@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EveryCall Admin Console</title>
+  <link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="logo">every<span>call</span> admin</div>
+
+      <div class="nav-group">
+        <div class="nav-label">Platform</div>
+        <button class="nav-btn active" data-screen="admin-overview">Overview</button>
+        <button class="nav-btn" data-screen="tenants">Tenants</button>
+        <button class="nav-btn" data-screen="monitoring">Call Monitoring</button>
+        <button class="nav-btn" data-screen="jobs">Provisioning Jobs</button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Controls</div>
+        <button class="nav-btn" data-screen="users">Admin Users</button>
+        <button class="nav-btn" data-screen="system">System Config</button>
+        <button class="nav-btn" data-screen="audit">Audit Log</button>
+      </div>
+
+      <div class="sidebar-foot">
+        <div><strong>Admin:</strong> jonlehman</div>
+        <div><strong>Env:</strong> Production</div>
+        <div style="margin-top:8px;"><a href="/login.html">Sign out</a></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section id="admin-overview" class="screen active">
+        <div class="topbar"><h1>Platform Overview</h1></div>
+        <div class="grid cols-4">
+          <div class="card"><div class="stat">Active Tenants</div><div class="value">12</div></div>
+          <div class="card"><div class="stat">Calls (24h)</div><div class="value">324</div></div>
+          <div class="card"><div class="stat">Errors (24h)</div><div class="value">4</div></div>
+          <div class="card"><div class="stat">Avg Latency</div><div class="value">189ms</div></div>
+        </div>
+        <div class="split" style="margin-top:12px;">
+          <div class="card">
+            <h2>Recent Incidents</h2>
+            <table class="table">
+              <thead><tr><th>Time</th><th>Tenant</th><th>Issue</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td>06:12</td><td>Bob's Plumbing</td><td>Twilio webhook 404</td><td><span class="badge ok">Resolved</span></td></tr>
+                <tr><td>05:41</td><td>Blue Sky HVAC</td><td>Prompt config restore</td><td><span class="badge ok">Resolved</span></td></tr>
+                <tr><td>04:17</td><td>Rooter Pro</td><td>TTS fallback spike</td><td><span class="badge warn">Watching</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h2>Quick Actions</h2>
+            <div class="toolbar" style="flex-wrap:wrap;">
+              <button class="btn">Create Tenant</button>
+              <button class="btn">Rotate API Keys</button>
+              <button class="btn">Pause Tenant</button>
+              <button class="btn brand">Open Call Dashboard</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tenants" class="screen">
+        <div class="topbar"><h1>Tenant Administration</h1><div class="top-actions"><button class="btn brand">New Tenant</button></div></div>
+        <div class="card">
+          <table class="table">
+            <thead><tr><th>Tenant</th><th>Users</th><th>Phone</th><th>Status</th><th>Data Region</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>Bob's Plumbing</td><td>3</td><td>+1 425 484 3086</td><td><span class="badge ok">Active</span></td><td>US</td><td><button class="btn">Manage</button></td></tr>
+              <tr><td>Blue Sky HVAC</td><td>5</td><td>+1 206 933 2001</td><td><span class="badge ok">Active</span></td><td>US</td><td><button class="btn">Manage</button></td></tr>
+              <tr><td>Rooter Pro</td><td>2</td><td>+1 360 111 0022</td><td><span class="badge warn">Limited</span></td><td>US</td><td><button class="btn">Manage</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="monitoring" class="screen">
+        <div class="topbar"><h1>Live Call Monitoring</h1></div>
+        <div class="card">
+          <p class="muted">Uses the same feed as Operator Dashboard, but cross-tenant.</p>
+          <a class="btn" href="/dashboard.html">Open Operator Dashboard View</a>
+        </div>
+      </section>
+
+      <section id="jobs" class="screen">
+        <div class="topbar"><h1>Provisioning Jobs</h1></div>
+        <div class="card">
+          <table class="table">
+            <thead><tr><th>Job</th><th>Tenant</th><th>Stage</th><th>Updated</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>prov_9381</td><td>Bob's Plumbing</td><td>number_setup</td><td>06:32</td><td><span class="badge ok">done</span></td></tr>
+              <tr><td>prov_9385</td><td>Ace Electric</td><td>workflow_seed</td><td>06:40</td><td><span class="badge warn">running</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="users" class="screen">
+        <div class="topbar"><h1>Admin Users</h1></div>
+        <div class="card">
+          <table class="table">
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last Active</th></tr></thead>
+            <tbody>
+              <tr><td>Jon Lehman</td><td>jon@everycall.io</td><td>Super Admin</td><td>Now</td></tr>
+              <tr><td>Ops Bot</td><td>ops-bot@everycall.io</td><td>Automation</td><td>5m ago</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="system" class="screen">
+        <div class="topbar"><h1>System Config</h1></div>
+        <div class="card">
+          <label>Global Emergency Phrase</label>
+          <textarea>That sounds urgent — let's get you taken care of right away.</textarea>
+          <div class="toolbar"><button class="btn brand">Save System Config</button></div>
+        </div>
+      </section>
+
+      <section id="audit" class="screen">
+        <div class="topbar"><h1>Audit Log</h1></div>
+        <div class="card code">[2026-02-24 06:44:11] config.update tenant=default actor=admin\n[2026-02-24 06:44:54] webhook.update number=+14254843086 actor=admin\n[2026-02-24 06:45:07] prompt.restore tenant=default version=12 actor=admin</div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const navBtns = [...document.querySelectorAll('.nav-btn')];
+    const screens = [...document.querySelectorAll('.screen')];
+    navBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        navBtns.forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        screens.forEach((s) => s.classList.toggle('active', s.id === btn.dataset.screen));
+      });
+    });
+  </script>
+</body>
+</html>
