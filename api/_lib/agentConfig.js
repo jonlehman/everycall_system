@@ -147,15 +147,33 @@ async function ensureTable(pool) {
     return;
   }
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS agent_configs (
-      tenant_key TEXT PRIMARY KEY,
-      agent_name TEXT NOT NULL,
-      company_name TEXT NOT NULL,
-      system_prompt TEXT NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS agent_configs (
+        tenant_key TEXT PRIMARY KEY,
+        agent_name TEXT NOT NULL,
+        company_name TEXT NOT NULL,
+        system_prompt TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS agent_config_versions (
+        id BIGSERIAL PRIMARY KEY,
+        tenant_key TEXT NOT NULL,
+        agent_name TEXT NOT NULL,
+        company_name TEXT NOT NULL,
+        system_prompt TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+  } catch (err) {
+    // Ignore benign concurrent init races under serverless cold starts.
+    if (err?.code !== "23505") {
+      throw err;
+    }
+  }
 
   tableReady = true;
 }
@@ -216,5 +234,67 @@ export async function setAgentConfig(update) {
     [next.tenantKey, next.agentName, next.companyName, next.systemPrompt]
   );
 
+  await pool.query(
+    `INSERT INTO agent_config_versions (tenant_key, agent_name, company_name, system_prompt)
+     VALUES ($1, $2, $3, $4)`,
+    [next.tenantKey, next.agentName, next.companyName, next.systemPrompt]
+  );
+
   return { ...next, storage: "database" };
+}
+
+export async function listAgentConfigVersions(tenantKey = DEFAULT_TENANT_KEY, limit = 20) {
+  const pool = getPool();
+  if (!pool) {
+    return [];
+  }
+
+  await ensureTable(pool);
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 20, 100));
+
+  const result = await pool.query(
+    `SELECT id, tenant_key, agent_name, company_name, created_at
+     FROM agent_config_versions
+     WHERE tenant_key = $1
+     ORDER BY id DESC
+     LIMIT $2`,
+    [tenantKey, safeLimit]
+  );
+
+  return result.rows.map((row) => ({
+    id: Number(row.id),
+    tenantKey: row.tenant_key,
+    agentName: row.agent_name,
+    companyName: row.company_name,
+    createdAt: row.created_at
+  }));
+}
+
+export async function restoreAgentConfigVersion(tenantKey = DEFAULT_TENANT_KEY, versionId) {
+  const pool = getPool();
+  if (!pool) {
+    throw new Error("DATABASE_URL is required for version restore");
+  }
+
+  await ensureTable(pool);
+
+  const result = await pool.query(
+    `SELECT tenant_key, agent_name, company_name, system_prompt
+     FROM agent_config_versions
+     WHERE tenant_key = $1 AND id = $2
+     LIMIT 1`,
+    [tenantKey, Number(versionId)]
+  );
+
+  if (!result.rowCount) {
+    throw new Error("version_not_found");
+  }
+
+  const row = result.rows[0];
+  return setAgentConfig({
+    tenantKey: row.tenant_key,
+    agentName: row.agent_name,
+    companyName: row.company_name,
+    systemPrompt: row.system_prompt
+  });
 }

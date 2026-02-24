@@ -5,66 +5,247 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>EveryCall Config UI</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 980px; margin: 24px auto; padding: 0 16px; }
-    label { display:block; margin: 12px 0 6px; font-weight: 600; }
-    input, textarea, button { width: 100%; padding: 10px; font-size: 14px; }
-    textarea { min-height: 360px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .status { margin-top: 12px; font-size: 14px; }
+    :root {
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --line: #dbe3ee;
+      --accent: #0ea5e9;
+      --accent-dark: #0284c7;
+      --ok: #059669;
+      --warn: #b45309;
+      --bad: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #eef3fa 0%, var(--bg) 60%);
+      color: var(--text);
+      font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    }
+    .wrap {
+      max-width: 1200px;
+      margin: 22px auto;
+      padding: 0 16px 24px;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .panel { padding: 14px; }
+    h1 { margin: 0; font-size: 22px; }
+    h2 { margin: 0 0 10px; font-size: 15px; }
+    p { margin: 6px 0; color: var(--muted); font-size: 14px; }
+    label { display: block; margin: 10px 0 6px; font-size: 12px; text-transform: uppercase; color: var(--muted); letter-spacing: .03em; }
+    input, textarea, button {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      background: #fff;
+      color: var(--text);
+    }
+    textarea {
+      min-height: 58vh;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      line-height: 1.4;
+    }
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 10px;
+    }
+    .toolbar button {
+      width: auto;
+      border: none;
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .toolbar button.secondary {
+      background: #e2e8f0;
+      color: #0f172a;
+    }
+    .toolbar button:hover { background: var(--accent-dark); }
+    .toolbar button.secondary:hover { background: #cbd5e1; }
+    .status { font-size: 13px; color: var(--muted); }
+    .status.ok { color: var(--ok); }
+    .status.warn { color: var(--warn); }
+    .status.bad { color: var(--bad); }
+    .kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; font-size: 13px; margin-top: 8px; }
+    .kv span:nth-child(odd) { color: var(--muted); }
+    .version-list { margin-top: 10px; display: grid; gap: 8px; max-height: 38vh; overflow: auto; }
+    .version-item {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px;
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .version-item .meta { color: var(--muted); }
+    .version-item button {
+      width: auto;
+      padding: 6px 10px;
+      font-size: 12px;
+      border: none;
+      background: #e2e8f0;
+      cursor: pointer;
+    }
+    .topline { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .pill {
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: #e0f2fe;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
+    }
+    @media (max-width: 980px) {
+      .wrap { grid-template-columns: 1fr; }
+      textarea { min-height: 45vh; }
+    }
   </style>
 </head>
 <body>
-  <h1>EveryCall Agent Config</h1>
-  <p>Edit the prompt and live agent settings used by the Twilio webhook.</p>
+  <div class="wrap">
+    <section class="card panel">
+      <div class="topline">
+        <h1>Agent Config</h1>
+        <span class="pill" id="storagePill">storage: -</span>
+      </div>
+      <p>Prompt + identity settings for live call handling.</p>
 
-  <div class="row">
-    <div>
       <label for="tenantKey">Tenant Key</label>
       <input id="tenantKey" value="default" />
-    </div>
-    <div>
+
       <label for="agentName">Agent Name</label>
       <input id="agentName" />
-    </div>
-    <div>
+
       <label for="companyName">Company Name</label>
       <input id="companyName" />
-    </div>
+
+      <label for="apiKey">Config API Key (optional)</label>
+      <input id="apiKey" type="password" placeholder="Needed only when CONFIG_API_KEY is set" />
+
+      <div class="kv">
+        <span>Characters</span><span id="charCount">0</span>
+        <span>Unsaved changes</span><span id="dirtyState">no</span>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--line);margin:12px 0;" />
+
+      <h2>Version History</h2>
+      <p>Each save creates a version in Postgres.</p>
+      <div class="version-list" id="versionList"></div>
+    </section>
+
+    <section class="card panel">
+      <h2>System Prompt</h2>
+      <textarea id="systemPrompt"></textarea>
+      <div class="toolbar">
+        <button id="saveBtn">Save Config</button>
+        <button class="secondary" id="reloadBtn">Reload</button>
+        <span class="status" id="status">Ready.</span>
+      </div>
+    </section>
   </div>
 
-  <label for="apiKey">Config API Key (optional)</label>
-  <input id="apiKey" type="password" placeholder="Required only if CONFIG_API_KEY is set" />
-
-  <label for="systemPrompt">System Prompt</label>
-  <textarea id="systemPrompt"></textarea>
-
-  <button id="saveBtn">Save Config</button>
-  <div class="status" id="status"></div>
-
   <script>
-    const statusEl = document.getElementById('status');
+    const els = {
+      tenantKey: document.getElementById('tenantKey'),
+      agentName: document.getElementById('agentName'),
+      companyName: document.getElementById('companyName'),
+      apiKey: document.getElementById('apiKey'),
+      systemPrompt: document.getElementById('systemPrompt'),
+      saveBtn: document.getElementById('saveBtn'),
+      reloadBtn: document.getElementById('reloadBtn'),
+      status: document.getElementById('status'),
+      charCount: document.getElementById('charCount'),
+      dirtyState: document.getElementById('dirtyState'),
+      storagePill: document.getElementById('storagePill'),
+      versionList: document.getElementById('versionList')
+    };
+
+    let lastSaved = null;
+
+    function setStatus(message, tone = 'normal') {
+      els.status.textContent = message;
+      els.status.className = `status ${tone === 'ok' ? 'ok' : tone === 'warn' ? 'warn' : tone === 'bad' ? 'bad' : ''}`;
+    }
+
+    function currentModel() {
+      return {
+        tenantKey: (els.tenantKey.value || 'default').trim(),
+        agentName: els.agentName.value,
+        companyName: els.companyName.value,
+        systemPrompt: els.systemPrompt.value
+      };
+    }
+
+    function updateDerived() {
+      const prompt = els.systemPrompt.value || '';
+      els.charCount.textContent = String(prompt.length);
+      const dirty = JSON.stringify(currentModel()) !== JSON.stringify(lastSaved || {});
+      els.dirtyState.textContent = dirty ? 'yes' : 'no';
+      els.dirtyState.style.color = dirty ? '#b45309' : '#059669';
+    }
 
     async function loadConfig() {
-      const tenantKey = document.getElementById('tenantKey').value || 'default';
+      const tenantKey = (els.tenantKey.value || 'default').trim();
+      setStatus('Loading config...');
       const resp = await fetch(`/v1/config/agent?tenantKey=${encodeURIComponent(tenantKey)}`);
       const json = await resp.json();
-      document.getElementById('tenantKey').value = json.tenantKey || tenantKey;
-      document.getElementById('agentName').value = json.agentName || '';
-      document.getElementById('companyName').value = json.companyName || '';
-      document.getElementById('systemPrompt').value = json.systemPrompt || '';
-      statusEl.textContent = `Loaded config for tenant key: ${json.tenantKey || tenantKey}.`;
+      els.tenantKey.value = json.tenantKey || tenantKey;
+      els.agentName.value = json.agentName || '';
+      els.companyName.value = json.companyName || '';
+      els.systemPrompt.value = json.systemPrompt || '';
+      els.storagePill.textContent = `storage: ${json.storage || 'unknown'}`;
+      lastSaved = currentModel();
+      updateDerived();
+      setStatus(`Loaded tenant ${els.tenantKey.value}.`, 'ok');
+      await loadVersions();
+    }
+
+    async function loadVersions() {
+      const tenantKey = (els.tenantKey.value || 'default').trim();
+      const resp = await fetch(`/v1/config/agent?mode=versions&tenantKey=${encodeURIComponent(tenantKey)}&limit=25`);
+      const json = await resp.json();
+      const versions = json.versions || [];
+      els.versionList.innerHTML = '';
+      if (!versions.length) {
+        els.versionList.innerHTML = '<div class="version-item"><div class="meta">No saved versions yet.</div></div>';
+        return;
+      }
+
+      for (const v of versions) {
+        const item = document.createElement('div');
+        item.className = 'version-item';
+        item.innerHTML = `
+          <div><strong>#${v.id}</strong></div>
+          <div class="meta">${new Date(v.createdAt).toLocaleString()}</div>
+          <div class="meta">${v.agentName} · ${v.companyName}</div>
+          <div><button data-id="${v.id}">Restore</button></div>
+        `;
+        item.querySelector('button').addEventListener('click', () => restoreVersion(v.id));
+        els.versionList.appendChild(item);
+      }
     }
 
     async function saveConfig() {
-      statusEl.textContent = 'Saving...';
-      const apiKey = document.getElementById('apiKey').value.trim();
-      const payload = {
-        tenantKey: document.getElementById('tenantKey').value || 'default',
-        agentName: document.getElementById('agentName').value,
-        companyName: document.getElementById('companyName').value,
-        systemPrompt: document.getElementById('systemPrompt').value
-      };
-
+      setStatus('Saving config...');
+      const apiKey = els.apiKey.value.trim();
+      const payload = currentModel();
       const resp = await fetch('/v1/config/agent', {
         method: 'POST',
         headers: {
@@ -75,19 +256,48 @@
       });
 
       if (!resp.ok) {
-        const err = await resp.text();
-        statusEl.textContent = `Save failed (${resp.status}): ${err}`;
+        setStatus(`Save failed (${resp.status}).`, 'bad');
         return;
       }
 
-      statusEl.textContent = 'Saved. New calls will use updated config.';
+      const json = await resp.json();
+      lastSaved = currentModel();
+      updateDerived();
+      els.storagePill.textContent = `storage: ${json.config?.storage || 'unknown'}`;
+      setStatus('Saved. New calls will use this config.', 'ok');
+      await loadVersions();
     }
 
-    document.getElementById('saveBtn').addEventListener('click', saveConfig);
-    document.getElementById('tenantKey').addEventListener('change', () => {
-      loadConfig().catch((e) => { statusEl.textContent = `Load failed: ${e.message}`; });
-    });
-    loadConfig().catch((e) => { statusEl.textContent = `Load failed: ${e.message}`; });
+    async function restoreVersion(versionId) {
+      setStatus(`Restoring version #${versionId}...`, 'warn');
+      const apiKey = els.apiKey.value.trim();
+      const resp = await fetch('/v1/config/agent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+        },
+        body: JSON.stringify({
+          tenantKey: (els.tenantKey.value || 'default').trim(),
+          restoreVersionId: versionId
+        })
+      });
+
+      if (!resp.ok) {
+        setStatus(`Restore failed (${resp.status}).`, 'bad');
+        return;
+      }
+
+      setStatus(`Restored version #${versionId}.`, 'ok');
+      await loadConfig();
+    }
+
+    els.saveBtn.addEventListener('click', saveConfig);
+    els.reloadBtn.addEventListener('click', () => loadConfig().catch((e) => setStatus(`Load failed: ${e.message}`, 'bad')));
+    els.tenantKey.addEventListener('change', () => loadConfig().catch((e) => setStatus(`Load failed: ${e.message}`, 'bad')));
+    [els.agentName, els.companyName, els.systemPrompt].forEach((el) => el.addEventListener('input', updateDerived));
+
+    loadConfig().catch((e) => setStatus(`Load failed: ${e.message}`, 'bad'));
   </script>
 </body>
 </html>

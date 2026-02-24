@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EveryCall Operator Dashboard</title>
+  <style>
+    body { margin: 0; font-family: "Avenir Next", system-ui, sans-serif; background: #f4f7fb; color: #0f172a; }
+    .wrap { max-width: 1200px; margin: 20px auto; padding: 0 16px; }
+    .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 12px; padding: 14px; }
+    h1 { margin: 0 0 10px; }
+    .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+    .toolbar input, .toolbar button { padding: 8px 10px; font-size: 14px; border-radius: 8px; border: 1px solid #cbd5e1; }
+    .toolbar button { cursor: pointer; border: none; background: #0ea5e9; color: white; }
+    .grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+    tr:hover { background: #f8fafc; cursor: pointer; }
+    .muted { color: #64748b; }
+    pre { white-space: pre-wrap; background: #0b1020; color: #e2e8f0; padding: 10px; border-radius: 8px; font-size: 12px; max-height: 58vh; overflow: auto; }
+    @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Operator Dashboard</h1>
+    <p class="muted">Recent calls, statuses, and per-call Twilio events.</p>
+
+    <div class="toolbar">
+      <label>Limit <input id="limit" type="number" min="1" max="100" value="30" style="width:80px;" /></label>
+      <button id="refreshBtn">Refresh</button>
+      <span id="status" class="muted">Loading...</span>
+    </div>
+
+    <div class="grid">
+      <section class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th><th>From</th><th>To</th><th>Status</th><th>Dur</th><th>SID</th>
+            </tr>
+          </thead>
+          <tbody id="callsBody"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h3 style="margin-top:0;">Call Detail</h3>
+        <pre id="detail">Select a call row to load details.</pre>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const callsBody = document.getElementById('callsBody');
+    const detailEl = document.getElementById('detail');
+
+    function setStatus(msg) { statusEl.textContent = msg; }
+
+    async function loadCalls() {
+      setStatus('Loading calls...');
+      const limit = Math.max(1, Math.min(Number(document.getElementById('limit').value || 30), 100));
+      const resp = await fetch(`/v1/dashboard/calls?limit=${limit}`);
+      const json = await resp.json();
+      callsBody.innerHTML = '';
+
+      if (!json.configured) {
+        setStatus(json.message || 'Twilio not configured.');
+        detailEl.textContent = JSON.stringify(json, null, 2);
+        return;
+      }
+
+      for (const call of json.calls || []) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${call.start_time || '-'}</td>
+          <td>${call.from || '-'}</td>
+          <td>${call.to || '-'}</td>
+          <td>${call.status || '-'}</td>
+          <td>${call.duration || '-'}</td>
+          <td>${call.sid || '-'}</td>
+        `;
+        tr.addEventListener('click', () => loadDetail(call.sid));
+        callsBody.appendChild(tr);
+      }
+
+      setStatus(`Loaded ${json.calls?.length || 0} calls.`);
+    }
+
+    async function loadDetail(callSid) {
+      detailEl.textContent = 'Loading detail...';
+      const resp = await fetch(`/v1/dashboard/calls?callSid=${encodeURIComponent(callSid)}`);
+      const json = await resp.json();
+      detailEl.textContent = JSON.stringify(json, null, 2);
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', () => loadCalls().catch(e => setStatus(`Error: ${e.message}`)));
+    loadCalls().catch(e => setStatus(`Error: ${e.message}`));
+    setInterval(() => loadCalls().catch(() => {}), 30000);
+  </script>
+</body>
+</html>

@@ -1,4 +1,9 @@
-import { getAgentConfig, setAgentConfig } from "../../_lib/agentConfig.js";
+import {
+  getAgentConfig,
+  listAgentConfigVersions,
+  restoreAgentConfigVersion,
+  setAgentConfig
+} from "../../_lib/agentConfig.js";
 
 function isAuthorized(req) {
   const configuredKey = process.env.CONFIG_API_KEY;
@@ -15,6 +20,10 @@ export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const tenantKey = req.query?.tenantKey || "default";
+      if (req.query?.mode === "versions") {
+        const versions = await listAgentConfigVersions(String(tenantKey), req.query?.limit);
+        return res.status(200).json({ tenantKey, versions });
+      }
       const cfg = await getAgentConfig(String(tenantKey));
       return res.status(200).json(cfg);
     }
@@ -25,6 +34,14 @@ export default async function handler(req, res) {
       }
 
       const body = typeof req.body === "object" && req.body ? req.body : {};
+      if (body.restoreVersionId) {
+        const restored = await restoreAgentConfigVersion(
+          body.tenantKey || "default",
+          body.restoreVersionId
+        );
+        return res.status(200).json({ ok: true, restored: true, config: restored });
+      }
+
       const updated = await setAgentConfig({
         tenantKey: body.tenantKey || "default",
         agentName: body.agentName,
