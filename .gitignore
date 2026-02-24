@@ -4,4 +4,3 @@ dist
 .env.*
 .DS_Store
 coverage
-pnpm-lock.yaml
