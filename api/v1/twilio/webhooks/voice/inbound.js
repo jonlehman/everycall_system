@@ -24,6 +24,25 @@ function parseBody(req) {
   return {};
 }
 
+function toInt(value, fallback = 0) {
+  const num = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function looksLikeAddress(text) {
+  const normalized = String(text || "").toLowerCase();
+  const hasNumber = /\d/.test(normalized);
+  const hasStreetToken = /\b(st|street|ave|avenue|rd|road|blvd|boulevard|ln|lane|dr|drive|way|court|ct)\b/.test(
+    normalized
+  );
+  const hasZip = /\b\d{5}(?:-\d{4})?\b/.test(normalized);
+  return (hasNumber && hasStreetToken) || hasZip;
+}
+
+function isDonePhrase(text) {
+  return /\b(no|nope|that'?s it|thats it|nothing else|done|goodbye|bye)\b/i.test(String(text || ""));
+}
+
 function buildGatherTwiml(prompt, actionPath) {
   const escapedPrompt = escapeXml(prompt);
   const escapedAction = escapeXml(actionPath);
@@ -94,24 +113,53 @@ async function generateReplyFromOpenAI(speechResult) {
 export default async function handler(req, res) {
   const body = parseBody(req);
   const speechResult = body.SpeechResult || body.speechresult;
+  const query = req.query || {};
   const callSid = body.CallSid || "unknown";
-  const actionPath = "/v1/twilio/webhooks/voice/inbound";
+  const turn = toInt(query.turn, 0);
+  const hasAddress = String(query.hasAddress || "0") === "1";
+  const actionBase = "/v1/twilio/webhooks/voice/inbound";
 
   if (!speechResult) {
     const twiml = buildGatherTwiml(
       "Thanks for calling EveryCall. How can we help you today?",
-      actionPath
+      `${actionBase}?turn=1&hasAddress=0`
     );
     res.setHeader("Content-Type", "text/xml; charset=utf-8");
     res.status(200).send(twiml);
     return;
   }
 
-  const aiReply = await generateReplyFromOpenAI(String(speechResult));
+  const text = String(speechResult);
+  const done = isDonePhrase(text);
+  const detectedAddress = hasAddress || looksLikeAddress(text);
+
+  if (done || turn >= 4) {
+    const closingTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Thanks. We captured your details and will follow up shortly. Goodbye.</Say>
+</Response>`;
+    res.setHeader("X-CallSid", String(callSid));
+    res.setHeader("Content-Type", "text/xml; charset=utf-8");
+    res.status(200).send(closingTwiml);
+    return;
+  }
+
+  let aiReply;
+  if (!process.env.OPENAI_API_KEY) {
+    aiReply = detectedAddress
+      ? "Perfect. I have your service address. What is the best callback number?"
+      : "Thanks. I captured that. What is the full service address including zip code?";
+  } else {
+    aiReply = await generateReplyFromOpenAI(text);
+  }
+
+  const nextTurn = turn + 1;
+  const nextAddressFlag = detectedAddress ? 1 : 0;
+  const nextActionPath = `${actionBase}?turn=${nextTurn}&hasAddress=${nextAddressFlag}`;
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">${escapeXml(aiReply)}</Say>
-  <Gather input="speech" speechTimeout="auto" action="${actionPath}" method="POST">
+  <Gather input="speech" speechTimeout="auto" action="${nextActionPath}" method="POST">
     <Say voice="alice">Anything else?</Say>
   </Gather>
   <Say voice="alice">Thanks for calling. Goodbye.</Say>
