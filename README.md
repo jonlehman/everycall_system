@@ -28,3 +28,8 @@ See `.env.example` for required variables.
 - API contracts: `docs/api/*`
 - Event schemas: `docs/events/*`
 - ADRs: `docs/adr/*`
+
+## Prompt config UI
+- UI: `/config-ui.html`
+- API: `GET/POST /v1/config/agent`
+- Note: current config storage is in-memory per runtime instance (suitable for initial testing only).

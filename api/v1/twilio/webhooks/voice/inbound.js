@@ -58,6 +58,7 @@ function buildGatherTwiml(prompt, actionPath) {
 
 async function generateReplyFromOpenAI(speechResult) {
   const apiKey = process.env.OPENAI_API_KEY;
+  const cfg = getAgentConfig();
   if (!apiKey) {
     return "Thanks. I captured that. What is the service address?";
   }
@@ -68,8 +69,7 @@ async function generateReplyFromOpenAI(speechResult) {
     input: [
       {
         role: "system",
-        content:
-          "You are EveryCall, a concise phone assistant for home service businesses. Keep replies under 25 words, ask one clarifying question, no markdown."
+        content: cfg.systemPrompt
       },
       {
         role: "user",
@@ -111,6 +111,7 @@ async function generateReplyFromOpenAI(speechResult) {
 }
 
 export default async function handler(req, res) {
+  const cfg = getAgentConfig();
   const body = parseBody(req);
   const speechResult = body.SpeechResult || body.speechresult;
   const query = req.query || {};
@@ -121,7 +122,7 @@ export default async function handler(req, res) {
 
   if (!speechResult) {
     const twiml = buildGatherTwiml(
-      "Thanks for calling EveryCall. How can we help you today?",
+      `Thanks for calling ${cfg.companyName}. How can we help you today?`,
       `${actionBase}?turn=1&hasAddress=0`
     );
     res.setHeader("Content-Type", "text/xml; charset=utf-8");
@@ -169,3 +170,4 @@ export default async function handler(req, res) {
   res.setHeader("Content-Type", "text/xml; charset=utf-8");
   res.status(200).send(twiml);
 }
+import { getAgentConfig } from "../../../../_lib/agentConfig.js";

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EveryCall Config UI</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 980px; margin: 24px auto; padding: 0 16px; }
+    label { display:block; margin: 12px 0 6px; font-weight: 600; }
+    input, textarea, button { width: 100%; padding: 10px; font-size: 14px; }
+    textarea { min-height: 360px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .status { margin-top: 12px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h1>EveryCall Agent Config</h1>
+  <p>Edit the prompt and live agent settings used by the Twilio webhook.</p>
+
+  <div class="row">
+    <div>
+      <label for="agentName">Agent Name</label>
+      <input id="agentName" />
+    </div>
+    <div>
+      <label for="companyName">Company Name</label>
+      <input id="companyName" />
+    </div>
+  </div>
+
+  <label for="apiKey">Config API Key (optional)</label>
+  <input id="apiKey" type="password" placeholder="Required only if CONFIG_API_KEY is set" />
+
+  <label for="systemPrompt">System Prompt</label>
+  <textarea id="systemPrompt"></textarea>
+
+  <button id="saveBtn">Save Config</button>
+  <div class="status" id="status"></div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+
+    async function loadConfig() {
+      const resp = await fetch('/v1/config/agent');
+      const json = await resp.json();
+      document.getElementById('agentName').value = json.agentName || '';
+      document.getElementById('companyName').value = json.companyName || '';
+      document.getElementById('systemPrompt').value = json.systemPrompt || '';
+      statusEl.textContent = 'Loaded current config.';
+    }
+
+    async function saveConfig() {
+      statusEl.textContent = 'Saving...';
+      const apiKey = document.getElementById('apiKey').value.trim();
+      const payload = {
+        agentName: document.getElementById('agentName').value,
+        companyName: document.getElementById('companyName').value,
+        systemPrompt: document.getElementById('systemPrompt').value
+      };
+
+      const resp = await fetch('/v1/config/agent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!resp.ok) {
+        const err = await resp.text();
+        statusEl.textContent = `Save failed (${resp.status}): ${err}`;
+        return;
+      }
+
+      statusEl.textContent = 'Saved. New calls will use updated config.';
+    }
+
+    document.getElementById('saveBtn').addEventListener('click', saveConfig);
+    loadConfig().catch((e) => { statusEl.textContent = `Load failed: ${e.message}`; });
+  </script>
+</body>
+</html>
