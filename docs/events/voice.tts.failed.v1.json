@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "voice.tts.failed.v1",
+  "type": "object",
+  "required": [
+    "event_name",
+    "event_version",
+    "trace_id",
+    "occurred_at",
+    "tenant_id",
+    "call_id",
+    "utterance_id",
+    "provider",
+    "error_code",
+    "retryable"
+  ],
+  "properties": {
+    "event_name": {"const": "voice.tts.failed"},
+    "event_version": {"const": 1},
+    "trace_id": {"type": "string", "minLength": 1},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "tenant_id": {"type": "string", "minLength": 1},
+    "call_id": {"type": "string", "minLength": 1},
+    "utterance_id": {"type": "string", "minLength": 1},
+    "provider": {"type": "string", "enum": ["elevenlabs", "openai"]},
+    "error_code": {"type": "string", "minLength": 1},
+    "retryable": {"type": "boolean"}
+  },
+  "additionalProperties": false
+}

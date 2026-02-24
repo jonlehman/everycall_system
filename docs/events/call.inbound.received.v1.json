@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "call.inbound.received.v1",
+  "type": "object",
+  "required": [
+    "event_name",
+    "event_version",
+    "trace_id",
+    "occurred_at",
+    "tenant_id",
+    "call_id",
+    "provider",
+    "provider_call_sid",
+    "from_number",
+    "to_number"
+  ],
+  "properties": {
+    "event_name": {"const": "call.inbound.received"},
+    "event_version": {"const": 1},
+    "trace_id": {"type": "string", "minLength": 1},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "tenant_id": {"type": "string", "minLength": 1},
+    "call_id": {"type": "string", "minLength": 1},
+    "provider": {"const": "twilio"},
+    "provider_call_sid": {"type": "string", "minLength": 1},
+    "from_number": {"type": "string", "minLength": 1},
+    "to_number": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

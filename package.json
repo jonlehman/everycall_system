@@ -1,0 +1,14 @@
+{
+  "name": "everycall",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "build": "corepack pnpm -r build",
+    "typecheck": "corepack pnpm -r typecheck",
+    "dev:call-gateway": "PORT=3101 corepack pnpm --filter @everycall/call-gateway dev",
+    "dev:ai-orchestrator": "PORT=3102 corepack pnpm --filter @everycall/ai-orchestrator dev",
+    "dev:voice-service": "PORT=3103 corepack pnpm --filter @everycall/voice-service dev",
+    "smoke": "node scripts/smoke.mjs"
+  }
+}

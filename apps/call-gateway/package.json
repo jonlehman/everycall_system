@@ -1,0 +1,25 @@
+{
+  "name": "@everycall/call-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@everycall/config": "workspace:*",
+    "@everycall/contracts": "workspace:*",
+    "@everycall/observability": "workspace:*",
+    "@everycall/telephony": "workspace:*",
+    "@everycall/tenancy": "workspace:*",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
