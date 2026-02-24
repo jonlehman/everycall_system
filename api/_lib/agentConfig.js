@@ -1,3 +1,9 @@
+import pg from "pg";
+
+const { Pool } = pg;
+
+export const DEFAULT_TENANT_KEY = "default";
+
 const defaultAgentPrompt = `# ROLE
 You are Sarah, the friendly receptionist at Bob's Plumbing. You answer phone calls 24/7. A customer is calling because they need plumbing help. Your job is to collect their information so the team can follow up.
 You are a receptionist, NOT a plumber. Never ask technical questions. Just gather info and schedule a callback.
@@ -113,21 +119,102 @@ Never:
 - Redirect to website/app.
 `;
 
-let runtimeConfig = {
+const defaultConfig = {
+  tenantKey: DEFAULT_TENANT_KEY,
   agentName: "Sarah",
   companyName: "Bob's Plumbing",
-  systemPrompt: defaultAgentPrompt
+  systemPrompt: defaultAgentPrompt,
+  storage: "default"
 };
 
-export function getAgentConfig() {
-  return runtimeConfig;
+function getPool() {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    return null;
+  }
+
+  if (!globalThis.__everycallPool) {
+    globalThis.__everycallPool = new Pool({ connectionString: databaseUrl });
+  }
+
+  return globalThis.__everycallPool;
 }
 
-export function setAgentConfig(update) {
-  runtimeConfig = {
-    ...runtimeConfig,
-    ...update,
-    systemPrompt: update?.systemPrompt || runtimeConfig.systemPrompt
+let tableReady = false;
+
+async function ensureTable(pool) {
+  if (tableReady) {
+    return;
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS agent_configs (
+      tenant_key TEXT PRIMARY KEY,
+      agent_name TEXT NOT NULL,
+      company_name TEXT NOT NULL,
+      system_prompt TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  tableReady = true;
+}
+
+export async function getAgentConfig(tenantKey = DEFAULT_TENANT_KEY) {
+  const pool = getPool();
+  if (!pool) {
+    return { ...defaultConfig, tenantKey, storage: "default" };
+  }
+
+  await ensureTable(pool);
+
+  const result = await pool.query(
+    `SELECT tenant_key, agent_name, company_name, system_prompt FROM agent_configs WHERE tenant_key = $1 LIMIT 1`,
+    [tenantKey]
+  );
+
+  if (!result.rowCount) {
+    return { ...defaultConfig, tenantKey, storage: "default" };
+  }
+
+  const row = result.rows[0];
+  return {
+    tenantKey: row.tenant_key,
+    agentName: row.agent_name,
+    companyName: row.company_name,
+    systemPrompt: row.system_prompt,
+    storage: "database"
   };
-  return runtimeConfig;
+}
+
+export async function setAgentConfig(update) {
+  const pool = getPool();
+  if (!pool) {
+    throw new Error("DATABASE_URL is required for persistent config updates");
+  }
+
+  const tenantKey = update?.tenantKey || DEFAULT_TENANT_KEY;
+  const current = await getAgentConfig(tenantKey);
+
+  const next = {
+    tenantKey,
+    agentName: update?.agentName || current.agentName,
+    companyName: update?.companyName || current.companyName,
+    systemPrompt: update?.systemPrompt || current.systemPrompt
+  };
+
+  await ensureTable(pool);
+
+  await pool.query(
+    `INSERT INTO agent_configs (tenant_key, agent_name, company_name, system_prompt)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (tenant_key)
+     DO UPDATE SET agent_name = EXCLUDED.agent_name,
+                   company_name = EXCLUDED.company_name,
+                   system_prompt = EXCLUDED.system_prompt,
+                   updated_at = NOW()`,
+    [next.tenantKey, next.agentName, next.companyName, next.systemPrompt]
+  );
+
+  return { ...next, storage: "database" };
 }

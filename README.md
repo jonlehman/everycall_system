@@ -32,4 +32,5 @@ See `.env.example` for required variables.
 ## Prompt config UI
 - UI: `/config-ui.html`
 - API: `GET/POST /v1/config/agent`
-- Note: current config storage is in-memory per runtime instance (suitable for initial testing only).
+- Storage: PostgreSQL (`agent_configs` table) when `DATABASE_URL` is set.
+- Fallback: defaults are returned if `DATABASE_URL` is unset; writes require `DATABASE_URL`.

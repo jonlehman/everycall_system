@@ -10,5 +10,8 @@
     "dev:ai-orchestrator": "PORT=3102 corepack pnpm --filter @everycall/ai-orchestrator dev",
     "dev:voice-service": "PORT=3103 corepack pnpm --filter @everycall/voice-service dev",
     "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
   }
 }

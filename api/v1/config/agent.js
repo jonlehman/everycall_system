@@ -12,25 +12,32 @@ function isAuthorized(req) {
 }
 
 export default async function handler(req, res) {
-  if (req.method === "GET") {
-    return res.status(200).json(getAgentConfig());
-  }
-
-  if (req.method === "POST") {
-    if (!isAuthorized(req)) {
-      return res.status(401).json({ error: "unauthorized" });
+  try {
+    if (req.method === "GET") {
+      const tenantKey = req.query?.tenantKey || "default";
+      const cfg = await getAgentConfig(String(tenantKey));
+      return res.status(200).json(cfg);
     }
 
-    const body = typeof req.body === "object" && req.body ? req.body : {};
-    const updated = setAgentConfig({
-      agentName: body.agentName,
-      companyName: body.companyName,
-      systemPrompt: body.systemPrompt
-    });
+    if (req.method === "POST") {
+      if (!isAuthorized(req)) {
+        return res.status(401).json({ error: "unauthorized" });
+      }
 
-    return res.status(200).json({ ok: true, config: updated });
+      const body = typeof req.body === "object" && req.body ? req.body : {};
+      const updated = await setAgentConfig({
+        tenantKey: body.tenantKey || "default",
+        agentName: body.agentName,
+        companyName: body.companyName,
+        systemPrompt: body.systemPrompt
+      });
+
+      return res.status(200).json({ ok: true, config: updated });
+    }
+
+    res.setHeader("Allow", "GET, POST");
+    return res.status(405).json({ error: "method_not_allowed" });
+  } catch (err) {
+    return res.status(500).json({ error: "config_error", message: err?.message || "unknown" });
   }
-
-  res.setHeader("Allow", "GET, POST");
-  return res.status(405).json({ error: "method_not_allowed" });
 }

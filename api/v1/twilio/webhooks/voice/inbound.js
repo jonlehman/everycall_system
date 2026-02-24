@@ -1,9 +1,11 @@
+import { DEFAULT_TENANT_KEY, getAgentConfig } from "../../../../_lib/agentConfig.js";
+
 function escapeXml(value) {
   return String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .replace(/\"/g, "&quot;")
     .replace(/'/g, "&apos;");
 }
 
@@ -56,9 +58,8 @@ function buildGatherTwiml(prompt, actionPath) {
 </Response>`;
 }
 
-async function generateReplyFromOpenAI(speechResult) {
+async function generateReplyFromOpenAI(speechResult, systemPrompt) {
   const apiKey = process.env.OPENAI_API_KEY;
-  const cfg = getAgentConfig();
   if (!apiKey) {
     return "Thanks. I captured that. What is the service address?";
   }
@@ -69,7 +70,7 @@ async function generateReplyFromOpenAI(speechResult) {
     input: [
       {
         role: "system",
-        content: cfg.systemPrompt
+        content: systemPrompt
       },
       {
         role: "user",
@@ -111,7 +112,7 @@ async function generateReplyFromOpenAI(speechResult) {
 }
 
 export default async function handler(req, res) {
-  const cfg = getAgentConfig();
+  const cfg = await getAgentConfig(DEFAULT_TENANT_KEY);
   const body = parseBody(req);
   const speechResult = body.SpeechResult || body.speechresult;
   const query = req.query || {};
@@ -151,7 +152,7 @@ export default async function handler(req, res) {
       ? "Perfect. I have your service address. What is the best callback number?"
       : "Thanks. I captured that. What is the full service address including zip code?";
   } else {
-    aiReply = await generateReplyFromOpenAI(text);
+    aiReply = await generateReplyFromOpenAI(text, cfg.systemPrompt);
   }
 
   const nextTurn = turn + 1;
@@ -170,4 +171,3 @@ export default async function handler(req, res) {
   res.setHeader("Content-Type", "text/xml; charset=utf-8");
   res.status(200).send(twiml);
 }
-import { getAgentConfig } from "../../../../_lib/agentConfig.js";
