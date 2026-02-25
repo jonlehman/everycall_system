@@ -9,7 +9,7 @@
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <div class="logo">every<span>call</span> client</div>
+      <div class="logo">every<span>call</span></div>
 
       <div class="nav-group">
         <div class="nav-label">Operations</div>
@@ -19,25 +19,31 @@
       </div>
 
       <div class="nav-group">
-        <div class="nav-label">Knowledge</div>
+        <div class="nav-label">Setup</div>
         <button class="nav-btn" data-screen="faq">FAQ Manager</button>
-      </div>
-
-      <div class="nav-group">
-        <div class="nav-label">Workspace</div>
         <button class="nav-btn" data-screen="team">Team Users</button>
         <button class="nav-btn" data-screen="routing">Call Routing</button>
         <button class="nav-btn" data-screen="settings">Account Settings</button>
       </div>
 
-      <div class="sidebar-foot">
-        <div><strong>Tenant:</strong> Bob's Plumbing</div>
-        <div><strong>Role:</strong> Owner</div>
-        <div style="margin-top:8px;"><a href="/login.html">Sign out</a></div>
-      </div>
+      <div class="sidebar-foot"></div>
     </aside>
 
     <main class="main">
+      <div class="topbar" style="justify-content:flex-end;">
+        <div class="user-chip" style="display:flex; align-items:center; gap:10px;">
+          <div class="badge ok" style="border-radius:999px; padding:6px; display:flex; align-items:center; justify-content:center;">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false" style="display:block;">
+              <circle cx="12" cy="8" r="4" fill="currentColor"></circle>
+              <path d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+            </svg>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-weight:600;" id="tenantName">Tenant</div>
+            <div class="muted" style="font-size:12px;"><a href="/login.html">Sign out</a></div>
+          </div>
+        </div>
+      </div>
       <section id="overview" class="screen active">
         <div class="topbar">
           <h1>Overview</h1>
@@ -425,6 +431,7 @@
     async function loadSettings() {
       const data = await fetchJson(`/v1/settings?tenantKey=${encodeURIComponent(tenantKey)}`);
       document.getElementById('accountTenant').textContent = data.tenant?.name || '-';
+      document.getElementById('tenantName').textContent = data.tenant?.name || 'Tenant';
       document.getElementById('accountPlan').textContent = data.tenant?.plan || '-';
       document.getElementById('accountRegion').textContent = data.tenant?.data_region || '-';
       document.getElementById('accountAudit').textContent = data.settings?.notes ? 'Enabled' : 'Disabled';
