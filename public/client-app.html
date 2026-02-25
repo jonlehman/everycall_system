@@ -281,17 +281,36 @@
       e.stopPropagation();
       userMenu.style.display = userMenu.style.display === 'block' ? 'none' : 'block';
     });
-    const openMenu = () => { userMenu.style.display = 'block'; };
-    const closeMenu = () => { userMenu.style.display = 'none'; };
+    let menuCloseTimer = null;
+    const openMenu = () => {
+      if (menuCloseTimer) {
+        clearTimeout(menuCloseTimer);
+        menuCloseTimer = null;
+      }
+      userMenu.style.display = 'block';
+    };
+    const scheduleCloseMenu = () => {
+      if (menuCloseTimer) {
+        clearTimeout(menuCloseTimer);
+      }
+      menuCloseTimer = setTimeout(() => {
+        userMenu.style.display = 'none';
+        menuCloseTimer = null;
+      }, 2000);
+    };
     userChip.addEventListener('mouseenter', openMenu);
     userMenu.addEventListener('mouseenter', openMenu);
     userChip.addEventListener('mouseleave', (e) => {
-      if (!userMenu.contains(e.relatedTarget)) closeMenu();
+      if (!userMenu.contains(e.relatedTarget)) scheduleCloseMenu();
     });
     userMenu.addEventListener('mouseleave', (e) => {
-      if (!userChip.contains(e.relatedTarget)) closeMenu();
+      if (!userChip.contains(e.relatedTarget)) scheduleCloseMenu();
     });
     document.addEventListener('click', () => {
+      if (menuCloseTimer) {
+        clearTimeout(menuCloseTimer);
+        menuCloseTimer = null;
+      }
       userMenu.style.display = 'none';
     });
     document.querySelectorAll('[data-menu-screen]').forEach((item) => {
