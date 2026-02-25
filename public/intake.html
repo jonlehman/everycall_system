@@ -146,9 +146,28 @@
               <label>Phone</label>
               <input id="phone" placeholder="+1 555 555 5555" />
             </div>
+          </div>
+          <div class="section-title">Business Address</div>
+          <div class="intake-grid">
+            <div class="stack full">
+              <label>Address Line 1</label>
+              <input id="address1" placeholder="123 Main St" />
+            </div>
+            <div class="stack full">
+              <label>Address Line 2</label>
+              <input id="address2" placeholder="Suite 200" />
+            </div>
             <div class="stack">
-              <label>Business Address</label>
-              <input id="address" placeholder="123 Main St, Seattle, WA" />
+              <label>City</label>
+              <input id="city" placeholder="Seattle" />
+            </div>
+            <div class="stack">
+              <label>State</label>
+              <input id="state" placeholder="WA" />
+            </div>
+            <div class="stack">
+              <label>ZIP</label>
+              <input id="zip" placeholder="98101" />
             </div>
             <div class="stack full">
               <label>Service Area</label>
@@ -346,7 +365,13 @@
         ownerEmail: document.getElementById('ownerEmail').value.trim(),
         phone: document.getElementById('phone').value.trim(),
         serviceArea: document.getElementById('serviceArea').value.trim(),
-        address: document.getElementById('address').value.trim(),
+        address: [
+          document.getElementById('address1').value.trim(),
+          document.getElementById('address2').value.trim(),
+          document.getElementById('city').value.trim(),
+          document.getElementById('state').value.trim(),
+          document.getElementById('zip').value.trim()
+        ].filter(Boolean).join(', '),
         timezone: document.getElementById('timezone').value.trim() || 'America/Los_Angeles',
         businessHours: document.getElementById('businessHours').value.trim(),
         averageCallsPerDay: Number(document.getElementById('avgCalls').value || 0),
