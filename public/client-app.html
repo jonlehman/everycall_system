@@ -199,7 +199,7 @@
     });
 
     const detail = document.getElementById('callDetail');
-    const tenantKey = new URLSearchParams(window.location.search).get('tenantKey') || 'bobs_plumbing';
+    const tenantKey = new URLSearchParams(window.location.search).get('tenantKey') || 'default';
 
     async function fetchJson(path, options = {}) {
       const resp = await fetch(path, options);

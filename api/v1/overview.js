@@ -1,7 +1,7 @@
-import { ensureTables, getPool, seedDemoData } from "../_lib/db.js";
+import { ensureTables, getPool } from "../_lib/db.js";
 
 function getTenantKey(req) {
-  return String(req.query?.tenantKey || "bobs_plumbing");
+  return String(req.query?.tenantKey || "default");
 }
 
 export default async function handler(req, res) {
@@ -12,7 +12,6 @@ export default async function handler(req, res) {
     }
 
     await ensureTables(pool);
-    await seedDemoData(pool);
 
     const tenantKey = getTenantKey(req);
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);

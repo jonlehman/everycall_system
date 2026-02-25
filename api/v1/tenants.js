@@ -1,4 +1,4 @@
-import { ensureTables, getPool, seedDemoData } from "../_lib/db.js";
+import { ensureTables, getPool } from "../_lib/db.js";
 
 export default async function handler(req, res) {
   try {
@@ -8,7 +8,6 @@ export default async function handler(req, res) {
     }
 
     await ensureTables(pool);
-    await seedDemoData(pool);
 
     if (req.method === "GET") {
       const tenantKey = req.query?.tenantKey;

@@ -1,9 +1,9 @@
-import { ensureTables, getPool, seedDemoData } from "../../_lib/db.js";
+import { ensureTables, getPool } from "../../_lib/db.js";
 
 const DEFAULT_LIMIT = 30;
 
 function getTenantKey(req) {
-  return String(req.query?.tenantKey || "bobs_plumbing");
+  return String(req.query?.tenantKey || "default");
 }
 
 export default async function handler(req, res) {
@@ -14,7 +14,6 @@ export default async function handler(req, res) {
     }
 
     await ensureTables(pool);
-    await seedDemoData(pool);
 
     const tenantKey = getTenantKey(req);
     const callSid = req.query?.callSid;

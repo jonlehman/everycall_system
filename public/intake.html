@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EveryCall Trial Intake</title>
+  <link rel="stylesheet" href="/assets/app.css" />
+  <style>
+    .intake-shell {
+      max-width: 900px;
+      margin: 32px auto;
+      padding: 0 16px 32px;
+    }
+    .intake-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .intake-card {
+      padding: 18px;
+    }
+    .intake-card h1 { margin: 0 0 6px; }
+    .intake-card p { margin: 0 0 14px; }
+    .stack { display: grid; gap: 10px; }
+    .stack label { font-size: 12px; text-transform: uppercase; color: #64748b; letter-spacing: .03em; }
+    .stack input, .stack select, .stack textarea {
+      width: 100%;
+      border: 1px solid #dbe3ee;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .stack textarea { min-height: 96px; resize: vertical; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .muted { color: #64748b; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="intake-shell">
+    <div class="card intake-card">
+      <h1>Free Trial Intake</h1>
+      <p class="muted">Tell us about your service business so we can configure EveryCall for you.</p>
+      <form id="intakeForm" class="stack">
+        <div class="intake-grid">
+          <div class="stack">
+            <label>Business Name</label>
+            <input id="businessName" required placeholder="Acme Plumbing" />
+          </div>
+          <div class="stack">
+            <label>Industry</label>
+            <select id="industry" required>
+              <option value="">Select industry</option>
+              <option value="plumbing">Plumbing</option>
+              <option value="window_installers">Window Installers</option>
+              <option value="electrical">Electrical</option>
+              <option value="hvac">HVAC</option>
+              <option value="roofing">Roofing</option>
+              <option value="landscaping">Landscaping</option>
+              <option value="cleaning">Cleaning</option>
+              <option value="pest_control">Pest Control</option>
+              <option value="garage_door">Garage Door</option>
+              <option value="general_contractor">General Contractor</option>
+              <option value="locksmith">Locksmith</option>
+            </select>
+          </div>
+          <div class="stack">
+            <label>Owner Name</label>
+            <input id="ownerName" required placeholder="Jane Smith" />
+          </div>
+          <div class="stack">
+            <label>Owner Email (Username)</label>
+            <input id="ownerEmail" type="email" required placeholder="jane@acme.com" />
+          </div>
+          <div class="stack">
+            <label>Phone</label>
+            <input id="phone" placeholder="+1 555 555 5555" />
+          </div>
+          <div class="stack">
+            <label>Service Area</label>
+            <input id="serviceArea" placeholder="Seattle + Eastside" />
+          </div>
+          <div class="stack">
+            <label>Business Address</label>
+            <input id="address" placeholder="123 Main St, Seattle, WA" />
+          </div>
+          <div class="stack">
+            <label>Timezone</label>
+            <input id="timezone" placeholder="America/Los_Angeles" />
+          </div>
+          <div class="stack">
+            <label>Business Hours</label>
+            <input id="businessHours" placeholder="Mon-Fri 8 AM - 6 PM" />
+          </div>
+          <div class="stack">
+            <label>Average Calls Per Day</label>
+            <input id="avgCalls" type="number" min="0" placeholder="10" />
+          </div>
+          <div class="stack">
+            <label>Emergency Services?</label>
+            <select id="emergencyServices">
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+          <div class="stack">
+            <label>Services Offered</label>
+            <textarea id="servicesOffered" placeholder="List your main services"></textarea>
+          </div>
+        </div>
+        <div class="stack">
+          <label>Primary Goal For EveryCall</label>
+          <textarea id="primaryGoal" placeholder="Reduce missed calls, improve scheduling, etc."></textarea>
+        </div>
+        <div class="actions">
+          <button class="btn brand" type="submit">Create Free Trial</button>
+          <span class="muted" id="status">Ready.</span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const form = document.getElementById('intakeForm');
+
+    function setStatus(message, tone) {
+      statusEl.textContent = message;
+      statusEl.style.color = tone === 'bad' ? '#dc2626' : tone === 'ok' ? '#059669' : '#64748b';
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setStatus('Submitting...', 'warn');
+
+      const payload = {
+        businessName: document.getElementById('businessName').value.trim(),
+        industry: document.getElementById('industry').value,
+        ownerName: document.getElementById('ownerName').value.trim(),
+        ownerEmail: document.getElementById('ownerEmail').value.trim(),
+        phone: document.getElementById('phone').value.trim(),
+        serviceArea: document.getElementById('serviceArea').value.trim(),
+        address: document.getElementById('address').value.trim(),
+        timezone: document.getElementById('timezone').value.trim() || 'America/Los_Angeles',
+        businessHours: document.getElementById('businessHours').value.trim(),
+        averageCallsPerDay: Number(document.getElementById('avgCalls').value || 0),
+        emergencyServices: document.getElementById('emergencyServices').value === 'true',
+        servicesOffered: document.getElementById('servicesOffered').value.trim(),
+        primaryGoal: document.getElementById('primaryGoal').value.trim()
+      };
+
+      try {
+        const resp = await fetch('/v1/tenants/onboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!resp.ok) {
+          const msg = await resp.text();
+          setStatus(msg || `Request failed (${resp.status})`, 'bad');
+          return;
+        }
+
+        const data = await resp.json();
+        setStatus('Trial created. Redirecting to workspace...', 'ok');
+        const tenantKey = data.tenantKey || '';
+        setTimeout(() => {
+          window.location.href = `/client-app.html?tenantKey=${encodeURIComponent(tenantKey)}`;
+        }, 1200);
+      } catch (err) {
+        setStatus(err.message || 'Request failed.', 'bad');
+      }
+    });
+  </script>
+</body>
+</html>
