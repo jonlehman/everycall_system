@@ -119,14 +119,6 @@
         <div class="topbar">
           <h1>Customer Questions and Answers</h1>
           <div class="top-actions">
-            <select id="industrySelect" class="btn">
-              <option value="electrician">Electrician</option>
-              <option value="general">General Service</option>
-              <option value="hvac">HVAC</option>
-              <option value="plumber">Plumber</option>
-            </select>
-            <button class="btn" id="seedIndustryFaqs">Add Industry Defaults</button>
-            <button class="btn brand" id="addFaqBtn">Add FAQ</button>
           </div>
         </div>
         <div class="grid cols-2">
@@ -413,8 +405,6 @@
     const faqCategory = document.getElementById('faqCategory');
     const saveFaq = document.getElementById('saveFaq');
     const resetFaqForm = document.getElementById('resetFaqForm');
-    const industrySelect = document.getElementById('industrySelect');
-    const seedIndustryFaqs = document.getElementById('seedIndustryFaqs');
 
     function setFaqStatus(message, tone) {
       faqStatus.textContent = message;
@@ -461,16 +451,6 @@
       setFaqStatus('Loaded FAQs.', 'ok');
     }
 
-    async function addIndustryDefaults() {
-      const industry = industrySelect.value || 'general';
-      const resp = await fetchJson('/v1/faq', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantKey, action: 'seedIndustry', industry })
-      });
-      await loadFaqs();
-      setFaqStatus(`Added ${resp.added} industry FAQs.`, 'ok');
-    }
 
     function resetForm() {
       faqQuestion.value = '';
@@ -497,8 +477,7 @@
     });
 
     resetFaqForm.addEventListener('click', resetForm);
-    seedIndustryFaqs.addEventListener('click', addIndustryDefaults);
-    document.getElementById('addFaqBtn').addEventListener('click', () => faqQuestion.focus());
+    faqQuestion.addEventListener('focus', () => setFaqStatus('Ready.', 'normal'));
 
     async function loadTeamUsers() {
       const data = await fetchJson(`/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`);
