@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "packageManager": "pnpm@10.0.0",
   "scripts": {
-    "build": "pnpm -r build",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "typecheck": "pnpm -r typecheck",
     "dev:call-gateway": "PORT=3101 pnpm --filter @everycall/call-gateway dev",
     "dev:ai-orchestrator": "PORT=3102 pnpm --filter @everycall/ai-orchestrator dev",
@@ -12,6 +14,9 @@
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
-    "pg": "^8.16.3"
+    "next": "14.2.8",
+    "pg": "^8.16.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }
