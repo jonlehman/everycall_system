@@ -23,9 +23,9 @@ export default function Sidebar() {
 
       <div className="nav-group">
         <div className="nav-label">Operations</div>
-        <Link className={linkClass('/client/overview')} href={withTenant('/client/overview', tenantKey)}>Overview</Link>
-        <Link className={linkClass('/client/calls')} href={withTenant('/client/calls', tenantKey)}>Calls</Link>
-        <Link className={linkClass('/client/dispatch')} href={withTenant('/client/dispatch', tenantKey)}>Dispatch Board</Link>
+        <Link className={linkClass('/client/overview')} style={{ display: 'block' }} href={withTenant('/client/overview', tenantKey)}>Overview</Link>
+        <Link className={linkClass('/client/calls')} style={{ display: 'block' }} href={withTenant('/client/calls', tenantKey)}>Calls</Link>
+        <Link className={linkClass('/client/dispatch')} style={{ display: 'block' }} href={withTenant('/client/dispatch', tenantKey)}>Dispatch Board</Link>
       </div>
 
       <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: '14px 0' }} />
