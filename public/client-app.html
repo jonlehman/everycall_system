@@ -20,7 +20,7 @@
 
       <div class="nav-group">
         <div class="nav-label">Setup</div>
-        <button class="nav-btn" data-screen="faq">FAQ Manager</button>
+        <button class="nav-btn" data-screen="faq">Questions and Answers</button>
         <button class="nav-btn" data-screen="team">Team Users</button>
         <button class="nav-btn" data-screen="routing">Call Routing</button>
         <button class="nav-btn" data-screen="settings">Account Settings</button>
@@ -108,7 +108,7 @@
 
       <section id="faq" class="screen">
         <div class="topbar">
-          <h1>FAQ Manager</h1>
+          <h1>Customer Questions and Answers</h1>
           <div class="top-actions">
             <select id="industrySelect" class="btn">
               <option value="electrician">Electrician</option>
@@ -120,72 +120,98 @@
             <button class="btn brand" id="addFaqBtn">Add FAQ</button>
           </div>
         </div>
-        <div class="card">
-          <table class="table">
-            <thead><tr><th>Question</th><th>Answer</th><th>Category</th><th>Last Updated</th><th></th></tr></thead>
-            <tbody id="faqTable"></tbody>
-          </table>
-        </div>
-        <div class="card" style="margin-top:12px;">
-          <div class="topbar" style="margin-bottom:8px;">
-            <h2 style="margin:0;">New FAQ</h2>
-            <div class="top-actions"><span class="muted" id="faqStatus">Ready.</span></div>
-          </div>
-          <div class="grid cols-2">
-            <div>
-              <label>Question</label>
-              <input id="faqQuestion" placeholder="What areas do you serve?" />
-              <label style="margin-top:10px;">Category</label>
-              <input id="faqCategory" placeholder="Service Area" />
+        <div class="grid cols-2">
+          <div>
+            <div class="card">
+              <table class="table">
+                <thead><tr><th>Question</th><th>Answer</th><th>Category</th><th>Last Updated</th><th></th></tr></thead>
+                <tbody id="faqTable"></tbody>
+              </table>
             </div>
-            <div>
-              <label>Answer</label>
-              <textarea id="faqAnswer" style="min-height:120px;">We serve the greater metro area and nearby suburbs. Call with your address and we will confirm coverage.</textarea>
+            <div class="card" style="margin-top:12px;">
+              <div class="topbar" style="margin-bottom:8px;">
+                <h2 style="margin:0;">New FAQ</h2>
+                <div class="top-actions"><span class="muted" id="faqStatus">Ready.</span></div>
+              </div>
+              <div class="grid cols-2">
+                <div>
+                  <label>Question</label>
+                  <input id="faqQuestion" placeholder="What areas do you serve?" />
+                  <label style="margin-top:10px;">Category</label>
+                  <input id="faqCategory" placeholder="Service Area" />
+                </div>
+                <div>
+                  <label>Answer</label>
+                  <textarea id="faqAnswer" style="min-height:120px;">We serve the greater metro area and nearby suburbs. Call with your address and we will confirm coverage.</textarea>
+                </div>
+              </div>
+              <div class="toolbar" style="margin-top:10px;">
+                <button class="btn brand" id="saveFaq">Save FAQ</button>
+                <button class="btn" id="resetFaqForm">Reset</button>
+              </div>
             </div>
           </div>
-          <div class="toolbar" style="margin-top:10px;">
-            <button class="btn brand" id="saveFaq">Save FAQ</button>
-            <button class="btn" id="resetFaqForm">Reset</button>
+          <div class="card">
+            <h2>Help</h2>
+            <p class="muted">These answers are used by the receptionist to respond instantly. Keep them concise, accurate, and updated as your policies and coverage change.</p>
           </div>
         </div>
       </section>
 
       <section id="team" class="screen">
         <div class="topbar"><h1>Team Users</h1><div class="top-actions"><button class="btn brand">Invite User</button></div></div>
-        <div class="card">
-          <table class="table">
-            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
-            <tbody id="teamUsersTable"></tbody>
-          </table>
+        <div class="grid cols-2">
+          <div class="card">
+            <table class="table">
+              <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+              <tbody id="teamUsersTable"></tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h2>Help</h2>
+            <p class="muted">Control who can access calls, update routing, and edit customer-facing settings. Keep admin access limited.</p>
+          </div>
         </div>
       </section>
 
       <section id="routing" class="screen">
         <div class="topbar"><h1>Call Routing</h1><div class="top-actions"><button class="btn brand" id="saveRouting">Save Routing</button></div></div>
         <div class="grid cols-2">
-          <div class="card">
-            <label>Primary Callback Queue</label>
-            <select id="routingPrimary"><option>Dispatch Team</option><option>Owner Only</option></select>
-            <label style="margin-top:10px;">Emergency Calls</label>
-            <select id="routingEmergency"><option>Immediate Transfer</option><option>Priority Queue</option></select>
+          <div>
+            <div class="card">
+              <label>Primary Callback Queue</label>
+              <select id="routingPrimary"><option>Dispatch Team</option><option>Owner Only</option></select>
+              <label style="margin-top:10px;">Emergency Calls</label>
+              <select id="routingEmergency"><option>Immediate Transfer</option><option>Priority Queue</option></select>
+            </div>
+            <div class="card" style="margin-top:12px;">
+              <label>Business Hours</label>
+              <textarea id="routingHours">Mon-Fri 7:00 AM - 8:00 PM\nEmergency service 24/7</textarea>
+              <label style="margin-top:10px;">After Hours Behavior</label>
+              <select id="routingAfterHours"><option>Collect details and dispatch callback</option><option>Forward to on-call</option></select>
+            </div>
           </div>
           <div class="card">
-            <label>Business Hours</label>
-            <textarea id="routingHours">Mon-Fri 7:00 AM - 8:00 PM\nEmergency service 24/7</textarea>
-            <label style="margin-top:10px;">After Hours Behavior</label>
-            <select id="routingAfterHours"><option>Collect details and dispatch callback</option><option>Forward to on-call</option></select>
+            <h2>Help</h2>
+            <p class="muted">Define where callbacks go, how emergencies are handled, and what happens after hours. These rules shape every call flow.</p>
           </div>
         </div>
       </section>
 
       <section id="settings" class="screen">
         <div class="topbar"><h1>Account Settings</h1></div>
-        <div class="card">
-          <div class="kv">
-            <div>Tenant</div><div id="accountTenant">-</div>
-            <div>Plan</div><div id="accountPlan">-</div>
-            <div>Data Region</div><div id="accountRegion">-</div>
-            <div>Audit Logs</div><div id="accountAudit">-</div>
+        <div class="grid cols-2">
+          <div class="card">
+            <div class="kv">
+              <div>Tenant</div><div id="accountTenant">-</div>
+              <div>Plan</div><div id="accountPlan">-</div>
+              <div>Data Region</div><div id="accountRegion">-</div>
+              <div>Audit Logs</div><div id="accountAudit">-</div>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Help</h2>
+            <p class="muted">View plan and compliance details here. Contact support to change data region or audit policies.</p>
           </div>
         </div>
       </section>
