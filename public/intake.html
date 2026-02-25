@@ -42,79 +42,105 @@
       <h1>Free Trial Intake</h1>
       <p class="muted">Tell us about your service business so we can configure EveryCall for you.</p>
       <form id="intakeForm" class="stack">
-        <div class="intake-grid">
-          <div class="stack">
-            <label>Business Name</label>
-            <input id="businessName" required placeholder="Acme Plumbing" />
+        <div id="page1" class="stack">
+          <div class="intake-grid">
+            <div class="stack">
+              <label>Business Name</label>
+              <input id="businessName" required placeholder="Acme Plumbing" />
+            </div>
+            <div class="stack">
+              <label>Industry</label>
+              <select id="industry" required>
+                <option value="">Select industry</option>
+                <option value="plumbing">Plumbing</option>
+                <option value="window_installers">Window Installers</option>
+                <option value="electrical">Electrical</option>
+                <option value="hvac">HVAC</option>
+                <option value="roofing">Roofing</option>
+                <option value="landscaping">Landscaping</option>
+                <option value="cleaning">Cleaning</option>
+                <option value="pest_control">Pest Control</option>
+                <option value="garage_door">Garage Door</option>
+                <option value="general_contractor">General Contractor</option>
+                <option value="locksmith">Locksmith</option>
+              </select>
+            </div>
+            <div class="stack">
+              <label>Phone</label>
+              <input id="phone" placeholder="+1 555 555 5555" />
+            </div>
+            <div class="stack">
+              <label>Business Address</label>
+              <input id="address" placeholder="123 Main St, Seattle, WA" />
+            </div>
+            <div class="stack">
+              <label>Owner Name</label>
+              <input id="ownerName" required placeholder="Jane Smith" />
+            </div>
+            <div class="stack">
+              <label>Owner Email (Username)</label>
+              <input id="ownerEmail" type="email" required placeholder="jane@acme.com" />
+            </div>
+            <div class="stack">
+              <label>Timezone</label>
+              <input id="timezone" placeholder="America/Los_Angeles" />
+            </div>
+            <div class="stack">
+              <label>Business Hours</label>
+              <input id="businessHours" placeholder="Mon-Fri 8 AM - 6 PM" />
+            </div>
           </div>
-          <div class="stack">
-            <label>Industry</label>
-            <select id="industry" required>
-              <option value="">Select industry</option>
-              <option value="plumbing">Plumbing</option>
-              <option value="window_installers">Window Installers</option>
-              <option value="electrical">Electrical</option>
-              <option value="hvac">HVAC</option>
-              <option value="roofing">Roofing</option>
-              <option value="landscaping">Landscaping</option>
-              <option value="cleaning">Cleaning</option>
-              <option value="pest_control">Pest Control</option>
-              <option value="garage_door">Garage Door</option>
-              <option value="general_contractor">General Contractor</option>
-              <option value="locksmith">Locksmith</option>
-            </select>
-          </div>
-          <div class="stack">
-            <label>Owner Name</label>
-            <input id="ownerName" required placeholder="Jane Smith" />
-          </div>
-          <div class="stack">
-            <label>Owner Email (Username)</label>
-            <input id="ownerEmail" type="email" required placeholder="jane@acme.com" />
-          </div>
-          <div class="stack">
-            <label>Phone</label>
-            <input id="phone" placeholder="+1 555 555 5555" />
-          </div>
-          <div class="stack">
-            <label>Service Area</label>
-            <input id="serviceArea" placeholder="Seattle + Eastside" />
-          </div>
-          <div class="stack">
-            <label>Business Address</label>
-            <input id="address" placeholder="123 Main St, Seattle, WA" />
-          </div>
-          <div class="stack">
-            <label>Timezone</label>
-            <input id="timezone" placeholder="America/Los_Angeles" />
-          </div>
-          <div class="stack">
-            <label>Business Hours</label>
-            <input id="businessHours" placeholder="Mon-Fri 8 AM - 6 PM" />
-          </div>
-          <div class="stack">
-            <label>Average Calls Per Day</label>
-            <input id="avgCalls" type="number" min="0" placeholder="10" />
-          </div>
-          <div class="stack">
-            <label>Emergency Services?</label>
-            <select id="emergencyServices">
-              <option value="true">Yes</option>
-              <option value="false">No</option>
-            </select>
-          </div>
-          <div class="stack">
-            <label>Services Offered</label>
-            <textarea id="servicesOffered" placeholder="List your main services"></textarea>
+          <div class="actions">
+            <button class="btn brand" type="button" id="nextPage">Continue</button>
           </div>
         </div>
-        <div class="stack">
-          <label>Primary Goal For EveryCall</label>
-          <textarea id="primaryGoal" placeholder="Reduce missed calls, improve scheduling, etc."></textarea>
-        </div>
-        <div class="actions">
-          <button class="btn brand" type="submit">Create Free Trial</button>
-          <span class="muted" id="status">Ready.</span>
+
+        <div id="page2" class="stack" style="display:none;">
+          <div class="intake-grid">
+            <div class="stack">
+              <label>Service Area</label>
+              <input id="serviceArea" placeholder="Seattle + Eastside" />
+            </div>
+            <div class="stack">
+              <label>Average Calls Per Day</label>
+              <input id="avgCalls" type="number" min="0" placeholder="10" />
+            </div>
+            <div class="stack">
+              <label>Emergency Services?</label>
+              <select id="emergencyServices">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </div>
+            <div class="stack">
+              <label>Services Offered</label>
+              <div class="stack" style="gap:6px;">
+                <input id="serviceSearch" list="serviceOptions" placeholder="Search or add a service" />
+                <datalist id="serviceOptions"></datalist>
+                <div class="actions">
+                  <button class="btn" type="button" id="addService">Add Service</button>
+                  <span class="muted" id="serviceHint">Choose from the list or add your own.</span>
+                </div>
+                <div id="serviceTags" class="actions" style="gap:6px;"></div>
+              </div>
+            </div>
+          </div>
+          <div class="stack">
+            <label>Primary Goal For EveryCall</label>
+            <div class="stack" id="goalList">
+              <label><input type="checkbox" value="reduce_missed_calls" /> Reduce missed calls</label>
+              <label><input type="checkbox" value="improve_response_time" /> Improve response time</label>
+              <label><input type="checkbox" value="book_more_jobs" /> Book more jobs</label>
+              <label><input type="checkbox" value="after_hours_coverage" /> After-hours coverage</label>
+              <label><input type="checkbox" value="better_dispatch" /> Better dispatching</label>
+              <label><input type="checkbox" value="call_quality" /> Improve call quality</label>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn" type="button" id="backPage">Back</button>
+            <button class="btn brand" type="submit">Create Free Trial</button>
+            <span class="muted" id="status">Ready.</span>
+          </div>
         </div>
       </form>
     </div>
@@ -123,11 +149,100 @@
   <script>
     const statusEl = document.getElementById('status');
     const form = document.getElementById('intakeForm');
+    const page1 = document.getElementById('page1');
+    const page2 = document.getElementById('page2');
+    const nextPage = document.getElementById('nextPage');
+    const backPage = document.getElementById('backPage');
+    const industrySelect = document.getElementById('industry');
+    const serviceSearch = document.getElementById('serviceSearch');
+    const serviceOptions = document.getElementById('serviceOptions');
+    const serviceTags = document.getElementById('serviceTags');
+    const addService = document.getElementById('addService');
+
+    const SERVICES_BY_INDUSTRY = {
+      plumbing: ['Drain cleaning', 'Water heater repair', 'Leak detection', 'Sewer line repair', 'Fixture installation', 'Emergency plumbing'],
+      window_installers: ['Window replacement', 'Glass repair', 'Energy-efficient upgrades', 'Custom windows', 'Installation estimates'],
+      electrical: ['Panel upgrade', 'Outlet installation', 'Lighting', 'Wiring repair', 'EV charger install', 'Emergency electrical'],
+      hvac: ['AC repair', 'Furnace repair', 'Maintenance', 'System replacement', 'Duct cleaning', 'Thermostat install'],
+      roofing: ['Leak repair', 'Roof replacement', 'Inspection', 'Gutter install', 'Storm damage repair'],
+      landscaping: ['Lawn care', 'Irrigation', 'Hardscaping', 'Tree trimming', 'Seasonal cleanup'],
+      cleaning: ['Residential cleaning', 'Deep cleaning', 'Move-out cleaning', 'Commercial cleaning', 'Recurring service'],
+      pest_control: ['Inspection', 'Extermination', 'Prevention plan', 'Rodent control', 'Termite treatment'],
+      garage_door: ['Spring repair', 'Opener install', 'Door replacement', 'Sensor repair', 'Tune-up'],
+      general_contractor: ['Remodeling', 'Additions', 'Kitchens', 'Bathrooms', 'Permits coordination'],
+      locksmith: ['Lockout service', 'Rekeying', 'Lock installation', 'Key duplication', 'Emergency locksmith']
+    };
+
+    const selectedServices = new Set();
+
+    function renderServiceOptions() {
+      serviceOptions.innerHTML = '';
+      const industry = industrySelect.value;
+      (SERVICES_BY_INDUSTRY[industry] || []).forEach((item) => {
+        const option = document.createElement('option');
+        option.value = item;
+        serviceOptions.appendChild(option);
+      });
+    }
+
+    function renderServiceTags() {
+      serviceTags.innerHTML = '';
+      selectedServices.forEach((service) => {
+        const tag = document.createElement('button');
+        tag.type = 'button';
+        tag.className = 'btn';
+        tag.textContent = `${service} ✕`;
+        tag.addEventListener('click', () => {
+          selectedServices.delete(service);
+          renderServiceTags();
+        });
+        serviceTags.appendChild(tag);
+      });
+    }
+
+    function addServiceTag() {
+      const value = serviceSearch.value.trim();
+      if (!value) return;
+      selectedServices.add(value);
+      serviceSearch.value = '';
+      renderServiceTags();
+    }
+
+    industrySelect.addEventListener('change', () => {
+      renderServiceOptions();
+      selectedServices.clear();
+      renderServiceTags();
+    });
+
+    addService.addEventListener('click', addServiceTag);
+    serviceSearch.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        addServiceTag();
+      }
+    });
+
+    renderServiceOptions();
 
     function setStatus(message, tone) {
       statusEl.textContent = message;
       statusEl.style.color = tone === 'bad' ? '#dc2626' : tone === 'ok' ? '#059669' : '#64748b';
     }
+
+    nextPage.addEventListener('click', () => {
+      if (!document.getElementById('businessName').value.trim() || !industrySelect.value || !document.getElementById('ownerName').value.trim() || !document.getElementById('ownerEmail').value.trim()) {
+        setStatus('Please complete required fields before continuing.', 'bad');
+        return;
+      }
+      page1.style.display = 'none';
+      page2.style.display = 'block';
+      setStatus('Ready.', 'normal');
+    });
+
+    backPage.addEventListener('click', () => {
+      page2.style.display = 'none';
+      page1.style.display = 'block';
+    });
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -145,8 +260,8 @@
         businessHours: document.getElementById('businessHours').value.trim(),
         averageCallsPerDay: Number(document.getElementById('avgCalls').value || 0),
         emergencyServices: document.getElementById('emergencyServices').value === 'true',
-        servicesOffered: document.getElementById('servicesOffered').value.trim(),
-        primaryGoal: document.getElementById('primaryGoal').value.trim()
+        servicesOffered: [...selectedServices],
+        primaryGoal: [...document.querySelectorAll('#goalList input[type=\"checkbox\"]:checked')].map((el) => el.value)
       };
 
       try {
