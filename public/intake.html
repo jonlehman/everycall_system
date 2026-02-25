@@ -7,14 +7,14 @@
   <link rel="stylesheet" href="/assets/app.css" />
   <style>
     .intake-shell {
-      max-width: 900px;
+      max-width: 860px;
       margin: 32px auto;
       padding: 0 16px 32px;
     }
     .intake-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
     }
     .intake-card {
       padding: 18px;
@@ -34,6 +34,11 @@
     .stack textarea { min-height: 96px; resize: vertical; }
     .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .muted { color: #64748b; font-size: 13px; }
+    .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #475569; margin-top: 6px; }
+    .full { grid-column: 1 / -1; }
+    @media (max-width: 780px) {
+      .intake-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -43,6 +48,7 @@
       <p class="muted">Tell us about your service business so we can configure EveryCall for you.</p>
       <form id="intakeForm" class="stack">
         <div id="page1" class="stack">
+          <div class="section-title">Business Basics</div>
           <div class="intake-grid">
             <div class="stack">
               <label>Business Name</label>
@@ -73,6 +79,13 @@
               <label>Business Address</label>
               <input id="address" placeholder="123 Main St, Seattle, WA" />
             </div>
+            <div class="stack full">
+              <label>Service Area</label>
+              <input id="serviceArea" placeholder="Seattle + Eastside" />
+            </div>
+          </div>
+          <div class="section-title">Owner & Ops</div>
+          <div class="intake-grid">
             <div class="stack">
               <label>Owner Name</label>
               <input id="ownerName" required placeholder="Jane Smith" />
@@ -96,11 +109,8 @@
         </div>
 
         <div id="page2" class="stack" style="display:none;">
+          <div class="section-title">Call Volume</div>
           <div class="intake-grid">
-            <div class="stack">
-              <label>Service Area</label>
-              <input id="serviceArea" placeholder="Seattle + Eastside" />
-            </div>
             <div class="stack">
               <label>Average Calls Per Day</label>
               <input id="avgCalls" type="number" min="0" placeholder="10" />
@@ -112,7 +122,10 @@
                 <option value="false">No</option>
               </select>
             </div>
-            <div class="stack">
+          </div>
+          <div class="section-title">Services Offered</div>
+          <div class="intake-grid">
+            <div class="stack full">
               <label>Services Offered</label>
               <div class="stack" style="gap:6px;">
                 <input id="serviceSearch" list="serviceOptions" placeholder="Search or add a service" />
@@ -125,6 +138,7 @@
               </div>
             </div>
           </div>
+          <div class="section-title">Primary Goals</div>
           <div class="stack">
             <label>Primary Goal For EveryCall</label>
             <div class="stack" id="goalList">
