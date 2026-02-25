@@ -257,15 +257,14 @@
     const setupToggle = document.getElementById('setupToggle');
     const setupSubmenu = document.getElementById('setupSubmenu');
 
+    const isSetupScreen = (id) => ['setup-overview', 'faq', 'team', 'routing', 'settings'].includes(id);
     const setActiveScreen = (id) => {
       navBtns.forEach((b) => b.classList.toggle('active', b.dataset.screen === id));
       screens.forEach((s) => s.classList.toggle('active', s.id === id));
+      setupSubmenu.style.display = isSetupScreen(id) ? 'grid' : 'none';
     };
     navBtns.forEach((btn) => btn.addEventListener('click', () => {
       setActiveScreen(btn.dataset.screen);
-      if (btn.dataset.screen === 'setup-overview') {
-        setupSubmenu.style.display = 'grid';
-      }
     }));
 
     setupToggle.addEventListener('click', (e) => {
@@ -320,6 +319,8 @@
         setActiveScreen(item.dataset.menuScreen);
       });
     });
+
+    setActiveScreen(document.querySelector('.screen.active')?.id || 'overview');
 
     const detail = document.getElementById('callDetail');
     const tenantKey = new URLSearchParams(window.location.search).get('tenantKey') || 'default';
