@@ -7,9 +7,31 @@
   <link rel="stylesheet" href="/assets/app.css" />
   <style>
     .intake-shell {
-      max-width: 860px;
-      margin: 32px auto;
-      padding: 0 16px 32px;
+      max-width: 960px;
+      margin: 32px auto 48px;
+      padding: 0 18px 48px;
+    }
+    .hero {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .brand {
+      font-weight: 700;
+      letter-spacing: .02em;
+      text-transform: lowercase;
+      font-size: 20px;
+    }
+    .brand span { opacity: .6; font-weight: 500; }
+    .headline {
+      font-size: 32px;
+      line-height: 1.1;
+      margin: 0;
+    }
+    .subhead {
+      font-size: 15px;
+      color: #475569;
+      max-width: 64ch;
     }
     .intake-grid {
       display: grid;
@@ -17,12 +39,16 @@
       gap: 18px;
     }
     .intake-card {
-      padding: 18px;
+      padding: 22px;
+      border-radius: 18px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
     }
     .intake-card h1 { margin: 0 0 6px; }
     .intake-card p { margin: 0 0 14px; }
     .stack { display: grid; gap: 10px; }
-    .stack label { font-size: 12px; text-transform: uppercase; color: #64748b; letter-spacing: .03em; }
+    .stack label { font-size: 11px; text-transform: uppercase; color: #64748b; letter-spacing: .12em; }
     .stack input, .stack select, .stack textarea {
       width: 100%;
       border: 1px solid #dbe3ee;
@@ -34,20 +60,65 @@
     .stack textarea { min-height: 96px; resize: vertical; }
     .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .muted { color: #64748b; font-size: 13px; }
-    .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #475569; margin-top: 6px; }
+    .section-title { font-size: 12px; text-transform: uppercase; letter-spacing: .18em; color: #0f172a; margin-top: 6px; }
     .full { grid-column: 1 / -1; }
+    .progress {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 14px 0 18px;
+    }
+    .progress span {
+      height: 6px;
+      border-radius: 999px;
+      background: #e2e8f0;
+    }
+    .progress span.active {
+      background: #0f172a;
+    }
+    .page-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0 0 2px;
+    }
+    .page-hint {
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 8px;
+    }
+    .tag-button.btn {
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      color: #0f172a;
+    }
+    .tag-button.btn:hover { background: #e2e8f0; }
+    body {
+      background: radial-gradient(circle at top, #f8fafc 0%, #eef2f7 52%, #e2e8f0 100%);
+    }
     @media (max-width: 780px) {
       .intake-grid { grid-template-columns: 1fr; }
+      .headline { font-size: 26px; }
     }
   </style>
 </head>
 <body>
   <div class="intake-shell">
+    <div class="hero">
+      <div class="brand">everycall <span>intake</span></div>
+      <h1 class="headline">Launch your 24/7 call assistant in minutes.</h1>
+      <div class="subhead">This short intake configures your AI receptionist, FAQs, routing, and onboarding defaults so you can start your free trial right away.</div>
+    </div>
     <div class="card intake-card">
       <h1>Free Trial Intake</h1>
       <p class="muted">Tell us about your service business so we can configure EveryCall for you.</p>
+      <div class="progress" aria-hidden="true">
+        <span id="progressOne" class="active"></span>
+        <span id="progressTwo"></span>
+      </div>
       <form id="intakeForm" class="stack">
         <div id="page1" class="stack">
+          <div class="page-title">Step 1 — Business basics</div>
+          <div class="page-hint">We use this to set your workspace defaults and onboarding profile.</div>
           <div class="section-title">Business Basics</div>
           <div class="intake-grid">
             <div class="stack">
@@ -109,6 +180,8 @@
         </div>
 
         <div id="page2" class="stack" style="display:none;">
+          <div class="page-title">Step 2 — Call handling preferences</div>
+          <div class="page-hint">These settings help EveryCall build the right FAQ and intake prompts.</div>
           <div class="section-title">Call Volume</div>
           <div class="intake-grid">
             <div class="stack">
@@ -204,7 +277,7 @@
       selectedServices.forEach((service) => {
         const tag = document.createElement('button');
         tag.type = 'button';
-        tag.className = 'btn';
+        tag.className = 'btn tag-button';
         tag.textContent = `${service} ✕`;
         tag.addEventListener('click', () => {
           selectedServices.delete(service);
@@ -250,12 +323,16 @@
       }
       page1.style.display = 'none';
       page2.style.display = 'block';
+      document.getElementById('progressOne').classList.remove('active');
+      document.getElementById('progressTwo').classList.add('active');
       setStatus('Ready.', 'normal');
     });
 
     backPage.addEventListener('click', () => {
       page2.style.display = 'none';
       page1.style.display = 'block';
+      document.getElementById('progressOne').classList.add('active');
+      document.getElementById('progressTwo').classList.remove('active');
     });
 
     form.addEventListener('submit', async (event) => {
