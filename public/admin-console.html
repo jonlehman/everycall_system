@@ -37,21 +37,17 @@
       <section id="admin-overview" class="screen active">
         <div class="topbar"><h1>Platform Overview</h1></div>
         <div class="grid cols-4">
-          <div class="card"><div class="stat">Active Tenants</div><div class="value">12</div></div>
-          <div class="card"><div class="stat">Calls (24h)</div><div class="value">324</div></div>
-          <div class="card"><div class="stat">Errors (24h)</div><div class="value">4</div></div>
-          <div class="card"><div class="stat">Avg Latency</div><div class="value">189ms</div></div>
+          <div class="card"><div class="stat">Active Tenants</div><div class="value" id="statActiveTenants">0</div></div>
+          <div class="card"><div class="stat">Calls (24h)</div><div class="value" id="statCalls24h">0</div></div>
+          <div class="card"><div class="stat">Errors (24h)</div><div class="value" id="statErrors24h">0</div></div>
+          <div class="card"><div class="stat">Avg Latency</div><div class="value" id="statLatency">0ms</div></div>
         </div>
         <div class="split" style="margin-top:12px;">
           <div class="card">
             <h2>Recent Incidents</h2>
             <table class="table">
               <thead><tr><th>Time</th><th>Tenant</th><th>Issue</th><th>Status</th></tr></thead>
-              <tbody>
-                <tr><td>06:12</td><td>Bob's Plumbing</td><td>Twilio webhook 404</td><td><span class="badge ok">Resolved</span></td></tr>
-                <tr><td>05:41</td><td>Blue Sky HVAC</td><td>Prompt config restore</td><td><span class="badge ok">Resolved</span></td></tr>
-                <tr><td>04:17</td><td>Rooter Pro</td><td>TTS fallback spike</td><td><span class="badge warn">Watching</span></td></tr>
-              </tbody>
+              <tbody id="incidentTable"></tbody>
             </table>
           </div>
           <div class="card">
@@ -71,11 +67,48 @@
         <div class="card">
           <table class="table">
             <thead><tr><th>Tenant</th><th>Users</th><th>Phone</th><th>Status</th><th>Data Region</th><th></th></tr></thead>
-            <tbody>
-              <tr><td>Bob's Plumbing</td><td>3</td><td>+1 425 484 3086</td><td><span class="badge ok">Active</span></td><td>US</td><td><button class="btn">Manage</button></td></tr>
-              <tr><td>Blue Sky HVAC</td><td>5</td><td>+1 206 933 2001</td><td><span class="badge ok">Active</span></td><td>US</td><td><button class="btn">Manage</button></td></tr>
-              <tr><td>Rooter Pro</td><td>2</td><td>+1 360 111 0022</td><td><span class="badge warn">Limited</span></td><td>US</td><td><button class="btn">Manage</button></td></tr>
-            </tbody>
+            <tbody id="tenantTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tenant-manage" class="screen">
+        <div class="topbar">
+          <div>
+            <div class="eyebrow">Manage Tenant</div>
+            <h1 id="tenantManageName">Tenant</h1>
+          </div>
+          <div class="top-actions">
+            <button class="btn">Pause Tenant</button>
+            <button class="btn brand">Save Changes</button>
+          </div>
+        </div>
+        <div class="grid cols-2">
+          <div class="card">
+            <label>Tenant Details</label>
+            <div class="kv">
+              <div>Status</div><div id="tenantStatus">-</div>
+              <div>Data Region</div><div id="tenantRegion">-</div>
+              <div>Primary Number</div><div id="tenantNumber">-</div>
+              <div>Plan</div><div id="tenantPlan">-</div>
+            </div>
+          </div>
+          <div class="card">
+            <label>Agent Prompt & Behavior</label>
+            <p class="muted">This prompt is stored per tenant in the agents table.</p>
+            <textarea id="tenantPrompt" placeholder="Loading prompt..."></textarea>
+            <div class="toolbar" style="margin-top:10px;">
+              <a class="btn" id="fullPromptLink" href="/config-ui.html">Open Full Prompt Editor</a>
+              <button class="btn brand" id="saveTenantPrompt">Save Prompt</button>
+              <span class="muted" id="tenantPromptStatus">Idle</span>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:12px;">
+          <label>Client Users</label>
+          <table class="table">
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+            <tbody id="tenantUsersTable"></tbody>
           </table>
         </div>
       </section>
@@ -93,10 +126,7 @@
         <div class="card">
           <table class="table">
             <thead><tr><th>Job</th><th>Tenant</th><th>Stage</th><th>Updated</th><th>Status</th></tr></thead>
-            <tbody>
-              <tr><td>prov_9381</td><td>Bob's Plumbing</td><td>number_setup</td><td>06:32</td><td><span class="badge ok">done</span></td></tr>
-              <tr><td>prov_9385</td><td>Ace Electric</td><td>workflow_seed</td><td>06:40</td><td><span class="badge warn">running</span></td></tr>
-            </tbody>
+            <tbody id="jobsTable"></tbody>
           </table>
         </div>
       </section>
@@ -106,10 +136,7 @@
         <div class="card">
           <table class="table">
             <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last Active</th></tr></thead>
-            <tbody>
-              <tr><td>Jon Lehman</td><td>jon@everycall.io</td><td>Super Admin</td><td>Now</td></tr>
-              <tr><td>Ops Bot</td><td>ops-bot@everycall.io</td><td>Automation</td><td>5m ago</td></tr>
-            </tbody>
+            <tbody id="adminUsersTable"></tbody>
           </table>
         </div>
       </section>
@@ -118,14 +145,14 @@
         <div class="topbar"><h1>System Config</h1></div>
         <div class="card">
           <label>Global Emergency Phrase</label>
-          <textarea>That sounds urgent — let's get you taken care of right away.</textarea>
-          <div class="toolbar"><button class="btn brand">Save System Config</button></div>
+          <textarea id="systemPhrase"></textarea>
+          <div class="toolbar"><button class="btn brand" id="saveSystemConfig">Save System Config</button></div>
         </div>
       </section>
 
       <section id="audit" class="screen">
         <div class="topbar"><h1>Audit Log</h1></div>
-        <div class="card code">[2026-02-24 06:44:11] config.update tenant=default actor=admin\n[2026-02-24 06:44:54] webhook.update number=+14254843086 actor=admin\n[2026-02-24 06:45:07] prompt.restore tenant=default version=12 actor=admin</div>
+        <div class="card code" id="auditLog"></div>
       </section>
     </main>
   </div>
@@ -133,13 +160,234 @@
   <script>
     const navBtns = [...document.querySelectorAll('.nav-btn')];
     const screens = [...document.querySelectorAll('.screen')];
-    navBtns.forEach((btn) => {
-      btn.addEventListener('click', () => {
-        navBtns.forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
-        screens.forEach((s) => s.classList.toggle('active', s.id === btn.dataset.screen));
+    const setActiveScreen = (id) => {
+      navBtns.forEach((b) => b.classList.toggle('active', b.dataset.screen === id));
+      screens.forEach((s) => s.classList.toggle('active', s.id === id));
+    };
+    navBtns.forEach((btn) => btn.addEventListener('click', () => setActiveScreen(btn.dataset.screen)));
+
+    const tenantName = document.getElementById('tenantManageName');
+    const tenantPrompt = document.getElementById('tenantPrompt');
+    const tenantPromptStatus = document.getElementById('tenantPromptStatus');
+    const saveTenantPrompt = document.getElementById('saveTenantPrompt');
+    const fullPromptLink = document.getElementById('fullPromptLink');
+    let activeTenantKey = 'default';
+
+    async function fetchJson(path, options = {}) {
+      const resp = await fetch(path, options);
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(text || `Request failed (${resp.status})`);
+      }
+      return resp.json();
+    }
+
+    function setPromptStatus(message, tone) {
+      tenantPromptStatus.textContent = message;
+      tenantPromptStatus.style.color = tone === 'bad' ? '#dc2626' : tone === 'ok' ? '#059669' : '#475569';
+    }
+
+    async function loadTenantPrompt(tenantKey) {
+      activeTenantKey = tenantKey || 'default';
+      setPromptStatus('Loading...', 'warn');
+      try {
+        const resp = await fetch(`/v1/config/agent?tenantKey=${encodeURIComponent(activeTenantKey)}`);
+        if (!resp.ok) {
+          throw new Error(`Load failed (${resp.status})`);
+        }
+        const json = await resp.json();
+        tenantPrompt.value = json.systemPrompt || '';
+        setPromptStatus(`Loaded ${json.storage || 'unknown'} config.`, 'ok');
+        fullPromptLink.href = `/config-ui.html?tenantKey=${encodeURIComponent(activeTenantKey)}`;
+      } catch (err) {
+        tenantPrompt.value = '';
+        setPromptStatus(err.message || 'Load failed.', 'bad');
+      }
+    }
+
+    async function savePrompt() {
+      setPromptStatus('Saving...', 'warn');
+      try {
+        const resp = await fetch('/v1/config/agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tenantKey: activeTenantKey || 'default',
+            systemPrompt: tenantPrompt.value || ''
+          })
+        });
+        if (!resp.ok) {
+          throw new Error(`Save failed (${resp.status})`);
+        }
+        setPromptStatus('Saved.', 'ok');
+      } catch (err) {
+        setPromptStatus(err.message || 'Save failed.', 'bad');
+      }
+    }
+
+    async function loadOverview() {
+      const data = await fetchJson('/v1/admin/overview');
+      document.getElementById('statActiveTenants').textContent = data.stats.activeTenants;
+      document.getElementById('statCalls24h').textContent = data.stats.calls24h;
+      document.getElementById('statErrors24h').textContent = data.stats.errors24h;
+      document.getElementById('statLatency').textContent = `${data.stats.avgLatencyMs}ms`;
+
+      const incidentTable = document.getElementById('incidentTable');
+      incidentTable.innerHTML = '';
+      if (!data.incidents.length) {
+        incidentTable.innerHTML = '<tr><td colspan="4" class="muted">No incidents.</td></tr>';
+      } else {
+        data.incidents.forEach((inc) => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${new Date(inc.created_at).toLocaleTimeString()}</td>
+            <td>${inc.tenant_key || '-'}</td>
+            <td>${inc.issue}</td>
+            <td><span class="badge ${inc.status === 'resolved' ? 'ok' : 'warn'}">${inc.status}</span></td>
+          `;
+          incidentTable.appendChild(row);
+        });
+      }
+    }
+
+    async function loadTenants() {
+      const data = await fetchJson('/v1/tenants');
+      const table = document.getElementById('tenantTable');
+      table.innerHTML = '';
+      if (!data.tenants.length) {
+        table.innerHTML = '<tr><td colspan="6" class="muted">No tenants yet.</td></tr>';
+        return;
+      }
+      data.tenants.forEach((tenant) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${tenant.name}</td>
+          <td>${tenant.user_count || 0}</td>
+          <td>${tenant.primary_number || '-'}</td>
+          <td><span class="badge ${tenant.status === 'active' ? 'ok' : 'warn'}">${tenant.status}</span></td>
+          <td>${tenant.data_region}</td>
+          <td><button class="btn manage-tenant" data-tenant="${tenant.name}" data-tenant-key="${tenant.tenant_key}">Manage</button></td>
+        `;
+        table.appendChild(row);
+      });
+
+      table.querySelectorAll('.manage-tenant').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          tenantName.textContent = btn.dataset.tenant || 'Tenant';
+          loadTenantPrompt(btn.dataset.tenantKey || 'default');
+          loadTenantDetails(btn.dataset.tenantKey || 'default');
+          loadTenantUsers(btn.dataset.tenantKey || 'default');
+          setActiveScreen('tenant-manage');
+        });
+      });
+    }
+
+    async function loadTenantDetails(tenantKey) {
+      const data = await fetchJson(`/v1/tenants?tenantKey=${encodeURIComponent(tenantKey)}`);
+      const tenant = data.tenant;
+      document.getElementById('tenantStatus').textContent = tenant?.status || '-';
+      document.getElementById('tenantRegion').textContent = tenant?.data_region || '-';
+      document.getElementById('tenantNumber').textContent = tenant?.primary_number || '-';
+      document.getElementById('tenantPlan').textContent = tenant?.plan || '-';
+    }
+
+    async function loadTenantUsers(tenantKey) {
+      const data = await fetchJson(`/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`);
+      const tbody = document.getElementById('tenantUsersTable');
+      tbody.innerHTML = '';
+      if (!data.users.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">No users yet.</td></tr>';
+        return;
+      }
+      data.users.forEach((user) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${user.name}</td>
+          <td>${user.email}</td>
+          <td>${user.role}</td>
+          <td><span class="badge ${user.status === 'active' ? 'ok' : 'warn'}">${user.status}</span></td>
+          <td><button class="btn">Manage</button></td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    async function loadJobs() {
+      const data = await fetchJson('/v1/admin/jobs');
+      const tbody = document.getElementById('jobsTable');
+      tbody.innerHTML = '';
+      if (!data.jobs.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">No jobs yet.</td></tr>';
+        return;
+      }
+      data.jobs.forEach((job) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>prov_${job.id}</td>
+          <td>${job.tenant_key}</td>
+          <td>${job.stage}</td>
+          <td>${new Date(job.updated_at).toLocaleTimeString()}</td>
+          <td><span class="badge ${job.status === 'done' ? 'ok' : 'warn'}">${job.status}</span></td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    async function loadAdminUsers() {
+      const data = await fetchJson('/v1/admin/users');
+      const tbody = document.getElementById('adminUsersTable');
+      tbody.innerHTML = '';
+      if (!data.users.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="muted">No users yet.</td></tr>';
+        return;
+      }
+      data.users.forEach((user) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${user.username}</td>
+          <td>${user.email}</td>
+          <td>${user.role}</td>
+          <td>${user.last_active_at ? new Date(user.last_active_at).toLocaleTimeString() : '-'}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    async function loadSystemConfig() {
+      const data = await fetchJson('/v1/system/config');
+      document.getElementById('systemPhrase').value = data.config?.global_emergency_phrase || '';
+    }
+
+    document.getElementById('saveSystemConfig').addEventListener('click', async () => {
+      await fetchJson('/v1/system/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ globalEmergencyPhrase: document.getElementById('systemPhrase').value })
       });
     });
+
+    async function loadAuditLog() {
+      const data = await fetchJson('/v1/admin/audit');
+      const log = document.getElementById('auditLog');
+      if (!data.entries.length) {
+        log.textContent = 'No audit entries.';
+        return;
+      }
+      log.textContent = data.entries
+        .map((entry) => `[${new Date(entry.created_at).toLocaleString()}] ${entry.action} tenant=${entry.tenant_key || '-'} actor=${entry.actor}${entry.details ? ` ${entry.details}` : ''}`)
+        .join('\\n');
+    }
+
+    saveTenantPrompt.addEventListener('click', () => savePrompt());
+
+    Promise.all([
+      loadOverview(),
+      loadTenants(),
+      loadJobs(),
+      loadAdminUsers(),
+      loadSystemConfig(),
+      loadAuditLog()
+    ]).catch(() => {});
   </script>
 </body>
 </html>

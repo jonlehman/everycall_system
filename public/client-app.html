@@ -21,7 +21,6 @@
       <div class="nav-group">
         <div class="nav-label">Knowledge</div>
         <button class="nav-btn" data-screen="faq">FAQ Manager</button>
-        <button class="nav-btn" data-screen="agent">Agent Prompt</button>
       </div>
 
       <div class="nav-group">
@@ -49,10 +48,10 @@
         </div>
 
         <div class="grid cols-4">
-          <div class="card"><div class="stat">Calls Today</div><div class="value">42</div></div>
-          <div class="card"><div class="stat">Missed</div><div class="value">3</div></div>
-          <div class="card"><div class="stat">Urgent</div><div class="value">11</div></div>
-          <div class="card"><div class="stat">Callbacks Due</div><div class="value">7</div></div>
+          <div class="card"><div class="stat">Calls Today</div><div class="value" id="statCalls">0</div></div>
+          <div class="card"><div class="stat">Missed</div><div class="value" id="statMissed">0</div></div>
+          <div class="card"><div class="stat">Urgent</div><div class="value" id="statUrgent">0</div></div>
+          <div class="card"><div class="stat">Callbacks Due</div><div class="value" id="statCallbacks">0</div></div>
         </div>
 
         <div class="split" style="margin-top:12px;">
@@ -61,22 +60,14 @@
             <div class="table-wrap">
               <table class="table">
                 <thead><tr><th>Time</th><th>Caller</th><th>Status</th><th>Summary</th></tr></thead>
-                <tbody>
-                  <tr><td>6:24 AM</td><td>+1 425 615 4640</td><td><span class="badge warn">Urgent</span></td><td>Burst pipe in basement</td></tr>
-                  <tr><td>6:11 AM</td><td>+1 425 222 1938</td><td><span class="badge ok">Handled</span></td><td>Water heater no hot water</td></tr>
-                  <tr><td>5:58 AM</td><td>+1 206 998 1101</td><td><span class="badge ok">Handled</span></td><td>Drain cleaning request</td></tr>
-                </tbody>
+                <tbody id="recentCallsTable"></tbody>
               </table>
             </div>
           </div>
           <div class="card">
             <h2>Action Queue</h2>
             <p class="muted">Calls requiring callback or dispatch confirmation.</p>
-            <div class="kv">
-              <div>John R.</div><div>Burst pipe · callback due in 7 min</div>
-              <div>Maria S.</div><div>No hot water · quoted range requested</div>
-              <div>Elena P.</div><div>Gas smell safety instruction delivered</div>
-            </div>
+            <div class="kv" id="actionQueue"></div>
           </div>
         </div>
       </section>
@@ -90,11 +81,7 @@
           <div class="card">
             <table class="table" id="callsTable">
               <thead><tr><th>SID</th><th>From</th><th>When</th><th>Status</th></tr></thead>
-              <tbody>
-                <tr data-sid="CA20..."><td>CA20...681e</td><td>+1 425 615 4640</td><td>Today 6:34</td><td><span class="badge ok">Completed</span></td></tr>
-                <tr data-sid="CA13..."><td>CA13...24cd</td><td>+1 425 615 4640</td><td>Today 6:38</td><td><span class="badge warn">Long</span></td></tr>
-                <tr data-sid="CAea..."><td>CAea...ce45</td><td>+1 425 615 4640</td><td>Today 6:36</td><td><span class="badge bad">Error</span></td></tr>
-              </tbody>
+              <tbody id="callsTableBody"></tbody>
             </table>
           </div>
           <div class="card">
@@ -107,31 +94,53 @@
       <section id="dispatch" class="screen">
         <div class="topbar"><h1>Dispatch Board</h1></div>
         <div class="grid cols-3">
-          <div class="card"><h2>New</h2><p>3 calls waiting assignment</p></div>
-          <div class="card"><h2>Assigned</h2><p>5 calls in progress</p></div>
-          <div class="card"><h2>Closed</h2><p>19 completed today</p></div>
+          <div class="card"><h2>New</h2><p><span id="dispatchNew">0</span> calls waiting assignment</p></div>
+          <div class="card"><h2>Assigned</h2><p><span id="dispatchAssigned">0</span> calls in progress</p></div>
+          <div class="card"><h2>Closed</h2><p><span id="dispatchClosed">0</span> completed today</p></div>
         </div>
       </section>
 
       <section id="faq" class="screen">
-        <div class="topbar"><h1>FAQ Manager</h1><div class="top-actions"><button class="btn brand">Add FAQ</button></div></div>
+        <div class="topbar">
+          <h1>FAQ Manager</h1>
+          <div class="top-actions">
+            <select id="industrySelect" class="btn">
+              <option value="general">General Service</option>
+              <option value="plumber">Plumber</option>
+              <option value="electrician">Electrician</option>
+              <option value="hvac">HVAC</option>
+            </select>
+            <button class="btn" id="seedIndustryFaqs">Add Industry Defaults</button>
+            <button class="btn brand" id="addFaqBtn">Add FAQ</button>
+          </div>
+        </div>
         <div class="card">
           <table class="table">
-            <thead><tr><th>Question</th><th>Category</th><th>Last Updated</th><th></th></tr></thead>
-            <tbody>
-              <tr><td>How much does a service call cost?</td><td>Pricing</td><td>Today</td><td><button class="btn">Edit</button></td></tr>
-              <tr><td>Do you do free estimates?</td><td>Scheduling</td><td>Today</td><td><button class="btn">Edit</button></td></tr>
-              <tr><td>What do I do if I smell gas?</td><td>Emergency</td><td>Today</td><td><button class="btn">Edit</button></td></tr>
-            </tbody>
+            <thead><tr><th>Question</th><th>Answer</th><th>Category</th><th>Last Updated</th><th></th></tr></thead>
+            <tbody id="faqTable"></tbody>
           </table>
         </div>
-      </section>
-
-      <section id="agent" class="screen">
-        <div class="topbar"><h1>Agent Prompt & Behavior</h1><div class="top-actions"><a class="btn brand" href="/config-ui.html">Open Full Prompt Editor</a></div></div>
-        <div class="card">
-          <label>Active Prompt Summary</label>
-          <textarea>Sarah receptionist persona active. Bob's Plumbing KB loaded. Emergency rules and pricing policy active.</textarea>
+        <div class="card" style="margin-top:12px;">
+          <div class="topbar" style="margin-bottom:8px;">
+            <h2 style="margin:0;">New FAQ</h2>
+            <div class="top-actions"><span class="muted" id="faqStatus">Ready.</span></div>
+          </div>
+          <div class="grid cols-2">
+            <div>
+              <label>Question</label>
+              <input id="faqQuestion" placeholder="What areas do you serve?" />
+              <label style="margin-top:10px;">Category</label>
+              <input id="faqCategory" placeholder="Service Area" />
+            </div>
+            <div>
+              <label>Answer</label>
+              <textarea id="faqAnswer" style="min-height:120px;">We serve the greater metro area and nearby suburbs. Call with your address and we will confirm coverage.</textarea>
+            </div>
+          </div>
+          <div class="toolbar" style="margin-top:10px;">
+            <button class="btn brand" id="saveFaq">Save FAQ</button>
+            <button class="btn" id="resetFaqForm">Reset</button>
+          </div>
         </div>
       </section>
 
@@ -140,29 +149,25 @@
         <div class="card">
           <table class="table">
             <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
-            <tbody>
-              <tr><td>Bob</td><td>bob@bobsplumbing.com</td><td>Owner</td><td><span class="badge ok">Active</span></td><td><button class="btn">Manage</button></td></tr>
-              <tr><td>Leah</td><td>dispatch@bobsplumbing.com</td><td>Dispatcher</td><td><span class="badge ok">Active</span></td><td><button class="btn">Manage</button></td></tr>
-              <tr><td>Marco</td><td>ops@bobsplumbing.com</td><td>Manager</td><td><span class="badge warn">Pending</span></td><td><button class="btn">Resend Invite</button></td></tr>
-            </tbody>
+            <tbody id="teamUsersTable"></tbody>
           </table>
         </div>
       </section>
 
       <section id="routing" class="screen">
-        <div class="topbar"><h1>Call Routing</h1><div class="top-actions"><button class="btn brand">Save Routing</button></div></div>
+        <div class="topbar"><h1>Call Routing</h1><div class="top-actions"><button class="btn brand" id="saveRouting">Save Routing</button></div></div>
         <div class="grid cols-2">
           <div class="card">
             <label>Primary Callback Queue</label>
-            <select><option>Dispatch Team</option><option>Owner Only</option></select>
+            <select id="routingPrimary"><option>Dispatch Team</option><option>Owner Only</option></select>
             <label style="margin-top:10px;">Emergency Calls</label>
-            <select><option>Priority Queue</option><option>Immediate Transfer</option></select>
+            <select id="routingEmergency"><option>Priority Queue</option><option>Immediate Transfer</option></select>
           </div>
           <div class="card">
             <label>Business Hours</label>
-            <textarea>Mon-Fri 7:00 AM - 8:00 PM\nEmergency service 24/7</textarea>
+            <textarea id="routingHours">Mon-Fri 7:00 AM - 8:00 PM\nEmergency service 24/7</textarea>
             <label style="margin-top:10px;">After Hours Behavior</label>
-            <select><option>Collect details and dispatch callback</option><option>Forward to on-call</option></select>
+            <select id="routingAfterHours"><option>Collect details and dispatch callback</option><option>Forward to on-call</option></select>
           </div>
         </div>
       </section>
@@ -171,10 +176,10 @@
         <div class="topbar"><h1>Account Settings</h1></div>
         <div class="card">
           <div class="kv">
-            <div>Tenant</div><div>Bob's Plumbing</div>
-            <div>Plan</div><div>Growth</div>
-            <div>Data Region</div><div>US</div>
-            <div>Audit Logs</div><div>Enabled</div>
+            <div>Tenant</div><div id="accountTenant">-</div>
+            <div>Plan</div><div id="accountPlan">-</div>
+            <div>Data Region</div><div id="accountRegion">-</div>
+            <div>Audit Logs</div><div id="accountAudit">-</div>
           </div>
         </div>
       </section>
@@ -194,21 +199,246 @@
     });
 
     const detail = document.getElementById('callDetail');
-    document.querySelectorAll('#callsTable tbody tr').forEach((row) => {
-      row.addEventListener('click', () => {
-        const sid = row.dataset.sid;
-        detail.textContent = JSON.stringify({
-          callSid: sid,
-          extracted: {
-            intent: 'emergency_repair',
-            urgency: 'high',
-            address: '15506 SE 49th St, Bellevue, WA 98006',
-            callback: '+14256154640'
-          },
-          disposition: 'callback_pending'
-        }, null, 2);
+    const tenantKey = new URLSearchParams(window.location.search).get('tenantKey') || 'bobs_plumbing';
+
+    async function fetchJson(path, options = {}) {
+      const resp = await fetch(path, options);
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(text || `Request failed (${resp.status})`);
+      }
+      return resp.json();
+    }
+
+    async function loadOverview() {
+      const data = await fetchJson(`/v1/overview?tenantKey=${encodeURIComponent(tenantKey)}`);
+      document.getElementById('statCalls').textContent = data.stats.callsToday;
+      document.getElementById('statMissed').textContent = data.stats.missed;
+      document.getElementById('statUrgent').textContent = data.stats.urgent;
+      document.getElementById('statCallbacks').textContent = data.stats.callbacksDue;
+
+      const recent = document.getElementById('recentCallsTable');
+      recent.innerHTML = '';
+      if (!data.recentCalls.length) {
+        recent.innerHTML = '<tr><td colspan="4" class="muted">No recent calls.</td></tr>';
+      } else {
+        data.recentCalls.forEach((call) => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${new Date(call.created_at).toLocaleTimeString()}</td>
+            <td>${call.from_number || '-'}</td>
+            <td><span class="badge ${call.urgency === 'high' ? 'warn' : call.status === 'error' ? 'bad' : 'ok'}">${call.urgency === 'high' ? 'Urgent' : call.status || 'Handled'}</span></td>
+            <td>${call.summary || '-'}</td>
+          `;
+          recent.appendChild(row);
+        });
+      }
+
+      const queue = document.getElementById('actionQueue');
+      queue.innerHTML = '';
+      if (!data.actionQueue.length) {
+        queue.innerHTML = '<div class="muted">No callbacks due.</div>';
+      } else {
+        data.actionQueue.forEach((item) => {
+          const name = document.createElement('div');
+          name.textContent = item.caller_name || 'Caller';
+          const summary = document.createElement('div');
+          summary.textContent = item.summary || '';
+          queue.appendChild(name);
+          queue.appendChild(summary);
+        });
+      }
+    }
+
+    async function loadCalls() {
+      const data = await fetchJson(`/v1/calls?tenantKey=${encodeURIComponent(tenantKey)}`);
+      const tbody = document.getElementById('callsTableBody');
+      tbody.innerHTML = '';
+      if (!data.calls.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="muted">No calls yet.</td></tr>';
+        return;
+      }
+      data.calls.forEach((call) => {
+        const row = document.createElement('tr');
+        row.dataset.sid = call.call_sid;
+        row.innerHTML = `
+          <td>${call.call_sid}</td>
+          <td>${call.from_number || '-'}</td>
+          <td>${new Date(call.created_at).toLocaleString()}</td>
+          <td><span class="badge ${call.status === 'error' ? 'bad' : 'ok'}">${call.status}</span></td>
+        `;
+        row.addEventListener('click', async () => {
+          const detailJson = await fetchJson(`/v1/calls?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(call.call_sid)}`);
+          detail.textContent = JSON.stringify(detailJson.call || {}, null, 2);
+        });
+        tbody.appendChild(row);
+      });
+    }
+
+    async function loadDispatch() {
+      const data = await fetchJson(`/v1/dispatch?tenantKey=${encodeURIComponent(tenantKey)}`);
+      document.getElementById('dispatchNew').textContent = data.counts.new;
+      document.getElementById('dispatchAssigned').textContent = data.counts.assigned;
+      document.getElementById('dispatchClosed').textContent = data.counts.closed;
+    }
+
+    const faqTable = document.getElementById('faqTable');
+    const faqStatus = document.getElementById('faqStatus');
+    const faqQuestion = document.getElementById('faqQuestion');
+    const faqAnswer = document.getElementById('faqAnswer');
+    const faqCategory = document.getElementById('faqCategory');
+    const saveFaq = document.getElementById('saveFaq');
+    const resetFaqForm = document.getElementById('resetFaqForm');
+    const industrySelect = document.getElementById('industrySelect');
+    const seedIndustryFaqs = document.getElementById('seedIndustryFaqs');
+
+    function setFaqStatus(message, tone) {
+      faqStatus.textContent = message;
+      faqStatus.style.color = tone === 'bad' ? '#dc2626' : tone === 'ok' ? '#059669' : '#475569';
+    }
+
+    async function loadFaqs() {
+      setFaqStatus('Loading FAQs...', 'warn');
+      const data = await fetchJson(`/v1/faq?tenantKey=${encodeURIComponent(tenantKey)}`);
+      faqTable.innerHTML = '';
+      if (!data.faqs.length) {
+        faqTable.innerHTML = '<tr><td colspan="5" class="muted">No FAQs yet.</td></tr>';
+        setFaqStatus('No FAQs found.', 'warn');
+        return;
+      }
+      data.faqs.forEach((faq) => {
+        const row = document.createElement('tr');
+        row.dataset.id = faq.id;
+        row.dataset.deletable = String(Boolean(faq.deletable));
+        row.innerHTML = `
+          <td>${faq.question}</td>
+          <td>${faq.answer}</td>
+          <td>${faq.category}</td>
+          <td>${faq.updated_at ? new Date(faq.updated_at).toLocaleString() : ''}</td>
+          <td>
+            <input type="hidden" value="${faq.deletable ? '1' : '0'}" />
+            <button class="btn delete-faq"${faq.deletable ? '' : ' disabled'}>Delete</button>
+          </td>
+        `;
+        faqTable.appendChild(row);
+      });
+
+      faqTable.querySelectorAll('.delete-faq').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          const row = e.target.closest('tr');
+          if (!row || row.dataset.deletable !== 'true') {
+            return;
+          }
+          await fetchJson(`/v1/faq?tenantKey=${encodeURIComponent(tenantKey)}&id=${row.dataset.id}`, { method: 'DELETE' });
+          await loadFaqs();
+          setFaqStatus('Deleted FAQ.', 'ok');
+        });
+      });
+      setFaqStatus('Loaded FAQs.', 'ok');
+    }
+
+    async function addIndustryDefaults() {
+      const industry = industrySelect.value || 'general';
+      const resp = await fetchJson('/v1/faq', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantKey, action: 'seedIndustry', industry })
+      });
+      await loadFaqs();
+      setFaqStatus(`Added ${resp.added} industry FAQs.`, 'ok');
+    }
+
+    function resetForm() {
+      faqQuestion.value = '';
+      faqAnswer.value = '';
+      faqCategory.value = '';
+    }
+
+    saveFaq.addEventListener('click', async () => {
+      const question = faqQuestion.value.trim();
+      const answer = faqAnswer.value.trim();
+      const category = faqCategory.value.trim() || 'General';
+      if (!question || !answer) {
+        setFaqStatus('Question and answer are required.', 'bad');
+        return;
+      }
+      await fetchJson('/v1/faq', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantKey, question, answer, category })
+      });
+      resetForm();
+      await loadFaqs();
+      setFaqStatus('FAQ saved.', 'ok');
+    });
+
+    resetFaqForm.addEventListener('click', resetForm);
+    seedIndustryFaqs.addEventListener('click', addIndustryDefaults);
+    document.getElementById('addFaqBtn').addEventListener('click', () => faqQuestion.focus());
+
+    async function loadTeamUsers() {
+      const data = await fetchJson(`/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`);
+      const tbody = document.getElementById('teamUsersTable');
+      tbody.innerHTML = '';
+      if (!data.users.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">No users yet.</td></tr>';
+        return;
+      }
+      data.users.forEach((user) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${user.name}</td>
+          <td>${user.email}</td>
+          <td>${user.role}</td>
+          <td><span class="badge ${user.status === 'active' ? 'ok' : 'warn'}">${user.status}</span></td>
+          <td><button class="btn">Manage</button></td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    async function loadRouting() {
+      const data = await fetchJson(`/v1/routing?tenantKey=${encodeURIComponent(tenantKey)}`);
+      if (!data.routing) {
+        return;
+      }
+      document.getElementById('routingPrimary').value = data.routing.primary_queue;
+      document.getElementById('routingEmergency').value = data.routing.emergency_behavior;
+      document.getElementById('routingAfterHours').value = data.routing.after_hours_behavior;
+      document.getElementById('routingHours').value = data.routing.business_hours;
+    }
+
+    document.getElementById('saveRouting').addEventListener('click', async () => {
+      await fetchJson('/v1/routing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantKey,
+          primaryQueue: document.getElementById('routingPrimary').value,
+          emergencyBehavior: document.getElementById('routingEmergency').value,
+          afterHoursBehavior: document.getElementById('routingAfterHours').value,
+          businessHours: document.getElementById('routingHours').value
+        })
       });
     });
+
+    async function loadSettings() {
+      const data = await fetchJson(`/v1/settings?tenantKey=${encodeURIComponent(tenantKey)}`);
+      document.getElementById('accountTenant').textContent = data.tenant?.name || '-';
+      document.getElementById('accountPlan').textContent = data.tenant?.plan || '-';
+      document.getElementById('accountRegion').textContent = data.tenant?.data_region || '-';
+      document.getElementById('accountAudit').textContent = data.settings?.notes ? 'Enabled' : 'Disabled';
+    }
+
+    Promise.all([
+      loadOverview(),
+      loadCalls(),
+      loadDispatch(),
+      loadFaqs(),
+      loadTeamUsers(),
+      loadRouting(),
+      loadSettings()
+    ]).catch(() => {});
   </script>
 </body>
 </html>

@@ -1,6 +1,4 @@
-import { ensureTables, getPool, seedDemoData } from "../../_lib/db.js";
-
-const DEFAULT_LIMIT = 30;
+import { ensureTables, getPool, seedDemoData } from "../_lib/db.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "bobs_plumbing");
@@ -18,6 +16,7 @@ export default async function handler(req, res) {
 
     const tenantKey = getTenantKey(req);
     const callSid = req.query?.callSid;
+
     if (callSid) {
       const detail = await pool.query(
         `SELECT c.call_sid, c.status, c.from_number, c.to_number, c.summary, c.urgency, c.disposition, c.created_at,
@@ -28,12 +27,12 @@ export default async function handler(req, res) {
          LIMIT 1`,
         [tenantKey, String(callSid)]
       );
-      return res.status(200).json({ configured: true, detail: detail.rows[0] || null });
+      return res.status(200).json({ call: detail.rows[0] || null });
     }
 
-    const limit = Math.max(1, Math.min(Number(req.query?.limit) || DEFAULT_LIMIT, 100));
+    const limit = Math.max(1, Math.min(Number(req.query?.limit) || 30, 200));
     const rows = await pool.query(
-      `SELECT call_sid, status, from_number, to_number, created_at
+      `SELECT call_sid, from_number, status, created_at
        FROM calls
        WHERE tenant_key = $1
        ORDER BY created_at DESC
@@ -41,21 +40,8 @@ export default async function handler(req, res) {
       [tenantKey, limit]
     );
 
-    const calls = rows.rows.map((c) => ({
-      sid: c.call_sid,
-      status: c.status,
-      direction: "inbound",
-      from: c.from_number,
-      to: c.to_number,
-      duration: null,
-      start_time: c.created_at,
-      end_time: null,
-      price: null,
-      price_unit: null
-    }));
-
-    return res.status(200).json({ configured: true, calls });
+    return res.status(200).json({ calls: rows.rows });
   } catch (err) {
-    return res.status(500).json({ error: "dashboard_calls_error", message: err?.message || "unknown" });
+    return res.status(500).json({ error: "calls_error", message: err?.message || "unknown" });
   }
 }

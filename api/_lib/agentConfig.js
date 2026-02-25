@@ -1,6 +1,4 @@
-import pg from "pg";
-
-const { Pool } = pg;
+import { ensureTables, getPool } from "./db.js";
 
 export const DEFAULT_TENANT_KEY = "default";
 
@@ -127,67 +125,16 @@ const defaultConfig = {
   storage: "default"
 };
 
-function getPool() {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    return null;
-  }
-
-  if (!globalThis.__everycallPool) {
-    globalThis.__everycallPool = new Pool({ connectionString: databaseUrl });
-  }
-
-  return globalThis.__everycallPool;
-}
-
-let tableReady = false;
-
-async function ensureTable(pool) {
-  if (tableReady) {
-    return;
-  }
-
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS agent_configs (
-        tenant_key TEXT PRIMARY KEY,
-        agent_name TEXT NOT NULL,
-        company_name TEXT NOT NULL,
-        system_prompt TEXT NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-    `);
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS agent_config_versions (
-        id BIGSERIAL PRIMARY KEY,
-        tenant_key TEXT NOT NULL,
-        agent_name TEXT NOT NULL,
-        company_name TEXT NOT NULL,
-        system_prompt TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-    `);
-  } catch (err) {
-    // Ignore benign concurrent init races under serverless cold starts.
-    if (err?.code !== "23505") {
-      throw err;
-    }
-  }
-
-  tableReady = true;
-}
-
 export async function getAgentConfig(tenantKey = DEFAULT_TENANT_KEY) {
   const pool = getPool();
   if (!pool) {
     return { ...defaultConfig, tenantKey, storage: "default" };
   }
 
-  await ensureTable(pool);
+  await ensureTables(pool);
 
   const result = await pool.query(
-    `SELECT tenant_key, agent_name, company_name, system_prompt FROM agent_configs WHERE tenant_key = $1 LIMIT 1`,
+    `SELECT tenant_key, agent_name, company_name, system_prompt FROM agents WHERE tenant_key = $1 LIMIT 1`,
     [tenantKey]
   );
 
@@ -221,10 +168,10 @@ export async function setAgentConfig(update) {
     systemPrompt: update?.systemPrompt || current.systemPrompt
   };
 
-  await ensureTable(pool);
+  await ensureTables(pool);
 
   await pool.query(
-    `INSERT INTO agent_configs (tenant_key, agent_name, company_name, system_prompt)
+    `INSERT INTO agents (tenant_key, agent_name, company_name, system_prompt)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (tenant_key)
      DO UPDATE SET agent_name = EXCLUDED.agent_name,
@@ -235,7 +182,7 @@ export async function setAgentConfig(update) {
   );
 
   await pool.query(
-    `INSERT INTO agent_config_versions (tenant_key, agent_name, company_name, system_prompt)
+    `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt)
      VALUES ($1, $2, $3, $4)`,
     [next.tenantKey, next.agentName, next.companyName, next.systemPrompt]
   );
@@ -249,12 +196,12 @@ export async function listAgentConfigVersions(tenantKey = DEFAULT_TENANT_KEY, li
     return [];
   }
 
-  await ensureTable(pool);
+  await ensureTables(pool);
   const safeLimit = Math.max(1, Math.min(Number(limit) || 20, 100));
 
   const result = await pool.query(
     `SELECT id, tenant_key, agent_name, company_name, created_at
-     FROM agent_config_versions
+     FROM agent_versions
      WHERE tenant_key = $1
      ORDER BY id DESC
      LIMIT $2`,
@@ -276,11 +223,11 @@ export async function restoreAgentConfigVersion(tenantKey = DEFAULT_TENANT_KEY, 
     throw new Error("DATABASE_URL is required for version restore");
   }
 
-  await ensureTable(pool);
+  await ensureTables(pool);
 
   const result = await pool.query(
     `SELECT tenant_key, agent_name, company_name, system_prompt
-     FROM agent_config_versions
+     FROM agent_versions
      WHERE tenant_key = $1 AND id = $2
      LIMIT 1`,
     [tenantKey, Number(versionId)]

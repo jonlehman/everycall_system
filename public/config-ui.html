@@ -177,6 +177,11 @@
       versionList: document.getElementById('versionList')
     };
 
+    const urlTenantKey = new URLSearchParams(window.location.search).get('tenantKey');
+    if (urlTenantKey) {
+      els.tenantKey.value = urlTenantKey;
+    }
+
     let lastSaved = null;
 
     function setStatus(message, tone = 'normal') {
