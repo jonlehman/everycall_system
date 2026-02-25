@@ -20,7 +20,16 @@
 
       <div class="nav-group"></div>
 
-      <div class="sidebar-foot"></div>
+      <hr style="border:none;border-top:1px solid #e2e8f0;margin:14px 0;" />
+      <div class="nav-group">
+        <button class="nav-btn" data-screen="setup-overview" id="setupToggle">Setup</button>
+        <div class="sub-menu" id="setupSubmenu" style="margin-left:10px; display:none; gap:6px; margin-top:8px;">
+          <button class="nav-btn" data-screen="faq" style="font-size:12px;">Questions and Answers</button>
+          <button class="nav-btn" data-screen="team" style="font-size:12px;">Team Users</button>
+          <button class="nav-btn" data-screen="routing" style="font-size:12px;">Call Routing</button>
+          <button class="nav-btn" data-screen="settings" style="font-size:12px;">Account Settings</button>
+        </div>
+      </div>
     </aside>
 
     <main class="main">
@@ -50,10 +59,7 @@
       <section id="overview" class="screen active">
         <div class="topbar">
           <h1>Overview</h1>
-          <div class="top-actions">
-            <button class="btn">Export Today</button>
-            <button class="btn brand">New FAQ</button>
-          </div>
+          <div class="top-actions"></div>
         </div>
 
         <div class="grid cols-4">
@@ -161,6 +167,30 @@
         </div>
       </section>
 
+      <section id="setup-overview" class="screen">
+        <div class="topbar"><h1>Setup Overview</h1></div>
+        <div class="card">
+          <p class="muted">Complete these steps to configure your workspace.</p>
+          <div class="grid cols-2">
+            <div class="card">
+              <h2>Questions and Answers</h2>
+              <p class="muted">Add customer-facing FAQs the receptionist can answer instantly.</p>
+            </div>
+            <div class="card">
+              <h2>Team Users</h2>
+              <p class="muted">Invite teammates and set roles for access control.</p>
+            </div>
+            <div class="card">
+              <h2>Call Routing</h2>
+              <p class="muted">Define emergency handling, callbacks, and after-hours behavior.</p>
+            </div>
+            <div class="card">
+              <h2>Account Settings</h2>
+              <p class="muted">Review plan, region, and compliance details.</p>
+            </div>
+          </div>
+        </div>
+      </section>
       <section id="team" class="screen">
         <div class="topbar"><h1>Team Users</h1><div class="top-actions"><button class="btn brand">Invite User</button></div></div>
         <div class="grid cols-2">
@@ -224,11 +254,26 @@
   <script>
     const navBtns = [...document.querySelectorAll('.nav-btn')];
     const screens = [...document.querySelectorAll('.screen')];
+    const setupToggle = document.getElementById('setupToggle');
+    const setupSubmenu = document.getElementById('setupSubmenu');
+
     const setActiveScreen = (id) => {
       navBtns.forEach((b) => b.classList.toggle('active', b.dataset.screen === id));
       screens.forEach((s) => s.classList.toggle('active', s.id === id));
     };
-    navBtns.forEach((btn) => btn.addEventListener('click', () => setActiveScreen(btn.dataset.screen)));
+    navBtns.forEach((btn) => btn.addEventListener('click', () => {
+      setActiveScreen(btn.dataset.screen);
+      if (btn.dataset.screen === 'setup-overview') {
+        setupSubmenu.style.display = 'grid';
+      }
+    }));
+
+    setupToggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      const open = setupSubmenu.style.display === 'grid';
+      setupSubmenu.style.display = open ? 'none' : 'grid';
+      setActiveScreen('setup-overview');
+    });
 
     const userChip = document.getElementById('userChip');
     const userMenu = document.getElementById('userMenu');
@@ -236,11 +281,15 @@
       e.stopPropagation();
       userMenu.style.display = userMenu.style.display === 'block' ? 'none' : 'block';
     });
-    userChip.addEventListener('mouseenter', () => {
-      userMenu.style.display = 'block';
+    const openMenu = () => { userMenu.style.display = 'block'; };
+    const closeMenu = () => { userMenu.style.display = 'none'; };
+    userChip.addEventListener('mouseenter', openMenu);
+    userMenu.addEventListener('mouseenter', openMenu);
+    userChip.addEventListener('mouseleave', (e) => {
+      if (!userMenu.contains(e.relatedTarget)) closeMenu();
     });
-    userChip.addEventListener('mouseleave', () => {
-      userMenu.style.display = 'none';
+    userMenu.addEventListener('mouseleave', (e) => {
+      if (!userChip.contains(e.relatedTarget)) closeMenu();
     });
     document.addEventListener('click', () => {
       userMenu.style.display = 'none';
