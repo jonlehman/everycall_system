@@ -23,7 +23,7 @@ export default function TeamPage() {
   return (
     <section className="screen active">
       <div className="topbar"><h1>Team Users</h1><div className="top-actions"><button className="btn brand">Invite User</button></div></div>
-      <div className="grid cols-2" style={{ gridTemplateColumns: '3fr 1fr' }}>
+      <div className="grid cols-2" style={{ gridTemplateColumns: '7fr 3fr' }}>
         <div className="card">
           <table className="table">
             <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>

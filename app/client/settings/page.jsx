@@ -25,7 +25,7 @@ export default function SettingsPage() {
   return (
     <section className="screen active">
       <div className="topbar"><h1>Account Settings</h1></div>
-      <div className="grid cols-2" style={{ gridTemplateColumns: '3fr 1fr' }}>
+      <div className="grid cols-2" style={{ gridTemplateColumns: '7fr 3fr' }}>
         <div className="card">
           <div className="kv">
             <div>Tenant</div><div>{tenant.name || '-'}</div>
