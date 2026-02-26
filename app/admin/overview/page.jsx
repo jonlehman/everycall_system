@@ -74,9 +74,7 @@ export default function AdminOverviewPage() {
         <div className="card">
           <h2>Quick Actions</h2>
           <div className="toolbar" style={{ flexWrap: 'wrap' }}>
-            <button className="btn">Create Tenant</button>
-            <button className="btn">Rotate API Keys</button>
-            <button className="btn">Pause Tenant</button>
+            <a className="btn" href="/intake">Create Tenant</a>
             <a className="btn brand" href="/dashboard">Open Call Dashboard</a>
           </div>
         </div>
