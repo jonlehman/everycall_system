@@ -15,8 +15,8 @@ export default function JobsPage() {
     return () => { mounted = false; };
   }, []);
 
-  const rows = jobs.map((job) => ({
-    id: job.id,
+  const rows = jobs.map((job, idx) => ({
+    id: job.id ?? `${job.tenant_key || 'tenant'}-${job.stage || 'stage'}-${job.updated_at || idx}`,
     tenant: job.tenant_key,
     stage: job.stage,
     updated: new Date(job.updated_at).toLocaleTimeString(),
@@ -24,7 +24,14 @@ export default function JobsPage() {
   }));
 
   const columns = [
-    { field: 'id', headerName: 'Job', flex: 0.4, minWidth: 100, valueFormatter: ({ value }) => `prov_${value}` },
+    {
+      field: 'job',
+      headerName: 'Job',
+      flex: 0.4,
+      minWidth: 120,
+      valueGetter: (params) => params.row.id,
+      valueFormatter: ({ value }) => `prov_${value}`
+    },
     { field: 'tenant', headerName: 'Tenant', flex: 1, minWidth: 160 },
     { field: 'stage', headerName: 'Stage', flex: 1, minWidth: 140 },
     { field: 'updated', headerName: 'Updated', flex: 0.6, minWidth: 120 },
