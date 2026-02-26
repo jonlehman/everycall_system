@@ -36,6 +36,19 @@ export default function AdminSidebar() {
           ))}
         </div>
       ))}
+      <div style={{ marginTop: 'auto', paddingTop: 12 }}>
+        <button
+          className="nav-btn"
+          style={{ width: '100%', textAlign: 'left' }}
+          type="button"
+          onClick={async () => {
+            await fetch('/api/v1/auth/logout', { method: 'POST' });
+            window.location.href = '/login';
+          }}
+        >
+          Sign out
+        </button>
+      </div>
     </aside>
   );
 }

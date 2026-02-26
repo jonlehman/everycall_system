@@ -101,7 +101,17 @@ export default function Header() {
             <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href={withTenant('/client/routing', tenantKey)}>Call Routing</Link>
             <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href={withTenant('/client/settings', tenantKey)}>Account Settings</Link>
             <div style={{ height: 1, background: '#e2e8f0', margin: '8px 0' }}></div>
-            <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none' }} href="/login.html">Sign out</Link>
+            <button
+              className="menu-link"
+              style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', border: 'none', background: 'transparent', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+              type="button"
+              onClick={async () => {
+                await fetch('/api/v1/auth/logout', { method: 'POST' });
+                window.location.href = '/login';
+              }}
+            >
+              Sign out
+            </button>
           </div>
         ) : null}
       </div>

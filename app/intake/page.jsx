@@ -55,6 +55,8 @@ export default function IntakePage() {
     serviceArea: '',
     ownerName: '',
     ownerEmail: '',
+    password: '',
+    confirmPassword: '',
     timezone: 'America/Los_Angeles',
     businessHours: '',
     avgCalls: '',
@@ -104,6 +106,14 @@ export default function IntakePage() {
       setStatusMessage('Please complete required fields before continuing.', 'bad');
       return;
     }
+    if (!form.password || form.password.length < 8) {
+      setStatusMessage('Password must be at least 8 characters.', 'bad');
+      return;
+    }
+    if (form.password !== form.confirmPassword) {
+      setStatusMessage('Passwords do not match.', 'bad');
+      return;
+    }
     setPage(2);
     setStatusMessage('Ready.', 'normal');
   };
@@ -121,6 +131,7 @@ export default function IntakePage() {
       industry: form.industry,
       ownerName: form.ownerName.trim(),
       ownerEmail: form.ownerEmail.trim(),
+      password: form.password,
       phone: form.phone.trim(),
       serviceArea: form.serviceArea.trim(),
       address: [
@@ -238,6 +249,14 @@ export default function IntakePage() {
                   <div className="intake-stack">
                     <label>Owner Email (Username)</label>
                     <input type="email" required placeholder="jane@acme.com" value={form.ownerEmail} onChange={(event) => setForm({ ...form, ownerEmail: event.target.value })} />
+                  </div>
+                  <div className="intake-stack">
+                    <label>Password</label>
+                    <input type="password" required placeholder="Create a password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+                  </div>
+                  <div className="intake-stack">
+                    <label>Confirm Password</label>
+                    <input type="password" required placeholder="Confirm password" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} />
                   </div>
                   <div className="intake-stack">
                     <label>Timezone</label>

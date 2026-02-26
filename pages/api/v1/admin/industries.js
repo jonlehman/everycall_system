@@ -1,4 +1,5 @@
 import { ensureTables, getPool } from "../../_lib/db.js";
+import { requireSession } from "../../_lib/auth.js";
 
 function getIndustryKey(req) {
   return String(req.query?.industryKey || "");
@@ -12,6 +13,8 @@ export default async function handler(req, res) {
     }
 
     await ensureTables(pool);
+    const session = await requireSession(req, res, { role: "admin" });
+    if (!session) return;
 
     const mode = String(req.query?.mode || "").toLowerCase();
     const industryKey = getIndustryKey(req);

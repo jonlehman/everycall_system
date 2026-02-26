@@ -4,6 +4,7 @@ import {
   restoreAgentConfigVersion,
   setAgentConfig
 } from "../../_lib/agentConfig.js";
+import { requireSession } from "../../_lib/auth.js";
 
 function isAuthorized(req) {
   const configuredKey = process.env.CONFIG_API_KEY;
@@ -18,6 +19,9 @@ function isAuthorized(req) {
 
 export default async function handler(req, res) {
   try {
+    const session = await requireSession(req, res, { role: "admin" });
+    if (!session) return;
+
     if (req.method === "GET") {
       const tenantKey = req.query?.tenantKey || "default";
       if (req.query?.mode === "versions") {

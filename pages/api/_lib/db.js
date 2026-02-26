@@ -44,12 +44,14 @@ export async function ensureTables(pool) {
       tenant_key TEXT NOT NULL,
       name TEXT NOT NULL,
       email TEXT NOT NULL,
+      password_hash TEXT,
       role TEXT NOT NULL DEFAULT 'owner',
       status TEXT NOT NULL DEFAULT 'active',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS agents (
@@ -172,8 +174,21 @@ export async function ensureTables(pool) {
       id BIGSERIAL PRIMARY KEY,
       username TEXT NOT NULL,
       email TEXT NOT NULL,
+      password_hash TEXT,
       role TEXT NOT NULL DEFAULT 'admin',
       last_active_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id BIGINT NOT NULL,
+      tenant_key TEXT,
+      role TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);

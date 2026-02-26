@@ -1,4 +1,5 @@
 import { ensureTables, getPool } from "../../_lib/db.js";
+import { requireSession } from "../../_lib/auth.js";
 
 const DEFAULT_LIMIT = 30;
 
@@ -14,6 +15,8 @@ export default async function handler(req, res) {
     }
 
     await ensureTables(pool);
+    const session = await requireSession(req, res, { role: "admin" });
+    if (!session) return;
 
     const tenantKey = getTenantKey(req);
     const callSid = req.query?.callSid;

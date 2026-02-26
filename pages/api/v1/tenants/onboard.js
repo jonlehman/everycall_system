@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { ensureTables, getPool } from "../../_lib/db.js";
 
 const INDUSTRIES = [
@@ -224,8 +225,9 @@ export default async function handler(req, res) {
     const ownerName = String(body.ownerName || "").trim();
     const ownerEmail = String(body.ownerEmail || "").trim().toLowerCase();
     const industry = String(body.industry || "").trim();
+    const password = String(body.password || "");
 
-    if (!businessName || !ownerName || !ownerEmail || !industry) {
+    if (!businessName || !ownerName || !ownerEmail || !industry || !password) {
       return res.status(400).json({ error: "missing_fields" });
     }
 
@@ -267,10 +269,11 @@ export default async function handler(req, res) {
       [tenantKey, businessName, status, dataRegion, plan, primaryNumber, industry]
     );
 
+    const passwordHash = await bcrypt.hash(password, 10);
     await pool.query(
-      `INSERT INTO tenant_users (tenant_key, name, email, role, status)
-       VALUES ($1, $2, $3, 'owner', 'active')`,
-      [tenantKey, ownerName, ownerEmail]
+      `INSERT INTO tenant_users (tenant_key, name, email, password_hash, role, status)
+       VALUES ($1, $2, $3, $4, 'owner', 'active')`,
+      [tenantKey, ownerName, ownerEmail, passwordHash]
     );
 
     await pool.query(
