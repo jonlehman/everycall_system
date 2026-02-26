@@ -297,13 +297,21 @@ export default async function handler(req, res) {
       [tenantKey, timezone, primaryGoal || null]
     );
 
-    const prompt = buildPrompt({
+    let prompt = buildPrompt({
       businessName,
       industry,
       serviceArea,
       businessHours,
       emergency: emergencyServices
     });
+
+    const industryPromptRow = await pool.query(
+      `SELECT prompt FROM industry_prompts WHERE industry_key = $1`,
+      [industry]
+    );
+    if (industryPromptRow.rowCount && industryPromptRow.rows[0]?.prompt) {
+      prompt = `${prompt}\n\n# INDUSTRY PROMPT\n${industryPromptRow.rows[0].prompt}`;
+    }
 
     await pool.query(
       `INSERT INTO agents (tenant_key, agent_name, company_name, system_prompt)
@@ -325,7 +333,16 @@ export default async function handler(req, res) {
       );
     }
 
-    const industryFaqs = INDUSTRY_FAQS[industry] || [];
+    let industryFaqs = [];
+    const industryFaqRows = await pool.query(
+      `SELECT question, answer, category FROM industry_faqs WHERE industry_key = $1 ORDER BY id ASC`,
+      [industry]
+    );
+    if (industryFaqRows.rowCount) {
+      industryFaqs = industryFaqRows.rows;
+    } else {
+      industryFaqs = INDUSTRY_FAQS[industry] || [];
+    }
     for (const faq of industryFaqs) {
       await pool.query(
         `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_industry_default, industry)
