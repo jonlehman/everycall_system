@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { DataGrid } from '@mui/x-data-grid';
 import { useSearchParams } from 'next/navigation';
 
 export default function FaqPage() {
@@ -62,6 +63,40 @@ export default function FaqPage() {
     setStatus('FAQ saved.');
   };
 
+  const rows = faqs.map((faq) => ({
+    id: faq.id,
+    question: faq.question,
+    answer: faq.answer,
+    category: faq.category,
+    updatedAt: faq.updated_at ? new Date(faq.updated_at).toLocaleString() : '',
+    deletable: Boolean(faq.deletable)
+  }));
+
+  const columns = [
+    { field: 'question', headerName: 'Question', flex: 1.2, minWidth: 180 },
+    { field: 'answer', headerName: 'Answer', flex: 1.6, minWidth: 240 },
+    { field: 'category', headerName: 'Category', flex: 0.6, minWidth: 120 },
+    { field: 'updatedAt', headerName: 'Last Updated', flex: 0.7, minWidth: 160 },
+    {
+      field: 'actions',
+      headerName: '',
+      sortable: false,
+      filterable: false,
+      align: 'right',
+      headerAlign: 'right',
+      minWidth: 120,
+      renderCell: (params) => (
+        <button
+          className="btn delete-faq"
+          disabled={!params.row.deletable}
+          onClick={() => deleteFaq(params.row.id)}
+        >
+          Delete
+        </button>
+      )
+    }
+  ];
+
   return (
     <section className="screen active">
       <div className="topbar">
@@ -71,25 +106,24 @@ export default function FaqPage() {
       <div ref={gridRef} className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
         <div>
           <div className="card">
-            <table className="table">
-              <thead><tr><th>Question</th><th>Answer</th><th>Category</th><th>Last Updated</th><th></th></tr></thead>
-              <tbody>
-                {faqs.length === 0 ? (
-                  <tr><td colSpan="5" className="muted">No FAQs yet.</td></tr>
-                ) : faqs.map((faq) => (
-                  <tr key={faq.id} data-deletable={String(Boolean(faq.deletable))}>
-                    <td>{faq.question}</td>
-                    <td>{faq.answer}</td>
-                    <td>{faq.category}</td>
-                    <td>{faq.updated_at ? new Date(faq.updated_at).toLocaleString() : ''}</td>
-                    <td>
-                      <input type="hidden" value={faq.deletable ? '1' : '0'} />
-                      <button className="btn delete-faq" disabled={!faq.deletable} onClick={() => deleteFaq(faq.id)}>Delete</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ height: rows.length ? 'auto' : 300 }}>
+              <DataGrid
+                rows={rows}
+                columns={columns}
+                autoHeight
+                disableRowSelectionOnClick
+                pageSizeOptions={[10, 25, 50]}
+                initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
+                localeText={{ noRowsLabel: 'No FAQs yet.' }}
+                sx={{
+                  border: 'none',
+                  '& .MuiDataGrid-cell': { alignItems: 'flex-start', lineHeight: '1.4', whiteSpace: 'normal' },
+                  '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
+                  '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 },
+                  '& .MuiDataGrid-row': { maxHeight: 'none' }
+                }}
+              />
+            </div>
           </div>
           <div className="card" style={{ marginTop: 12 }}>
             <div className="topbar" style={{ marginBottom: 8 }}>
