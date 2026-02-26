@@ -53,7 +53,7 @@ export default async function handler(req, res) {
     let delivered = false;
     let deliveryError = null;
     if (mailtrapClient) {
-      const baseUrl = process.env.APP_BASE_URL || "https://everycallsystem.vercel.app";
+      const baseUrl = process.env.APP_BASE_URL || "https://app.everycall.io";
       const resetUrl = `${baseUrl}/reset?token=${encodeURIComponent(token)}`;
       try {
         await mailtrapClient.send({

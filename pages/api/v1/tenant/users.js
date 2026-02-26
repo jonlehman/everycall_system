@@ -31,7 +31,7 @@ async function createInviteToken({ email, tenantKey }) {
 
 async function sendInviteEmail({ tenantKey, name, email, role }) {
   if (!mailtrapClient) return;
-  const baseUrl = process.env.APP_BASE_URL || "https://everycallsystem.vercel.app";
+  const baseUrl = process.env.APP_BASE_URL || "https://app.everycall.io";
 
   const subject = `You're invited to EveryCall (${tenantKey})`;
   const token = await createInviteToken({ email, tenantKey });
