@@ -5,3 +5,7 @@
 .nav-btn {
   text-decoration: none;
 }
+
+.help-split {
+  grid-template-columns: 7fr 3fr !important;
+}
