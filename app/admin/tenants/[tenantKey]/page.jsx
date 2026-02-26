@@ -11,6 +11,7 @@ export default function TenantManagePage() {
   const [prompt, setPrompt] = useState('');
   const [status, setStatus] = useState('Idle');
   const [users, setUsers] = useState([]);
+  const [composedPrompt, setComposedPrompt] = useState('');
   const [editing, setEditing] = useState({ status: '', plan: '', data_region: '', primary_number: '' });
 
   useEffect(() => {
@@ -33,7 +34,12 @@ export default function TenantManagePage() {
 
     fetch(`/api/v1/config/agent?tenantKey=${encodeURIComponent(tenantKey)}`)
       .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => { if (mounted) setPrompt(data?.systemPrompt || ''); })
+      .then((data) => { if (mounted) setPrompt(data?.tenantPromptOverride || data?.systemPrompt || ''); })
+      .catch(() => {});
+
+    fetch(`/api/v1/config/agent?mode=preview&tenantKey=${encodeURIComponent(tenantKey)}`)
+      .then((resp) => resp.ok ? resp.json() : null)
+      .then((data) => { if (mounted) setComposedPrompt(data?.composedPrompt || ''); })
       .catch(() => {});
 
     fetch(`/api/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`)
@@ -56,6 +62,10 @@ export default function TenantManagePage() {
       return;
     }
     setStatus('Saved.');
+    fetch(`/api/v1/config/agent?mode=preview&tenantKey=${encodeURIComponent(tenantKey)}`)
+      .then((resp) => resp.ok ? resp.json() : null)
+      .then((data) => setComposedPrompt(data?.composedPrompt || ''))
+      .catch(() => {});
   };
 
   const saveTenantDetails = async () => {
@@ -170,13 +180,18 @@ export default function TenantManagePage() {
         </div>
         <div className="card">
           <label>Agent Prompt &amp; Behavior</label>
-          <p className="muted">This prompt is stored per tenant.</p>
+          <p className="muted">This is the tenant override prompt. Final prompt is composed at runtime.</p>
           <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} style={{ minHeight: 180 }}></textarea>
           <div className="toolbar" style={{ marginTop: 10 }}>
             <button className="btn brand" onClick={savePrompt}>Save Prompt</button>
             <span className="muted">{status}</span>
           </div>
         </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 12 }}>
+        <label>Final Prompt Preview</label>
+        <textarea value={composedPrompt} readOnly style={{ minHeight: 220 }}></textarea>
       </div>
 
       <div className="card" style={{ marginTop: 12 }}>

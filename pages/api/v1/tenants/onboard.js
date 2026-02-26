@@ -298,24 +298,16 @@ export default async function handler(req, res) {
       emergency: emergencyServices
     });
 
-    const industryPromptRow = await pool.query(
-      `SELECT prompt FROM industry_prompts WHERE industry_key = $1`,
-      [industry]
-    );
-    if (industryPromptRow.rowCount && industryPromptRow.rows[0]?.prompt) {
-      prompt = `${prompt}\n\n# INDUSTRY PROMPT\n${industryPromptRow.rows[0].prompt}`;
-    }
-
     await pool.query(
-      `INSERT INTO agents (tenant_key, agent_name, company_name, system_prompt)
-       VALUES ($1, 'Alex', $2, $3)`,
-      [tenantKey, businessName, prompt]
+      `INSERT INTO agents (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override)
+       VALUES ($1, 'Alex', $2, $3, $4)`,
+      [tenantKey, businessName, prompt, prompt]
     );
 
     await pool.query(
-      `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt)
-       VALUES ($1, 'Alex', $2, $3)`,
-      [tenantKey, businessName, prompt]
+      `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override)
+       VALUES ($1, 'Alex', $2, $3, $4)`,
+      [tenantKey, businessName, prompt, prompt]
     );
 
     for (const faq of BASE_FAQS) {

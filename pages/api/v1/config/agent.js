@@ -1,4 +1,5 @@
 import {
+  composePromptForTenant,
   getAgentConfig,
   listAgentConfigVersions,
   restoreAgentConfigVersion,
@@ -27,6 +28,15 @@ export default async function handler(req, res) {
       if (req.query?.mode === "versions") {
         const versions = await listAgentConfigVersions(String(tenantKey), req.query?.limit);
         return res.status(200).json({ tenantKey, versions });
+      }
+      if (req.query?.mode === "preview") {
+        const composed = await composePromptForTenant(String(tenantKey));
+        const cfg = await getAgentConfig(String(tenantKey));
+        return res.status(200).json({
+          tenantKey,
+          tenantPromptOverride: cfg.tenantPromptOverride || "",
+          composedPrompt: composed
+        });
       }
       const cfg = await getAgentConfig(String(tenantKey));
       return res.status(200).json(cfg);

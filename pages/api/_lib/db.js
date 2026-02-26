@@ -59,9 +59,11 @@ export async function ensureTables(pool) {
       agent_name TEXT NOT NULL,
       company_name TEXT NOT NULL,
       system_prompt TEXT NOT NULL,
+      tenant_prompt_override TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS tenant_prompt_override TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS agent_versions (
@@ -70,9 +72,11 @@ export async function ensureTables(pool) {
       agent_name TEXT NOT NULL,
       company_name TEXT NOT NULL,
       system_prompt TEXT NOT NULL,
+      tenant_prompt_override TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS tenant_prompt_override TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS faqs (

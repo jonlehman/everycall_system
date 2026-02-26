@@ -125,6 +125,61 @@ const defaultConfig = {
   storage: "default"
 };
 
+async function getSystemPromptParts(pool) {
+  const row = await pool.query(
+    `SELECT global_emergency_phrase,
+            personality_prompt,
+            datetime_prompt,
+            numbers_symbols_prompt,
+            confirmation_prompt
+     FROM system_config
+     WHERE id = 1`
+  );
+  return row.rows[0] || {};
+}
+
+function formatSection(title, body) {
+  if (!body) return "";
+  return `# ${title}\n${body}`;
+}
+
+export async function composePromptForTenant(tenantKey = DEFAULT_TENANT_KEY) {
+  const pool = getPool();
+  if (!pool) {
+    return defaultAgentPrompt;
+  }
+
+  await ensureTables(pool);
+
+  const tenantRow = await pool.query(
+    `SELECT industry FROM tenants WHERE tenant_key = $1 LIMIT 1`,
+    [tenantKey]
+  );
+  const industryKey = tenantRow.rows[0]?.industry || null;
+
+  const systemParts = await getSystemPromptParts(pool);
+  const industryPromptRow = industryKey
+    ? await pool.query(`SELECT prompt FROM industry_prompts WHERE industry_key = $1`, [industryKey])
+    : { rows: [] };
+  const tenantPromptRow = await pool.query(
+    `SELECT tenant_prompt_override, system_prompt FROM agents WHERE tenant_key = $1 LIMIT 1`,
+    [tenantKey]
+  );
+
+  const sections = [];
+  sections.push(formatSection("SYSTEM EMERGENCY PHRASE", systemParts.global_emergency_phrase));
+  sections.push(formatSection("PERSONALITY", systemParts.personality_prompt));
+  sections.push(formatSection("DATE & TIME", systemParts.datetime_prompt));
+  sections.push(formatSection("NUMBERS & SYMBOLS", systemParts.numbers_symbols_prompt));
+  sections.push(formatSection("CONFIRMATION", systemParts.confirmation_prompt));
+  sections.push(formatSection("INDUSTRY PROMPT", industryPromptRow.rows[0]?.prompt));
+
+  const tenantOverride = tenantPromptRow.rows[0]?.tenant_prompt_override || tenantPromptRow.rows[0]?.system_prompt || "";
+  sections.push(formatSection("TENANT PROMPT OVERRIDE", tenantOverride));
+
+  return sections.filter(Boolean).join("\n\n").trim() || defaultAgentPrompt;
+}
+
 export async function getAgentConfig(tenantKey = DEFAULT_TENANT_KEY) {
   const pool = getPool();
   if (!pool) {
@@ -134,7 +189,8 @@ export async function getAgentConfig(tenantKey = DEFAULT_TENANT_KEY) {
   await ensureTables(pool);
 
   const result = await pool.query(
-    `SELECT tenant_key, agent_name, company_name, system_prompt FROM agents WHERE tenant_key = $1 LIMIT 1`,
+    `SELECT tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override
+     FROM agents WHERE tenant_key = $1 LIMIT 1`,
     [tenantKey]
   );
 
@@ -143,11 +199,13 @@ export async function getAgentConfig(tenantKey = DEFAULT_TENANT_KEY) {
   }
 
   const row = result.rows[0];
+  const composed = await composePromptForTenant(tenantKey);
   return {
     tenantKey: row.tenant_key,
     agentName: row.agent_name,
     companyName: row.company_name,
-    systemPrompt: row.system_prompt,
+    systemPrompt: composed,
+    tenantPromptOverride: row.tenant_prompt_override || row.system_prompt || "",
     storage: "database"
   };
 }
@@ -165,26 +223,27 @@ export async function setAgentConfig(update) {
     tenantKey,
     agentName: update?.agentName || current.agentName,
     companyName: update?.companyName || current.companyName,
-    systemPrompt: update?.systemPrompt || current.systemPrompt
+    systemPrompt: update?.systemPrompt || current.tenantPromptOverride || current.systemPrompt
   };
 
   await ensureTables(pool);
 
   await pool.query(
-    `INSERT INTO agents (tenant_key, agent_name, company_name, system_prompt)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO agents (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (tenant_key)
      DO UPDATE SET agent_name = EXCLUDED.agent_name,
                    company_name = EXCLUDED.company_name,
                    system_prompt = EXCLUDED.system_prompt,
+                   tenant_prompt_override = EXCLUDED.tenant_prompt_override,
                    updated_at = NOW()`,
-    [next.tenantKey, next.agentName, next.companyName, next.systemPrompt]
+    [next.tenantKey, next.agentName, next.companyName, next.systemPrompt, next.systemPrompt]
   );
 
   await pool.query(
-    `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt)
-     VALUES ($1, $2, $3, $4)`,
-    [next.tenantKey, next.agentName, next.companyName, next.systemPrompt]
+    `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [next.tenantKey, next.agentName, next.companyName, next.systemPrompt, next.systemPrompt]
   );
 
   return { ...next, storage: "database" };
@@ -200,7 +259,7 @@ export async function listAgentConfigVersions(tenantKey = DEFAULT_TENANT_KEY, li
   const safeLimit = Math.max(1, Math.min(Number(limit) || 20, 100));
 
   const result = await pool.query(
-    `SELECT id, tenant_key, agent_name, company_name, created_at
+    `SELECT id, tenant_key, agent_name, company_name, created_at, tenant_prompt_override
      FROM agent_versions
      WHERE tenant_key = $1
      ORDER BY id DESC
@@ -213,7 +272,8 @@ export async function listAgentConfigVersions(tenantKey = DEFAULT_TENANT_KEY, li
     tenantKey: row.tenant_key,
     agentName: row.agent_name,
     companyName: row.company_name,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    tenantPromptOverride: row.tenant_prompt_override || ""
   }));
 }
 
@@ -226,7 +286,7 @@ export async function restoreAgentConfigVersion(tenantKey = DEFAULT_TENANT_KEY, 
   await ensureTables(pool);
 
   const result = await pool.query(
-    `SELECT tenant_key, agent_name, company_name, system_prompt
+    `SELECT tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override
      FROM agent_versions
      WHERE tenant_key = $1 AND id = $2
      LIMIT 1`,
@@ -242,6 +302,6 @@ export async function restoreAgentConfigVersion(tenantKey = DEFAULT_TENANT_KEY, 
     tenantKey: row.tenant_key,
     agentName: row.agent_name,
     companyName: row.company_name,
-    systemPrompt: row.system_prompt
+    systemPrompt: row.tenant_prompt_override || row.system_prompt
   });
 }

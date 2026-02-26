@@ -120,7 +120,8 @@ export default async function handler(req, res) {
         const prompt = promptRow.rows[0].prompt;
         const updated = await pool.query(
           `UPDATE agents
-           SET system_prompt = $1,
+           SET tenant_prompt_override = $1,
+               system_prompt = $1,
                updated_at = NOW()
            WHERE tenant_key IN (SELECT tenant_key FROM tenants WHERE industry = $2)
            RETURNING tenant_key, agent_name, company_name`,
@@ -128,8 +129,8 @@ export default async function handler(req, res) {
         );
         if (updated.rowCount) {
           await pool.query(
-            `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt)
-             SELECT tenant_key, agent_name, company_name, $2
+            `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override)
+             SELECT tenant_key, agent_name, company_name, $2, $2
              FROM agents
              WHERE tenant_key IN (SELECT tenant_key FROM tenants WHERE industry = $1)`,
             [industryKey, prompt]
