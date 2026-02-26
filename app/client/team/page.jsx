@@ -8,9 +8,15 @@ export default function TeamPage() {
   const searchParams = useSearchParams();
   const tenantKey = searchParams.get('tenantKey') || 'default';
   const [users, setUsers] = useState([]);
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteName, setInviteName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('member');
+  const [inviteStatus, setInviteStatus] = useState('active');
+  const [inviteMessage, setInviteMessage] = useState('');
   const gridRef = useRef(null);
 
-  useEffect(() => {
+  const loadUsers = () => {
     let mounted = true;
     fetch(`/api/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`)
       .then((resp) => resp.ok ? resp.json() : null)
@@ -20,6 +26,11 @@ export default function TeamPage() {
       })
       .catch(() => {});
     return () => { mounted = false; };
+  };
+
+  useEffect(() => {
+    const cleanup = loadUsers();
+    return cleanup;
   }, [tenantKey]);
 
   useEffect(() => {
@@ -61,11 +72,89 @@ export default function TeamPage() {
     }
   ];
 
+  const handleInvite = async (event) => {
+    event.preventDefault();
+    setInviteMessage('');
+    if (!inviteName.trim() || !inviteEmail.trim()) {
+      setInviteMessage('Name and email are required.');
+      return;
+    }
+    const resp = await fetch(`/api/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: inviteName.trim(),
+        email: inviteEmail.trim(),
+        role: inviteRole,
+        status: inviteStatus
+      })
+    });
+    if (!resp.ok) {
+      setInviteMessage('Invite failed.');
+      return;
+    }
+    setInviteMessage('Invite added.');
+    setInviteName('');
+    setInviteEmail('');
+    setInviteRole('member');
+    setInviteStatus('active');
+    setShowInvite(false);
+    loadUsers();
+  };
+
   return (
     <section className="screen active">
-      <div className="topbar"><h1>Team Users</h1><div className="top-actions"><button className="btn brand">Invite User</button></div></div>
+      <div className="topbar">
+        <h1>Team Users</h1>
+        <div className="top-actions">
+          <button className="btn brand" onClick={() => setShowInvite((prev) => !prev)}>
+            {showInvite ? 'Close Invite' : 'Invite User'}
+          </button>
+        </div>
+      </div>
       <div ref={gridRef} className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
-        <div className="card">
+        <div>
+          {showInvite && (
+            <div className="card" style={{ marginBottom: 12 }}>
+              <h2>Invite Team Member</h2>
+              <form className="stack" onSubmit={handleInvite}>
+                <div className="form-row">
+                  <div>
+                    <label>Name</label>
+                    <input value={inviteName} onChange={(event) => setInviteName(event.target.value)} placeholder="Jane Smith" />
+                  </div>
+                  <div>
+                    <label>Email</label>
+                    <input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="jane@company.com" />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div>
+                    <label>Role</label>
+                    <select value={inviteRole} onChange={(event) => setInviteRole(event.target.value)}>
+                      <option value="admin">Admin</option>
+                      <option value="member">Member</option>
+                      <option value="owner">Owner</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>Status</label>
+                    <select value={inviteStatus} onChange={(event) => setInviteStatus(event.target.value)}>
+                      <option value="active">Active</option>
+                      <option value="invited">Invited</option>
+                      <option value="suspended">Suspended</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="toolbar" style={{ marginTop: 6 }}>
+                  <button className="btn brand" type="submit">Send Invite</button>
+                  <span className="muted">{inviteMessage}</span>
+                </div>
+              </form>
+            </div>
+          )}
+          <div className="card">
           <div style={{ height: rows.length ? 'auto' : 300 }}>
             <DataGrid
               rows={rows}
@@ -82,6 +171,7 @@ export default function TeamPage() {
                 '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
               }}
             />
+          </div>
           </div>
         </div>
         <div className="card">
