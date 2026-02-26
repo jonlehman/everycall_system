@@ -226,6 +226,54 @@ export async function ensureTables(pool) {
     );
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS industries (
+      key TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS industry_faqs (
+      id BIGSERIAL PRIMARY KEY,
+      industry_key TEXT NOT NULL REFERENCES industries(key) ON DELETE CASCADE,
+      question TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'General',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS industry_prompts (
+      industry_key TEXT PRIMARY KEY REFERENCES industries(key) ON DELETE CASCADE,
+      prompt TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`CREATE INDEX IF NOT EXISTS industry_faqs_industry_idx ON industry_faqs (industry_key);`);
+
+  const industryCount = await pool.query(`SELECT COUNT(*)::int AS count FROM industries`);
+  if ((industryCount.rows[0]?.count || 0) === 0) {
+    await pool.query(
+      `INSERT INTO industries (key, name) VALUES
+       ('cleaning', 'Cleaning'),
+       ('electrical', 'Electrical'),
+       ('garage_door', 'Garage Door'),
+       ('general_contractor', 'General Contractor'),
+       ('hvac', 'HVAC'),
+       ('landscaping', 'Landscaping'),
+       ('locksmith', 'Locksmith'),
+       ('pest_control', 'Pest Control'),
+       ('plumbing', 'Plumbing'),
+       ('roofing', 'Roofing'),
+       ('window_installers', 'Window Installers')`
+    );
+  }
+
   await pool.query(`CREATE INDEX IF NOT EXISTS calls_tenant_created_idx ON calls (tenant_key, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS dispatch_queue_tenant_status_idx ON dispatch_queue (tenant_key, status, due_at);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS faqs_tenant_category_idx ON faqs (tenant_key, category);`);
