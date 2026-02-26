@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 export default function RoutingPage() {
@@ -10,6 +10,7 @@ export default function RoutingPage() {
   const [emergencyBehavior, setEmergencyBehavior] = useState('Immediate Transfer');
   const [afterHours, setAfterHours] = useState('Collect details and dispatch callback');
   const [businessHours, setBusinessHours] = useState('Mon-Fri 7:00 AM - 8:00 PM\nEmergency service 24/7');
+  const gridRef = useRef(null);
 
   useEffect(() => {
     let mounted = true;
@@ -25,6 +26,12 @@ export default function RoutingPage() {
       .catch(() => {});
     return () => { mounted = false; };
   }, [tenantKey]);
+
+  useEffect(() => {
+    if (gridRef.current) {
+      gridRef.current.style.gridTemplateColumns = '7fr 3fr';
+    }
+  }, []);
 
   const saveRouting = async () => {
     await fetch('/api/v1/routing', {
@@ -43,7 +50,7 @@ export default function RoutingPage() {
   return (
     <section className="screen active">
       <div className="topbar"><h1>Call Routing</h1><div className="top-actions"><button className="btn brand" onClick={saveRouting}>Save Routing</button></div></div>
-      <div className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
+      <div ref={gridRef} className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
         <div>
           <div className="card">
             <label>Primary Callback Queue</label>

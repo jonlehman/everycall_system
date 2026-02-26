@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 export default function TeamPage() {
   const searchParams = useSearchParams();
   const tenantKey = searchParams.get('tenantKey') || 'default';
   const [users, setUsers] = useState([]);
+  const gridRef = useRef(null);
 
   useEffect(() => {
     let mounted = true;
@@ -20,10 +21,16 @@ export default function TeamPage() {
     return () => { mounted = false; };
   }, [tenantKey]);
 
+  useEffect(() => {
+    if (gridRef.current) {
+      gridRef.current.style.gridTemplateColumns = '7fr 3fr';
+    }
+  }, []);
+
   return (
     <section className="screen active">
       <div className="topbar"><h1>Team Users</h1><div className="top-actions"><button className="btn brand">Invite User</button></div></div>
-      <div className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
+      <div ref={gridRef} className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
         <div className="card">
           <table className="table">
             <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>

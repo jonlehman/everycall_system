@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 export default function FaqPage() {
@@ -11,6 +11,7 @@ export default function FaqPage() {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('We serve the greater metro area and nearby suburbs. Call with your address and we will confirm coverage.');
   const [category, setCategory] = useState('');
+  const gridRef = useRef(null);
 
   const loadFaqs = () => {
     setStatus('Loading FAQs...');
@@ -27,6 +28,12 @@ export default function FaqPage() {
   useEffect(() => {
     loadFaqs();
   }, [tenantKey]);
+
+  useEffect(() => {
+    if (gridRef.current) {
+      gridRef.current.style.gridTemplateColumns = '7fr 3fr';
+    }
+  }, []);
 
   const deleteFaq = async (id) => {
     const resp = await fetch(`/api/v1/faq?tenantKey=${encodeURIComponent(tenantKey)}&id=${id}`, { method: 'DELETE' });
@@ -61,7 +68,7 @@ export default function FaqPage() {
         <h1>Customer Questions and Answers</h1>
         <div className="top-actions"></div>
       </div>
-      <div className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
+      <div ref={gridRef} className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
         <div>
           <div className="card">
             <table className="table">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 export default function SettingsPage() {
@@ -8,6 +8,7 @@ export default function SettingsPage() {
   const tenantKey = searchParams.get('tenantKey') || 'default';
   const [tenant, setTenant] = useState({ name: '-', plan: '-', data_region: '-' });
   const [auditEnabled, setAuditEnabled] = useState('-');
+  const gridRef = useRef(null);
 
   useEffect(() => {
     let mounted = true;
@@ -22,10 +23,16 @@ export default function SettingsPage() {
     return () => { mounted = false; };
   }, [tenantKey]);
 
+  useEffect(() => {
+    if (gridRef.current) {
+      gridRef.current.style.gridTemplateColumns = '7fr 3fr';
+    }
+  }, []);
+
   return (
     <section className="screen active">
       <div className="topbar"><h1>Account Settings</h1></div>
-      <div className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
+      <div ref={gridRef} className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
         <div className="card">
           <div className="kv">
             <div>Tenant</div><div>{tenant.name || '-'}</div>
