@@ -188,6 +188,26 @@ export default function IndustryConfigPage() {
     setStatus('Copied configuration.');
   };
 
+  const seedDefaults = async () => {
+    if (!selectedKey) return;
+    const resp = await fetch('/api/v1/admin/industries?mode=seedDefaults', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ industryKey: selectedKey })
+    });
+    if (!resp.ok) {
+      setStatus('Seed defaults failed.');
+      return;
+    }
+    const data = await resp.json();
+    if (data.skipped) {
+      setStatus('Defaults already exist for this industry.');
+    } else {
+      setStatus(`Seeded ${data.inserted || 0} FAQs.`);
+      loadFaqs(selectedKey);
+    }
+  };
+
   const rows = faqs.map((faq) => ({
     id: faq.id,
     question: faq.question,
@@ -314,6 +334,7 @@ export default function IndustryConfigPage() {
             <div className="toolbar" style={{ marginTop: 10 }}>
               <button className="btn brand" onClick={addFaq}>Save FAQ</button>
               <button className="btn" onClick={applyFaqsToTenants}>Apply FAQs to Tenants</button>
+              <button className="btn" onClick={seedDefaults}>Seed Default FAQs</button>
             </div>
             <div className="divider" style={{ borderTop: '1px solid #e2e8f0', margin: '12px 0' }}></div>
             <h3 style={{ margin: '0 0 8px' }}>Copy From Industry</h3>

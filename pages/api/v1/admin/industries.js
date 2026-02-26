@@ -173,6 +173,77 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, updated: tenants.rowCount });
       }
 
+      if (mode === "seeddefaults") {
+        const industryKey = String(body.industryKey || "").trim();
+        if (!industryKey) {
+          return res.status(400).json({ error: "missing_fields" });
+        }
+        const existing = await pool.query(
+          `SELECT COUNT(*)::int AS count FROM industry_faqs WHERE industry_key = $1`,
+          [industryKey]
+        );
+        if ((existing.rows[0]?.count || 0) > 0) {
+          return res.status(200).json({ ok: true, skipped: true });
+        }
+
+        const DEFAULTS = {
+          plumbing: [
+            { question: "What should I do for a burst pipe?", answer: "Shut off the main water valve if safe, then call us immediately.", category: "Emergency" },
+            { question: "Do you handle drain clogs and backups?", answer: "Yes. We clear clogs, inspect lines, and recommend next steps.", category: "Services" }
+          ],
+          window_installers: [
+            { question: "Do you replace broken glass or only full windows?", answer: "We can assess glass-only replacement vs full units.", category: "Services" },
+            { question: "What is the typical lead time for installation?", answer: "Lead time varies by product and scope; we confirm after measuring.", category: "Scheduling" }
+          ],
+          electrical: [
+            { question: "What should I do if I smell burning or see sparks?", answer: "Turn off power at the breaker if safe and call us immediately.", category: "Emergency" },
+            { question: "Do you upgrade electrical panels?", answer: "Yes. We inspect your panel and provide upgrade options.", category: "Services" }
+          ],
+          hvac: [
+            { question: "What should I do if I have no heat or no cooling?", answer: "Check thermostat and breaker; if still out, call us for priority service.", category: "Emergency" },
+            { question: "Do you offer maintenance plans?", answer: "Yes. We provide seasonal tune-ups and priority scheduling.", category: "Maintenance" }
+          ],
+          roofing: [
+            { question: "Do you handle emergency leaks?", answer: "Yes. We can tarp and stabilize leaks quickly.", category: "Emergency" },
+            { question: "Do you work with insurance claims?", answer: "Yes. We can document damage and provide estimates.", category: "Billing" }
+          ],
+          landscaping: [
+            { question: "Do you offer recurring maintenance?", answer: "Yes. We offer weekly or bi-weekly maintenance plans.", category: "Maintenance" },
+            { question: "Can you handle irrigation issues?", answer: "Yes. We can diagnose and repair irrigation systems.", category: "Services" }
+          ],
+          cleaning: [
+            { question: "Do you provide recurring cleanings?", answer: "Yes. We offer weekly, bi-weekly, and monthly plans.", category: "Maintenance" },
+            { question: "Do you bring your own supplies?", answer: "Yes. We bring standard supplies unless requested otherwise.", category: "Services" }
+          ],
+          pest_control: [
+            { question: "Do you offer one-time treatments?", answer: "Yes. We offer one-time and recurring plans.", category: "Services" },
+            { question: "How soon can you come out for an infestation?", answer: "We can often schedule within 24-48 hours.", category: "Scheduling" }
+          ],
+          garage_door: [
+            { question: "Do you repair broken springs?", answer: "Yes. We can replace springs and tune up doors.", category: "Services" },
+            { question: "Do you install new openers?", answer: "Yes. We install and configure new openers.", category: "Services" }
+          ],
+          general_contractor: [
+            { question: "Do you handle permits?", answer: "Yes. We can manage permits and inspections.", category: "Process" },
+            { question: "Can you provide a project timeline?", answer: "Yes. We provide a timeline after scope review.", category: "Scheduling" }
+          ],
+          locksmith: [
+            { question: "Do you offer emergency lockout service?", answer: "Yes. We provide emergency lockout service.", category: "Emergency" },
+            { question: "Can you rekey locks?", answer: "Yes. We rekey residential and commercial locks.", category: "Services" }
+          ]
+        };
+
+        const faqs = DEFAULTS[industryKey] || [];
+        for (const faq of faqs) {
+          await pool.query(
+            `INSERT INTO industry_faqs (industry_key, question, answer, category)
+             VALUES ($1, $2, $3, $4)`,
+            [industryKey, faq.question, faq.answer, faq.category]
+          );
+        }
+        return res.status(200).json({ ok: true, inserted: faqs.length });
+      }
+
       if (mode === "prompt") {
         const prompt = String(body.prompt || "").trim();
         if (!industryKey || !prompt) {
