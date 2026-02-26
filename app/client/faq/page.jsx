@@ -61,7 +61,7 @@ export default function FaqPage() {
         <h1>Customer Questions and Answers</h1>
         <div className="top-actions"></div>
       </div>
-      <div className="grid help-grid">
+      <div className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
         <div>
           <div className="card">
             <table className="table">
