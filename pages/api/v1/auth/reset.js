@@ -39,11 +39,15 @@ export default async function handler(req, res) {
     }
 
     const hash = await bcrypt.hash(password, 10);
-    const adminRow = await pool.query(`SELECT 1 FROM admin_users WHERE id = $1`, [tokenRow.user_id]);
-    if (adminRow.rowCount) {
-      await pool.query(`UPDATE admin_users SET password_hash = $1 WHERE id = $2`, [hash, tokenRow.user_id]);
+    if (tokenRow.tenant_key) {
+      await pool.query(
+        `UPDATE tenant_users
+         SET password_hash = $1
+         WHERE id = $2 AND tenant_key = $3`,
+        [hash, tokenRow.user_id, tokenRow.tenant_key]
+      );
     } else {
-      await pool.query(`UPDATE tenant_users SET password_hash = $1 WHERE id = $2`, [hash, tokenRow.user_id]);
+      await pool.query(`UPDATE admin_users SET password_hash = $1 WHERE id = $2`, [hash, tokenRow.user_id]);
     }
 
     await pool.query(`DELETE FROM auth_tokens WHERE token = $1`, [token]);
