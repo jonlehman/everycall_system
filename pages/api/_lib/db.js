@@ -221,6 +221,7 @@ export async function ensureTables(pool) {
       datetime_prompt TEXT,
       numbers_symbols_prompt TEXT,
       confirmation_prompt TEXT,
+      faq_usage_prompt TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -229,6 +230,7 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS datetime_prompt TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS numbers_symbols_prompt TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS confirmation_prompt TEXT;`);
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS faq_usage_prompt TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS audit_log (

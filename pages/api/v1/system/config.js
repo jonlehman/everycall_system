@@ -18,7 +18,8 @@ export default async function handler(req, res) {
                 personality_prompt,
                 datetime_prompt,
                 numbers_symbols_prompt,
-                confirmation_prompt
+                confirmation_prompt,
+                faq_usage_prompt
          FROM system_config WHERE id = 1`
       );
       return res.status(200).json({ config: row.rows[0] || null });
@@ -31,20 +32,22 @@ export default async function handler(req, res) {
       const dateTime = String(body.dateTimePrompt || "").trim();
       const numbersSymbols = String(body.numbersSymbolsPrompt || "").trim();
       const confirmation = String(body.confirmationPrompt || "").trim();
+      const faqUsage = String(body.faqUsagePrompt || "").trim();
       if (!phrase) {
         return res.status(400).json({ error: "missing_phrase" });
       }
       await pool.query(
-        `INSERT INTO system_config (id, global_emergency_phrase, personality_prompt, datetime_prompt, numbers_symbols_prompt, confirmation_prompt)
-         VALUES (1, $1, $2, $3, $4, $5)
+        `INSERT INTO system_config (id, global_emergency_phrase, personality_prompt, datetime_prompt, numbers_symbols_prompt, confirmation_prompt, faq_usage_prompt)
+         VALUES (1, $1, $2, $3, $4, $5, $6)
          ON CONFLICT (id)
          DO UPDATE SET global_emergency_phrase = EXCLUDED.global_emergency_phrase,
                        personality_prompt = EXCLUDED.personality_prompt,
                        datetime_prompt = EXCLUDED.datetime_prompt,
                        numbers_symbols_prompt = EXCLUDED.numbers_symbols_prompt,
                        confirmation_prompt = EXCLUDED.confirmation_prompt,
+                       faq_usage_prompt = EXCLUDED.faq_usage_prompt,
                        updated_at = NOW()`,
-        [phrase, personality, dateTime, numbersSymbols, confirmation]
+        [phrase, personality, dateTime, numbersSymbols, confirmation, faqUsage]
       );
       return res.status(200).json({ ok: true });
     }

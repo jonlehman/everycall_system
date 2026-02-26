@@ -8,6 +8,7 @@ export default function AdminSystemPage() {
   const [dateTime, setDateTime] = useState('');
   const [numbersSymbols, setNumbersSymbols] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const [faqUsage, setFaqUsage] = useState('');
   const [status, setStatus] = useState('Ready.');
 
   const loadConfig = () => {
@@ -20,6 +21,7 @@ export default function AdminSystemPage() {
         setDateTime(data?.config?.datetime_prompt || '');
         setNumbersSymbols(data?.config?.numbers_symbols_prompt || '');
         setConfirmation(data?.config?.confirmation_prompt || '');
+        setFaqUsage(data?.config?.faq_usage_prompt || '');
         setStatus('Loaded.');
       })
       .catch(() => setStatus('Failed to load.'));
@@ -39,7 +41,8 @@ export default function AdminSystemPage() {
         personalityPrompt: personality.trim(),
         dateTimePrompt: dateTime.trim(),
         numbersSymbolsPrompt: numbersSymbols.trim(),
-        confirmationPrompt: confirmation.trim()
+        confirmationPrompt: confirmation.trim(),
+        faqUsagePrompt: faqUsage.trim()
       })
     })
       .then((resp) => resp.ok ? resp.json() : null)
@@ -71,6 +74,8 @@ export default function AdminSystemPage() {
         <textarea value={numbersSymbols} onChange={(event) => setNumbersSymbols(event.target.value)} />
         <label style={{ marginTop: 12 }}>Confirmation</label>
         <textarea value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
+        <label style={{ marginTop: 12 }}>When to Use the FAQ</label>
+        <textarea value={faqUsage} onChange={(event) => setFaqUsage(event.target.value)} />
         <div className="toolbar">
           <button className="btn brand" onClick={saveConfig}>Save System Config</button>
           <span className="muted">{status}</span>

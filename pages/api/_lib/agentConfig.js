@@ -131,7 +131,8 @@ async function getSystemPromptParts(pool) {
             personality_prompt,
             datetime_prompt,
             numbers_symbols_prompt,
-            confirmation_prompt
+            confirmation_prompt,
+            faq_usage_prompt
      FROM system_config
      WHERE id = 1`
   );
@@ -172,6 +173,7 @@ export async function composePromptForTenant(tenantKey = DEFAULT_TENANT_KEY) {
   sections.push(formatSection("DATE & TIME", systemParts.datetime_prompt));
   sections.push(formatSection("NUMBERS & SYMBOLS", systemParts.numbers_symbols_prompt));
   sections.push(formatSection("CONFIRMATION", systemParts.confirmation_prompt));
+  sections.push(formatSection("WHEN TO USE FAQ", systemParts.faq_usage_prompt));
   sections.push(formatSection("INDUSTRY PROMPT", industryPromptRow.rows[0]?.prompt));
 
   const tenantOverride = tenantPromptRow.rows[0]?.tenant_prompt_override || tenantPromptRow.rows[0]?.system_prompt || "";
