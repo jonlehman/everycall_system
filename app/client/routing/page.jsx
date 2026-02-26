@@ -43,7 +43,7 @@ export default function RoutingPage() {
   return (
     <section className="screen active">
       <div className="topbar"><h1>Call Routing</h1><div className="top-actions"><button className="btn brand" onClick={saveRouting}>Save Routing</button></div></div>
-      <div className="grid cols-2 help-split">
+      <div className="grid cols-2 help-split" style={{ '--grid-cols': '7fr 3fr' }}>
         <div>
           <div className="card">
             <label>Primary Callback Queue</label>
