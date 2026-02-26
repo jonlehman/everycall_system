@@ -182,9 +182,18 @@ export async function ensureTables(pool) {
     CREATE TABLE IF NOT EXISTS system_config (
       id SMALLINT PRIMARY KEY DEFAULT 1,
       global_emergency_phrase TEXT NOT NULL,
+      personality_prompt TEXT,
+      datetime_prompt TEXT,
+      numbers_symbols_prompt TEXT,
+      confirmation_prompt TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS personality_prompt TEXT;`);
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS datetime_prompt TEXT;`);
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS numbers_symbols_prompt TEXT;`);
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS confirmation_prompt TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS audit_log (

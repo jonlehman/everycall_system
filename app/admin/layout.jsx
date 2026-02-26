@@ -1,4 +1,5 @@
 import AdminSidebar from './_components/AdminSidebar';
+import './admin.css';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
