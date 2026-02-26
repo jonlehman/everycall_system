@@ -140,6 +140,8 @@ a { color: inherit; }
 .grid.cols-2 { grid-template-columns: var(--grid-cols, repeat(2, minmax(0, 1fr))); }
 .help-grid { grid-template-columns: 7fr 3fr; }
 .help-grid > * { min-width: 0; }
+.help-grid .table { width: 100%; table-layout: fixed; }
+.help-grid th, .help-grid td { overflow-wrap: anywhere; }
 
 .card {
   background: var(--card);
