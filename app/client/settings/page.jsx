@@ -43,7 +43,11 @@ export default function SettingsPage() {
         </div>
         <div className="card">
           <h2>Help</h2>
-          <p className="muted">View plan and compliance details here. Contact support to change data region or audit policies.</p>
+          <ul className="muted" style={{ paddingLeft: 18, marginTop: 8 }}>
+            <li>Review your plan, tenant name, and data region here.</li>
+            <li>Audit logging status reflects current compliance settings.</li>
+            <li>Contact support to change region or enterprise settings.</li>
+          </ul>
         </div>
       </div>
     </section>

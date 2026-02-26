@@ -176,7 +176,12 @@ export default function TeamPage() {
         </div>
         <div className="card">
           <h2>Help</h2>
-          <p className="muted">Control who can access calls, update routing, and edit customer-facing settings. Keep admin access limited.</p>
+          <ul className="muted" style={{ paddingLeft: 18, marginTop: 8 }}>
+            <li>Invite teammates who need access to calls or settings.</li>
+            <li>Use roles to control who can edit routing and FAQs.</li>
+            <li>Keep admin access limited to trusted owners.</li>
+            <li>Set status to “Invited” if the user hasn’t accepted yet.</li>
+          </ul>
         </div>
       </div>
     </section>

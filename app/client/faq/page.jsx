@@ -150,7 +150,12 @@ export default function FaqPage() {
         </div>
         <div className="card">
           <h2>Help</h2>
-          <p className="muted">These answers are used by the receptionist to respond instantly. Keep them concise, accurate, and updated as your policies and coverage change.</p>
+          <ul className="muted" style={{ paddingLeft: 18, marginTop: 8 }}>
+            <li>These answers are used by the receptionist during live calls.</li>
+            <li>Keep responses short, clear, and easy to say out loud.</li>
+            <li>Update items when service area, hours, or policies change.</li>
+            <li>Use categories to group similar questions for faster edits.</li>
+          </ul>
         </div>
       </div>
     </section>

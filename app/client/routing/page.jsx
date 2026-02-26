@@ -76,7 +76,12 @@ export default function RoutingPage() {
         </div>
         <div className="card">
           <h2>Help</h2>
-          <p className="muted">Define where callbacks go, how emergencies are handled, and what happens after hours. These rules shape every call flow.</p>
+          <ul className="muted" style={{ paddingLeft: 18, marginTop: 8 }}>
+            <li>Choose the primary team that receives callback requests.</li>
+            <li>Set how emergency calls are escalated.</li>
+            <li>Define after-hours behavior so callers get a clear next step.</li>
+            <li>Keep business hours current to prevent misrouting.</li>
+          </ul>
         </div>
       </div>
     </section>
