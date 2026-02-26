@@ -7,6 +7,7 @@ function getIndustryKey(req) {
 
 async function fetchSeedDefaults(pool, industryKey, defaultFaqs, defaultPrompts, options = {}) {
   const forcePrompt = options.forcePrompt === true;
+  const forceFaqs = options.forceFaqs === true;
   const inserted = { faqs: 0, prompt: 0 };
   const existingFaqs = await pool.query(
     `SELECT COUNT(*)::int AS count FROM industry_faqs WHERE industry_key = $1`,
@@ -16,7 +17,10 @@ async function fetchSeedDefaults(pool, industryKey, defaultFaqs, defaultPrompts,
     `SELECT prompt FROM industry_prompts WHERE industry_key = $1`,
     [industryKey]
   );
-  if ((existingFaqs.rows[0]?.count || 0) === 0) {
+  if (forceFaqs) {
+    await pool.query(`DELETE FROM industry_faqs WHERE industry_key = $1`, [industryKey]);
+  }
+  if (forceFaqs || (existingFaqs.rows[0]?.count || 0) === 0) {
     const faqs = defaultFaqs[industryKey] || [];
     for (const faq of faqs) {
       await pool.query(
@@ -645,7 +649,8 @@ export default async function handler(req, res) {
         const summary = [];
         for (const row of rows.rows) {
           const resp = await fetchSeedDefaults(pool, row.key, DEFAULT_FAQS, DEFAULT_PROMPTS, {
-            forcePrompt: true
+            forcePrompt: true,
+            forceFaqs: true
           });
           summary.push({ industryKey: row.key, inserted: resp });
         }
