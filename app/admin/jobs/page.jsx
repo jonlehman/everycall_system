@@ -17,6 +17,7 @@ export default function JobsPage() {
 
   const rows = jobs.map((job, idx) => ({
     id: job.id ?? `${job.tenant_key || 'tenant'}-${job.stage || 'stage'}-${job.updated_at || idx}`,
+    job: job.id ?? `${job.tenant_key || 'tenant'}-${job.stage || 'stage'}-${job.updated_at || idx}`,
     tenant: job.tenant_key,
     stage: job.stage,
     updated: new Date(job.updated_at).toLocaleTimeString(),
@@ -29,7 +30,6 @@ export default function JobsPage() {
       headerName: 'Job',
       flex: 0.4,
       minWidth: 120,
-      valueGetter: (params) => params.row.id,
       valueFormatter: ({ value }) => `prov_${value}`
     },
     { field: 'tenant', headerName: 'Tenant', flex: 1, minWidth: 160 },
