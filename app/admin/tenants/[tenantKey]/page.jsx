@@ -11,12 +11,24 @@ export default function TenantManagePage() {
   const [prompt, setPrompt] = useState('');
   const [status, setStatus] = useState('Idle');
   const [users, setUsers] = useState([]);
+  const [editing, setEditing] = useState({ status: '', plan: '', data_region: '', primary_number: '' });
 
   useEffect(() => {
     let mounted = true;
     fetch(`/api/v1/tenants?tenantKey=${encodeURIComponent(tenantKey)}`)
       .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => { if (mounted) setTenant(data?.tenant || null); })
+      .then((data) => {
+        if (!mounted) return;
+        setTenant(data?.tenant || null);
+        if (data?.tenant) {
+          setEditing({
+            status: data.tenant.status || 'active',
+            plan: data.tenant.plan || 'Growth',
+            data_region: data.tenant.data_region || 'US',
+            primary_number: data.tenant.primary_number || ''
+          });
+        }
+      })
       .catch(() => {});
 
     fetch(`/api/v1/config/agent?tenantKey=${encodeURIComponent(tenantKey)}`)
@@ -44,6 +56,42 @@ export default function TenantManagePage() {
       return;
     }
     setStatus('Saved.');
+  };
+
+  const saveTenantDetails = async () => {
+    setStatus('Saving tenant...');
+    const resp = await fetch('/api/v1/tenants', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tenantKey,
+        name: tenant?.name || tenantKey,
+        status: editing.status,
+        plan: editing.plan,
+        dataRegion: editing.data_region,
+        primaryNumber: editing.primary_number
+      })
+    });
+    setStatus(resp.ok ? 'Tenant saved.' : 'Save failed.');
+  };
+
+  const toggleTenantStatus = async () => {
+    const nextStatus = (editing.status === 'active') ? 'paused' : 'active';
+    setEditing({ ...editing, status: nextStatus });
+    setStatus('Updating status...');
+    const resp = await fetch('/api/v1/tenants', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tenantKey,
+        name: tenant?.name || tenantKey,
+        status: nextStatus,
+        plan: editing.plan,
+        dataRegion: editing.data_region,
+        primaryNumber: editing.primary_number
+      })
+    });
+    setStatus(resp.ok ? `Tenant ${nextStatus}.` : 'Update failed.');
   };
 
   const rows = users.map((u, idx) => ({
@@ -77,8 +125,10 @@ export default function TenantManagePage() {
           <h1>{tenant?.name || tenantKey}</h1>
         </div>
         <div className="top-actions">
-          <button className="btn">Pause Tenant</button>
-          <button className="btn brand" onClick={savePrompt}>Save Changes</button>
+          <button className="btn" onClick={toggleTenantStatus}>
+            {editing.status === 'active' ? 'Pause Tenant' : 'Resume Tenant'}
+          </button>
+          <button className="btn brand" onClick={saveTenantDetails}>Save Tenant</button>
         </div>
       </div>
 
@@ -86,10 +136,36 @@ export default function TenantManagePage() {
         <div className="card">
           <label>Tenant Details</label>
           <div className="kv">
-            <div>Status</div><div>{tenant?.status || '-'}</div>
-            <div>Data Region</div><div>{tenant?.data_region || '-'}</div>
-            <div>Primary Number</div><div>{tenant?.primary_number || '-'}</div>
-            <div>Plan</div><div>{tenant?.plan || '-'}</div>
+            <div>Status</div>
+            <div>
+              <select value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value })}>
+                <option value="active">Active</option>
+                <option value="paused">Paused</option>
+              </select>
+            </div>
+            <div>Data Region</div>
+            <div>
+              <select value={editing.data_region} onChange={(e) => setEditing({ ...editing, data_region: e.target.value })}>
+                <option value="US">US</option>
+                <option value="EU">EU</option>
+              </select>
+            </div>
+            <div>Primary Number</div>
+            <div>
+              <input value={editing.primary_number} onChange={(e) => setEditing({ ...editing, primary_number: e.target.value })} />
+            </div>
+            <div>Plan</div>
+            <div>
+              <select value={editing.plan} onChange={(e) => setEditing({ ...editing, plan: e.target.value })}>
+                <option value="Trial">Trial</option>
+                <option value="Growth">Growth</option>
+                <option value="Enterprise">Enterprise</option>
+              </select>
+            </div>
+          </div>
+          <div className="toolbar" style={{ marginTop: 10 }}>
+            <button className="btn brand" onClick={saveTenantDetails}>Save Tenant Details</button>
+            <span className="muted">{status}</span>
           </div>
         </div>
         <div className="card">

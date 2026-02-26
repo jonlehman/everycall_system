@@ -5,6 +5,8 @@ import { DataGrid } from '@mui/x-data-grid';
 
 export default function AdminAuditPage() {
   const [entries, setEntries] = useState([]);
+  const [search, setSearch] = useState('');
+  const [tenantFilter, setTenantFilter] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -18,7 +20,14 @@ export default function AdminAuditPage() {
     return () => { mounted = false; };
   }, []);
 
-  const rows = entries.map((entry, idx) => ({
+  const rows = entries
+    .filter((entry) => {
+      if (tenantFilter && entry.tenant_key !== tenantFilter) return false;
+      if (!search.trim()) return true;
+      const hay = `${entry.tenant_key} ${entry.actor} ${entry.action} ${entry.details}`.toLowerCase();
+      return hay.includes(search.trim().toLowerCase());
+    })
+    .map((entry, idx) => ({
     id: idx,
     tenant: entry.tenant_key || '-',
     actor: entry.actor || '-',
@@ -26,6 +35,8 @@ export default function AdminAuditPage() {
     details: entry.details || '-',
     createdAt: entry.created_at ? new Date(entry.created_at).toLocaleString() : '-'
   }));
+
+  const tenants = Array.from(new Set(entries.map((entry) => entry.tenant_key).filter(Boolean)));
 
   const columns = [
     { field: 'createdAt', headerName: 'Time', flex: 0.8, minWidth: 160 },
@@ -38,6 +49,18 @@ export default function AdminAuditPage() {
   return (
     <section className="screen active">
       <div className="topbar"><h1>Audit Log</h1></div>
+      <div className="toolbar" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
+        <label>Tenant</label>
+        <select value={tenantFilter} onChange={(e) => setTenantFilter(e.target.value)}>
+          <option value="">All</option>
+          {tenants.map((tenant) => (
+            <option key={tenant} value={tenant}>{tenant}</option>
+          ))}
+        </select>
+        <label>Search</label>
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="actor, action, details" />
+        <span className="muted">{rows.length} entries</span>
+      </div>
       <div className="card">
         <DataGrid
           rows={rows}
