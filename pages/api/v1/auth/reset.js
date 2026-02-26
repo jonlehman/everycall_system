@@ -39,15 +39,33 @@ export default async function handler(req, res) {
     }
 
     const hash = await bcrypt.hash(password, 10);
+    let updated = null;
     if (tokenRow.tenant_key) {
-      await pool.query(
+      updated = await pool.query(
         `UPDATE tenant_users
          SET password_hash = $1
-         WHERE id = $2 AND tenant_key = $3`,
-        [hash, tokenRow.user_id, tokenRow.tenant_key]
+         WHERE id = $2 AND email = $3 AND tenant_key = $4`,
+        [hash, tokenRow.user_id, tokenRow.email, tokenRow.tenant_key]
       );
     } else {
-      await pool.query(`UPDATE admin_users SET password_hash = $1 WHERE id = $2`, [hash, tokenRow.user_id]);
+      updated = await pool.query(
+        `UPDATE tenant_users
+         SET password_hash = $1
+         WHERE id = $2 AND email = $3`,
+        [hash, tokenRow.user_id, tokenRow.email]
+      );
+      if (!updated.rowCount) {
+        updated = await pool.query(
+          `UPDATE admin_users
+           SET password_hash = $1
+           WHERE id = $2 AND email = $3`,
+          [hash, tokenRow.user_id, tokenRow.email]
+        );
+      }
+    }
+
+    if (!updated?.rowCount) {
+      return res.status(400).json({ error: "user_not_found" });
     }
 
     await pool.query(`DELETE FROM auth_tokens WHERE token = $1`, [token]);
