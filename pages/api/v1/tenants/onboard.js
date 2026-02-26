@@ -1,20 +1,6 @@
 import bcrypt from "bcryptjs";
 import { ensureTables, getPool } from "../../_lib/db.js";
 
-const INDUSTRIES = [
-  "plumbing",
-  "window_installers",
-  "electrical",
-  "hvac",
-  "roofing",
-  "landscaping",
-  "cleaning",
-  "pest_control",
-  "garage_door",
-  "general_contractor",
-  "locksmith"
-];
-
 const BASE_FAQS = [
   {
     question: "What areas do you serve?",
@@ -231,7 +217,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "missing_fields" });
     }
 
-    if (!INDUSTRIES.includes(industry)) {
+    const industryRow = await pool.query(
+      `SELECT key FROM industries WHERE key = $1 AND active = true`,
+      [industry]
+    );
+    if (!industryRow.rowCount) {
       return res.status(400).json({ error: "invalid_industry" });
     }
 

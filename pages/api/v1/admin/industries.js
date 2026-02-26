@@ -138,6 +138,41 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, updated: updated.rowCount });
       }
 
+      if (mode === "applyfaqs") {
+        if (!industryKey) {
+          return res.status(400).json({ error: "missing_fields" });
+        }
+        const faqs = await pool.query(
+          `SELECT question, answer, category
+           FROM industry_faqs
+           WHERE industry_key = $1
+           ORDER BY id ASC`,
+          [industryKey]
+        );
+        if (!faqs.rowCount) {
+          return res.status(404).json({ error: "missing_faqs" });
+        }
+        const tenants = await pool.query(
+          `SELECT tenant_key FROM tenants WHERE industry = $1`,
+          [industryKey]
+        );
+        for (const tenant of tenants.rows) {
+          await pool.query(
+            `DELETE FROM faqs
+             WHERE tenant_key = $1 AND is_industry_default = true AND industry = $2`,
+            [tenant.tenant_key, industryKey]
+          );
+          for (const faq of faqs.rows) {
+            await pool.query(
+              `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_industry_default, industry)
+               VALUES ($1, $2, $3, $4, true, true, $5)`,
+              [tenant.tenant_key, faq.question, faq.answer, faq.category, industryKey]
+            );
+          }
+        }
+        return res.status(200).json({ ok: true, updated: tenants.rowCount });
+      }
+
       if (mode === "prompt") {
         const prompt = String(body.prompt || "").trim();
         if (!industryKey || !prompt) {

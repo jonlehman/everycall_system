@@ -107,6 +107,19 @@ export default function IndustryConfigPage() {
     setStatus(`Applied to ${data.updated || 0} tenants.`);
   };
 
+  const applyFaqsToTenants = async () => {
+    if (!selectedKey) return;
+    const resp = await fetch(`/api/v1/admin/industries?mode=applyFaqs&industryKey=${encodeURIComponent(selectedKey)}`, {
+      method: 'POST'
+    });
+    if (!resp.ok) {
+      setStatus('Apply FAQs failed.');
+      return;
+    }
+    const data = await resp.json();
+    setStatus(`Applied FAQs to ${data.updated || 0} tenants.`);
+  };
+
   const addFaq = async () => {
     if (!faqQuestion.trim() || !faqAnswer.trim()) {
       setStatus('Question and answer are required.');
@@ -300,6 +313,7 @@ export default function IndustryConfigPage() {
             </div>
             <div className="toolbar" style={{ marginTop: 10 }}>
               <button className="btn brand" onClick={addFaq}>Save FAQ</button>
+              <button className="btn" onClick={applyFaqsToTenants}>Apply FAQs to Tenants</button>
             </div>
             <div className="divider" style={{ borderTop: '1px solid #e2e8f0', margin: '12px 0' }}></div>
             <h3 style={{ margin: '0 0 8px' }}>Copy From Industry</h3>
