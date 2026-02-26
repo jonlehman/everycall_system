@@ -7,5 +7,5 @@
 }
 
 .help-split {
-  grid-template-columns: 7fr 3fr !important;
+  --grid-cols: 7fr 3fr;
 }
