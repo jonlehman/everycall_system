@@ -203,8 +203,27 @@ export default function IndustryConfigPage() {
     if (data.skipped) {
       setStatus('Defaults already exist for this industry.');
     } else {
-      setStatus(`Seeded ${data.inserted || 0} FAQs.`);
+      const faqCount = data.inserted?.faqs || 0;
+      const promptCount = data.inserted?.prompt ? 1 : 0;
+      setStatus(`Seeded ${faqCount} FAQs and ${promptCount} prompt.`);
       loadFaqs(selectedKey);
+      loadPrompt(selectedKey);
+    }
+  };
+
+  const seedAllDefaults = async () => {
+    const resp = await fetch('/api/v1/admin/industries?mode=seedAll', {
+      method: 'POST'
+    });
+    if (!resp.ok) {
+      setStatus('Seed all failed.');
+      return;
+    }
+    setStatus('Seeded defaults for all industries.');
+    loadIndustries();
+    if (selectedKey) {
+      loadFaqs(selectedKey);
+      loadPrompt(selectedKey);
     }
   };
 
@@ -270,6 +289,7 @@ export default function IndustryConfigPage() {
           <input value={industryKey} onChange={(event) => setIndustryKey(event.target.value)} placeholder="plumbing" />
           <div className="toolbar" style={{ marginTop: 10 }}>
             <button className="btn brand" onClick={createIndustry}>Save Industry</button>
+            <button className="btn" onClick={seedAllDefaults}>Seed All Defaults</button>
           </div>
         </div>
         <div>
