@@ -32,13 +32,6 @@ export default function FaqPage() {
   useEffect(() => {
     if (gridRef.current) {
       gridRef.current.style.gridTemplateColumns = '7fr 3fr';
-      const computed = window.getComputedStyle(gridRef.current).gridTemplateColumns;
-      console.log('[FAQ] gridTemplateColumns on mount:', computed);
-      setTimeout(() => {
-        if (!gridRef.current) return;
-        const later = window.getComputedStyle(gridRef.current).gridTemplateColumns;
-        console.log('[FAQ] gridTemplateColumns after 500ms:', later);
-      }, 500);
     }
   }, []);
 
