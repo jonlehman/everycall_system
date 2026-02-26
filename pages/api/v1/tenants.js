@@ -16,7 +16,7 @@ export default async function handler(req, res) {
       const tenantKey = req.query?.tenantKey;
       if (tenantKey) {
         const row = await pool.query(
-          `SELECT tenant_key, name, status, data_region, plan, primary_number
+          `SELECT tenant_key, name, status, data_region, plan, primary_number, industry
            FROM tenants
            WHERE tenant_key = $1
            LIMIT 1`,
@@ -26,7 +26,7 @@ export default async function handler(req, res) {
       }
 
       const rows = await pool.query(
-        `SELECT t.tenant_key, t.name, t.status, t.data_region, t.plan, t.primary_number,
+        `SELECT t.tenant_key, t.name, t.status, t.data_region, t.plan, t.primary_number, t.industry,
                 (SELECT COUNT(*)::int FROM tenant_users u WHERE u.tenant_key = t.tenant_key) AS user_count
          FROM tenants t
          ORDER BY t.name ASC`
@@ -45,18 +45,20 @@ export default async function handler(req, res) {
       const dataRegion = String(body.dataRegion || "US");
       const plan = String(body.plan || "Growth");
       const primaryNumber = body.primaryNumber ? String(body.primaryNumber) : null;
+      const industry = body.industry ? String(body.industry) : null;
 
       await pool.query(
-        `INSERT INTO tenants (tenant_key, name, status, data_region, plan, primary_number)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO tenants (tenant_key, name, status, data_region, plan, primary_number, industry)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (tenant_key)
          DO UPDATE SET name = EXCLUDED.name,
                        status = EXCLUDED.status,
                        data_region = EXCLUDED.data_region,
                        plan = EXCLUDED.plan,
                        primary_number = EXCLUDED.primary_number,
+                       industry = EXCLUDED.industry,
                        updated_at = NOW()`,
-        [tenantKey, name, status, dataRegion, plan, primaryNumber]
+        [tenantKey, name, status, dataRegion, plan, primaryNumber, industry]
       );
 
       return res.status(200).json({ ok: true });

@@ -600,6 +600,40 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, updated: updated.rowCount });
       }
 
+      if (mode === "importprompt") {
+        const targetTenant = String(body.tenantKey || "").trim();
+        if (!industryKey || !targetTenant) {
+          return res.status(400).json({ error: "missing_fields" });
+        }
+        const promptRow = await pool.query(
+          `SELECT prompt FROM industry_prompts WHERE industry_key = $1`,
+          [industryKey]
+        );
+        if (!promptRow.rowCount) {
+          return res.status(404).json({ error: "missing_prompt" });
+        }
+        const prompt = promptRow.rows[0].prompt;
+        const updated = await pool.query(
+          `UPDATE agents
+           SET tenant_prompt_override = $1,
+               system_prompt = $1,
+               updated_at = NOW()
+           WHERE tenant_key = $2
+           RETURNING tenant_key, agent_name, company_name`,
+          [prompt, targetTenant]
+        );
+        if (updated.rowCount) {
+          await pool.query(
+            `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override)
+             SELECT tenant_key, agent_name, company_name, $2, $2
+             FROM agents
+             WHERE tenant_key = $1`,
+            [targetTenant, prompt]
+          );
+        }
+        return res.status(200).json({ ok: true, updated: updated.rowCount || 0 });
+      }
+
       if (mode === "applyfaqs") {
         if (!industryKey) {
           return res.status(400).json({ error: "missing_fields" });
@@ -633,6 +667,36 @@ export default async function handler(req, res) {
           }
         }
         return res.status(200).json({ ok: true, updated: tenants.rowCount });
+      }
+
+      if (mode === "importfaqs") {
+        const targetTenant = String(body.tenantKey || "").trim();
+        if (!industryKey || !targetTenant) {
+          return res.status(400).json({ error: "missing_fields" });
+        }
+        const faqs = await pool.query(
+          `SELECT question, answer, category
+           FROM industry_faqs
+           WHERE industry_key = $1
+           ORDER BY id ASC`,
+          [industryKey]
+        );
+        if (!faqs.rowCount) {
+          return res.status(404).json({ error: "missing_faqs" });
+        }
+        await pool.query(
+          `DELETE FROM faqs
+           WHERE tenant_key = $1 AND is_industry_default = true AND industry = $2`,
+          [targetTenant, industryKey]
+        );
+        for (const faq of faqs.rows) {
+          await pool.query(
+            `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_industry_default, industry)
+             VALUES ($1, $2, $3, $4, true, true, $5)`,
+            [targetTenant, faq.question, faq.answer, faq.category, industryKey]
+          );
+        }
+        return res.status(200).json({ ok: true, updated: 1 });
       }
 
       if (mode === "seeddefaults") {

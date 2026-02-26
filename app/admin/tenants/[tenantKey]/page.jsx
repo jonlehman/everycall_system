@@ -12,7 +12,9 @@ export default function TenantManagePage() {
   const [status, setStatus] = useState('Idle');
   const [users, setUsers] = useState([]);
   const [composedPrompt, setComposedPrompt] = useState('');
-  const [editing, setEditing] = useState({ status: '', plan: '', data_region: '', primary_number: '' });
+  const [editing, setEditing] = useState({ status: '', plan: '', data_region: '', primary_number: '', industry: '' });
+  const [industries, setIndustries] = useState([]);
+  const [faqs, setFaqs] = useState([]);
 
   useEffect(() => {
     let mounted = true;
@@ -26,7 +28,8 @@ export default function TenantManagePage() {
             status: data.tenant.status || 'active',
             plan: data.tenant.plan || 'Growth',
             data_region: data.tenant.data_region || 'US',
-            primary_number: data.tenant.primary_number || ''
+            primary_number: data.tenant.primary_number || '',
+            industry: data.tenant.industry || ''
           });
         }
       })
@@ -45,6 +48,16 @@ export default function TenantManagePage() {
     fetch(`/api/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => { if (mounted) setUsers(data?.users || []); })
+      .catch(() => {});
+
+    fetch('/api/v1/admin/industries')
+      .then((resp) => resp.ok ? resp.json() : null)
+      .then((data) => { if (mounted) setIndustries(data?.industries || []); })
+      .catch(() => {});
+
+    fetch(`/api/v1/faq?tenantKey=${encodeURIComponent(tenantKey)}`)
+      .then((resp) => resp.ok ? resp.json() : null)
+      .then((data) => { if (mounted) setFaqs(data?.faqs || []); })
       .catch(() => {});
 
     return () => { mounted = false; };
@@ -80,6 +93,7 @@ export default function TenantManagePage() {
         plan: editing.plan,
         dataRegion: editing.data_region,
         primaryNumber: editing.primary_number
+        ,industry: editing.industry || null
       })
     });
     setStatus(resp.ok ? 'Tenant saved.' : 'Save failed.');
@@ -98,10 +112,59 @@ export default function TenantManagePage() {
         status: nextStatus,
         plan: editing.plan,
         dataRegion: editing.data_region,
-        primaryNumber: editing.primary_number
+        primaryNumber: editing.primary_number,
+        industry: editing.industry || null
       })
     });
     setStatus(resp.ok ? `Tenant ${nextStatus}.` : 'Update failed.');
+  };
+
+  const importIndustryPrompt = async () => {
+    if (!editing.industry) {
+      setStatus('Set an industry first.');
+      return;
+    }
+    setStatus('Importing prompt...');
+    const resp = await fetch(`/api/v1/admin/industries?mode=importPrompt&industryKey=${encodeURIComponent(editing.industry)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenantKey })
+    });
+    if (!resp.ok) {
+      setStatus('Import prompt failed.');
+      return;
+    }
+    setStatus('Prompt imported.');
+    fetch(`/api/v1/config/agent?tenantKey=${encodeURIComponent(tenantKey)}`)
+      .then((resp) => resp.ok ? resp.json() : null)
+      .then((data) => setPrompt(data?.tenantPromptOverride || data?.systemPrompt || ''))
+      .catch(() => {});
+    fetch(`/api/v1/config/agent?mode=preview&tenantKey=${encodeURIComponent(tenantKey)}`)
+      .then((resp) => resp.ok ? resp.json() : null)
+      .then((data) => setComposedPrompt(data?.composedPrompt || ''))
+      .catch(() => {});
+  };
+
+  const importIndustryFaqs = async () => {
+    if (!editing.industry) {
+      setStatus('Set an industry first.');
+      return;
+    }
+    setStatus('Importing FAQs...');
+    const resp = await fetch(`/api/v1/admin/industries?mode=importFaqs&industryKey=${encodeURIComponent(editing.industry)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenantKey })
+    });
+    if (!resp.ok) {
+      setStatus('Import FAQs failed.');
+      return;
+    }
+    setStatus('FAQs imported.');
+    fetch(`/api/v1/faq?tenantKey=${encodeURIComponent(tenantKey)}`)
+      .then((resp) => resp.ok ? resp.json() : null)
+      .then((data) => setFaqs(data?.faqs || []))
+      .catch(() => {});
   };
 
   const rows = users.map((u, idx) => ({
@@ -172,6 +235,15 @@ export default function TenantManagePage() {
                 <option value="Enterprise">Enterprise</option>
               </select>
             </div>
+            <div>Industry</div>
+            <div>
+              <select value={editing.industry || ''} onChange={(e) => setEditing({ ...editing, industry: e.target.value })}>
+                <option value="">Unassigned</option>
+                {industries.map((item) => (
+                  <option key={item.key} value={item.key}>{item.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="toolbar" style={{ marginTop: 10 }}>
             <button className="btn brand" onClick={saveTenantDetails}>Save Tenant Details</button>
@@ -184,6 +256,8 @@ export default function TenantManagePage() {
           <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} style={{ minHeight: 180 }}></textarea>
           <div className="toolbar" style={{ marginTop: 10 }}>
             <button className="btn brand" onClick={savePrompt}>Save Prompt</button>
+            <button className="btn" onClick={importIndustryPrompt}>Import Industry Prompt</button>
+            <button className="btn" onClick={importIndustryFaqs}>Import Industry FAQs</button>
             <span className="muted">{status}</span>
           </div>
         </div>
@@ -204,6 +278,34 @@ export default function TenantManagePage() {
           pageSizeOptions={[10, 25, 50]}
           initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
           localeText={{ noRowsLabel: 'No users yet.' }}
+          sx={{
+            border: 'none',
+            '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
+            '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
+            '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
+          }}
+        />
+      </div>
+
+      <div className="card" style={{ marginTop: 12 }}>
+        <label>Current FAQs</label>
+        <DataGrid
+          rows={faqs.map((faq) => ({
+            id: faq.id,
+            question: faq.question,
+            answer: faq.answer,
+            category: faq.category
+          }))}
+          columns={[
+            { field: 'question', headerName: 'Question', flex: 1.2, minWidth: 200 },
+            { field: 'answer', headerName: 'Answer', flex: 1.8, minWidth: 300 },
+            { field: 'category', headerName: 'Category', flex: 0.6, minWidth: 140 }
+          ]}
+          autoHeight
+          disableRowSelectionOnClick
+          pageSizeOptions={[10, 25, 50]}
+          initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
+          localeText={{ noRowsLabel: 'No FAQs yet.' }}
           sx={{
             border: 'none',
             '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
