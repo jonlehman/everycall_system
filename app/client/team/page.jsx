@@ -54,7 +54,7 @@ export default function TeamPage() {
       flex: 0.6,
       minWidth: 120,
       renderCell: (params) => (
-        <span className={`badge ${params.value === 'active' ? 'ok' : 'warn'}`}>{params.value}</span>
+        <span className={`badge ${params.value === 'active' ? 'ok' : params.value === 'invited' ? 'warn' : 'bad'}`}>{params.value}</span>
       )
     },
     {
@@ -64,8 +64,31 @@ export default function TeamPage() {
       filterable: false,
       align: 'right',
       headerAlign: 'right',
-      minWidth: 120,
-      renderCell: () => <button className="btn">Manage</button>
+      minWidth: 260,
+      renderCell: (params) => (
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', width: '100%' }}>
+          {params.row.status === 'invited' ? (
+            <button
+              className="btn"
+              onClick={() => resendInvite(params.row.id)}
+            >
+              Resend
+            </button>
+          ) : null}
+          <button
+            className="btn"
+            onClick={() => updateStatus(params.row.id, params.row.status === 'active' ? 'disabled' : 'active')}
+          >
+            {params.row.status === 'active' ? 'Deactivate' : 'Activate'}
+          </button>
+          <button
+            className="btn"
+            onClick={() => deleteUser(params.row.id)}
+          >
+            Delete
+          </button>
+        </div>
+      )
     }
   ];
 
@@ -96,6 +119,42 @@ export default function TeamPage() {
     setInviteRole('member');
     setInviteStatus('active');
     setShowInvite(false);
+    loadUsers();
+  };
+
+  const updateStatus = async (id, nextStatus) => {
+    const resp = await fetch('/api/v1/tenant/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'status', id, status: nextStatus })
+    });
+    if (!resp.ok) {
+      setInviteMessage('Status update failed.');
+      return;
+    }
+    loadUsers();
+  };
+
+  const resendInvite = async (id) => {
+    const resp = await fetch('/api/v1/tenant/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'resend', id })
+    });
+    if (!resp.ok) {
+      setInviteMessage('Resend failed.');
+      return;
+    }
+    setInviteMessage('Invite resent.');
+  };
+
+  const deleteUser = async (id) => {
+    if (!window.confirm('Delete this user?')) return;
+    const resp = await fetch(`/api/v1/tenant/users?id=${id}`, { method: 'DELETE' });
+    if (!resp.ok) {
+      setInviteMessage('Delete failed.');
+      return;
+    }
     loadUsers();
   };
 

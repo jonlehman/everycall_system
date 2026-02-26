@@ -15,12 +15,26 @@ const mailtrapSender = {
 
 const mailtrapClient = mailtrapToken ? new MailtrapClient({ token: mailtrapToken }) : null;
 
+async function createInviteToken({ email, tenantKey }) {
+  const token = crypto.randomBytes(24).toString("hex");
+  const pool = getPool();
+  if (pool) {
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await pool.query(
+      `INSERT INTO auth_tokens (token, token_type, email, tenant_key, expires_at)
+       VALUES ($1, 'invite', $2, $3, $4)`,
+      [token, email, tenantKey, expiresAt.toISOString()]
+    );
+  }
+  return token;
+}
+
 async function sendInviteEmail({ tenantKey, name, email, role }) {
   if (!mailtrapClient) return;
   const baseUrl = process.env.APP_BASE_URL || "https://everycallsystem.vercel.app";
 
   const subject = `You're invited to EveryCall (${tenantKey})`;
-  const token = crypto.randomBytes(24).toString("hex");
+  const token = await createInviteToken({ email, tenantKey });
   const inviteUrl = `${baseUrl}/accept-invite?token=${encodeURIComponent(token)}`;
   const text = [
     `Hi ${name},`,
@@ -33,16 +47,6 @@ async function sendInviteEmail({ tenantKey, name, email, role }) {
     "",
     "If you have questions, reply to this email."
   ].join("\n");
-
-  const pool = getPool();
-  if (pool) {
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await pool.query(
-      `INSERT INTO auth_tokens (token, token_type, email, tenant_key, expires_at)
-       VALUES ($1, 'invite', $2, $3, $4)`,
-      [token, email, tenantKey, expiresAt.toISOString()]
-    );
-  }
 
   await mailtrapClient.send({
     from: mailtrapSender,
@@ -79,6 +83,45 @@ export default async function handler(req, res) {
 
     if (req.method === "POST") {
       const body = typeof req.body === "object" && req.body ? req.body : {};
+      if (body.action === "status") {
+        const id = Number(body.id || 0);
+        const status = String(body.status || "");
+        if (!id || !status) {
+          return res.status(400).json({ error: "missing_fields" });
+        }
+        await pool.query(
+          `UPDATE tenant_users SET status = $2, updated_at = NOW()
+           WHERE tenant_key = $1 AND id = $3`,
+          [tenantKey, status, id]
+        );
+        return res.status(200).json({ ok: true });
+      }
+
+      if (body.action === "resend") {
+        const id = Number(body.id || 0);
+        if (!id) {
+          return res.status(400).json({ error: "missing_fields" });
+        }
+        const row = await pool.query(
+          `SELECT id, name, email, role, status
+           FROM tenant_users
+           WHERE tenant_key = $1 AND id = $2
+           LIMIT 1`,
+          [tenantKey, id]
+        );
+        if (!row.rowCount) {
+          return res.status(404).json({ error: "not_found" });
+        }
+        const user = row.rows[0];
+        await sendInviteEmail({ tenantKey, name: user.name, email: user.email, role: user.role });
+        await pool.query(
+          `UPDATE tenant_users SET status = 'invited', updated_at = NOW()
+           WHERE tenant_key = $1 AND id = $2`,
+          [tenantKey, id]
+        );
+        return res.status(200).json({ ok: true });
+      }
+
       const name = String(body.name || "").trim();
       const email = String(body.email || "").trim();
       if (!name || !email) {
@@ -105,7 +148,19 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    res.setHeader("Allow", "GET, POST");
+    if (req.method === "DELETE") {
+      const id = Number(req.query?.id || 0);
+      if (!id) {
+        return res.status(400).json({ error: "missing_fields" });
+      }
+      await pool.query(
+        `DELETE FROM tenant_users WHERE tenant_key = $1 AND id = $2`,
+        [tenantKey, id]
+      );
+      return res.status(200).json({ ok: true });
+    }
+
+    res.setHeader("Allow", "GET, POST, DELETE");
     return res.status(405).json({ error: "method_not_allowed" });
   } catch (err) {
     return res.status(500).json({ error: "tenant_users_error", message: err?.message || "unknown" });
