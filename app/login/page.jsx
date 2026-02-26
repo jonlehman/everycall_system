@@ -116,7 +116,17 @@ export default function LoginPage() {
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ email: resetEmail, role: resetRole })
                 });
-                setResetStatus(resp.ok ? 'Reset email sent.' : 'Request failed.');
+                if (!resp.ok) {
+                  const data = await resp.json().catch(() => ({}));
+                  setResetStatus(data?.error || 'Request failed.');
+                  return;
+                }
+                const data = await resp.json().catch(() => ({}));
+                if (data?.delivered === false) {
+                  setResetStatus(`Email delivery failed: ${data?.deliveryError || 'mail provider error'}.`);
+                  return;
+                }
+                setResetStatus('Reset email sent.');
               }}
             >
               Send Reset Email

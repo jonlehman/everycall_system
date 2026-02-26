@@ -50,19 +50,26 @@ export default async function handler(req, res) {
       [token, user.id, user.email, user.tenant_key || null, expiresAt.toISOString()]
     );
 
+    let delivered = false;
+    let deliveryError = null;
     if (mailtrapClient) {
       const baseUrl = process.env.APP_BASE_URL || "https://everycallsystem.vercel.app";
       const resetUrl = `${baseUrl}/reset?token=${encodeURIComponent(token)}`;
-      await mailtrapClient.send({
-        from: mailtrapSender,
-        to: [{ email }],
-        subject: "Reset your EveryCall password",
-        text: `Reset your password using this link:\n${resetUrl}\n\nThis link expires in 1 hour.`,
-        category: "Password Reset"
-      });
+      try {
+        await mailtrapClient.send({
+          from: mailtrapSender,
+          to: [{ email }],
+          subject: "Reset your EveryCall password",
+          text: `Reset your password using this link:\n${resetUrl}\n\nThis link expires in 1 hour.`,
+          category: "Password Reset"
+        });
+        delivered = true;
+      } catch (err) {
+        deliveryError = err?.message || "mailtrap_failed";
+      }
     }
 
-    return res.status(200).json({ ok: true });
+    return res.status(200).json({ ok: true, delivered, deliveryError });
   } catch (err) {
     return res.status(500).json({ error: "reset_request_error", message: err?.message || "unknown" });
   }
