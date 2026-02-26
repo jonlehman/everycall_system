@@ -1,7 +1,41 @@
 import { ensureTables, getPool } from "../../_lib/db.js";
+import { MailtrapClient } from "mailtrap";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
+}
+
+const mailtrapToken = process.env.MAILTRAP_TOKEN;
+const mailtrapSender = {
+  email: process.env.MAILTRAP_SENDER_EMAIL || "hello@demomailtrap.co",
+  name: process.env.MAILTRAP_SENDER_NAME || "EveryCall"
+};
+
+const mailtrapClient = mailtrapToken ? new MailtrapClient({ token: mailtrapToken }) : null;
+
+async function sendInviteEmail({ tenantKey, name, email, role }) {
+  if (!mailtrapClient) return;
+
+  const subject = `You're invited to EveryCall (${tenantKey})`;
+  const text = [
+    `Hi ${name},`,
+    "",
+    `You've been invited to join the EveryCall workspace for tenant "${tenantKey}".`,
+    `Role: ${role}.`,
+    "",
+    "You can access the workspace here:",
+    "https://everycallsystem.vercel.app/login",
+    "",
+    "If you have questions, reply to this email."
+  ].join("\n");
+
+  await mailtrapClient.send({
+    from: mailtrapSender,
+    to: [{ email }],
+    subject,
+    text,
+    category: "Invite"
+  });
 }
 
 export default async function handler(req, res) {
@@ -40,6 +74,12 @@ export default async function handler(req, res) {
          VALUES ($1, $2, $3, $4, $5)`,
         [tenantKey, name, email, role, status]
       );
+      try {
+        await sendInviteEmail({ tenantKey, name, email, role });
+      } catch (mailErr) {
+        // Email failure should not block user creation.
+        console.error("mailtrap_invite_failed", mailErr?.message || mailErr);
+      }
       return res.status(200).json({ ok: true });
     }
 
