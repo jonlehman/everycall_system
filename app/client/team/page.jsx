@@ -1,12 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { DataGrid } from '@mui/x-data-grid';
 
 export default function TeamPage() {
-  const searchParams = useSearchParams();
-  const tenantKey = searchParams.get('tenantKey') || 'default';
   const [users, setUsers] = useState([]);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteName, setInviteName] = useState('');
@@ -18,7 +15,7 @@ export default function TeamPage() {
 
   const loadUsers = () => {
     let mounted = true;
-    fetch(`/api/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`)
+    fetch(`/api/v1/tenant/users`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => {
         if (!mounted || !data) return;
@@ -31,7 +28,7 @@ export default function TeamPage() {
   useEffect(() => {
     const cleanup = loadUsers();
     return cleanup;
-  }, [tenantKey]);
+  }, []);
 
   useEffect(() => {
     if (gridRef.current) {
@@ -79,7 +76,7 @@ export default function TeamPage() {
       setInviteMessage('Name and email are required.');
       return;
     }
-    const resp = await fetch(`/api/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`, {
+    const resp = await fetch(`/api/v1/tenant/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

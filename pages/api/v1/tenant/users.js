@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { MailtrapClient } from "mailtrap";
@@ -16,19 +17,32 @@ const mailtrapClient = mailtrapToken ? new MailtrapClient({ token: mailtrapToken
 
 async function sendInviteEmail({ tenantKey, name, email, role }) {
   if (!mailtrapClient) return;
+  const baseUrl = process.env.APP_BASE_URL || "https://everycallsystem.vercel.app";
 
   const subject = `You're invited to EveryCall (${tenantKey})`;
+  const token = crypto.randomBytes(24).toString("hex");
+  const inviteUrl = `${baseUrl}/accept-invite?token=${encodeURIComponent(token)}`;
   const text = [
     `Hi ${name},`,
     "",
     `You've been invited to join the EveryCall workspace for tenant "${tenantKey}".`,
     `Role: ${role}.`,
     "",
-    "You can access the workspace here:",
-    "https://everycallsystem.vercel.app/login",
+    "Accept your invite here:",
+    inviteUrl,
     "",
     "If you have questions, reply to this email."
   ].join("\n");
+
+  const pool = getPool();
+  if (pool) {
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await pool.query(
+      `INSERT INTO auth_tokens (token, token_type, email, tenant_key, expires_at)
+       VALUES ($1, 'invite', $2, $3, $4)`,
+      [token, email, tenantKey, expiresAt.toISOString()]
+    );
+  }
 
   await mailtrapClient.send({
     from: mailtrapSender,
@@ -71,10 +85,15 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "missing_fields" });
       }
       const role = String(body.role || "member");
-      const status = String(body.status || "active");
+      const status = String(body.status || "invited");
       await pool.query(
         `INSERT INTO tenant_users (tenant_key, name, email, role, status)
-         VALUES ($1, $2, $3, $4, $5)`,
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (email)
+         DO UPDATE SET tenant_key = EXCLUDED.tenant_key,
+                       name = EXCLUDED.name,
+                       role = EXCLUDED.role,
+                       status = EXCLUDED.status`,
         [tenantKey, name, email, role, status]
       );
       try {

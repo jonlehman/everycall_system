@@ -1,18 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-
 export default function SettingsPage() {
-  const searchParams = useSearchParams();
-  const tenantKey = searchParams.get('tenantKey') || 'default';
   const [tenant, setTenant] = useState({ name: '-', plan: '-', data_region: '-' });
   const [auditEnabled, setAuditEnabled] = useState('-');
   const gridRef = useRef(null);
 
   useEffect(() => {
     let mounted = true;
-    fetch(`/api/v1/settings?tenantKey=${encodeURIComponent(tenantKey)}`)
+    fetch(`/api/v1/settings`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => {
         if (!mounted || !data) return;
@@ -21,7 +17,7 @@ export default function SettingsPage() {
       })
       .catch(() => {});
     return () => { mounted = false; };
-  }, [tenantKey]);
+  }, []);
 
   useEffect(() => {
     if (gridRef.current) {

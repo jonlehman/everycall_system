@@ -9,6 +9,9 @@ export default function LoginPage() {
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminStatus, setAdminStatus] = useState('');
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetRole, setResetRole] = useState('tenant');
+  const [resetStatus, setResetStatus] = useState('');
 
   const login = async ({ email, password, role, setStatus, onSuccess }) => {
     setStatus('Signing in...');
@@ -87,6 +90,35 @@ export default function LoginPage() {
               Sign In to Admin Console
             </button>
             <span className="muted">{adminStatus}</span>
+          </div>
+        </section>
+        <section className="card">
+          <h2>Reset Password</h2>
+          <p className="muted">We will email a reset link.</p>
+          <label>Email</label>
+          <input placeholder="you@company.com" value={resetEmail} onChange={(event) => setResetEmail(event.target.value)} />
+          <label>Account Type</label>
+          <select value={resetRole} onChange={(event) => setResetRole(event.target.value)}>
+            <option value="tenant">Client User</option>
+            <option value="admin">Admin User</option>
+          </select>
+          <div className="toolbar" style={{ marginTop: 12 }}>
+            <button
+              className="btn"
+              type="button"
+              onClick={async () => {
+                setResetStatus('Sending...');
+                const resp = await fetch('/api/v1/auth/request-reset', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ email: resetEmail, role: resetRole })
+                });
+                setResetStatus(resp.ok ? 'Reset email sent.' : 'Request failed.');
+              }}
+            >
+              Send Reset Email
+            </button>
+            <span className="muted">{resetStatus}</span>
           </div>
         </section>
       </div>

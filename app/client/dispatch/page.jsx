@@ -1,16 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-
 export default function DispatchPage() {
-  const searchParams = useSearchParams();
-  const tenantKey = searchParams.get('tenantKey') || 'default';
   const [counts, setCounts] = useState({ new: 0, assigned: 0, closed: 0 });
 
   useEffect(() => {
     let mounted = true;
-    fetch(`/api/v1/dispatch?tenantKey=${encodeURIComponent(tenantKey)}`)
+    fetch(`/api/v1/dispatch`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => {
         if (!mounted || !data) return;
@@ -18,7 +14,7 @@ export default function DispatchPage() {
       })
       .catch(() => {});
     return () => { mounted = false; };
-  }, [tenantKey]);
+  }, []);
 
   return (
     <section className="screen active">

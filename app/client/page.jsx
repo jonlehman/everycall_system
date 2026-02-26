@@ -1,5 +1,10 @@
-import { redirect } from 'next/navigation';
+'use client';
+
+import { useEffect } from 'react';
 
 export default function Page() {
-  redirect('/client/overview');
+  useEffect(() => {
+    window.location.href = '/client/overview';
+  }, []);
+  return null;
 }

@@ -5,6 +5,11 @@ import { DataGrid } from '@mui/x-data-grid';
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState([]);
+  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [role, setRole] = useState('admin');
+  const [password, setPassword] = useState('');
+  const [status, setStatus] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -17,6 +22,13 @@ export default function AdminUsersPage() {
       .catch(() => {});
     return () => { mounted = false; };
   }, []);
+
+  const loadUsers = () => {
+    fetch('/api/v1/admin/users')
+      .then((resp) => resp.ok ? resp.json() : null)
+      .then((data) => setUsers(data?.users || []))
+      .catch(() => {});
+  };
 
   const rows = users.map((user, idx) => ({
     id: idx,
@@ -33,9 +45,55 @@ export default function AdminUsersPage() {
     { field: 'lastActive', headerName: 'Last Active', flex: 0.8, minWidth: 160 }
   ];
 
+  const saveUser = async () => {
+    if (!email.trim() || !password.trim()) {
+      setStatus('Email and password are required.');
+      return;
+    }
+    const resp = await fetch('/api/v1/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, username, role, password })
+    });
+    if (!resp.ok) {
+      setStatus('Save failed.');
+      return;
+    }
+    setStatus('Saved.');
+    setEmail('');
+    setUsername('');
+    setRole('admin');
+    setPassword('');
+    loadUsers();
+  };
+
   return (
     <section className="screen active">
       <div className="topbar"><h1>Admin Users</h1></div>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <h2>Create / Reset Admin User</h2>
+        <div className="grid cols-2">
+          <div>
+            <label>Email</label>
+            <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@everycall.io" />
+            <label style={{ marginTop: 10 }}>Username</label>
+            <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="admin" />
+          </div>
+          <div>
+            <label>Role</label>
+            <select value={role} onChange={(event) => setRole(event.target.value)}>
+              <option value="admin">Admin</option>
+              <option value="super_admin">Super Admin</option>
+            </select>
+            <label style={{ marginTop: 10 }}>Password</label>
+            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Set password" />
+          </div>
+        </div>
+        <div className="toolbar" style={{ marginTop: 10 }}>
+          <button className="btn brand" onClick={saveUser}>Save Admin User</button>
+          <span className="muted">{status}</span>
+        </div>
+      </div>
       <div className="card">
         <DataGrid
           rows={rows}

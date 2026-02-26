@@ -2,15 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-
-function withTenant(path, tenantKey) {
-  return tenantKey ? `${path}?tenantKey=${encodeURIComponent(tenantKey)}` : path;
-}
 
 export default function Header() {
-  const searchParams = useSearchParams();
-  const tenantKey = searchParams.get('tenantKey') || 'default';
   const [tenantName, setTenantName] = useState('Tenant');
   const [open, setOpen] = useState(false);
   const timerRef = useRef(null);
@@ -47,7 +40,7 @@ export default function Header() {
 
   useEffect(() => {
     let mounted = true;
-    fetch(`/api/v1/settings?tenantKey=${encodeURIComponent(tenantKey)}`)
+    fetch(`/api/v1/settings`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => {
         if (!mounted || !data?.tenant?.name) return;
@@ -55,7 +48,7 @@ export default function Header() {
       })
       .catch(() => {});
     return () => { mounted = false; };
-  }, [tenantKey]);
+  }, []);
 
   return (
     <div className="topbar" style={{ justifyContent: 'flex-end' }}>
@@ -96,10 +89,10 @@ export default function Header() {
             }}
           >
             <div className="muted" style={{ fontSize: 12, padding: '6px 8px' }}>Setup</div>
-            <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href={withTenant('/client/faq', tenantKey)}>Questions and Answers</Link>
-            <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href={withTenant('/client/team', tenantKey)}>Team Users</Link>
-            <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href={withTenant('/client/routing', tenantKey)}>Call Routing</Link>
-            <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href={withTenant('/client/settings', tenantKey)}>Account Settings</Link>
+            <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href="/client/faq">Questions and Answers</Link>
+            <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href="/client/team">Team Users</Link>
+            <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href="/client/routing">Call Routing</Link>
+            <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href="/client/settings">Account Settings</Link>
             <div style={{ height: 1, background: '#e2e8f0', margin: '8px 0' }}></div>
             <button
               className="menu-link"

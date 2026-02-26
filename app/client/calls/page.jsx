@@ -1,18 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { DataGrid } from '@mui/x-data-grid';
 
 export default function CallsPage() {
-  const searchParams = useSearchParams();
-  const tenantKey = searchParams.get('tenantKey') || 'default';
   const [calls, setCalls] = useState([]);
   const [detail, setDetail] = useState('Select a call to inspect transcript, extracted fields, and routing result.');
 
   useEffect(() => {
     let mounted = true;
-    fetch(`/api/v1/calls?tenantKey=${encodeURIComponent(tenantKey)}`)
+    fetch(`/api/v1/calls`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => {
         if (!mounted || !data) return;
@@ -20,10 +17,10 @@ export default function CallsPage() {
       })
       .catch(() => {});
     return () => { mounted = false; };
-  }, [tenantKey]);
+  }, []);
 
   const loadDetail = async (callSid) => {
-    const resp = await fetch(`/api/v1/calls?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(callSid)}`);
+    const resp = await fetch(`/api/v1/calls?callSid=${encodeURIComponent(callSid)}`);
     if (!resp.ok) return;
     const data = await resp.json();
     setDetail(JSON.stringify(data.call || {}, null, 2));

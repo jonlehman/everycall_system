@@ -194,6 +194,20 @@ export async function ensureTables(pool) {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS auth_tokens (
+      id BIGSERIAL PRIMARY KEY,
+      token TEXT NOT NULL UNIQUE,
+      token_type TEXT NOT NULL,
+      user_id BIGINT,
+      email TEXT,
+      tenant_key TEXT,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS auth_tokens_token_idx ON auth_tokens (token);`);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS system_config (
       id SMALLINT PRIMARY KEY DEFAULT 1,
       global_emergency_phrase TEXT NOT NULL,

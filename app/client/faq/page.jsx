@@ -2,11 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
-import { useSearchParams } from 'next/navigation';
-
 export default function FaqPage() {
-  const searchParams = useSearchParams();
-  const tenantKey = searchParams.get('tenantKey') || 'default';
   const [faqs, setFaqs] = useState([]);
   const [status, setStatus] = useState('Ready.');
   const [question, setQuestion] = useState('');
@@ -16,7 +12,7 @@ export default function FaqPage() {
 
   const loadFaqs = () => {
     setStatus('Loading FAQs...');
-    fetch(`/api/v1/faq?tenantKey=${encodeURIComponent(tenantKey)}`)
+    fetch(`/api/v1/faq`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => {
         if (!data) return;
@@ -28,7 +24,7 @@ export default function FaqPage() {
 
   useEffect(() => {
     loadFaqs();
-  }, [tenantKey]);
+  }, []);
 
   useEffect(() => {
     if (gridRef.current) {
@@ -37,7 +33,7 @@ export default function FaqPage() {
   }, []);
 
   const deleteFaq = async (id) => {
-    const resp = await fetch(`/api/v1/faq?tenantKey=${encodeURIComponent(tenantKey)}&id=${id}`, { method: 'DELETE' });
+    const resp = await fetch(`/api/v1/faq?id=${id}`, { method: 'DELETE' });
     if (!resp.ok) return;
     loadFaqs();
     setStatus('Deleted FAQ.');
@@ -51,7 +47,7 @@ export default function FaqPage() {
     const resp = await fetch('/api/v1/faq', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantKey, question: question.trim(), answer: answer.trim(), category: category.trim() || 'General' })
+      body: JSON.stringify({ question: question.trim(), answer: answer.trim(), category: category.trim() || 'General' })
     });
     if (!resp.ok) {
       setStatus('Save failed.');

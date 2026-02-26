@@ -1,11 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-
 export default function RoutingPage() {
-  const searchParams = useSearchParams();
-  const tenantKey = searchParams.get('tenantKey') || 'default';
   const [primaryQueue, setPrimaryQueue] = useState('Dispatch Team');
   const [emergencyBehavior, setEmergencyBehavior] = useState('Immediate Transfer');
   const [afterHours, setAfterHours] = useState('Collect details and dispatch callback');
@@ -14,7 +10,7 @@ export default function RoutingPage() {
 
   useEffect(() => {
     let mounted = true;
-    fetch(`/api/v1/routing?tenantKey=${encodeURIComponent(tenantKey)}`)
+    fetch(`/api/v1/routing`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => {
         if (!mounted || !data?.routing) return;
@@ -25,7 +21,7 @@ export default function RoutingPage() {
       })
       .catch(() => {});
     return () => { mounted = false; };
-  }, [tenantKey]);
+  }, []);
 
   useEffect(() => {
     if (gridRef.current) {
@@ -38,7 +34,6 @@ export default function RoutingPage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        tenantKey,
         primaryQueue,
         emergencyBehavior,
         afterHoursBehavior: afterHours,

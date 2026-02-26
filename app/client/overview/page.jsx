@@ -2,18 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
-import { useSearchParams } from 'next/navigation';
-
 export default function OverviewPage() {
-  const searchParams = useSearchParams();
-  const tenantKey = searchParams.get('tenantKey') || 'default';
   const [stats, setStats] = useState({ callsToday: 0, missed: 0, urgent: 0, callbacksDue: 0 });
   const [recentCalls, setRecentCalls] = useState([]);
   const [actionQueue, setActionQueue] = useState([]);
 
   useEffect(() => {
     let mounted = true;
-    fetch(`/api/v1/overview?tenantKey=${encodeURIComponent(tenantKey)}`)
+    fetch(`/api/v1/overview`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => {
         if (!mounted || !data) return;
@@ -23,7 +19,7 @@ export default function OverviewPage() {
       })
       .catch(() => {});
     return () => { mounted = false; };
-  }, [tenantKey]);
+  }, []);
 
   const rows = recentCalls.map((call, idx) => ({
     id: call.call_sid || idx,

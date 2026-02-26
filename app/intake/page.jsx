@@ -164,9 +164,8 @@ export default function IntakePage() {
 
       const data = await resp.json();
       setStatusMessage('Trial created. Redirecting to workspace...', 'ok');
-      const tenantKey = data.tenantKey || '';
       setTimeout(() => {
-        window.location.href = `/client/overview?tenantKey=${encodeURIComponent(tenantKey)}`;
+        window.location.href = `/client/overview`;
       }, 1200);
     } catch (err) {
       setStatusMessage(err.message || 'Request failed.', 'bad');
