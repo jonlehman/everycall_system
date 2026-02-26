@@ -34,7 +34,7 @@ export default async function handler(req, res) {
 
     const limit = Math.max(1, Math.min(Number(req.query?.limit) || 30, 200));
     const rows = await pool.query(
-      `SELECT call_sid, from_number, status, created_at
+      `SELECT call_sid, from_number, status, urgency, created_at
        FROM calls
        WHERE tenant_key = $1
        ORDER BY created_at DESC

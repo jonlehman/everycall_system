@@ -8,6 +8,8 @@ export default function DispatchPage() {
   const [items, setItems] = useState([]);
   const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState('Ready.');
+  const [users, setUsers] = useState([]);
+  const [newItem, setNewItem] = useState({ callerName: '', summary: '', dueAt: '', assignedTo: '', status: 'new' });
 
   const loadDispatch = () => {
     let mounted = true;
@@ -25,6 +27,13 @@ export default function DispatchPage() {
   useEffect(() => {
     const cleanup = loadDispatch();
     return cleanup;
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/v1/tenant/users')
+      .then((resp) => resp.ok ? resp.json() : null)
+      .then((data) => setUsers(data?.users || []))
+      .catch(() => {});
   }, []);
 
   const rows = useMemo(() => items.map((item) => ({
@@ -73,6 +82,33 @@ export default function DispatchPage() {
     loadDispatch();
   };
 
+  const createItem = async () => {
+    if (!newItem.callerName.trim() || !newItem.summary.trim()) {
+      setStatus('Caller and summary are required.');
+      return;
+    }
+    setStatus('Creating...');
+    const resp = await fetch('/api/v1/dispatch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create',
+        callerName: newItem.callerName,
+        summary: newItem.summary,
+        dueAt: newItem.dueAt || null,
+        assignedTo: newItem.assignedTo || null,
+        status: newItem.status
+      })
+    });
+    if (!resp.ok) {
+      setStatus('Create failed.');
+      return;
+    }
+    setStatus('Created.');
+    setNewItem({ callerName: '', summary: '', dueAt: '', assignedTo: '', status: 'new' });
+    loadDispatch();
+  };
+
   return (
     <section className="screen active">
       <div className="topbar">
@@ -88,6 +124,48 @@ export default function DispatchPage() {
       </div>
       <div className="split" style={{ marginTop: 12 }}>
         <div className="card">
+          <h2>New Dispatch Item</h2>
+          <label>Caller</label>
+          <input
+            value={newItem.callerName}
+            onChange={(event) => setNewItem({ ...newItem, callerName: event.target.value })}
+            placeholder="Caller name"
+          />
+          <label style={{ marginTop: 10 }}>Summary</label>
+          <textarea
+            value={newItem.summary}
+            onChange={(event) => setNewItem({ ...newItem, summary: event.target.value })}
+            style={{ minHeight: 90 }}
+            placeholder="Issue summary"
+          />
+          <label style={{ marginTop: 10 }}>Status</label>
+          <select
+            value={newItem.status}
+            onChange={(event) => setNewItem({ ...newItem, status: event.target.value })}
+          >
+            <option value="new">New</option>
+            <option value="assigned">Assigned</option>
+          </select>
+          <label style={{ marginTop: 10 }}>Assigned To</label>
+          <select
+            value={newItem.assignedTo}
+            onChange={(event) => setNewItem({ ...newItem, assignedTo: event.target.value })}
+          >
+            <option value="">Unassigned</option>
+            {users.map((user) => (
+              <option key={user.email} value={user.email}>{user.name} ({user.email})</option>
+            ))}
+          </select>
+          <label style={{ marginTop: 10 }}>Due Date</label>
+          <input
+            type="datetime-local"
+            value={newItem.dueAt}
+            onChange={(event) => setNewItem({ ...newItem, dueAt: event.target.value })}
+          />
+          <div className="toolbar" style={{ marginTop: 10 }}>
+            <button className="btn brand" onClick={createItem}>Add Item</button>
+          </div>
+          <div style={{ height: 1, background: '#e2e8f0', margin: '12px 0' }}></div>
           <DataGrid
             rows={rows}
             columns={columns}
@@ -128,11 +206,15 @@ export default function DispatchPage() {
                 <option value="closed">Closed</option>
               </select>
               <label style={{ marginTop: 10 }}>Assigned To</label>
-              <input
+              <select
                 value={selected.assigned_to || ''}
                 onChange={(event) => setSelected({ ...selected, assigned_to: event.target.value })}
-                placeholder="Dispatcher name"
-              />
+              >
+                <option value="">Unassigned</option>
+                {users.map((user) => (
+                  <option key={user.email} value={user.email}>{user.name} ({user.email})</option>
+                ))}
+              </select>
               <label style={{ marginTop: 10 }}>Due Date</label>
               <input
                 type="datetime-local"

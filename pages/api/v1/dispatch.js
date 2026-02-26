@@ -51,6 +51,24 @@ export default async function handler(req, res) {
 
     if (req.method === "POST") {
       const body = typeof req.body === "object" && req.body ? req.body : {};
+      if (body.action === "create") {
+        const callerName = String(body.callerName || "").trim();
+        const summary = String(body.summary || "").trim();
+        const dueAt = body.dueAt ? new Date(body.dueAt) : null;
+        const assignedTo = body.assignedTo ? String(body.assignedTo) : null;
+        const status = String(body.status || "new");
+        if (!callerName || !summary) {
+          return res.status(400).json({ error: "missing_fields" });
+        }
+        const row = await pool.query(
+          `INSERT INTO dispatch_queue (tenant_key, caller_name, summary, due_at, assigned_to, status)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id`,
+          [tenantKey, callerName, summary, dueAt, assignedTo, status]
+        );
+        return res.status(200).json({ ok: true, id: row.rows[0]?.id });
+      }
+
       if (!body.id || !body.status) {
         return res.status(400).json({ error: "missing_fields" });
       }
