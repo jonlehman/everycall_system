@@ -212,6 +212,8 @@ export default function IndustryConfigPage() {
   };
 
   const seedAllDefaults = async () => {
+    const confirmed = window.confirm('Are you sure you want to seed defaults for all industries?');
+    if (!confirmed) return;
     const resp = await fetch('/api/v1/admin/industries?mode=seedAll', {
       method: 'POST'
     });
