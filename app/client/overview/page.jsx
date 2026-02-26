@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { DataGrid } from '@mui/x-data-grid';
 import { useSearchParams } from 'next/navigation';
 
 export default function OverviewPage() {
@@ -24,6 +25,30 @@ export default function OverviewPage() {
     return () => { mounted = false; };
   }, [tenantKey]);
 
+  const rows = recentCalls.map((call, idx) => ({
+    id: call.call_sid || idx,
+    time: new Date(call.created_at).toLocaleTimeString(),
+    caller: call.from_number || '-',
+    status: call.urgency === 'high' ? 'Urgent' : call.status || 'Handled',
+    statusTone: call.urgency === 'high' ? 'warn' : call.status === 'error' ? 'bad' : 'ok',
+    summary: call.summary || '-'
+  }));
+
+  const columns = [
+    { field: 'time', headerName: 'Time', flex: 0.6, minWidth: 100 },
+    { field: 'caller', headerName: 'Caller', flex: 1, minWidth: 160 },
+    {
+      field: 'status',
+      headerName: 'Status',
+      flex: 0.6,
+      minWidth: 120,
+      renderCell: (params) => (
+        <span className={`badge ${params.row.statusTone}`}>{params.value}</span>
+      )
+    },
+    { field: 'summary', headerName: 'Summary', flex: 1.4, minWidth: 220 }
+  ];
+
   return (
     <section className="screen active">
       <div className="topbar">
@@ -42,21 +67,21 @@ export default function OverviewPage() {
         <div className="card">
           <h2>Recent Calls</h2>
           <div className="table-wrap">
-            <table className="table">
-              <thead><tr><th>Time</th><th>Caller</th><th>Status</th><th>Summary</th></tr></thead>
-              <tbody>
-                {recentCalls.length === 0 ? (
-                  <tr><td colSpan="4" className="muted">No recent calls.</td></tr>
-                ) : recentCalls.map((call) => (
-                  <tr key={call.call_sid || call.created_at}>
-                    <td>{new Date(call.created_at).toLocaleTimeString()}</td>
-                    <td>{call.from_number || '-'}</td>
-                    <td><span className={`badge ${call.urgency === 'high' ? 'warn' : call.status === 'error' ? 'bad' : 'ok'}`}>{call.urgency === 'high' ? 'Urgent' : call.status || 'Handled'}</span></td>
-                    <td>{call.summary || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataGrid
+              rows={rows}
+              columns={columns}
+              autoHeight
+              disableRowSelectionOnClick
+              pageSizeOptions={[5, 10, 25]}
+              initialState={{ pagination: { paginationModel: { pageSize: 5, page: 0 } } }}
+              localeText={{ noRowsLabel: 'No recent calls.' }}
+              sx={{
+                border: 'none',
+                '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
+                '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
+                '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
+              }}
+            />
           </div>
         </div>
         <div className="card">

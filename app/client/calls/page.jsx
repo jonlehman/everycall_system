@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { DataGrid } from '@mui/x-data-grid';
 
 export default function CallsPage() {
   const searchParams = useSearchParams();
@@ -28,6 +29,29 @@ export default function CallsPage() {
     setDetail(JSON.stringify(data.call || {}, null, 2));
   };
 
+  const rows = calls.map((call, idx) => ({
+    id: call.call_sid || idx,
+    sid: call.call_sid,
+    from: call.from_number || '-',
+    when: new Date(call.created_at).toLocaleString(),
+    status: call.status
+  }));
+
+  const columns = [
+    { field: 'sid', headerName: 'SID', flex: 1, minWidth: 160 },
+    { field: 'from', headerName: 'From', flex: 1, minWidth: 160 },
+    { field: 'when', headerName: 'When', flex: 1, minWidth: 180 },
+    {
+      field: 'status',
+      headerName: 'Status',
+      flex: 0.6,
+      minWidth: 120,
+      renderCell: (params) => (
+        <span className={`badge ${params.value === 'error' ? 'bad' : 'ok'}`}>{params.value}</span>
+      )
+    }
+  ];
+
   return (
     <section className="screen active">
       <div className="topbar">
@@ -36,21 +60,24 @@ export default function CallsPage() {
       </div>
       <div className="split">
         <div className="card">
-          <table className="table" id="callsTable">
-            <thead><tr><th>SID</th><th>From</th><th>When</th><th>Status</th></tr></thead>
-            <tbody>
-              {calls.length === 0 ? (
-                <tr><td colSpan="4" className="muted">No calls yet.</td></tr>
-              ) : calls.map((call) => (
-                <tr key={call.call_sid} onClick={() => loadDetail(call.call_sid)} style={{ cursor: 'pointer' }}>
-                  <td>{call.call_sid}</td>
-                  <td>{call.from_number || '-'}</td>
-                  <td>{new Date(call.created_at).toLocaleString()}</td>
-                  <td><span className={`badge ${call.status === 'error' ? 'bad' : 'ok'}`}>{call.status}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ height: rows.length ? 'auto' : 300 }}>
+            <DataGrid
+              rows={rows}
+              columns={columns}
+              autoHeight
+              disableRowSelectionOnClick
+              pageSizeOptions={[10, 25, 50]}
+              initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
+              localeText={{ noRowsLabel: 'No calls yet.' }}
+              onRowClick={(params) => loadDetail(params.row.sid)}
+              sx={{
+                border: 'none',
+                '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
+                '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
+                '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
+              }}
+            />
+          </div>
         </div>
         <div className="card">
           <h2>Call Detail</h2>
