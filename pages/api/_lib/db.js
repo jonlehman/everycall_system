@@ -124,11 +124,13 @@ export async function ensureTables(pool) {
       caller_name TEXT,
       summary TEXT,
       due_at TIMESTAMPTZ,
+      assigned_to TEXT,
       status TEXT NOT NULL DEFAULT 'new',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE dispatch_queue ADD COLUMN IF NOT EXISTS assigned_to TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS routing_rules (

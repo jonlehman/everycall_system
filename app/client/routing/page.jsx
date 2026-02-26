@@ -7,6 +7,8 @@ export default function RoutingPage() {
   const [afterHours, setAfterHours] = useState('Collect details and dispatch callback');
   const [businessHours, setBusinessHours] = useState('Mon-Fri 7:00 AM - 8:00 PM\nEmergency service 24/7');
   const gridRef = useRef(null);
+  const [status, setStatus] = useState('Ready.');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -30,7 +32,13 @@ export default function RoutingPage() {
   }, []);
 
   const saveRouting = async () => {
-    await fetch('/api/v1/routing', {
+    if (!primaryQueue || !emergencyBehavior || !afterHours || !businessHours.trim()) {
+      setStatus('All fields are required.');
+      return;
+    }
+    setSaving(true);
+    setStatus('Saving...');
+    const resp = await fetch('/api/v1/routing', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -40,11 +48,19 @@ export default function RoutingPage() {
         businessHours
       })
     });
+    setSaving(false);
+    setStatus(resp.ok ? 'Saved.' : 'Save failed.');
   };
 
   return (
     <section className="screen active">
-      <div className="topbar"><h1>Call Routing</h1><div className="top-actions"><button className="btn brand" onClick={saveRouting}>Save Routing</button></div></div>
+      <div className="topbar">
+        <h1>Call Routing</h1>
+        <div className="top-actions">
+          <button className="btn brand" onClick={saveRouting} disabled={saving}>Save Routing</button>
+          <span className="muted" style={{ marginLeft: 10 }}>{status}</span>
+        </div>
+      </div>
       <div ref={gridRef} className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
         <div>
           <div className="card">

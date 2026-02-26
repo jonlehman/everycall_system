@@ -1,22 +1,32 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 
 export default function CallsPage() {
   const [calls, setCalls] = useState([]);
   const [detail, setDetail] = useState('Select a call to inspect transcript, extracted fields, and routing result.');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
+  const loadCalls = () => {
+    setLoading(true);
     let mounted = true;
     fetch(`/api/v1/calls`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => {
         if (!mounted || !data) return;
         setCalls(data.calls || []);
+        setLoading(false);
       })
-      .catch(() => {});
+      .catch(() => setLoading(false));
     return () => { mounted = false; };
+  };
+
+  useEffect(() => {
+    const cleanup = loadCalls();
+    return cleanup;
   }, []);
 
   const loadDetail = async (callSid) => {
@@ -26,13 +36,22 @@ export default function CallsPage() {
     setDetail(JSON.stringify(data.call || {}, null, 2));
   };
 
-  const rows = calls.map((call, idx) => ({
+  const rows = useMemo(() => calls.map((call, idx) => ({
     id: call.call_sid || idx,
     sid: call.call_sid,
     from: call.from_number || '-',
     when: new Date(call.created_at).toLocaleString(),
     status: call.status
-  }));
+  })), [calls]);
+
+  const filteredRows = rows.filter((row) => {
+    if (statusFilter !== 'all' && row.status !== statusFilter) return false;
+    if (search.trim()) {
+      const hay = `${row.sid} ${row.from}`.toLowerCase();
+      if (!hay.includes(search.trim().toLowerCase())) return false;
+    }
+    return true;
+  });
 
   const columns = [
     { field: 'sid', headerName: 'SID', flex: 1, minWidth: 160 },
@@ -53,13 +72,27 @@ export default function CallsPage() {
     <section className="screen active">
       <div className="topbar">
         <h1>Call Inbox</h1>
-        <div className="top-actions"><button className="btn">Refresh</button></div>
+        <div className="top-actions">
+          <button className="btn" onClick={loadCalls}>Refresh</button>
+        </div>
+      </div>
+      <div className="toolbar" style={{ marginBottom: 12 }}>
+        <label>Status</label>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <option value="all">All</option>
+          <option value="completed">Completed</option>
+          <option value="missed">Missed</option>
+          <option value="error">Error</option>
+        </select>
+        <label>Search</label>
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Caller or SID" />
+        <span className="muted">{loading ? 'Loading...' : `${filteredRows.length} calls`}</span>
       </div>
       <div className="split">
         <div className="card">
           <div style={{ height: rows.length ? 'auto' : 300 }}>
             <DataGrid
-              rows={rows}
+              rows={filteredRows}
               columns={columns}
               autoHeight
               disableRowSelectionOnClick
