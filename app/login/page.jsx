@@ -64,9 +64,12 @@ export default function LoginPage() {
             </button>
             <span className="muted">{clientStatus}</span>
           </div>
+          <div style={{ marginTop: 8 }}>
+            <a className="link" href="#reset-password">Forgot password?</a>
+          </div>
         </section>
 
-        <section className="card">
+        <section className="card" id="reset-password">
           <h2>Admin Console Login</h2>
           <p className="muted">For platform operator access only.</p>
           <label>Admin Email</label>
