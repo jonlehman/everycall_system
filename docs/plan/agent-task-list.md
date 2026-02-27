@@ -9,6 +9,12 @@ Use the **Status** column and keep **Dependencies** accurate.
 - `blocked`
 - `done`
 
+## Active Agents
+- Dev A (Core Platform)
+- Dev B (Telephony + Webhooks)
+- Dev C (Data + Admin UX)
+- Smoke Agent (Testing after each task marked done)
+
 ## Task Index
 1. Foundation & Infrastructure
 2. Voice Processing (MVP, no emergency dispatch)
@@ -26,9 +32,9 @@ Use the **Status** column and keep **Dependencies** accurate.
 ## 1) Foundation & Infrastructure
 | ID | Task | Owner | Status | Dependencies | Notes |
 |---|---|---|---|---|---|
-| F1 | Confirm Vercel env vars (DATABASE_URL, OPENAI_API_KEY, TELNYX_API_KEY, APP_BASE_URL) | | not started | — | Required for most flows |
-| F2 | Add Telnyx webhook signature verification | | not started | F1 | Use TELNYX_API_KEY |
-| F3 | DB migrations sanity check on prod | | not started | F1 | Ensure new columns exist |
+| F1 | Confirm Vercel env vars (DATABASE_URL, OPENAI_API_KEY, TELNYX_API_KEY, APP_BASE_URL) | Dev A | in progress | — | Required for most flows |
+| F2 | Add Telnyx webhook signature verification | Dev B | not started | F1 | Use TELNYX_API_KEY |
+| F3 | DB migrations sanity check on prod | Dev C | not started | F1 | Ensure new columns exist |
 | F4 | Confirm DNS + domain routing for app.everycall.io | | not started | — | Must resolve to Vercel |
 | F5 | Deploy call-gateway service | | not started | F1 | Required for smoke tests |
 | F6 | Deploy ai-orchestrator service | | not started | F1 | Required for smoke tests |
