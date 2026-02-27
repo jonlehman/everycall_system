@@ -19,7 +19,10 @@ export default async function handler(req, res) {
                 datetime_prompt,
                 numbers_symbols_prompt,
                 confirmation_prompt,
-                faq_usage_prompt
+                faq_usage_prompt,
+                telnyx_sms_number,
+                telnyx_sms_number_id,
+                telnyx_sms_messaging_profile_id
          FROM system_config WHERE id = 1`
       );
       return res.status(200).json({ config: row.rows[0] || null });
@@ -33,12 +36,15 @@ export default async function handler(req, res) {
       const numbersSymbols = String(body.numbersSymbolsPrompt || "").trim();
       const confirmation = String(body.confirmationPrompt || "").trim();
       const faqUsage = String(body.faqUsagePrompt || "").trim();
+      const telnyxSmsNumber = String(body.telnyxSmsNumber || "").trim();
+      const telnyxSmsNumberId = String(body.telnyxSmsNumberId || "").trim();
+      const telnyxSmsMessagingProfileId = String(body.telnyxSmsMessagingProfileId || "").trim();
       if (!phrase) {
         return res.status(400).json({ error: "missing_phrase" });
       }
       await pool.query(
-        `INSERT INTO system_config (id, global_emergency_phrase, personality_prompt, datetime_prompt, numbers_symbols_prompt, confirmation_prompt, faq_usage_prompt)
-         VALUES (1, $1, $2, $3, $4, $5, $6)
+        `INSERT INTO system_config (id, global_emergency_phrase, personality_prompt, datetime_prompt, numbers_symbols_prompt, confirmation_prompt, faq_usage_prompt, telnyx_sms_number, telnyx_sms_number_id, telnyx_sms_messaging_profile_id)
+         VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (id)
          DO UPDATE SET global_emergency_phrase = EXCLUDED.global_emergency_phrase,
                        personality_prompt = EXCLUDED.personality_prompt,
@@ -46,8 +52,11 @@ export default async function handler(req, res) {
                        numbers_symbols_prompt = EXCLUDED.numbers_symbols_prompt,
                        confirmation_prompt = EXCLUDED.confirmation_prompt,
                        faq_usage_prompt = EXCLUDED.faq_usage_prompt,
+                       telnyx_sms_number = EXCLUDED.telnyx_sms_number,
+                       telnyx_sms_number_id = EXCLUDED.telnyx_sms_number_id,
+                       telnyx_sms_messaging_profile_id = EXCLUDED.telnyx_sms_messaging_profile_id,
                        updated_at = NOW()`,
-        [phrase, personality, dateTime, numbersSymbols, confirmation, faqUsage]
+        [phrase, personality, dateTime, numbersSymbols, confirmation, faqUsage, telnyxSmsNumber, telnyxSmsNumberId, telnyxSmsMessagingProfileId]
       );
       return res.status(200).json({ ok: true });
     }

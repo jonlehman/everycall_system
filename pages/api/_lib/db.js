@@ -222,6 +222,9 @@ export async function ensureTables(pool) {
       numbers_symbols_prompt TEXT,
       confirmation_prompt TEXT,
       faq_usage_prompt TEXT,
+      telnyx_sms_number TEXT,
+      telnyx_sms_number_id TEXT,
+      telnyx_sms_messaging_profile_id TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -231,6 +234,9 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS numbers_symbols_prompt TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS confirmation_prompt TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS faq_usage_prompt TEXT;`);
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_number TEXT;`);
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_number_id TEXT;`);
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_messaging_profile_id TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS audit_log (
