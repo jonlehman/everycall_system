@@ -16,7 +16,6 @@ const openAiModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const signatureRequired = (process.env.TELNYX_SIGNATURE_REQUIRED || "true").toLowerCase() !== "false";
 
 app.set("trust proxy", true);
-app.use(express.urlencoded({ extended: false }));
 
 function parseFormBody(raw: string): Record<string, string> {
   const params = new URLSearchParams(raw);
