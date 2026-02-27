@@ -23,6 +23,23 @@ function parseFormBody(raw: string): Record<string, string> {
   return Object.fromEntries(params.entries());
 }
 
+function parseTelnyxParams(rawBody: string, contentType: string | undefined): Record<string, string> {
+  const ct = (contentType || "").toLowerCase();
+  if (ct.includes("application/json") && rawBody.trim().startsWith("{")) {
+    try {
+      const json = JSON.parse(rawBody);
+      if (json && typeof json === "object") {
+        return Object.fromEntries(
+          Object.entries(json).map(([key, value]) => [key, String(value ?? "")])
+        );
+      }
+    } catch {
+      return {};
+    }
+  }
+  return parseFormBody(rawBody);
+}
+
 function buildBaseUrl(req: express.Request) {
   if (callGatewayBaseUrl) return callGatewayBaseUrl;
   return `${req.protocol}://${req.get("host")}`;
@@ -127,8 +144,10 @@ app.post("/v1/telnyx/texml/inbound", express.raw({ type: "*/*" }), async (req, r
   logInfo("telnyx_texml_inbound_request", {
     path: req.path,
     contentLength: req.header("content-length"),
+    contentType: req.header("content-type"),
     hasSignature: Boolean(req.header("telnyx-signature-ed25519")),
-    hasTimestamp: Boolean(req.header("telnyx-timestamp"))
+    hasTimestamp: Boolean(req.header("telnyx-timestamp")),
+    bodyPreview: rawBody ? rawBody.slice(0, 200) : ""
   });
   if (signatureRequired && !verifyTelnyx(req, rawBody)) {
     logError("telnyx_signature_invalid", {
@@ -144,7 +163,7 @@ app.post("/v1/telnyx/texml/inbound", express.raw({ type: "*/*" }), async (req, r
   }
 
   try {
-    const params = parseFormBody(rawBody);
+    const params = parseTelnyxParams(rawBody, req.header("content-type"));
     const toRaw = String(params.To || "");
     const fromRaw = String(params.From || "");
     const to = normalizePhone(toRaw);
@@ -208,8 +227,10 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
   logInfo("telnyx_texml_gather_request", {
     path: req.path,
     contentLength: req.header("content-length"),
+    contentType: req.header("content-type"),
     hasSignature: Boolean(req.header("telnyx-signature-ed25519")),
-    hasTimestamp: Boolean(req.header("telnyx-timestamp"))
+    hasTimestamp: Boolean(req.header("telnyx-timestamp")),
+    bodyPreview: rawBody ? rawBody.slice(0, 200) : ""
   });
   if (signatureRequired && !verifyTelnyx(req, rawBody)) {
     logError("telnyx_signature_invalid", {
@@ -225,7 +246,7 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
   }
 
   try {
-    const params = parseFormBody(rawBody);
+    const params = parseTelnyxParams(rawBody, req.header("content-type"));
     const tenantKey = String(req.query?.tenantKey || "");
     const callSid = String(req.query?.callSid || params.CallSid || "unknown");
     const speech = String(params.SpeechResult || "");
