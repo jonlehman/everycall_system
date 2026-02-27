@@ -342,16 +342,20 @@ export default async function handler(req, res) {
       emergency: emergencyServices
     });
 
+    const agentName = "Alex";
+    const greetingText = `Hi, thanks for calling ${businessName}. This is ${agentName}, how can I help you?`;
+    const voiceType = "alloy";
+
     await pool.query(
-      `INSERT INTO agents (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override)
-       VALUES ($1, 'Alex', $2, $3, $4)`,
-      [tenantKey, businessName, prompt, prompt]
+      `INSERT INTO agents (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override, greeting_text, voice_type)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [tenantKey, agentName, businessName, prompt, prompt, greetingText, voiceType]
     );
 
     await pool.query(
-      `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override)
-       VALUES ($1, 'Alex', $2, $3, $4)`,
-      [tenantKey, businessName, prompt, prompt]
+      `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override, greeting_text, voice_type)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [tenantKey, agentName, businessName, prompt, prompt, greetingText, voiceType]
     );
 
     for (const faq of BASE_FAQS) {

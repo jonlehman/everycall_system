@@ -9,6 +9,8 @@ export default function TenantManagePage() {
   const tenantKey = params.tenantKey;
   const [tenant, setTenant] = useState(null);
   const [prompt, setPrompt] = useState('');
+  const [greetingText, setGreetingText] = useState('');
+  const [voiceType, setVoiceType] = useState('alloy');
   const [status, setStatus] = useState('Idle');
   const [users, setUsers] = useState([]);
   const [composedPrompt, setComposedPrompt] = useState('');
@@ -37,7 +39,12 @@ export default function TenantManagePage() {
 
     fetch(`/api/v1/config/agent?tenantKey=${encodeURIComponent(tenantKey)}`)
       .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => { if (mounted) setPrompt(data?.tenantPromptOverride || data?.systemPrompt || ''); })
+      .then((data) => {
+        if (!mounted) return;
+        setPrompt(data?.tenantPromptOverride || data?.systemPrompt || '');
+        setGreetingText(data?.greetingText || '');
+        setVoiceType(data?.voiceType || 'alloy');
+      })
       .catch(() => {});
 
     fetch(`/api/v1/config/agent?mode=preview&tenantKey=${encodeURIComponent(tenantKey)}`)
@@ -68,7 +75,7 @@ export default function TenantManagePage() {
     const resp = await fetch('/api/v1/config/agent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantKey, systemPrompt: prompt })
+      body: JSON.stringify({ tenantKey, systemPrompt: prompt, greetingText, voiceType })
     });
     if (!resp.ok) {
       setStatus('Save failed.');
@@ -274,6 +281,21 @@ export default function TenantManagePage() {
             <button className="btn" onClick={importIndustryFaqs}>Import Industry FAQs</button>
             <span className="muted">{status}</span>
           </div>
+        </div>
+        <div className="card" style={{ marginTop: 12 }}>
+          <label>Agent Greeting</label>
+          <textarea
+            value={greetingText}
+            onChange={(e) => setGreetingText(e.target.value)}
+            placeholder="Hi, thanks for calling..."
+            style={{ minHeight: 110 }}
+          />
+          <label style={{ marginTop: 10 }}>Voice Type</label>
+          <select value={voiceType} onChange={(e) => setVoiceType(e.target.value)}>
+            {['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'shimmer'].map((voice) => (
+              <option key={voice} value={voice}>{voice}</option>
+            ))}
+          </select>
         </div>
       </div>
 

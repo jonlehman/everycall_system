@@ -121,6 +121,8 @@ const defaultConfig = {
   tenantKey: DEFAULT_TENANT_KEY,
   agentName: "Sarah",
   companyName: "Bob's Plumbing",
+  greetingText: "Hi, thanks for calling Bob's Plumbing. This is Sarah, how can I help you?",
+  voiceType: "alloy",
   systemPrompt: defaultAgentPrompt,
   storage: "default"
 };
@@ -191,7 +193,7 @@ export async function getAgentConfig(tenantKey = DEFAULT_TENANT_KEY) {
   await ensureTables(pool);
 
   const result = await pool.query(
-    `SELECT tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override
+    `SELECT tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override, greeting_text, voice_type
      FROM agents WHERE tenant_key = $1 LIMIT 1`,
     [tenantKey]
   );
@@ -206,6 +208,8 @@ export async function getAgentConfig(tenantKey = DEFAULT_TENANT_KEY) {
     tenantKey: row.tenant_key,
     agentName: row.agent_name,
     companyName: row.company_name,
+    greetingText: row.greeting_text || "",
+    voiceType: row.voice_type || "",
     systemPrompt: composed,
     tenantPromptOverride: row.tenant_prompt_override || row.system_prompt || "",
     storage: "database"
@@ -225,27 +229,31 @@ export async function setAgentConfig(update) {
     tenantKey,
     agentName: update?.agentName || current.agentName,
     companyName: update?.companyName || current.companyName,
+    greetingText: update?.greetingText ?? current.greetingText,
+    voiceType: update?.voiceType ?? current.voiceType,
     systemPrompt: update?.systemPrompt || current.tenantPromptOverride || current.systemPrompt
   };
 
   await ensureTables(pool);
 
   await pool.query(
-    `INSERT INTO agents (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO agents (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override, greeting_text, voice_type)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (tenant_key)
      DO UPDATE SET agent_name = EXCLUDED.agent_name,
                    company_name = EXCLUDED.company_name,
                    system_prompt = EXCLUDED.system_prompt,
                    tenant_prompt_override = EXCLUDED.tenant_prompt_override,
+                   greeting_text = EXCLUDED.greeting_text,
+                   voice_type = EXCLUDED.voice_type,
                    updated_at = NOW()`,
-    [next.tenantKey, next.agentName, next.companyName, next.systemPrompt, next.systemPrompt]
+    [next.tenantKey, next.agentName, next.companyName, next.systemPrompt, next.systemPrompt, next.greetingText, next.voiceType]
   );
 
   await pool.query(
-    `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [next.tenantKey, next.agentName, next.companyName, next.systemPrompt, next.systemPrompt]
+    `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override, greeting_text, voice_type)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [next.tenantKey, next.agentName, next.companyName, next.systemPrompt, next.systemPrompt, next.greetingText, next.voiceType]
   );
 
   return { ...next, storage: "database" };
@@ -261,7 +269,7 @@ export async function listAgentConfigVersions(tenantKey = DEFAULT_TENANT_KEY, li
   const safeLimit = Math.max(1, Math.min(Number(limit) || 20, 100));
 
   const result = await pool.query(
-    `SELECT id, tenant_key, agent_name, company_name, created_at, tenant_prompt_override
+    `SELECT id, tenant_key, agent_name, company_name, created_at, tenant_prompt_override, greeting_text, voice_type
      FROM agent_versions
      WHERE tenant_key = $1
      ORDER BY id DESC
@@ -275,7 +283,9 @@ export async function listAgentConfigVersions(tenantKey = DEFAULT_TENANT_KEY, li
     agentName: row.agent_name,
     companyName: row.company_name,
     createdAt: row.created_at,
-    tenantPromptOverride: row.tenant_prompt_override || ""
+    tenantPromptOverride: row.tenant_prompt_override || "",
+    greetingText: row.greeting_text || "",
+    voiceType: row.voice_type || ""
   }));
 }
 
@@ -288,7 +298,7 @@ export async function restoreAgentConfigVersion(tenantKey = DEFAULT_TENANT_KEY, 
   await ensureTables(pool);
 
   const result = await pool.query(
-    `SELECT tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override
+    `SELECT tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override, greeting_text, voice_type
      FROM agent_versions
      WHERE tenant_key = $1 AND id = $2
      LIMIT 1`,
@@ -304,6 +314,8 @@ export async function restoreAgentConfigVersion(tenantKey = DEFAULT_TENANT_KEY, 
     tenantKey: row.tenant_key,
     agentName: row.agent_name,
     companyName: row.company_name,
-    systemPrompt: row.tenant_prompt_override || row.system_prompt
+    systemPrompt: row.tenant_prompt_override || row.system_prompt,
+    greetingText: row.greeting_text || "",
+    voiceType: row.voice_type || ""
   });
 }

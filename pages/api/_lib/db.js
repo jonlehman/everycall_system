@@ -76,10 +76,14 @@ export async function ensureTables(pool) {
       company_name TEXT NOT NULL,
       system_prompt TEXT NOT NULL,
       tenant_prompt_override TEXT,
+      greeting_text TEXT,
+      voice_type TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
   await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS tenant_prompt_override TEXT;`);
+  await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS greeting_text TEXT;`);
+  await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS voice_type TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS agent_versions (
@@ -89,10 +93,14 @@ export async function ensureTables(pool) {
       company_name TEXT NOT NULL,
       system_prompt TEXT NOT NULL,
       tenant_prompt_override TEXT,
+      greeting_text TEXT,
+      voice_type TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
   await pool.query(`ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS tenant_prompt_override TEXT;`);
+  await pool.query(`ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS greeting_text TEXT;`);
+  await pool.query(`ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS voice_type TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS faqs (

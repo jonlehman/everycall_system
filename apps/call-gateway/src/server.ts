@@ -47,6 +47,7 @@ type StreamSession = {
   outputActive?: boolean;
   responseActive?: boolean;
   instructions?: string;
+  voiceOverride?: string;
   rtpSeq?: number;
   rtpTimestamp?: number;
   rtpSsrc?: number;
@@ -224,7 +225,7 @@ function connectOpenAiRealtime(session: StreamSession) {
         instructions,
         input_audio_format: openAiRealtimeInputFormat,
         output_audio_format: openAiRealtimeOutputFormat,
-        voice: openAiRealtimeVoice,
+        voice: session.voiceOverride || openAiRealtimeVoice,
         turn_detection: { type: "server_vad", silence_duration_ms: 900, prefix_padding_ms: 300 },
         input_audio_transcription: { model: "gpt-4o-mini-transcribe", language: "en" }
       }
@@ -423,6 +424,10 @@ function isDonePhrase(text: string) {
   return /\b(no|nope|that'?s it|thats it|nothing else|done|goodbye|bye|stop)\b/i.test(String(text || ""));
 }
 
+function buildDefaultGreeting(companyName: string, agentName: string) {
+  return `Hi, thanks for calling ${companyName}. This is ${agentName}, how can I help you?`;
+}
+
 async function composePromptForTenant(tenantKey: string) {
   if (!pool) return "";
   const systemParts = await pool.query(
@@ -557,6 +562,13 @@ app.post("/v1/telnyx/texml/inbound", express.raw({ type: "*/*" }), async (req, r
     }
     const tenantKey = tenantRow.rows[0].tenant_key;
     const companyName = tenantRow.rows[0].name || "our team";
+    const agentRow = await pool.query(
+      `SELECT agent_name, greeting_text, voice_type FROM agents WHERE tenant_key = $1 LIMIT 1`,
+      [tenantKey]
+    );
+    const agentName = agentRow.rows[0]?.agent_name || "our team";
+    const greetingText = agentRow.rows[0]?.greeting_text || "";
+    const voiceType = agentRow.rows[0]?.voice_type || "";
 
     await pool.query(
       `INSERT INTO calls (call_sid, tenant_key, from_number, to_number, status)
@@ -575,7 +587,9 @@ app.post("/v1/telnyx/texml/inbound", express.raw({ type: "*/*" }), async (req, r
       [callSid, JSON.stringify({ turn: 0, history: [] })]
     );
 
-    const greeting = `Thanks for calling ${companyName}. I can help get you scheduled. What's your name and best callback number?`;
+    const greeting =
+      greetingText.trim() ||
+      buildDefaultGreeting(companyName, agentName);
     const actionUrl = `${buildBaseUrl(req)}/v1/telnyx/texml/gather?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(callSid)}`;
     logInfo("telnyx_texml_inbound_response", {
       callSid,
@@ -862,6 +876,13 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
 
     const tenantKey = tenantRow.rows[0].tenant_key;
     const companyName = tenantRow.rows[0].name || "our team";
+    const agentRow = await pool.query(
+      `SELECT agent_name, greeting_text, voice_type FROM agents WHERE tenant_key = $1 LIMIT 1`,
+      [tenantKey]
+    );
+    const agentName = agentRow.rows[0]?.agent_name || "our team";
+    const greetingText = agentRow.rows[0]?.greeting_text || "";
+    const voiceType = agentRow.rows[0]?.voice_type || "";
 
     await pool.query(
       `INSERT INTO calls (call_sid, tenant_key, from_number, to_number, status)
@@ -880,7 +901,9 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
       [callSid, JSON.stringify({ turn: 0, history: [] })]
     );
 
-    const greeting = `Thanks for calling ${companyName}. I can help get you scheduled. What's your name and best callback number?`;
+    const greeting =
+      greetingText.trim() ||
+      buildDefaultGreeting(companyName, agentName);
     const instructions = await composePromptForTenant(tenantKey);
 
     streamSessions.set(callControlId, {
@@ -889,6 +912,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
       tenantKey,
       greeting,
       instructions,
+      ...(voiceType ? { voiceOverride: voiceType } : {}),
       awaitingAnswer: true
     });
     try {

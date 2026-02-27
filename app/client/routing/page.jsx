@@ -6,6 +6,8 @@ export default function RoutingPage() {
   const [emergencyBehavior, setEmergencyBehavior] = useState('Immediate Transfer');
   const [afterHours, setAfterHours] = useState('Collect details and dispatch callback');
   const [businessHours, setBusinessHours] = useState('Mon-Fri 7:00 AM - 8:00 PM\nEmergency service 24/7');
+  const [greetingText, setGreetingText] = useState('');
+  const [voiceType, setVoiceType] = useState('alloy');
   const gridRef = useRef(null);
   const [status, setStatus] = useState('Ready.');
   const [saving, setSaving] = useState(false);
@@ -20,6 +22,14 @@ export default function RoutingPage() {
         setEmergencyBehavior(data.routing.emergency_behavior);
         setAfterHours(data.routing.after_hours_behavior);
         setBusinessHours(data.routing.business_hours);
+      })
+      .catch(() => {});
+    fetch(`/api/v1/agent`)
+      .then((resp) => resp.ok ? resp.json() : null)
+      .then((data) => {
+        if (!mounted || !data) return;
+        setGreetingText(data.greetingText || '');
+        setVoiceType(data.voiceType || 'alloy');
       })
       .catch(() => {});
     return () => { mounted = false; };
@@ -48,8 +58,16 @@ export default function RoutingPage() {
         businessHours
       })
     });
+    const agentResp = await fetch('/api/v1/agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        greetingText,
+        voiceType
+      })
+    });
     setSaving(false);
-    setStatus(resp.ok ? 'Saved.' : 'Save failed.');
+    setStatus(resp.ok && agentResp.ok ? 'Saved.' : 'Save failed.');
   };
 
   return (
@@ -82,6 +100,21 @@ export default function RoutingPage() {
             <select id="routingAfterHours" value={afterHours} onChange={(e) => setAfterHours(e.target.value)}>
               <option>Collect details and dispatch callback</option>
               <option>Forward to on-call</option>
+            </select>
+          </div>
+          <div className="card" style={{ marginTop: 12 }}>
+            <label>Agent Greeting</label>
+            <textarea
+              value={greetingText}
+              onChange={(e) => setGreetingText(e.target.value)}
+              placeholder="Hi, thanks for calling..."
+              style={{ minHeight: 110 }}
+            />
+            <label style={{ marginTop: 10 }}>Voice Type</label>
+            <select value={voiceType} onChange={(e) => setVoiceType(e.target.value)}>
+              {['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'shimmer'].map((voice) => (
+                <option key={voice} value={voice}>{voice}</option>
+              ))}
             </select>
           </div>
         </div>

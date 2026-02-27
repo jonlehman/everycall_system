@@ -60,6 +60,8 @@ export default async function handler(req, res) {
         tenantKey: body.tenantKey || "default",
         agentName: body.agentName,
         companyName: body.companyName,
+        greetingText: body.greetingText,
+        voiceType: body.voiceType,
         systemPrompt: body.systemPrompt
       });
 

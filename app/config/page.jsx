@@ -9,6 +9,8 @@ export default function ConfigPage() {
   const [companyName, setCompanyName] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
+  const [greetingText, setGreetingText] = useState('');
+  const [voiceType, setVoiceType] = useState('alloy');
   const [status, setStatus] = useState({ message: 'Ready.', tone: '' });
   const [storage, setStorage] = useState('-');
   const [versions, setVersions] = useState([]);
@@ -24,9 +26,11 @@ export default function ConfigPage() {
     if (!lastSaved) return false;
     return lastSaved.agentName !== agentName
       || lastSaved.companyName !== companyName
+      || lastSaved.greetingText !== greetingText
+      || lastSaved.voiceType !== voiceType
       || lastSaved.systemPrompt !== systemPrompt
       || lastSaved.tenantKey !== tenantKey;
-  }, [agentName, companyName, systemPrompt, tenantKey, lastSaved]);
+  }, [agentName, companyName, greetingText, voiceType, systemPrompt, tenantKey, lastSaved]);
 
   const charCount = systemPrompt.length;
 
@@ -55,11 +59,15 @@ export default function ConfigPage() {
         setAgentName(data.agentName || '');
         setCompanyName(data.companyName || '');
         setSystemPrompt(data.systemPrompt || '');
+        setGreetingText(data.greetingText || '');
+        setVoiceType(data.voiceType || 'alloy');
         setStorage(data.storage || '-');
         setLastSaved({
           tenantKey: key,
           agentName: data.agentName || '',
           companyName: data.companyName || '',
+          greetingText: data.greetingText || '',
+          voiceType: data.voiceType || 'alloy',
           systemPrompt: data.systemPrompt || ''
         });
         setStatusMessage(`Loaded ${data.storage || 'unknown'} config.`, 'ok');
@@ -77,7 +85,7 @@ export default function ConfigPage() {
     fetch('/api/v1/config/agent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders },
-      body: JSON.stringify({ tenantKey, agentName, companyName, systemPrompt })
+      body: JSON.stringify({ tenantKey, agentName, companyName, greetingText, voiceType, systemPrompt })
     })
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => {
@@ -85,7 +93,7 @@ export default function ConfigPage() {
           setStatusMessage('Save failed.', 'bad');
           return;
         }
-        setLastSaved({ tenantKey, agentName, companyName, systemPrompt });
+        setLastSaved({ tenantKey, agentName, companyName, greetingText, voiceType, systemPrompt });
         setStatusMessage('Saved.', 'ok');
         loadVersions(tenantKey);
       })
@@ -109,11 +117,15 @@ export default function ConfigPage() {
         setAgentName(cfg.agentName || '');
         setCompanyName(cfg.companyName || '');
         setSystemPrompt(cfg.systemPrompt || '');
+        setGreetingText(cfg.greetingText || '');
+        setVoiceType(cfg.voiceType || 'alloy');
         setStorage(cfg.storage || storage);
         setLastSaved({
           tenantKey,
           agentName: cfg.agentName || '',
           companyName: cfg.companyName || '',
+          greetingText: cfg.greetingText || '',
+          voiceType: cfg.voiceType || 'alloy',
           systemPrompt: cfg.systemPrompt || ''
         });
         setStatusMessage('Version restored.', 'ok');
@@ -139,6 +151,16 @@ export default function ConfigPage() {
 
           <label htmlFor="companyName">Company Name</label>
           <input id="companyName" value={companyName} onChange={(event) => setCompanyName(event.target.value)} />
+
+          <label htmlFor="greetingText">Agent Greeting</label>
+          <textarea id="greetingText" value={greetingText} onChange={(event) => setGreetingText(event.target.value)} />
+
+          <label htmlFor="voiceType">Voice Type</label>
+          <select id="voiceType" value={voiceType} onChange={(event) => setVoiceType(event.target.value)}>
+            {['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'shimmer'].map((voice) => (
+              <option key={voice} value={voice}>{voice}</option>
+            ))}
+          </select>
 
           <label htmlFor="apiKey">Config API Key (optional)</label>
           <input id="apiKey" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="Needed only when CONFIG_API_KEY is set" />
