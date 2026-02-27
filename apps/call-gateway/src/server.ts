@@ -116,6 +116,7 @@ function sendOpenAiEvent(ws: WebSocket | undefined, payload: Record<string, unkn
 function decodeRtpPayload(packet: Buffer): Buffer | null {
   if (packet.length < 12) return null;
   const first = packet[0];
+  if (first === undefined) return null;
   const hasExtension = (first & 0x10) !== 0;
   const csrcCount = first & 0x0f;
   let headerLen = 12 + csrcCount * 4;
