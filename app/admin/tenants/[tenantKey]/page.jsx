@@ -171,14 +171,28 @@ export default function TenantManagePage() {
     id: u.id || idx,
     name: u.name,
     email: u.email,
+    phone: u.phone_number || '',
     role: u.role,
-    status: u.status
+    status: u.status,
+    smsOptIn: u.sms_opt_in_status || 'not_requested'
   }));
 
   const columns = [
     { field: 'name', headerName: 'Name', flex: 1, minWidth: 140 },
     { field: 'email', headerName: 'Email', flex: 1.2, minWidth: 200 },
+    { field: 'phone', headerName: 'Phone', flex: 0.8, minWidth: 140 },
     { field: 'role', headerName: 'Role', flex: 0.6, minWidth: 120 },
+    {
+      field: 'smsOptIn',
+      headerName: 'SMS Opt-In',
+      flex: 0.6,
+      minWidth: 140,
+      renderCell: (params) => (
+        <span className={`badge ${params.value === 'opted_in' ? 'ok' : params.value === 'pending' ? 'warn' : 'bad'}`}>
+          {params.value}
+        </span>
+      )
+    },
     {
       field: 'status',
       headerName: 'Status',

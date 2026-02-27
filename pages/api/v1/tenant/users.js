@@ -4,6 +4,7 @@ import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { MailtrapClient } from "mailtrap";
 import { sendTelnyxSms } from "../_lib/telnyx.js";
 import { getSharedSmsNumber } from "../_lib/alerts.js";
+import { normalizePhoneNumber } from "../_lib/phone.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
@@ -126,7 +127,7 @@ export default async function handler(req, res) {
 
       if (body.action === "update_phone") {
         const id = Number(body.id || 0);
-        const phoneNumber = String(body.phoneNumber || "").trim();
+        const phoneNumber = normalizePhoneNumber(body.phoneNumber);
         if (!id || !phoneNumber) {
           return res.status(400).json({ error: "missing_fields" });
         }
@@ -177,7 +178,7 @@ export default async function handler(req, res) {
 
       const name = String(body.name || "").trim();
       const email = String(body.email || "").trim();
-      const phoneNumber = String(body.phoneNumber || "").trim();
+      const phoneNumber = normalizePhoneNumber(body.phoneNumber);
       if (!name || !email) {
         return res.status(400).json({ error: "missing_fields" });
       }

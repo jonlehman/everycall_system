@@ -59,6 +59,7 @@ Use the **Status** column and keep **Dependencies** accurate.
 | S2 | Create outbound SMS API wrapper (Telnyx) | Dev B | done | F1 | Use TELNYX_API_KEY |
 | S3 | Alert template(s) for appointment/call summary | Dev B | done | V5 | Implemented call summary template |
 | S4 | Send SMS to tenant users after call summary | Dev B | done | S2, S3, V5 | Requires opt-in + shared number |
+| S4a | Wire call summary save to SMS alerts endpoint | Dev B | done | S4 | Uses /api/v1/calls action=summary |
 
 ## 4) Tenant & Industry Management
 | ID | Task | Owner | Status | Dependencies | Notes |
