@@ -13,4 +13,4 @@ RUN pnpm --filter @everycall/ai-orchestrator build
 ENV NODE_ENV=production
 ENV PORT=3102
 
-CMD ["node", "dist/apps/ai-orchestrator/src/server.js"]
+CMD ["node", "apps/ai-orchestrator/dist/apps/ai-orchestrator/src/server.js"]

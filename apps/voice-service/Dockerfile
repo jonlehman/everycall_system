@@ -13,4 +13,4 @@ RUN pnpm --filter @everycall/voice-service build
 ENV NODE_ENV=production
 ENV PORT=3103
 
-CMD ["node", "dist/apps/voice-service/src/server.js"]
+CMD ["node", "apps/voice-service/dist/apps/voice-service/src/server.js"]

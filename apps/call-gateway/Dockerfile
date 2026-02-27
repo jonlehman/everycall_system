@@ -13,4 +13,4 @@ RUN pnpm --filter @everycall/call-gateway build
 ENV NODE_ENV=production
 ENV PORT=3101
 
-CMD ["node", "dist/apps/call-gateway/src/server.js"]
+CMD ["node", "apps/call-gateway/dist/apps/call-gateway/src/server.js"]
