@@ -44,10 +44,21 @@ function buildBaseUrl(req: express.Request) {
   return `${req.protocol}://${req.get("host")}`;
 }
 
+function buildBaseUrlFromAction(actionUrl: string) {
+  try {
+    const parsed = new URL(actionUrl);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return callGatewayBaseUrl || "";
+  }
+}
+
 function buildTeXMLResponse(prompt: string, actionUrl: string) {
   const escaped = prompt.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const escapedAction = actionUrl.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Gather input="speech" timeout="10" speechTimeout="4" language="en-US" transcriptionEngine="Google" useEnhanced="true" action="${escapedAction}" method="POST">\n    <Say>${escaped}</Say>\n  </Gather>\n  <Say>We didn't catch that. Please call again.</Say>\n</Response>`;
+  const transcriptionCallback = `${buildBaseUrlFromAction(actionUrl)}/v1/telnyx/texml/transcription`;
+  const escapedCallback = transcriptionCallback.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Start>\n    <Transcription language="en" transcriptionEngine="Telnyx" transcriptionCallback="${escapedCallback}" />\n  </Start>\n  <Gather input="speech" timeout="10" speechTimeout="4" language="en-US" action="${escapedAction}" method="POST">\n    <Say>${escaped}</Say>\n  </Gather>\n  <Say>We didn't catch that. Please call again.</Say>\n</Response>`;
 }
 
 function buildHangupResponse(text: string) {
@@ -263,7 +274,7 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
     const params = parseTelnyxParams(rawBody, req.header("content-type"));
     const tenantKey = String(req.query?.tenantKey || "");
     const callSid = String(req.query?.callSid || params.CallSid || "unknown");
-    const speech = String(params.SpeechResult || "");
+    let speech = String(params.SpeechResult || "");
     logInfo("telnyx_texml_gather_params", {
       callSid,
       tenantKey,
@@ -287,6 +298,18 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
     const state = detailRow.rows[0]?.state_json || { turn: 0, history: [] };
     const turn = Number(state.turn || 0) + 1;
     const history = Array.isArray(state.history) ? state.history : [];
+
+    if (!speech.trim() && state.last_transcript) {
+      speech = String(state.last_transcript || "");
+      state.last_transcript = "";
+    }
+
+    if (!speech.trim()) {
+      const retryPrompt = "Sorry, I didn't catch that. Please say your name and best callback number.";
+      const actionUrl = `${buildBaseUrl(req)}/v1/telnyx/texml/gather?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(callSid)}`;
+      res.type("text/xml").status(200).send(buildTeXMLResponse(retryPrompt, actionUrl));
+      return;
+    }
 
     await pool.query(
       `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
@@ -352,6 +375,61 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
     });
     res.type("text/xml").status(200).send(buildHangupResponse("We are unable to take your call right now."));
   }
+});
+
+app.post("/v1/telnyx/texml/transcription", express.raw({ type: "*/*" }), async (req, res) => {
+  const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
+  logInfo("telnyx_texml_transcription_request", {
+    path: req.path,
+    contentLength: req.header("content-length"),
+    contentType: req.header("content-type"),
+    hasSignature: Boolean(req.header("telnyx-signature-ed25519")),
+    hasTimestamp: Boolean(req.header("telnyx-timestamp")),
+    bodyPreview: rawBody ? rawBody.slice(0, 200) : ""
+  });
+  if (signatureRequired && !verifyTelnyx(req, rawBody)) {
+    logError("telnyx_signature_invalid", {
+      path: req.path,
+      hasSignature: Boolean(req.header("telnyx-signature-ed25519")),
+      hasTimestamp: Boolean(req.header("telnyx-timestamp"))
+    });
+    return res.status(401).send("invalid_signature");
+  }
+  if (!pool) {
+    return res.status(200).send("ok");
+  }
+  try {
+    const params = parseTelnyxParams(rawBody, req.header("content-type"));
+    const callSid = String(params.CallSid || "unknown");
+    const transcript = String(
+      params.TranscriptionText || params.Transcript || params.SpeechResult || ""
+    );
+    const isFinal = String(params.TranscriptionStatus || params.IsFinal || "true");
+    if (transcript.trim()) {
+      await pool.query(
+        `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
+         VALUES ($1, $2, $3, $4, 'transcript')`,
+        [callSid, params.TenantKey || "unknown", "caller", transcript]
+      );
+      await pool.query(
+        `UPDATE call_details
+         SET state_json = COALESCE(state_json, '{}'::jsonb) || jsonb_build_object('last_transcript', $2),
+             updated_at = NOW()
+         WHERE call_sid = $1`,
+        [callSid, transcript]
+      );
+    }
+    logInfo("telnyx_texml_transcription_params", {
+      callSid,
+      transcriptLength: transcript.trim().length,
+      isFinal
+    });
+  } catch (err) {
+    logError("telnyx_texml_transcription_error", {
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
+  res.status(200).send("ok");
 });
 
 app.use(express.json());
