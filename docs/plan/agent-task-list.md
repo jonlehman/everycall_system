@@ -36,7 +36,7 @@ Use the **Status** column and keep **Dependencies** accurate.
 | F1a | Add TELNYX_PUBLIC_KEY env var for webhook verification | Dev A | done | — | Required for Telnyx webhook verification |
 | F1b | Add TELNYX_VOICE_CONNECTION_ID env var | Dev A | not started | — | Required for voice number provisioning |
 | F2 | Add Telnyx webhook signature verification | Dev B | done | F1 | Uses TELNYX_PUBLIC_KEY |
-| F3 | DB migrations sanity check on prod | Dev C | blocked | F1 | Needs prod verification |
+| F3 | DB migrations sanity check on prod | Dev C | done | F1 | Prod columns verified & added |
 | F4 | Confirm DNS + domain routing for app.everycall.io | | not started | — | Must resolve to Vercel |
 | F5 | Deploy call-gateway service | | not started | F1 | Required for smoke tests |
 | F6 | Deploy ai-orchestrator service | | not started | F1 | Required for smoke tests |
