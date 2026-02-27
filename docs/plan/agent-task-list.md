@@ -33,7 +33,8 @@ Use the **Status** column and keep **Dependencies** accurate.
 | ID | Task | Owner | Status | Dependencies | Notes |
 |---|---|---|---|---|---|
 | F1 | Confirm Vercel env vars (DATABASE_URL, OPENAI_API_KEY, TELNYX_API_KEY, APP_BASE_URL) | Dev A | done | — | Required for most flows |
-| F2 | Add Telnyx webhook signature verification | Dev B | in progress | F1 | Use TELNYX_API_KEY |
+| F1a | Add TELNYX_PUBLIC_KEY env var for webhook verification | Dev A | not started | — | Required for Telnyx webhook verification |
+| F2 | Add Telnyx webhook signature verification | Dev B | done | F1 | Uses TELNYX_PUBLIC_KEY |
 | F3 | DB migrations sanity check on prod | Dev C | in progress | F1 | Ensure new columns exist |
 | F4 | Confirm DNS + domain routing for app.everycall.io | | not started | — | Must resolve to Vercel |
 | F5 | Deploy call-gateway service | | not started | F1 | Required for smoke tests |
