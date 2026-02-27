@@ -51,6 +51,8 @@ type StreamSession = {
   rtpTimestamp?: number;
   rtpSsrc?: number;
   outputBuffer?: Buffer;
+  outputQueue?: Buffer[];
+  outputTimer?: NodeJS.Timeout;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -159,14 +161,34 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
   const buffer = session.outputBuffer ? Buffer.concat([session.outputBuffer, pcmChunk]) : pcmChunk;
   const frameSize = 160;
   let offset = 0;
+  if (!session.outputQueue) {
+    session.outputQueue = [];
+  }
   while (buffer.length - offset >= frameSize) {
     const frame = buffer.subarray(offset, offset + frameSize);
     const payload = bidirectionalPayloadMode === "raw" ? frame : buildRtpPacket(frame, session);
-    const base64 = payload.toString("base64");
-    sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, base64);
+    session.outputQueue.push(payload);
     offset += frameSize;
   }
   session.outputBuffer = buffer.subarray(offset);
+  startOutputPump(session);
+}
+
+function startOutputPump(session: StreamSession) {
+  if (session.outputTimer) return;
+  session.outputTimer = setInterval(() => {
+    if (!session.outputQueue || session.outputQueue.length === 0) {
+      if (session.outputTimer) {
+        clearInterval(session.outputTimer);
+        session.outputTimer = undefined;
+      }
+      return;
+    }
+    const payload = session.outputQueue.shift();
+    if (!payload) return;
+    const base64 = payload.toString("base64");
+    sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, base64);
+  }, 20);
 }
 
 function connectOpenAiRealtime(session: StreamSession) {
@@ -198,6 +220,7 @@ function connectOpenAiRealtime(session: StreamSession) {
     });
 
     if (session.greeting) {
+      session.responseActive = true;
       sendOpenAiEvent(ws, {
         type: "response.create",
         response: {
@@ -236,15 +259,16 @@ function connectOpenAiRealtime(session: StreamSession) {
       session.responseActive = false;
     }
     if (type === "input_audio_buffer.speech_stopped" || type === "input_audio_buffer.committed") {
-      if (!session.responseActive) {
-        session.responseActive = true;
-        sendOpenAiEvent(ws, {
-          type: "response.create",
-          response: {
-            modalities: ["audio", "text"]
-          }
-        });
+      if (session.responseActive) {
+        return;
       }
+      session.responseActive = true;
+      sendOpenAiEvent(ws, {
+        type: "response.create",
+        response: {
+          modalities: ["audio", "text"]
+        }
+      });
     }
     if (type === "error") {
       logError("openai_realtime_error", { callSid: session.callSid, detail: payload });
@@ -977,11 +1001,6 @@ wss.on("connection", (ws) => {
       const session = streamSessions.get(callControlId);
       if (!session) return;
       if (track === "inbound") {
-        if (session.outputActive && session.openAiWs && session.responseActive) {
-          session.outputActive = false;
-          session.responseActive = false;
-          sendOpenAiEvent(session.openAiWs, { type: "response.cancel" });
-        }
         // Telnyx streaming payload is raw audio (RTP payload) for the selected codec.
         sendOpenAiEvent(session.openAiWs, { type: "input_audio_buffer.append", audio: encoded });
       }
