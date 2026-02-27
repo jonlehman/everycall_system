@@ -44,6 +44,10 @@ export async function ensureTables(pool) {
       tenant_key TEXT NOT NULL,
       name TEXT NOT NULL,
       email TEXT NOT NULL,
+      phone_number TEXT,
+      sms_opt_in_status TEXT NOT NULL DEFAULT 'not_requested',
+      sms_opt_in_requested_at TIMESTAMPTZ,
+      sms_opt_in_confirmed_at TIMESTAMPTZ,
       password_hash TEXT,
       role TEXT NOT NULL DEFAULT 'owner',
       status TEXT NOT NULL DEFAULT 'active',
@@ -52,6 +56,10 @@ export async function ensureTables(pool) {
     );
   `);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
+  await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS phone_number TEXT;`);
+  await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS sms_opt_in_status TEXT NOT NULL DEFAULT 'not_requested';`);
+  await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS sms_opt_in_requested_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS sms_opt_in_confirmed_at TIMESTAMPTZ;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS agents (

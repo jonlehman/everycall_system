@@ -8,6 +8,7 @@ export default function TeamPage() {
   const [showInvite, setShowInvite] = useState(false);
   const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePhone, setInvitePhone] = useState('');
   const [inviteRole, setInviteRole] = useState('member');
   const [inviteStatus, setInviteStatus] = useState('active');
   const [inviteMessage, setInviteMessage] = useState('');
@@ -40,14 +41,28 @@ export default function TeamPage() {
     id: user.id || idx,
     name: user.name,
     email: user.email,
+    phone: user.phone_number || '',
     role: user.role,
-    status: user.status
+    status: user.status,
+    smsOptIn: user.sms_opt_in_status || 'not_requested'
   }));
 
   const columns = [
     { field: 'name', headerName: 'Name', flex: 1, minWidth: 140 },
     { field: 'email', headerName: 'Email', flex: 1.2, minWidth: 200 },
+    { field: 'phone', headerName: 'Phone', flex: 0.9, minWidth: 150 },
     { field: 'role', headerName: 'Role', flex: 0.6, minWidth: 120 },
+    {
+      field: 'smsOptIn',
+      headerName: 'SMS Opt-In',
+      flex: 0.7,
+      minWidth: 140,
+      renderCell: (params) => (
+        <span className={`badge ${params.value === 'opted_in' ? 'ok' : params.value === 'pending' ? 'warn' : 'bad'}`}>
+          {params.value}
+        </span>
+      )
+    },
     {
       field: 'status',
       headerName: 'Status',
@@ -67,6 +82,23 @@ export default function TeamPage() {
       minWidth: 260,
       renderCell: (params) => (
         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', width: '100%' }}>
+          <button
+            className="btn"
+            onClick={() => {
+              const phone = window.prompt('Enter mobile number (E.164 recommended):', params.row.phone || '');
+              if (!phone) return;
+              updatePhone(params.row.id, phone);
+            }}
+          >
+            Set Phone
+          </button>
+          <button
+            className="btn"
+            onClick={() => requestSmsOptIn(params.row.id)}
+            disabled={!params.row.phone || params.row.smsOptIn === 'opted_in'}
+          >
+            {params.row.smsOptIn === 'opted_in' ? 'SMS Enabled' : 'Request SMS Opt-In'}
+          </button>
           {params.row.status === 'invited' ? (
             <button
               className="btn"
@@ -105,6 +137,7 @@ export default function TeamPage() {
       body: JSON.stringify({
         name: inviteName.trim(),
         email: inviteEmail.trim(),
+        phoneNumber: invitePhone.trim(),
         role: inviteRole,
         status: inviteStatus
       })
@@ -116,6 +149,7 @@ export default function TeamPage() {
     setInviteMessage('Invite added.');
     setInviteName('');
     setInviteEmail('');
+    setInvitePhone('');
     setInviteRole('member');
     setInviteStatus('active');
     setShowInvite(false);
@@ -146,6 +180,33 @@ export default function TeamPage() {
       return;
     }
     setInviteMessage('Invite resent.');
+  };
+
+  const updatePhone = async (id, phoneNumber) => {
+    const resp = await fetch('/api/v1/tenant/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_phone', id, phoneNumber })
+    });
+    if (!resp.ok) {
+      setInviteMessage('Phone update failed.');
+      return;
+    }
+    loadUsers();
+  };
+
+  const requestSmsOptIn = async (id) => {
+    const resp = await fetch('/api/v1/tenant/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sms_opt_in_request', id })
+    });
+    if (!resp.ok) {
+      setInviteMessage('SMS opt-in request failed.');
+      return;
+    }
+    setInviteMessage('Opt-in text sent.');
+    loadUsers();
   };
 
   const deleteUser = async (id) => {
@@ -183,6 +244,13 @@ export default function TeamPage() {
                     <label>Email</label>
                     <input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="jane@company.com" />
                   </div>
+                </div>
+                <div className="form-row">
+                  <div>
+                    <label>Mobile Phone</label>
+                    <input value={invitePhone} onChange={(event) => setInvitePhone(event.target.value)} placeholder="+1XXXXXXXXXX" />
+                  </div>
+                  <div></div>
                 </div>
                 <div className="form-row">
                   <div>
@@ -236,6 +304,7 @@ export default function TeamPage() {
             <li>Invite teammates who need access to calls or settings.</li>
             <li>Use roles to control who can edit routing and FAQs.</li>
             <li>Keep admin access limited to trusted owners.</li>
+            <li>SMS alerts require opt-in by replying YES to the text message.</li>
             <li>Set status to “Invited” if the user hasn’t accepted yet.</li>
           </ul>
         </div>

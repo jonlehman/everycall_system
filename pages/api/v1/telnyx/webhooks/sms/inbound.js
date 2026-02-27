@@ -1,4 +1,6 @@
-import { readRawBody, verifyTelnyxSignature } from "../../../../_lib/telnyx.js";
+import { readRawBody, verifyTelnyxSignature, sendTelnyxSms } from "../../../../_lib/telnyx.js";
+import { ensureTables, getPool } from "../../../../_lib/db.js";
+import { getSharedSmsNumber } from "../../../../_lib/alerts.js";
 
 export const config = {
   api: { bodyParser: false }
@@ -23,6 +25,12 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: "invalid_signature" });
     }
 
+    const pool = getPool();
+    if (!pool) {
+      return res.status(500).json({ error: "database_unavailable" });
+    }
+    await ensureTables(pool);
+
     // Telnyx sends JSON. We accept and acknowledge for now.
     let body = {};
     try {
@@ -39,7 +47,41 @@ export default async function handler(req, res) {
     const text = payload.text || payload.body || null;
     const messageId = data.id || null;
 
-    // TODO: persist to DB or enqueue for processing.
+    const normalizedText = String(text || "").trim().toLowerCase();
+    const isYes = normalizedText === "yes" || normalizedText === "y";
+    const isStop = ["stop", "unsubscribe", "cancel", "end", "quit"].includes(normalizedText);
+    if (from && (isYes || isStop)) {
+      const nextStatus = isYes ? "opted_in" : "opted_out";
+      const timestampField = isYes ? "sms_opt_in_confirmed_at" : "sms_opt_in_requested_at";
+      await pool.query(
+        `UPDATE tenant_users
+         SET sms_opt_in_status = $1,
+             ${timestampField} = NOW(),
+             updated_at = NOW()
+         WHERE phone_number = $2`,
+        [nextStatus, from]
+      );
+      if (isYes) {
+        const fromNumber = await getSharedSmsNumber(pool);
+        if (fromNumber) {
+          await sendTelnyxSms({
+            from: fromNumber,
+            to: from,
+            text: "You're opted in for EveryCall alerts. Reply STOP to opt out."
+          });
+        }
+      } else {
+        const fromNumber = await getSharedSmsNumber(pool);
+        if (fromNumber) {
+          await sendTelnyxSms({
+            from: fromNumber,
+            to: from,
+            text: "You are opted out of EveryCall alerts. Reply YES to opt back in."
+          });
+        }
+      }
+    }
+
     res.status(200).json({
       ok: true,
       received: true,
