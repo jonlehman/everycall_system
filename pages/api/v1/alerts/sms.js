@@ -1,7 +1,7 @@
-import { ensureTables, getPool } from "../_lib/db.js";
-import { requireSession } from "../_lib/auth.js";
-import { buildCallSummarySms, getSharedSmsNumber } from "../_lib/alerts.js";
-import { sendTelnyxSms } from "../_lib/telnyx.js";
+import { ensureTables, getPool } from "../../_lib/db.js";
+import { requireSession } from "../../_lib/auth.js";
+import { buildCallSummarySms, getSharedSmsNumber } from "../../_lib/alerts.js";
+import { sendTelnyxSms } from "../../_lib/telnyx.js";
 
 export default async function handler(req, res) {
   try {

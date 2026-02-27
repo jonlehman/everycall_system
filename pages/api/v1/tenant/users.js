@@ -2,9 +2,9 @@ import crypto from "crypto";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { MailtrapClient } from "mailtrap";
-import { sendTelnyxSms } from "../_lib/telnyx.js";
-import { getSharedSmsNumber } from "../_lib/alerts.js";
-import { normalizePhoneNumber } from "../_lib/phone.js";
+import { sendTelnyxSms } from "../../_lib/telnyx.js";
+import { getSharedSmsNumber } from "../../_lib/alerts.js";
+import { normalizePhoneNumber } from "../../_lib/phone.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
