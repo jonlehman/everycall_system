@@ -11,6 +11,12 @@ services:
         sync: false
       - key: TELNYX_API_KEY
         sync: false
+      - key: TELNYX_TRANSCRIPTION_MODEL
+        sync: false
+      - key: VOICE_SERVICE_URL
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
       - key: APP_BASE_URL
         sync: false
       - key: CALL_SUMMARY_TOKEN

@@ -8,6 +8,13 @@ const callGatewayEnvSchema = baseSchema.extend({
   PORT: z.coerce.number().int().positive().default(3101),
   TELNYX_PUBLIC_KEY: z.string().min(1).optional(),
   TELNYX_API_KEY: z.string().min(1).optional(),
+  TELNYX_AI_MODEL: z.string().min(1).optional(),
+  TELNYX_OPENAI_API_KEY_REF: z.string().min(1).optional(),
+  TELNYX_ELEVENLABS_API_KEY_REF: z.string().min(1).optional(),
+  TELNYX_ELEVENLABS_VOICE: z.string().min(1).optional(),
+  TELNYX_TRANSCRIPTION_MODEL: z.string().min(1).optional(),
+  VOICE_SERVICE_URL: z.string().min(1).optional(),
+  ELEVENLABS_VOICE_ID: z.string().min(1).optional(),
   APP_BASE_URL: z.string().min(1).optional(),
   CALL_SUMMARY_TOKEN: z.string().min(1).optional(),
   DATABASE_URL: z.string().min(1).optional()
