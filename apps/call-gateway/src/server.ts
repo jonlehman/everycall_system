@@ -226,7 +226,16 @@ function connectOpenAiRealtime(session: StreamSession) {
         output_audio_format: openAiRealtimeOutputFormat,
         voice: openAiRealtimeVoice,
         turn_detection: { type: "server_vad", silence_duration_ms: 900, prefix_padding_ms: 300 },
-        input_audio_transcription: { model: "whisper-1" }
+        input_audio_transcription: { model: "gpt-4o-mini-transcribe", language: "en" },
+        audio: {
+          input: {
+            format: { type: openAiRealtimeInputFormat, rate: 8000 },
+            transcription: { model: "gpt-4o-mini-transcribe", language: "en" }
+          },
+          output: {
+            format: { type: openAiRealtimeOutputFormat, rate: 8000 }
+          }
+        }
       }
     });
 
@@ -293,13 +302,24 @@ function connectOpenAiRealtime(session: StreamSession) {
         session.pendingAssistantText = (session.pendingAssistantText || "") + String(delta);
       }
     }
-    if (type === "input_audio_transcription.completed") {
+    if (type === "conversation.item.input_audio_transcription.delta") {
+      const delta = payload.delta || payload.transcript || payload.text || "";
+      if (delta) {
+        session.pendingCallerText = (session.pendingCallerText || "") + String(delta);
+      }
+    }
+    if (
+      type === "conversation.item.input_audio_transcription.completed" ||
+      type === "input_audio_transcription.completed"
+    ) {
       const transcript =
         payload.transcript ||
         payload.text ||
         payload.data?.transcript ||
         payload.data?.text ||
+        session.pendingCallerText ||
         "";
+      session.pendingCallerText = "";
       if (transcript) {
         await pool?.query(
           `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
