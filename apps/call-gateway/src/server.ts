@@ -52,7 +52,7 @@ type StreamSession = {
   rtpSsrc?: number;
   outputBuffer?: Buffer;
   outputQueue?: Buffer[];
-  outputTimer?: NodeJS.Timeout;
+  outputTimer?: NodeJS.Timeout | undefined;
 };
 
 const streamSessions = new Map<string, StreamSession>();
