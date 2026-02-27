@@ -57,8 +57,8 @@ Use the **Status** column and keep **Dependencies** accurate.
 |---|---|---|---|---|---|
 | S1 | Store shared SMS number in system config | Dev C | done | F3 | System config field |
 | S2 | Create outbound SMS API wrapper (Telnyx) | Dev B | done | F1 | Use TELNYX_API_KEY |
-| S3 | Alert template(s) for appointment/call summary | | not started | V5 | |
-| S4 | Send SMS to tenant users after call summary | | not started | S2, S3, V5 | Opt‑in rules TBD |
+| S3 | Alert template(s) for appointment/call summary | Dev B | done | V5 | Implemented call summary template |
+| S4 | Send SMS to tenant users after call summary | Dev B | done | S2, S3, V5 | Requires opt-in + shared number |
 
 ## 4) Tenant & Industry Management
 | ID | Task | Owner | Status | Dependencies | Notes |
