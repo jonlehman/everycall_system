@@ -102,10 +102,10 @@ Use the **Status** column and keep **Dependencies** accurate.
 | ID | Task | Owner | Status | Dependencies | Notes |
 |---|---|---|---|---|---|
 | Q1 | Smoke test against deployed services | Smoke Agent | done | F8 | Smoke passed against Render URLs |
-| Q2 | Regression checklist (admin + client flows) | | not started | — | |
+| Q2 | Regression checklist (admin + client flows) | Dev A | done | — | Added docs/plan/regression-checklist.md |
 
 ## 10) Release & Rollout
 | ID | Task | Owner | Status | Dependencies | Notes |
 |---|---|---|---|---|---|
-| R1 | Staging rollout plan | | not started | V6, S4 | |
-| R2 | Production rollout checklist | | not started | R1 | |
+| R1 | Staging rollout plan | Dev A | done | V6, S4 | docs/plan/staging-rollout.md |
+| R2 | Production rollout checklist | Dev A | done | R1 | docs/plan/production-rollout.md |
