@@ -178,7 +178,7 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
 function startOutputPump(session: StreamSession) {
   if (session.outputTimer) return;
   // Pre-buffer a few frames to avoid initial underruns.
-  if (!session.outputPrimed && session.outputQueue && session.outputQueue.length < 5) {
+  if (!session.outputPrimed && session.outputQueue && session.outputQueue.length < 8) {
     return;
   }
   session.outputPrimed = true;
@@ -194,7 +194,7 @@ function startOutputPump(session: StreamSession) {
     if (!payload) return;
     const base64 = payload.toString("base64");
     sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, base64);
-  }, 20);
+  }, 18);
 }
 
 function connectOpenAiRealtime(session: StreamSession) {
