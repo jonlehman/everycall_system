@@ -2,7 +2,7 @@ import express from "express";
 import { readCallGatewayEnv } from "@everycall/config";
 import { logError, logInfo } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
-import { resolveTenantByToNumber } from "@everycall/tenancy";
+import pg from "pg";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -48,8 +48,20 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), (req
   const to = normalizePhone(String(toRaw));
   const from = normalizePhone(String(fromRaw));
 
-  const routing = resolveTenantByToNumber(to, env.TENANT_NUMBERS_FILE);
-  if (!routing || !routing.active) {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    return res.status(500).json({ error: "database_unavailable" });
+  }
+  const pool = new pg.Pool({ connectionString: databaseUrl });
+  const tenantRow = await pool.query(
+    `SELECT tenant_key, status
+     FROM tenants
+     WHERE telnyx_voice_number = $1
+     LIMIT 1`,
+    [to]
+  );
+  await pool.end().catch(() => {});
+  if (!tenantRow.rowCount || tenantRow.rows[0].status !== "active") {
     return res.status(404).json({ error: "tenant_not_found_for_number" });
   }
 
@@ -60,7 +72,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), (req
   logInfo("telnyx_inbound_received", {
     trace_id: traceId,
     call_id: callId,
-    tenant_id: routing.tenantId,
+    tenant_id: tenantRow.rows[0].tenant_key,
     provider_call_id: providerCallId,
     from_number: from,
     to_number: to

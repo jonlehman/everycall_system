@@ -9,7 +9,7 @@ services:
         value: "3101"
       - key: TELNYX_PUBLIC_KEY
         sync: false
-      - key: TENANT_NUMBERS_FILE
+      - key: DATABASE_URL
         sync: false
 
   - type: web

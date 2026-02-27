@@ -7,7 +7,7 @@ const baseSchema = z.object({
 const callGatewayEnvSchema = baseSchema.extend({
   PORT: z.coerce.number().int().positive().default(3101),
   TELNYX_PUBLIC_KEY: z.string().min(1).optional(),
-  TENANT_NUMBERS_FILE: z.string().min(1).default("data/tenant-numbers.json")
+  DATABASE_URL: z.string().min(1).optional()
 });
 
 const aiOrchestratorEnvSchema = baseSchema.extend({

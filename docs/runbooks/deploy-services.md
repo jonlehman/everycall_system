@@ -11,7 +11,7 @@ This guide uses Render with the included `render.yaml`.
 1. In Render, create a **New Blueprint**.
 2. Point it at this repo and select `render.yaml`.
 3. Set required env vars for each service:
-   - Call Gateway: `TELNYX_PUBLIC_KEY`, `TENANT_NUMBERS_FILE`
+   - Call Gateway: `TELNYX_PUBLIC_KEY`, `DATABASE_URL`
    - AI Orchestrator: `OPENAI_API_KEY`, `OPENAI_MODEL`
    - Voice Service: `ELEVENLABS_API_KEY`, `ELEVENLABS_MODEL_ID`
 4. Deploy all three services.
