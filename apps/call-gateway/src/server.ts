@@ -55,6 +55,8 @@ type StreamSession = {
   outputTimer?: NodeJS.Timeout | undefined;
   outputPrimed?: boolean;
   lastResponseAt?: number;
+  pendingCallerText?: string;
+  pendingAssistantText?: string;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -222,7 +224,8 @@ function connectOpenAiRealtime(session: StreamSession) {
         input_audio_format: openAiRealtimeInputFormat,
         output_audio_format: openAiRealtimeOutputFormat,
         voice: openAiRealtimeVoice,
-        turn_detection: { type: "server_vad", silence_duration_ms: 900, prefix_padding_ms: 300 }
+        turn_detection: { type: "server_vad", silence_duration_ms: 900, prefix_padding_ms: 300 },
+        input_audio_transcription: { model: "whisper-1" }
       }
     });
 
@@ -238,7 +241,7 @@ function connectOpenAiRealtime(session: StreamSession) {
     }
   });
 
-  ws.on("message", (data) => {
+  ws.on("message", async (data) => {
     let payload: any = {};
     try {
       payload = JSON.parse(data.toString());
@@ -264,6 +267,52 @@ function connectOpenAiRealtime(session: StreamSession) {
     if (type === "response.done" || type === "response.completed") {
       session.outputActive = false;
       session.responseActive = false;
+      if (session.pendingAssistantText) {
+        const text = session.pendingAssistantText.trim();
+        session.pendingAssistantText = "";
+        if (text) {
+          await pool?.query(
+            `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
+             VALUES ($1, $2, $3, $4, 'message')`,
+            [session.callSid, session.tenantKey, "assistant", text]
+          );
+          await pool?.query(
+            `UPDATE call_details
+             SET transcript = COALESCE(transcript, '') || $2,
+                 updated_at = NOW()
+             WHERE call_sid = $1`,
+            [session.callSid, `\nAssistant: ${text}`]
+          );
+        }
+      }
+    }
+    if (type === "response.text.delta" || type === "response.output_text.delta" || type === "output_text.delta") {
+      const delta = payload.delta || payload.text || payload.data || "";
+      if (delta) {
+        session.pendingAssistantText = (session.pendingAssistantText || "") + String(delta);
+      }
+    }
+    if (type === "input_audio_transcription.completed") {
+      const transcript =
+        payload.transcript ||
+        payload.text ||
+        payload.data?.transcript ||
+        payload.data?.text ||
+        "";
+      if (transcript) {
+        await pool?.query(
+          `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
+           VALUES ($1, $2, $3, $4, 'message')`,
+          [session.callSid, session.tenantKey, "caller", String(transcript)]
+        );
+        await pool?.query(
+          `UPDATE call_details
+           SET transcript = COALESCE(transcript, '') || $2,
+               updated_at = NOW()
+           WHERE call_sid = $1`,
+          [session.callSid, `\nCaller: ${transcript}`]
+        );
+      }
     }
     if (type === "input_audio_buffer.speech_stopped" || type === "input_audio_buffer.committed") {
       const now = Date.now();
