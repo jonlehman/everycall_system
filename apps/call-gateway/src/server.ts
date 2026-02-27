@@ -47,7 +47,7 @@ function buildBaseUrl(req: express.Request) {
 function buildTeXMLResponse(prompt: string, actionUrl: string) {
   const escaped = prompt.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const escapedAction = actionUrl.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Gather input="speech" speechTimeout="2" language="en-US" action="${escapedAction}" method="POST">\n    <Say>${escaped}</Say>\n  </Gather>\n  <Say>We didn't catch that. Please call again.</Say>\n</Response>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Gather input="speech" timeout="8" speechTimeout="3" language="en-US" action="${escapedAction}" method="POST">\n    <Say>${escaped}</Say>\n  </Gather>\n  <Say>We didn't catch that. Please call again.</Say>\n</Response>`;
 }
 
 function buildHangupResponse(text: string) {
@@ -264,6 +264,20 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
     const tenantKey = String(req.query?.tenantKey || "");
     const callSid = String(req.query?.callSid || params.CallSid || "unknown");
     const speech = String(params.SpeechResult || "");
+    logInfo("telnyx_texml_gather_params", {
+      callSid,
+      tenantKey,
+      speechLength: speech.trim().length,
+      speechPreview: speech.slice(0, 120),
+      confidence: params.Confidence || ""
+    });
+
+    if (!speech.trim()) {
+      const retryPrompt = "Sorry, I didn't catch that. Please say your name and best callback number.";
+      const actionUrl = `${buildBaseUrl(req)}/v1/telnyx/texml/gather?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(callSid)}`;
+      res.type("text/xml").status(200).send(buildTeXMLResponse(retryPrompt, actionUrl));
+      return;
+    }
 
     const detailRow = await pool.query(
       `SELECT state_json, transcript FROM call_details WHERE call_sid = $1`,
