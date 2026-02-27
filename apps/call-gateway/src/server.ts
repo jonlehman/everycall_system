@@ -3,85 +3,148 @@ import { readCallGatewayEnv } from "@everycall/config";
 import { logError, logInfo } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
 import pg from "pg";
-import { telnyxCallCommand } from "./telnyx.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
 const databaseUrl = process.env.DATABASE_URL || "";
 const pool = databaseUrl ? new pg.Pool({ connectionString: databaseUrl }) : null;
-const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const appBaseUrl = process.env.APP_BASE_URL || "";
 const callSummaryToken = process.env.CALL_SUMMARY_TOKEN || "";
+const callGatewayBaseUrl = process.env.CALL_GATEWAY_BASE_URL || "";
+const openAiKey = process.env.OPENAI_API_KEY || "";
+const openAiModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
 app.set("trust proxy", true);
 app.use(express.urlencoded({ extended: false }));
 
-function safeJsonParse(raw: string): any {
-  try {
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return null;
-  }
+function parseFormBody(raw: string): Record<string, string> {
+  const params = new URLSearchParams(raw);
+  return Object.fromEntries(params.entries());
 }
 
-app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), async (req, res) => {
-  const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
+function buildBaseUrl(req: express.Request) {
+  if (callGatewayBaseUrl) return callGatewayBaseUrl;
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+function buildTeXMLResponse(prompt: string, actionUrl: string) {
+  const escaped = prompt.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Gather input="speech" speechTimeout="auto" action="${actionUrl}" method="POST">\n    <Say>${escaped}</Say>\n  </Gather>\n  <Say>We didn't catch that. Please call again.</Say>\n</Response>`;
+}
+
+function buildHangupResponse(text: string) {
+  const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Say>${escaped}</Say>\n  <Hangup/>\n</Response>`;
+}
+
+function isDonePhrase(text: string) {
+  return /\b(no|nope|that'?s it|thats it|nothing else|done|goodbye|bye|stop)\b/i.test(String(text || ""));
+}
+
+async function composePromptForTenant(tenantKey: string) {
+  if (!pool) return "";
+  const systemParts = await pool.query(
+    `SELECT global_emergency_phrase,
+            personality_prompt,
+            datetime_prompt,
+            numbers_symbols_prompt,
+            confirmation_prompt,
+            faq_usage_prompt
+     FROM system_config
+     WHERE id = 1`
+  );
+  const tenantRow = await pool.query(
+    `SELECT industry FROM tenants WHERE tenant_key = $1 LIMIT 1`,
+    [tenantKey]
+  );
+  const industryKey = tenantRow.rows[0]?.industry || null;
+  const industryPromptRow = industryKey
+    ? await pool.query(`SELECT prompt FROM industry_prompts WHERE industry_key = $1`, [industryKey])
+    : { rows: [] };
+  const tenantPromptRow = await pool.query(
+    `SELECT tenant_prompt_override, system_prompt FROM agents WHERE tenant_key = $1 LIMIT 1`,
+    [tenantKey]
+  );
+
+  const sections: string[] = [];
+  const format = (title: string, body?: string) => (body ? `# ${title}\n${body}` : "");
+  sections.push(format("SYSTEM EMERGENCY PHRASE", systemParts.rows[0]?.global_emergency_phrase));
+  sections.push(format("PERSONALITY", systemParts.rows[0]?.personality_prompt));
+  sections.push(format("DATE & TIME", systemParts.rows[0]?.datetime_prompt));
+  sections.push(format("NUMBERS & SYMBOLS", systemParts.rows[0]?.numbers_symbols_prompt));
+  sections.push(format("CONFIRMATION", systemParts.rows[0]?.confirmation_prompt));
+  sections.push(format("WHEN TO USE FAQ", systemParts.rows[0]?.faq_usage_prompt));
+  sections.push(format("INDUSTRY PROMPT", industryPromptRow.rows[0]?.prompt));
+  const tenantOverride = tenantPromptRow.rows[0]?.tenant_prompt_override || tenantPromptRow.rows[0]?.system_prompt || "";
+  sections.push(format("TENANT PROMPT OVERRIDE", tenantOverride));
+  return sections.filter(Boolean).join("\n\n");
+}
+
+async function generateAssistantReply(prompt: string, history: Array<{ role: string; content: string }>, userText: string) {
+  if (!openAiKey) {
+    return "Thanks. What is the service address and best callback number?";
+  }
+  const input = [
+    { role: "system", content: prompt },
+    ...history,
+    { role: "user", content: userText }
+  ];
+  const resp = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openAiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ model: openAiModel, input })
+  });
+  if (!resp.ok) {
+    return "Thanks. Can you share your service address and best callback number?";
+  }
+  const json = await resp.json();
+  const text =
+    json.output_text ||
+    json.output
+      ?.flatMap((item: any) => item.content || [])
+      .find((item: any) => item.type === "output_text" && typeof item.text === "string")
+      ?.text;
+  return String(text || "").slice(0, 400) || "Thanks. What is the service address?";
+}
+
+function verifyTelnyx(req: express.Request, rawBody: string) {
   const signature = req.header("telnyx-signature-ed25519");
   const timestamp = req.header("telnyx-timestamp");
-  const validSignature = validateTelnyxSignature({
+  return validateTelnyxSignature({
     signatureHeader: signature,
     timestampHeader: timestamp,
     publicKey: env.TELNYX_PUBLIC_KEY,
     rawBody
   });
+}
 
-  if (!validSignature) {
-    return res.status(401).json({ error: "invalid_signature" });
-  }
-
-  const body = safeJsonParse(rawBody);
-  if (!body) {
-    return res.status(400).json({ error: "invalid_json" });
-  }
-
-  const payload = body?.data?.payload || {};
-  const toRaw = payload.to?.[0]?.phone_number || payload.to?.phone_number || payload.to;
-  const fromRaw = payload.from?.phone_number || payload.from;
-  if (!toRaw || !fromRaw) {
-    return res.status(422).json({ error: "missing_numbers" });
-  }
-
-  const to = normalizePhone(String(toRaw));
-  const from = normalizePhone(String(fromRaw));
-
+app.post("/v1/telnyx/texml/inbound", express.raw({ type: "*/*" }), async (req, res) => {
   if (!pool) {
     return res.status(500).json({ error: "database_unavailable" });
   }
-  const eventType = body?.data?.event_type || "unknown";
+  const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
+  if (!verifyTelnyx(req, rawBody)) {
+    return res.status(401).send("invalid_signature");
+  }
+
+  const params = parseFormBody(rawBody);
+  const to = normalizePhone(String(params.To || ""));
+  const from = normalizePhone(String(params.From || ""));
+  const callSid = String(params.CallSid || "unknown");
+
   const tenantRow = await pool.query(
-    `SELECT tenant_key, status
-     FROM tenants
-     WHERE telnyx_voice_number = $1
-     LIMIT 1`,
+    `SELECT tenant_key, status, name FROM tenants WHERE telnyx_voice_number = $1 LIMIT 1`,
     [to]
   );
   if (!tenantRow.rowCount || tenantRow.rows[0].status !== "active") {
-    return res.status(404).json({ error: "tenant_not_found_for_number" });
+    res.type("text/xml").status(200).send(buildHangupResponse("Thanks for calling. Goodbye."));
+    return;
   }
-
-  const providerCallId = body?.data?.payload?.call_control_id || body?.data?.id || "unknown";
-  const traceId = req.header("x-trace-id") ?? `trc_${providerCallId}`;
-  const callId = `cal_${providerCallId}`;
   const tenantKey = tenantRow.rows[0].tenant_key;
-
-  logInfo("telnyx_inbound_received", {
-    trace_id: traceId,
-    call_id: callId,
-    tenant_id: tenantRow.rows[0].tenant_key,
-    provider_call_id: providerCallId,
-    from_number: from,
-    to_number: to
-  });
+  const companyName = tenantRow.rows[0].name || "our team";
 
   await pool.query(
     `INSERT INTO calls (call_sid, tenant_key, from_number, to_number, status)
@@ -89,7 +152,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
      ON CONFLICT (call_sid)
      DO UPDATE SET from_number = EXCLUDED.from_number,
                    to_number = EXCLUDED.to_number`,
-    [callId, tenantKey, from, to]
+    [callSid, tenantKey, from, to]
   );
 
   await pool.query(
@@ -97,73 +160,50 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
      VALUES ($1, $2)
      ON CONFLICT (call_sid)
      DO UPDATE SET state_json = COALESCE(call_details.state_json, EXCLUDED.state_json)`,
-    [callId, JSON.stringify({ status: "initiated", turn: 0 })]
+    [callSid, JSON.stringify({ turn: 0, history: [] })]
   );
+
+  const greeting = `Thanks for calling ${companyName}. I can help get you scheduled. What's your name and best callback number?`;
+  const actionUrl = `${buildBaseUrl(req)}/v1/telnyx/texml/gather?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(callSid)}`;
+  res.type("text/xml").status(200).send(buildTeXMLResponse(greeting, actionUrl));
+});
+
+app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, res) => {
+  if (!pool) {
+    return res.status(500).json({ error: "database_unavailable" });
+  }
+  const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
+  if (!verifyTelnyx(req, rawBody)) {
+    return res.status(401).send("invalid_signature");
+  }
+
+  const params = parseFormBody(rawBody);
+  const tenantKey = String(req.query?.tenantKey || "");
+  const callSid = String(req.query?.callSid || params.CallSid || "unknown");
+  const speech = String(params.SpeechResult || "");
+
+  const detailRow = await pool.query(
+    `SELECT state_json, transcript FROM call_details WHERE call_sid = $1`,
+    [callSid]
+  );
+  const state = detailRow.rows[0]?.state_json || { turn: 0, history: [] };
+  const turn = Number(state.turn || 0) + 1;
+  const history = Array.isArray(state.history) ? state.history : [];
 
   await pool.query(
     `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [callId, tenantKey, "system", null, eventType]
+     VALUES ($1, $2, $3, $4, 'message')`,
+    [callSid, tenantKey, "caller", speech]
   );
 
-  const callControlId = body?.data?.payload?.call_control_id;
-  if (!callControlId || !telnyxApiKey) {
-    return res.status(200).json({ ok: true, warning: "call_control_id_or_key_missing" });
-  }
-
-  if (eventType === "call.initiated") {
-    await telnyxCallCommand({ apiKey: telnyxApiKey, callControlId, action: "answer" });
-    return res.status(200).json({ ok: true });
-  }
-
-  if (eventType === "call.answered") {
-    const tenantInfo = await pool.query(
-      `SELECT name FROM tenants WHERE tenant_key = $1 LIMIT 1`,
-      [tenantKey]
-    );
-    const companyName = tenantInfo.rows[0]?.name || "our team";
-    const greeting = `Thanks for calling ${companyName}. I can help get you scheduled. What's your name and best callback number?`;
-    await telnyxCallCommand({
-      apiKey: telnyxApiKey,
-      callControlId,
-      action: "gather_using_ai",
-      payload: {
-        greeting,
-        language: "en-US",
-        voice: "female",
-        maximum_digits: 0,
-        minimum_digits: 0,
-        maximum_wait_time: 8,
-        max_transcript_confidence: 0.6,
-        parameters: [
-          { name: "caller_name", description: "Full name of the caller" },
-          { name: "callback_number", description: "Best callback phone number" },
-          { name: "service_address", description: "Service address including city and zip" },
-          { name: "preferred_time", description: "Preferred time for the visit or callback" },
-          { name: "urgency", description: "Urgency level (normal or urgent)" }
-        ]
-      }
-    });
-    return res.status(200).json({ ok: true });
-  }
-
-  if (eventType === "call.ai_gather.ended") {
-    const aiResult = payload?.results || payload?.result || payload?.data || null;
+  const done = isDonePhrase(speech) || turn >= 6;
+  if (done) {
+    await pool.query(`UPDATE calls SET status = 'completed' WHERE call_sid = $1`, [callSid]);
+    const transcript = `${detailRow.rows[0]?.transcript || ""}\nCaller: ${speech}`.trim();
     await pool.query(
-      `UPDATE call_details
-       SET extracted_json = $2,
-           updated_at = NOW()
-       WHERE call_sid = $1`,
-      [callId, aiResult ? JSON.stringify(aiResult) : null]
+      `UPDATE call_details SET transcript = $2, updated_at = NOW() WHERE call_sid = $1`,
+      [callSid, transcript]
     );
-    await pool.query(
-      `UPDATE calls
-       SET status = 'completed',
-           summary = $2
-       WHERE call_sid = $1`,
-      [callId, "Call captured via AI gather."]
-    );
-
     if (appBaseUrl && callSummaryToken) {
       await fetch(`${appBaseUrl}/api/v1/calls?tenantKey=${encodeURIComponent(tenantKey)}`, {
         method: "POST",
@@ -174,28 +214,40 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
         body: JSON.stringify({
           action: "summary",
           tenantKey,
-          callSid: callId,
-          summary: "Call captured via AI gather.",
-          extracted: aiResult || {}
+          callSid,
+          summary: "Call completed.",
+          extracted: { transcript }
         })
       });
     }
-
-    await telnyxCallCommand({ apiKey: telnyxApiKey, callControlId, action: "hangup" });
-    return res.status(200).json({ ok: true });
+    res.type("text/xml").status(200).send(buildHangupResponse("Thanks. We have your details and will follow up soon."));
+    return;
   }
 
-  if (eventType === "call.hangup") {
-    await pool.query(
-      `UPDATE calls
-       SET status = 'completed'
-       WHERE call_sid = $1`,
-      [callId]
-    );
-    return res.status(200).json({ ok: true });
-  }
+  const prompt = await composePromptForTenant(tenantKey);
+  const assistantReply = await generateAssistantReply(prompt, history, speech);
+  const updatedHistory = history
+    .concat({ role: "user", content: speech }, { role: "assistant", content: assistantReply })
+    .slice(-12);
+  const updatedTranscript = `${detailRow.rows[0]?.transcript || ""}\nCaller: ${speech}\nAssistant: ${assistantReply}`.trim();
 
-  return res.status(200).json({ ok: true });
+  await pool.query(
+    `UPDATE call_details
+     SET state_json = $2,
+         transcript = $3,
+         updated_at = NOW()
+     WHERE call_sid = $1`,
+    [callSid, JSON.stringify({ turn, history: updatedHistory }), updatedTranscript]
+  );
+
+  await pool.query(
+    `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
+     VALUES ($1, $2, $3, $4, 'message')`,
+    [callSid, tenantKey, "assistant", assistantReply]
+  );
+
+  const actionUrl = `${buildBaseUrl(req)}/v1/telnyx/texml/gather?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(callSid)}`;
+  res.type("text/xml").status(200).send(buildTeXMLResponse(assistantReply, actionUrl));
 });
 
 app.use(express.json());
