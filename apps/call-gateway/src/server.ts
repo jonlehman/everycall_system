@@ -36,8 +36,8 @@ type StreamSession = {
   callSid: string;
   tenantKey: string;
   telnyxStreamId?: string;
-  telnyxWs?: WebSocket;
-  openAiWs?: WebSocket;
+  telnyxWs?: WebSocket | undefined;
+  openAiWs?: WebSocket | undefined;
   greeting?: string;
   lastTranscript?: string;
   outputActive?: boolean;
