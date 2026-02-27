@@ -145,14 +145,29 @@ app.post("/v1/telnyx/texml/inbound", express.raw({ type: "*/*" }), async (req, r
 
   try {
     const params = parseFormBody(rawBody);
-    const to = normalizePhone(String(params.To || ""));
-    const from = normalizePhone(String(params.From || ""));
+    const toRaw = String(params.To || "");
+    const fromRaw = String(params.From || "");
+    const to = normalizePhone(toRaw);
+    const from = normalizePhone(fromRaw);
     const callSid = String(params.CallSid || "unknown");
+    logInfo("telnyx_texml_inbound_params", {
+      callSid,
+      toRaw,
+      fromRaw,
+      to,
+      from
+    });
 
     const tenantRow = await pool.query(
       `SELECT tenant_key, status, name FROM tenants WHERE telnyx_voice_number = $1 LIMIT 1`,
       [to]
     );
+    logInfo("telnyx_texml_inbound_tenant_lookup", {
+      callSid,
+      matched: Boolean(tenantRow.rowCount),
+      tenantKey: tenantRow.rows[0]?.tenant_key,
+      status: tenantRow.rows[0]?.status
+    });
     if (!tenantRow.rowCount || tenantRow.rows[0].status !== "active") {
       res.type("text/xml").status(200).send(buildHangupResponse("Thanks for calling. Goodbye."));
       return;
