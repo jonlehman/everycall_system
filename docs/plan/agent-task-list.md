@@ -101,7 +101,7 @@ Use the **Status** column and keep **Dependencies** accurate.
 ## 9) Testing & QA
 | ID | Task | Owner | Status | Dependencies | Notes |
 |---|---|---|---|---|---|
-| Q1 | Smoke test against deployed services | | blocked | F8 | Needs service URLs |
+| Q1 | Smoke test against deployed services | Smoke Agent | done | F8 | Smoke passed against Render URLs |
 | Q2 | Regression checklist (admin + client flows) | | not started | — | |
 
 ## 10) Release & Rollout
