@@ -28,18 +28,8 @@ async function postForm(url, form, headers = {}) {
 }
 
 async function main() {
-  const form = {
-    CallSid: "CA1234567890",
-    From: "+15125550111",
-    To: twilioToNumber,
-    CallStatus: "ringing",
-    Direction: "inbound"
-  };
-
-  const webhookUrl = `${callGateway}/v1/twilio/webhooks/voice/inbound`;
-  const signature = twilioToken ? twilioSig(webhookUrl, form, twilioToken) : "";
-  const cg = await postForm(webhookUrl, form, signature ? { "X-Twilio-Signature": signature } : {});
-  console.log("call-gateway", cg.status, (await cg.text()).slice(0, 120));
+  const health = await fetch(`${callGateway}/healthz`);
+  console.log("call-gateway", health.status, (await health.text()).slice(0, 120));
 
   const ai = await fetch(`${aiOrchestrator}/v1/ai/orchestrate-turn`, {
     method: "POST",
