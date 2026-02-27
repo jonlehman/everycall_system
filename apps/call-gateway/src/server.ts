@@ -22,6 +22,9 @@ const voiceServiceUrl = process.env.VOICE_SERVICE_URL || "";
 const elevenLabsVoiceId = process.env.ELEVENLABS_VOICE_ID || process.env.ELEVENLABS_DEFAULT_VOICE_ID || "";
 const openAiRealtimeModel = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime";
 const openAiRealtimeVoice = process.env.OPENAI_REALTIME_VOICE || "alloy";
+const openAiRealtimeInputFormat = process.env.OPENAI_REALTIME_INPUT_FORMAT || "g711_ulaw";
+const openAiRealtimeOutputFormat = process.env.OPENAI_REALTIME_OUTPUT_FORMAT || "g711_ulaw";
+const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 
 type PlaybackAsset = {
   buffer: Buffer;
@@ -142,18 +145,18 @@ function buildRtpPacket(payload: Buffer, session: StreamSession): Buffer {
   }
   const header = Buffer.alloc(12);
   header[0] = 0x80;
-  header[1] = 96;
+  header[1] = rtpPayloadType & 0x7f;
   header.writeUInt16BE(session.rtpSeq, 2);
   header.writeUInt32BE(session.rtpTimestamp, 4);
   header.writeUInt32BE(session.rtpSsrc, 8);
   session.rtpSeq = (session.rtpSeq + 1) & 0xffff;
-  session.rtpTimestamp = (session.rtpTimestamp + 320) >>> 0;
+  session.rtpTimestamp = (session.rtpTimestamp + 160) >>> 0;
   return Buffer.concat([header, payload]);
 }
 
 function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
   const buffer = session.outputBuffer ? Buffer.concat([session.outputBuffer, pcmChunk]) : pcmChunk;
-  const frameSize = 320 * 2;
+  const frameSize = 160;
   let offset = 0;
   while (buffer.length - offset >= frameSize) {
     const frame = buffer.subarray(offset, offset + frameSize);
@@ -186,8 +189,8 @@ function connectOpenAiRealtime(session: StreamSession) {
       session: {
         modalities: ["audio", "text"],
         instructions,
-        input_audio_format: "pcm16",
-        output_audio_format: "pcm16",
+        input_audio_format: openAiRealtimeInputFormat,
+        output_audio_format: openAiRealtimeOutputFormat,
         voice: openAiRealtimeVoice,
         turn_detection: { type: "server_vad" }
       }
@@ -232,12 +235,15 @@ function connectOpenAiRealtime(session: StreamSession) {
       session.responseActive = false;
     }
     if (type === "input_audio_buffer.speech_stopped" || type === "input_audio_buffer.committed") {
-      sendOpenAiEvent(ws, {
-        type: "response.create",
-        response: {
-          modalities: ["audio", "text"]
-        }
-      });
+      if (!session.responseActive) {
+        session.responseActive = true;
+        sendOpenAiEvent(ws, {
+          type: "response.create",
+          response: {
+            modalities: ["audio", "text"]
+          }
+        });
+      }
     }
     if (type === "error") {
       logError("openai_realtime_error", { callSid: session.callSid, detail: payload });
@@ -797,9 +803,9 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
           stream_url: streamUrl,
           stream_track: "both_tracks",
           stream_bidirectional_mode: "rtp",
-          stream_bidirectional_codec: "L16",
-          stream_bidirectional_sampling_rate: 16000,
-          stream_codec: "L16"
+          stream_bidirectional_codec: "PCMU",
+          stream_bidirectional_sampling_rate: 8000,
+          stream_codec: "PCMU"
         });
       }
     } catch (err) {

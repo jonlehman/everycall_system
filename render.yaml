@@ -23,6 +23,12 @@ services:
         sync: false
       - key: OPENAI_REALTIME_VOICE
         sync: false
+      - key: OPENAI_REALTIME_INPUT_FORMAT
+        sync: false
+      - key: OPENAI_REALTIME_OUTPUT_FORMAT
+        sync: false
+      - key: TELNYX_RTP_PAYLOAD_TYPE
+        sync: false
       - key: APP_BASE_URL
         sync: false
       - key: CALL_SUMMARY_TOKEN

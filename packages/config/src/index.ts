@@ -17,6 +17,9 @@ const callGatewayEnvSchema = baseSchema.extend({
   ELEVENLABS_VOICE_ID: z.string().min(1).optional(),
   OPENAI_REALTIME_MODEL: z.string().min(1).optional(),
   OPENAI_REALTIME_VOICE: z.string().min(1).optional(),
+  OPENAI_REALTIME_INPUT_FORMAT: z.string().min(1).optional(),
+  OPENAI_REALTIME_OUTPUT_FORMAT: z.string().min(1).optional(),
+  TELNYX_RTP_PAYLOAD_TYPE: z.string().min(1).optional(),
   APP_BASE_URL: z.string().min(1).optional(),
   CALL_SUMMARY_TOKEN: z.string().min(1).optional(),
   DATABASE_URL: z.string().min(1).optional()
