@@ -53,6 +53,7 @@ type StreamSession = {
   outputBuffer?: Buffer;
   outputQueue?: Buffer[];
   outputTimer?: NodeJS.Timeout | undefined;
+  outputPrimed?: boolean;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -176,6 +177,11 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
 
 function startOutputPump(session: StreamSession) {
   if (session.outputTimer) return;
+  // Pre-buffer a few frames to avoid initial underruns.
+  if (!session.outputPrimed && session.outputQueue && session.outputQueue.length < 5) {
+    return;
+  }
+  session.outputPrimed = true;
   session.outputTimer = setInterval(() => {
     if (!session.outputQueue || session.outputQueue.length === 0) {
       if (session.outputTimer) {
