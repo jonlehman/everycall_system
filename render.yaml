@@ -9,6 +9,12 @@ services:
         value: "3101"
       - key: TELNYX_PUBLIC_KEY
         sync: false
+      - key: TELNYX_API_KEY
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+      - key: CALL_SUMMARY_TOKEN
+        sync: false
       - key: DATABASE_URL
         sync: false
 

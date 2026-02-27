@@ -132,6 +132,22 @@ export async function ensureTables(pool) {
       transcript TEXT,
       extracted_json JSONB,
       routing_json JSONB,
+      state_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS state_json JSONB;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS call_events (
+      id BIGSERIAL PRIMARY KEY,
+      call_sid TEXT NOT NULL,
+      tenant_key TEXT NOT NULL,
+      role TEXT NOT NULL,
+      text TEXT,
+      event_type TEXT NOT NULL DEFAULT 'message',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);

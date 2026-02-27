@@ -7,6 +7,9 @@ const baseSchema = z.object({
 const callGatewayEnvSchema = baseSchema.extend({
   PORT: z.coerce.number().int().positive().default(3101),
   TELNYX_PUBLIC_KEY: z.string().min(1).optional(),
+  TELNYX_API_KEY: z.string().min(1).optional(),
+  APP_BASE_URL: z.string().min(1).optional(),
+  CALL_SUMMARY_TOKEN: z.string().min(1).optional(),
   DATABASE_URL: z.string().min(1).optional()
 });
 
