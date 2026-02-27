@@ -47,7 +47,7 @@ function buildBaseUrl(req: express.Request) {
 function buildTeXMLResponse(prompt: string, actionUrl: string) {
   const escaped = prompt.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const escapedAction = actionUrl.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Gather input="speech" timeout="8" speechTimeout="3" language="en-US" action="${escapedAction}" method="POST">\n    <Say>${escaped}</Say>\n  </Gather>\n  <Say>We didn't catch that. Please call again.</Say>\n</Response>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Gather input="speech" timeout="10" speechTimeout="4" language="en-US" transcriptionEngine="Google" useEnhanced="true" action="${escapedAction}" method="POST">\n    <Say>${escaped}</Say>\n  </Gather>\n  <Say>We didn't catch that. Please call again.</Say>\n</Response>`;
 }
 
 function buildHangupResponse(text: string) {
@@ -269,7 +269,8 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
       tenantKey,
       speechLength: speech.trim().length,
       speechPreview: speech.slice(0, 120),
-      confidence: params.Confidence || ""
+      confidence: params.Confidence || "",
+      digits: params.Digits || ""
     });
 
     if (!speech.trim()) {
