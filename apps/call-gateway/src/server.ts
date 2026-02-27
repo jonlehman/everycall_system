@@ -18,7 +18,7 @@ function safeJsonParse(raw: string): any {
   }
 }
 
-app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), (req, res) => {
+app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), async (req, res) => {
   const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
   const signature = req.header("telnyx-signature-ed25519");
   const timestamp = req.header("telnyx-timestamp");
