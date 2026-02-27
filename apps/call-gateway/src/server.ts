@@ -57,6 +57,7 @@ type StreamSession = {
   lastResponseAt?: number;
   pendingCallerText?: string;
   pendingAssistantText?: string;
+  awaitingAnswer?: boolean;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -876,11 +877,26 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
       callSid,
       tenantKey,
       greeting,
-      instructions
+      instructions,
+      awaitingAnswer: true
     });
     try {
       if (callControlId) {
         await telnyxCallAction(callControlId, "answer", {});
+      }
+    } catch (err) {
+      logError("telnyx_call_control_start_error", {
+        message: err instanceof Error ? err.message : "unknown"
+      });
+    }
+  }
+
+  if (eventType === "call.answered") {
+    const callControlId = String(eventPayload.call_control_id || "");
+    const session = callControlId ? streamSessions.get(callControlId) : undefined;
+    if (callControlId && session?.awaitingAnswer) {
+      session.awaitingAnswer = false;
+      try {
         const streamUrl = `${toWebSocketUrl(callGatewayBaseUrl || buildBaseUrl(req))}/v1/telnyx/stream`;
         await telnyxCallAction(callControlId, "streaming_start", {
           stream_url: streamUrl,
@@ -890,11 +906,11 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
           stream_bidirectional_sampling_rate: 8000,
           stream_codec: "PCMU"
         });
+      } catch (err) {
+        logError("telnyx_call_control_stream_start_error", {
+          message: err instanceof Error ? err.message : "unknown"
+        });
       }
-    } catch (err) {
-      logError("telnyx_call_control_start_error", {
-        message: err instanceof Error ? err.message : "unknown"
-      });
     }
   }
 
