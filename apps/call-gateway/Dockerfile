@@ -8,7 +8,7 @@ COPY packages ./packages
 COPY apps/call-gateway ./apps/call-gateway
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @everycall/call-gateway build
+RUN pnpm -r build
 
 ENV NODE_ENV=production
 ENV PORT=3101

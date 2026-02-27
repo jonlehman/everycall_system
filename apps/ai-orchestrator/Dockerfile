@@ -8,7 +8,7 @@ COPY packages ./packages
 COPY apps/ai-orchestrator ./apps/ai-orchestrator
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @everycall/ai-orchestrator build
+RUN pnpm -r build
 
 ENV NODE_ENV=production
 ENV PORT=3102

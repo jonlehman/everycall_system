@@ -8,7 +8,7 @@ COPY packages ./packages
 COPY apps/voice-service ./apps/voice-service
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @everycall/voice-service build
+RUN pnpm -r build
 
 ENV NODE_ENV=production
 ENV PORT=3103
