@@ -729,8 +729,9 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
           stream_url: streamUrl,
           stream_track: "both_tracks",
           stream_bidirectional_mode: "rtp",
-          stream_bidirectional_codec: "l16",
-          stream_codec: "l16"
+          stream_bidirectional_codec: "L16",
+          stream_bidirectional_sampling_rate: 16000,
+          stream_codec: "L16"
         });
       }
     } catch (err) {
