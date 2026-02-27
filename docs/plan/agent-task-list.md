@@ -34,6 +34,7 @@ Use the **Status** column and keep **Dependencies** accurate.
 |---|---|---|---|---|---|
 | F1 | Confirm Vercel env vars (DATABASE_URL, OPENAI_API_KEY, TELNYX_API_KEY, APP_BASE_URL) | Dev A | done | — | Required for most flows |
 | F1a | Add TELNYX_PUBLIC_KEY env var for webhook verification | Dev A | done | — | Required for Telnyx webhook verification |
+| F1b | Add TELNYX_VOICE_CONNECTION_ID env var | Dev A | not started | — | Required for voice number provisioning |
 | F2 | Add Telnyx webhook signature verification | Dev B | done | F1 | Uses TELNYX_PUBLIC_KEY |
 | F3 | DB migrations sanity check on prod | Dev C | blocked | F1 | Needs prod verification |
 | F4 | Confirm DNS + domain routing for app.everycall.io | | not started | — | Must resolve to Vercel |
@@ -64,8 +65,8 @@ Use the **Status** column and keep **Dependencies** accurate.
 ## 4) Tenant & Industry Management
 | ID | Task | Owner | Status | Dependencies | Notes |
 |---|---|---|---|---|---|
-| T1 | Auto‑provision local voice number per tenant | | not started | F1 | No toll‑free |
-| T2 | Assign voice number to SIP/voice app | | not started | T1 | Telnyx connection |
+| T1 | Auto‑provision local voice number per tenant | Dev B | done | F1 | No toll‑free |
+| T2 | Assign voice number to SIP/voice app | Dev B | done | T1 | Telnyx connection |
 | T3 | Admin “Import Industry Prompt/FAQs” UX complete | | done | — | Implemented |
 | T4 | Onboarding uses industry prompt + FAQs | | done | — | Implemented |
 

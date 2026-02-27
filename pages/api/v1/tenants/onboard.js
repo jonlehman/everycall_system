@@ -1,5 +1,7 @@
 import bcrypt from "bcryptjs";
 import { ensureTables, getPool } from "../../_lib/db.js";
+import { findAvailableVoiceNumber, orderVoiceNumber } from "../../_lib/telnyx.js";
+import { normalizePhoneNumber } from "../../_lib/phone.js";
 
 const BASE_FAQS = [
   {
@@ -258,6 +260,48 @@ export default async function handler(req, res) {
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [tenantKey, businessName, status, dataRegion, plan, primaryNumber, industry]
     );
+
+    // Auto-provision a local voice number via Telnyx.
+    let voiceNumber = null;
+    let voiceOrder = null;
+    try {
+      const normalizedPrimary = normalizePhoneNumber(primaryNumber);
+      const digits = String(normalizedPrimary || "").replace(/[^\d]/g, "");
+      const areaCode = digits.length >= 10 ? digits.slice(-10, -7) : null;
+      voiceNumber = await findAvailableVoiceNumber({ areaCode });
+      if (!voiceNumber) {
+        voiceNumber = await findAvailableVoiceNumber();
+      }
+      if (voiceNumber) {
+        const connectionId = process.env.TELNYX_VOICE_CONNECTION_ID || "";
+        voiceOrder = await orderVoiceNumber({ phoneNumber: voiceNumber, connectionId });
+        await pool.query(
+          `UPDATE tenants
+           SET telnyx_voice_number = $2,
+               telnyx_voice_order_id = $3,
+               telnyx_voice_status = 'active',
+               updated_at = NOW()
+           WHERE tenant_key = $1`,
+          [tenantKey, voiceNumber, voiceOrder?.data?.id || null]
+        );
+      } else {
+        await pool.query(
+          `UPDATE tenants
+           SET telnyx_voice_status = 'unavailable',
+               updated_at = NOW()
+           WHERE tenant_key = $1`,
+          [tenantKey]
+        );
+      }
+    } catch (err) {
+      await pool.query(
+        `UPDATE tenants
+         SET telnyx_voice_status = 'failed',
+             updated_at = NOW()
+         WHERE tenant_key = $1`,
+        [tenantKey]
+      );
+    }
 
     const passwordHash = await bcrypt.hash(password, 10);
     await pool.query(

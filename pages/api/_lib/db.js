@@ -31,12 +31,20 @@ export async function ensureTables(pool) {
       plan TEXT NOT NULL DEFAULT 'Growth',
       primary_number TEXT,
       industry TEXT,
+      telnyx_voice_number TEXT,
+      telnyx_voice_number_id TEXT,
+      telnyx_voice_order_id TEXT,
+      telnyx_voice_status TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS industry TEXT;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS telnyx_voice_number TEXT;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS telnyx_voice_number_id TEXT;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS telnyx_voice_order_id TEXT;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS telnyx_voice_status TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tenant_users (
