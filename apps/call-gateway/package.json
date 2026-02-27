@@ -14,11 +14,13 @@
     "@everycall/observability": "workspace:*",
     "@everycall/telephony": "workspace:*",
     "@everycall/tenancy": "workspace:*",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.12",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }

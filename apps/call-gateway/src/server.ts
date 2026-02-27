@@ -1,4 +1,6 @@
 import express from "express";
+import http from "node:http";
+import WebSocket, { WebSocketServer } from "ws";
 import { readCallGatewayEnv } from "@everycall/config";
 import { logError, logInfo } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
@@ -18,6 +20,8 @@ const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const telnyxTranscriptionModel = process.env.TELNYX_TRANSCRIPTION_MODEL || "Telnyx";
 const voiceServiceUrl = process.env.VOICE_SERVICE_URL || "";
 const elevenLabsVoiceId = process.env.ELEVENLABS_VOICE_ID || process.env.ELEVENLABS_DEFAULT_VOICE_ID || "";
+const openAiRealtimeModel = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime";
+const openAiRealtimeVoice = process.env.OPENAI_REALTIME_VOICE || "alloy";
 
 type PlaybackAsset = {
   buffer: Buffer;
@@ -26,6 +30,21 @@ type PlaybackAsset = {
 };
 
 const playbackStore = new Map<string, PlaybackAsset>();
+
+type StreamSession = {
+  callControlId: string;
+  callSid: string;
+  tenantKey: string;
+  telnyxStreamId?: string;
+  telnyxWs?: WebSocket;
+  openAiWs?: WebSocket;
+  greeting?: string;
+  lastTranscript?: string;
+  outputActive?: boolean;
+  instructions?: string;
+};
+
+const streamSessions = new Map<string, StreamSession>();
 
 app.set("trust proxy", true);
 
@@ -63,6 +82,103 @@ function buildBaseUrlFromAction(actionUrl: string) {
   } catch {
     return callGatewayBaseUrl || "";
   }
+}
+
+function toWebSocketUrl(baseUrl: string) {
+  if (baseUrl.startsWith("https://")) return baseUrl.replace("https://", "wss://");
+  if (baseUrl.startsWith("http://")) return baseUrl.replace("http://", "ws://");
+  return baseUrl;
+}
+
+function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined, payloadBase64: string) {
+  if (!ws || ws.readyState !== WebSocket.OPEN || !streamId) return;
+  ws.send(
+    JSON.stringify({
+      event: "media",
+      stream_id: streamId,
+      media: {
+        payload: payloadBase64
+      }
+    })
+  );
+}
+
+function sendOpenAiEvent(ws: WebSocket | undefined, payload: Record<string, unknown>) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify(payload));
+}
+
+function connectOpenAiRealtime(session: StreamSession) {
+  if (!openAiKey) {
+    logError("openai_realtime_missing_key", { callSid: session.callSid });
+    return;
+  }
+  const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(openAiRealtimeModel)}`;
+  const ws = new WebSocket(url, {
+    headers: {
+      Authorization: `Bearer ${openAiKey}`,
+      "OpenAI-Beta": "realtime=v1"
+    }
+  });
+  session.openAiWs = ws;
+
+  ws.on("open", () => {
+    const instructions = session.instructions || "";
+    sendOpenAiEvent(ws, {
+      type: "session.update",
+      session: {
+        modalities: ["audio", "text"],
+        instructions,
+        input_audio_format: "pcm16",
+        output_audio_format: "pcm16",
+        voice: openAiRealtimeVoice,
+        turn_detection: { type: "server_vad" }
+      }
+    });
+
+    if (session.greeting) {
+      sendOpenAiEvent(ws, {
+        type: "response.create",
+        response: {
+          modalities: ["audio"],
+          instructions: session.greeting
+        }
+      });
+    }
+  });
+
+  ws.on("message", (data) => {
+    let payload: any = {};
+    try {
+      payload = JSON.parse(data.toString());
+    } catch {
+      return;
+    }
+    const type = payload.type || "";
+    if (type === "response.audio.delta" || type === "response.output_audio.delta" || type === "output_audio.delta") {
+      const audioBase64 =
+        payload.delta ||
+        payload.audio?.delta ||
+        payload.audio?.data ||
+        payload.data ||
+        "";
+      if (audioBase64 && session.telnyxWs && session.telnyxStreamId) {
+        session.outputActive = true;
+        sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, audioBase64);
+      }
+      return;
+    }
+    if (type === "response.done" || type === "response.completed") {
+      session.outputActive = false;
+    }
+    if (type === "error") {
+      logError("openai_realtime_error", { callSid: session.callSid, detail: payload });
+    }
+  });
+
+  ws.on("close", () => {
+    session.openAiWs = undefined;
+  });
 }
 
 async function telnyxCallAction(callControlId: string, action: string, payload: Record<string, unknown> = {}) {
@@ -596,22 +712,26 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     );
 
     const greeting = `Thanks for calling ${companyName}. I can help get you scheduled. What's your name and best callback number?`;
+    const instructions = await composePromptForTenant(tenantKey);
+
+    streamSessions.set(callControlId, {
+      callControlId,
+      callSid,
+      tenantKey,
+      greeting,
+      instructions
+    });
     try {
       if (callControlId) {
         await telnyxCallAction(callControlId, "answer", {});
-        await telnyxCallAction(callControlId, "transcription_start", {
-          transcription_engine: telnyxTranscriptionModel,
-          language: "en"
+        const streamUrl = `${toWebSocketUrl(callGatewayBaseUrl || buildBaseUrl(req))}/v1/telnyx/stream`;
+        await telnyxCallAction(callControlId, "streaming_start", {
+          stream_url: streamUrl,
+          stream_track: "both_tracks",
+          stream_bidirectional_mode: "rtp",
+          stream_bidirectional_codec: "l16",
+          stream_codec: "l16"
         });
-        const utteranceId = `${callSid}-greeting`;
-        const audio = await synthesizeAudio(greeting, tenantKey, callSid, utteranceId);
-        if (audio) {
-          savePlaybackAsset(utteranceId, audio);
-          const audioUrl = `${callGatewayBaseUrl || buildBaseUrl(req)}/v1/voice/playback/${encodeURIComponent(utteranceId)}`;
-          await telnyxCallAction(callControlId, "playback_start", { audio_url: audioUrl });
-        } else {
-          await telnyxCallAction(callControlId, "speak", { payload: greeting, voice: "female" });
-        }
       }
     } catch (err) {
       logError("telnyx_call_control_start_error", {
@@ -715,6 +835,13 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     const callControlId = String(eventPayload.call_control_id || "");
     const callSid = callControlId || String(eventPayload.call_session_id || "unknown");
     await pool.query(`UPDATE calls SET status = 'completed' WHERE call_sid = $1`, [callSid]);
+    if (callControlId) {
+      const session = streamSessions.get(callControlId);
+      if (session?.openAiWs) {
+        session.openAiWs.close();
+      }
+      streamSessions.delete(callControlId);
+    }
   }
 
   return res.status(200).send("ok");
@@ -731,7 +858,71 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   res.status(500).json({ error: "internal_error" });
 });
 
-app.listen(env.PORT, () => {
+const server = http.createServer(app);
+const streamIdToCall = new Map<string, string>();
+const wss = new WebSocketServer({ server, path: "/v1/telnyx/stream" });
+
+wss.on("connection", (ws) => {
+  ws.on("message", (data) => {
+    let payload: any = {};
+    try {
+      payload = JSON.parse(data.toString());
+    } catch {
+      return;
+    }
+    const event = payload.event;
+    if (event === "start") {
+      const streamId = payload.stream_id;
+      const callControlId = payload.start?.call_control_id || payload.start?.call_control_id;
+      if (!streamId || !callControlId) return;
+      const session = streamSessions.get(callControlId);
+      if (!session) return;
+      session.telnyxWs = ws;
+      session.telnyxStreamId = streamId;
+      streamIdToCall.set(streamId, callControlId);
+      logInfo("telnyx_stream_started", { callSid: session.callSid, callControlId, streamId });
+      if (!session.openAiWs) {
+        connectOpenAiRealtime(session);
+      }
+      return;
+    }
+
+    if (event === "media") {
+      const streamId = payload.stream_id;
+      const media = payload.media || {};
+      const track = media.track || "inbound";
+      const encoded = media.payload || "";
+      if (!streamId || !encoded) return;
+      const callControlId = streamIdToCall.get(streamId);
+      if (!callControlId) return;
+      const session = streamSessions.get(callControlId);
+      if (!session) return;
+      if (track === "inbound") {
+        if (session.outputActive && session.openAiWs) {
+          session.outputActive = false;
+          sendOpenAiEvent(session.openAiWs, { type: "response.cancel" });
+        }
+        sendOpenAiEvent(session.openAiWs, { type: "input_audio_buffer.append", audio: encoded });
+      }
+      return;
+    }
+
+    if (event === "stop") {
+      const streamId = payload.stream_id;
+      if (!streamId) return;
+      const callControlId = streamIdToCall.get(streamId);
+      if (!callControlId) return;
+      const session = streamSessions.get(callControlId);
+      if (session?.openAiWs) {
+        session.openAiWs.close();
+      }
+      streamIdToCall.delete(streamId);
+      return;
+    }
+  });
+});
+
+server.listen(env.PORT, () => {
   logInfo("call_gateway_started", {
     port: env.PORT
   });
