@@ -41,7 +41,12 @@ type StreamSession = {
   greeting?: string;
   lastTranscript?: string;
   outputActive?: boolean;
+  responseActive?: boolean;
   instructions?: string;
+  rtpSeq?: number;
+  rtpTimestamp?: number;
+  rtpSsrc?: number;
+  outputBuffer?: Buffer;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -108,6 +113,57 @@ function sendOpenAiEvent(ws: WebSocket | undefined, payload: Record<string, unkn
   ws.send(JSON.stringify(payload));
 }
 
+function decodeRtpPayload(packet: Buffer): Buffer | null {
+  if (packet.length < 12) return null;
+  const first = packet[0];
+  const hasExtension = (first & 0x10) !== 0;
+  const csrcCount = first & 0x0f;
+  let headerLen = 12 + csrcCount * 4;
+  if (packet.length < headerLen) return null;
+  if (hasExtension) {
+    if (packet.length < headerLen + 4) return null;
+    const extLenWords = packet.readUInt16BE(headerLen + 2);
+    headerLen += 4 + extLenWords * 4;
+    if (packet.length < headerLen) return null;
+  }
+  return packet.subarray(headerLen);
+}
+
+function buildRtpPacket(payload: Buffer, session: StreamSession): Buffer {
+  if (session.rtpSeq === undefined) {
+    session.rtpSeq = Math.floor(Math.random() * 65535);
+  }
+  if (session.rtpTimestamp === undefined) {
+    session.rtpTimestamp = Math.floor(Math.random() * 0xffffffff);
+  }
+  if (session.rtpSsrc === undefined) {
+    session.rtpSsrc = Math.floor(Math.random() * 0xffffffff);
+  }
+  const header = Buffer.alloc(12);
+  header[0] = 0x80;
+  header[1] = 96;
+  header.writeUInt16BE(session.rtpSeq, 2);
+  header.writeUInt32BE(session.rtpTimestamp, 4);
+  header.writeUInt32BE(session.rtpSsrc, 8);
+  session.rtpSeq = (session.rtpSeq + 1) & 0xffff;
+  session.rtpTimestamp = (session.rtpTimestamp + 320) >>> 0;
+  return Buffer.concat([header, payload]);
+}
+
+function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
+  const buffer = session.outputBuffer ? Buffer.concat([session.outputBuffer, pcmChunk]) : pcmChunk;
+  const frameSize = 320 * 2;
+  let offset = 0;
+  while (buffer.length - offset >= frameSize) {
+    const frame = buffer.subarray(offset, offset + frameSize);
+    const rtpPacket = buildRtpPacket(frame, session);
+    const base64 = rtpPacket.toString("base64");
+    sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, base64);
+    offset += frameSize;
+  }
+  session.outputBuffer = buffer.subarray(offset);
+}
+
 function connectOpenAiRealtime(session: StreamSession) {
   if (!openAiKey) {
     logError("openai_realtime_missing_key", { callSid: session.callSid });
@@ -164,12 +220,23 @@ function connectOpenAiRealtime(session: StreamSession) {
         "";
       if (audioBase64 && session.telnyxWs && session.telnyxStreamId) {
         session.outputActive = true;
-        sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, audioBase64);
+        session.responseActive = true;
+        const pcm = Buffer.from(audioBase64, "base64");
+        enqueueOutputPcm(session, pcm);
       }
       return;
     }
     if (type === "response.done" || type === "response.completed") {
       session.outputActive = false;
+      session.responseActive = false;
+    }
+    if (type === "input_audio_buffer.speech_stopped" || type === "input_audio_buffer.committed") {
+      sendOpenAiEvent(ws, {
+        type: "response.create",
+        response: {
+          modalities: ["audio", "text"]
+        }
+      });
     }
     if (type === "error") {
       logError("openai_realtime_error", { callSid: session.callSid, detail: payload });
@@ -880,6 +947,9 @@ wss.on("connection", (ws) => {
       if (!session) return;
       session.telnyxWs = ws;
       session.telnyxStreamId = streamId;
+      session.outputBuffer = Buffer.alloc(0);
+      session.outputActive = false;
+      session.responseActive = false;
       streamIdToCall.set(streamId, callControlId);
       logInfo("telnyx_stream_started", { callSid: session.callSid, callControlId, streamId });
       if (!session.openAiWs) {
@@ -899,11 +969,16 @@ wss.on("connection", (ws) => {
       const session = streamSessions.get(callControlId);
       if (!session) return;
       if (track === "inbound") {
-        if (session.outputActive && session.openAiWs) {
+        if (session.outputActive && session.openAiWs && session.responseActive) {
           session.outputActive = false;
+          session.responseActive = false;
           sendOpenAiEvent(session.openAiWs, { type: "response.cancel" });
         }
-        sendOpenAiEvent(session.openAiWs, { type: "input_audio_buffer.append", audio: encoded });
+        const packet = Buffer.from(encoded, "base64");
+        const payloadPcm = decodeRtpPayload(packet);
+        if (payloadPcm) {
+          sendOpenAiEvent(session.openAiWs, { type: "input_audio_buffer.append", audio: payloadPcm.toString("base64") });
+        }
       }
       return;
     }
