@@ -981,11 +981,8 @@ wss.on("connection", (ws) => {
           session.responseActive = false;
           sendOpenAiEvent(session.openAiWs, { type: "response.cancel" });
         }
-        const packet = Buffer.from(encoded, "base64");
-        const payloadPcm = decodeRtpPayload(packet);
-        if (payloadPcm) {
-          sendOpenAiEvent(session.openAiWs, { type: "input_audio_buffer.append", audio: payloadPcm.toString("base64") });
-        }
+        // Telnyx streaming payload is raw audio (RTP payload) for the selected codec.
+        sendOpenAiEvent(session.openAiWs, { type: "input_audio_buffer.append", audio: encoded });
       }
       return;
     }
