@@ -226,16 +226,7 @@ function connectOpenAiRealtime(session: StreamSession) {
         output_audio_format: openAiRealtimeOutputFormat,
         voice: openAiRealtimeVoice,
         turn_detection: { type: "server_vad", silence_duration_ms: 900, prefix_padding_ms: 300 },
-        input_audio_transcription: { model: "gpt-4o-mini-transcribe", language: "en" },
-        audio: {
-          input: {
-            format: { type: openAiRealtimeInputFormat, rate: 8000 },
-            transcription: { model: "gpt-4o-mini-transcribe", language: "en" }
-          },
-          output: {
-            format: { type: openAiRealtimeOutputFormat, rate: 8000 }
-          }
-        }
+        input_audio_transcription: { model: "gpt-4o-mini-transcribe", language: "en" }
       }
     });
 
