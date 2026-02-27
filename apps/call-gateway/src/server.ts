@@ -212,6 +212,11 @@ app.post("/v1/telnyx/texml/inbound", express.raw({ type: "*/*" }), async (req, r
 
     const greeting = `Thanks for calling ${companyName}. I can help get you scheduled. What's your name and best callback number?`;
     const actionUrl = `${buildBaseUrl(req)}/v1/telnyx/texml/gather?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(callSid)}`;
+    logInfo("telnyx_texml_inbound_response", {
+      callSid,
+      tenantKey,
+      actionUrl
+    });
     res.type("text/xml").status(200).send(buildTeXMLResponse(greeting, actionUrl));
   } catch (err) {
     logError("telnyx_texml_inbound_error", {
@@ -219,6 +224,15 @@ app.post("/v1/telnyx/texml/inbound", express.raw({ type: "*/*" }), async (req, r
     });
     res.type("text/xml").status(200).send(buildHangupResponse("We are unable to take your call right now."));
   }
+});
+
+app.post("/v1/telnyx/texml/debug", express.raw({ type: "*/*" }), (_req, res) => {
+  res
+    .type("text/xml")
+    .status(200)
+    .send(
+      `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Say>Everycall debug endpoint is live.</Say>\n  <Hangup/>\n</Response>`
+    );
 });
 
 app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, res) => {
