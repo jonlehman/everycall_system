@@ -54,6 +54,7 @@ type StreamSession = {
   outputQueue?: Buffer[];
   outputTimer?: NodeJS.Timeout | undefined;
   outputPrimed?: boolean;
+  lastResponseAt?: number;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -221,7 +222,7 @@ function connectOpenAiRealtime(session: StreamSession) {
         input_audio_format: openAiRealtimeInputFormat,
         output_audio_format: openAiRealtimeOutputFormat,
         voice: openAiRealtimeVoice,
-        turn_detection: { type: "server_vad" }
+        turn_detection: { type: "server_vad", silence_duration_ms: 900, prefix_padding_ms: 300 }
       }
     });
 
@@ -265,10 +266,12 @@ function connectOpenAiRealtime(session: StreamSession) {
       session.responseActive = false;
     }
     if (type === "input_audio_buffer.speech_stopped" || type === "input_audio_buffer.committed") {
-      if (session.responseActive) {
+      const now = Date.now();
+      if (session.responseActive || (session.lastResponseAt && now - session.lastResponseAt < 1200)) {
         return;
       }
       session.responseActive = true;
+      session.lastResponseAt = now;
       sendOpenAiEvent(ws, {
         type: "response.create",
         response: {
