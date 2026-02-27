@@ -38,9 +38,9 @@ Use the **Status** column and keep **Dependencies** accurate.
 | F2 | Add Telnyx webhook signature verification | Dev B | done | F1 | Uses TELNYX_PUBLIC_KEY |
 | F3 | DB migrations sanity check on prod | Dev C | done | F1 | Prod columns verified & added |
 | F4 | Confirm DNS + domain routing for app.everycall.io | | not started | — | Must resolve to Vercel |
-| F5 | Deploy call-gateway service | | not started | F1 | Required for smoke tests |
-| F6 | Deploy ai-orchestrator service | | not started | F1 | Required for smoke tests |
-| F7 | Deploy voice-service | | not started | F1 | Required for smoke tests |
+| F5 | Deploy call-gateway service | Dev A | in progress | F1 | Deployment scaffolding added (Render) |
+| F6 | Deploy ai-orchestrator service | Dev A | in progress | F1 | Deployment scaffolding added (Render) |
+| F7 | Deploy voice-service | Dev A | in progress | F1 | Deployment scaffolding added (Render) |
 | F8 | Record service URLs in plan for smoke tests | | not started | F5, F6, F7 | Populate CALL_GATEWAY_URL, AI_ORCHESTRATOR_URL, VOICE_SERVICE_URL |
 
 ## 2) Voice Processing (MVP, no emergency dispatch)

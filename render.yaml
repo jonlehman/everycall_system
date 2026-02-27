@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: everycall-call-gateway
+    env: docker
+    dockerfilePath: apps/call-gateway/Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "3101"
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WEBHOOK_BASE_URL
+        sync: false
+      - key: TENANT_NUMBERS_FILE
+        sync: false
+
+  - type: web
+    name: everycall-ai-orchestrator
+    env: docker
+    dockerfilePath: apps/ai-orchestrator/Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "3102"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
+
+  - type: web
+    name: everycall-voice-service
+    env: docker
+    dockerfilePath: apps/voice-service/Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "3103"
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_MODEL_ID
+        sync: false
