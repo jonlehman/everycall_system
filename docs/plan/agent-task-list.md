@@ -55,8 +55,8 @@ Use the **Status** column and keep **Dependencies** accurate.
 ## 3) SMS Alerts (Shared Number)
 | ID | Task | Owner | Status | Dependencies | Notes |
 |---|---|---|---|---|---|
-| S1 | Store shared SMS number in system config | Dev C | in progress | F3 | System config field |
-| S2 | Create outbound SMS API wrapper (Telnyx) | Dev B | in progress | F1 | Use TELNYX_API_KEY |
+| S1 | Store shared SMS number in system config | Dev C | done | F3 | System config field |
+| S2 | Create outbound SMS API wrapper (Telnyx) | Dev B | done | F1 | Use TELNYX_API_KEY |
 | S3 | Alert template(s) for appointment/call summary | | not started | V5 | |
 | S4 | Send SMS to tenant users after call summary | | not started | S2, S3, V5 | Opt‑in rules TBD |
 
