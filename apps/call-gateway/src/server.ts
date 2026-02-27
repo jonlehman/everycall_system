@@ -25,6 +25,7 @@ const openAiRealtimeVoice = process.env.OPENAI_REALTIME_VOICE || "alloy";
 const openAiRealtimeInputFormat = process.env.OPENAI_REALTIME_INPUT_FORMAT || "g711_ulaw";
 const openAiRealtimeOutputFormat = process.env.OPENAI_REALTIME_OUTPUT_FORMAT || "g711_ulaw";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
+const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "rtp").toLowerCase();
 
 type PlaybackAsset = {
   buffer: Buffer;
@@ -160,8 +161,8 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
   let offset = 0;
   while (buffer.length - offset >= frameSize) {
     const frame = buffer.subarray(offset, offset + frameSize);
-    const rtpPacket = buildRtpPacket(frame, session);
-    const base64 = rtpPacket.toString("base64");
+    const payload = bidirectionalPayloadMode === "raw" ? frame : buildRtpPacket(frame, session);
+    const base64 = payload.toString("base64");
     sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, base64);
     offset += frameSize;
   }

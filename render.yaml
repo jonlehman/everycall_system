@@ -29,6 +29,8 @@ services:
         sync: false
       - key: TELNYX_RTP_PAYLOAD_TYPE
         sync: false
+      - key: TELNYX_BIDIRECTIONAL_PAYLOAD_MODE
+        sync: false
       - key: APP_BASE_URL
         sync: false
       - key: CALL_SUMMARY_TOKEN
