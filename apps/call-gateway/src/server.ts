@@ -140,7 +140,7 @@ function connectOpenAiRealtime(session: StreamSession) {
       sendOpenAiEvent(ws, {
         type: "response.create",
         response: {
-          modalities: ["audio"],
+          modalities: ["audio", "text"],
           instructions: session.greeting
         }
       });
