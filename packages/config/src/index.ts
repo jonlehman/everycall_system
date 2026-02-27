@@ -6,9 +6,7 @@ const baseSchema = z.object({
 
 const callGatewayEnvSchema = baseSchema.extend({
   PORT: z.coerce.number().int().positive().default(3101),
-  TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
-  TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
-  TWILIO_WEBHOOK_BASE_URL: z.string().url().optional(),
+  TELNYX_PUBLIC_KEY: z.string().min(1).optional(),
   TENANT_NUMBERS_FILE: z.string().min(1).default("data/tenant-numbers.json")
 });
 

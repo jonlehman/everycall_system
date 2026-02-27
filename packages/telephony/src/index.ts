@@ -31,3 +31,39 @@ export function validateTwilioSignature(args: {
     return false;
   }
 }
+
+function toPemPublicKey(rawKey: string | undefined): string {
+  if (!rawKey) return "";
+  if (rawKey.includes("BEGIN PUBLIC KEY")) return rawKey;
+  const cleaned = rawKey.replace(/[\r\n\s]/g, "");
+  const wrapped = cleaned.match(/.{1,64}/g)?.join("\n") || cleaned;
+  return `-----BEGIN PUBLIC KEY-----\n${wrapped}\n-----END PUBLIC KEY-----`;
+}
+
+export function validateTelnyxSignature(args: {
+  signatureHeader: string | undefined;
+  timestampHeader: string | undefined;
+  publicKey: string | undefined;
+  rawBody: string;
+  toleranceSeconds?: number;
+}): boolean {
+  const { signatureHeader, timestampHeader, publicKey, rawBody } = args;
+  const toleranceSeconds = args.toleranceSeconds ?? 300;
+  if (!signatureHeader || !timestampHeader || !publicKey) return false;
+  const ts = Number(timestampHeader);
+  if (!Number.isFinite(ts)) return false;
+  const ageSeconds = Math.abs(Date.now() / 1000 - ts);
+  if (ageSeconds > toleranceSeconds) return false;
+  const message = `${timestampHeader}|${rawBody}`;
+  const pemKey = toPemPublicKey(publicKey);
+  try {
+    return crypto.verify(
+      null,
+      Buffer.from(message, "utf8"),
+      pemKey,
+      Buffer.from(signatureHeader, "base64")
+    );
+  } catch {
+    return false;
+  }
+}

@@ -1,8 +1,7 @@
 import express from "express";
 import { readCallGatewayEnv } from "@everycall/config";
-import { inboundWebhookSchema } from "@everycall/contracts";
 import { logError, logInfo } from "@everycall/observability";
-import { normalizePhone, validateTwilioSignature } from "@everycall/telephony";
+import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
 import { resolveTenantByToNumber } from "@everycall/tenancy";
 
 const env = readCallGatewayEnv(process.env);
@@ -10,70 +9,67 @@ const app = express();
 
 app.set("trust proxy", true);
 app.use(express.urlencoded({ extended: false }));
-app.use(express.json());
 
-function getWebhookUrl(req: express.Request): string {
-  if (env.TWILIO_WEBHOOK_BASE_URL) {
-    return `${env.TWILIO_WEBHOOK_BASE_URL}${req.path}`;
+function safeJsonParse(raw: string): any {
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return null;
   }
-  return `${req.protocol}://${req.get("host")}${req.originalUrl}`;
 }
 
-function toStringRecord(input: unknown): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!input || typeof input !== "object") {
-    return out;
-  }
-
-  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-    out[key] = String(value ?? "");
-  }
-
-  return out;
-}
-
-app.post("/v1/twilio/webhooks/voice/inbound", (req, res) => {
-  const signature = req.header("X-Twilio-Signature");
-  const validSignature = validateTwilioSignature({
+app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), (req, res) => {
+  const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
+  const signature = req.header("telnyx-signature-ed25519");
+  const timestamp = req.header("telnyx-timestamp");
+  const validSignature = validateTelnyxSignature({
     signatureHeader: signature,
-    authToken: env.TWILIO_AUTH_TOKEN,
-    url: getWebhookUrl(req),
-    params: toStringRecord(req.body)
+    timestampHeader: timestamp,
+    publicKey: env.TELNYX_PUBLIC_KEY,
+    rawBody
   });
 
   if (!validSignature) {
     return res.status(401).json({ error: "invalid_signature" });
   }
 
-  const parsed = inboundWebhookSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(422).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  const body = safeJsonParse(rawBody);
+  if (!body) {
+    return res.status(400).json({ error: "invalid_json" });
   }
 
-  const body = parsed.data;
-  const to = normalizePhone(body.To);
-  const from = normalizePhone(body.From);
+  const payload = body?.data?.payload || {};
+  const toRaw = payload.to?.[0]?.phone_number || payload.to?.phone_number || payload.to;
+  const fromRaw = payload.from?.phone_number || payload.from;
+  if (!toRaw || !fromRaw) {
+    return res.status(422).json({ error: "missing_numbers" });
+  }
+
+  const to = normalizePhone(String(toRaw));
+  const from = normalizePhone(String(fromRaw));
 
   const routing = resolveTenantByToNumber(to, env.TENANT_NUMBERS_FILE);
   if (!routing || !routing.active) {
     return res.status(404).json({ error: "tenant_not_found_for_number" });
   }
 
-  const traceId = req.header("x-trace-id") ?? `trc_${body.CallSid}`;
-  const callId = `cal_${body.CallSid}`;
+  const providerCallId = body?.data?.payload?.call_control_id || body?.data?.id || "unknown";
+  const traceId = req.header("x-trace-id") ?? `trc_${providerCallId}`;
+  const callId = `cal_${providerCallId}`;
 
-  logInfo("twilio_inbound_received", {
+  logInfo("telnyx_inbound_received", {
     trace_id: traceId,
     call_id: callId,
     tenant_id: routing.tenantId,
-    provider_call_sid: body.CallSid,
+    provider_call_id: providerCallId,
     from_number: from,
     to_number: to
   });
 
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Say>Connecting you now.</Say>\n</Response>`;
-  res.type("text/xml").status(200).send(twiml);
+  return res.status(200).json({ ok: true });
 });
+
+app.use(express.json());
 
 app.get("/healthz", (_req, res) => {
   res.status(200).json({ ok: true, service: "call-gateway" });
@@ -86,7 +82,6 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 
 app.listen(env.PORT, () => {
   logInfo("call_gateway_started", {
-    port: env.PORT,
-    webhook_base_url: env.TWILIO_WEBHOOK_BASE_URL ?? "auto"
+    port: env.PORT
   });
 });
