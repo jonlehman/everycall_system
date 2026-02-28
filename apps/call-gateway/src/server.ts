@@ -716,6 +716,20 @@ app.post("/v1/telnyx/texml/inbound", express.raw({ type: "*/*" }), async (req, r
     const greeting =
       greetingText.trim() ||
       buildDefaultGreeting(companyName, agentName);
+
+    await pool.query(
+      `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
+       VALUES ($1, $2, $3, $4, 'message')`,
+      [callSid, tenantKey, "assistant", greeting]
+    );
+    await appendCombinedTranscript(callSid, "assistant", greeting);
+    await pool.query(
+      `UPDATE call_details
+       SET transcript = COALESCE(transcript, '') || $2,
+           updated_at = NOW()
+       WHERE call_sid = $1`,
+      [callSid, `\nAssistant: ${greeting}`]
+    );
     const actionUrl = `${buildBaseUrl(req)}/v1/telnyx/texml/gather?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(callSid)}`;
     logInfo("telnyx_texml_inbound_response", {
       callSid,
@@ -1034,6 +1048,20 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
       greetingText.trim() ||
       buildDefaultGreeting(companyName, agentName);
     const instructions = await composePromptForTenant(tenantKey);
+
+    await pool.query(
+      `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
+       VALUES ($1, $2, $3, $4, 'message')`,
+      [callSid, tenantKey, "assistant", greeting]
+    );
+    await appendCombinedTranscript(callSid, "assistant", greeting);
+    await pool.query(
+      `UPDATE call_details
+       SET transcript = COALESCE(transcript, '') || $2,
+           updated_at = NOW()
+       WHERE call_sid = $1`,
+      [callSid, `\nAssistant: ${greeting}`]
+    );
 
     streamSessions.set(callControlId, {
       callControlId,
