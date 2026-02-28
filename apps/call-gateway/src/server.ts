@@ -302,17 +302,43 @@ function connectOpenAiRealtime(session: StreamSession) {
       }
       return;
     }
-    if (type === "response.audio_transcript.delta") {
+    if (
+      type === "response.output_audio_transcript.delta" ||
+      type === "response.audio_transcript.delta"
+    ) {
       const delta = payload.delta || payload.text || payload.data || "";
       if (delta) {
         session.pendingAssistantAudioText = (session.pendingAssistantAudioText || "") + String(delta);
       }
     }
-    if (type === "response.audio_transcript.done") {
+    if (
+      type === "response.output_audio_transcript.done" ||
+      type === "response.audio_transcript.done"
+    ) {
       const doneText = payload.transcript || payload.text || payload.data || "";
       if (doneText) {
         // Prefer the finalized transcript to avoid duplicate text from deltas.
         session.pendingAssistantAudioText = String(doneText);
+      }
+    }
+    if (
+      type === "response.output_text.delta" ||
+      type === "response.text.delta" ||
+      type === "output_text.delta"
+    ) {
+      const delta = payload.delta || payload.text || payload.data || "";
+      if (delta) {
+        session.pendingAssistantText = (session.pendingAssistantText || "") + String(delta);
+      }
+    }
+    if (
+      type === "response.output_text.done" ||
+      type === "response.text.done" ||
+      type === "output_text.done"
+    ) {
+      const doneText = payload.text || payload.data || "";
+      if (doneText) {
+        session.pendingAssistantText = String(doneText);
       }
     }
     if (type === "response.done" || type === "response.completed") {
