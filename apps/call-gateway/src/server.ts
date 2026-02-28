@@ -205,7 +205,7 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
 function startOutputPump(session: StreamSession) {
   if (session.outputTimer) return;
   // Pre-buffer a few frames to avoid initial underruns while keeping latency low.
-  if (!session.outputPrimed && session.outputQueue && session.outputQueue.length < 4) {
+  if (!session.outputPrimed && session.outputQueue && session.outputQueue.length < 3) {
     return;
   }
   session.outputPrimed = true;
@@ -250,8 +250,8 @@ function connectOpenAiRealtime(session: StreamSession) {
         voice: session.voiceOverride || openAiRealtimeVoice,
         turn_detection: {
           type: "server_vad",
-          silence_duration_ms: 150,
-          prefix_padding_ms: 75,
+          silence_duration_ms: 120,
+          prefix_padding_ms: 60,
           create_response: true
         },
         input_audio_transcription: { model: "gpt-4o-mini-transcribe", language: "en" }
