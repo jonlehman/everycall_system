@@ -263,8 +263,7 @@ function connectOpenAiRealtime(session: StreamSession) {
       sendOpenAiEvent(ws, {
         type: "response.create",
         response: {
-          modalities: ["audio", "text"],
-          instructions: session.greeting
+          modalities: ["audio", "text"]
         }
       });
     }
@@ -565,7 +564,7 @@ async function appendCombinedTranscript(callSid: string, role: string, text: str
   }
 }
 
-async function composePromptForTenant(tenantKey: string) {
+async function composePromptForTenant(tenantKey: string, greeting?: string) {
   if (!pool) return "";
   const systemParts = await pool.query(
     `SELECT global_emergency_phrase,
@@ -600,6 +599,10 @@ async function composePromptForTenant(tenantKey: string) {
   sections.push(format("WHEN TO USE FAQ", systemParts.rows[0]?.faq_usage_prompt));
   sections.push(format("INDUSTRY PROMPT", industryPromptRow.rows[0]?.prompt));
   const tenantOverride = tenantPromptRow.rows[0]?.tenant_prompt_override || tenantPromptRow.rows[0]?.system_prompt || "";
+  const initialResponse = greeting
+    ? `On the first assistant turn, respond exactly with: "${greeting}". Do not add anything else.`
+    : "";
+  sections.push(format("INITIAL RESPONSE", initialResponse));
   sections.push(format("TENANT PROMPT OVERRIDE", tenantOverride));
   return sections.filter(Boolean).join("\n\n");
 }
@@ -1058,21 +1061,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     const greeting =
       greetingText.trim() ||
       buildDefaultGreeting(companyName, agentName);
-    const instructions = await composePromptForTenant(tenantKey);
-
-    await pool.query(
-      `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-       VALUES ($1, $2, $3, $4, 'message')`,
-      [callSid, tenantKey, "assistant", greeting]
-    );
-    await appendCombinedTranscript(callSid, "assistant", greeting);
-    await pool.query(
-      `UPDATE call_details
-       SET transcript = COALESCE(transcript, '') || $2,
-           updated_at = NOW()
-       WHERE call_sid = $1`,
-      [callSid, `\nAssistant: ${greeting}`]
-    );
+    const instructions = await composePromptForTenant(tenantKey, greeting);
 
     streamSessions.set(callControlId, {
       callControlId,

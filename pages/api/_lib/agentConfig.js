@@ -165,7 +165,7 @@ export async function composePromptForTenant(tenantKey = DEFAULT_TENANT_KEY) {
     ? await pool.query(`SELECT prompt FROM industry_prompts WHERE industry_key = $1`, [industryKey])
     : { rows: [] };
   const tenantPromptRow = await pool.query(
-    `SELECT tenant_prompt_override, system_prompt FROM agents WHERE tenant_key = $1 LIMIT 1`,
+    `SELECT tenant_prompt_override, system_prompt, greeting_text FROM agents WHERE tenant_key = $1 LIMIT 1`,
     [tenantKey]
   );
 
@@ -179,6 +179,11 @@ export async function composePromptForTenant(tenantKey = DEFAULT_TENANT_KEY) {
   sections.push(formatSection("INDUSTRY PROMPT", industryPromptRow.rows[0]?.prompt));
 
   const tenantOverride = tenantPromptRow.rows[0]?.tenant_prompt_override || tenantPromptRow.rows[0]?.system_prompt || "";
+  const greetingText = tenantPromptRow.rows[0]?.greeting_text || "";
+  const initialResponse = greetingText
+    ? `On the first assistant turn, respond exactly with: "${greetingText}". Do not add anything else.`
+    : "";
+  sections.push(formatSection("INITIAL RESPONSE", initialResponse));
   sections.push(formatSection("TENANT PROMPT OVERRIDE", tenantOverride));
 
   return sections.filter(Boolean).join("\n\n").trim() || defaultAgentPrompt;
