@@ -23,11 +23,49 @@ export default async function handler(req, res) {
     }
     const tenantKey = session ? resolveTenantKey(session, getTenantKey(req)) : getTenantKey(req);
     const callSid = req.query?.callSid;
+    const mode = String(req.query?.mode || "");
+
+    if (req.method === "GET" && mode === "transcript") {
+      if (callSid) {
+        const detail = await pool.query(
+          `SELECT c.call_sid, c.created_at,
+                  d.transcript_combined, d.transcript
+           FROM calls c
+           LEFT JOIN call_details d ON d.call_sid = c.call_sid
+           WHERE c.tenant_key = $1 AND c.call_sid = $2
+           LIMIT 1`,
+          [tenantKey, String(callSid)]
+        );
+        const row = detail.rows[0];
+        return res.status(200).json({
+          callSid: row?.call_sid || null,
+          createdAt: row?.created_at || null,
+          transcript: row?.transcript_combined || row?.transcript || ""
+        });
+      }
+
+      const latest = await pool.query(
+        `SELECT c.call_sid, c.created_at,
+                d.transcript_combined, d.transcript
+         FROM calls c
+         LEFT JOIN call_details d ON d.call_sid = c.call_sid
+         WHERE c.tenant_key = $1
+         ORDER BY c.created_at DESC
+         LIMIT 1`,
+        [tenantKey]
+      );
+      const row = latest.rows[0];
+      return res.status(200).json({
+        callSid: row?.call_sid || null,
+        createdAt: row?.created_at || null,
+        transcript: row?.transcript_combined || row?.transcript || ""
+      });
+    }
 
     if (callSid) {
       const detail = await pool.query(
         `SELECT c.call_sid, c.status, c.from_number, c.to_number, c.summary, c.urgency, c.disposition, c.created_at,
-                d.transcript, d.extracted_json, d.routing_json
+                d.transcript, d.transcript_combined, d.extracted_json, d.routing_json
          FROM calls c
          LEFT JOIN call_details d ON d.call_sid = c.call_sid
          WHERE c.tenant_key = $1 AND c.call_sid = $2
