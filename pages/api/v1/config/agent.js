@@ -24,6 +24,7 @@ export default async function handler(req, res) {
     if (!session) return;
 
     if (req.method === "GET") {
+      res.setHeader("Cache-Control", "no-store");
       const tenantKey = req.query?.tenantKey || "default";
       if (req.query?.mode === "versions") {
         const versions = await listAgentConfigVersions(String(tenantKey), req.query?.limit);
@@ -35,6 +36,7 @@ export default async function handler(req, res) {
         return res.status(200).json({
           tenantKey,
           tenantPromptOverride: cfg.tenantPromptOverride || "",
+          greetingText: cfg.greetingText || "",
           composedPrompt: composed
         });
       }
