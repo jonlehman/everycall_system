@@ -269,24 +269,23 @@ function connectOpenAiRealtime(session: StreamSession) {
     if (type === "response.done" || type === "response.completed") {
       session.outputActive = false;
       session.responseActive = false;
-      if (session.pendingAssistantText) {
-        const text = session.pendingAssistantText.trim();
-        session.pendingAssistantText = "";
-        if (text) {
-          await pool?.query(
-            `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-             VALUES ($1, $2, $3, $4, 'message')`,
-            [session.callSid, session.tenantKey, "assistant", text]
-          );
-          await appendCombinedTranscript(session.callSid, "assistant", text);
-          await pool?.query(
-            `UPDATE call_details
-             SET transcript = COALESCE(transcript, '') || $2,
-                 updated_at = NOW()
-             WHERE call_sid = $1`,
-            [session.callSid, `\nAssistant: ${text}`]
-          );
-        }
+      const derivedText = extractAssistantText(payload);
+      const text = (session.pendingAssistantText || derivedText || "").trim();
+      session.pendingAssistantText = "";
+      if (text) {
+        await pool?.query(
+          `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
+           VALUES ($1, $2, $3, $4, 'message')`,
+          [session.callSid, session.tenantKey, "assistant", text]
+        );
+        await appendCombinedTranscript(session.callSid, "assistant", text);
+        await pool?.query(
+          `UPDATE call_details
+           SET transcript = COALESCE(transcript, '') || $2,
+               updated_at = NOW()
+           WHERE call_sid = $1`,
+          [session.callSid, `\nAssistant: ${text}`]
+        );
       }
     }
     if (type === "response.text.delta" || type === "response.output_text.delta" || type === "output_text.delta") {
@@ -428,6 +427,28 @@ function isDonePhrase(text: string) {
 
 function buildDefaultGreeting(companyName: string, agentName: string) {
   return `Hi, thanks for calling ${companyName}. This is ${agentName}, how can I help you?`;
+}
+
+function extractAssistantText(payload: any): string {
+  const direct = payload?.response?.output_text || payload?.response?.text;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  const output = payload?.response?.output;
+  if (Array.isArray(output)) {
+    const parts: string[] = [];
+    for (const item of output) {
+      const content = item?.content;
+      if (Array.isArray(content)) {
+        for (const c of content) {
+          if (c?.type === "output_text" && typeof c.text === "string") {
+            parts.push(c.text);
+          }
+        }
+      }
+    }
+    const joined = parts.join("").trim();
+    if (joined) return joined;
+  }
+  return "";
 }
 
 async function appendCombinedTranscript(callSid: string, role: string, text: string) {
