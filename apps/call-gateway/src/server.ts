@@ -61,8 +61,12 @@ type StreamSession = {
   pendingCallerText?: string;
   pendingAssistantText?: string;
   pendingAssistantAudioText?: string;
+  pendingAssistantFlush?: string;
+  pendingAssistantFlushTimer?: NodeJS.Timeout | undefined;
   lastAssistantText?: string;
   lastResponseId?: string;
+  lastResponseDoneAt?: number;
+  lastUserUtteranceAt?: number;
   awaitingAnswer?: boolean;
   realtimeModel?: string;
 };
@@ -129,6 +133,33 @@ function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined
 function sendOpenAiEvent(ws: WebSocket | undefined, payload: Record<string, unknown>) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify(payload));
+}
+
+async function flushAssistantText(session: StreamSession) {
+  const text = (session.pendingAssistantFlush || "").trim();
+  session.pendingAssistantFlush = "";
+  session.pendingAssistantFlushTimer = undefined;
+  if (!text) return;
+  if (text === session.lastAssistantText) {
+    return;
+  }
+  await pool?.query(
+    `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
+     VALUES ($1, $2, $3, $4, 'message')`,
+    [session.callSid, session.tenantKey, "assistant", text]
+  );
+  await appendCombinedTranscript(session.callSid, "assistant", text);
+  await pool?.query(
+    `UPDATE call_details
+     SET transcript = COALESCE(transcript, '') || $2,
+         updated_at = NOW()
+     WHERE call_sid = $1`,
+    [session.callSid, `\nAssistant: ${text}`]
+  );
+  session.history = (session.history || [])
+    .concat({ role: "assistant", content: text })
+    .slice(-12);
+  session.lastAssistantText = text;
 }
 
 function decodeRtpPayload(packet: Buffer): Buffer | null {
@@ -348,29 +379,29 @@ function connectOpenAiRealtime(session: StreamSession) {
         responseId: responseId || null,
         textLength: text.length
       });
+      session.lastResponseId = responseId || session.lastResponseId;
+      session.lastResponseDoneAt = Date.now();
       if (text) {
-        if (text === session.lastAssistantText) {
-          return;
+        // Debounce short multi-part outputs into a single assistant message.
+        session.pendingAssistantFlush = (session.pendingAssistantFlush || "").trim();
+        const merged = session.pendingAssistantFlush
+          ? `${session.pendingAssistantFlush} ${text}`.trim()
+          : text;
+        session.pendingAssistantFlush = merged;
+        if (session.pendingAssistantFlushTimer) {
+          clearTimeout(session.pendingAssistantFlushTimer);
         }
-        await pool?.query(
-          `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-           VALUES ($1, $2, $3, $4, 'message')`,
-          [session.callSid, session.tenantKey, "assistant", text]
-        );
-        await appendCombinedTranscript(session.callSid, "assistant", text);
-        await pool?.query(
-          `UPDATE call_details
-           SET transcript = COALESCE(transcript, '') || $2,
-               updated_at = NOW()
-           WHERE call_sid = $1`,
-          [session.callSid, `\nAssistant: ${text}`]
-        );
-        session.history = (session.history || [])
-          .concat({ role: "assistant", content: text })
-          .slice(-12);
-        session.lastAssistantText = text;
-        session.lastResponseId = responseId || session.lastResponseId;
-      } else if (session.lastUserUtterance) {
+        session.pendingAssistantFlushTimer = setTimeout(() => {
+          flushAssistantText(session).catch((err) => {
+            logError("assistant_transcript_flush_failed", {
+              callSid: session.callSid,
+              message: err instanceof Error ? err.message : "unknown"
+            });
+          });
+        }, 350);
+        return;
+      }
+      if (session.lastUserUtterance) {
         logInfo("assistant_transcript_fallback_triggered", {
           callSid: session.callSid,
           responseId: responseId || null,
@@ -456,6 +487,7 @@ function connectOpenAiRealtime(session: StreamSession) {
           .concat({ role: "user", content: String(transcript) })
           .slice(-12);
         session.lastUserUtterance = String(transcript);
+        session.lastUserUtteranceAt = Date.now();
         await pool?.query(
           `UPDATE call_details
            SET transcript = COALESCE(transcript, '') || $2,
@@ -627,7 +659,7 @@ async function composePromptForTenant(tenantKey: string, greeting?: string) {
     : "";
   sections.push(format("Single use greeting: begin the conversation with this. do not repeat it", singleUseGreeting));
   const toneOverride =
-    "Always speak in a warm, inviting, lightly playful, leaning-in manner while staying professional. Avoid an announcer or broadcast cadence. Use contractions and natural phrasing. Do not mirror urgency or intensity from the caller; acknowledge briefly, then continue at a steady, soothing pace. Avoid pet names or overly intimate language unless the caller uses them first.";
+    "Always speak in a warm, inviting, lightly playful, leaning-in manner while staying professional. Avoid an announcer or broadcast cadence; aim for a softer, closer-mic delivery with lower energy and gentle warmth. Use contractions and natural phrasing. Do not mirror urgency or intensity from the caller; acknowledge briefly, then continue at a steady, soothing pace. Avoid pet names or overly intimate language unless the caller uses them first.";
   sections.push(format("TONE OVERRIDE (highest priority)", toneOverride));
   sections.push(format("SYSTEM EMERGENCY PHRASE", systemParts.rows[0]?.global_emergency_phrase));
   const basePersonality = systemParts.rows[0]?.personality_prompt || "";
