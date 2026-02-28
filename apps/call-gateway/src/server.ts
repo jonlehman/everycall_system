@@ -238,8 +238,8 @@ function connectOpenAiRealtime(session: StreamSession) {
         voice: session.voiceOverride || openAiRealtimeVoice,
         turn_detection: {
           type: "server_vad",
-          silence_duration_ms: 120,
-          prefix_padding_ms: 60,
+          silence_duration_ms: 350,
+          prefix_padding_ms: 200,
           create_response: true
         },
         input_audio_transcription: { model: "gpt-4o-mini-transcribe", language: "en" }
@@ -629,7 +629,7 @@ async function composePromptForTenant(tenantKey: string, greeting?: string) {
   sections.push(format("SYSTEM EMERGENCY PHRASE", systemParts.rows[0]?.global_emergency_phrase));
   const basePersonality = systemParts.rows[0]?.personality_prompt || "";
   const voiceTone =
-    "Deliver speech with a warm, inviting, understanding, competent tone. Avoid being insistent or pushy; keep a calm, helpful pace.";
+    "Deliver speech with a warm, inviting, understanding tone. Avoid being insistent or pushy; keep a calm, helpful pace. Do not interrupt; allow the caller to finish and tolerate short pauses.";
   const personalityWithTone = basePersonality
     ? `${basePersonality}\n\n${voiceTone}`
     : voiceTone;
