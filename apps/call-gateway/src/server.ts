@@ -250,8 +250,8 @@ function connectOpenAiRealtime(session: StreamSession) {
         voice: session.voiceOverride || openAiRealtimeVoice,
         turn_detection: {
           type: "server_vad",
-          silence_duration_ms: 450,
-          prefix_padding_ms: 200,
+          silence_duration_ms: 300,
+          prefix_padding_ms: 150,
           create_response: true
         },
         input_audio_transcription: { model: "gpt-4o-mini-transcribe", language: "en" }
