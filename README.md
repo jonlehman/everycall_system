@@ -29,6 +29,10 @@ See `.env.example` for required variables.
 - Event schemas: `docs/events/*`
 - ADRs: `docs/adr/*`
 
+## Deployment notes
+- Admin web app (Next.js) is deployed on Vercel.
+- Call gateway (Telnyx + Realtime) is deployed on Render.
+
 ## Prompt config UI
 - UI: `/config-ui.html`
 - API: `GET/POST /v1/config/agent`
