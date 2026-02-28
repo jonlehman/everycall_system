@@ -5,7 +5,9 @@ import { DataGrid } from '@mui/x-data-grid';
 
 export default function CallsPage() {
   const [calls, setCalls] = useState([]);
-  const [detail, setDetail] = useState('Select a call to inspect transcript, extracted fields, and routing result.');
+  const [detailMeta, setDetailMeta] = useState(null);
+  const [detailTranscript, setDetailTranscript] = useState('');
+  const [detailStatus, setDetailStatus] = useState('Select a call to inspect transcript, extracted fields, and routing result.');
   const [statusFilter, setStatusFilter] = useState('all');
   const [urgencyFilter, setUrgencyFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -33,10 +35,27 @@ export default function CallsPage() {
   }, []);
 
   const loadDetail = async (callSid) => {
-    const resp = await fetch(`/api/v1/calls?callSid=${encodeURIComponent(callSid)}`);
-    if (!resp.ok) return;
-    const data = await resp.json();
-    setDetail(JSON.stringify(data.call || {}, null, 2));
+    if (!callSid) return;
+    setDetailStatus('Loading call details...');
+    setDetailMeta(null);
+    setDetailTranscript('');
+
+    const [metaResp, transcriptResp] = await Promise.all([
+      fetch(`/api/v1/calls?callSid=${encodeURIComponent(callSid)}`),
+      fetch(`/api/v1/calls?mode=transcript&callSid=${encodeURIComponent(callSid)}`)
+    ]);
+
+    if (metaResp.ok) {
+      const data = await metaResp.json();
+      setDetailMeta(data.call || null);
+    }
+
+    if (transcriptResp.ok) {
+      const data = await transcriptResp.json();
+      setDetailTranscript(data.transcript || '');
+    }
+
+    setDetailStatus('Ready.');
   };
 
   const rows = useMemo(() => calls.map((call, idx) => ({
@@ -135,7 +154,31 @@ export default function CallsPage() {
         </div>
         <div className="card">
           <h2>Call Detail</h2>
-          <div className="code" id="callDetail">{detail}</div>
+          {!detailMeta ? (
+            <div className="muted">{detailStatus}</div>
+          ) : (
+            <>
+              <div className="muted" style={{ marginBottom: 8 }}>
+                {detailMeta.call_sid} · {new Date(detailMeta.created_at).toLocaleString()}
+              </div>
+              <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <div className="muted">From</div>
+                  <div>{detailMeta.from_number || '-'}</div>
+                </div>
+                <div>
+                  <div className="muted">Status</div>
+                  <div>{detailMeta.status || '-'}</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <div className="muted" style={{ marginBottom: 6 }}>Transcript</div>
+                <pre className="code" style={{ whiteSpace: 'pre-wrap' }}>
+                  {detailTranscript || 'No transcript available yet.'}
+                </pre>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </section>
