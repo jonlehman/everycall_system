@@ -61,6 +61,8 @@ type StreamSession = {
   pendingCallerText?: string;
   pendingAssistantText?: string;
   pendingAssistantAudioText?: string;
+  lastAssistantText?: string;
+  lastResponseId?: string;
   awaitingAnswer?: boolean;
 };
 
@@ -246,7 +248,12 @@ function connectOpenAiRealtime(session: StreamSession) {
         input_audio_format: openAiRealtimeInputFormat,
         output_audio_format: openAiRealtimeOutputFormat,
         voice: session.voiceOverride || openAiRealtimeVoice,
-        turn_detection: { type: "server_vad", silence_duration_ms: 900, prefix_padding_ms: 300 },
+        turn_detection: {
+          type: "server_vad",
+          silence_duration_ms: 900,
+          prefix_padding_ms: 300,
+          create_response: true
+        },
         input_audio_transcription: { model: "gpt-4o-mini-transcribe", language: "en" }
       }
     });
@@ -301,17 +308,29 @@ function connectOpenAiRealtime(session: StreamSession) {
     if (type === "response.audio_transcript.done") {
       const doneText = payload.transcript || payload.text || payload.data || "";
       if (doneText) {
-        session.pendingAssistantAudioText = (session.pendingAssistantAudioText || "") + String(doneText);
+        // Prefer the finalized transcript to avoid duplicate text from deltas.
+        session.pendingAssistantAudioText = String(doneText);
       }
     }
     if (type === "response.done" || type === "response.completed") {
       session.outputActive = false;
       session.responseActive = false;
+      const responseId =
+        payload.response?.id ||
+        payload.response_id ||
+        payload.id ||
+        "";
+      if (responseId && responseId === session.lastResponseId) {
+        return;
+      }
       const derivedText = extractAssistantText(payload);
       const text = (session.pendingAssistantText || derivedText || session.pendingAssistantAudioText || "").trim();
       session.pendingAssistantText = "";
       session.pendingAssistantAudioText = "";
       if (text) {
+        if (text === session.lastAssistantText) {
+          return;
+        }
         await pool?.query(
           `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
            VALUES ($1, $2, $3, $4, 'message')`,
@@ -328,6 +347,8 @@ function connectOpenAiRealtime(session: StreamSession) {
         session.history = (session.history || [])
           .concat({ role: "assistant", content: text })
           .slice(-12);
+        session.lastAssistantText = text;
+        session.lastResponseId = responseId || session.lastResponseId;
       } else if (session.lastUserUtterance) {
         try {
           const fallbackText = await generateAssistantReply(
@@ -352,6 +373,8 @@ function connectOpenAiRealtime(session: StreamSession) {
             session.history = (session.history || [])
               .concat({ role: "assistant", content: fallbackText })
               .slice(-12);
+            session.lastAssistantText = fallbackText;
+            session.lastResponseId = responseId || session.lastResponseId;
           }
         } catch (err) {
           logError("assistant_transcript_fallback_failed", {
@@ -370,7 +393,8 @@ function connectOpenAiRealtime(session: StreamSession) {
     if (type === "response.output_text.done" || type === "output_text.done") {
       const doneText = payload.text || payload.data || payload.output_text || "";
       if (doneText) {
-        session.pendingAssistantText = (session.pendingAssistantText || "") + String(doneText);
+        // Prefer the finalized text to avoid duplicate text from deltas.
+        session.pendingAssistantText = String(doneText);
       }
     }
     if (type === "conversation.item.input_audio_transcription.delta") {
@@ -411,20 +435,7 @@ function connectOpenAiRealtime(session: StreamSession) {
         );
       }
     }
-    if (type === "input_audio_buffer.speech_stopped" || type === "input_audio_buffer.committed") {
-      const now = Date.now();
-      if (session.responseActive || (session.lastResponseAt && now - session.lastResponseAt < 1200)) {
-        return;
-      }
-      session.responseActive = true;
-      session.lastResponseAt = now;
-      sendOpenAiEvent(ws, {
-        type: "response.create",
-        response: {
-          modalities: ["audio", "text"]
-        }
-      });
-    }
+    // With server VAD auto-response enabled, we do not manually create responses here.
     if (type === "error") {
       logError("openai_realtime_error", { callSid: session.callSid, detail: payload });
     }
