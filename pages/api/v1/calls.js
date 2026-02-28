@@ -26,6 +26,27 @@ export default async function handler(req, res) {
     const mode = String(req.query?.mode || "");
 
     if (req.method === "GET" && mode === "transcript") {
+      const resolveCombined = async (row) => {
+        if (!row?.call_sid) return { callSid: null, createdAt: null, transcript: "" };
+        if (row.transcript_combined) {
+          return { callSid: row.call_sid, createdAt: row.created_at, transcript: row.transcript_combined };
+        }
+        const events = await pool.query(
+          `SELECT role, text
+           FROM call_events
+           WHERE call_sid = $1
+           ORDER BY created_at ASC`,
+          [row.call_sid]
+        );
+        if (events.rows.length) {
+          const combined = events.rows
+            .map((evt) => `${(evt.role || "Speaker").replace(/^[a-z]/, (c) => c.toUpperCase())}: ${evt.text || ""}`)
+            .join("\n");
+          return { callSid: row.call_sid, createdAt: row.created_at, transcript: combined };
+        }
+        return { callSid: row.call_sid, createdAt: row.created_at, transcript: row.transcript || "" };
+      };
+
       if (callSid) {
         const detail = await pool.query(
           `SELECT c.call_sid, c.created_at,
@@ -36,12 +57,8 @@ export default async function handler(req, res) {
            LIMIT 1`,
           [tenantKey, String(callSid)]
         );
-        const row = detail.rows[0];
-        return res.status(200).json({
-          callSid: row?.call_sid || null,
-          createdAt: row?.created_at || null,
-          transcript: row?.transcript_combined || row?.transcript || ""
-        });
+        const resolved = await resolveCombined(detail.rows[0]);
+        return res.status(200).json(resolved);
       }
 
       const latest = await pool.query(
@@ -54,12 +71,8 @@ export default async function handler(req, res) {
          LIMIT 1`,
         [tenantKey]
       );
-      const row = latest.rows[0];
-      return res.status(200).json({
-        callSid: row?.call_sid || null,
-        createdAt: row?.created_at || null,
-        transcript: row?.transcript_combined || row?.transcript || ""
-      });
+      const resolved = await resolveCombined(latest.rows[0]);
+      return res.status(200).json(resolved);
     }
 
     if (callSid) {
