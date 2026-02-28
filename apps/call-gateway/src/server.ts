@@ -204,8 +204,8 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
 
 function startOutputPump(session: StreamSession) {
   if (session.outputTimer) return;
-  // Pre-buffer a few frames to avoid initial underruns.
-  if (!session.outputPrimed && session.outputQueue && session.outputQueue.length < 8) {
+  // Pre-buffer a few frames to avoid initial underruns while keeping latency low.
+  if (!session.outputPrimed && session.outputQueue && session.outputQueue.length < 4) {
     return;
   }
   session.outputPrimed = true;
@@ -221,7 +221,7 @@ function startOutputPump(session: StreamSession) {
     if (!payload) return;
     const base64 = payload.toString("base64");
     sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, base64);
-  }, 18);
+  }, 20);
 }
 
 function connectOpenAiRealtime(session: StreamSession) {
@@ -250,8 +250,8 @@ function connectOpenAiRealtime(session: StreamSession) {
         voice: session.voiceOverride || openAiRealtimeVoice,
         turn_detection: {
           type: "server_vad",
-          silence_duration_ms: 300,
-          prefix_padding_ms: 150,
+          silence_duration_ms: 150,
+          prefix_padding_ms: 75,
           create_response: true
         },
         input_audio_transcription: { model: "gpt-4o-mini-transcribe", language: "en" }
