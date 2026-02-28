@@ -60,6 +60,7 @@ type StreamSession = {
   lastResponseAt?: number;
   pendingCallerText?: string;
   pendingAssistantText?: string;
+  pendingAssistantAudioText?: string;
   awaitingAnswer?: boolean;
 };
 
@@ -291,12 +292,25 @@ function connectOpenAiRealtime(session: StreamSession) {
       }
       return;
     }
+    if (type === "response.audio_transcript.delta") {
+      const delta = payload.delta || payload.text || payload.data || "";
+      if (delta) {
+        session.pendingAssistantAudioText = (session.pendingAssistantAudioText || "") + String(delta);
+      }
+    }
+    if (type === "response.audio_transcript.done") {
+      const doneText = payload.transcript || payload.text || payload.data || "";
+      if (doneText) {
+        session.pendingAssistantAudioText = (session.pendingAssistantAudioText || "") + String(doneText);
+      }
+    }
     if (type === "response.done" || type === "response.completed") {
       session.outputActive = false;
       session.responseActive = false;
       const derivedText = extractAssistantText(payload);
-      const text = (session.pendingAssistantText || derivedText || "").trim();
+      const text = (session.pendingAssistantText || derivedText || session.pendingAssistantAudioText || "").trim();
       session.pendingAssistantText = "";
+      session.pendingAssistantAudioText = "";
       if (text) {
         await pool?.query(
           `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
