@@ -180,10 +180,10 @@ export async function composePromptForTenant(tenantKey = DEFAULT_TENANT_KEY) {
 
   const tenantOverride = tenantPromptRow.rows[0]?.tenant_prompt_override || tenantPromptRow.rows[0]?.system_prompt || "";
   const greetingText = tenantPromptRow.rows[0]?.greeting_text || "";
-  const initialResponse = greetingText
-    ? `On the first assistant turn, respond exactly with: "${greetingText}". Do not add anything else.`
+  const singleUseGreeting = greetingText
+    ? `Begin the conversation with: "${greetingText}". Do not repeat it.`
     : "";
-  sections.push(formatSection("INITIAL RESPONSE", initialResponse));
+  sections.push(formatSection("Single use greeting: begin the conversation with this. do not repeat it", singleUseGreeting));
   sections.push(formatSection("TENANT PROMPT OVERRIDE", tenantOverride));
 
   return sections.filter(Boolean).join("\n\n").trim() || defaultAgentPrompt;

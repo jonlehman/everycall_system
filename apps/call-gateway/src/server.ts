@@ -599,10 +599,10 @@ async function composePromptForTenant(tenantKey: string, greeting?: string) {
   sections.push(format("WHEN TO USE FAQ", systemParts.rows[0]?.faq_usage_prompt));
   sections.push(format("INDUSTRY PROMPT", industryPromptRow.rows[0]?.prompt));
   const tenantOverride = tenantPromptRow.rows[0]?.tenant_prompt_override || tenantPromptRow.rows[0]?.system_prompt || "";
-  const initialResponse = greeting
-    ? `On the first assistant turn, respond exactly with: "${greeting}". Do not add anything else.`
+  const singleUseGreeting = greeting
+    ? `Begin the conversation with: "${greeting}". Do not repeat it.`
     : "";
-  sections.push(format("INITIAL RESPONSE", initialResponse));
+  sections.push(format("Single use greeting: begin the conversation with this. do not repeat it", singleUseGreeting));
   sections.push(format("TENANT PROMPT OVERRIDE", tenantOverride));
   return sections.filter(Boolean).join("\n\n");
 }
