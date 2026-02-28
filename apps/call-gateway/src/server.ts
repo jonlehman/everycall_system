@@ -112,7 +112,7 @@ function toWebSocketUrl(baseUrl: string) {
 function summarizeOpenAiPayload(payload: any) {
   const response = payload?.response || {};
   const output = Array.isArray(response.output) ? response.output : [];
-  const outputTypes = output.map((item) => item?.type).filter(Boolean);
+  const outputTypes = output.map((item: any) => item?.type).filter(Boolean);
   const outputText = extractAssistantText(payload);
   return {
     type: payload?.type,
