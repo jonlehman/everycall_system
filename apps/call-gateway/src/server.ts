@@ -626,6 +626,9 @@ async function composePromptForTenant(tenantKey: string, greeting?: string) {
     ? `Begin the conversation with: "${greeting}". Do not repeat it.`
     : "";
   sections.push(format("Single use greeting: begin the conversation with this. do not repeat it", singleUseGreeting));
+  const toneOverride =
+    "Always speak in a calm, warm, unhurried, reassuring manner. Do not mirror urgency or intensity from the caller. If the caller sounds anxious or urgent, acknowledge briefly and continue with a steady, soothing pace.";
+  sections.push(format("TONE OVERRIDE (highest priority)", toneOverride));
   sections.push(format("SYSTEM EMERGENCY PHRASE", systemParts.rows[0]?.global_emergency_phrase));
   const basePersonality = systemParts.rows[0]?.personality_prompt || "";
   const voiceTone =
