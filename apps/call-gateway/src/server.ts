@@ -64,6 +64,7 @@ type StreamSession = {
   lastAssistantText?: string;
   lastResponseId?: string;
   awaitingAnswer?: boolean;
+  realtimeModel?: string;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -110,23 +111,6 @@ function toWebSocketUrl(baseUrl: string) {
   if (baseUrl.startsWith("https://")) return baseUrl.replace("https://", "wss://");
   if (baseUrl.startsWith("http://")) return baseUrl.replace("http://", "ws://");
   return baseUrl;
-}
-
-function summarizeOpenAiPayload(payload: any) {
-  const response = payload?.response || {};
-  const output = Array.isArray(response.output) ? response.output : [];
-  const outputTypes = output.map((item: any) => item?.type).filter(Boolean);
-  const outputText = extractAssistantText(payload);
-  return {
-    type: payload?.type,
-    hasResponse: Boolean(payload?.response),
-    outputCount: output.length,
-    outputTypes,
-    outputTextLength: outputText ? outputText.length : 0,
-    hasDelta: Boolean(payload?.delta),
-    hasText: Boolean(payload?.text),
-    hasAudio: Boolean(payload?.audio?.delta || payload?.audio?.data)
-  };
 }
 
 function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined, payloadBase64: string) {
@@ -240,7 +224,7 @@ function connectOpenAiRealtime(session: StreamSession) {
 
   ws.on("open", () => {
     const instructions = session.instructions || "";
-    logInfo("openai_realtime_session_update", {
+    logInfo("openai_realtime_session_start", {
       callSid: session.callSid,
       model: openAiRealtimeModel
     });
@@ -281,10 +265,12 @@ function connectOpenAiRealtime(session: StreamSession) {
       return;
     }
     const type = payload.type || "";
-    if (type.startsWith("response.") || type.startsWith("output_text")) {
-      logInfo("openai_realtime_event", {
+    if (type === "session.updated") {
+      const model = payload?.session?.model || openAiRealtimeModel;
+      session.realtimeModel = model;
+      logInfo("openai_realtime_session_updated", {
         callSid: session.callSid,
-        ...summarizeOpenAiPayload(payload)
+        model
       });
     }
     if (type === "response.audio.delta" || type === "response.output_audio.delta" || type === "output_audio.delta") {
@@ -356,6 +342,12 @@ function connectOpenAiRealtime(session: StreamSession) {
       const text = (session.pendingAssistantText || derivedText || session.pendingAssistantAudioText || "").trim();
       session.pendingAssistantText = "";
       session.pendingAssistantAudioText = "";
+      logInfo("openai_realtime_response_done", {
+        callSid: session.callSid,
+        model: session.realtimeModel || openAiRealtimeModel,
+        responseId: responseId || null,
+        textLength: text.length
+      });
       if (text) {
         if (text === session.lastAssistantText) {
           return;
