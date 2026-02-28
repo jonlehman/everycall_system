@@ -1,4 +1,4 @@
-import { requireSession } from "../_lib/auth.js";
+import { requireSession } from "../../_lib/auth.js";
 
 const DEFAULT_SAMPLE_TEXT = "Hi, thanks for calling. This is the Everycall assistant. How can I help you today?";
 const REALTIME_VOICES = new Set([
