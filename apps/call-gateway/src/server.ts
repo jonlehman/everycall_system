@@ -591,6 +591,10 @@ async function composePromptForTenant(tenantKey: string, greeting?: string) {
 
   const sections: string[] = [];
   const format = (title: string, body?: string) => (body ? `# ${title}\n${body}` : "");
+  const singleUseGreeting = greeting
+    ? `Begin the conversation with: "${greeting}". Do not repeat it.`
+    : "";
+  sections.push(format("Single use greeting: begin the conversation with this. do not repeat it", singleUseGreeting));
   sections.push(format("SYSTEM EMERGENCY PHRASE", systemParts.rows[0]?.global_emergency_phrase));
   sections.push(format("PERSONALITY", systemParts.rows[0]?.personality_prompt));
   sections.push(format("DATE & TIME", systemParts.rows[0]?.datetime_prompt));
@@ -599,10 +603,6 @@ async function composePromptForTenant(tenantKey: string, greeting?: string) {
   sections.push(format("WHEN TO USE FAQ", systemParts.rows[0]?.faq_usage_prompt));
   sections.push(format("INDUSTRY PROMPT", industryPromptRow.rows[0]?.prompt));
   const tenantOverride = tenantPromptRow.rows[0]?.tenant_prompt_override || tenantPromptRow.rows[0]?.system_prompt || "";
-  const singleUseGreeting = greeting
-    ? `Begin the conversation with: "${greeting}". Do not repeat it.`
-    : "";
-  sections.push(format("Single use greeting: begin the conversation with this. do not repeat it", singleUseGreeting));
   sections.push(format("TENANT PROMPT OVERRIDE", tenantOverride));
   return sections.filter(Boolean).join("\n\n");
 }
