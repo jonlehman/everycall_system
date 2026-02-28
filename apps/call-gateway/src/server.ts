@@ -240,6 +240,10 @@ function connectOpenAiRealtime(session: StreamSession) {
 
   ws.on("open", () => {
     const instructions = session.instructions || "";
+    logInfo("openai_realtime_session_update", {
+      callSid: session.callSid,
+      model: openAiRealtimeModel
+    });
     sendOpenAiEvent(ws, {
       type: "session.update",
       session: {
