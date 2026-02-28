@@ -627,7 +627,13 @@ async function composePromptForTenant(tenantKey: string, greeting?: string) {
     : "";
   sections.push(format("Single use greeting: begin the conversation with this. do not repeat it", singleUseGreeting));
   sections.push(format("SYSTEM EMERGENCY PHRASE", systemParts.rows[0]?.global_emergency_phrase));
-  sections.push(format("PERSONALITY", systemParts.rows[0]?.personality_prompt));
+  const basePersonality = systemParts.rows[0]?.personality_prompt || "";
+  const voiceTone =
+    "Deliver speech with a warm, inviting, understanding, competent tone. Avoid being insistent or pushy; keep a calm, helpful pace.";
+  const personalityWithTone = basePersonality
+    ? `${basePersonality}\n\n${voiceTone}`
+    : voiceTone;
+  sections.push(format("PERSONALITY", personalityWithTone));
   sections.push(format("DATE & TIME", systemParts.rows[0]?.datetime_prompt));
   sections.push(format("NUMBERS & SYMBOLS", systemParts.rows[0]?.numbers_symbols_prompt));
   sections.push(format("CONFIRMATION", systemParts.rows[0]?.confirmation_prompt));
