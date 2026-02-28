@@ -48,6 +48,8 @@ type StreamSession = {
   responseActive?: boolean;
   instructions?: string;
   voiceOverride?: string;
+  history?: { role: string; content: string }[];
+  lastUserUtterance?: string;
   rtpSeq?: number;
   rtpTimestamp?: number;
   rtpSsrc?: number;
@@ -286,12 +288,52 @@ function connectOpenAiRealtime(session: StreamSession) {
            WHERE call_sid = $1`,
           [session.callSid, `\nAssistant: ${text}`]
         );
+        session.history = (session.history || [])
+          .concat({ role: "assistant", content: text })
+          .slice(-12);
+      } else if (session.lastUserUtterance) {
+        try {
+          const fallbackText = await generateAssistantReply(
+            session.instructions || "",
+            session.history || [],
+            session.lastUserUtterance
+          );
+          if (fallbackText) {
+            await pool?.query(
+              `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
+               VALUES ($1, $2, $3, $4, 'message')`,
+              [session.callSid, session.tenantKey, "assistant", fallbackText]
+            );
+            await appendCombinedTranscript(session.callSid, "assistant", fallbackText);
+            await pool?.query(
+              `UPDATE call_details
+               SET transcript = COALESCE(transcript, '') || $2,
+                   updated_at = NOW()
+               WHERE call_sid = $1`,
+              [session.callSid, `\nAssistant: ${fallbackText}`]
+            );
+            session.history = (session.history || [])
+              .concat({ role: "assistant", content: fallbackText })
+              .slice(-12);
+          }
+        } catch (err) {
+          logError("assistant_transcript_fallback_failed", {
+            callSid: session.callSid,
+            message: err instanceof Error ? err.message : "unknown"
+          });
+        }
       }
     }
     if (type === "response.text.delta" || type === "response.output_text.delta" || type === "output_text.delta") {
       const delta = payload.delta || payload.text || payload.data || "";
       if (delta) {
         session.pendingAssistantText = (session.pendingAssistantText || "") + String(delta);
+      }
+    }
+    if (type === "response.output_text.done" || type === "output_text.done") {
+      const doneText = payload.text || payload.data || payload.output_text || "";
+      if (doneText) {
+        session.pendingAssistantText = (session.pendingAssistantText || "") + String(doneText);
       }
     }
     if (type === "conversation.item.input_audio_transcription.delta") {
@@ -319,6 +361,10 @@ function connectOpenAiRealtime(session: StreamSession) {
           [session.callSid, session.tenantKey, "caller", String(transcript)]
         );
         await appendCombinedTranscript(session.callSid, "caller", String(transcript));
+        session.history = (session.history || [])
+          .concat({ role: "user", content: String(transcript) })
+          .slice(-12);
+        session.lastUserUtterance = String(transcript);
         await pool?.query(
           `UPDATE call_details
            SET transcript = COALESCE(transcript, '') || $2,
