@@ -138,6 +138,7 @@ export async function ensureTables(pool) {
     CREATE TABLE IF NOT EXISTS call_details (
       call_sid TEXT PRIMARY KEY,
       transcript TEXT,
+      transcript_combined TEXT,
       extracted_json JSONB,
       routing_json JSONB,
       state_json JSONB,
@@ -146,6 +147,7 @@ export async function ensureTables(pool) {
     );
   `);
   await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS state_json JSONB;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS transcript_combined TEXT;`);
   await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
 
   await pool.query(`

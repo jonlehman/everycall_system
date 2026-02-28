@@ -278,6 +278,7 @@ function connectOpenAiRealtime(session: StreamSession) {
              VALUES ($1, $2, $3, $4, 'message')`,
             [session.callSid, session.tenantKey, "assistant", text]
           );
+          await appendCombinedTranscript(session.callSid, "assistant", text);
           await pool?.query(
             `UPDATE call_details
              SET transcript = COALESCE(transcript, '') || $2,
@@ -318,6 +319,7 @@ function connectOpenAiRealtime(session: StreamSession) {
            VALUES ($1, $2, $3, $4, 'message')`,
           [session.callSid, session.tenantKey, "caller", String(transcript)]
         );
+        await appendCombinedTranscript(session.callSid, "caller", String(transcript));
         await pool?.query(
           `UPDATE call_details
            SET transcript = COALESCE(transcript, '') || $2,
@@ -426,6 +428,25 @@ function isDonePhrase(text: string) {
 
 function buildDefaultGreeting(companyName: string, agentName: string) {
   return `Hi, thanks for calling ${companyName}. This is ${agentName}, how can I help you?`;
+}
+
+async function appendCombinedTranscript(callSid: string, role: string, text: string) {
+  if (!pool || !callSid || !text) return;
+  const safeRole = role ? role[0].toUpperCase() + role.slice(1) : "Speaker";
+  try {
+    await pool.query(
+      `UPDATE call_details
+       SET transcript_combined = COALESCE(transcript_combined, '') || $2,
+           updated_at = NOW()
+       WHERE call_sid = $1`,
+      [callSid, `\n${safeRole}: ${text}`]
+    );
+  } catch (err) {
+    logError("transcript_combined_update_failed", {
+      callSid,
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
 }
 
 async function composePromptForTenant(tenantKey: string) {
@@ -683,6 +704,7 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
        VALUES ($1, $2, $3, $4, 'message')`,
       [callSid, tenantKey, "caller", speech]
     );
+    await appendCombinedTranscript(callSid, "caller", speech);
 
     const done = isDonePhrase(speech) || turn >= 6;
     if (done) {
@@ -733,6 +755,7 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
        VALUES ($1, $2, $3, $4, 'message')`,
       [callSid, tenantKey, "assistant", assistantReply]
     );
+    await appendCombinedTranscript(callSid, "assistant", assistantReply);
 
     const actionUrl = `${buildBaseUrl(req)}/v1/telnyx/texml/gather?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(callSid)}`;
     res.type("text/xml").status(200).send(buildTeXMLResponse(assistantReply, actionUrl));
@@ -778,6 +801,7 @@ app.post("/v1/telnyx/texml/transcription", express.raw({ type: "*/*" }), async (
          VALUES ($1, $2, $3, $4, 'transcript')`,
         [callSid, params.TenantKey || "unknown", "caller", transcript]
       );
+      await appendCombinedTranscript(callSid, "caller", transcript);
       await pool.query(
         `UPDATE call_details
          SET state_json = COALESCE(state_json, '{}'::jsonb) || jsonb_build_object('last_transcript', $2),
@@ -996,6 +1020,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
        VALUES ($1, $2, $3, $4, 'transcript')`,
       [callSid, tenantKey, "caller", transcript]
     );
+    await appendCombinedTranscript(callSid, "caller", transcript);
 
     const prompt = await composePromptForTenant(tenantKey);
     const assistantReply = await generateAssistantReply(prompt, history, transcript);
@@ -1018,6 +1043,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
        VALUES ($1, $2, $3, $4, 'message')`,
       [callSid, tenantKey, "assistant", assistantReply]
     );
+    await appendCombinedTranscript(callSid, "assistant", assistantReply);
 
     try {
       const utteranceId = `${callSid}-turn-${turn}`;
