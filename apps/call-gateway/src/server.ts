@@ -109,6 +109,23 @@ function toWebSocketUrl(baseUrl: string) {
   return baseUrl;
 }
 
+function summarizeOpenAiPayload(payload: any) {
+  const response = payload?.response || {};
+  const output = Array.isArray(response.output) ? response.output : [];
+  const outputTypes = output.map((item) => item?.type).filter(Boolean);
+  const outputText = extractAssistantText(payload);
+  return {
+    type: payload?.type,
+    hasResponse: Boolean(payload?.response),
+    outputCount: output.length,
+    outputTypes,
+    outputTextLength: outputText ? outputText.length : 0,
+    hasDelta: Boolean(payload?.delta),
+    hasText: Boolean(payload?.text),
+    hasAudio: Boolean(payload?.audio?.delta || payload?.audio?.data)
+  };
+}
+
 function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined, payloadBase64: string) {
   if (!ws || ws.readyState !== WebSocket.OPEN || !streamId) return;
   ws.send(
@@ -253,6 +270,12 @@ function connectOpenAiRealtime(session: StreamSession) {
       return;
     }
     const type = payload.type || "";
+    if (type.startsWith("response.") || type.startsWith("output_text")) {
+      logInfo("openai_realtime_event", {
+        callSid: session.callSid,
+        ...summarizeOpenAiPayload(payload)
+      });
+    }
     if (type === "response.audio.delta" || type === "response.output_audio.delta" || type === "output_audio.delta") {
       const audioBase64 =
         payload.delta ||
