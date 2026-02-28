@@ -170,10 +170,6 @@ export async function composePromptForTenant(tenantKey = DEFAULT_TENANT_KEY) {
   );
 
   const sections = [];
-  const singleUseGreeting = greetingText
-    ? `Begin the conversation with: "${greetingText}". Do not repeat it.`
-    : "";
-  sections.push(formatSection("Single use greeting: begin the conversation with this. do not repeat it", singleUseGreeting));
   sections.push(formatSection("SYSTEM EMERGENCY PHRASE", systemParts.global_emergency_phrase));
   sections.push(formatSection("PERSONALITY", systemParts.personality_prompt));
   sections.push(formatSection("DATE & TIME", systemParts.datetime_prompt));
@@ -183,6 +179,11 @@ export async function composePromptForTenant(tenantKey = DEFAULT_TENANT_KEY) {
   sections.push(formatSection("INDUSTRY PROMPT", industryPromptRow.rows[0]?.prompt));
 
   const tenantOverride = tenantPromptRow.rows[0]?.tenant_prompt_override || tenantPromptRow.rows[0]?.system_prompt || "";
+  const greetingText = tenantPromptRow.rows[0]?.greeting_text || "";
+  const singleUseGreeting = greetingText
+    ? `Begin the conversation with: "${greetingText}". Do not repeat it.`
+    : "";
+  sections.push(formatSection("Single use greeting: begin the conversation with this. do not repeat it", singleUseGreeting));
   sections.push(formatSection("TENANT PROMPT OVERRIDE", tenantOverride));
 
   return sections.filter(Boolean).join("\n\n").trim() || defaultAgentPrompt;
