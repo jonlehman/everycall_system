@@ -353,6 +353,15 @@ function connectOpenAiRealtime(session: StreamSession) {
         session.lastAssistantText = text;
         session.lastResponseId = responseId || session.lastResponseId;
       } else if (session.lastUserUtterance) {
+        logInfo("assistant_transcript_fallback_triggered", {
+          callSid: session.callSid,
+          responseId: responseId || null,
+          lastUserUtterance: session.lastUserUtterance,
+          derivedTextLength: derivedText ? derivedText.length : 0,
+          pendingTextLength: session.pendingAssistantText ? session.pendingAssistantText.length : 0,
+          pendingAudioTextLength: session.pendingAssistantAudioText ? session.pendingAssistantAudioText.length : 0,
+          outputTextLength: Number(payload?.response?.output_text?.length || 0)
+        });
         try {
           const fallbackText = await generateAssistantReply(
             session.instructions || "",
