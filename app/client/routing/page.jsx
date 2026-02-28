@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 export default function RoutingPage() {
+  const voiceOptions = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'];
   const [primaryQueue, setPrimaryQueue] = useState('Dispatch Team');
   const [emergencyBehavior, setEmergencyBehavior] = useState('Immediate Transfer');
   const [afterHours, setAfterHours] = useState('Collect details and dispatch callback');
@@ -9,6 +10,9 @@ export default function RoutingPage() {
   const [greetingText, setGreetingText] = useState('');
   const [voiceType, setVoiceType] = useState('alloy');
   const gridRef = useRef(null);
+  const sampleAudioRef = useRef(null);
+  const sampleUrlRef = useRef('');
+  const [sampleStatus, setSampleStatus] = useState('');
   const [status, setStatus] = useState('Ready.');
   const [saving, setSaving] = useState(false);
 
@@ -70,6 +74,31 @@ export default function RoutingPage() {
     setStatus(resp.ok && agentResp.ok ? 'Saved.' : 'Save failed.');
   };
 
+  const playSample = async () => {
+    if (!voiceType) return;
+    setSampleStatus('Loading sample...');
+    try {
+      const resp = await fetch(`/api/v1/voice/sample?voice=${encodeURIComponent(voiceType)}`);
+      if (!resp.ok) {
+        setSampleStatus('Sample failed.');
+        return;
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      if (sampleUrlRef.current) {
+        URL.revokeObjectURL(sampleUrlRef.current);
+      }
+      sampleUrlRef.current = url;
+      if (sampleAudioRef.current) {
+        sampleAudioRef.current.src = url;
+        await sampleAudioRef.current.play();
+      }
+      setSampleStatus('');
+    } catch {
+      setSampleStatus('Sample failed.');
+    }
+  };
+
   return (
     <section className="screen active">
       <div className="topbar">
@@ -112,10 +141,15 @@ export default function RoutingPage() {
             />
             <label style={{ marginTop: 10 }}>Voice Type</label>
             <select value={voiceType} onChange={(e) => setVoiceType(e.target.value)}>
-              {['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'shimmer'].map((voice) => (
+              {voiceOptions.map((voice) => (
                 <option key={voice} value={voice}>{voice}</option>
               ))}
             </select>
+            <div className="toolbar" style={{ marginTop: 10 }}>
+              <button className="btn" type="button" onClick={playSample}>Play Voice Sample</button>
+              <span className="muted">{sampleStatus}</span>
+            </div>
+            <audio ref={sampleAudioRef} preload="none" />
           </div>
         </div>
         <div className="card">

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import './config.css';
 
 export default function ConfigPage() {
+  const voiceOptions = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'];
   const [tenantKey, setTenantKey] = useState('default');
   const [agentName, setAgentName] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -157,7 +158,7 @@ export default function ConfigPage() {
 
           <label htmlFor="voiceType">Voice Type</label>
           <select id="voiceType" value={voiceType} onChange={(event) => setVoiceType(event.target.value)}>
-            {['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'shimmer'].map((voice) => (
+            {voiceOptions.map((voice) => (
               <option key={voice} value={voice}>{voice}</option>
             ))}
           </select>

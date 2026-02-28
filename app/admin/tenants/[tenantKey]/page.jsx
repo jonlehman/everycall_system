@@ -7,6 +7,7 @@ import { DataGrid } from '@mui/x-data-grid';
 export default function TenantManagePage() {
   const params = useParams();
   const tenantKey = params.tenantKey;
+  const voiceOptions = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'];
   const [tenant, setTenant] = useState(null);
   const [prompt, setPrompt] = useState('');
   const [greetingText, setGreetingText] = useState('');
@@ -292,7 +293,7 @@ export default function TenantManagePage() {
           />
           <label style={{ marginTop: 10 }}>Voice Type</label>
           <select value={voiceType} onChange={(e) => setVoiceType(e.target.value)}>
-            {['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'shimmer'].map((voice) => (
+            {voiceOptions.map((voice) => (
               <option key={voice} value={voice}>{voice}</option>
             ))}
           </select>
