@@ -432,7 +432,8 @@ function buildDefaultGreeting(companyName: string, agentName: string) {
 
 async function appendCombinedTranscript(callSid: string, role: string, text: string) {
   if (!pool || !callSid || !text) return;
-  const safeRole = role ? role[0].toUpperCase() + role.slice(1) : "Speaker";
+  const firstChar = role ? role[0] : "";
+  const safeRole = firstChar ? firstChar.toUpperCase() + role.slice(1) : "Speaker";
   try {
     await pool.query(
       `UPDATE call_details
