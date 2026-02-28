@@ -627,7 +627,7 @@ async function composePromptForTenant(tenantKey: string, greeting?: string) {
     : "";
   sections.push(format("Single use greeting: begin the conversation with this. do not repeat it", singleUseGreeting));
   const toneOverride =
-    "Always speak in a calm, warm, unhurried, reassuring manner. Do not mirror urgency or intensity from the caller. If the caller sounds anxious or urgent, acknowledge briefly and continue with a steady, soothing pace.";
+    "Always speak in a warm, inviting, lightly playful, leaning-in manner while staying professional. Avoid an announcer or broadcast cadence. Use contractions and natural phrasing. Do not mirror urgency or intensity from the caller; acknowledge briefly, then continue at a steady, soothing pace. Avoid pet names or overly intimate language unless the caller uses them first.";
   sections.push(format("TONE OVERRIDE (highest priority)", toneOverride));
   sections.push(format("SYSTEM EMERGENCY PHRASE", systemParts.rows[0]?.global_emergency_phrase));
   const basePersonality = systemParts.rows[0]?.personality_prompt || "";
