@@ -45,8 +45,30 @@ async function fetchSeedDefaults(pool, industryKey, defaultFaqs, defaultPrompts,
   return inserted;
 }
 
+const COMMON_FAQS = [
+  { question: "Do you offer free estimates?", answer: "We can schedule an on-site assessment and provide pricing after the technician reviews the issue.", category: "Pricing" },
+  { question: "What are your service or diagnostic fees?", answer: "We’ll confirm any service or diagnostic fee before dispatching a technician.", category: "Pricing" },
+  { question: "What payment methods do you accept?", answer: "We accept common payment methods. We can confirm specifics when booking.", category: "Payments" },
+  { question: "Do you offer any warranties or guarantees?", answer: "Yes. We stand by our workmanship and can share warranty details with you.", category: "Warranty" },
+  { question: "Do you work with insurance?", answer: "We can provide documentation to support insurance claims when applicable.", category: "Insurance" },
+  { question: "What areas do you service?", answer: "We serve the local area. Share your address and we’ll confirm coverage.", category: "Coverage" },
+  { question: "How soon can someone come out?", answer: "We’ll schedule the earliest available time and prioritize urgent issues.", category: "Scheduling" },
+  { question: "Do I need to be home for the visit?", answer: "Usually yes. If not, we can discuss access details and preferences.", category: "Scheduling" },
+  { question: "What happens next after I book?", answer: "We’ll confirm your details and a technician will contact you before arrival.", category: "Process" },
+  { question: "How long will the service take?", answer: "It depends on the issue. The technician can estimate timing on site.", category: "Process" },
+  { question: "Is there anything I should do to prepare?", answer: "Clear access to the problem area if possible. We’ll provide any specific prep tips.", category: "Preparation" },
+  { question: "Can I reschedule or cancel?", answer: "Yes. We can update your appointment if you need to change it.", category: "Scheduling" },
+  { question: "Can you help troubleshoot or explain how to fix it?", answer: "Great question — the technician will walk you through options when they call or arrive.", category: "Technical" },
+  { question: "Can I talk to the technician directly?", answer: "We can have the technician follow up with you to discuss details.", category: "Process" },
+  { question: "Do you handle emergencies?", answer: "We prioritize urgent issues and will do our best to get someone out quickly.", category: "Emergency" }
+];
+
+function applyCommonFaqs(faqs) {
+  return [...faqs, ...COMMON_FAQS];
+}
+
 const DEFAULT_FAQS = {
-  plumbing: [
+  plumbing: applyCommonFaqs([
     { question: "Do you offer emergency plumbing?", answer: "Yes. We prioritize active leaks, flooding, and sewage issues.", category: "Emergency" },
     { question: "What should I do for a burst pipe?", answer: "Shut off the main water valve if it’s safe, then call us right away.", category: "Emergency" },
     { question: "What should I do if I smell gas?", answer: "Please leave the home immediately and call 911 first. Once you’re safe, call us back.", category: "Emergency" },
@@ -67,8 +89,8 @@ const DEFAULT_FAQS = {
     { question: "What payment methods do you accept?", answer: "We accept common payment methods. We can confirm when booking.", category: "Payments" },
     { question: "Will you clean up after the repair?", answer: "Yes. We aim to leave the area clean and safe.", category: "Process" },
     { question: "What if the issue comes back?", answer: "Call us and we’ll take a look. We want the problem resolved.", category: "Support" }
-  ],
-  window_installers: [
+  ]),
+  window_installers: applyCommonFaqs([
     { question: "Do you offer window replacement?", answer: "Yes. We replace and install new windows.", category: "Services" },
     { question: "Do you replace glass only?", answer: "It depends on frame condition and window type; we confirm after an inspection.", category: "Services" },
     { question: "How long does window replacement take?", answer: "Once windows arrive, most homes are done in 1–2 days. Timing depends on the number of windows.", category: "Scheduling" },
@@ -89,8 +111,8 @@ const DEFAULT_FAQS = {
     { question: "What if it rains on install day?", answer: "We monitor weather and will coordinate any rescheduling.", category: "Scheduling" },
     { question: "Can you replace a single window?", answer: "Yes. We handle single window and full-home projects.", category: "Services" },
     { question: "Do you fix drafts or foggy glass?", answer: "Yes. We can recommend repair or replacement after inspection.", category: "Services" }
-  ],
-  electrical: [
+  ]),
+  electrical: applyCommonFaqs([
     { question: "Do you offer emergency electrical service?", answer: "Yes. We prioritize urgent safety issues.", category: "Emergency" },
     { question: "What should I do if I smell burning or see sparks?", answer: "If safe, shut off power at the breaker and call for emergency service. If there are flames or heavy smoke, call 911 first.", category: "Emergency" },
     { question: "Do you upgrade electrical panels?", answer: "Yes. We inspect your panel and recommend upgrade options.", category: "Services" },
@@ -111,8 +133,8 @@ const DEFAULT_FAQS = {
     { question: "Do you do inspections for real estate?", answer: "Yes. We can provide inspection reports as needed.", category: "Process" },
     { question: "Can you install smart home devices?", answer: "Yes. We can install smart switches and related devices.", category: "Services" },
     { question: "Is flickering lighting a concern?", answer: "It can be. We can inspect and diagnose the cause.", category: "Safety" }
-  ],
-  hvac: [
+  ]),
+  hvac: applyCommonFaqs([
     { question: "Do you offer emergency HVAC service?", answer: "Yes. We prioritize no heat or no cooling issues.", category: "Emergency" },
     { question: "What should I do if I have no heat or no cooling?", answer: "Check the thermostat and filter first; if it’s still out, we can schedule priority service.", category: "Emergency" },
     { question: "How often should I change my air filter?", answer: "Most homes check monthly and replace about every 3 months; more often with pets or heavy use.", category: "Maintenance" },
@@ -133,8 +155,8 @@ const DEFAULT_FAQS = {
     { question: "Do you offer warranties?", answer: "Yes. We provide workmanship and equipment warranty details.", category: "Warranty" },
     { question: "Can you help with thermostat issues?", answer: "Yes. We can troubleshoot and replace thermostats.", category: "Services" },
     { question: "Do you service commercial units?", answer: "We can confirm commercial availability based on your needs.", category: "Coverage" }
-  ],
-  roofing: [
+  ]),
+  roofing: applyCommonFaqs([
     { question: "Do you handle emergency leaks?", answer: "Yes. We can tarp and stabilize leaks quickly and schedule permanent repairs.", category: "Emergency" },
     { question: "Can you provide a temporary cover?", answer: "Yes. We can install temporary protection until full repairs are completed.", category: "Emergency" },
     { question: "Do you help with storm damage?", answer: "Yes. We inspect storm damage and provide documentation.", category: "Process" },
@@ -155,8 +177,8 @@ const DEFAULT_FAQS = {
     { question: "Do you service commercial roofs?", answer: "We can confirm commercial availability based on your needs.", category: "Coverage" },
     { question: "What payment methods do you accept?", answer: "We accept common payment methods. We can confirm when booking.", category: "Payments" },
     { question: "How soon can you come out?", answer: "We prioritize urgent leaks and schedule the earliest available time.", category: "Scheduling" }
-  ],
-  landscaping: [
+  ]),
+  landscaping: applyCommonFaqs([
     { question: "How often do you mow?", answer: "Typically weekly during peak growing season; timing can vary by weather and grass type.", category: "Maintenance" },
     { question: "Do you offer seasonal cleanups?", answer: "Yes. We schedule spring/fall cleanups and ongoing maintenance.", category: "Maintenance" },
     { question: "Can you handle irrigation issues?", answer: "Yes. We diagnose and repair irrigation systems.", category: "Services" },
@@ -177,8 +199,8 @@ const DEFAULT_FAQS = {
     { question: "Do you offer ongoing maintenance?", answer: "Yes. We can set up a recurring service plan.", category: "Maintenance" },
     { question: "Do you do hardscaping?", answer: "We can discuss patios, walkways, and retaining walls.", category: "Services" },
     { question: "Can you adjust service frequency?", answer: "Yes. We can tailor schedules to your needs.", category: "Scheduling" }
-  ],
-  cleaning: [
+  ]),
+  cleaning: applyCommonFaqs([
     { question: "Do you provide recurring cleanings?", answer: "Yes. We offer weekly, bi-weekly, and monthly plans.", category: "Maintenance" },
     { question: "Do you offer one-time or deep cleans?", answer: "Yes. We offer deep cleans and one-time services.", category: "Services" },
     { question: "Do you bring your own supplies?", answer: "Yes. We bring supplies and can use yours if requested.", category: "Services" },
@@ -199,8 +221,8 @@ const DEFAULT_FAQS = {
     { question: "Do you guarantee your work?", answer: "Yes. Let us know if anything was missed and we’ll make it right.", category: "Warranty" },
     { question: "What payment methods do you accept?", answer: "We accept common payment methods. We can confirm when booking.", category: "Payments" },
     { question: "Do you have background-checked staff?", answer: "We can share our hiring and screening process.", category: "Process" }
-  ],
-  pest_control: [
+  ]),
+  pest_control: applyCommonFaqs([
     { question: "What pests do you treat?", answer: "We handle common household pests like ants, roaches, spiders, rodents, and seasonal invaders. Specialized pests may require a separate inspection.", category: "Services" },
     { question: "Do you offer one-time and recurring service?", answer: "Yes. We can do a one-time treatment or set up a recurring plan.", category: "Services" },
     { question: "How often do you recommend service?", answer: "Many homes use quarterly plans, but it depends on pest activity and the property.", category: "Maintenance" },
@@ -225,8 +247,8 @@ const DEFAULT_FAQS = {
     { question: "Do you handle mosquitoes or outdoor pests?", answer: "Yes. We can provide seasonal treatments and guidance.", category: "Services" },
     { question: "Are the products odorless?", answer: "Most products have minimal odor, but it varies. We’ll set expectations.", category: "Process" },
     { question: "Can I do this myself instead of hiring a pro?", answer: "DIY can work for minor issues, but recurring problems often need professional care.", category: "Process" }
-  ],
-  garage_door: [
+  ]),
+  garage_door: applyCommonFaqs([
     { question: "Is it safe to use the door with a broken spring?", answer: "No. Broken springs are dangerous; avoid using the door and call us.", category: "Safety" },
     { question: "Do you repair broken springs?", answer: "Yes. We replace springs and tune up doors.", category: "Services" },
     { question: "Do you install or repair openers?", answer: "Yes. We repair and install new openers.", category: "Services" },
@@ -247,8 +269,8 @@ const DEFAULT_FAQS = {
     { question: "Can you fix remotes?", answer: "Yes. We can troubleshoot remotes and sensors.", category: "Services" },
     { question: "Will you haul away old doors?", answer: "Yes. We remove and dispose of old doors.", category: "Process" },
     { question: "Do you service rental properties?", answer: "Yes. We can coordinate access with property managers.", category: "Process" }
-  ],
-  general_contractor: [
+  ]),
+  general_contractor: applyCommonFaqs([
     { question: "Do you do estimates?", answer: "Yes. We review scope and provide a detailed estimate.", category: "Pricing" },
     { question: "Do you handle permits?", answer: "Yes. We coordinate permits and required inspections for the project.", category: "Process" },
     { question: "Can you provide a project timeline?", answer: "Yes. We provide a timeline after scope review.", category: "Scheduling" },
@@ -269,8 +291,8 @@ const DEFAULT_FAQS = {
     { question: "Can you help with inspections?", answer: "Yes. We schedule and coordinate required inspections.", category: "Process" },
     { question: "What payment methods do you accept?", answer: "We accept common payment methods. We can confirm when booking.", category: "Payments" },
     { question: "Do you provide progress updates?", answer: "Yes. We keep you informed throughout the project.", category: "Process" }
-  ],
-  locksmith: [
+  ]),
+  locksmith: applyCommonFaqs([
     { question: "Do you offer emergency lockout service?", answer: "Yes. We provide emergency lockout service.", category: "Emergency" },
     { question: "What is the difference between rekeying and replacing?", answer: "Rekeying changes the key without replacing the lock; replacement is best for damaged or upgraded hardware.", category: "Services" },
     { question: "Can you rekey locks?", answer: "Yes. We rekey residential and commercial locks.", category: "Services" },
@@ -291,7 +313,7 @@ const DEFAULT_FAQS = {
     { question: "What payment methods do you accept?", answer: "We accept common payment methods. We can confirm when booking.", category: "Payments" },
     { question: "Can you change locks after a move?", answer: "Yes. Rekeying or replacing is recommended after moving.", category: "Safety" },
     { question: "Do you handle emergency after-hours calls?", answer: "We can confirm after-hours availability when you call.", category: "Emergency" }
-  ]
+  ])
 };
 
 function buildIndustryPrompt({ companyName, helpType, proRole, technicalType }) {
