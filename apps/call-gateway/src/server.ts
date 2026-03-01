@@ -39,6 +39,8 @@ type StreamSession = {
   callControlId: string;
   callSid: string;
   tenantKey: string;
+  industryKey?: string;
+  companyName?: string;
   telnyxStreamId?: string;
   telnyxWs?: WebSocket | undefined;
   openAiWs?: WebSocket | undefined;
@@ -67,6 +69,14 @@ type StreamSession = {
   lastResponseId?: string;
   lastResponseDoneAt?: number;
   lastUserUtteranceAt?: number;
+  preCloseAsked?: boolean;
+  preCloseAnswered?: boolean;
+  collectedName?: string;
+  collectedPhone?: string;
+  collectedAddress?: string;
+  collectedTime?: string;
+  readyToClose?: boolean;
+  faqs?: Array<{ question: string; answer: string; category: string }>;
   awaitingAnswer?: boolean;
   realtimeModel?: string;
 };
@@ -133,6 +143,279 @@ function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined
 function sendOpenAiEvent(ws: WebSocket | undefined, payload: Record<string, unknown>) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify(payload));
+}
+
+const STOPWORDS = new Set([
+  "the","a","an","and","or","but","if","then","to","of","in","on","for","with","at","by","from",
+  "is","are","was","were","be","been","being","it","this","that","these","those","i","you","we","they",
+  "my","your","our","their","me","us","him","her","them","as","so","do","does","did","can","could","should",
+  "would","will","just","now","please","thanks","thank"
+]);
+
+const INDUSTRY_KEYWORDS: Record<string, string[]> = {
+  plumbing: ["plumbing", "plumber", "leak", "leaking", "water heater", "drain", "toilet", "faucet", "pipe", "sewer", "clog"],
+  cleaning: ["cleaning", "cleaner", "house cleaning", "deep clean", "maid", "move-out", "move in", "janitorial"],
+  hvac: ["hvac", "air conditioning", "ac", "furnace", "heat", "cooling", "thermostat", "heat pump"],
+  electrical: ["electrical", "electrician", "outlet", "panel", "breaker", "wiring", "lights", "spark"],
+  roofing: ["roof", "roofing", "shingle", "leak in roof", "gutter"],
+  landscaping: ["landscaping", "lawn", "mow", "mulch", "yard", "irrigation"],
+  pest_control: ["pest", "pest control", "rodent", "ants", "termites", "bugs"],
+  garage_door: ["garage door", "opener", "spring", "track"],
+  window_installers: ["window", "glass", "window replacement", "window install"],
+  locksmith: ["locksmith", "lock", "lockout", "key", "rekey"],
+  general_contractor: ["remodel", "renovation", "general contractor", "construction", "addition"]
+};
+
+function normalizeText(text: string) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenize(text: string) {
+  return normalizeText(text)
+    .split(" ")
+    .filter((t) => t && !STOPWORDS.has(t));
+}
+
+function detectPhone(text: string) {
+  const match = String(text || "").match(/\b(\d{3})[-.\s]?(\d{3})[-.\s]?(\d{4})\b/);
+  if (!match) return "";
+  return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
+function detectTime(text: string) {
+  const lower = String(text || "").toLowerCase();
+  const timeMatch = lower.match(/\b(\d{1,2})(:\d{2})?\s?(am|pm)\b/);
+  if (timeMatch) return timeMatch[0];
+  if (/(today|tonight|tomorrow|morning|afternoon|evening)/.test(lower)) {
+    return lower.match(/(today|tonight|tomorrow|morning|afternoon|evening)/)?.[0] || "";
+  }
+  return "";
+}
+
+function detectAddress(text: string) {
+  const lower = String(text || "").toLowerCase();
+  if (!/\b\d{2,6}\b/.test(lower)) return "";
+  if (
+    /(street|st\b|avenue|ave\b|road|rd\b|drive|dr\b|boulevard|blvd\b|lane|ln\b|way\b|court|ct\b|circle|cir\b|place|pl\b|parkway|pkwy\b|highway|hwy\b)/.test(lower)
+  ) {
+    return String(text || "");
+  }
+  return "";
+}
+
+function detectName(text: string) {
+  const cleaned = normalizeText(text);
+  if (/\d/.test(cleaned)) return "";
+  const parts = cleaned.split(" ").filter(Boolean);
+  if (parts.length === 0 || parts.length > 3) return "";
+  if (/(name is|this is|i am|i'm)/.test(cleaned)) {
+    const tail = cleaned.split(/name is|this is|i am|i'm/)[1]?.trim() || "";
+    const tailParts = tail.split(" ").filter(Boolean);
+    if (tailParts.length) return tailParts[0];
+  }
+  return parts[0] || "";
+}
+
+function isQuestionLike(text: string) {
+  const lower = String(text || "").toLowerCase();
+  return /\?$/.test(text.trim()) || /\b(do you|can you|could you|what|how|when|where|why|is it|are you)\b/.test(lower);
+}
+
+function detectIndustryMismatch(industryKey: string | undefined, text: string) {
+  if (!industryKey) return "";
+  const lower = normalizeText(text);
+  const currentKeywords = INDUSTRY_KEYWORDS[industryKey] || [];
+  const mentionsCurrent = currentKeywords.some((kw) => lower.includes(kw));
+  for (const [key, keywords] of Object.entries(INDUSTRY_KEYWORDS)) {
+    if (key === industryKey) continue;
+    if (keywords.some((kw) => lower.includes(kw))) {
+      if (!mentionsCurrent) return key;
+    }
+  }
+  return "";
+}
+
+function detectIntent(text: string) {
+  const lower = normalizeText(text);
+  if (/(reschedule|change time|move it|different time|another time)/.test(lower)) return "reschedule_request";
+  if (/(price|cost|estimate|quote|fee|diagnostic)/.test(lower)) return "pricing_question";
+  if (/(warranty|guarantee)/.test(lower)) return "warranty_question";
+  if (/(insurance|claim)/.test(lower)) return "insurance_question";
+  if (/(payment|pay|credit card|cash|check|apple pay|google pay)/.test(lower)) return "payment_methods_question";
+  if (/(area|coverage|service area|serve|cover)/.test(lower)) return "coverage_area_question";
+  if (/(schedule|appointment|availability|how soon|soon can|when can|same day|tomorrow|tonight)/.test(lower)) return "availability_question";
+  if (/(what happens next|next steps|process|before you arrive|before the visit)/.test(lower)) return "process_question";
+  if (/(prepare|prep|before you come|anything i should do)/.test(lower)) return "preparation_question";
+  if (/(emergency|urgent|asap|right away)/.test(lower)) return "emergency_question";
+  if (/(should i|how do i|can i fix|what should i do|drano|troubleshoot|diagnose)/.test(lower)) return "technical_question";
+  if (isQuestionLike(text)) return "faq_business";
+  return "general";
+}
+
+async function loadFaqs(session: StreamSession) {
+  if (session.faqs || !pool) return session.faqs || [];
+  const rows = await pool.query(
+    `SELECT question, answer, category
+     FROM faqs
+     WHERE tenant_key = $1
+     ORDER BY id ASC`,
+    [session.tenantKey]
+  );
+  session.faqs = rows.rows || [];
+  return session.faqs;
+}
+
+function scoreFaqMatch(text: string, faq: { question: string }) {
+  const textTokens = new Set(tokenize(text));
+  const questionTokens = tokenize(faq.question);
+  let score = 0;
+  for (const token of questionTokens) {
+    if (textTokens.has(token)) score += 1;
+  }
+  return score;
+}
+
+function findBestFaq(text: string, faqs: Array<{ question: string; answer: string; category: string }>) {
+  let best = null as null | { question: string; answer: string; category: string; score: number };
+  for (const faq of faqs) {
+    const score = scoreFaqMatch(text, faq);
+    if (!best || score > best.score) {
+      best = { ...faq, score };
+    }
+  }
+  if (!best || best.score < 2) return null;
+  return best;
+}
+
+function buildFaqAnswer(text: string, faqs: Array<{ question: string; answer: string; category: string }>) {
+  const intent = detectIntent(text);
+  const categoryMap: Record<string, string> = {
+    pricing_question: "Pricing",
+    warranty_question: "Warranty",
+    insurance_question: "Insurance",
+    payment_methods_question: "Payments",
+    coverage_area_question: "Coverage",
+    availability_question: "Scheduling",
+    process_question: "Process",
+    preparation_question: "Preparation",
+    emergency_question: "Emergency"
+  };
+  const targetCategory = categoryMap[intent];
+  const candidates = targetCategory ? faqs.filter((f) => f.category === targetCategory) : faqs;
+  const best = findBestFaq(text, candidates);
+  return best ? best.answer : "";
+}
+
+function buildClosing(session: StreamSession) {
+  const name = session.collectedName || "there";
+  const phone = session.collectedPhone || "the number you provided";
+  const time = session.collectedTime || "";
+  if (time) {
+    return `I've got you penciled in for ${time}. Someone from our team will call you at ${phone} to confirm the details. Thanks for calling ${session.companyName || "our team"}, ${name}—talk to you soon.`;
+  }
+  return `Someone from our team will call you at ${phone} shortly to confirm the details. Thanks for calling ${session.companyName || "our team"}, ${name}—talk to you soon.`;
+}
+
+async function handleCallerUtterance(session: StreamSession, transcript: string) {
+  const text = String(transcript || "").trim();
+  if (!text) return;
+
+  const preClosePrompt = "Do you have any other questions, or anything else I can help with?";
+  const needsPreCloseFollowup = Boolean(session.preCloseAsked && !session.preCloseAnswered);
+
+  const phone = detectPhone(text);
+  const time = detectTime(text);
+  const address = detectAddress(text);
+  const name = detectName(text);
+  if (phone) session.collectedPhone = phone;
+  if (time) session.collectedTime = time;
+  if (address) session.collectedAddress = address;
+  if (name) session.collectedName = name;
+
+  session.readyToClose = Boolean(session.collectedPhone && session.collectedAddress && session.collectedTime && session.collectedName);
+
+  if (session.preCloseAsked && !session.preCloseAnswered) {
+    if (isDonePhrase(text)) {
+      session.preCloseAnswered = true;
+      const closingText = buildClosing(session);
+      sendOpenAiEvent(session.openAiWs, {
+        type: "response.create",
+        response: { modalities: ["audio", "text"], instructions: `Say exactly: "${closingText}"` }
+      });
+      return;
+    }
+  }
+
+  const mismatch = detectIndustryMismatch(session.industryKey, text);
+  if (mismatch) {
+    const industryLabel = session.industryKey ? session.industryKey.replace(/_/g, " ") : "our services";
+    const reply = `We specialize in ${industryLabel}. Are you calling about ${industryLabel} service?`;
+    sendOpenAiEvent(session.openAiWs, {
+      type: "response.create",
+      response: { modalities: ["audio", "text"], instructions: `Say exactly: "${reply}"` }
+    });
+    return;
+  }
+
+  const intent = detectIntent(text);
+  const faqs = await loadFaqs(session);
+  const faqAnswer = buildFaqAnswer(text, faqs);
+
+  if (intent === "technical_question") {
+    const reply = "Great question — the technician will cover that when they call.";
+    sendOpenAiEvent(session.openAiWs, {
+      type: "response.create",
+      response: {
+        modalities: ["audio", "text"],
+        instructions: needsPreCloseFollowup
+          ? `Say exactly: "${reply}" Then ask: "${preClosePrompt}"`
+          : `Say exactly: "${reply}" Then continue the call flow with the next needed question in one short sentence.`
+      }
+    });
+    return;
+  }
+
+  if (faqAnswer) {
+    sendOpenAiEvent(session.openAiWs, {
+      type: "response.create",
+      response: {
+        modalities: ["audio", "text"],
+        instructions: needsPreCloseFollowup
+          ? `Say exactly: "${faqAnswer}" Then ask: "${preClosePrompt}"`
+          : `Say exactly: "${faqAnswer}" Then continue the call flow with the next needed question in one short sentence.`
+      }
+    });
+    return;
+  }
+
+  if (session.readyToClose && !session.preCloseAsked) {
+    session.preCloseAsked = true;
+    sendOpenAiEvent(session.openAiWs, {
+      type: "response.create",
+      response: { modalities: ["audio", "text"], instructions: `Say exactly: "${preClosePrompt}"` }
+    });
+    return;
+  }
+
+  if (needsPreCloseFollowup) {
+    sendOpenAiEvent(session.openAiWs, {
+      type: "response.create",
+      response: {
+        modalities: ["audio", "text"],
+        instructions: `Answer the caller briefly, then ask: "${preClosePrompt}"`
+      }
+    });
+    return;
+  }
+
+  sendOpenAiEvent(session.openAiWs, {
+    type: "response.create",
+    response: { modalities: ["audio", "text"] }
+  });
 }
 
 async function flushAssistantText(session: StreamSession) {
@@ -271,7 +554,7 @@ function connectOpenAiRealtime(session: StreamSession) {
           type: "server_vad",
           silence_duration_ms: 350,
           prefix_padding_ms: 200,
-          create_response: true
+          create_response: false
         },
         input_audio_transcription: { model: "gpt-4o-mini-transcribe", language: "en" }
       }
@@ -495,6 +778,7 @@ function connectOpenAiRealtime(session: StreamSession) {
            WHERE call_sid = $1`,
           [session.callSid, `\nCaller: ${transcript}`]
         );
+        await handleCallerUtterance(session, String(transcript));
       }
     }
     // With server VAD auto-response enabled, we do not manually create responses here.
@@ -759,7 +1043,10 @@ app.post("/v1/telnyx/texml/inbound", express.raw({ type: "*/*" }), async (req, r
     });
 
     const tenantRow = await pool.query(
-      `SELECT tenant_key, status, name FROM tenants WHERE telnyx_voice_number = $1 LIMIT 1`,
+      `SELECT tenant_key, status, name, industry
+       FROM tenants
+       WHERE telnyx_voice_number = $1
+       LIMIT 1`,
       [to]
     );
     logInfo("telnyx_texml_inbound_tenant_lookup", {
@@ -774,6 +1061,7 @@ app.post("/v1/telnyx/texml/inbound", express.raw({ type: "*/*" }), async (req, r
     }
     const tenantKey = tenantRow.rows[0].tenant_key;
     const companyName = tenantRow.rows[0].name || "our team";
+    const industryKey = tenantRow.rows[0].industry || undefined;
     const agentRow = await pool.query(
       `SELECT agent_name, greeting_text, voice_type FROM agents WHERE tenant_key = $1 LIMIT 1`,
       [tenantKey]
@@ -1139,6 +1427,8 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
       callControlId,
       callSid,
       tenantKey,
+      industryKey,
+      companyName,
       greeting,
       instructions,
       ...(voiceType ? { voiceOverride: voiceType } : {}),
