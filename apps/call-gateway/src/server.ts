@@ -145,6 +145,34 @@ function sendOpenAiEvent(ws: WebSocket | undefined, payload: Record<string, unkn
   ws.send(JSON.stringify(payload));
 }
 
+function shouldBargeIn(delta: string) {
+  const lower = normalizeText(delta);
+  if (!lower) return false;
+  if (/(stop|wait|hold on|excuse me|one sec|sorry|actually)/.test(lower)) return true;
+  const compact = lower.replace(/[^a-z0-9]/g, "");
+  return compact.length >= 2;
+}
+
+function cancelAssistantOutput(session: StreamSession, reason: string) {
+  if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
+    sendOpenAiEvent(session.openAiWs, { type: "response.cancel" });
+  }
+  session.responseActive = false;
+  session.outputActive = false;
+  session.pendingAssistantText = "";
+  session.pendingAssistantAudioText = "";
+  session.pendingAssistantFlush = "";
+  if (session.outputTimer) {
+    clearInterval(session.outputTimer);
+    session.outputTimer = undefined;
+  }
+  if (session.outputQueue) {
+    session.outputQueue = [];
+  }
+  session.outputBuffer = Buffer.alloc(0);
+  logInfo("assistant_response_canceled", { callSid: session.callSid, reason });
+}
+
 const STOPWORDS = new Set([
   "the","a","an","and","or","but","if","then","to","of","in","on","for","with","at","by","from",
   "is","are","was","were","be","been","being","it","this","that","these","those","i","you","we","they",
@@ -311,6 +339,21 @@ function buildFaqAnswer(text: string, faqs: Array<{ question: string; answer: st
   return best ? best.answer : "";
 }
 
+function isFaqIntent(intent: string) {
+  return (
+    intent === "pricing_question" ||
+    intent === "warranty_question" ||
+    intent === "insurance_question" ||
+    intent === "payment_methods_question" ||
+    intent === "coverage_area_question" ||
+    intent === "availability_question" ||
+    intent === "process_question" ||
+    intent === "preparation_question" ||
+    intent === "emergency_question" ||
+    intent === "faq_business"
+  );
+}
+
 function buildClosing(session: StreamSession) {
   const name = session.collectedName || "there";
   const phone = session.collectedPhone || "the number you provided";
@@ -388,6 +431,20 @@ async function handleCallerUtterance(session: StreamSession, transcript: string)
         instructions: needsPreCloseFollowup
           ? `Say exactly: "${faqAnswer}" Then ask: "${preClosePrompt}"`
           : `Say exactly: "${faqAnswer}" Then continue the call flow with the next needed question in one short sentence.`
+      }
+    });
+    return;
+  }
+
+  if (isFaqIntent(intent)) {
+    const reply = "I don’t have that detail, but I can have someone call you with the specifics.";
+    sendOpenAiEvent(session.openAiWs, {
+      type: "response.create",
+      response: {
+        modalities: ["audio", "text"],
+        instructions: needsPreCloseFollowup
+          ? `Say exactly: "${reply}" Then ask: "${preClosePrompt}"`
+          : `Say exactly: "${reply}" Then continue the call flow with the next needed question in one short sentence.`
       }
     });
     return;
@@ -746,6 +803,9 @@ function connectOpenAiRealtime(session: StreamSession) {
       const delta = payload.delta || payload.transcript || payload.text || "";
       if (delta) {
         session.pendingCallerText = (session.pendingCallerText || "") + String(delta);
+        if ((session.responseActive || session.outputActive) && shouldBargeIn(String(delta))) {
+          cancelAssistantOutput(session, "caller_barge_in");
+        }
       }
     }
     if (
@@ -761,6 +821,9 @@ function connectOpenAiRealtime(session: StreamSession) {
         "";
       session.pendingCallerText = "";
       if (transcript) {
+        if ((session.responseActive || session.outputActive) && /stop talking|stop|be quiet|shut up|hold on|wait/i.test(String(transcript))) {
+          cancelAssistantOutput(session, "caller_interrupt_command");
+        }
         await pool?.query(
           `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
            VALUES ($1, $2, $3, $4, 'message')`,
