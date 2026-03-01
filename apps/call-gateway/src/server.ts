@@ -265,8 +265,9 @@ async function loadFaqs(session: StreamSession): Promise<Array<{ question: strin
      ORDER BY id ASC`,
     [session.tenantKey]
   );
-  session.faqs = rows.rows || [];
-  return session.faqs;
+  const rowsArray = Array.isArray(rows.rows) ? rows.rows : [];
+  session.faqs = rowsArray as Array<{ question: string; answer: string; category: string }>;
+  return rowsArray;
 }
 
 function scoreFaqMatch(text: string, faq: { question: string }) {
