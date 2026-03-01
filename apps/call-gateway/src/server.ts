@@ -256,7 +256,7 @@ function detectIntent(text: string) {
   return "general";
 }
 
-async function loadFaqs(session: StreamSession) {
+async function loadFaqs(session: StreamSession): Promise<Array<{ question: string; answer: string; category: string }>> {
   if (session.faqs || !pool) return session.faqs || [];
   const rows = await pool.query(
     `SELECT question, answer, category
@@ -1375,7 +1375,10 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     });
 
     const tenantRow = await pool.query(
-      `SELECT tenant_key, status, name FROM tenants WHERE telnyx_voice_number = $1 LIMIT 1`,
+      `SELECT tenant_key, status, name, industry
+       FROM tenants
+       WHERE telnyx_voice_number = $1
+       LIMIT 1`,
       [to]
     );
     if (!tenantRow.rowCount || tenantRow.rows[0].status !== "active") {
@@ -1393,6 +1396,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
 
     const tenantKey = tenantRow.rows[0].tenant_key;
     const companyName = tenantRow.rows[0].name || "our team";
+    const industryKey = tenantRow.rows[0].industry || undefined;
     const agentRow = await pool.query(
       `SELECT agent_name, greeting_text, voice_type FROM agents WHERE tenant_key = $1 LIMIT 1`,
       [tenantKey]
