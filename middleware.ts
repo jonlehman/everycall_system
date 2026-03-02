@@ -5,8 +5,12 @@ const protectedPaths = ['/client', '/admin', '/dashboard', '/config'];
 export async function middleware(req: Request) {
   const url = new URL(req.url);
   const pathname = url.pathname;
+  const publicProtectedPaths = ['/admin/login'];
 
   if (!protectedPaths.some((path) => pathname.startsWith(path))) {
+    return NextResponse.next();
+  }
+  if (publicProtectedPaths.includes(pathname)) {
     return NextResponse.next();
   }
 
@@ -16,13 +20,14 @@ export async function middleware(req: Request) {
   const me = await meResp.json().catch(() => ({ authenticated: false }));
 
   if (!me?.authenticated) {
-    const redirectUrl = new URL('/login', url.origin);
+    const loginPath = pathname.startsWith('/admin') ? '/admin/login' : '/login';
+    const redirectUrl = new URL(loginPath, url.origin);
     redirectUrl.searchParams.set('next', pathname);
     return NextResponse.redirect(redirectUrl);
   }
 
   if ((pathname.startsWith('/admin') || pathname.startsWith('/dashboard') || pathname.startsWith('/config')) && me.role !== 'admin') {
-    return NextResponse.redirect(new URL('/login', url.origin));
+    return NextResponse.redirect(new URL('/admin/login', url.origin));
   }
 
   if (pathname.startsWith('/client') && me.role !== 'tenant') {

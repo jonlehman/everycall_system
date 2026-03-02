@@ -6,12 +6,6 @@ export default function LoginPage() {
   const [clientEmail, setClientEmail] = useState('');
   const [clientPassword, setClientPassword] = useState('');
   const [clientStatus, setClientStatus] = useState('');
-  const [adminEmail, setAdminEmail] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
-  const [adminStatus, setAdminStatus] = useState('');
-  const [resetEmail, setResetEmail] = useState('');
-  const [resetRole, setResetRole] = useState('tenant');
-  const [resetStatus, setResetStatus] = useState('');
 
   const login = async ({ email, password, role, setStatus, onSuccess }) => {
     setStatus('Signing in...');
@@ -34,7 +28,7 @@ export default function LoginPage() {
     <div className="auth-wrap">
       <section className="hero">
         <h1>EveryCall Workspace</h1>
-        <p>Use the client workspace to run calls, FAQ, and team settings. Use admin only for platform ops and tenant management.</p>
+        <p>Use the client workspace to run calls, FAQ, and team settings.</p>
       </section>
 
       <div className="auth-grid">
@@ -65,73 +59,10 @@ export default function LoginPage() {
             <span className="muted">{clientStatus}</span>
           </div>
           <div style={{ marginTop: 8 }}>
-            <a className="link" href="#reset-password">Forgot password?</a>
+            <a className="link" href="/forgot-password">Forgot password?</a>
           </div>
-        </section>
-
-        <section className="card" id="reset-password">
-          <h2>Admin Console Login</h2>
-          <p className="muted">For platform operator access only.</p>
-          <label>Admin Email</label>
-          <input placeholder="admin@everycall.io" value={adminEmail} onChange={(event) => setAdminEmail(event.target.value)} />
-          <label>Password</label>
-          <input type="password" placeholder="••••••••" value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} />
-          <div className="toolbar" style={{ marginTop: 12 }}>
-            <button
-              className="btn"
-              type="button"
-              onClick={() => login({
-                email: adminEmail,
-                password: adminPassword,
-                role: 'admin',
-                setStatus: setAdminStatus,
-                onSuccess: () => {
-                  window.location.href = '/admin/overview';
-                }
-              })}
-            >
-              Sign In to Admin Console
-            </button>
-            <span className="muted">{adminStatus}</span>
-          </div>
-        </section>
-        <section className="card">
-          <h2>Reset Password</h2>
-          <p className="muted">We will email a reset link.</p>
-          <label>Email</label>
-          <input placeholder="you@company.com" value={resetEmail} onChange={(event) => setResetEmail(event.target.value)} />
-          <label>Account Type</label>
-          <select value={resetRole} onChange={(event) => setResetRole(event.target.value)}>
-            <option value="tenant">Client User</option>
-            <option value="admin">Admin User</option>
-          </select>
-          <div className="toolbar" style={{ marginTop: 12 }}>
-            <button
-              className="btn"
-              type="button"
-              onClick={async () => {
-                setResetStatus('Sending...');
-                const resp = await fetch('/api/v1/auth/request-reset', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ email: resetEmail, role: resetRole })
-                });
-                if (!resp.ok) {
-                  const data = await resp.json().catch(() => ({}));
-                  setResetStatus(data?.error || 'Request failed.');
-                  return;
-                }
-                const data = await resp.json().catch(() => ({}));
-                if (data?.delivered === false) {
-                  setResetStatus(`Email delivery failed: ${data?.deliveryError || 'mail provider error'}.`);
-                  return;
-                }
-                setResetStatus('Reset email sent.');
-              }}
-            >
-              Send Reset Email
-            </button>
-            <span className="muted">{resetStatus}</span>
+          <div style={{ marginTop: 8 }}>
+            <a className="link" href="/admin/login">Admin sign in</a>
           </div>
         </section>
       </div>

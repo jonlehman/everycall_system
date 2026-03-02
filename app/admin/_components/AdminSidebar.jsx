@@ -43,7 +43,7 @@ export default function AdminSidebar() {
           type="button"
           onClick={async () => {
             await fetch('/api/v1/auth/logout', { method: 'POST' });
-            window.location.href = '/login';
+            window.location.href = '/admin/login';
           }}
         >
           Sign out

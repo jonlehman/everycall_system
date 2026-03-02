@@ -1,14 +1,9 @@
-import AdminSidebar from './_components/AdminSidebar';
+import AdminShell from './_components/AdminShell';
 import './admin.css';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default function AdminLayout({ children }) {
-  return (
-    <div className="shell">
-      <AdminSidebar />
-      <main className="main">{children}</main>
-    </div>
-  );
+  return <AdminShell>{children}</AdminShell>;
 }
