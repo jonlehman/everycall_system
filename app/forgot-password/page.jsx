@@ -1,14 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 
 export default function ForgotPasswordPage() {
-  const searchParams = useSearchParams();
-  const initialRole = searchParams.get('role') === 'admin' ? 'admin' : 'tenant';
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState(initialRole);
+  const [role, setRole] = useState('tenant');
   const [status, setStatus] = useState('');
+
+  useEffect(() => {
+    const roleParam = new URLSearchParams(window.location.search).get('role');
+    if (roleParam === 'admin') {
+      setRole('admin');
+    }
+  }, []);
 
   const requestReset = async () => {
     setStatus('Sending...');
