@@ -7,3 +7,6 @@
 - Deterministic FAQ answers preferred over model improvisation.
 - Pre-close question enforced programmatically for reliability.
 - Barge-in cancels assistant speech and output audio.
+
+## 2026-03-02
+- Added `docs/HISTORY.md` to preserve high-level project timeline.
