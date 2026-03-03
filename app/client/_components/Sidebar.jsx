@@ -5,10 +5,36 @@ import { usePathname } from 'next/navigation';
 
 const setupPaths = ['/client/setup', '/client/faq', '/client/team', '/client/routing', '/client/settings'];
 
+function NavIcon({ kind }) {
+  if (kind === 'dashboard') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 19h16" />
+        <rect x="5" y="11" width="3.5" height="6" rx="1" />
+        <rect x="10.25" y="8" width="3.5" height="9" rx="1" />
+        <rect x="15.5" y="5" width="3.5" height="12" rx="1" />
+      </svg>
+    );
+  }
+  if (kind === 'calls') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7.5 4.5c.8-.8 2.1-.8 2.9 0l1.6 1.6c.8.8.8 2.1 0 2.9l-1.2 1.2a14.5 14.5 0 0 0 3 3 14.5 14.5 0 0 0 3 3l1.2-1.2c.8-.8 2.1-.8 2.9 0l1.6 1.6c.8.8.8 2.1 0 2.9l-.9.9c-1.1 1.1-2.7 1.6-4.2 1.2-2.9-.8-6-2.8-8.8-5.6S4.7 9.2 3.9 6.3C3.5 4.8 4 3.2 5.1 2.1z" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.8 1.8 0 0 1-1.3 3.1h-.2a1 1 0 0 0-.9.6 1.8 1.8 0 0 1-3.4-.5 1 1 0 0 0-.9-.7h-2a1 1 0 0 0-.9.7 1.8 1.8 0 0 1-3.4.5 1 1 0 0 0-.9-.6h-.2a1.8 1.8 0 0 1-1.3-3.1l.1-.1A1 1 0 0 0 4.6 15a1 1 0 0 0-.8-.6h-.1a1.8 1.8 0 0 1 0-3.6h.1a1 1 0 0 0 .8-.6 1 1 0 0 0-.2-1.1l-.1-.1a1.8 1.8 0 0 1 1.3-3.1h.2a1 1 0 0 0 .9-.6 1.8 1.8 0 0 1 3.4.5 1 1 0 0 0 .9.7h2a1 1 0 0 0 .9-.7 1.8 1.8 0 0 1 3.4-.5 1 1 0 0 0 .9.6h.2a1.8 1.8 0 0 1 1.3 3.1l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .8.6h.1a1.8 1.8 0 0 1 0 3.6h-.1a1 1 0 0 0-.8.6z" />
+    </svg>
+  );
+}
+
 const navItems = [
-  { href: '/client/overview', label: 'Overview', icon: 'OV' },
-  { href: '/client/calls', label: 'Calls', icon: 'CL' },
-  { href: '/client/setup', label: 'Setup', icon: 'ST' }
+  { href: '/client/overview', label: 'Dashboard', icon: 'dashboard' },
+  { href: '/client/calls', label: 'Calls', icon: 'calls' },
+  { href: '/client/setup', label: 'Setup', icon: 'setup' }
 ];
 
 const setupSubItems = [
@@ -37,7 +63,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         {!collapsed ? <div className="nav-label">Operations</div> : null}
         {navItems.map((item) => (
           <Link key={item.href} className={linkClass(item.href)} href={item.href} title={collapsed ? item.label : undefined}>
-            <span className="nav-icon">{item.icon}</span>
+            <span className="nav-icon"><NavIcon kind={item.icon} /></span>
             {!collapsed ? <span>{item.label}</span> : null}
           </Link>
         ))}

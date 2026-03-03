@@ -10,3 +10,6 @@
 
 ## 2026-03-02
 - Added `docs/HISTORY.md` to preserve high-level project timeline.
+
+## 2026-03-03
+- Adopt Tailwind + shadcn/ui as the default web UI foundation (see ADR `0004-tailwind-shadcn-ui-standard.md`).
