@@ -3,8 +3,90 @@ import { getSession, requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { buildCallSummarySms, getSharedSmsNumber } from "../_lib/alerts.js";
 import { sendTelnyxSms } from "../_lib/telnyx.js";
 
+const openAiKey = process.env.OPENAI_API_KEY || "";
+const openAiModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
+}
+
+function normalizeSummary(rawText) {
+  const cleaned = String(rawText || "").replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
+
+  let left = "";
+  let right = "";
+  if (cleaned.includes(":")) {
+    const parts = cleaned.split(":");
+    left = parts.shift() || "";
+    right = parts.join(":");
+  } else if (cleaned.includes(" - ")) {
+    const parts = cleaned.split(" - ");
+    left = parts.shift() || "";
+    right = parts.join(" - ");
+  } else if (cleaned.includes(" — ")) {
+    const parts = cleaned.split(" — ");
+    left = parts.shift() || "";
+    right = parts.join(" — ");
+  } else {
+    left = "Call Summary";
+    right = cleaned;
+  }
+
+  let leftWords = left.trim().split(/\s+/).filter(Boolean);
+  if (leftWords.length < 2) {
+    leftWords = [...leftWords, "Summary"];
+  }
+  if (leftWords.length > 4) {
+    leftWords = leftWords.slice(0, 4);
+  }
+
+  let rightWords = right.trim().split(/\s+/).filter(Boolean);
+  if (rightWords.length === 0) {
+    rightWords = ["Follow", "up", "needed"];
+  }
+  if (rightWords.length > 12) {
+    rightWords = rightWords.slice(0, 12);
+  }
+
+  return `${leftWords.join(" ")}: ${rightWords.join(" ")}`;
+}
+
+async function generateSummaryFromTranscript(transcript) {
+  const trimmed = String(transcript || "").trim();
+  if (!trimmed || !openAiKey) return null;
+
+  const prompt = [
+    "Summarize this call transcript.",
+    "Format: 2-4 words, colon, then a 12-word max description.",
+    "Use only information from the transcript.",
+    "Return only the summary text."
+  ].join(" ");
+
+  const input = [
+    { role: "system", content: prompt },
+    { role: "user", content: trimmed.slice(0, 6000) }
+  ];
+
+  const resp = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openAiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ model: openAiModel, input })
+  });
+
+  if (!resp.ok) return null;
+  const json = await resp.json();
+  const output =
+    json.output_text ||
+    json.output
+      ?.flatMap((item) => item.content || [])
+      .find((item) => item.type === "output_text" && typeof item.text === "string")
+      ?.text;
+
+  return normalizeSummary(output);
 }
 
 export default async function handler(req, res) {
@@ -104,6 +186,15 @@ export default async function handler(req, res) {
         const urgency = String(body.urgency || "").trim() || null;
         const disposition = String(body.disposition || "").trim() || null;
         const extracted = body.extracted || null;
+        const transcriptFromPayload = extracted?.transcript || null;
+        let finalSummary = summary;
+
+        if (!finalSummary || finalSummary === "Call completed.") {
+          const generated = await generateSummaryFromTranscript(transcriptFromPayload || "");
+          if (generated) {
+            finalSummary = generated;
+          }
+        }
 
         await pool.query(
           `INSERT INTO calls (call_sid, tenant_key, status, summary, urgency, disposition)
@@ -112,7 +203,7 @@ export default async function handler(req, res) {
            DO UPDATE SET summary = EXCLUDED.summary,
                          urgency = EXCLUDED.urgency,
                          disposition = EXCLUDED.disposition`,
-          [callId, tenantKey, summary || null, urgency, disposition]
+          [callId, tenantKey, finalSummary || null, urgency, disposition]
         );
 
         if (extracted) {
@@ -153,6 +244,38 @@ export default async function handler(req, res) {
         }
 
         return res.status(200).json({ ok: true });
+      }
+
+      if (body.action === "backfill_summaries") {
+        if (!session) {
+          return res.status(403).json({ error: "forbidden" });
+        }
+
+        const missing = await pool.query(
+          `SELECT c.call_sid, c.summary, d.transcript, d.transcript_combined
+           FROM calls c
+           LEFT JOIN call_details d ON d.call_sid = c.call_sid
+           WHERE c.tenant_key = $1
+             AND (c.summary IS NULL OR c.summary = '' OR c.summary = 'Call completed.')
+           ORDER BY c.created_at DESC`,
+          [tenantKey]
+        );
+
+        let updated = 0;
+        for (const row of missing.rows) {
+          const transcript = row.transcript_combined || row.transcript || "";
+          const generated = await generateSummaryFromTranscript(transcript);
+          if (!generated) continue;
+          await pool.query(
+            `UPDATE calls
+             SET summary = $3
+             WHERE tenant_key = $1 AND call_sid = $2`,
+            [tenantKey, row.call_sid, generated]
+          );
+          updated += 1;
+        }
+
+        return res.status(200).json({ ok: true, updated });
       }
 
       if (body.action === "update") {

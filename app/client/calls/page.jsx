@@ -46,28 +46,43 @@ export default function CallsPage() {
   const [lastSavedAt, setLastSavedAt] = useState('');
   const searchInputRef = useRef(null);
 
-  const loadCalls = () => {
+  const loadCalls = async ({ showLoading = true } = {}) => {
+    if (showLoading) setLoading(true);
+    setLoadError('');
+    try {
+      const resp = await fetch(`/api/v1/calls`);
+      if (!resp.ok) {
+        setLoadError('Could not load calls. Refresh to retry.');
+        return;
+      }
+      const data = await resp.json();
+      setCalls(data.calls || []);
+    } catch {
+      setLoadError('Could not load calls. Refresh to retry.');
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  };
+
+  const refreshData = async () => {
     setLoading(true);
     setLoadError('');
-    let mounted = true;
-    fetch(`/api/v1/calls`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => {
-        if (!mounted) return;
-        if (!data) {
-          setLoadError('Could not load calls. Refresh to retry.');
-          setLoading(false);
-          return;
-        }
-        setCalls(data.calls || []);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setLoadError('Could not load calls. Refresh to retry.');
-        setLoading(false);
+    try {
+      const resp = await fetch('/api/v1/calls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'backfill_summaries' })
       });
-    return () => { mounted = false; };
+      if (!resp.ok) {
+        setLoadError('Could not refresh summaries. Refresh to retry.');
+        return;
+      }
+      await loadCalls({ showLoading: false });
+    } catch {
+      setLoadError('Could not refresh summaries. Refresh to retry.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -237,7 +252,7 @@ export default function CallsPage() {
       title="Call Inbox"
       subtitle="Review the call log and update call status, urgency, summary, and notes inline."
       status={status}
-      primaryAction={{ label: 'Refresh Data', brand: true, onClick: loadCalls }}
+      primaryAction={{ label: 'Refresh Data', brand: true, onClick: refreshData }}
     >
       <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-[1.2fr_.8fr]'}`}>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
