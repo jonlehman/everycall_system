@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
+import { Button } from '../../../components/ui/button';
 import ClientPage from '../_components/ClientPage';
 
 export default function TeamPage() {
@@ -180,9 +181,9 @@ export default function TeamPage() {
       headerAlign: 'right',
       minWidth: 260,
       renderCell: (params) => (
-        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', width: '100%' }}>
+        <div className="flex w-full justify-end gap-1.5">
           <button
-            className="btn"
+            className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted"
             onClick={() => {
               const phone = window.prompt('Enter mobile number (E.164 recommended):', params.row.phone || '');
               if (!phone) return;
@@ -192,22 +193,22 @@ export default function TeamPage() {
             Set Phone
           </button>
           <button
-            className="btn"
+            className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
             onClick={() => requestSmsOptIn(params.row.id)}
             disabled={!params.row.phone || params.row.smsOptIn === 'opted_in'}
           >
             {params.row.smsOptIn === 'opted_in' ? 'SMS Enabled' : 'Request SMS'}
           </button>
           {params.row.status === 'invited' ? (
-            <button className="btn" onClick={() => resendInvite(params.row.id)}>Resend</button>
+            <button className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted" onClick={() => resendInvite(params.row.id)}>Resend</button>
           ) : null}
           <button
-            className="btn"
+            className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted"
             onClick={() => updateStatus(params.row.id, params.row.status === 'active' ? 'disabled' : 'active')}
           >
             {params.row.status === 'active' ? 'Deactivate' : 'Activate'}
           </button>
-          <button className="btn" onClick={() => deleteUser(params.row.id)}>Delete</button>
+          <button className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted" onClick={() => deleteUser(params.row.id)}>Delete</button>
         </div>
       )
     }
@@ -224,13 +225,13 @@ export default function TeamPage() {
         onClick: () => setShowInvite((prev) => !prev)
       }}
     >
-      <div className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
-        <div className="stack">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[7fr_3fr]">
+        <div className="grid gap-3">
           {showInvite ? (
-            <div className="card">
-              <h2 style={{ marginTop: 0 }}>Invite Team Member</h2>
-              <form className="stack" onSubmit={handleInvite}>
-                <div className="form-row">
+            <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+              <h2 className="mt-0 text-lg font-semibold">Invite Team Member</h2>
+              <form className="grid gap-3" onSubmit={handleInvite}>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label>Name</label>
                     <input value={inviteName} onChange={(event) => setInviteName(event.target.value)} placeholder="Jane Smith" />
@@ -240,14 +241,14 @@ export default function TeamPage() {
                     <input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="jane@company.com" />
                   </div>
                 </div>
-                <div className="form-row">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label>Mobile Phone</label>
                     <input value={invitePhone} onChange={(event) => setInvitePhone(event.target.value)} placeholder="+1XXXXXXXXXX" />
                   </div>
                   <div></div>
                 </div>
-                <div className="form-row">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label>Role</label>
                     <select value={inviteRole} onChange={(event) => setInviteRole(event.target.value)}>
@@ -266,17 +267,17 @@ export default function TeamPage() {
                     </select>
                   </div>
                 </div>
-                <div className="toolbar">
-                  <button className="btn brand" type="submit" disabled={savingInvite}>
+                <div className="flex gap-2">
+                  <Button type="submit" disabled={savingInvite}>
                     {savingInvite ? 'Sending...' : 'Send Invite'}
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>
           ) : null}
 
-          <div className="card">
-            <h2 style={{ marginTop: 0 }}>Team Directory</h2>
+          <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+            <h2 className="mt-0 text-lg font-semibold">Team Directory</h2>
             <div style={{ height: rows.length ? 'auto' : 300 }}>
               <DataGrid
                 rows={rows}
@@ -297,9 +298,9 @@ export default function TeamPage() {
           </div>
         </div>
 
-        <div className="card">
-          <h2>Help</h2>
-          <ul className="muted" style={{ paddingLeft: 18, marginTop: 8 }}>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Help</h2>
+          <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
             <li>Invite only trusted users who need access to calls and settings.</li>
             <li>Use role and status to control who can make changes.</li>
             <li>SMS alerts require opt-in by replying YES to a request text.</li>
