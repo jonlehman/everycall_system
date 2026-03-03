@@ -1,62 +1,72 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
+import ClientPage from '../_components/ClientPage';
+
 export default function FaqPage() {
   const [faqs, setFaqs] = useState([]);
-  const [status, setStatus] = useState('Ready.');
+  const [status, setStatus] = useState({ message: 'Loading FAQs...', tone: 'warn' });
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('We serve the greater metro area and nearby suburbs. Call with your address and we will confirm coverage.');
   const [category, setCategory] = useState('');
-  const gridRef = useRef(null);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
-  const loadFaqs = () => {
-    setStatus('Loading FAQs...');
+  const loadFaqs = async () => {
+    setStatus({ message: 'Loading FAQs...', tone: 'warn' });
     fetch(`/api/v1/faq`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => {
-        if (!data) return;
+        if (!data) {
+          setStatus({ message: 'Could not load FAQs.', tone: 'bad' });
+          return;
+        }
         setFaqs(data.faqs || []);
-        setStatus('Loaded FAQs.');
+        setStatus({ message: `Loaded ${data.faqs?.length || 0} FAQ item(s).`, tone: 'ok' });
       })
-      .catch(() => setStatus('Failed to load FAQs.'));
+      .catch(() => setStatus({ message: 'Could not load FAQs.', tone: 'bad' }));
   };
 
   useEffect(() => {
     loadFaqs();
   }, []);
 
-  useEffect(() => {
-    if (gridRef.current) {
-      gridRef.current.style.gridTemplateColumns = '7fr 3fr';
-    }
-  }, []);
-
   const deleteFaq = async (id) => {
+    setDeletingId(id);
     const resp = await fetch(`/api/v1/faq?id=${id}`, { method: 'DELETE' });
-    if (!resp.ok) return;
-    loadFaqs();
-    setStatus('Deleted FAQ.');
+    if (!resp.ok) {
+      setStatus({ message: 'Delete failed. This FAQ may be protected.', tone: 'bad' });
+      setDeletingId(null);
+      return;
+    }
+    await loadFaqs();
+    setStatus({ message: 'FAQ deleted.', tone: 'ok' });
+    setDeletingId(null);
   };
 
   const saveFaq = async () => {
     if (!question.trim() || !answer.trim()) {
-      setStatus('Question and answer are required.');
+      setStatus({ message: 'Question and answer are required.', tone: 'bad' });
       return;
     }
+    setSaving(true);
+    setStatus({ message: 'Saving FAQ...', tone: 'warn' });
     const resp = await fetch('/api/v1/faq', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question: question.trim(), answer: answer.trim(), category: category.trim() || 'General' })
     });
     if (!resp.ok) {
-      setStatus('Save failed.');
+      setStatus({ message: 'Save failed. Please try again.', tone: 'bad' });
+      setSaving(false);
       return;
     }
     setQuestion('');
     setCategory('');
-    loadFaqs();
-    setStatus('FAQ saved.');
+    await loadFaqs();
+    setStatus({ message: 'FAQ saved.', tone: 'ok' });
+    setSaving(false);
   };
 
   const rows = faqs.map((faq) => ({
@@ -84,24 +94,26 @@ export default function FaqPage() {
       renderCell: (params) => (
         <button
           className="btn delete-faq"
-          disabled={!params.row.deletable}
+          disabled={!params.row.deletable || deletingId === params.row.id}
           onClick={() => deleteFaq(params.row.id)}
         >
-          Delete
+          {deletingId === params.row.id ? 'Deleting...' : 'Delete'}
         </button>
       )
     }
   ];
 
   return (
-    <section className="screen active">
-      <div className="topbar">
-        <h1>Customer Questions and Answers</h1>
-        <div className="top-actions"></div>
-      </div>
-      <div ref={gridRef} className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
+    <ClientPage
+      title="FAQ Manager"
+      subtitle="Keep caller answers clear and current. Save one change at a time."
+      status={status}
+      primaryAction={{ label: saving ? 'Saving...' : 'Save FAQ', brand: true, onClick: saveFaq, disabled: saving }}
+    >
+      <div className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
         <div>
           <div className="card">
+            <h2 style={{ marginTop: 0 }}>Current FAQs</h2>
             <div style={{ height: rows.length ? 'auto' : 300 }}>
               <DataGrid
                 rows={rows}
@@ -121,11 +133,8 @@ export default function FaqPage() {
               />
             </div>
           </div>
-          <div className="card" style={{ marginTop: 12 }}>
-            <div className="topbar" style={{ marginBottom: 8 }}>
-              <h2 style={{ margin: 0 }}>New FAQ</h2>
-              <div className="top-actions"><span className="muted">{status}</span></div>
-            </div>
+          <div className="card" id="new-faq" style={{ marginTop: 12 }}>
+            <h2 style={{ marginTop: 0 }}>New FAQ</h2>
             <div className="grid cols-2">
               <div>
                 <label>Question</label>
@@ -139,7 +148,7 @@ export default function FaqPage() {
               </div>
             </div>
             <div className="toolbar" style={{ marginTop: 10 }}>
-              <button className="btn brand" onClick={saveFaq}>Save FAQ</button>
+              <button className="btn brand" onClick={saveFaq} disabled={saving}>{saving ? 'Saving...' : 'Save FAQ'}</button>
               <button className="btn" onClick={() => { setQuestion(''); setCategory(''); }}>Reset</button>
             </div>
           </div>
@@ -154,6 +163,6 @@ export default function FaqPage() {
           </ul>
         </div>
       </div>
-    </section>
+    </ClientPage>
   );
 }

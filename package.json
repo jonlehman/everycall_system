@@ -13,7 +13,9 @@
     "dev:voice-service": "PORT=3103 pnpm --filter @everycall/voice-service dev",
     "smoke": "node scripts/smoke.mjs",
     "test:intake:v2:api": "node scripts/test-intake-v2-api.mjs",
-    "test:intake:v2:e2e": "node scripts/test-intake-v2-e2e.mjs"
+    "test:intake:v2:e2e": "node scripts/test-intake-v2-e2e.mjs",
+    "test:client-ui:v2:api": "node scripts/test-client-ui-v2-api.mjs",
+    "test:client-ui:v2:e2e": "node scripts/test-client-ui-v2-e2e.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

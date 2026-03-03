@@ -141,13 +141,13 @@ Use the **Status** column and keep **Dependencies** accurate.
 | CU2 | Client UI v2 delivery plan approved | Dev A | done | CU1 | docs/plan/client-ui-v2-delivery.md |
 | CU3 | Client UI v2 test matrix approved | Smoke Agent | done | CU1 | docs/TESTS-client-ui-v2.md |
 | CU4 | Client UI v2 ADR proposed | Dev C | done | CU1 | docs/adr/0003-client-ui-v2-delivery-contract.md |
-| CU5 | Shared page shell + status feedback pattern | Dev B | not started | CU1 | title/status/cta/content/save skeleton |
-| CU6 | Overview screen aligned to workflow contract | Dev B | not started | CU5 | one-job triage home |
-| CU7 | Calls Inbox aligned to filter/detail workflow | Dev B | not started | CU5 | readable transcript + follow-up flow |
-| CU8 | FAQ + Routing screens aligned to save-state standards | Dev B | not started | CU5 | deterministic save/error handling |
-| CU9 | Settings + Team screens aligned to role matrix | Dev B | not started | CU5 | permission-gated actions |
-| CU10 | API error envelope and role checks hardened | Dev A | not started | CU1 | all client write surfaces |
-| CU11 | Owner setup checklist with deep links | Dev B | not started | CU6, CU8, CU9 | task mode over menu mode |
+| CU5 | Shared page shell + status feedback pattern | Dev B | done | CU1 | Added reusable ClientPage scaffold + status styles |
+| CU6 | Overview screen aligned to workflow contract | Dev B | done | CU5 | Triage-focused overview with primary/secondary actions |
+| CU7 | Calls Inbox aligned to filter/detail workflow | Dev B | done | CU5 | Uses shared scaffold, clear filters, explicit load/error states |
+| CU8 | FAQ + Routing screens aligned to save-state standards | Dev B | done | CU5 | Shared scaffold + explicit load/save/delete states |
+| CU9 | Settings + Team screens aligned to role matrix | Dev B | done | CU5 | Shared scaffold + clear actions/status on Settings/Team |
+| CU10 | API error envelope and role checks hardened | Dev A | done | CU1 | Settings/Team/FAQ/Routing envelopes + validation updated |
+| CU11 | Owner setup checklist with deep links | Dev B | done | CU6, CU8, CU9 | `/client/setup` now shows actionable deep-linked checklist |
 | CU12 | Client UI v2 API + E2E test execution | Smoke Agent | not started | CU6, CU7, CU8, CU9, CU10 | per docs/TESTS-client-ui-v2.md |
 | CU13 | Regression checklist updated for client-ui v2 | Dev A | not started | CU12 | docs/plan/regression-checklist.md |
 | CU14 | Staging rollout + 7-day monitoring | Dev A | not started | CU13 | monitor error/success metrics |

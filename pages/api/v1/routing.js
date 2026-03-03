@@ -6,10 +6,12 @@ function getTenantKey(req) {
 }
 
 export default async function handler(req, res) {
+  const fail = (status, error, message) => res.status(status).json({ ok: false, error, message });
+
   try {
     const pool = getPool();
     if (!pool) {
-      return res.status(500).json({ error: "database_unavailable" });
+      return fail(500, "database_unavailable", "Database is unavailable.");
     }
 
     await ensureTables(pool);
@@ -25,7 +27,7 @@ export default async function handler(req, res) {
          WHERE tenant_key = $1`,
         [tenantKey]
       );
-      return res.status(200).json({ routing: row.rows[0] || null });
+      return res.status(200).json({ ok: true, routing: row.rows[0] || null });
     }
 
     if (req.method === "POST") {
@@ -34,6 +36,9 @@ export default async function handler(req, res) {
       const emergencyBehavior = String(body.emergencyBehavior || "Priority Queue");
       const afterHoursBehavior = String(body.afterHoursBehavior || "Collect details and dispatch callback");
       const businessHours = String(body.businessHours || "");
+      if (!primaryQueue.trim() || !emergencyBehavior.trim() || !afterHoursBehavior.trim() || !businessHours.trim()) {
+        return fail(400, "missing_fields", "All routing fields are required.");
+      }
 
       await pool.query(
         `INSERT INTO routing_rules (tenant_key, primary_queue, emergency_behavior, after_hours_behavior, business_hours)
@@ -51,8 +56,8 @@ export default async function handler(req, res) {
     }
 
     res.setHeader("Allow", "GET, POST");
-    return res.status(405).json({ error: "method_not_allowed" });
+    return fail(405, "method_not_allowed", "Method not allowed.");
   } catch (err) {
-    return res.status(500).json({ error: "routing_error", message: err?.message || "unknown" });
+    return fail(500, "routing_error", err?.message || "unknown");
   }
 }

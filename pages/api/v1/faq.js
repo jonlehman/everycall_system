@@ -46,10 +46,12 @@ const INDUSTRY_FAQS = {
 };
 
 export default async function handler(req, res) {
+  const fail = (status, error, message) => res.status(status).json({ ok: false, error, message });
+
   try {
     const pool = getPool();
     if (!pool) {
-      return res.status(500).json({ error: "database_unavailable" });
+      return fail(500, "database_unavailable", "Database is unavailable.");
     }
 
     await ensureTables(pool);
@@ -66,7 +68,7 @@ export default async function handler(req, res) {
          ORDER BY id ASC`,
         [tenantKey]
       );
-      return res.status(200).json({ faqs: rows.rows });
+      return res.status(200).json({ ok: true, faqs: rows.rows });
     }
 
     if (req.method === "POST") {
@@ -101,11 +103,14 @@ export default async function handler(req, res) {
       const question = String(body.question || "").trim();
       const answer = String(body.answer || "").trim();
       if (!question || !answer) {
-        return res.status(400).json({ error: "missing_fields" });
+        return fail(400, "missing_fields", "Question and answer are required.");
       }
 
       const category = String(body.category || "General").trim();
       const id = body.id ? Number(body.id) : null;
+      if (id !== null && (!Number.isFinite(id) || id <= 0)) {
+        return fail(400, "invalid_id", "FAQ id must be a positive number.");
+      }
 
       if (id) {
         await pool.query(
@@ -130,22 +135,22 @@ export default async function handler(req, res) {
     if (req.method === "DELETE") {
       const id = Number(req.query?.id);
       if (!id) {
-        return res.status(400).json({ error: "missing_id" });
+        return fail(400, "missing_id", "FAQ id is required.");
       }
       const row = await pool.query(
         `SELECT deletable FROM faqs WHERE tenant_key = $1 AND id = $2`,
         [tenantKey, id]
       );
       if (!row.rowCount || !row.rows[0].deletable) {
-        return res.status(403).json({ error: "not_deletable" });
+        return fail(403, "not_deletable", "This FAQ cannot be deleted.");
       }
       await pool.query(`DELETE FROM faqs WHERE tenant_key = $1 AND id = $2`, [tenantKey, id]);
       return res.status(200).json({ ok: true });
     }
 
     res.setHeader("Allow", "GET, POST, DELETE");
-    return res.status(405).json({ error: "method_not_allowed" });
+    return fail(405, "method_not_allowed", "Method not allowed.");
   } catch (err) {
-    return res.status(500).json({ error: "faq_error", message: err?.message || "unknown" });
+    return fail(500, "faq_error", err?.message || "unknown");
   }
 }

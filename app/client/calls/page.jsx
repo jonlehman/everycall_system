@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
+import ClientPage from '../_components/ClientPage';
 
 export default function CallsPage() {
   const [calls, setCalls] = useState([]);
@@ -12,20 +13,31 @@ export default function CallsPage() {
   const [urgencyFilter, setUrgencyFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
   const loadCalls = () => {
     setLoading(true);
+    setLoadError('');
     let mounted = true;
     fetch(`/api/v1/calls`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => {
-        if (!mounted || !data) return;
+        if (!mounted) return;
+        if (!data) {
+          setLoadError('Could not load calls. Refresh to retry.');
+          setLoading(false);
+          return;
+        }
         setCalls(data.calls || []);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        if (!mounted) return;
+        setLoadError('Could not load calls. Refresh to retry.');
+        setLoading(false);
+      });
     return () => { mounted = false; };
   };
 
@@ -101,38 +113,48 @@ export default function CallsPage() {
     }
   ];
 
+  const status = loadError
+    ? { tone: 'bad', message: loadError }
+    : loading
+      ? { tone: 'warn', message: 'Loading calls...' }
+      : { tone: 'ok', message: `${filteredRows.length} call(s) in current filter.` };
+
   return (
-    <section className="screen active">
-      <div className="topbar">
-        <h1>Call Inbox</h1>
-        <div className="top-actions">
-          <button className="btn" onClick={loadCalls}>Refresh</button>
-        </div>
+    <ClientPage
+      title="Call Inbox"
+      subtitle="Filter first, then open one call at a time for details and transcript."
+      status={status}
+      primaryAction={{ href: '/client/dispatch', label: 'Open Dispatch Board', brand: true }}
+    >
+      <div className="top-actions" style={{ justifyContent: 'flex-end' }}>
+        <button className="btn" onClick={loadCalls}>Refresh Calls</button>
       </div>
+
       <div className="toolbar" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
-        <label>Status</label>
+        <label>Call Status</label>
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
           <option value="all">All</option>
           <option value="completed">Completed</option>
           <option value="missed">Missed</option>
           <option value="error">Error</option>
         </select>
-        <label>Urgency</label>
+        <label>Urgency Level</label>
         <select value={urgencyFilter} onChange={(event) => setUrgencyFilter(event.target.value)}>
           <option value="all">All</option>
           <option value="high">High</option>
           <option value="normal">Normal</option>
         </select>
-        <label>From</label>
+        <label>Date From</label>
         <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-        <label>To</label>
+        <label>Date To</label>
         <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-        <label>Search</label>
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Caller or SID" />
+        <label>Search Calls</label>
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Caller number or call SID" />
         <span className="muted">{loading ? 'Loading...' : `${filteredRows.length} calls`}</span>
       </div>
       <div className="split">
         <div className="card">
+          <h2 style={{ marginTop: 0 }}>Call List</h2>
           <div style={{ height: rows.length ? 'auto' : 300 }}>
             <DataGrid
               rows={filteredRows}
@@ -181,6 +203,6 @@ export default function CallsPage() {
           )}
         </div>
       </div>
-    </section>
+    </ClientPage>
   );
 }

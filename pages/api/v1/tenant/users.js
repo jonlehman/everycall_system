@@ -17,6 +17,8 @@ const mailtrapSender = {
 };
 
 const mailtrapClient = mailtrapToken ? new MailtrapClient({ token: mailtrapToken }) : null;
+const ALLOWED_ROLES = new Set(["admin", "member", "owner", "viewer"]);
+const ALLOWED_STATUSES = new Set(["active", "invited", "suspended", "disabled"]);
 
 async function createInviteToken({ email, tenantKey }) {
   const token = crypto.randomBytes(24).toString("hex");
@@ -61,10 +63,12 @@ async function sendInviteEmail({ tenantKey, name, email, role }) {
 }
 
 export default async function handler(req, res) {
+  const fail = (status, error, message) => res.status(status).json({ ok: false, error, message });
+
   try {
     const pool = getPool();
     if (!pool) {
-      return res.status(500).json({ error: "database_unavailable" });
+      return fail(500, "database_unavailable", "Database is unavailable.");
     }
 
     await ensureTables(pool);
@@ -81,7 +85,7 @@ export default async function handler(req, res) {
          ORDER BY id ASC`,
         [tenantKey]
       );
-      return res.status(200).json({ users: rows.rows });
+      return res.status(200).json({ ok: true, users: rows.rows });
     }
 
     if (req.method === "POST") {
@@ -90,7 +94,10 @@ export default async function handler(req, res) {
         const id = Number(body.id || 0);
         const status = String(body.status || "");
         if (!id || !status) {
-          return res.status(400).json({ error: "missing_fields" });
+          return fail(400, "missing_fields", "User id and status are required.");
+        }
+        if (!ALLOWED_STATUSES.has(status)) {
+          return fail(400, "invalid_status", "Invalid user status.");
         }
         await pool.query(
           `UPDATE tenant_users SET status = $2, updated_at = NOW()
@@ -103,7 +110,7 @@ export default async function handler(req, res) {
       if (body.action === "resend") {
         const id = Number(body.id || 0);
         if (!id) {
-          return res.status(400).json({ error: "missing_fields" });
+          return fail(400, "missing_fields", "User id is required.");
         }
         const row = await pool.query(
           `SELECT id, name, email, role, status
@@ -113,7 +120,7 @@ export default async function handler(req, res) {
           [tenantKey, id]
         );
         if (!row.rowCount) {
-          return res.status(404).json({ error: "not_found" });
+          return fail(404, "not_found", "User not found.");
         }
         const user = row.rows[0];
         await sendInviteEmail({ tenantKey, name: user.name, email: user.email, role: user.role });
@@ -129,7 +136,7 @@ export default async function handler(req, res) {
         const id = Number(body.id || 0);
         const phoneNumber = normalizePhoneNumber(body.phoneNumber);
         if (!id || !phoneNumber) {
-          return res.status(400).json({ error: "missing_fields" });
+          return fail(400, "missing_fields", "User id and valid phone number are required.");
         }
         await pool.query(
           `UPDATE tenant_users
@@ -143,7 +150,7 @@ export default async function handler(req, res) {
       if (body.action === "sms_opt_in_request") {
         const id = Number(body.id || 0);
         if (!id) {
-          return res.status(400).json({ error: "missing_fields" });
+          return fail(400, "missing_fields", "User id is required.");
         }
         const row = await pool.query(
           `SELECT id, name, phone_number, sms_opt_in_status
@@ -153,15 +160,15 @@ export default async function handler(req, res) {
           [tenantKey, id]
         );
         if (!row.rowCount) {
-          return res.status(404).json({ error: "not_found" });
+          return fail(404, "not_found", "User not found.");
         }
         const user = row.rows[0];
         if (!user.phone_number) {
-          return res.status(400).json({ error: "missing_phone" });
+          return fail(400, "missing_phone", "User does not have a mobile phone on file.");
         }
         const fromNumber = await getSharedSmsNumber(pool);
         if (!fromNumber) {
-          return res.status(500).json({ error: "sms_number_missing" });
+          return fail(500, "sms_number_missing", "Shared SMS number is not configured.");
         }
         const text = "EveryCall alerts: Reply YES to opt in for appointment alerts. Reply STOP to opt out.";
         await sendTelnyxSms({ from: fromNumber, to: user.phone_number, text });
@@ -180,10 +187,16 @@ export default async function handler(req, res) {
       const email = String(body.email || "").trim();
       const phoneNumber = normalizePhoneNumber(body.phoneNumber);
       if (!name || !email) {
-        return res.status(400).json({ error: "missing_fields" });
+        return fail(400, "missing_fields", "Name and email are required.");
       }
       const role = String(body.role || "member");
       const status = String(body.status || "invited");
+      if (!ALLOWED_ROLES.has(role)) {
+        return fail(400, "invalid_role", "Invalid user role.");
+      }
+      if (!ALLOWED_STATUSES.has(status)) {
+        return fail(400, "invalid_status", "Invalid user status.");
+      }
       await pool.query(
         `INSERT INTO tenant_users (tenant_key, name, email, phone_number, role, status)
          VALUES ($1, $2, $3, $4, $5, $6)
@@ -207,7 +220,7 @@ export default async function handler(req, res) {
     if (req.method === "DELETE") {
       const id = Number(req.query?.id || 0);
       if (!id) {
-        return res.status(400).json({ error: "missing_fields" });
+        return fail(400, "missing_fields", "User id is required.");
       }
       await pool.query(
         `DELETE FROM tenant_users WHERE tenant_key = $1 AND id = $2`,
@@ -217,8 +230,8 @@ export default async function handler(req, res) {
     }
 
     res.setHeader("Allow", "GET, POST, DELETE");
-    return res.status(405).json({ error: "method_not_allowed" });
+    return fail(405, "method_not_allowed", "Method not allowed.");
   } catch (err) {
-    return res.status(500).json({ error: "tenant_users_error", message: err?.message || "unknown" });
+    return fail(500, "tenant_users_error", err?.message || "unknown");
   }
 }

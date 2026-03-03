@@ -6,10 +6,12 @@ function getTenantKey(req) {
 }
 
 export default async function handler(req, res) {
+  const fail = (status, error, message) => res.status(status).json({ ok: false, error, message });
+
   try {
     const pool = getPool();
     if (!pool) {
-      return res.status(500).json({ error: "database_unavailable" });
+      return fail(500, "database_unavailable", "Database is unavailable.");
     }
 
     await ensureTables(pool);
@@ -28,6 +30,7 @@ export default async function handler(req, res) {
         [tenantKey]
       );
       return res.status(200).json({
+        ok: true,
         tenant: tenant.rows[0] || null,
         settings: settings.rows[0] || null
       });
@@ -37,6 +40,9 @@ export default async function handler(req, res) {
       const body = typeof req.body === "object" && req.body ? req.body : {};
       const timezone = String(body.timezone || "America/Los_Angeles");
       const notes = String(body.notes || "");
+      if (!timezone.trim()) {
+        return fail(400, "invalid_timezone", "Timezone is required.");
+      }
 
       await pool.query(
         `INSERT INTO tenant_settings (tenant_key, timezone, notes)
@@ -50,8 +56,8 @@ export default async function handler(req, res) {
     }
 
     res.setHeader("Allow", "GET, POST");
-    return res.status(405).json({ error: "method_not_allowed" });
+    return fail(405, "method_not_allowed", "Method not allowed.");
   } catch (err) {
-    return res.status(500).json({ error: "settings_error", message: err?.message || "unknown" });
+    return fail(500, "settings_error", err?.message || "unknown");
   }
 }

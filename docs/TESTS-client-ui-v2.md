@@ -2,6 +2,15 @@
 
 Use this for staging signoff and release validation for Client UI v2.
 
+## Quick Run Commands
+- API suite:
+  - `APP_BASE_URL=https://app.everycall.io corepack pnpm test:client-ui:v2:api`
+- E2E suite:
+  - `APP_BASE_URL=https://app.everycall.io corepack pnpm test:client-ui:v2:e2e`
+- Dry run (no network calls):
+  - `CLIENT_UI_TEST_DRY_RUN=1 corepack pnpm test:client-ui:v2:api`
+  - `CLIENT_UI_TEST_DRY_RUN=1 corepack pnpm test:client-ui:v2:e2e`
+
 ## 1. Core UX Contract Tests
 
 ### Screen Structure

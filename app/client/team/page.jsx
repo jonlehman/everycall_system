@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
+import ClientPage from '../_components/ClientPage';
 
 export default function TeamPage() {
   const [users, setUsers] = useState([]);
@@ -11,33 +12,131 @@ export default function TeamPage() {
   const [invitePhone, setInvitePhone] = useState('');
   const [inviteRole, setInviteRole] = useState('member');
   const [inviteStatus, setInviteStatus] = useState('active');
-  const [inviteMessage, setInviteMessage] = useState('');
-  const gridRef = useRef(null);
+  const [loading, setLoading] = useState(false);
+  const [savingInvite, setSavingInvite] = useState(false);
+  const [status, setStatus] = useState({ message: 'Loading team users...', tone: 'warn' });
 
   const loadUsers = () => {
-    let mounted = true;
-    fetch(`/api/v1/tenant/users`)
-      .then((resp) => resp.ok ? resp.json() : null)
+    setLoading(true);
+    fetch('/api/v1/tenant/users')
+      .then((resp) => (resp.ok ? resp.json() : null))
       .then((data) => {
-        if (!mounted || !data) return;
+        if (!data) {
+          setStatus({ message: 'Could not load team users.', tone: 'bad' });
+          setLoading(false);
+          return;
+        }
         setUsers(data.users || []);
+        setStatus({ message: `Loaded ${data.users?.length || 0} team user(s).`, tone: 'ok' });
+        setLoading(false);
       })
-      .catch(() => {});
-    return () => { mounted = false; };
+      .catch(() => {
+        setStatus({ message: 'Could not load team users.', tone: 'bad' });
+        setLoading(false);
+      });
   };
 
   useEffect(() => {
-    const cleanup = loadUsers();
-    return cleanup;
+    loadUsers();
   }, []);
 
-  useEffect(() => {
-    if (gridRef.current) {
-      gridRef.current.style.gridTemplateColumns = '7fr 3fr';
+  const updateStatus = async (id, nextStatus) => {
+    const resp = await fetch('/api/v1/tenant/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'status', id, status: nextStatus })
+    });
+    if (!resp.ok) {
+      setStatus({ message: 'Status update failed.', tone: 'bad' });
+      return;
     }
-  }, []);
+    setStatus({ message: 'User status updated.', tone: 'ok' });
+    loadUsers();
+  };
 
-  const rows = users.map((user, idx) => ({
+  const resendInvite = async (id) => {
+    const resp = await fetch('/api/v1/tenant/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'resend', id })
+    });
+    setStatus(resp.ok ? { message: 'Invite resent.', tone: 'ok' } : { message: 'Invite resend failed.', tone: 'bad' });
+  };
+
+  const updatePhone = async (id, phoneNumber) => {
+    const resp = await fetch('/api/v1/tenant/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_phone', id, phoneNumber })
+    });
+    if (!resp.ok) {
+      setStatus({ message: 'Phone update failed.', tone: 'bad' });
+      return;
+    }
+    setStatus({ message: 'Phone number updated.', tone: 'ok' });
+    loadUsers();
+  };
+
+  const requestSmsOptIn = async (id) => {
+    const resp = await fetch('/api/v1/tenant/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sms_opt_in_request', id })
+    });
+    if (!resp.ok) {
+      setStatus({ message: 'SMS opt-in request failed.', tone: 'bad' });
+      return;
+    }
+    setStatus({ message: 'SMS opt-in request sent.', tone: 'ok' });
+    loadUsers();
+  };
+
+  const deleteUser = async (id) => {
+    if (!window.confirm('Delete this user?')) return;
+    const resp = await fetch(`/api/v1/tenant/users?id=${id}`, { method: 'DELETE' });
+    if (!resp.ok) {
+      setStatus({ message: 'Delete failed.', tone: 'bad' });
+      return;
+    }
+    setStatus({ message: 'User deleted.', tone: 'ok' });
+    loadUsers();
+  };
+
+  const handleInvite = async (event) => {
+    event.preventDefault();
+    if (!inviteName.trim() || !inviteEmail.trim()) {
+      setStatus({ message: 'Name and email are required for invite.', tone: 'bad' });
+      return;
+    }
+    setSavingInvite(true);
+    setStatus({ message: 'Sending invite...', tone: 'warn' });
+    const resp = await fetch('/api/v1/tenant/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: inviteName.trim(),
+        email: inviteEmail.trim(),
+        phoneNumber: invitePhone.trim(),
+        role: inviteRole,
+        status: inviteStatus
+      })
+    });
+    setSavingInvite(false);
+    if (!resp.ok) {
+      setStatus({ message: 'Invite failed.', tone: 'bad' });
+      return;
+    }
+    setInviteName('');
+    setInviteEmail('');
+    setInvitePhone('');
+    setInviteRole('member');
+    setInviteStatus('active');
+    setShowInvite(false);
+    setStatus({ message: 'Invite sent.', tone: 'ok' });
+    loadUsers();
+  };
+
+  const rows = useMemo(() => users.map((user, idx) => ({
     id: user.id || idx,
     name: user.name,
     email: user.email,
@@ -45,7 +144,7 @@ export default function TeamPage() {
     role: user.role,
     status: user.status,
     smsOptIn: user.sms_opt_in_status || 'not_requested'
-  }));
+  })), [users]);
 
   const columns = [
     { field: 'name', headerName: 'Name', flex: 1, minWidth: 140 },
@@ -97,15 +196,10 @@ export default function TeamPage() {
             onClick={() => requestSmsOptIn(params.row.id)}
             disabled={!params.row.phone || params.row.smsOptIn === 'opted_in'}
           >
-            {params.row.smsOptIn === 'opted_in' ? 'SMS Enabled' : 'Request SMS Opt-In'}
+            {params.row.smsOptIn === 'opted_in' ? 'SMS Enabled' : 'Request SMS'}
           </button>
           {params.row.status === 'invited' ? (
-            <button
-              className="btn"
-              onClick={() => resendInvite(params.row.id)}
-            >
-              Resend
-            </button>
+            <button className="btn" onClick={() => resendInvite(params.row.id)}>Resend</button>
           ) : null}
           <button
             className="btn"
@@ -113,127 +207,28 @@ export default function TeamPage() {
           >
             {params.row.status === 'active' ? 'Deactivate' : 'Activate'}
           </button>
-          <button
-            className="btn"
-            onClick={() => deleteUser(params.row.id)}
-          >
-            Delete
-          </button>
+          <button className="btn" onClick={() => deleteUser(params.row.id)}>Delete</button>
         </div>
       )
     }
   ];
 
-  const handleInvite = async (event) => {
-    event.preventDefault();
-    setInviteMessage('');
-    if (!inviteName.trim() || !inviteEmail.trim()) {
-      setInviteMessage('Name and email are required.');
-      return;
-    }
-    const resp = await fetch(`/api/v1/tenant/users`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: inviteName.trim(),
-        email: inviteEmail.trim(),
-        phoneNumber: invitePhone.trim(),
-        role: inviteRole,
-        status: inviteStatus
-      })
-    });
-    if (!resp.ok) {
-      setInviteMessage('Invite failed.');
-      return;
-    }
-    setInviteMessage('Invite added.');
-    setInviteName('');
-    setInviteEmail('');
-    setInvitePhone('');
-    setInviteRole('member');
-    setInviteStatus('active');
-    setShowInvite(false);
-    loadUsers();
-  };
-
-  const updateStatus = async (id, nextStatus) => {
-    const resp = await fetch('/api/v1/tenant/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'status', id, status: nextStatus })
-    });
-    if (!resp.ok) {
-      setInviteMessage('Status update failed.');
-      return;
-    }
-    loadUsers();
-  };
-
-  const resendInvite = async (id) => {
-    const resp = await fetch('/api/v1/tenant/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'resend', id })
-    });
-    if (!resp.ok) {
-      setInviteMessage('Resend failed.');
-      return;
-    }
-    setInviteMessage('Invite resent.');
-  };
-
-  const updatePhone = async (id, phoneNumber) => {
-    const resp = await fetch('/api/v1/tenant/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'update_phone', id, phoneNumber })
-    });
-    if (!resp.ok) {
-      setInviteMessage('Phone update failed.');
-      return;
-    }
-    loadUsers();
-  };
-
-  const requestSmsOptIn = async (id) => {
-    const resp = await fetch('/api/v1/tenant/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'sms_opt_in_request', id })
-    });
-    if (!resp.ok) {
-      setInviteMessage('SMS opt-in request failed.');
-      return;
-    }
-    setInviteMessage('Opt-in text sent.');
-    loadUsers();
-  };
-
-  const deleteUser = async (id) => {
-    if (!window.confirm('Delete this user?')) return;
-    const resp = await fetch(`/api/v1/tenant/users?id=${id}`, { method: 'DELETE' });
-    if (!resp.ok) {
-      setInviteMessage('Delete failed.');
-      return;
-    }
-    loadUsers();
-  };
-
   return (
-    <section className="screen active">
-      <div className="topbar">
-        <h1>Team Users</h1>
-        <div className="top-actions">
-          <button className="btn brand" onClick={() => setShowInvite((prev) => !prev)}>
-            {showInvite ? 'Close Invite' : 'Invite User'}
-          </button>
-        </div>
-      </div>
-      <div ref={gridRef} className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
-        <div>
-          {showInvite && (
-            <div className="card" style={{ marginBottom: 12 }}>
-              <h2>Invite Team Member</h2>
+    <ClientPage
+      title="Team Users"
+      subtitle="Invite teammates and manage account access in one place."
+      status={status}
+      primaryAction={{
+        label: showInvite ? 'Close Invite Form' : 'Invite User',
+        brand: true,
+        onClick: () => setShowInvite((prev) => !prev)
+      }}
+    >
+      <div className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
+        <div className="stack">
+          {showInvite ? (
+            <div className="card">
+              <h2 style={{ marginTop: 0 }}>Invite Team Member</h2>
               <form className="stack" onSubmit={handleInvite}>
                 <div className="form-row">
                   <div>
@@ -271,44 +266,46 @@ export default function TeamPage() {
                     </select>
                   </div>
                 </div>
-                <div className="toolbar" style={{ marginTop: 6 }}>
-                  <button className="btn brand" type="submit">Send Invite</button>
-                  <span className="muted">{inviteMessage}</span>
+                <div className="toolbar">
+                  <button className="btn brand" type="submit" disabled={savingInvite}>
+                    {savingInvite ? 'Sending...' : 'Send Invite'}
+                  </button>
                 </div>
               </form>
             </div>
-          )}
+          ) : null}
+
           <div className="card">
-          <div style={{ height: rows.length ? 'auto' : 300 }}>
-            <DataGrid
-              rows={rows}
-              columns={columns}
-              autoHeight
-              disableRowSelectionOnClick
-              pageSizeOptions={[10, 25, 50]}
-              initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
-              localeText={{ noRowsLabel: 'No users yet.' }}
-              sx={{
-                border: 'none',
-                '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
-                '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
-                '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
-              }}
-            />
-          </div>
+            <h2 style={{ marginTop: 0 }}>Team Directory</h2>
+            <div style={{ height: rows.length ? 'auto' : 300 }}>
+              <DataGrid
+                rows={rows}
+                columns={columns}
+                autoHeight
+                disableRowSelectionOnClick
+                pageSizeOptions={[10, 25, 50]}
+                initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
+                localeText={{ noRowsLabel: loading ? 'Loading users...' : 'No users yet.' }}
+                sx={{
+                  border: 'none',
+                  '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
+                  '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
+                  '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
+                }}
+              />
+            </div>
           </div>
         </div>
+
         <div className="card">
           <h2>Help</h2>
           <ul className="muted" style={{ paddingLeft: 18, marginTop: 8 }}>
-            <li>Invite teammates who need access to calls or settings.</li>
-            <li>Use roles to control who can edit routing and FAQs.</li>
-            <li>Keep admin access limited to trusted owners.</li>
-            <li>SMS alerts require opt-in by replying YES to the text message.</li>
-            <li>Set status to “Invited” if the user hasn’t accepted yet.</li>
+            <li>Invite only trusted users who need access to calls and settings.</li>
+            <li>Use role and status to control who can make changes.</li>
+            <li>SMS alerts require opt-in by replying YES to a request text.</li>
           </ul>
         </div>
       </div>
-    </section>
+    </ClientPage>
   );
 }
