@@ -235,14 +235,22 @@ export default function CallsPage() {
 
   const columns = [
     { field: 'when', headerName: 'Time', flex: 0.75, minWidth: 140 },
-    { field: 'from', headerName: 'Number', flex: 0.85, minWidth: 150 },
+    { field: 'from', headerName: 'Number', flex: 0.65, minWidth: 120 },
     {
       field: 'summary',
       headerName: 'AI Summary',
       flex: 1.25,
       minWidth: 210,
       renderCell: (params) => (
-        <span title={params.value || ''} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span
+          title={params.value || ''}
+          style={{
+            overflow: 'hidden',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical'
+          }}
+        >
           {params.value || '-'}
         </span>
       )
@@ -287,8 +295,8 @@ export default function CallsPage() {
       status={status}
       primaryAction={{ label: 'Refresh Data', brand: true, onClick: refreshData }}
     >
-      <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-[1.2fr_.8fr]'}`}>
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+      <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-[1.2fr_.8fr]'} min-w-0`}>
+        <div className="min-w-0 rounded-xl border border-border bg-card p-3 shadow-sm">
           <div className={`mb-3 flex ${isMobile ? 'flex-col' : 'flex-row items-start justify-between'} gap-3`}>
             <h2 className="mb-2 mt-0 text-lg font-semibold">Calls</h2>
             <div className={`${isMobile ? 'w-full' : ''}`}>
@@ -392,7 +400,7 @@ export default function CallsPage() {
             />
           </div>
         </div>
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+        <div className="min-w-0 rounded-xl border border-border bg-card p-3 shadow-sm">
           <h2 className="mt-0 text-lg font-semibold">Call Details</h2>
           {!detailMeta ? (
             <div className="text-sm text-slate-500">{detailStatus}</div>
