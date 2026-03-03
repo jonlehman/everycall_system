@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
+import { Button } from '../../../components/ui/button';
+import { cn } from '../../../lib/utils';
 
 function slugify(value) {
   return value
@@ -249,7 +251,7 @@ export default function IndustryConfigPage() {
       headerAlign: 'right',
       minWidth: 120,
       renderCell: (params) => (
-        <button className="btn" onClick={() => deleteFaq(params.row.id)}>Delete</button>
+        <Button variant="outline" size="sm" onClick={() => deleteFaq(params.row.id)}>Delete</Button>
       )
     }
   ];
@@ -257,7 +259,10 @@ export default function IndustryConfigPage() {
   const industryOptions = useMemo(() => industries.map((item) => (
     <button
       key={item.key}
-      className={`menu-link${selectedKey === item.key ? ' active' : ''}`}
+      className={cn(
+        'block rounded-md border px-3 py-2 text-left text-sm hover:bg-slate-50',
+        selectedKey === item.key ? 'border-slate-800 bg-slate-50' : 'border-slate-200 bg-white'
+      )}
       onClick={() => setSelectedKey(item.key)}
     >
       {item.name}
@@ -265,16 +270,18 @@ export default function IndustryConfigPage() {
   )), [industries, selectedKey]);
 
   return (
-    <section className="screen active">
-      <div className="topbar"><h1>Industry Config</h1></div>
-      <div className="grid cols-2" style={{ '--grid-cols': '320px 1fr' }}>
-        <div className="card">
-          <h2>Industries</h2>
-          <div className="menu-list" style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+    <section className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="m-0 text-2xl font-semibold tracking-tight">Industry Config</h1>
+      </div>
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[320px_1fr]">
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Industries</h2>
+          <div className="grid gap-1.5 pb-1">
             {industryOptions}
           </div>
-          <div className="divider" style={{ borderTop: '1px solid #e2e8f0', margin: '12px 0' }}></div>
-          <h3 style={{ margin: '0 0 8px' }}>Add Industry</h3>
+          <div className="my-3 h-px bg-slate-200"></div>
+          <h3 className="m-0 mb-2 text-base font-semibold">Add Industry</h3>
           <label>Name</label>
           <input
             value={industryName}
@@ -287,40 +294,38 @@ export default function IndustryConfigPage() {
             }}
             placeholder="Plumbing"
           />
-          <label style={{ marginTop: 10 }}>Key</label>
+          <label className="mt-2.5">Key</label>
           <input value={industryKey} onChange={(event) => setIndustryKey(event.target.value)} placeholder="plumbing" />
-          <div className="toolbar" style={{ marginTop: 10 }}>
-            <button className="btn brand" onClick={createIndustry}>Save Industry</button>
-            <button className="btn" onClick={seedAllDefaults}>Seed All Defaults</button>
+          <div className="mt-3 flex gap-2">
+            <Button onClick={createIndustry}>Save Industry</Button>
+            <Button variant="outline" onClick={seedAllDefaults}>Seed All Defaults</Button>
           </div>
         </div>
         <div>
-          <div className="card">
-            <h2>Agent Prompt & Behavior</h2>
-            <p className="muted">This prompt is applied to every tenant in the selected industry.</p>
+          <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+            <h2 className="mt-0 text-lg font-semibold">Agent Prompt & Behavior</h2>
+            <p className="text-sm text-slate-500">This prompt is applied to every tenant in the selected industry.</p>
             <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} style={{ minHeight: 180 }} />
-            <div className="toolbar" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <div className="mt-2 flex flex-wrap gap-2">
               {promptTemplates.map((template) => (
-                <button
+                <Button
                   key={template.id}
-                  className="btn"
+                  variant="outline"
                   type="button"
                   onClick={() => setPrompt(template.text)}
                 >
                   {template.label}
-                </button>
+                </Button>
               ))}
             </div>
-            <div className="toolbar" style={{ marginTop: 10 }}>
-              <button className="btn brand" onClick={savePrompt}>Save Prompt</button>
-              <button className="btn" onClick={applyPromptToTenants}>Apply to All Tenants</button>
-              <span className="muted">{status}</span>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button onClick={savePrompt}>Save Prompt</Button>
+              <Button variant="outline" onClick={applyPromptToTenants}>Apply to All Tenants</Button>
+              <span className="text-sm text-slate-500">{status}</span>
             </div>
           </div>
-          <div className="card" style={{ marginTop: 12 }}>
-            <div className="topbar" style={{ marginBottom: 8 }}>
-              <h2 style={{ margin: 0 }}>Industry FAQs</h2>
-            </div>
+          <div className="mt-3 rounded-xl border border-border bg-card p-3 shadow-sm">
+            <h2 className="mb-2 mt-0 text-lg font-semibold">Industry FAQs</h2>
             <div style={{ height: rows.length ? 'auto' : 240 }}>
               <DataGrid
                 rows={rows}
@@ -339,13 +344,13 @@ export default function IndustryConfigPage() {
                 }}
               />
             </div>
-            <div className="divider" style={{ borderTop: '1px solid #e2e8f0', margin: '12px 0' }}></div>
-            <h3 style={{ margin: '0 0 8px' }}>Add FAQ</h3>
-            <div className="grid cols-2">
+            <div className="my-3 h-px bg-slate-200"></div>
+            <h3 className="m-0 mb-2 text-base font-semibold">Add FAQ</h3>
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               <div>
                 <label>Question</label>
                 <input value={faqQuestion} onChange={(event) => setFaqQuestion(event.target.value)} placeholder="Do you offer emergency service?" />
-                <label style={{ marginTop: 10 }}>Category</label>
+                <label className="mt-2.5">Category</label>
                 <input value={faqCategory} onChange={(event) => setFaqCategory(event.target.value)} placeholder="Emergency" />
               </div>
               <div>
@@ -353,14 +358,14 @@ export default function IndustryConfigPage() {
                 <textarea value={faqAnswer} onChange={(event) => setFaqAnswer(event.target.value)} style={{ minHeight: 120 }}></textarea>
               </div>
             </div>
-            <div className="toolbar" style={{ marginTop: 10 }}>
-              <button className="btn brand" onClick={addFaq}>Save FAQ</button>
-              <button className="btn" onClick={applyFaqsToTenants}>Apply FAQs to Tenants</button>
-              <button className="btn" onClick={seedDefaults}>Seed Default FAQs</button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button onClick={addFaq}>Save FAQ</Button>
+              <Button variant="outline" onClick={applyFaqsToTenants}>Apply FAQs to Tenants</Button>
+              <Button variant="outline" onClick={seedDefaults}>Seed Default FAQs</Button>
             </div>
-            <div className="divider" style={{ borderTop: '1px solid #e2e8f0', margin: '12px 0' }}></div>
-            <h3 style={{ margin: '0 0 8px' }}>Copy From Industry</h3>
-            <div className="grid cols-2">
+            <div className="my-3 h-px bg-slate-200"></div>
+            <h3 className="m-0 mb-2 text-base font-semibold">Copy From Industry</h3>
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               <div>
                 <label>Source Industry</label>
                 <select value={copyFromKey} onChange={(event) => setCopyFromKey(event.target.value)}>
@@ -370,8 +375,8 @@ export default function IndustryConfigPage() {
                   ))}
                 </select>
               </div>
-              <div className="toolbar" style={{ alignItems: 'flex-end' }}>
-                <button className="btn" onClick={copyFromIndustry}>Copy Prompt + FAQs</button>
+              <div className="flex items-end">
+                <Button variant="outline" onClick={copyFromIndustry}>Copy Prompt + FAQs</Button>
               </div>
             </div>
           </div>
