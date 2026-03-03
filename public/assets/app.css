@@ -30,6 +30,12 @@ body {
 
 a { color: inherit; }
 
+.sidebar a,
+.sub-menu a,
+.nav-btn {
+  text-decoration: none;
+}
+
 .shell {
   min-height: 100vh;
   display: grid;
