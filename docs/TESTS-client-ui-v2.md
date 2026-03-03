@@ -40,7 +40,7 @@ For each screen verify:
 1. Open Overview and select urgent/callback item.
 2. Move to Calls Inbox and apply filters.
 3. Open call detail and transcript.
-4. Complete follow-up action path.
+4. Create or update a dispatch item from the Calls Inbox dispatch panel.
 
 ### Configuration Workflow (Owner/Manager)
 1. Edit and save FAQ.

@@ -60,11 +60,14 @@ Purpose:
 Required modules:
 - Filterable/paginated call list.
 - Call detail panel with summary + transcript.
+- Dispatch queue list with status/assignee/due date.
+- Dispatch detail panel for creating/updating follow-up tasks.
 
 Required actions:
 - Apply filters (status/urgency/date).
 - Open call details.
-- Trigger follow-up flow.
+- Create/update dispatch item from call detail.
+- Open a dispatch item and jump to the linked call when available.
 
 ### 3) FAQ Manager
 Purpose:

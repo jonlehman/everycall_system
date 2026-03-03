@@ -76,7 +76,7 @@ Use the **Status** column and keep **Dependencies** accurate.
 | ID | Task | Owner | Status | Dependencies | Notes |
 |---|---|---|---|---|---|
 | C1 | Calls Inbox: filters + refresh | | done | — | Implemented |
-| C2 | Dispatch Board: status + assign + due dates | | done | — | Implemented |
+| C2 | Dispatch Board: status + assign + due dates (now merged into Calls Inbox) | | done | — | Implemented |
 | C3 | FAQ Manager: MUI table + editing | | done | — | Implemented |
 
 ## 6) Admin Console UX

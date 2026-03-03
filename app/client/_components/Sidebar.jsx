@@ -19,7 +19,6 @@ export default function Sidebar() {
         <div className="nav-label">Operations</div>
         <Link className={linkClass('/client/overview')} style={{ display: 'block' }} href="/client/overview">Overview</Link>
         <Link className={linkClass('/client/calls')} style={{ display: 'block' }} href="/client/calls">Calls</Link>
-        <Link className={linkClass('/client/dispatch')} style={{ display: 'block' }} href="/client/dispatch">Dispatch Board</Link>
       </div>
 
       <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: '14px 0' }} />

@@ -75,7 +75,7 @@ Completion condition:
 - Open details/transcript.
 - Decide follow-up action.
 3. Execute follow-up:
-- Resolve callback/dispatch in relevant operational view.
+- Resolve callback/dispatch directly in the Calls Inbox dispatch panel.
 4. If repeated caller questions are observed:
 - Update `FAQ` immediately.
 5. If repeated escalation patterns are observed:
@@ -144,11 +144,12 @@ Purpose:
 Core layout:
 - Left: filterable call list.
 - Right: selected call detail with summary + transcript.
+- Dispatch queue list and dispatch detail panel in the same screen.
 
 Primary actions:
 - Filter by status/urgency/date.
 - Review transcript and extracted details.
-- Mark follow-up state or move to queue workflow.
+- Create/update dispatch follow-ups from the selected call.
 
 Simplicity rules:
 - One selected call at a time.
@@ -248,6 +249,8 @@ Purpose:
 Must provide:
 - Paginated list with status/urgency filters.
 - Call detail panel with summary + combined transcript.
+- Dispatch queue list with status/assignee/due date.
+- Dispatch detail panel for follow-up updates.
 
 Acceptance criteria:
 - Filter/query state persists while navigating.

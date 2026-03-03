@@ -73,7 +73,7 @@ export default function OverviewPage() {
       primaryAction={{ href: '/client/calls', label: 'Open Urgent Calls', brand: true }}
     >
       <div className="client-quick-actions">
-        <Link className="btn" href="/client/dispatch">Open Callbacks</Link>
+        <Link className="btn" href="/client/calls">Open Callbacks</Link>
         <Link className="btn" href="/client/calls">Open Inbox</Link>
       </div>
 

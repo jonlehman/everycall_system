@@ -56,15 +56,16 @@ export default async function handler(req, res) {
         const summary = String(body.summary || "").trim();
         const dueAt = body.dueAt ? new Date(body.dueAt) : null;
         const assignedTo = body.assignedTo ? String(body.assignedTo) : null;
+        const callSid = body.callSid ? String(body.callSid) : null;
         const status = String(body.status || "new");
         if (!callerName || !summary) {
           return res.status(400).json({ error: "missing_fields" });
         }
         const row = await pool.query(
-          `INSERT INTO dispatch_queue (tenant_key, caller_name, summary, due_at, assigned_to, status)
-           VALUES ($1, $2, $3, $4, $5, $6)
+          `INSERT INTO dispatch_queue (tenant_key, call_sid, caller_name, summary, due_at, assigned_to, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING id`,
-          [tenantKey, callerName, summary, dueAt, assignedTo, status]
+          [tenantKey, callSid, callerName, summary, dueAt, assignedTo, status]
         );
         return res.status(200).json({ ok: true, id: row.rows[0]?.id });
       }

@@ -5,6 +5,9 @@ This is a high‑level timeline generated from git history and current docs. It 
 ## 2026‑03‑02
 - Added collaboration docs and specs (`docs/PRD.md`, `docs/SPECS/*`, `docs/DECISIONS.md`, `docs/TESTS.md`, `docs/RUNBOOK.md`).
 
+## 2026‑03‑03
+- Merged Dispatch Board into Calls Inbox and centralized dispatch follow-ups on the Calls screen.
+
 ## 2026‑02‑28
 - Realtime voice tuning: multiple VAD/pacing adjustments to reduce latency and interruptions.
 - Added realtime model logging and transcript capture improvements.
