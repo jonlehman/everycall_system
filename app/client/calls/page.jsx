@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import { useMediaQuery } from '@mui/material';
+import { Button } from '../../../components/ui/button';
 import ClientPage from '../_components/ClientPage';
 
 function formatLabel(value) {
@@ -238,19 +239,11 @@ export default function CallsPage() {
       status={status}
       primaryAction={{ label: 'Refresh Data', brand: true, onClick: loadCalls }}
     >
-      <div className="split" style={isMobile ? { gridTemplateColumns: '1fr', gap: 10 } : undefined}>
-        <div className="card">
-          <h2 style={{ marginTop: 0, marginBottom: 10 }}>Calls</h2>
-          <div
-            className="grid"
-            style={{
-              gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))',
-              gap: 10,
-              alignItems: 'end',
-              marginBottom: 10
-            }}
-          >
-            <div style={{ maxWidth: '1.6in' }}>
+      <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-[1.2fr_.8fr]'}`}>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mb-2 mt-0 text-lg font-semibold">Calls</h2>
+          <div className={`mb-3 grid items-end gap-2 ${isMobile ? 'grid-cols-2' : 'grid-cols-4'}`}>
+            <div className="max-w-[1.6in]">
               <label>Search Calls</label>
               <input
                 ref={searchInputRef}
@@ -259,7 +252,7 @@ export default function CallsPage() {
                 placeholder="Caller or SID (/)"
               />
             </div>
-            <div style={{ maxWidth: '1.6in' }}>
+            <div className="max-w-[1.6in]">
               <label>Call Status</label>
               <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
                 <option value="all">All</option>
@@ -269,7 +262,7 @@ export default function CallsPage() {
                 <option value="error">Error</option>
               </select>
             </div>
-            <div style={{ maxWidth: '1.6in' }}>
+            <div className="max-w-[1.6in]">
               <label>Urgency Level</label>
               <select value={urgencyFilter} onChange={(event) => setUrgencyFilter(event.target.value)}>
                 <option value="all">All</option>
@@ -279,15 +272,15 @@ export default function CallsPage() {
                 <option value="low">Low</option>
               </select>
             </div>
-            <div style={{ maxWidth: '1.6in' }}>
+            <div className="max-w-[1.6in]">
               <label>Date From</label>
               <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-              <label style={{ marginTop: 8 }}>Date To</label>
+              <label className="mt-2">Date To</label>
               <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
             </div>
-            <div className="toolbar" style={{ margin: 0, alignItems: 'center', gridColumn: isMobile ? 'span 2' : 'span 4' }}>
-              <button
-                className="btn"
+            <div className={`flex items-center gap-2 ${isMobile ? 'col-span-2' : 'col-span-4'}`}>
+              <Button
+                variant="outline"
                 type="button"
                 onClick={() => {
                   setStatusFilter('all');
@@ -298,8 +291,8 @@ export default function CallsPage() {
                 }}
               >
                 Reset Filters
-              </button>
-              <span className="muted">{loading ? 'Loading...' : `${filteredRows.length} calls`}</span>
+              </Button>
+              <span className="text-sm text-slate-500">{loading ? 'Loading...' : `${filteredRows.length} calls`}</span>
             </div>
           </div>
           <div style={{ height: rows.length ? 'auto' : 300 }}>
@@ -326,16 +319,16 @@ export default function CallsPage() {
             />
           </div>
         </div>
-        <div className="card">
-          <h2>Call Details</h2>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Call Details</h2>
           {!detailMeta ? (
-            <div className="muted">{detailStatus}</div>
+            <div className="text-sm text-slate-500">{detailStatus}</div>
           ) : (
             <>
-              <div className="muted" style={{ marginBottom: 8 }}>
+              <div className="mb-2 text-sm text-slate-500">
                 {detailMeta.call_sid} · {new Date(detailMeta.created_at).toLocaleString()}
               </div>
-              <div className="grid" style={{ gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+              <div className={`grid gap-2 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
                   <label>Caller / Number</label>
                   <input value={detailMeta.from_number || ''} readOnly />
@@ -353,7 +346,7 @@ export default function CallsPage() {
                   </select>
                 </div>
               </div>
-              <div className="grid" style={{ gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10, marginTop: 10 }}>
+              <div className={`mt-2 grid gap-2 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
                   <label>Urgency</label>
                   <select
@@ -371,7 +364,7 @@ export default function CallsPage() {
                   <input value={new Date(detailMeta.created_at).toLocaleString()} readOnly />
                 </div>
               </div>
-              <div style={{ marginTop: 12 }}>
+              <div className="mt-3">
                 <label>AI Summary</label>
                 <textarea
                   value={detailDraft.summary}
@@ -379,7 +372,7 @@ export default function CallsPage() {
                   style={{ minHeight: isMobile ? 64 : 70 }}
                 />
               </div>
-              <div style={{ marginTop: 12 }}>
+              <div className="mt-3">
                 <label>Internal Notes</label>
                 <textarea
                   value={detailDraft.notes}
@@ -388,19 +381,19 @@ export default function CallsPage() {
                   placeholder="Write follow-up details, context, or callback notes."
                 />
               </div>
-              <div className="toolbar" style={{ marginTop: 10, flexWrap: 'wrap' }}>
-                <button className="btn" type="button" onClick={() => saveDetail('notes')}>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Button variant="outline" type="button" onClick={() => saveDetail('notes')}>
                   Save Notes (S)
-                </button>
-                <button className="btn brand" type="button" onClick={() => saveDetail('all')} disabled={!hasUnsavedChanges}>
+                </Button>
+                <Button type="button" onClick={() => saveDetail('all')} disabled={!hasUnsavedChanges}>
                   Save All Changes
-                </button>
-                <span className="muted">{saveStatus || (hasUnsavedChanges ? 'Unsaved changes' : 'No changes')}</span>
-                {lastSavedAt ? <span className="muted">Last saved {lastSavedAt}</span> : null}
+                </Button>
+                <span className="text-sm text-slate-500">{saveStatus || (hasUnsavedChanges ? 'Unsaved changes' : 'No changes')}</span>
+                {lastSavedAt ? <span className="text-sm text-slate-500">Last saved {lastSavedAt}</span> : null}
               </div>
-              <div style={{ marginTop: 12 }}>
-                <div className="muted" style={{ marginBottom: 6 }}>Transcript</div>
-                <pre className="code" style={{ whiteSpace: 'pre-wrap' }}>
+              <div className="mt-3">
+                <div className="mb-1 text-sm text-slate-500">Transcript</div>
+                <pre className="rounded-md bg-slate-900 p-3 font-mono text-xs text-slate-100" style={{ whiteSpace: 'pre-wrap' }}>
                   {detailTranscript || 'No transcript available yet.'}
                 </pre>
               </div>
