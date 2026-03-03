@@ -64,6 +64,19 @@ Validate Client UI v2 stability and usability after production rollout.
 - Incident check:
   - No P0/P1 issues observed during this pass.
 
+### 2026-03-03 (Day 0 Follow-up Pass)
+- Production commit confirmed:
+  - `bb5e8854514c39b4066d93d02dce09256a610902`
+- Validation commands:
+  - `curl -sS https://app.everycall.io/api/version`
+  - `APP_BASE_URL=https://app.everycall.io corepack pnpm test:client-ui:v2:api`
+  - `APP_BASE_URL=https://app.everycall.io corepack pnpm test:client-ui:v2:e2e`
+- Result:
+  - API suite: pass
+  - E2E suite: pass
+- Incident check:
+  - No P0/P1 issues observed during this follow-up pass.
+
 ## Day 7 Exit Criteria
 1. No unresolved P0/P1 issues.
 2. Error targets met.
