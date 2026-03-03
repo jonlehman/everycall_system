@@ -281,20 +281,18 @@ export default function CallsPage() {
             <div className={`${isMobile ? 'w-full' : 'ml-auto'}`}>
               <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div className="grid gap-2">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Search Calls</div>
                   <div>
-                    <label>Number</label>
                     <input
                       ref={searchInputRef}
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
                       placeholder="Number or SID (/)"
+                      aria-label="Number or SID"
                     />
                   </div>
                   <div>
-                    <label>Call Status</label>
-                    <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                      <option value="all">All</option>
+                    <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Call Status">
+                      <option value="all">Call Status (All)</option>
                       <option value="new">New</option>
                       <option value="contacted">Contacted</option>
                       <option value="scheduled">Scheduled</option>
@@ -306,9 +304,8 @@ export default function CallsPage() {
                     </select>
                   </div>
                   <div>
-                    <label>Urgency Level</label>
-                    <select value={urgencyFilter} onChange={(event) => setUrgencyFilter(event.target.value)}>
-                      <option value="all">All</option>
+                    <select value={urgencyFilter} onChange={(event) => setUrgencyFilter(event.target.value)} aria-label="Urgency Level">
+                      <option value="all">Urgency (All)</option>
                       <option value="critical">Critical</option>
                       <option value="high">High</option>
                       <option value="normal">Normal</option>
@@ -317,31 +314,42 @@ export default function CallsPage() {
                   </div>
                 </div>
                 <div className="grid gap-2">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-transparent">Search Calls</div>
                   <div>
-                    <label>Date From</label>
-                    <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(event) => setDateFrom(event.target.value)}
+                      placeholder="Date From"
+                      aria-label="Date From"
+                    />
                   </div>
                   <div>
-                    <label>Date To</label>
-                    <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(event) => setDateTo(event.target.value)}
+                      placeholder="Date To"
+                      aria-label="Date To"
+                    />
+                  </div>
+                  <div>
+                    <Button
+                      variant="outline"
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter('all');
+                        setUrgencyFilter('all');
+                        setDateFrom('');
+                        setDateTo('');
+                        setSearch('');
+                      }}
+                    >
+                      Reset Filters
+                    </Button>
                   </div>
                 </div>
               </div>
               <div className="mt-2 flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => {
-                    setStatusFilter('all');
-                    setUrgencyFilter('all');
-                    setDateFrom('');
-                    setDateTo('');
-                    setSearch('');
-                  }}
-                >
-                  Reset Filters
-                </Button>
                 <span className="text-sm text-slate-500">{loading ? 'Loading...' : `${filteredRows.length} calls`}</span>
               </div>
             </div>
