@@ -286,8 +286,8 @@ export default function CallsPage() {
                       ref={searchInputRef}
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Number or SID (/)"
-                      aria-label="Number or SID"
+                      placeholder="Number"
+                      aria-label="Number"
                     />
                   </div>
                   <div>
@@ -315,22 +315,26 @@ export default function CallsPage() {
                 </div>
                 <div className="grid gap-2">
                   <div>
-                    <input
-                      type="date"
-                      value={dateFrom}
-                      onChange={(event) => setDateFrom(event.target.value)}
-                      placeholder="Date From"
-                      aria-label="Date From"
-                    />
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">From</span>
+                      <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={(event) => setDateFrom(event.target.value)}
+                        aria-label="Date From"
+                      />
+                    </div>
                   </div>
                   <div>
-                    <input
-                      type="date"
-                      value={dateTo}
-                      onChange={(event) => setDateTo(event.target.value)}
-                      placeholder="Date To"
-                      aria-label="Date To"
-                    />
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">To</span>
+                      <input
+                        type="date"
+                        value={dateTo}
+                        onChange={(event) => setDateTo(event.target.value)}
+                        aria-label="Date To"
+                      />
+                    </div>
                   </div>
                   <div>
                     <Button
