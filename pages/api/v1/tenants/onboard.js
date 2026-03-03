@@ -377,6 +377,7 @@ export default async function handler(req, res) {
 
       for (let attempt = 0; attempt < maxTenantKeyAttempts; attempt += 1) {
         tenantKey = attempt === 0 ? baseTenantKey : `${baseTenantKey}_${attempt + 1}`;
+        await client.query("SAVEPOINT tenant_key_insert");
         try {
           await client.query(
             `INSERT INTO tenants (tenant_key, name, status, data_region, plan, primary_number, industry)
@@ -391,8 +392,11 @@ export default async function handler(req, res) {
               payload.industry
             ]
           );
+          await client.query("RELEASE SAVEPOINT tenant_key_insert");
           break;
         } catch (insertErr) {
+          await client.query("ROLLBACK TO SAVEPOINT tenant_key_insert");
+          await client.query("RELEASE SAVEPOINT tenant_key_insert");
           if (insertErr?.code === "23505") {
             if (attempt === maxTenantKeyAttempts - 1) {
               await client.query("ROLLBACK");
