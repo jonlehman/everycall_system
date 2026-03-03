@@ -51,10 +51,9 @@ export default function Header() {
   }, []);
 
   return (
-    <div className="topbar" style={{ justifyContent: 'flex-end' }}>
+    <div className="mb-4 flex justify-end">
       <div
-        className="user-chip"
-        style={{ display: 'flex', alignItems: 'center', gap: 10, position: 'relative', cursor: 'pointer' }}
+        className="relative flex cursor-pointer items-center gap-2"
         onClick={(e) => {
           e.stopPropagation();
           setOpen((prev) => !prev);
@@ -66,21 +65,20 @@ export default function Header() {
           }
         }}
       >
-        <div className="badge ok" style={{ borderRadius: 999, padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ display: 'block' }}>
+        <div className="flex items-center justify-center rounded-full border border-emerald-300 bg-emerald-100 p-1.5 text-emerald-700">
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false" className="block">
             <circle cx="12" cy="8" r="4" fill="currentColor"></circle>
             <path d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"></path>
           </svg>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontWeight: 600 }}>{tenantName || 'Tenant'}</div>
-          <div className="muted" style={{ fontSize: 12 }}>Account</div>
+        <div className="text-right">
+          <div className="font-semibold">{tenantName || 'Tenant'}</div>
+          <div className="text-xs text-slate-500">Account</div>
         </div>
 
         {open ? (
           <div
-            className="card"
-            style={{ position: 'absolute', right: 0, top: 48, minWidth: 220, display: 'block', padding: 8 }}
+            className="absolute right-0 top-12 z-20 min-w-[220px] rounded-lg border border-border bg-card p-2 shadow-md"
             onMouseEnter={openMenu}
             onMouseLeave={(e) => {
               if (!(e.relatedTarget && e.currentTarget.contains(e.relatedTarget))) {
@@ -88,15 +86,14 @@ export default function Header() {
               }
             }}
           >
-            <div className="muted" style={{ fontSize: 12, padding: '6px 8px' }}>Setup</div>
-            <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href="/client/faq">Questions and Answers</Link>
-            <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href="/client/team">Team Users</Link>
-            <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href="/client/routing">Call Routing</Link>
-            <Link className="menu-link" style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', marginBottom: 4 }} href="/client/settings">Account Settings</Link>
-            <div style={{ height: 1, background: '#e2e8f0', margin: '8px 0' }}></div>
+            <div className="px-2 py-1 text-xs uppercase tracking-wide text-slate-500">Setup</div>
+            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/faq">Questions and Answers</Link>
+            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/team">Team Users</Link>
+            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/routing">Call Routing</Link>
+            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/settings">Account Settings</Link>
+            <div className="my-2 h-px bg-slate-200"></div>
             <button
-              className="menu-link"
-              style={{ display: 'block', padding: 8, borderRadius: 8, color: 'inherit', textDecoration: 'none', border: 'none', background: 'transparent', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+              className="block w-full rounded-md px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
               type="button"
               onClick={async () => {
                 await fetch('/api/v1/auth/logout', { method: 'POST' });

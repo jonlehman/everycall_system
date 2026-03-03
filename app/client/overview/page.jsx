@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import Link from 'next/link';
+import { buttonVariants } from '../../../components/ui/button';
+import { cn } from '../../../lib/utils';
 import ClientPage from '../_components/ClientPage';
 
 export default function OverviewPage() {
@@ -72,25 +74,25 @@ export default function OverviewPage() {
       status={status}
       primaryAction={{ href: '/client/calls', label: 'Open Urgent Calls', brand: true }}
     >
-      <div className="client-quick-actions">
-        <Link className="btn" href="/client/calls">Open Callbacks</Link>
-        <Link className="btn" href="/client/calls">Open Inbox</Link>
+      <div className="flex flex-wrap gap-2">
+        <Link className={cn(buttonVariants({ variant: 'outline' }))} href="/client/calls">Open Callbacks</Link>
+        <Link className={cn(buttonVariants({ variant: 'outline' }))} href="/client/calls">Open Inbox</Link>
       </div>
 
-      <div className="grid cols-4">
-        <div className="card"><div className="stat">Calls Today</div><div className="value">{stats.callsToday}</div></div>
-        <div className="card"><div className="stat">Missed</div><div className="value">{stats.missed}</div></div>
-        <div className="card"><div className="stat">Urgent</div><div className="value">{stats.urgent}</div></div>
-        <div className="card"><div className="stat">Callbacks Due</div><div className="value">{stats.callbacksDue}</div></div>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wider text-slate-500">Calls Today</div><div className="mt-1 text-3xl font-bold">{stats.callsToday}</div></div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wider text-slate-500">Missed</div><div className="mt-1 text-3xl font-bold">{stats.missed}</div></div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wider text-slate-500">Urgent</div><div className="mt-1 text-3xl font-bold">{stats.urgent}</div></div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wider text-slate-500">Callbacks Due</div><div className="mt-1 text-3xl font-bold">{stats.callbacksDue}</div></div>
       </div>
 
-      <div className="split" style={{ marginTop: 12 }}>
-        <div className="card">
-          <h2>Recent Calls</h2>
+      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_.8fr]">
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Recent Calls</h2>
           {loadState === 'error' ? (
-            <p className="muted">Unable to load recent calls.</p>
+            <p className="text-sm text-slate-500">Unable to load recent calls.</p>
           ) : (
-            <div className="table-wrap">
+            <div className="overflow-auto">
             <DataGrid
               rows={rows}
               columns={columns}
@@ -109,14 +111,14 @@ export default function OverviewPage() {
             </div>
           )}
         </div>
-        <div className="card">
-          <h2>Action Queue</h2>
-          <p className="muted">Calls requiring callback or dispatch confirmation.</p>
-          <div className="kv">
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Action Queue</h2>
+          <p className="text-sm text-slate-500">Calls requiring callback or dispatch confirmation.</p>
+          <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-[180px_1fr]">
             {loadState === 'error' ? (
-              <div className="muted">Unable to load callback queue.</div>
+              <div className="text-slate-500">Unable to load callback queue.</div>
             ) : actionQueue.length === 0 ? (
-              <div className="muted">No callbacks due.</div>
+              <div className="text-slate-500">No callbacks due.</div>
             ) : actionQueue.map((item, idx) => (
               <span key={`${item.caller_name}-${idx}`} style={{ display: 'contents' }}>
                 <div>{item.caller_name || 'Caller'}</div>

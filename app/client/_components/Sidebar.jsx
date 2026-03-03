@@ -69,12 +69,12 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         ))}
       </div>
 
-      <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: '14px 0' }} />
+      <hr className="my-3 border-0 border-t border-slate-300/30" />
       <div className="nav-group">
         {!collapsed && showSetup ? (
-          <div className="sub-menu" style={{ marginLeft: 10, display: 'grid', gap: 6, marginTop: 8 }}>
+          <div className="sub-menu ml-2 mt-2 grid gap-1.5">
             {setupSubItems.map((item) => (
-              <Link key={item.href} className={linkClass(item.href)} style={{ fontSize: 12 }} href={item.href}>
+              <Link key={item.href} className={`${linkClass(item.href)} text-xs`} href={item.href}>
                 {item.label}
               </Link>
             ))}
