@@ -435,11 +435,8 @@ export default function CallsPage() {
                 />
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button variant="outline" type="button" onClick={() => saveDetail('notes')}>
-                  Save Notes (S)
-                </Button>
                 <Button type="button" onClick={() => saveDetail('all')} disabled={!hasUnsavedChanges}>
-                  Save All Changes
+                  Save Changes
                 </Button>
                 <span className="text-sm text-slate-500">{saveStatus || (hasUnsavedChanges ? 'Unsaved changes' : 'No changes')}</span>
                 {lastSavedAt ? <span className="text-sm text-slate-500">Last saved {lastSavedAt}</span> : null}
