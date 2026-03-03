@@ -248,7 +248,9 @@ export default function CallsPage() {
             overflow: 'hidden',
             display: '-webkit-box',
             WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical'
+            WebkitBoxOrient: 'vertical',
+            lineHeight: '1.25rem',
+            maxHeight: '2.5rem'
           }}
         >
           {params.value || '-'}
@@ -382,6 +384,7 @@ export default function CallsPage() {
               columns={columns}
               autoHeight
               disableRowSelectionOnClick
+              getRowHeight={() => 56}
               pageSizeOptions={[10, 25, 50]}
               initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
               localeText={{ noRowsLabel: 'No calls yet.' }}
@@ -391,7 +394,7 @@ export default function CallsPage() {
               getRowClassName={(params) => (selectedCallSid === params.row.sid ? 'is-selected-call-row' : '')}
               sx={{
                 border: 'none',
-                '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.35' },
+                '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.35', whiteSpace: 'normal' },
                 '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
                 '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600, letterSpacing: '0.01em' },
                 '& .is-selected-call-row': { backgroundColor: '#f0f9ff' },
