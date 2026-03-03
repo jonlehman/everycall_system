@@ -27,6 +27,7 @@ Use the **Status** column and keep **Dependencies** accurate.
 9. Testing & QA
 10. Release & Rollout
 11. Intake V2 (Structured Onboarding)
+12. Client UI V2 (Workflow Clarity)
 
 ---
 
@@ -132,3 +133,21 @@ Use the **Status** column and keep **Dependencies** accurate.
 | I16 | Tests: E2E onboarding -> authenticated redirect | Smoke Agent | done | I13, I14 | Passed on production at commit 4966b73 |
 | I17 | Regression checklist onboarding section updated | Dev A | done | I15, I16 | docs/plan/regression-checklist.md updated |
 | I18 | Staging rollout + 24h monitoring for intake v2 | Dev A | in progress | I17 | Production tests passed; monitoring window active |
+
+## 12) Client UI V2 (Workflow Clarity)
+| ID | Task | Owner | Status | Dependencies | Notes |
+|---|---|---|---|---|---|
+| CU1 | Client UI v2 technical spec approved | Dev A | done | — | docs/SPECS/client-ui-v2.md |
+| CU2 | Client UI v2 delivery plan approved | Dev A | done | CU1 | docs/plan/client-ui-v2-delivery.md |
+| CU3 | Client UI v2 test matrix approved | Smoke Agent | done | CU1 | docs/TESTS-client-ui-v2.md |
+| CU4 | Client UI v2 ADR proposed | Dev C | done | CU1 | docs/adr/0003-client-ui-v2-delivery-contract.md |
+| CU5 | Shared page shell + status feedback pattern | Dev B | not started | CU1 | title/status/cta/content/save skeleton |
+| CU6 | Overview screen aligned to workflow contract | Dev B | not started | CU5 | one-job triage home |
+| CU7 | Calls Inbox aligned to filter/detail workflow | Dev B | not started | CU5 | readable transcript + follow-up flow |
+| CU8 | FAQ + Routing screens aligned to save-state standards | Dev B | not started | CU5 | deterministic save/error handling |
+| CU9 | Settings + Team screens aligned to role matrix | Dev B | not started | CU5 | permission-gated actions |
+| CU10 | API error envelope and role checks hardened | Dev A | not started | CU1 | all client write surfaces |
+| CU11 | Owner setup checklist with deep links | Dev B | not started | CU6, CU8, CU9 | task mode over menu mode |
+| CU12 | Client UI v2 API + E2E test execution | Smoke Agent | not started | CU6, CU7, CU8, CU9, CU10 | per docs/TESTS-client-ui-v2.md |
+| CU13 | Regression checklist updated for client-ui v2 | Dev A | not started | CU12 | docs/plan/regression-checklist.md |
+| CU14 | Staging rollout + 7-day monitoring | Dev A | not started | CU13 | monitor error/success metrics |
