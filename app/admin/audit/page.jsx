@@ -47,21 +47,29 @@ export default function AdminAuditPage() {
   ];
 
   return (
-    <section className="screen active">
-      <div className="topbar"><h1>Audit Log</h1></div>
-      <div className="toolbar" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
-        <label>Tenant</label>
-        <select value={tenantFilter} onChange={(e) => setTenantFilter(e.target.value)}>
-          <option value="">All</option>
-          {tenants.map((tenant) => (
-            <option key={tenant} value={tenant}>{tenant}</option>
-          ))}
-        </select>
-        <label>Search</label>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="actor, action, details" />
-        <span className="muted">{rows.length} entries</span>
+    <section className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="m-0 text-2xl font-semibold tracking-tight">Audit Log</h1>
       </div>
-      <div className="card">
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="max-w-[1.9in]">
+            <label>Tenant</label>
+            <select value={tenantFilter} onChange={(e) => setTenantFilter(e.target.value)}>
+              <option value="">All</option>
+              {tenants.map((tenant) => (
+                <option key={tenant} value={tenant}>{tenant}</option>
+              ))}
+            </select>
+          </div>
+          <div className="max-w-[2.1in]">
+            <label>Search</label>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="actor, action, details" />
+          </div>
+          <span className="text-sm text-slate-500">{rows.length} entries</span>
+        </div>
+      </div>
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <DataGrid
           rows={rows}
           columns={columns}

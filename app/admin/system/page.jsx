@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Button } from '../../../components/ui/button';
 
 export default function AdminSystemPage() {
   const [phrase, setPhrase] = useState('');
@@ -70,30 +71,32 @@ export default function AdminSystemPage() {
   }, []);
 
   return (
-    <section className="screen active">
-      <div className="topbar"><h1>System Config</h1></div>
-      <div className="card">
+    <section className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="m-0 text-2xl font-semibold tracking-tight">System Config</h1>
+      </div>
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <label>Global Emergency Phrase</label>
         <textarea value={phrase} onChange={(event) => setPhrase(event.target.value)} />
-        <label style={{ marginTop: 12 }}>Personality</label>
+        <label className="mt-3">Personality</label>
         <textarea value={personality} onChange={(event) => setPersonality(event.target.value)} />
-        <label style={{ marginTop: 12 }}>Date &amp; Time</label>
+        <label className="mt-3">Date &amp; Time</label>
         <textarea value={dateTime} onChange={(event) => setDateTime(event.target.value)} />
-        <label style={{ marginTop: 12 }}>Numbers &amp; Symbols</label>
+        <label className="mt-3">Numbers &amp; Symbols</label>
         <textarea value={numbersSymbols} onChange={(event) => setNumbersSymbols(event.target.value)} />
-        <label style={{ marginTop: 12 }}>Confirmation</label>
+        <label className="mt-3">Confirmation</label>
         <textarea value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
-        <label style={{ marginTop: 12 }}>When to Use the FAQ</label>
+        <label className="mt-3">When to Use the FAQ</label>
         <textarea value={faqUsage} onChange={(event) => setFaqUsage(event.target.value)} />
-        <label style={{ marginTop: 12 }}>Telnyx SMS Number (Shared)</label>
+        <label className="mt-3">Telnyx SMS Number (Shared)</label>
         <input value={telnyxSmsNumber} onChange={(event) => setTelnyxSmsNumber(event.target.value)} placeholder="+1XXXXXXXXXX" />
-        <label style={{ marginTop: 12 }}>Telnyx SMS Number ID</label>
+        <label className="mt-3">Telnyx SMS Number ID</label>
         <input value={telnyxSmsNumberId} onChange={(event) => setTelnyxSmsNumberId(event.target.value)} />
-        <label style={{ marginTop: 12 }}>Telnyx Messaging Profile ID</label>
+        <label className="mt-3">Telnyx Messaging Profile ID</label>
         <input value={telnyxSmsMessagingProfileId} onChange={(event) => setTelnyxSmsMessagingProfileId(event.target.value)} />
-        <div className="toolbar">
-          <button className="btn brand" onClick={saveConfig}>Save System Config</button>
-          <span className="muted">{status}</span>
+        <div className="mt-3 flex items-center gap-2">
+          <Button onClick={saveConfig}>Save System Config</Button>
+          <span className="text-sm text-slate-500">{status}</span>
         </div>
       </div>
     </section>

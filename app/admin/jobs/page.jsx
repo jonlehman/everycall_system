@@ -47,9 +47,11 @@ export default function JobsPage() {
   ];
 
   return (
-    <section className="screen active">
-      <div className="topbar"><h1>Provisioning Jobs</h1></div>
-      <div className="card">
+    <section className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="m-0 text-2xl font-semibold tracking-tight">Provisioning Jobs</h1>
+      </div>
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <DataGrid
           rows={rows}
           columns={columns}
