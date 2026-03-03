@@ -16,6 +16,13 @@ Run this after major changes or before release. Mark each item pass/fail.
 - FAQ Manager loads and can edit/save
 - Team Users: invite, update status, delete
 - SMS opt‑in flow (set phone, request opt‑in)
+- Client UI v2 page scaffold present (title, status banner, primary action)
+- Client UI v2 states validated (loading, empty, error, permission-denied where applicable)
+- Setup checklist (`/client/setup`) loads and deep links to FAQ/Team/Routing/Settings
+- Overview triage actions work (urgent calls, callbacks, inbox)
+- Calls Inbox filter/detail workflow works end-to-end
+- Routing and Settings show explicit save state (`Saving`, `Saved`, error)
+- Role-gated write actions behave correctly for restricted users
 
 ## Onboarding
 - Intake page submit creates tenant + user
