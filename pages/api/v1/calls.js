@@ -57,7 +57,7 @@ async function generateSummaryFromTranscript(transcript) {
   const trimmed = String(transcript || "").trim();
   if (!trimmed || !openAiKey) return null;
 
-  const prompt = "Format: 2-4 words, colon, then a 12-word max summary. Return only the summary text.";
+  const prompt = "Format: 2-4 words describing the type of service required, colon, then a 12-word max description of the service request. Return only the summary text.";
 
   const input = [
     { role: "system", content: prompt },
