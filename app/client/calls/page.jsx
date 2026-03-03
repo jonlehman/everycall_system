@@ -325,9 +325,7 @@ export default function CallsPage() {
             <div className="text-sm text-slate-500">{detailStatus}</div>
           ) : (
             <>
-              <div className="mb-2 text-sm text-slate-500">
-                {detailMeta.call_sid} · {new Date(detailMeta.created_at).toLocaleString()}
-              </div>
+              <div className="mb-2 text-sm text-slate-500">{new Date(detailMeta.created_at).toLocaleString()}</div>
               <div className={`grid gap-2 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
                   <label>Caller / Number</label>
