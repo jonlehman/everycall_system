@@ -187,7 +187,7 @@ export default function CallsPage() {
 
   const columns = [
     { field: 'when', headerName: 'Time', flex: 0.75, minWidth: 140 },
-    { field: 'from', headerName: 'Caller / Number', flex: 0.85, minWidth: 150 },
+    { field: 'from', headerName: 'Number', flex: 0.85, minWidth: 150 },
     {
       field: 'summary',
       headerName: 'AI Summary',
@@ -242,57 +242,69 @@ export default function CallsPage() {
       <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-[1.2fr_.8fr]'}`}>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <h2 className="mb-2 mt-0 text-lg font-semibold">Calls</h2>
-          <div className={`mb-3 grid items-end gap-2 ${isMobile ? 'grid-cols-2' : 'grid-cols-4'}`}>
-            <div className="max-w-[1.6in]">
-              <label>Search Calls</label>
-              <input
-                ref={searchInputRef}
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Caller or SID (/)"
-              />
-            </div>
-            <div className="max-w-[1.6in]">
-              <label>Call Status</label>
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                <option value="all">All</option>
-                <option value="completed">Completed</option>
-                <option value="missed">Missed</option>
-                <option value="in_progress">In Progress</option>
-                <option value="error">Error</option>
-              </select>
-            </div>
-            <div className="max-w-[1.6in]">
-              <label>Urgency Level</label>
-              <select value={urgencyFilter} onChange={(event) => setUrgencyFilter(event.target.value)}>
-                <option value="all">All</option>
-                <option value="critical">Critical</option>
-                <option value="high">High</option>
-                <option value="normal">Normal</option>
-                <option value="low">Low</option>
-              </select>
-            </div>
-            <div className="max-w-[1.6in]">
-              <label>Date From</label>
-              <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-              <label className="mt-2">Date To</label>
-              <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-            </div>
-            <div className={`flex items-center gap-2 ${isMobile ? 'col-span-2' : 'col-span-4'}`}>
-              <Button
-                variant="outline"
-                type="button"
-                onClick={() => {
-                  setStatusFilter('all');
-                  setUrgencyFilter('all');
-                  setDateFrom('');
-                  setDateTo('');
-                  setSearch('');
-                }}
-              >
-                Reset Filters
-              </Button>
-              <span className="text-sm text-slate-500">{loading ? 'Loading...' : `${filteredRows.length} calls`}</span>
+          <div className={`mb-3 flex ${isMobile ? 'flex-col' : 'flex-row items-start justify-between'} gap-3`}>
+            <div className={`${isMobile ? 'w-full' : 'ml-auto'}`}>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <div className="grid gap-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Search Calls</div>
+                  <div>
+                    <label>Number</label>
+                    <input
+                      ref={searchInputRef}
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Number or SID (/)"
+                    />
+                  </div>
+                  <div>
+                    <label>Call Status</label>
+                    <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                      <option value="all">All</option>
+                      <option value="completed">Completed</option>
+                      <option value="missed">Missed</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="error">Error</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>Urgency Level</label>
+                    <select value={urgencyFilter} onChange={(event) => setUrgencyFilter(event.target.value)}>
+                      <option value="all">All</option>
+                      <option value="critical">Critical</option>
+                      <option value="high">High</option>
+                      <option value="normal">Normal</option>
+                      <option value="low">Low</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-transparent">Search Calls</div>
+                  <div>
+                    <label>Date From</label>
+                    <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+                  </div>
+                  <div>
+                    <label>Date To</label>
+                    <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+                  </div>
+                </div>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => {
+                    setStatusFilter('all');
+                    setUrgencyFilter('all');
+                    setDateFrom('');
+                    setDateTo('');
+                    setSearch('');
+                  }}
+                >
+                  Reset Filters
+                </Button>
+                <span className="text-sm text-slate-500">{loading ? 'Loading...' : `${filteredRows.length} calls`}</span>
+              </div>
             </div>
           </div>
           <div style={{ height: rows.length ? 'auto' : 300 }}>
@@ -328,7 +340,7 @@ export default function CallsPage() {
               <div className="mb-2 text-sm text-slate-500">{new Date(detailMeta.created_at).toLocaleString()}</div>
               <div className={`grid gap-2 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
-                  <label>Caller / Number</label>
+                  <label>Number</label>
                   <input value={detailMeta.from_number || ''} readOnly />
                 </div>
                 <div>
