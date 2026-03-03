@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ClientPage from '../_components/ClientPage';
 
 export default function RoutingPage() {
