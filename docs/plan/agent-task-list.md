@@ -128,7 +128,7 @@ Use the **Status** column and keep **Dependencies** accurate.
 | I12 | UI: intake payload aligned to v2 contract | Dev B | done | I1 | sends `primaryGoals`, validates required arrays |
 | I13 | UI: success activation panel + forwarding guidance | Dev B | done | I9, I11 | Shows EveryCall number and routing instruction |
 | I14 | UI/API: forwarding acknowledgment persistence | Dev B | done | I5, I13 | `/api/v1/tenants/forwarding-status` implemented |
-| I15 | Tests: API integration suite for intake v2 | Smoke Agent | blocked | I11 | Live app behavior indicates old deploy; rerun post-deploy |
-| I16 | Tests: E2E onboarding -> authenticated redirect | Smoke Agent | blocked | I13, I14 | Live app returned no onboarding session cookie; rerun post-deploy |
+| I15 | Tests: API integration suite for intake v2 | Smoke Agent | done | I11 | Passed on production at commit 4966b73 |
+| I16 | Tests: E2E onboarding -> authenticated redirect | Smoke Agent | done | I13, I14 | Passed on production at commit 4966b73 |
 | I17 | Regression checklist onboarding section updated | Dev A | done | I15, I16 | docs/plan/regression-checklist.md updated |
-| I18 | Staging rollout + 24h monitoring for intake v2 | Dev A | not started | I17 | track completion/error rates |
+| I18 | Staging rollout + 24h monitoring for intake v2 | Dev A | in progress | I17 | Production tests passed; monitoring window active |
