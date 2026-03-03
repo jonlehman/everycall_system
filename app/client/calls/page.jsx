@@ -22,6 +22,26 @@ function urgencyTone(value) {
   return 'ok';
 }
 
+function formatTranscript(text) {
+  const lines = String(text || '').split('\n');
+  const formatted = [];
+  let lastSpeaker = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const match = trimmed.match(/^(Assistant|Caller|Agent|System):\s*/i);
+    const speaker = match ? match[1].toLowerCase() : null;
+    if (speaker && lastSpeaker && speaker !== lastSpeaker) {
+      formatted.push('');
+    }
+    formatted.push(trimmed);
+    if (speaker) lastSpeaker = speaker;
+  }
+
+  return formatted.join('\n');
+}
+
 export default function CallsPage() {
   const isMobile = useMediaQuery('(max-width: 980px)');
   const [calls, setCalls] = useState([]);
@@ -419,7 +439,7 @@ export default function CallsPage() {
               <div className="mt-3">
                 <div className="mb-1 text-sm text-slate-500">Transcript</div>
                 <pre className="rounded-md bg-slate-900 p-3 font-mono text-xs text-slate-100" style={{ whiteSpace: 'pre-wrap' }}>
-                  {detailTranscript || 'No transcript available yet.'}
+                  {detailTranscript ? formatTranscript(detailTranscript) : 'No transcript available yet.'}
                 </pre>
               </div>
             </>
