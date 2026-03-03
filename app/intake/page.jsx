@@ -43,6 +43,9 @@ const GOALS = [
 export default function IntakePage() {
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState({ message: 'Ready.', tone: 'normal' });
+  const [activation, setActivation] = useState(null);
+  const [activationStatus, setActivationStatus] = useState({ message: '', tone: 'normal' });
+  const [activationBusy, setActivationBusy] = useState(false);
   const [form, setForm] = useState({
     businessName: '',
     industry: '',
@@ -124,6 +127,18 @@ export default function IntakePage() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (!form.serviceArea.trim()) {
+      setStatusMessage('Service area is required.', 'bad');
+      return;
+    }
+    if (selectedServices.length < 1) {
+      setStatusMessage('Please add at least one service offered.', 'bad');
+      return;
+    }
+    if (primaryGoals.length < 1) {
+      setStatusMessage('Please select at least one primary goal.', 'bad');
+      return;
+    }
     setStatusMessage('Submitting...', 'warn');
 
     const payload = {
@@ -146,7 +161,7 @@ export default function IntakePage() {
       averageCallsPerDay: Number(form.avgCalls || 0),
       emergencyServices: form.emergencyServices === 'true',
       servicesOffered: selectedServices,
-      primaryGoal: primaryGoals
+      primaryGoals
     };
 
     try {
@@ -157,20 +172,105 @@ export default function IntakePage() {
       });
 
       if (!resp.ok) {
-        const msg = await resp.text();
-        setStatusMessage(msg || `Request failed (${resp.status})`, 'bad');
+        const data = await resp.json().catch(() => null);
+        setStatusMessage(data?.message || data?.error || `Request failed (${resp.status})`, 'bad');
         return;
       }
 
       const data = await resp.json();
-      setStatusMessage('Trial created. Redirecting to workspace...', 'ok');
-      setTimeout(() => {
-        window.location.href = `/client/overview`;
-      }, 1200);
+      setStatusMessage('Trial created.', 'ok');
+      setActivation({
+        tenantKey: data?.tenantKey || '',
+        voiceNumber: data?.provisioning?.voiceNumber || '',
+        voiceStatus: data?.provisioning?.voiceStatus || 'pending'
+      });
     } catch (err) {
       setStatusMessage(err.message || 'Request failed.', 'bad');
     }
   };
+
+  const completeActivation = async (forwardingStatus) => {
+    setActivationBusy(true);
+    setActivationStatus({ message: 'Saving...', tone: 'warn' });
+    try {
+      const resp = await fetch('/api/v1/tenants/forwarding-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: forwardingStatus })
+      });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => null);
+        setActivationStatus({ message: data?.message || 'Could not save activation status.', tone: 'bad' });
+        setActivationBusy(false);
+        return;
+      }
+      setActivationStatus({ message: 'Saved. Redirecting to workspace...', tone: 'ok' });
+      setTimeout(() => {
+        window.location.href = '/client/overview';
+      }, 900);
+    } catch (err) {
+      setActivationStatus({ message: err.message || 'Could not save activation status.', tone: 'bad' });
+      setActivationBusy(false);
+    }
+  };
+
+  if (activation) {
+    return (
+      <div className="intake-body">
+        <div className="intake-shell">
+          <div className="intake-hero">
+            <div className="intake-brand">everycall <span>intake</span></div>
+            <h1 className="intake-headline">One final activation step.</h1>
+            <div className="intake-subhead">Your workspace is ready. To activate call handling, route overflow/no-answer calls to your EveryCall number.</div>
+          </div>
+          <div className="card intake-card">
+            <h1>Activate Call Routing</h1>
+            <p className="intake-muted">Tenant: {activation.tenantKey || '-'}</p>
+            <div className="intake-section-title">Your EveryCall Number</div>
+            <div className="card" style={{ marginBottom: 12 }}>
+              <div className="stat">Voice Number</div>
+              <div className="value" style={{ fontSize: 24 }}>
+                {activation.voiceNumber || 'Provisioning in progress'}
+              </div>
+              <p className="muted" style={{ marginTop: 8 }}>
+                Status: {activation.voiceStatus}
+              </p>
+            </div>
+            <div className="intake-section-title">Required Setup</div>
+            <p className="intake-muted">
+              Route overflow or no-answer calls from your main business line to this EveryCall number. This is required for EveryCall to answer your calls.
+            </p>
+            <div className="intake-actions">
+              <button
+                className="btn brand"
+                type="button"
+                disabled={activationBusy}
+                onClick={() => completeActivation('configured')}
+              >
+                I Configured Forwarding
+              </button>
+              <button
+                className="btn"
+                type="button"
+                disabled={activationBusy}
+                onClick={() => completeActivation('acknowledged')}
+              >
+                I Will Do This Later
+              </button>
+              <span
+                className="intake-muted"
+                style={{
+                  color: activationStatus.tone === 'bad' ? '#dc2626' : activationStatus.tone === 'ok' ? '#059669' : '#64748b'
+                }}
+              >
+                {activationStatus.message}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="intake-body">

@@ -2,6 +2,8 @@ import bcrypt from "bcryptjs";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { findAvailableVoiceNumber, orderVoiceNumber } from "../../_lib/telnyx.js";
 import { normalizePhoneNumber } from "../../_lib/phone.js";
+import { createSession, setSessionCookie } from "../../_lib/auth.js";
+import crypto from "crypto";
 
 const BASE_FAQS = [
   {
@@ -174,6 +176,110 @@ function slugify(input) {
     .slice(0, 48);
 }
 
+function jsonError(res, status, error, message, fieldErrors = undefined) {
+  return res.status(status).json({
+    ok: false,
+    error,
+    message,
+    ...(fieldErrors ? { fieldErrors } : {})
+  });
+}
+
+function normalizeStringArray(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+  if (typeof value === "string" && value.trim()) {
+    return [value.trim()];
+  }
+  return [];
+}
+
+function parsePayload(body) {
+  const ownerEmail = String(body.ownerEmail || "").trim().toLowerCase();
+  const primaryGoals = normalizeStringArray(body.primaryGoals ?? body.primaryGoal);
+  const servicesOffered = normalizeStringArray(body.servicesOffered);
+  const phone = String(body.phone || body.primaryNumber || "").trim();
+  const averageCallsPerDayRaw = body.averageCallsPerDay;
+  const averageCallsPerDay = averageCallsPerDayRaw === null || averageCallsPerDayRaw === undefined || String(averageCallsPerDayRaw).trim() === ""
+    ? null
+    : Number(averageCallsPerDayRaw);
+
+  const emergencyRaw = body.emergencyServices;
+  const emergencyServices = emergencyRaw === true || emergencyRaw === "true" || emergencyRaw === 1 || emergencyRaw === "1";
+
+  return {
+    businessName: String(body.businessName || "").trim(),
+    industry: String(body.industry || "").trim(),
+    ownerName: String(body.ownerName || "").trim(),
+    ownerEmail,
+    password: String(body.password || ""),
+    phone,
+    serviceArea: String(body.serviceArea || "").trim(),
+    address: String(body.address || "").trim(),
+    timezone: String(body.timezone || "America/Los_Angeles").trim() || "America/Los_Angeles",
+    businessHours: String(body.businessHours || "").trim(),
+    averageCallsPerDay,
+    emergencyServices,
+    servicesOffered,
+    primaryGoals,
+    status: String(body.status || "active"),
+    dataRegion: String(body.dataRegion || "US"),
+    plan: String(body.plan || "Trial")
+  };
+}
+
+function validatePayload(payload) {
+  const fieldErrors = {};
+  if (!payload.businessName) fieldErrors.businessName = "Business name is required.";
+  if (!payload.industry) fieldErrors.industry = "Industry is required.";
+  if (!payload.ownerName) fieldErrors.ownerName = "Owner name is required.";
+  if (!payload.ownerEmail) fieldErrors.ownerEmail = "Owner email is required.";
+  if (!payload.password) fieldErrors.password = "Password is required.";
+  if (!payload.serviceArea) fieldErrors.serviceArea = "Service area is required.";
+  if (payload.password && payload.password.length < 8) fieldErrors.password = "Password must be at least 8 characters.";
+  if (payload.ownerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.ownerEmail)) {
+    fieldErrors.ownerEmail = "Enter a valid email address.";
+  }
+  if (payload.servicesOffered.length < 1) fieldErrors.servicesOffered = "Select at least one service.";
+  if (payload.primaryGoals.length < 1) fieldErrors.primaryGoals = "Select at least one primary goal.";
+  if (payload.averageCallsPerDay !== null && (!Number.isFinite(payload.averageCallsPerDay) || payload.averageCallsPerDay < 0)) {
+    fieldErrors.averageCallsPerDay = "Average calls per day must be a non-negative number.";
+  }
+  return fieldErrors;
+}
+
+async function findReusableIdempotentResult(pool, idempotencyKey, requestHash) {
+  if (!idempotencyKey) return null;
+  const row = await pool.query(
+    `SELECT response_status, response_body, request_hash
+     FROM onboarding_idempotency
+     WHERE idempotency_key = $1
+     LIMIT 1`,
+    [idempotencyKey]
+  );
+  if (!row.rowCount) return null;
+  const existing = row.rows[0];
+  if (existing.request_hash !== requestHash) {
+    return { conflict: true };
+  }
+  return {
+    status: Number(existing.response_status),
+    body: existing.response_body
+  };
+}
+
+async function storeIdempotentResult(pool, idempotencyKey, requestHash, responseStatus, responseBody) {
+  if (!idempotencyKey) return;
+  await pool.query(
+    `INSERT INTO onboarding_idempotency (idempotency_key, request_hash, response_status, response_body)
+     VALUES ($1, $2, $3, $4::jsonb)
+     ON CONFLICT (idempotency_key)
+     DO NOTHING`,
+    [idempotencyKey, requestHash, responseStatus, JSON.stringify(responseBody)]
+  );
+}
+
 function buildPrompt({ businessName, industry, serviceArea, businessHours, emergency }) {
   return `# ROLE
 You are the friendly receptionist for ${businessName}. You answer calls, gather caller details, and schedule a callback.
@@ -195,77 +301,246 @@ Ask if there is anything else you can help with, then close politely.`;
 }
 
 export default async function handler(req, res) {
+  const pool = getPool();
+  if (!pool) {
+    return jsonError(res, 500, "database_unavailable", "Database is unavailable.");
+  }
+
   try {
     if (req.method !== "POST") {
       res.setHeader("Allow", "POST");
-      return res.status(405).json({ error: "method_not_allowed" });
-    }
-
-    const pool = getPool();
-    if (!pool) {
-      return res.status(500).json({ error: "database_unavailable" });
+      return jsonError(res, 405, "method_not_allowed", "Method not allowed.");
     }
 
     await ensureTables(pool);
 
     const body = typeof req.body === "object" && req.body ? req.body : {};
-    const businessName = String(body.businessName || "").trim();
-    const ownerName = String(body.ownerName || "").trim();
-    const ownerEmail = String(body.ownerEmail || "").trim().toLowerCase();
-    const industry = String(body.industry || "").trim();
-    const password = String(body.password || "");
-
-    if (!businessName || !ownerName || !ownerEmail || !industry || !password) {
-      return res.status(400).json({ error: "missing_fields" });
+    const payload = parsePayload(body);
+    const validationErrors = validatePayload(payload);
+    if (Object.keys(validationErrors).length) {
+      return jsonError(res, 400, "invalid_payload", "Please correct the highlighted fields.", validationErrors);
     }
 
+    const idempotencyKey = String(req.headers["idempotency-key"] || "").trim();
+    const requestHash = crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+    const existingResult = await findReusableIdempotentResult(pool, idempotencyKey, requestHash);
+    if (existingResult?.conflict) {
+      return jsonError(res, 409, "idempotency_key_reused", "Idempotency key was already used with a different request payload.");
+    }
+    if (existingResult) {
+      const existingBody = existingResult.body || {};
+      if (existingBody?.ok && payload.ownerEmail) {
+        const userRow = await pool.query(
+          `SELECT id, tenant_key
+           FROM tenant_users
+           WHERE email = $1
+           LIMIT 1`,
+          [payload.ownerEmail]
+        );
+        if (userRow.rowCount) {
+          const user = userRow.rows[0];
+          const sessionId = await createSession({ userId: user.id, tenantKey: user.tenant_key, role: "tenant" });
+          if (sessionId) setSessionCookie(res, sessionId);
+        }
+      }
+      return res.status(existingResult.status).json(existingBody);
+    }
+
+    const industry = payload.industry;
     const industryRow = await pool.query(
       `SELECT key FROM industries WHERE key = $1 AND active = true`,
       [industry]
     );
     if (!industryRow.rowCount) {
-      return res.status(400).json({ error: "invalid_industry" });
+      const responseBody = {
+        ok: false,
+        error: "invalid_industry",
+        message: "Selected industry is invalid or inactive.",
+        fieldErrors: { industry: "Select an active industry." }
+      };
+      await storeIdempotentResult(pool, idempotencyKey, requestHash, 400, responseBody);
+      return res.status(400).json(responseBody);
     }
 
-    const emailExists = await pool.query(`SELECT 1 FROM tenant_users WHERE email = $1 LIMIT 1`, [ownerEmail]);
-    if (emailExists.rowCount) {
-      return res.status(409).json({ error: "email_exists" });
-    }
+    let tenantKey = "";
+    let ownerUserId = null;
+    const baseTenantKey = slugify(payload.businessName) || "tenant";
+    const servicesOfferedText = payload.servicesOffered.join(", ");
+    const primaryGoalsText = payload.primaryGoals.join(", ");
+    const maxTenantKeyAttempts = 50;
 
-    let tenantKey = String(body.tenantKey || "").trim();
-    if (!tenantKey) {
-      tenantKey = slugify(businessName) || `tenant_${Date.now()}`;
-    }
-
-    const existingTenant = await pool.query(`SELECT 1 FROM tenants WHERE tenant_key = $1`, [tenantKey]);
-    if (existingTenant.rowCount) {
-      return res.status(200).json({ ok: true, tenantKey, existing: true });
-    }
-
-    const status = String(body.status || "active");
-    const dataRegion = String(body.dataRegion || "US");
-    const plan = String(body.plan || "Trial");
-    const primaryNumber = body.primaryNumber ? String(body.primaryNumber) : null;
-    const serviceArea = String(body.serviceArea || "").trim();
-    const address = String(body.address || "").trim();
-    const timezone = String(body.timezone || "America/Los_Angeles");
-    const businessHours = String(body.businessHours || "").trim();
-    const averageCallsPerDay = body.averageCallsPerDay ? Number(body.averageCallsPerDay) : null;
-    const emergencyServices = Boolean(body.emergencyServices);
-    const servicesOffered = String(body.servicesOffered || "").trim();
-    const primaryGoal = String(body.primaryGoal || "").trim();
-
-    await pool.query(
-      `INSERT INTO tenants (tenant_key, name, status, data_region, plan, primary_number, industry)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [tenantKey, businessName, status, dataRegion, plan, primaryNumber, industry]
-    );
-
-    // Auto-provision a local voice number via Telnyx.
-    let voiceNumber = null;
-    let voiceOrder = null;
+    const client = await pool.connect();
     try {
-      const normalizedPrimary = normalizePhoneNumber(primaryNumber);
+      await client.query("BEGIN");
+
+      const passwordHash = await bcrypt.hash(payload.password, 10);
+
+      for (let attempt = 0; attempt < maxTenantKeyAttempts; attempt += 1) {
+        tenantKey = attempt === 0 ? baseTenantKey : `${baseTenantKey}_${attempt + 1}`;
+        try {
+          await client.query(
+            `INSERT INTO tenants (tenant_key, name, status, data_region, plan, primary_number, industry)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              tenantKey,
+              payload.businessName,
+              payload.status,
+              payload.dataRegion,
+              payload.plan,
+              payload.phone || null,
+              payload.industry
+            ]
+          );
+          break;
+        } catch (insertErr) {
+          if (insertErr?.code === "23505") {
+            if (attempt === maxTenantKeyAttempts - 1) {
+              await client.query("ROLLBACK");
+              const responseBody = {
+                ok: false,
+                error: "tenant_key_conflict",
+                message: "Could not generate a unique tenant key. Please try again."
+              };
+              await storeIdempotentResult(pool, idempotencyKey, requestHash, 409, responseBody);
+              return res.status(409).json(responseBody);
+            }
+            continue;
+          }
+          throw insertErr;
+        }
+      }
+
+      const insertedUser = await client.query(
+        `INSERT INTO tenant_users (tenant_key, name, email, password_hash, role, status)
+         VALUES ($1, $2, $3, $4, 'owner', 'active')
+         RETURNING id`,
+        [tenantKey, payload.ownerName, payload.ownerEmail, passwordHash]
+      );
+      ownerUserId = insertedUser.rows[0]?.id || null;
+
+      await client.query(
+        `INSERT INTO onboarding_intake (tenant_key, owner_name, owner_email, phone, service_area, address, timezone, business_hours, average_calls_per_day, emergency_services, services_offered, primary_goal)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [
+          tenantKey,
+          payload.ownerName,
+          payload.ownerEmail,
+          payload.phone || null,
+          payload.serviceArea,
+          payload.address,
+          payload.timezone,
+          payload.businessHours,
+          payload.averageCallsPerDay,
+          payload.emergencyServices,
+          servicesOfferedText,
+          primaryGoalsText
+        ]
+      );
+
+      await client.query(
+        `INSERT INTO routing_rules (tenant_key, primary_queue, emergency_behavior, after_hours_behavior, business_hours)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          tenantKey,
+          "Dispatch Team",
+          payload.emergencyServices ? "Priority Queue" : "Standard Queue",
+          "Collect details and dispatch callback",
+          payload.businessHours || "Weekdays 8:00 AM - 6:00 PM"
+        ]
+      );
+
+      await client.query(
+        `INSERT INTO tenant_settings (tenant_key, timezone, notes)
+         VALUES ($1, $2, $3)`,
+        [tenantKey, payload.timezone, primaryGoalsText || null]
+      );
+
+      let prompt = buildPrompt({
+        businessName: payload.businessName,
+        industry: payload.industry,
+        serviceArea: payload.serviceArea,
+        businessHours: payload.businessHours,
+        emergency: payload.emergencyServices
+      });
+
+      const agentName = "Alex";
+      const greetingText = `Hi, thanks for calling ${payload.businessName}. This is ${agentName}, how can I help you?`;
+      const voiceType = "alloy";
+
+      await client.query(
+        `INSERT INTO agents (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override, greeting_text, voice_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [tenantKey, agentName, payload.businessName, prompt, prompt, greetingText, voiceType]
+      );
+
+      await client.query(
+        `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override, greeting_text, voice_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [tenantKey, agentName, payload.businessName, prompt, prompt, greetingText, voiceType]
+      );
+
+      for (const faq of BASE_FAQS) {
+        await client.query(
+          `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_default)
+           VALUES ($1, $2, $3, $4, false, true)`,
+          [tenantKey, faq.question, faq.answer, faq.category]
+        );
+      }
+
+      let industryFaqs = [];
+      const industryFaqRows = await client.query(
+        `SELECT question, answer, category FROM industry_faqs WHERE industry_key = $1 ORDER BY id ASC`,
+        [industry]
+      );
+      if (industryFaqRows.rowCount) {
+        industryFaqs = industryFaqRows.rows;
+      } else {
+        industryFaqs = INDUSTRY_FAQS[industry] || [];
+      }
+      for (const faq of industryFaqs) {
+        await client.query(
+          `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_industry_default, industry)
+           VALUES ($1, $2, $3, $4, true, true, $5)`,
+          [tenantKey, faq.question, faq.answer, faq.category, industry]
+        );
+      }
+
+      await client.query(
+        `INSERT INTO provisioning_jobs (tenant_key, stage, status, updated_at)
+         VALUES ($1, 'workflow_seed', 'running', NOW()),
+                ($1, 'number_setup', 'pending', NOW())`,
+        [tenantKey]
+      );
+
+      await client.query(
+        `INSERT INTO audit_log (tenant_key, actor, action, details)
+         VALUES ($1, 'system', 'onboarding.completed', $2)`,
+        [tenantKey, `industry=${industry} owner=${payload.ownerEmail}`]
+      );
+
+      await client.query("COMMIT");
+    } catch (txErr) {
+      await client.query("ROLLBACK");
+      if (txErr?.code === "23505" && String(txErr?.constraint || "").includes("tenant_users_email_unique")) {
+        const responseBody = {
+          ok: false,
+          error: "email_exists",
+          message: "An account with this email already exists.",
+          fieldErrors: { ownerEmail: "Already in use." }
+        };
+        await storeIdempotentResult(pool, idempotencyKey, requestHash, 409, responseBody);
+        return res.status(409).json(responseBody);
+      }
+      throw txErr;
+    } finally {
+      client.release();
+    }
+
+    // Auto-provision a local voice number via Telnyx (non-blocking for core onboarding).
+    let voiceStatus = "pending";
+    let voiceNumber = null;
+    try {
+      const normalizedPrimary = normalizePhoneNumber(payload.phone || null);
       const digits = String(normalizedPrimary || "").replace(/[^\d]/g, "");
       const areaCode = digits.length >= 10 ? digits.slice(-10, -7) : null;
       voiceNumber = await findAvailableVoiceNumber({ areaCode });
@@ -274,7 +549,7 @@ export default async function handler(req, res) {
       }
       if (voiceNumber) {
         const connectionId = process.env.TELNYX_VOICE_CONNECTION_ID || "";
-        voiceOrder = await orderVoiceNumber({ phoneNumber: voiceNumber, connectionId });
+        const voiceOrder = await orderVoiceNumber({ phoneNumber: voiceNumber, connectionId });
         await pool.query(
           `UPDATE tenants
            SET telnyx_voice_number = $2,
@@ -284,6 +559,7 @@ export default async function handler(req, res) {
            WHERE tenant_key = $1`,
           [tenantKey, voiceNumber, voiceOrder?.data?.id || null]
         );
+        voiceStatus = "active";
       } else {
         await pool.query(
           `UPDATE tenants
@@ -292,6 +568,7 @@ export default async function handler(req, res) {
            WHERE tenant_key = $1`,
           [tenantKey]
         );
+        voiceStatus = "unavailable";
       }
     } catch (err) {
       await pool.query(
@@ -301,104 +578,26 @@ export default async function handler(req, res) {
          WHERE tenant_key = $1`,
         [tenantKey]
       );
+      voiceStatus = "failed";
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
-    await pool.query(
-      `INSERT INTO tenant_users (tenant_key, name, email, password_hash, role, status)
-       VALUES ($1, $2, $3, $4, 'owner', 'active')`,
-      [tenantKey, ownerName, ownerEmail, passwordHash]
-    );
-
-    await pool.query(
-      `INSERT INTO onboarding_intake (tenant_key, owner_name, owner_email, phone, service_area, address, timezone, business_hours, average_calls_per_day, emergency_services, services_offered, primary_goal)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [tenantKey, ownerName, ownerEmail, body.phone || null, serviceArea, address, timezone, businessHours, averageCallsPerDay, emergencyServices, servicesOffered, primaryGoal]
-    );
-
-    await pool.query(
-      `INSERT INTO routing_rules (tenant_key, primary_queue, emergency_behavior, after_hours_behavior, business_hours)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        tenantKey,
-        "Dispatch Team",
-        emergencyServices ? "Priority Queue" : "Standard Queue",
-        "Collect details and dispatch callback",
-        businessHours || "Weekdays 8:00 AM - 6:00 PM"
-      ]
-    );
-
-    await pool.query(
-      `INSERT INTO tenant_settings (tenant_key, timezone, notes)
-       VALUES ($1, $2, $3)`,
-      [tenantKey, timezone, primaryGoal || null]
-    );
-
-    let prompt = buildPrompt({
-      businessName,
-      industry,
-      serviceArea,
-      businessHours,
-      emergency: emergencyServices
-    });
-
-    const agentName = "Alex";
-    const greetingText = `Hi, thanks for calling ${businessName}. This is ${agentName}, how can I help you?`;
-    const voiceType = "alloy";
-
-    await pool.query(
-      `INSERT INTO agents (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override, greeting_text, voice_type)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [tenantKey, agentName, businessName, prompt, prompt, greetingText, voiceType]
-    );
-
-    await pool.query(
-      `INSERT INTO agent_versions (tenant_key, agent_name, company_name, system_prompt, tenant_prompt_override, greeting_text, voice_type)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [tenantKey, agentName, businessName, prompt, prompt, greetingText, voiceType]
-    );
-
-    for (const faq of BASE_FAQS) {
-      await pool.query(
-        `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_default)
-         VALUES ($1, $2, $3, $4, false, true)`,
-        [tenantKey, faq.question, faq.answer, faq.category]
-      );
+    if (ownerUserId) {
+      const sessionId = await createSession({ userId: ownerUserId, tenantKey, role: "tenant" });
+      if (sessionId) setSessionCookie(res, sessionId);
     }
 
-    let industryFaqs = [];
-    const industryFaqRows = await pool.query(
-      `SELECT question, answer, category FROM industry_faqs WHERE industry_key = $1 ORDER BY id ASC`,
-      [industry]
-    );
-    if (industryFaqRows.rowCount) {
-      industryFaqs = industryFaqRows.rows;
-    } else {
-      industryFaqs = INDUSTRY_FAQS[industry] || [];
-    }
-    for (const faq of industryFaqs) {
-      await pool.query(
-        `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_industry_default, industry)
-         VALUES ($1, $2, $3, $4, true, true, $5)`,
-        [tenantKey, faq.question, faq.answer, faq.category, industry]
-      );
-    }
-
-    await pool.query(
-      `INSERT INTO provisioning_jobs (tenant_key, stage, status, updated_at)
-       VALUES ($1, 'workflow_seed', 'running', NOW()),
-              ($1, 'number_setup', 'pending', NOW())`,
-      [tenantKey]
-    );
-
-    await pool.query(
-      `INSERT INTO audit_log (tenant_key, actor, action, details)
-       VALUES ($1, 'system', 'onboarding.completed', $2)`,
-      [tenantKey, `industry=${industry} owner=${ownerEmail}`]
-    );
-
-    return res.status(200).json({ ok: true, tenantKey });
+    const successBody = {
+      ok: true,
+      tenantKey,
+      redirectTo: "/client/overview",
+      provisioning: {
+        voiceStatus,
+        voiceNumber
+      }
+    };
+    await storeIdempotentResult(pool, idempotencyKey, requestHash, 200, successBody);
+    return res.status(200).json(successBody);
   } catch (err) {
-    return res.status(500).json({ error: "onboarding_error", message: err?.message || "unknown" });
+    return jsonError(res, 500, "onboarding_error", err?.message || "unknown");
   }
 }

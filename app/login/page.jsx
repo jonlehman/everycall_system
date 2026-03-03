@@ -61,9 +61,6 @@ export default function LoginPage() {
           <div style={{ marginTop: 8 }}>
             <a className="link" href="/forgot-password">Forgot password?</a>
           </div>
-          <div style={{ marginTop: 8 }}>
-            <a className="link" href="/admin/login">Admin sign in</a>
-          </div>
         </section>
       </div>
     </div>

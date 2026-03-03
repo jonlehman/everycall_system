@@ -45,6 +45,9 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS telnyx_voice_number_id TEXT;`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS telnyx_voice_order_id TEXT;`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS telnyx_voice_status TEXT;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS forwarding_setup_status TEXT NOT NULL DEFAULT 'not_started';`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS forwarding_acknowledged_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS forwarding_configured_at TIMESTAMPTZ;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tenant_users (
@@ -254,6 +257,18 @@ export async function ensureTables(pool) {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS auth_tokens_token_idx ON auth_tokens (token);`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS onboarding_idempotency (
+      id BIGSERIAL PRIMARY KEY,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      request_hash TEXT NOT NULL,
+      response_status INTEGER NOT NULL,
+      response_body JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS onboarding_idempotency_created_idx ON onboarding_idempotency (created_at DESC);`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS system_config (

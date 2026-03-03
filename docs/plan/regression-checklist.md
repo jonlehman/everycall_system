@@ -19,8 +19,11 @@ Run this after major changes or before release. Mark each item pass/fail.
 
 ## Onboarding
 - Intake page submit creates tenant + user
+- Intake submit creates authenticated owner session and lands in client workspace
 - Tenant receives industry defaults (prompt + FAQs)
 - Telnyx voice number auto‑provisioning succeeds
+- Post-intake activation screen shows EveryCall number and forwarding instruction
+- Forwarding acknowledgment/configured status persists on tenant
 
 ## SMS Alerts
 - Shared SMS number set in system config

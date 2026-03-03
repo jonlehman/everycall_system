@@ -6,6 +6,24 @@ export async function middleware(req: Request) {
   const url = new URL(req.url);
   const pathname = url.pathname;
   const publicProtectedPaths = ['/admin/login'];
+  const meResp = await fetch(new URL('/api/v1/auth/me', url.origin), {
+    headers: { cookie: req.headers.get('cookie') || '' }
+  });
+  const me = await meResp.json().catch(() => ({ authenticated: false }));
+
+  if (pathname === '/') {
+    if (!me?.authenticated) {
+      return NextResponse.redirect(new URL('/login', url.origin));
+    }
+    if (me.role === 'admin') {
+      return NextResponse.redirect(new URL('/admin/overview', url.origin));
+    }
+    const clientUrl = new URL('/client/overview', url.origin);
+    if (me.tenantKey) {
+      clientUrl.searchParams.set('tenantKey', String(me.tenantKey));
+    }
+    return NextResponse.redirect(clientUrl);
+  }
 
   if (!protectedPaths.some((path) => pathname.startsWith(path))) {
     return NextResponse.next();
@@ -13,11 +31,6 @@ export async function middleware(req: Request) {
   if (publicProtectedPaths.includes(pathname)) {
     return NextResponse.next();
   }
-
-  const meResp = await fetch(new URL('/api/v1/auth/me', url.origin), {
-    headers: { cookie: req.headers.get('cookie') || '' }
-  });
-  const me = await meResp.json().catch(() => ({ authenticated: false }));
 
   if (!me?.authenticated) {
     const loginPath = pathname.startsWith('/admin') ? '/admin/login' : '/login';
@@ -38,5 +51,5 @@ export async function middleware(req: Request) {
 }
 
 export const config = {
-  matcher: ['/client/:path*', '/admin/:path*', '/dashboard', '/config']
+  matcher: ['/', '/client/:path*', '/admin/:path*', '/dashboard', '/config']
 };

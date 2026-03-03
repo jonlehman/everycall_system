@@ -56,9 +56,8 @@ export default function ForgotPasswordPage() {
           </button>
           <span className="muted">{status}</span>
         </div>
-        <div style={{ marginTop: 8, display: 'flex', gap: 12 }}>
+        <div style={{ marginTop: 8 }}>
           <a className="link" href="/login">Back to client sign in</a>
-          <a className="link" href="/admin/login">Admin sign in</a>
         </div>
       </section>
     </div>

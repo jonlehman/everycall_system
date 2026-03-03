@@ -26,6 +26,7 @@ Use the **Status** column and keep **Dependencies** accurate.
 8. Observability & Ops
 9. Testing & QA
 10. Release & Rollout
+11. Intake V2 (Structured Onboarding)
 
 ---
 
@@ -109,3 +110,25 @@ Use the **Status** column and keep **Dependencies** accurate.
 |---|---|---|---|---|---|
 | R1 | Staging rollout plan | Dev A | done | V6, S4 | docs/plan/staging-rollout.md |
 | R2 | Production rollout checklist | Dev A | done | R1 | docs/plan/production-rollout.md |
+
+## 11) Intake V2 (Structured Onboarding)
+| ID | Task | Owner | Status | Dependencies | Notes |
+|---|---|---|---|---|---|
+| I1 | Intake v2 technical spec approved | Dev A | done | — | docs/SPECS/intake-onboarding-v2.md |
+| I2 | Intake v2 delivery plan approved | Dev A | done | I1 | docs/plan/intake-v2-delivery.md |
+| I3 | Intake v2 test matrix approved | Smoke Agent | done | I1 | docs/TESTS-intake-v2.md |
+| I4 | Migration ADR proposed (schema + rollout strategy) | Dev C | done | I1 | docs/adr/0002-intake-v2-migration.md |
+| I5 | DB schema: forwarding status columns added | Dev C | done | I4 | Added in pages/api/_lib/db.js |
+| I6 | DB schema: idempotency storage added | Dev C | done | I4 | Added onboarding_idempotency table + index |
+| I7 | API: onboarding request validation hardened | Dev A | done | I1, I5 | Required arrays + field errors implemented |
+| I8 | API: onboarding transaction boundary implemented | Dev A | done | I5 | Rollback-safe writes implemented |
+| I9 | API: owner session created on onboarding success | Dev A | done | I8 | Session cookie set post-commit |
+| I10 | API: tenant key collision strategy implemented | Dev A | done | I8 | suffix strategy `_2`, `_3` implemented |
+| I11 | API: canonical response shape + error codes | Dev A | done | I7, I8, I9 | Includes `redirectTo` + provisioning block |
+| I12 | UI: intake payload aligned to v2 contract | Dev B | done | I1 | sends `primaryGoals`, validates required arrays |
+| I13 | UI: success activation panel + forwarding guidance | Dev B | done | I9, I11 | Shows EveryCall number and routing instruction |
+| I14 | UI/API: forwarding acknowledgment persistence | Dev B | done | I5, I13 | `/api/v1/tenants/forwarding-status` implemented |
+| I15 | Tests: API integration suite for intake v2 | Smoke Agent | blocked | I11 | Live app behavior indicates old deploy; rerun post-deploy |
+| I16 | Tests: E2E onboarding -> authenticated redirect | Smoke Agent | blocked | I13, I14 | Live app returned no onboarding session cookie; rerun post-deploy |
+| I17 | Regression checklist onboarding section updated | Dev A | done | I15, I16 | docs/plan/regression-checklist.md updated |
+| I18 | Staging rollout + 24h monitoring for intake v2 | Dev A | not started | I17 | track completion/error rates |
