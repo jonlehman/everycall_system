@@ -238,48 +238,69 @@ export default function CallsPage() {
       status={status}
       primaryAction={{ label: 'Refresh Data', brand: true, onClick: loadCalls }}
     >
-      <div className="toolbar" style={{ marginTop: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-        <label>Search Calls</label>
-        <input
-          ref={searchInputRef}
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Caller number or call SID (/)"
-        />
-        <label>Call Status</label>
-        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-          <option value="all">All</option>
-          <option value="completed">Completed</option>
-          <option value="missed">Missed</option>
-          <option value="in_progress">In Progress</option>
-          <option value="error">Error</option>
-        </select>
-        <label>Urgency Level</label>
-        <select value={urgencyFilter} onChange={(event) => setUrgencyFilter(event.target.value)}>
-          <option value="all">All</option>
-          <option value="critical">Critical</option>
-          <option value="high">High</option>
-          <option value="normal">Normal</option>
-          <option value="low">Low</option>
-        </select>
-        <label>Date From</label>
-        <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-        <label>Date To</label>
-        <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-        <button
-          className="btn"
-          type="button"
-          onClick={() => {
-            setStatusFilter('all');
-            setUrgencyFilter('all');
-            setDateFrom('');
-            setDateTo('');
-            setSearch('');
+      <div className="card" style={{ marginTop: 12, marginBottom: 12 }}>
+        <div
+          className="grid"
+          style={{
+            gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))',
+            gap: 10,
+            alignItems: 'end'
           }}
         >
-          Reset Filters
-        </button>
-        <span className="muted">{loading ? 'Loading...' : `${filteredRows.length} calls`}</span>
+          <div style={{ maxWidth: '1.6in' }}>
+            <label>Search Calls</label>
+            <input
+              ref={searchInputRef}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Caller or SID (/)"
+            />
+          </div>
+          <div style={{ maxWidth: '1.6in' }}>
+            <label>Call Status</label>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">All</option>
+              <option value="completed">Completed</option>
+              <option value="missed">Missed</option>
+              <option value="in_progress">In Progress</option>
+              <option value="error">Error</option>
+            </select>
+          </div>
+          <div style={{ maxWidth: '1.6in' }}>
+            <label>Urgency Level</label>
+            <select value={urgencyFilter} onChange={(event) => setUrgencyFilter(event.target.value)}>
+              <option value="all">All</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="normal">Normal</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div style={{ maxWidth: '1.6in' }}>
+            <label>Date From</label>
+            <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+          </div>
+          <div style={{ maxWidth: '1.6in' }}>
+            <label>Date To</label>
+            <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+          </div>
+          <div className="toolbar" style={{ margin: 0, alignItems: 'center' }}>
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                setStatusFilter('all');
+                setUrgencyFilter('all');
+                setDateFrom('');
+                setDateTo('');
+                setSearch('');
+              }}
+            >
+              Reset Filters
+            </button>
+            <span className="muted">{loading ? 'Loading...' : `${filteredRows.length} calls`}</span>
+          </div>
+        </div>
       </div>
       <div className="split" style={isMobile ? { gridTemplateColumns: '1fr', gap: 10 } : undefined}>
         <div className="card">
