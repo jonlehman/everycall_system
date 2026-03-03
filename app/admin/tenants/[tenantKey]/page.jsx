@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { DataGrid } from '@mui/x-data-grid';
+import { Button } from '../../../../components/ui/button';
 
 export default function TenantManagePage() {
   const params = useParams();
@@ -213,22 +214,22 @@ export default function TenantManagePage() {
   ];
 
   return (
-    <section className="screen active">
-      <div className="topbar">
+    <section className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="eyebrow">Manage Tenant</div>
-          <h1>{tenant?.name || tenantKey}</h1>
+          <div className="text-xs uppercase tracking-wide text-slate-500">Manage Tenant</div>
+          <h1 className="m-0 text-2xl font-semibold tracking-tight">{tenant?.name || tenantKey}</h1>
         </div>
-        <div className="top-actions">
-          <button className="btn" onClick={toggleTenantStatus}>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={toggleTenantStatus}>
             {editing.status === 'active' ? 'Pause Tenant' : 'Resume Tenant'}
-          </button>
-          <button className="btn brand" onClick={saveTenantDetails}>Save Tenant</button>
+          </Button>
+          <Button onClick={saveTenantDetails}>Save Tenant</Button>
         </div>
       </div>
 
-      <div className="grid cols-2">
-        <div className="card">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <label>Tenant Details</label>
           <div className="kv">
             <div>Status</div>
@@ -267,23 +268,23 @@ export default function TenantManagePage() {
               </select>
             </div>
           </div>
-          <div className="toolbar" style={{ marginTop: 10 }}>
-            <button className="btn brand" onClick={saveTenantDetails}>Save Tenant Details</button>
-            <span className="muted">{status}</span>
+          <div className="mt-3 flex items-center gap-2">
+            <Button onClick={saveTenantDetails}>Save Tenant Details</Button>
+            <span className="text-sm text-slate-500">{status}</span>
           </div>
         </div>
-        <div className="card">
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <label>Agent Prompt &amp; Behavior</label>
-          <p className="muted">This is the tenant override prompt. Final prompt is composed at runtime.</p>
+          <p className="text-sm text-slate-500">This is the tenant override prompt. Final prompt is composed at runtime.</p>
           <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} style={{ minHeight: 180 }}></textarea>
-          <div className="toolbar" style={{ marginTop: 10 }}>
-            <button className="btn brand" onClick={savePrompt}>Save Prompt</button>
-            <button className="btn" onClick={importIndustryPrompt}>Import Industry Prompt</button>
-            <button className="btn" onClick={importIndustryFaqs}>Import Industry FAQs</button>
-            <span className="muted">{status}</span>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button onClick={savePrompt}>Save Prompt</Button>
+            <Button variant="outline" onClick={importIndustryPrompt}>Import Industry Prompt</Button>
+            <Button variant="outline" onClick={importIndustryFaqs}>Import Industry FAQs</Button>
+            <span className="text-sm text-slate-500">{status}</span>
           </div>
         </div>
-        <div className="card" style={{ marginTop: 12 }}>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <label>Agent Greeting</label>
           <textarea
             value={greetingText}
@@ -300,12 +301,12 @@ export default function TenantManagePage() {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: 12 }}>
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <label>Final Prompt Preview</label>
         <textarea value={composedPrompt} readOnly style={{ minHeight: 220 }}></textarea>
       </div>
 
-      <div className="card" style={{ marginTop: 12 }}>
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <label>Client Users</label>
         <DataGrid
           rows={rows}
@@ -324,7 +325,7 @@ export default function TenantManagePage() {
         />
       </div>
 
-      <div className="card" style={{ marginTop: 12 }}>
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <label>Current FAQs</label>
         <DataGrid
           rows={faqs.map((faq) => ({
