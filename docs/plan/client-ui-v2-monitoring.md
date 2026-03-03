@@ -4,6 +4,7 @@
 - In progress
 - Start date: 2026-03-03
 - Owner: Dev A
+- Automated daily run: `.github/workflows/client-ui-v2-monitoring.yml` (16:15 UTC + manual dispatch)
 
 ## Goal
 Validate Client UI v2 stability and usability after production rollout.
