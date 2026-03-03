@@ -2,17 +2,19 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { buttonVariants } from '../../../components/ui/button';
+import { cn } from '../../../lib/utils';
 import ClientPage from '../_components/ClientPage';
 
 function TaskCard({ title, description, href, done, cta }) {
   return (
-    <div className="card">
-      <div className="topbar" style={{ marginBottom: 8 }}>
-        <h2 style={{ margin: 0 }}>{title}</h2>
+    <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="m-0 text-lg font-semibold">{title}</h2>
         <span className={`badge ${done ? 'ok' : 'warn'}`}>{done ? 'Done' : 'Needs Review'}</span>
       </div>
-      <p className="muted" style={{ marginTop: 0 }}>{description}</p>
-      <Link className="btn brand" href={href}>{cta}</Link>
+      <p className="mt-0 text-sm text-slate-500">{description}</p>
+      <Link className={cn(buttonVariants({ variant: 'default' }))} href={href}>{cta}</Link>
     </div>
   );
 }
@@ -87,17 +89,17 @@ export default function SetupOverviewPage() {
       status={status}
       primaryAction={{ label: 'Reload Checklist', brand: true, onClick: loadChecklist, disabled: loading }}
     >
-      <div className="card">
-        <div className="topbar" style={{ marginBottom: 0 }}>
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="stat">Setup Progress</div>
-            <div className="value" style={{ fontSize: 24 }}>{completedCount}/4 complete</div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">Setup Progress</div>
+            <div className="text-2xl font-bold">{completedCount}/4 complete</div>
           </div>
-          <div className="muted">Complete FAQ, Team, Routing, and Settings to finish baseline setup.</div>
+          <div className="text-sm text-slate-500">Complete FAQ, Team, Routing, and Settings to finish baseline setup.</div>
         </div>
       </div>
 
-      <div className="grid cols-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <TaskCard
           title="Questions and Answers"
           description={`Current FAQ items: ${summary.faqCount}. Add or refine answers used by the receptionist.`}

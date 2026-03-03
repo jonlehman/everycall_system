@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Button } from '../../../components/ui/button';
 import ClientPage from '../_components/ClientPage';
 
 const TIMEZONES = [
@@ -71,20 +72,20 @@ export default function SettingsPage() {
       status={status}
       primaryAction={{ label: saving ? 'Saving...' : 'Save Settings', brand: true, onClick: saveSettings, disabled: saving || loading }}
     >
-      <div className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
-        <div className="stack">
-          <div className="card">
-            <h2 style={{ marginTop: 0 }}>Account Snapshot</h2>
-            <div className="kv">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[7fr_3fr]">
+        <div className="grid gap-3">
+          <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+            <h2 className="mt-0 text-lg font-semibold">Account Snapshot</h2>
+            <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-[180px_1fr]">
               <div>Tenant</div><div>{tenant.name || '-'}</div>
               <div>Plan</div><div>{tenant.plan || '-'}</div>
               <div>Data Region</div><div>{tenant.data_region || '-'}</div>
             </div>
           </div>
 
-          <div className="card">
-            <h2 style={{ marginTop: 0 }}>Operational Defaults</h2>
-            <div className="stack">
+          <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+            <h2 className="mt-0 text-lg font-semibold">Operational Defaults</h2>
+            <div className="grid gap-3">
               <div>
                 <label>Timezone</label>
                 <select value={timezone} onChange={(event) => setTimezone(event.target.value)}>
@@ -102,18 +103,18 @@ export default function SettingsPage() {
                 />
               </div>
             </div>
-            <div className="toolbar" style={{ marginTop: 10 }}>
-              <button className="btn brand" type="button" onClick={saveSettings} disabled={saving || loading}>
+            <div className="mt-3 flex gap-2">
+              <Button type="button" onClick={saveSettings} disabled={saving || loading}>
                 {saving ? 'Saving...' : 'Save Settings'}
-              </button>
-              <button className="btn" type="button" onClick={loadSettings} disabled={saving}>Reload</button>
+              </Button>
+              <Button variant="outline" type="button" onClick={loadSettings} disabled={saving}>Reload</Button>
             </div>
           </div>
         </div>
 
-        <div className="card">
-          <h2>Help</h2>
-          <ul className="muted" style={{ paddingLeft: 18, marginTop: 8 }}>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Help</h2>
+          <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
             <li>Use timezone and notes to keep routing and handoff behavior consistent.</li>
             <li>If region or plan needs to change, contact support.</li>
             <li>Save changes before leaving this page.</li>
