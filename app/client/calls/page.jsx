@@ -276,9 +276,9 @@ export default function CallsPage() {
     >
       <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-[1.2fr_.8fr]'}`}>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <h2 className="mb-2 mt-0 text-lg font-semibold">Calls</h2>
           <div className={`mb-3 flex ${isMobile ? 'flex-col' : 'flex-row items-start justify-between'} gap-3`}>
-            <div className={`${isMobile ? 'w-full' : 'ml-auto'}`}>
+            <h2 className="mb-2 mt-0 text-lg font-semibold">Calls</h2>
+            <div className={`${isMobile ? 'w-full' : ''}`}>
               <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div className="grid gap-2">
                   <div>
@@ -348,9 +348,6 @@ export default function CallsPage() {
                     </Button>
                   </div>
                 </div>
-              </div>
-              <div className="mt-2 flex items-center gap-2">
-                <span className="text-sm text-slate-500">{loading ? 'Loading...' : `${filteredRows.length} calls`}</span>
               </div>
             </div>
           </div>
