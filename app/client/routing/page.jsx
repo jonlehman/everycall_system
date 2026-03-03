@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Button } from '../../../components/ui/button';
 import ClientPage from '../_components/ClientPage';
 
 export default function RoutingPage() {
@@ -114,32 +115,32 @@ export default function RoutingPage() {
       status={status}
       primaryAction={{ label: saving ? 'Saving...' : 'Save Routing', brand: true, onClick: saveRouting, disabled: saving }}
     >
-      <div className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[7fr_3fr]">
         <div>
-          <div className="card">
-            <h2 style={{ marginTop: 0 }}>Call Flow Defaults</h2>
+          <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+            <h2 className="mt-0 text-lg font-semibold">Call Flow Defaults</h2>
             <label>Who Gets Calls First</label>
             <select id="routingPrimary" value={primaryQueue} onChange={(e) => setPrimaryQueue(e.target.value)}>
               <option>Dispatch Team</option>
               <option>Owner Only</option>
             </select>
-            <label style={{ marginTop: 10 }}>How Emergency Calls Are Handled</label>
+            <label className="mt-2.5">How Emergency Calls Are Handled</label>
             <select id="routingEmergency" value={emergencyBehavior} onChange={(e) => setEmergencyBehavior(e.target.value)}>
               <option>Immediate Transfer</option>
               <option>Priority Queue</option>
             </select>
           </div>
-          <div className="card" style={{ marginTop: 12 }}>
+          <div className="mt-3 rounded-xl border border-border bg-card p-3 shadow-sm">
             <label>Business Hours</label>
             <textarea id="routingHours" value={businessHours} onChange={(e) => setBusinessHours(e.target.value)}></textarea>
-            <label style={{ marginTop: 10 }}>What Happens After Hours</label>
+            <label className="mt-2.5">What Happens After Hours</label>
             <select id="routingAfterHours" value={afterHours} onChange={(e) => setAfterHours(e.target.value)}>
               <option>Collect details and dispatch callback</option>
               <option>Forward to on-call</option>
             </select>
           </div>
-          <div className="card" style={{ marginTop: 12 }}>
-            <h2 style={{ marginTop: 0 }}>Voice and Greeting</h2>
+          <div className="mt-3 rounded-xl border border-border bg-card p-3 shadow-sm">
+            <h2 className="mt-0 text-lg font-semibold">Voice and Greeting</h2>
             <label>Agent Greeting</label>
             <textarea
               value={greetingText}
@@ -147,22 +148,22 @@ export default function RoutingPage() {
               placeholder="Hi, thanks for calling..."
               style={{ minHeight: 110 }}
             />
-            <label style={{ marginTop: 10 }}>Voice Type</label>
+            <label className="mt-2.5">Voice Type</label>
             <select value={voiceType} onChange={(e) => setVoiceType(e.target.value)}>
               {voiceOptions.map((voice) => (
                 <option key={voice} value={voice}>{voice}</option>
               ))}
             </select>
-            <div className="toolbar" style={{ marginTop: 10 }}>
-              <button className="btn" type="button" onClick={playSample}>Play Voice Sample</button>
-              <span className="muted">{sampleStatus}</span>
+            <div className="mt-3 flex items-center gap-2">
+              <Button variant="outline" type="button" onClick={playSample}>Play Voice Sample</Button>
+              <span className="text-sm text-slate-500">{sampleStatus}</span>
             </div>
             <audio ref={sampleAudioRef} preload="none" />
           </div>
         </div>
-        <div className="card">
-          <h2>Help</h2>
-          <ul className="muted" style={{ paddingLeft: 18, marginTop: 8 }}>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Help</h2>
+          <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
             <li>Choose the primary team that receives callback requests.</li>
             <li>Set how emergency calls are escalated.</li>
             <li>Define after-hours behavior so callers get a clear next step.</li>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
+import { Button } from '../../../components/ui/button';
 import ClientPage from '../_components/ClientPage';
 
 export default function FaqPage() {
@@ -92,13 +93,13 @@ export default function FaqPage() {
       headerAlign: 'right',
       minWidth: 120,
       renderCell: (params) => (
-        <button
-          className="btn delete-faq"
+        <Button
+          variant="outline"
           disabled={!params.row.deletable || deletingId === params.row.id}
           onClick={() => deleteFaq(params.row.id)}
         >
           {deletingId === params.row.id ? 'Deleting...' : 'Delete'}
-        </button>
+        </Button>
       )
     }
   ];
@@ -110,10 +111,10 @@ export default function FaqPage() {
       status={status}
       primaryAction={{ label: saving ? 'Saving...' : 'Save FAQ', brand: true, onClick: saveFaq, disabled: saving }}
     >
-      <div className="grid help-grid" style={{ gridTemplateColumns: '7fr 3fr' }}>
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[7fr_3fr]">
         <div>
-          <div className="card">
-            <h2 style={{ marginTop: 0 }}>Current FAQs</h2>
+          <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+            <h2 className="mt-0 text-lg font-semibold">Current FAQs</h2>
             <div style={{ height: rows.length ? 'auto' : 300 }}>
               <DataGrid
                 rows={rows}
@@ -133,13 +134,13 @@ export default function FaqPage() {
               />
             </div>
           </div>
-          <div className="card" id="new-faq" style={{ marginTop: 12 }}>
-            <h2 style={{ marginTop: 0 }}>New FAQ</h2>
-            <div className="grid cols-2">
+          <div className="mt-3 rounded-xl border border-border bg-card p-3 shadow-sm" id="new-faq">
+            <h2 className="mt-0 text-lg font-semibold">New FAQ</h2>
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               <div>
                 <label>Question</label>
                 <input value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="What areas do you serve?" />
-                <label style={{ marginTop: 10 }}>Category</label>
+                <label className="mt-2.5">Category</label>
                 <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Service Area" />
               </div>
               <div>
@@ -147,15 +148,15 @@ export default function FaqPage() {
                 <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} style={{ minHeight: 120 }}></textarea>
               </div>
             </div>
-            <div className="toolbar" style={{ marginTop: 10 }}>
-              <button className="btn brand" onClick={saveFaq} disabled={saving}>{saving ? 'Saving...' : 'Save FAQ'}</button>
-              <button className="btn" onClick={() => { setQuestion(''); setCategory(''); }}>Reset</button>
+            <div className="mt-3 flex gap-2">
+              <Button onClick={saveFaq} disabled={saving}>{saving ? 'Saving...' : 'Save FAQ'}</Button>
+              <Button variant="outline" onClick={() => { setQuestion(''); setCategory(''); }}>Reset</Button>
             </div>
           </div>
         </div>
-        <div className="card">
-          <h2>Help</h2>
-          <ul className="muted" style={{ paddingLeft: 18, marginTop: 8 }}>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Help</h2>
+          <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
             <li>These answers are used by the receptionist during live calls.</li>
             <li>Keep responses short, clear, and easy to say out loud.</li>
             <li>Update items when service area, hours, or policies change.</li>
