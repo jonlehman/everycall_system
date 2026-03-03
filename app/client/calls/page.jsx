@@ -1,17 +1,34 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
+import { useMediaQuery } from '@mui/material';
 import ClientPage from '../_components/ClientPage';
 
-const emptyDispatchCounts = { new: 0, assigned: 0, closed: 0 };
-const emptyDispatchDraft = { callerName: '', summary: '', dueAt: '', assignedTo: '', status: 'new', callSid: '' };
+function formatLabel(value) {
+  return String(value || '').replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function statusTone(value) {
+  if (value === 'error') return 'bad';
+  if (value === 'missed') return 'warn';
+  return 'ok';
+}
+
+function urgencyTone(value) {
+  if (value === 'critical') return 'bad';
+  if (value === 'high') return 'warn';
+  return 'ok';
+}
 
 export default function CallsPage() {
+  const isMobile = useMediaQuery('(max-width: 980px)');
   const [calls, setCalls] = useState([]);
+  const [selectedCallSid, setSelectedCallSid] = useState('');
   const [detailMeta, setDetailMeta] = useState(null);
   const [detailTranscript, setDetailTranscript] = useState('');
-  const [detailStatus, setDetailStatus] = useState('Select a call to inspect transcript, extracted fields, and routing result.');
+  const [detailStatus, setDetailStatus] = useState('Select a call to review details and edit status, urgency, summary, and notes.');
+  const [saveStatus, setSaveStatus] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [urgencyFilter, setUrgencyFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -19,13 +36,14 @@ export default function CallsPage() {
   const [loadError, setLoadError] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-
-  const [dispatchCounts, setDispatchCounts] = useState(emptyDispatchCounts);
-  const [dispatchItems, setDispatchItems] = useState([]);
-  const [dispatchSelected, setDispatchSelected] = useState(null);
-  const [dispatchStatus, setDispatchStatus] = useState('');
-  const [dispatchUsers, setDispatchUsers] = useState([]);
-  const [newDispatch, setNewDispatch] = useState(emptyDispatchDraft);
+  const [detailDraft, setDetailDraft] = useState({
+    status: 'completed',
+    urgency: 'normal',
+    summary: '',
+    notes: ''
+  });
+  const [lastSavedAt, setLastSavedAt] = useState('');
+  const searchInputRef = useRef(null);
 
   const loadCalls = () => {
     setLoading(true);
@@ -51,37 +69,14 @@ export default function CallsPage() {
     return () => { mounted = false; };
   };
 
-  const loadDispatch = () => {
-    let mounted = true;
-    fetch(`/api/v1/dispatch`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => {
-        if (!mounted || !data) return;
-        setDispatchCounts(data.counts || emptyDispatchCounts);
-        setDispatchItems(data.items || []);
-      })
-      .catch(() => {});
-    return () => { mounted = false; };
-  };
-
-  const loadAll = () => {
+  useEffect(() => {
     loadCalls();
-    loadDispatch();
-  };
-
-  useEffect(() => {
-    loadAll();
-  }, []);
-
-  useEffect(() => {
-    fetch('/api/v1/tenant/users')
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => setDispatchUsers(data?.users || []))
-      .catch(() => {});
   }, []);
 
   const loadDetail = async (callSid) => {
     if (!callSid) return;
+    setSelectedCallSid(callSid);
+    setSaveStatus('');
     setDetailStatus('Loading call details...');
     setDetailMeta(null);
     setDetailTranscript('');
@@ -93,7 +88,14 @@ export default function CallsPage() {
 
     if (metaResp.ok) {
       const data = await metaResp.json();
-      setDetailMeta(data.call || null);
+      const call = data.call || null;
+      setDetailMeta(call);
+      setDetailDraft({
+        status: call?.status || 'completed',
+        urgency: call?.urgency || 'normal',
+        summary: call?.summary || '',
+        notes: call?.state_json?.client_notes || ''
+      });
     }
 
     if (transcriptResp.ok) {
@@ -104,80 +106,60 @@ export default function CallsPage() {
     setDetailStatus('Ready.');
   };
 
-  useEffect(() => {
-    if (!detailMeta || dispatchSelected) return;
-    const extracted = detailMeta.extracted_json || {};
-    const callerName = extracted.caller_name || extracted.caller || detailMeta.from_number || '';
-    const summary = detailMeta.summary || extracted.issue_summary || extracted.issue || '';
-    setNewDispatch((prev) => ({
-      ...prev,
-      callerName,
-      summary,
-      callSid: detailMeta.call_sid || prev.callSid
-    }));
-  }, [detailMeta, dispatchSelected]);
-
-  useEffect(() => {
+  const saveDetail = async (mode = 'all') => {
     if (!detailMeta?.call_sid) return;
-    const match = dispatchItems.find((item) => item.call_sid === detailMeta.call_sid);
-    if (match && dispatchSelected?.id !== match.id) {
-      setDispatchSelected(match);
-    }
-  }, [dispatchItems, detailMeta?.call_sid, dispatchSelected?.id]);
-
-  const saveDispatch = async () => {
-    if (!dispatchSelected?.id) return;
-    setDispatchStatus('Saving...');
-    const resp = await fetch('/api/v1/dispatch', {
+    setSaveStatus(mode === 'notes' ? 'Saving notes...' : 'Saving...');
+    const resp = await fetch('/api/v1/calls', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        id: dispatchSelected.id,
-        status: dispatchSelected.status,
-        assignedTo: dispatchSelected.assigned_to || null,
-        dueAt: dispatchSelected.due_at || null
+        action: 'update',
+        callSid: detailMeta.call_sid,
+        status: detailDraft.status,
+        urgency: detailDraft.urgency,
+        summary: detailDraft.summary,
+        notes: detailDraft.notes
       })
     });
     if (!resp.ok) {
-      setDispatchStatus('Save failed.');
+      setSaveStatus('Save failed.');
       return;
     }
-    setDispatchStatus('Saved.');
-    loadDispatch();
+    const savedAt = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    setLastSavedAt(savedAt);
+    setSaveStatus(mode === 'notes' ? 'Notes saved.' : 'Saved.');
+    await Promise.all([loadCalls(), loadDetail(detailMeta.call_sid)]);
   };
 
-  const createDispatch = async () => {
-    if (!newDispatch.callerName.trim() || !newDispatch.summary.trim()) {
-      setDispatchStatus('Caller and summary are required.');
-      return;
-    }
-    setDispatchStatus('Creating...');
-    const resp = await fetch('/api/v1/dispatch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'create',
-        callerName: newDispatch.callerName,
-        summary: newDispatch.summary,
-        dueAt: newDispatch.dueAt || null,
-        assignedTo: newDispatch.assignedTo || null,
-        status: newDispatch.status,
-        callSid: newDispatch.callSid || null
-      })
-    });
-    if (!resp.ok) {
-      setDispatchStatus('Create failed.');
-      return;
-    }
-    setDispatchStatus('Created.');
-    setNewDispatch((prev) => ({ ...emptyDispatchDraft, callSid: prev.callSid }));
-    loadDispatch();
-  };
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const target = event.target;
+      const tag = target?.tagName;
+      const isTypingContext = target?.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+      if (event.key === '/' && !isTypingContext) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select?.();
+        return;
+      }
+
+      if ((event.key === 's' || event.key === 'S') && !event.metaKey && !event.ctrlKey && !event.altKey && !isTypingContext) {
+        if (!detailMeta?.call_sid) return;
+        event.preventDefault();
+        saveDetail('notes');
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [detailMeta?.call_sid, detailDraft.notes]);
 
   const rows = useMemo(() => calls.map((call, idx) => ({
     id: call.call_sid || idx,
     sid: call.call_sid,
     from: call.from_number || '-',
+    summary: call.summary || '-',
     when: new Date(call.created_at).toLocaleString(),
     status: call.status,
     urgency: call.urgency || 'normal',
@@ -202,116 +184,104 @@ export default function CallsPage() {
     return true;
   });
 
-  const dispatchRows = useMemo(() => dispatchItems.map((item) => ({
-    id: item.id,
-    caller: item.caller_name || 'Caller',
-    summary: item.summary || '',
-    dueAt: item.due_at ? new Date(item.due_at).toLocaleString() : '-',
-    assignedTo: item.assigned_to || '-',
-    status: item.status,
-    callSid: item.call_sid || '-'
-  })), [dispatchItems]);
-
   const columns = [
-    { field: 'sid', headerName: 'SID', flex: 1, minWidth: 160 },
-    { field: 'from', headerName: 'From', flex: 1, minWidth: 160 },
-    { field: 'when', headerName: 'When', flex: 1, minWidth: 180 },
+    { field: 'when', headerName: 'Time', flex: 0.75, minWidth: 140 },
+    { field: 'from', headerName: 'Caller / Number', flex: 0.85, minWidth: 150 },
     {
-      field: 'status',
-      headerName: 'Status',
-      flex: 0.6,
-      minWidth: 120,
+      field: 'summary',
+      headerName: 'AI Summary',
+      flex: 1.25,
+      minWidth: 210,
       renderCell: (params) => (
-        <span className={`badge ${params.value === 'error' ? 'bad' : 'ok'}`}>{params.value}</span>
-      )
-    }
-  ];
-
-  const dispatchColumns = [
-    { field: 'caller', headerName: 'Caller', flex: 0.8, minWidth: 140 },
-    { field: 'summary', headerName: 'Summary', flex: 1.4, minWidth: 220 },
-    { field: 'dueAt', headerName: 'Due', flex: 0.8, minWidth: 160 },
-    { field: 'assignedTo', headerName: 'Assigned', flex: 0.8, minWidth: 140 },
-    {
-      field: 'status',
-      headerName: 'Status',
-      flex: 0.6,
-      minWidth: 120,
-      renderCell: (params) => (
-        <span className={`badge ${params.value === 'closed' ? 'ok' : params.value === 'assigned' ? 'warn' : ''}`}>{params.value}</span>
+        <span title={params.value || ''} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {params.value || '-'}
+        </span>
       )
     },
-    { field: 'callSid', headerName: 'Call SID', flex: 0.8, minWidth: 160 }
+    {
+      field: 'status',
+      headerName: 'Status',
+      flex: 0.52,
+      minWidth: 104,
+      renderCell: (params) => (
+        <span className={`badge ${statusTone(params.value)}`}>{formatLabel(params.value)}</span>
+      )
+    },
+    {
+      field: 'urgency',
+      headerName: 'Urgency',
+      flex: 0.5,
+      minWidth: 98,
+      renderCell: (params) => (
+        <span className={`badge ${urgencyTone(params.value)}`}>{formatLabel(params.value)}</span>
+      )
+    }
   ];
 
   const status = loadError
     ? { tone: 'bad', message: loadError }
     : loading
       ? { tone: 'warn', message: 'Loading calls...' }
-      : { tone: 'ok', message: `${filteredRows.length} call(s) and ${dispatchItems.length} dispatch item(s) in view.` };
+      : { tone: 'ok', message: `${filteredRows.length} call(s) in view.` };
+
+  const hasUnsavedChanges = Boolean(detailMeta) && (
+    detailDraft.status !== (detailMeta.status || 'completed')
+    || detailDraft.urgency !== (detailMeta.urgency || 'normal')
+    || detailDraft.summary !== (detailMeta.summary || '')
+    || detailDraft.notes !== (detailMeta.state_json?.client_notes || '')
+  );
 
   return (
     <ClientPage
       title="Call Inbox"
-      subtitle="Review calls and manage dispatch follow-ups in one place."
+      subtitle="Review the call log and update call status, urgency, summary, and notes inline."
       status={status}
-      primaryAction={{ label: 'Refresh Data', brand: true, onClick: loadAll }}
+      primaryAction={{ label: 'Refresh Data', brand: true, onClick: loadCalls }}
     >
-      <div className="grid cols-3">
-        <div className="card"><h2>New</h2><p><span>{dispatchCounts.new}</span> calls waiting assignment</p></div>
-        <div className="card"><h2>Assigned</h2><p><span>{dispatchCounts.assigned}</span> calls in progress</p></div>
-        <div className="card"><h2>Closed</h2><p><span>{dispatchCounts.closed}</span> completed today</p></div>
-      </div>
-
-      <div className="card" style={{ marginTop: 12 }}>
-        <h2>Dispatch Queue</h2>
-        <p className="muted">Click a dispatch item to jump to the call and update status.</p>
-        <DataGrid
-          rows={dispatchRows}
-          columns={dispatchColumns}
-          autoHeight
-          disableRowSelectionOnClick
-          pageSizeOptions={[10, 25, 50]}
-          initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
-          localeText={{ noRowsLabel: 'No dispatch items yet.' }}
-          onRowClick={(params) => {
-            const item = dispatchItems.find((i) => i.id === params.row.id);
-            if (!item) return;
-            setDispatchSelected(item);
-            if (item.call_sid) loadDetail(item.call_sid);
-          }}
-          sx={{
-            border: 'none',
-            '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
-            '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
-            '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
-          }}
-        />
-      </div>
-
       <div className="toolbar" style={{ marginTop: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+        <label>Search Calls</label>
+        <input
+          ref={searchInputRef}
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Caller number or call SID (/)"
+        />
         <label>Call Status</label>
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
           <option value="all">All</option>
           <option value="completed">Completed</option>
           <option value="missed">Missed</option>
+          <option value="in_progress">In Progress</option>
           <option value="error">Error</option>
         </select>
         <label>Urgency Level</label>
         <select value={urgencyFilter} onChange={(event) => setUrgencyFilter(event.target.value)}>
           <option value="all">All</option>
+          <option value="critical">Critical</option>
           <option value="high">High</option>
           <option value="normal">Normal</option>
+          <option value="low">Low</option>
         </select>
         <label>Date From</label>
         <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
         <label>Date To</label>
         <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-        <label>Search Calls</label>
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Caller number or call SID" />
+        <button
+          className="btn"
+          type="button"
+          onClick={() => {
+            setStatusFilter('all');
+            setUrgencyFilter('all');
+            setDateFrom('');
+            setDateTo('');
+            setSearch('');
+          }}
+        >
+          Reset Filters
+        </button>
         <span className="muted">{loading ? 'Loading...' : `${filteredRows.length} calls`}</span>
       </div>
-      <div className="split">
+      <div className="split" style={isMobile ? { gridTemplateColumns: '1fr', gap: 10 } : undefined}>
         <div className="card">
           <h2 style={{ marginTop: 0 }}>Call List</h2>
           <div style={{ height: rows.length ? 'auto' : 300 }}>
@@ -324,134 +294,100 @@ export default function CallsPage() {
               initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
               localeText={{ noRowsLabel: 'No calls yet.' }}
               onRowClick={(params) => {
-                setDispatchSelected(null);
                 loadDetail(params.row.sid);
               }}
+              getRowClassName={(params) => (selectedCallSid === params.row.sid ? 'is-selected-call-row' : '')}
               sx={{
                 border: 'none',
-                '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
+                '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.35' },
                 '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
-                '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
+                '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600, letterSpacing: '0.01em' },
+                '& .is-selected-call-row': { backgroundColor: '#f0f9ff' },
+                '& .MuiDataGrid-row:hover': { backgroundColor: '#f8fafc' }
               }}
             />
           </div>
         </div>
-        <div style={{ display: 'grid', gap: 12 }}>
-          <div className="card">
-            <h2>Call Detail</h2>
-            {!detailMeta ? (
-              <div className="muted">{detailStatus}</div>
-            ) : (
-              <>
-                <div className="muted" style={{ marginBottom: 8 }}>
-                  {detailMeta.call_sid} · {new Date(detailMeta.created_at).toLocaleString()}
+        <div className="card">
+          <h2>Call Details</h2>
+          {!detailMeta ? (
+            <div className="muted">{detailStatus}</div>
+          ) : (
+            <>
+              <div className="muted" style={{ marginBottom: 8 }}>
+                {detailMeta.call_sid} · {new Date(detailMeta.created_at).toLocaleString()}
+              </div>
+              <div className="grid" style={{ gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label>Caller / Number</label>
+                  <input value={detailMeta.from_number || ''} readOnly />
                 </div>
-                <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <div className="muted">From</div>
-                    <div>{detailMeta.from_number || '-'}</div>
-                  </div>
-                  <div>
-                    <div className="muted">Status</div>
-                    <div>{detailMeta.status || '-'}</div>
-                  </div>
+                <div>
+                  <label>Status</label>
+                  <select
+                    value={detailDraft.status}
+                    onChange={(event) => setDetailDraft((prev) => ({ ...prev, status: event.target.value }))}
+                  >
+                    <option value="completed">Completed</option>
+                    <option value="missed">Missed</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="error">Error</option>
+                  </select>
                 </div>
-                <div style={{ marginTop: 12 }}>
-                  <div className="muted" style={{ marginBottom: 6 }}>Transcript</div>
-                  <pre className="code" style={{ whiteSpace: 'pre-wrap' }}>
-                    {detailTranscript || 'No transcript available yet.'}
-                  </pre>
+              </div>
+              <div className="grid" style={{ gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10, marginTop: 10 }}>
+                <div>
+                  <label>Urgency</label>
+                  <select
+                    value={detailDraft.urgency}
+                    onChange={(event) => setDetailDraft((prev) => ({ ...prev, urgency: event.target.value }))}
+                  >
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="normal">Normal</option>
+                    <option value="low">Low</option>
+                  </select>
                 </div>
-              </>
-            )}
-          </div>
-          <div className="card">
-            <h2>Dispatch Detail</h2>
-            {!detailMeta && !dispatchSelected ? (
-              <p className="muted">Select a call or dispatch item to manage follow-up.</p>
-            ) : dispatchSelected ? (
-              <>
-                <label>Caller</label>
-                <input value={dispatchSelected.caller_name || ''} readOnly />
-                <label style={{ marginTop: 10 }}>Summary</label>
-                <textarea value={dispatchSelected.summary || ''} readOnly style={{ minHeight: 90 }} />
-                <label style={{ marginTop: 10 }}>Status</label>
-                <select
-                  value={dispatchSelected.status}
-                  onChange={(event) => setDispatchSelected({ ...dispatchSelected, status: event.target.value })}
-                >
-                  <option value="new">New</option>
-                  <option value="assigned">Assigned</option>
-                  <option value="closed">Closed</option>
-                </select>
-                <label style={{ marginTop: 10 }}>Assigned To</label>
-                <select
-                  value={dispatchSelected.assigned_to || ''}
-                  onChange={(event) => setDispatchSelected({ ...dispatchSelected, assigned_to: event.target.value })}
-                >
-                  <option value="">Unassigned</option>
-                  {dispatchUsers.map((user) => (
-                    <option key={user.email} value={user.email}>{user.name} ({user.email})</option>
-                  ))}
-                </select>
-                <label style={{ marginTop: 10 }}>Due Date</label>
-                <input
-                  type="datetime-local"
-                  value={dispatchSelected.due_at ? new Date(dispatchSelected.due_at).toISOString().slice(0, 16) : ''}
-                  onChange={(event) => setDispatchSelected({ ...dispatchSelected, due_at: event.target.value })}
-                />
-                <div className="toolbar" style={{ marginTop: 10 }}>
-                  <button className="btn brand" onClick={saveDispatch}>Save Changes</button>
-                  <span className="muted">{dispatchStatus}</span>
+                <div>
+                  <label>Call Time</label>
+                  <input value={new Date(detailMeta.created_at).toLocaleString()} readOnly />
                 </div>
-              </>
-            ) : (
-              <>
-                <p className="muted">Create a dispatch item for the selected call.</p>
-                <label>Caller</label>
-                <input
-                  value={newDispatch.callerName}
-                  onChange={(event) => setNewDispatch({ ...newDispatch, callerName: event.target.value })}
-                  placeholder="Caller name"
-                />
-                <label style={{ marginTop: 10 }}>Summary</label>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <label>AI Summary</label>
                 <textarea
-                  value={newDispatch.summary}
-                  onChange={(event) => setNewDispatch({ ...newDispatch, summary: event.target.value })}
-                  style={{ minHeight: 90 }}
-                  placeholder="Issue summary"
+                  value={detailDraft.summary}
+                  onChange={(event) => setDetailDraft((prev) => ({ ...prev, summary: event.target.value }))}
+                  style={{ minHeight: isMobile ? 64 : 70 }}
                 />
-                <label style={{ marginTop: 10 }}>Status</label>
-                <select
-                  value={newDispatch.status}
-                  onChange={(event) => setNewDispatch({ ...newDispatch, status: event.target.value })}
-                >
-                  <option value="new">New</option>
-                  <option value="assigned">Assigned</option>
-                </select>
-                <label style={{ marginTop: 10 }}>Assigned To</label>
-                <select
-                  value={newDispatch.assignedTo}
-                  onChange={(event) => setNewDispatch({ ...newDispatch, assignedTo: event.target.value })}
-                >
-                  <option value="">Unassigned</option>
-                  {dispatchUsers.map((user) => (
-                    <option key={user.email} value={user.email}>{user.name} ({user.email})</option>
-                  ))}
-                </select>
-                <label style={{ marginTop: 10 }}>Due Date</label>
-                <input
-                  type="datetime-local"
-                  value={newDispatch.dueAt}
-                  onChange={(event) => setNewDispatch({ ...newDispatch, dueAt: event.target.value })}
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <label>Internal Notes</label>
+                <textarea
+                  value={detailDraft.notes}
+                  onChange={(event) => setDetailDraft((prev) => ({ ...prev, notes: event.target.value }))}
+                  style={{ minHeight: isMobile ? 96 : 120 }}
+                  placeholder="Write follow-up details, context, or callback notes."
                 />
-                <div className="toolbar" style={{ marginTop: 10 }}>
-                  <button className="btn brand" onClick={createDispatch}>Add Dispatch Item</button>
-                  <span className="muted">{dispatchStatus}</span>
-                </div>
-              </>
-            )}
-          </div>
+              </div>
+              <div className="toolbar" style={{ marginTop: 10, flexWrap: 'wrap' }}>
+                <button className="btn" type="button" onClick={() => saveDetail('notes')}>
+                  Save Notes (S)
+                </button>
+                <button className="btn brand" type="button" onClick={() => saveDetail('all')} disabled={!hasUnsavedChanges}>
+                  Save All Changes
+                </button>
+                <span className="muted">{saveStatus || (hasUnsavedChanges ? 'Unsaved changes' : 'No changes')}</span>
+                {lastSavedAt ? <span className="muted">Last saved {lastSavedAt}</span> : null}
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <div className="muted" style={{ marginBottom: 6 }}>Transcript</div>
+                <pre className="code" style={{ whiteSpace: 'pre-wrap' }}>
+                  {detailTranscript || 'No transcript available yet.'}
+                </pre>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </ClientPage>

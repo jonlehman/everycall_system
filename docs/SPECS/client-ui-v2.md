@@ -55,19 +55,19 @@ Required actions:
 
 ### 2) Calls Inbox
 Purpose:
-- Process call records and transcripts.
+- Process call records quickly with inline call outcome updates.
 
 Required modules:
 - Filterable/paginated call list.
-- Call detail panel with summary + transcript.
-- Dispatch queue list with status/assignee/due date.
-- Dispatch detail panel for creating/updating follow-up tasks.
+- Call detail panel with inline editable `status`, `urgency`, and short AI summary.
+- Inline editable internal notes field with explicit save state.
+- Transcript viewer for selected call.
 
 Required actions:
 - Apply filters (status/urgency/date).
 - Open call details.
-- Create/update dispatch item from call detail.
-- Open a dispatch item and jump to the linked call when available.
+- Edit status/urgency/summary/notes directly in-page.
+- Save call detail edits without leaving the screen.
 
 ### 3) FAQ Manager
 Purpose:

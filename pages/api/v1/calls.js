@@ -1,5 +1,5 @@
 import { ensureTables, getPool } from "../_lib/db.js";
-import { requireSession, resolveTenantKey } from "../_lib/auth.js";
+import { getSession, requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { buildCallSummarySms, getSharedSmsNumber } from "../_lib/alerts.js";
 import { sendTelnyxSms } from "../_lib/telnyx.js";
 
@@ -16,11 +16,10 @@ export default async function handler(req, res) {
 
     await ensureTables(pool);
 
-    let session = null;
-    if (req.method !== "POST") {
-      session = await requireSession(req, res);
-      if (!session) return;
-    }
+    const session = req.method === "POST"
+      ? await getSession(req)
+      : await requireSession(req, res);
+    if (!session && req.method !== "POST") return;
     const tenantKey = session ? resolveTenantKey(session, getTenantKey(req)) : getTenantKey(req);
     const callSid = req.query?.callSid;
     const mode = String(req.query?.mode || "");
@@ -78,7 +77,7 @@ export default async function handler(req, res) {
     if (callSid) {
       const detail = await pool.query(
         `SELECT c.call_sid, c.status, c.from_number, c.to_number, c.summary, c.urgency, c.disposition, c.created_at,
-                d.transcript, d.transcript_combined, d.extracted_json, d.routing_json
+                d.transcript, d.transcript_combined, d.extracted_json, d.routing_json, d.state_json
          FROM calls c
          LEFT JOIN call_details d ON d.call_sid = c.call_sid
          WHERE c.tenant_key = $1 AND c.call_sid = $2
@@ -156,12 +155,72 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
+      if (body.action === "update") {
+        if (!session) {
+          return res.status(403).json({ error: "forbidden" });
+        }
+        const callId = String(body.callSid || "").trim();
+        if (!callId) {
+          return res.status(400).json({ error: "missing_call_id" });
+        }
+
+        const allowedStatus = new Set(["completed", "missed", "error", "in_progress"]);
+        const allowedUrgency = new Set(["critical", "high", "normal", "low"]);
+        const statusValue = String(body.status || "").trim().toLowerCase();
+        const urgencyValue = String(body.urgency || "").trim().toLowerCase();
+        const summaryValue = String(body.summary || "").trim().slice(0, 500);
+        const notesValue = String(body.notes || "").trim().slice(0, 5000);
+
+        if (statusValue && !allowedStatus.has(statusValue)) {
+          return res.status(400).json({ error: "invalid_status" });
+        }
+        if (urgencyValue && !allowedUrgency.has(urgencyValue)) {
+          return res.status(400).json({ error: "invalid_urgency" });
+        }
+
+        const existing = await pool.query(
+          `SELECT d.state_json
+           FROM calls c
+           LEFT JOIN call_details d ON d.call_sid = c.call_sid
+           WHERE c.tenant_key = $1 AND c.call_sid = $2
+           LIMIT 1`,
+          [tenantKey, callId]
+        );
+        if (!existing.rows[0]) {
+          return res.status(404).json({ error: "call_not_found" });
+        }
+
+        await pool.query(
+          `UPDATE calls
+           SET status = COALESCE($3, status),
+               urgency = COALESCE($4, urgency),
+               summary = COALESCE($5, summary)
+           WHERE tenant_key = $1 AND call_sid = $2`,
+          [tenantKey, callId, statusValue || null, urgencyValue || null, summaryValue || null]
+        );
+
+        const nextState = {
+          ...((existing.rows[0]?.state_json && typeof existing.rows[0].state_json === "object") ? existing.rows[0].state_json : {}),
+          client_notes: notesValue
+        };
+        await pool.query(
+          `INSERT INTO call_details (call_sid, state_json, updated_at)
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (call_sid)
+           DO UPDATE SET state_json = EXCLUDED.state_json,
+                         updated_at = NOW()`,
+          [callId, nextState]
+        );
+
+        return res.status(200).json({ ok: true });
+      }
+
       return res.status(400).json({ error: "unsupported_action" });
     }
 
     const limit = Math.max(1, Math.min(Number(req.query?.limit) || 30, 200));
     const rows = await pool.query(
-      `SELECT call_sid, from_number, status, urgency, created_at
+      `SELECT call_sid, from_number, status, urgency, summary, created_at
        FROM calls
        WHERE tenant_key = $1
        ORDER BY created_at DESC

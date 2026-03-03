@@ -139,21 +139,23 @@ Simplicity rules:
 
 ### 7.2 Calls Inbox
 Purpose:
-- Process and review call records without clutter.
+- Process and review call records without clutter, with inline editing on a selected call.
 
 Core layout:
-- Left: filterable call list.
-- Right: selected call detail with summary + transcript.
-- Dispatch queue list and dispatch detail panel in the same screen.
+- Left: filterable call log focused on time, caller/number, AI summary, status, urgency.
+- Right: selected call detail with inline editable status, urgency, short AI summary, and notes.
+- Transcript area below editable fields for context.
 
 Primary actions:
 - Filter by status/urgency/date.
 - Review transcript and extracted details.
-- Create/update dispatch follow-ups from the selected call.
+- Update status/urgency/summary inline.
+- Write and save internal call notes inline.
 
 Simplicity rules:
 - One selected call at a time.
 - Details remain readable on long transcripts.
+- No separate modal for call edits or notes.
 
 ### 7.3 FAQ Manager
 Purpose:
@@ -247,14 +249,15 @@ Purpose:
 - Review all calls and inspect details/transcript quickly.
 
 Must provide:
-- Paginated list with status/urgency filters.
-- Call detail panel with summary + combined transcript.
-- Dispatch queue list with status/assignee/due date.
-- Dispatch detail panel for follow-up updates.
+- Paginated call log with status/urgency/date filters.
+- Call detail panel with editable status/urgency/summary.
+- Inline notes field with explicit save action and feedback.
+- Combined transcript for selected call.
 
 Acceptance criteria:
 - Filter/query state persists while navigating.
 - Transcript render handles long content without layout break.
+- Call detail edits persist without leaving the page.
 - 404/permission errors handled with user-safe message.
 
 ### 9.3 FAQs
