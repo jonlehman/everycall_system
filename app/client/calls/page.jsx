@@ -22,6 +22,19 @@ function urgencyTone(value) {
   return 'ok';
 }
 
+function formatPhoneNumber(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+  return raw;
+}
+
 function formatTranscript(text) {
   const lines = String(text || '').split('\n');
   const formatted = [];
@@ -194,7 +207,7 @@ export default function CallsPage() {
   const rows = useMemo(() => calls.map((call, idx) => ({
     id: call.call_sid || idx,
     sid: call.call_sid,
-    from: call.from_number || '-',
+    from: formatPhoneNumber(call.from_number) || '-',
     summary: call.summary || '-',
     when: new Date(call.created_at).toLocaleString(),
     status: call.status,
@@ -389,7 +402,7 @@ export default function CallsPage() {
               <div className={`grid gap-2 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
                   <label>Number</label>
-                  <input value={detailMeta.from_number || ''} readOnly />
+                  <input value={formatPhoneNumber(detailMeta.from_number) || ''} readOnly />
                 </div>
                 <div>
                   <label>Status</label>
