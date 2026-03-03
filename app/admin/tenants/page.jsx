@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { DataGrid } from '@mui/x-data-grid';
+import { buttonVariants } from '../../../components/ui/button';
+import { cn } from '../../../lib/utils';
 
 export default function TenantsPage() {
   const [tenants, setTenants] = useState([]);
@@ -52,15 +54,20 @@ export default function TenantsPage() {
       headerAlign: 'right',
       minWidth: 120,
       renderCell: (params) => (
-        <Link className="btn" href={`/admin/tenants/${params.row.key}`}>Manage</Link>
+        <Link className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))} href={`/admin/tenants/${params.row.key}`}>Manage</Link>
       )
     }
   ];
 
   return (
-    <section className="screen active">
-      <div className="topbar"><h1>Tenant Administration</h1><div className="top-actions"><Link className="btn brand" href="/intake">New Tenant</Link></div></div>
-      <div className="card">
+    <section className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="m-0 text-2xl font-semibold tracking-tight">Tenant Administration</h1>
+        <div className="flex gap-2">
+          <Link className={cn(buttonVariants({ variant: 'default' }))} href="/intake">New Tenant</Link>
+        </div>
+      </div>
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <DataGrid
           rows={rows}
           columns={columns}

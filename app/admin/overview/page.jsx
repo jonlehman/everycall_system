@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
+import { buttonVariants } from '../../../components/ui/button';
+import { cn } from '../../../lib/utils';
 
 export default function AdminOverviewPage() {
   const [stats, setStats] = useState({ activeTenants: 0, calls24h: 0, errors24h: 0, avgLatencyMs: 0 });
@@ -44,17 +46,19 @@ export default function AdminOverviewPage() {
   ];
 
   return (
-    <section className="screen active">
-      <div className="topbar"><h1>Platform Overview</h1></div>
-      <div className="grid cols-4">
-        <div className="card"><div className="stat">Active Tenants</div><div className="value">{stats.activeTenants}</div></div>
-        <div className="card"><div className="stat">Calls (24h)</div><div className="value">{stats.calls24h}</div></div>
-        <div className="card"><div className="stat">Errors (24h)</div><div className="value">{stats.errors24h}</div></div>
-        <div className="card"><div className="stat">Avg Latency</div><div className="value">{stats.avgLatencyMs}ms</div></div>
+    <section className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="m-0 text-2xl font-semibold tracking-tight">Platform Overview</h1>
       </div>
-      <div className="split" style={{ marginTop: 12 }}>
-        <div className="card">
-          <h2>Recent Incidents</h2>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wide text-slate-500">Active Tenants</div><div className="mt-1 text-3xl font-bold">{stats.activeTenants}</div></div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wide text-slate-500">Calls (24h)</div><div className="mt-1 text-3xl font-bold">{stats.calls24h}</div></div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wide text-slate-500">Errors (24h)</div><div className="mt-1 text-3xl font-bold">{stats.errors24h}</div></div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wide text-slate-500">Avg Latency</div><div className="mt-1 text-3xl font-bold">{stats.avgLatencyMs}ms</div></div>
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_.8fr]">
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Recent Incidents</h2>
           <DataGrid
             rows={rows}
             columns={columns}
@@ -71,11 +75,11 @@ export default function AdminOverviewPage() {
             }}
           />
         </div>
-        <div className="card">
-          <h2>Quick Actions</h2>
-          <div className="toolbar" style={{ flexWrap: 'wrap' }}>
-            <a className="btn" href="/intake">Create Tenant</a>
-            <a className="btn brand" href="/dashboard">Open Call Dashboard</a>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Quick Actions</h2>
+          <div className="flex flex-wrap gap-2">
+            <a className={cn(buttonVariants({ variant: 'outline' }))} href="/intake">Create Tenant</a>
+            <a className={cn(buttonVariants({ variant: 'default' }))} href="/dashboard">Open Call Dashboard</a>
           </div>
         </div>
       </div>

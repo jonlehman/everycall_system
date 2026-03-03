@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
+import { Button } from '../../../components/ui/button';
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState([]);
@@ -68,15 +69,17 @@ export default function AdminUsersPage() {
   };
 
   return (
-    <section className="screen active">
-      <div className="topbar"><h1>Admin Users</h1></div>
-      <div className="card" style={{ marginBottom: 12 }}>
-        <h2>Create / Reset Admin User</h2>
-        <div className="grid cols-2">
+    <section className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="m-0 text-2xl font-semibold tracking-tight">Admin Users</h1>
+      </div>
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+        <h2 className="mt-0 text-lg font-semibold">Create / Reset Admin User</h2>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
             <label>Email</label>
             <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@everycall.io" />
-            <label style={{ marginTop: 10 }}>Username</label>
+            <label className="mt-2.5">Username</label>
             <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="admin" />
           </div>
           <div>
@@ -85,16 +88,16 @@ export default function AdminUsersPage() {
               <option value="admin">Admin</option>
               <option value="super_admin">Super Admin</option>
             </select>
-            <label style={{ marginTop: 10 }}>Password</label>
+            <label className="mt-2.5">Password</label>
             <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Set password" />
           </div>
         </div>
-        <div className="toolbar" style={{ marginTop: 10 }}>
-          <button className="btn brand" onClick={saveUser}>Save Admin User</button>
-          <span className="muted">{status}</span>
+        <div className="mt-3 flex items-center gap-2">
+          <Button onClick={saveUser}>Save Admin User</Button>
+          <span className="text-sm text-slate-500">{status}</span>
         </div>
       </div>
-      <div className="card">
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <DataGrid
           rows={rows}
           columns={columns}
