@@ -128,7 +128,7 @@ export async function ensureTables(pool) {
       agent_version_id BIGINT,
       from_number TEXT,
       to_number TEXT,
-      status TEXT NOT NULL DEFAULT 'completed',
+      status TEXT NOT NULL DEFAULT 'new',
       summary TEXT,
       urgency TEXT,
       disposition TEXT,
@@ -136,6 +136,8 @@ export async function ensureTables(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  await pool.query(`ALTER TABLE calls ALTER COLUMN status SET DEFAULT 'new';`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS call_details (

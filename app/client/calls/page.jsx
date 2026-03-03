@@ -58,7 +58,7 @@ export default function CallsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [detailDraft, setDetailDraft] = useState({
-    status: 'completed',
+    status: 'new',
     urgency: 'normal',
     summary: '',
     notes: ''
@@ -127,7 +127,7 @@ export default function CallsPage() {
       const call = data.call || null;
       setDetailMeta(call);
       setDetailDraft({
-        status: call?.status || 'completed',
+        status: call?.status || 'new',
         urgency: call?.urgency || 'normal',
         summary: call?.summary || '',
         notes: call?.state_json?.client_notes || ''
@@ -261,7 +261,7 @@ export default function CallsPage() {
       : { tone: 'ok', message: `${filteredRows.length} call(s) in view.` };
 
   const hasUnsavedChanges = Boolean(detailMeta) && (
-    detailDraft.status !== (detailMeta.status || 'completed')
+    detailDraft.status !== (detailMeta.status || 'new')
     || detailDraft.urgency !== (detailMeta.urgency || 'normal')
     || detailDraft.summary !== (detailMeta.summary || '')
     || detailDraft.notes !== (detailMeta.state_json?.client_notes || '')
@@ -295,10 +295,14 @@ export default function CallsPage() {
                     <label>Call Status</label>
                     <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
                       <option value="all">All</option>
-                      <option value="completed">Completed</option>
-                      <option value="missed">Missed</option>
+                      <option value="new">New</option>
+                      <option value="contacted">Contacted</option>
+                      <option value="scheduled">Scheduled</option>
                       <option value="in_progress">In Progress</option>
-                      <option value="error">Error</option>
+                      <option value="completed">Completed</option>
+                      <option value="unable_to_reach">Unable to Reach</option>
+                      <option value="canceled">Canceled</option>
+                      <option value="spam">Spam / Wrong Number</option>
                     </select>
                   </div>
                   <div>
@@ -384,10 +388,14 @@ export default function CallsPage() {
                     value={detailDraft.status}
                     onChange={(event) => setDetailDraft((prev) => ({ ...prev, status: event.target.value }))}
                   >
-                    <option value="completed">Completed</option>
-                    <option value="missed">Missed</option>
+                    <option value="new">New</option>
+                    <option value="contacted">Contacted</option>
+                    <option value="scheduled">Scheduled</option>
                     <option value="in_progress">In Progress</option>
-                    <option value="error">Error</option>
+                    <option value="completed">Completed</option>
+                    <option value="unable_to_reach">Unable to Reach</option>
+                    <option value="canceled">Canceled</option>
+                    <option value="spam">Spam / Wrong Number</option>
                   </select>
                 </div>
               </div>

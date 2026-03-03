@@ -199,7 +199,7 @@ export default async function handler(req, res) {
 
         await pool.query(
           `INSERT INTO calls (call_sid, tenant_key, status, summary, urgency, disposition)
-           VALUES ($1, $2, 'completed', $3, $4, $5)
+           VALUES ($1, $2, 'new', $3, $4, $5)
            ON CONFLICT (call_sid)
            DO UPDATE SET summary = EXCLUDED.summary,
                          urgency = EXCLUDED.urgency,
@@ -288,7 +288,16 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: "missing_call_id" });
         }
 
-        const allowedStatus = new Set(["completed", "missed", "error", "in_progress"]);
+        const allowedStatus = new Set([
+          "new",
+          "contacted",
+          "scheduled",
+          "in_progress",
+          "completed",
+          "unable_to_reach",
+          "canceled",
+          "spam"
+        ]);
         const allowedUrgency = new Set(["critical", "high", "normal", "low"]);
         const statusValue = String(body.status || "").trim().toLowerCase();
         const urgencyValue = String(body.urgency || "").trim().toLowerCase();
