@@ -5,6 +5,7 @@ import { sendTelnyxSms } from "../_lib/telnyx.js";
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
 const openAiModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+const openAiSummaryModel = process.env.OPENAI_SUMMARY_MODEL || "gpt-5.2";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
@@ -56,12 +57,7 @@ async function generateSummaryFromTranscript(transcript) {
   const trimmed = String(transcript || "").trim();
   if (!trimmed || !openAiKey) return null;
 
-  const prompt = [
-    "Summarize this call transcript.",
-    "Format: 2-4 words, colon, then a 12-word max description.",
-    "Use only information from the transcript.",
-    "Return only the summary text."
-  ].join(" ");
+  const prompt = "Format: 2-4 words, colon, then a 12-word max summary. Return only the summary text.";
 
   const input = [
     { role: "system", content: prompt },
@@ -74,7 +70,7 @@ async function generateSummaryFromTranscript(transcript) {
       Authorization: `Bearer ${openAiKey}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ model: openAiModel, input })
+    body: JSON.stringify({ model: openAiSummaryModel, input })
   });
 
   if (!resp.ok) return null;
@@ -256,7 +252,7 @@ export default async function handler(req, res) {
            FROM calls c
            LEFT JOIN call_details d ON d.call_sid = c.call_sid
            WHERE c.tenant_key = $1
-             AND (c.summary IS NULL OR c.summary = '' OR c.summary = 'Call completed.')
+             AND (c.summary IS NULL OR c.summary = '' OR c.summary = '-' OR c.summary = 'Call completed.')
            ORDER BY c.created_at DESC`,
           [tenantKey]
         );
