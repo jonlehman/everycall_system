@@ -69,7 +69,7 @@ type StreamSession = {
   lastResponseId?: string;
   lastResponseDoneAt?: number;
   lastUserUtteranceAt?: number;
-  pendingResponseInstructions?: string;
+  pendingResponseInstructions?: string | null;
   pendingHangup?: boolean;
   preCloseAsked?: boolean;
   preCloseAnswered?: boolean;
@@ -881,9 +881,9 @@ function connectOpenAiRealtime(session: StreamSession) {
             }
           }, 1500);
         }
-        if (session.pendingResponseInstructions !== undefined) {
+        if (session.pendingResponseInstructions !== null && session.pendingResponseInstructions !== undefined) {
           const queued = session.pendingResponseInstructions;
-          session.pendingResponseInstructions = undefined;
+          session.pendingResponseInstructions = null;
           if (queued) {
             createResponse(session, queued);
           } else {
