@@ -9,8 +9,6 @@
     "start": "next start",
     "typecheck": "pnpm -r typecheck",
     "dev:call-gateway": "PORT=3101 pnpm --filter @everycall/call-gateway dev",
-    "dev:ai-orchestrator": "PORT=3102 pnpm --filter @everycall/ai-orchestrator dev",
-    "dev:voice-service": "PORT=3103 pnpm --filter @everycall/voice-service dev",
     "smoke": "node scripts/smoke.mjs",
     "test:intake:v2:api": "node scripts/test-intake-v2-api.mjs",
     "test:intake:v2:e2e": "node scripts/test-intake-v2-e2e.mjs",

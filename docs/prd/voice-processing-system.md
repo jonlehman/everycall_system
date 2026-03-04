@@ -23,9 +23,8 @@ Build a reliable, low-latency voice experience that answers inbound calls, gathe
 ## Core Flow (No Emergency Dispatch)
 1. Inbound call hits Call Gateway webhook.
 2. Call Gateway resolves tenant + call state from DB.
-3. AI Orchestrator composes prompt (system + industry + tenant override) and generates next text response.
-4. Voice Service synthesizes audio from AI response.
-5. Call Gateway returns TwiML/audio response to Twilio.
+3. OpenAI Realtime generates audio/text responses inside Call Gateway.
+4. Call Gateway returns TeXML/audio response to Telnyx.
 6. Each caller turn updates call state + transcript.
 7. On call end, store summary + structured fields and notify tenant.
 
@@ -48,16 +47,10 @@ Build a reliable, low-latency voice experience that answers inbound calls, gathe
 
 ## API/Service Responsibilities
 - **Call Gateway**
-  - Receives Twilio webhook.
+  - Receives Telnyx webhook.
   - Loads call state and tenant config.
-  - Calls AI Orchestrator and Voice Service.
-  - Returns TwiML/stream response.
-- **AI Orchestrator**
-  - Builds prompt + context.
-  - Produces next assistant response and structured updates.
-- **Voice Service**
-  - Converts assistant text to audio.
-  - Returns audio bytes/stream.
+  - Uses OpenAI Realtime for responses.
+  - Returns TeXML/stream response.
 
 ## UX/Behavior Requirements
 - Use polite, warm receptionist tone.

@@ -1,4 +1,6 @@
-# TEL-001 API Contract: Twilio Inbound Webhook
+# TEL-001 API Contract: Twilio Inbound Webhook (Deprecated)
+
+This document is retained for historical reference. Current production uses Telnyx webhooks handled by `call-gateway`.
 
 ## Endpoint
 - Method: `POST`

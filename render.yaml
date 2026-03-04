@@ -13,10 +13,6 @@ services:
         sync: false
       - key: TELNYX_TRANSCRIPTION_MODEL
         sync: false
-      - key: VOICE_SERVICE_URL
-        sync: false
-      - key: ELEVENLABS_VOICE_ID
-        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_REALTIME_MODEL
@@ -36,30 +32,4 @@ services:
       - key: CALL_SUMMARY_TOKEN
         sync: false
       - key: DATABASE_URL
-        sync: false
-
-  - type: web
-    name: everycall-ai-orchestrator
-    env: docker
-    dockerfilePath: apps/ai-orchestrator/Dockerfile
-    autoDeploy: true
-    envVars:
-      - key: PORT
-        value: "3102"
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: OPENAI_MODEL
-        sync: false
-
-  - type: web
-    name: everycall-voice-service
-    env: docker
-    dockerfilePath: apps/voice-service/Dockerfile
-    autoDeploy: true
-    envVars:
-      - key: PORT
-        value: "3103"
-      - key: ELEVENLABS_API_KEY
-        sync: false
-      - key: ELEVENLABS_MODEL_ID
         sync: false

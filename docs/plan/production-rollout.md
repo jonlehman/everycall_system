@@ -12,8 +12,6 @@
   - `CALL_SUMMARY_TOKEN`
   - `APP_BASE_URL`
   - `CALL_GATEWAY_URL`
-  - `AI_ORCHESTRATOR_URL`
-  - `VOICE_SERVICE_URL`
 - Confirm shared SMS number in System Config.
 
 ## Deploy

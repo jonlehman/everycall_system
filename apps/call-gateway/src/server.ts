@@ -18,22 +18,13 @@ const openAiModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const signatureRequired = (process.env.TELNYX_SIGNATURE_REQUIRED || "true").toLowerCase() !== "false";
 const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const telnyxTranscriptionModel = process.env.TELNYX_TRANSCRIPTION_MODEL || "Telnyx";
-const voiceServiceUrl = process.env.VOICE_SERVICE_URL || "";
-const elevenLabsVoiceId = process.env.ELEVENLABS_VOICE_ID || process.env.ELEVENLABS_DEFAULT_VOICE_ID || "";
+// Voice service removed; realtime uses OpenAI audio and Telnyx speak fallback.
 const openAiRealtimeModel = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime";
 const openAiRealtimeVoice = process.env.OPENAI_REALTIME_VOICE || "alloy";
 const openAiRealtimeInputFormat = process.env.OPENAI_REALTIME_INPUT_FORMAT || "g711_ulaw";
 const openAiRealtimeOutputFormat = process.env.OPENAI_REALTIME_OUTPUT_FORMAT || "g711_ulaw";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "rtp").toLowerCase();
-
-type PlaybackAsset = {
-  buffer: Buffer;
-  contentType: string;
-  createdAt: number;
-};
-
-const playbackStore = new Map<string, PlaybackAsset>();
 
 type StreamSession = {
   callControlId: string;
@@ -1042,43 +1033,6 @@ async function telnyxCallAction(callControlId: string, action: string, payload: 
   return resp.json();
 }
 
-async function synthesizeAudio(text: string, tenantKey: string, callSid: string, utteranceId: string) {
-  if (!voiceServiceUrl || !elevenLabsVoiceId) {
-    return null;
-  }
-  const resp = await fetch(`${voiceServiceUrl}/v1/voice/synthesize-stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      trace_id: `trace_${callSid}`,
-      tenant_id: tenantKey,
-      call_id: callSid,
-      utterance_id: utteranceId,
-      provider: "elevenlabs",
-      voice: { voice_id: elevenLabsVoiceId },
-      audio: { format: "mp3", sample_rate_hz: 24000 },
-      text
-    })
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`voice_service_failed:${resp.status}:${text}`);
-  }
-  const arrayBuffer = await resp.arrayBuffer();
-  return Buffer.from(arrayBuffer);
-}
-
-function savePlaybackAsset(utteranceId: string, buffer: Buffer) {
-  playbackStore.set(utteranceId, {
-    buffer,
-    contentType: "audio/mpeg",
-    createdAt: Date.now()
-  });
-  setTimeout(() => {
-    playbackStore.delete(utteranceId);
-  }, 2 * 60 * 1000);
-}
-
 function buildTeXMLResponse(prompt: string, actionUrl: string) {
   const escaped = prompt.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const escapedAction = actionUrl.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -1583,16 +1537,6 @@ app.post("/v1/telnyx/texml/transcription", express.raw({ type: "*/*" }), async (
   res.status(200).send("ok");
 });
 
-app.get("/v1/voice/playback/:utteranceId", (req, res) => {
-  const utteranceId = String(req.params.utteranceId || "");
-  const asset = playbackStore.get(utteranceId);
-  if (!asset) {
-    return res.status(404).send("not_found");
-  }
-  res.setHeader("Content-Type", asset.contentType);
-  res.status(200).send(asset.buffer);
-});
-
 app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), async (req, res) => {
   const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
   logInfo("telnyx_call_control_request", {
@@ -1812,15 +1756,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     await appendCombinedTranscript(callSid, "assistant", assistantReply);
 
     try {
-      const utteranceId = `${callSid}-turn-${turn}`;
-      const audio = await synthesizeAudio(assistantReply, tenantKey, callSid, utteranceId);
-      if (audio) {
-        savePlaybackAsset(utteranceId, audio);
-        const audioUrl = `${callGatewayBaseUrl || buildBaseUrl(req)}/v1/voice/playback/${encodeURIComponent(utteranceId)}`;
-        await telnyxCallAction(callControlId, "playback_start", { audio_url: audioUrl });
-      } else {
-        await telnyxCallAction(callControlId, "speak", { payload: assistantReply, voice: "female" });
-      }
+      await telnyxCallAction(callControlId, "speak", { payload: assistantReply, voice: "female" });
     } catch (err) {
       logError("telnyx_call_control_playback_error", {
         message: err instanceof Error ? err.message : "unknown"

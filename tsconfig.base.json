@@ -17,9 +17,7 @@
       "@everycall/config": ["packages/config/src/index.ts"],
       "@everycall/observability": ["packages/observability/src/index.ts"],
       "@everycall/tenancy": ["packages/tenancy/src/index.ts"],
-      "@everycall/telephony": ["packages/telephony/src/index.ts"],
-      "@everycall/ai": ["packages/ai/src/index.ts"],
-      "@everycall/voice": ["packages/voice/src/index.ts"]
+      "@everycall/telephony": ["packages/telephony/src/index.ts"]
     }
   }
 }

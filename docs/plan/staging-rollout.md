@@ -5,7 +5,7 @@ Deploy full stack (web + services) to staging for integrated testing.
 
 ## Steps
 1. Deploy latest `main` to Vercel staging.
-2. Deploy Render services (call-gateway, ai-orchestrator, voice-service) to staging.
+2. Deploy Render services (call-gateway) to staging.
 3. Set staging env vars:
    - `DATABASE_URL`
    - `OPENAI_API_KEY`
@@ -16,8 +16,6 @@ Deploy full stack (web + services) to staging for integrated testing.
    - `APP_BASE_URL`
 4. Set staging service URLs:
    - `CALL_GATEWAY_URL`
-   - `AI_ORCHESTRATOR_URL`
-   - `VOICE_SERVICE_URL`
 5. Run smoke test against staging URLs.
 6. Run regression checklist.
 7. Validate SMS opt‑in/out on staging.

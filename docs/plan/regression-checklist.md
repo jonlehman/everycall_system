@@ -38,10 +38,7 @@ Run this after major changes or before release. Mark each item pass/fail.
 - Opt‑out: user replies STOP and gets confirmation
 - Call summary triggers SMS alert to opted‑in users
 
-## Voice Services
 - Call gateway `/healthz` ok
-- AI orchestrator `/healthz` ok
-- Voice service `/healthz` ok
 
 ## Security
 - Unauthorized API access returns 401/403
