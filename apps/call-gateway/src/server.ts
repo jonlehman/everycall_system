@@ -6,6 +6,7 @@ import { logError, logInfo } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
 import pg from "pg";
 import fs from "node:fs";
+import path from "node:path";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -1925,6 +1926,20 @@ app.use(express.json());
 
 app.get("/healthz", (_req, res) => {
   res.status(200).json({ ok: true, service: "call-gateway" });
+});
+
+app.get("/v1/debug/realtime-log", (req, res) => {
+  const provided = String(req.header("x-everycall-internal") || req.query?.token || "");
+  if (!callSummaryToken || provided !== callSummaryToken) {
+    return res.status(403).json({ error: "forbidden" });
+  }
+  if (!fs.existsSync(realtimeLogFile)) {
+    return res.status(404).json({ error: "not_found" });
+  }
+  res.setHeader("Content-Type", "application/jsonl");
+  res.setHeader("Content-Disposition", `attachment; filename="${path.basename(realtimeLogFile)}"`);
+  const stream = fs.createReadStream(realtimeLogFile);
+  stream.pipe(res);
 });
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
