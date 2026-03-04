@@ -488,19 +488,23 @@ function createResponse(session: StreamSession, instructions?: string) {
   });
 }
 
+function resetRealtimeLog(session: StreamSession) {
+  if (!realtimeDebug && !realtimeTrace) return;
+  if (session.realtimeLogInitialized) return;
+  try {
+    fs.writeFileSync(realtimeLogFile, "");
+  } catch (err) {
+    logError("realtime_log_write_failed", {
+      callSid: session.callSid,
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
+  session.realtimeLogInitialized = true;
+}
+
 function logRealtimeRaw(session: StreamSession, payload: any) {
   if (!realtimeDebug) return;
-  if (!session.realtimeLogInitialized) {
-    try {
-      fs.writeFileSync(realtimeLogFile, "");
-    } catch (err) {
-      logError("realtime_log_write_failed", {
-        callSid: session.callSid,
-        message: err instanceof Error ? err.message : "unknown"
-      });
-    }
-    session.realtimeLogInitialized = true;
-  }
+  resetRealtimeLog(session);
   const entry = {
     ts: new Date().toISOString(),
     kind: "raw",
@@ -521,17 +525,7 @@ function logRealtimeRaw(session: StreamSession, payload: any) {
 
 function logRealtimeTrace(session: StreamSession, payload: any) {
   if (!realtimeTrace) return;
-  if (!session.realtimeLogInitialized) {
-    try {
-      fs.writeFileSync(realtimeLogFile, "");
-    } catch (err) {
-      logError("realtime_log_write_failed", {
-        callSid: session.callSid,
-        message: err instanceof Error ? err.message : "unknown"
-      });
-    }
-    session.realtimeLogInitialized = true;
-  }
+  resetRealtimeLog(session);
   const type = payload?.type || "";
   if (
     type === "response.create" ||
@@ -1771,6 +1765,10 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
       ...(voiceType ? { voiceOverride: voiceType } : {}),
       awaitingAnswer: true
     });
+    const session = streamSessions.get(callControlId);
+    if (session) {
+      resetRealtimeLog(session);
+    }
     try {
       if (callControlId) {
         await telnyxCallAction(callControlId, "answer", {});
