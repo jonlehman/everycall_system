@@ -86,6 +86,7 @@ type StreamSession = {
   askedTime?: boolean;
   skipAddress?: boolean;
   skipTime?: boolean;
+  realtimeLogInitialized?: boolean;
   readyToClose?: boolean;
   faqs?: Array<{ question: string; answer: string; category: string }>;
   awaitingAnswer?: boolean;
@@ -470,6 +471,17 @@ function createResponse(session: StreamSession, instructions?: string) {
 
 function logRealtimeRaw(session: StreamSession, payload: any) {
   if (!realtimeDebug) return;
+  if (!session.realtimeLogInitialized) {
+    try {
+      fs.writeFileSync(realtimeLogFile, "");
+    } catch (err) {
+      logError("realtime_log_write_failed", {
+        callSid: session.callSid,
+        message: err instanceof Error ? err.message : "unknown"
+      });
+    }
+    session.realtimeLogInitialized = true;
+  }
   const entry = {
     ts: new Date().toISOString(),
     kind: "raw",
@@ -490,6 +502,17 @@ function logRealtimeRaw(session: StreamSession, payload: any) {
 
 function logRealtimeTrace(session: StreamSession, payload: any) {
   if (!realtimeTrace) return;
+  if (!session.realtimeLogInitialized) {
+    try {
+      fs.writeFileSync(realtimeLogFile, "");
+    } catch (err) {
+      logError("realtime_log_write_failed", {
+        callSid: session.callSid,
+        message: err instanceof Error ? err.message : "unknown"
+      });
+    }
+    session.realtimeLogInitialized = true;
+  }
   const type = payload?.type || "";
   if (
     type === "response.create" ||
