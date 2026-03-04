@@ -350,6 +350,17 @@ export default async function handler(req, res) {
         const urgencyValue = String(body.urgency || "").trim().toLowerCase();
         const summaryValue = String(body.summary || "").trim().slice(0, 500);
         const notesValue = String(body.notes || "").trim().slice(0, 5000);
+        const firstName = String(body.firstName || "").trim().slice(0, 120);
+        const lastName = String(body.lastName || "").trim().slice(0, 120);
+        const callbackNumber = String(body.callbackNumber || "").trim().slice(0, 40);
+        const serviceRequired = String(body.serviceRequired || "").trim().slice(0, 240);
+        const addressLine1 = String(body.addressLine1 || "").trim().slice(0, 240);
+        const addressLine2 = String(body.addressLine2 || "").trim().slice(0, 240);
+        const city = String(body.city || "").trim().slice(0, 120);
+        const state = String(body.state || "").trim().slice(0, 60);
+        const postalCode = String(body.postalCode || "").trim().slice(0, 20);
+        const requestedDate = String(body.requestedDate || "").trim().slice(0, 32);
+        const requestedTime = String(body.requestedTime || "").trim().slice(0, 32);
 
         if (statusValue && !allowedStatus.has(statusValue)) {
           return res.status(400).json({ error: "invalid_status" });
@@ -390,6 +401,39 @@ export default async function handler(req, res) {
            DO UPDATE SET state_json = EXCLUDED.state_json,
                          updated_at = NOW()`,
           [callId, nextState]
+        );
+
+        await pool.query(
+          `UPDATE call_details
+           SET caller_first_name = $3,
+               caller_last_name = $4,
+               callback_number = $5,
+               service_required = $6,
+               urgency_level = $7,
+               address_line1 = $8,
+               address_line2 = $9,
+               city = $10,
+               state = $11,
+               postal_code = $12,
+               requested_date = $13,
+               requested_time = $14,
+               updated_at = NOW()
+           WHERE call_sid = $1`,
+          [
+            callId,
+            firstName || null,
+            lastName || null,
+            callbackNumber || null,
+            serviceRequired || null,
+            urgencyValue || null,
+            addressLine1 || null,
+            addressLine2 || null,
+            city || null,
+            state || null,
+            postalCode || null,
+            requestedDate || null,
+            requestedTime || null
+          ]
         );
 
         return res.status(200).json({ ok: true });

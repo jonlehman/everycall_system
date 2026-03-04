@@ -74,7 +74,18 @@ export default function CallsPage() {
     status: 'new',
     urgency: 'normal',
     summary: '',
-    notes: ''
+    notes: '',
+    firstName: '',
+    lastName: '',
+    callbackNumber: '',
+    serviceRequired: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    postalCode: '',
+    requestedDate: '',
+    requestedTime: ''
   });
   const [lastSavedAt, setLastSavedAt] = useState('');
   const searchInputRef = useRef(null);
@@ -143,7 +154,18 @@ export default function CallsPage() {
         status: call?.status || 'new',
         urgency: call?.urgency || 'normal',
         summary: call?.summary || '',
-        notes: call?.state_json?.client_notes || ''
+        notes: call?.state_json?.client_notes || '',
+        firstName: call?.caller_first_name || '',
+        lastName: call?.caller_last_name || '',
+        callbackNumber: call?.callback_number || '',
+        serviceRequired: call?.service_required || '',
+        addressLine1: call?.address_line1 || '',
+        addressLine2: call?.address_line2 || '',
+        city: call?.city || '',
+        state: call?.state || '',
+        postalCode: call?.postal_code || '',
+        requestedDate: call?.requested_date || '',
+        requestedTime: call?.requested_time || ''
       });
     }
 
@@ -167,7 +189,18 @@ export default function CallsPage() {
         status: detailDraft.status,
         urgency: detailDraft.urgency,
         summary: detailDraft.summary,
-        notes: detailDraft.notes
+        notes: detailDraft.notes,
+        firstName: detailDraft.firstName,
+        lastName: detailDraft.lastName,
+        callbackNumber: detailDraft.callbackNumber,
+        serviceRequired: detailDraft.serviceRequired,
+        addressLine1: detailDraft.addressLine1,
+        addressLine2: detailDraft.addressLine2,
+        city: detailDraft.city,
+        state: detailDraft.state,
+        postalCode: detailDraft.postalCode,
+        requestedDate: detailDraft.requestedDate,
+        requestedTime: detailDraft.requestedTime
       })
     });
     if (!resp.ok) {
@@ -288,6 +321,17 @@ export default function CallsPage() {
     || detailDraft.urgency !== (detailMeta.urgency || 'normal')
     || detailDraft.summary !== (detailMeta.summary || '')
     || detailDraft.notes !== (detailMeta.state_json?.client_notes || '')
+    || detailDraft.firstName !== (detailMeta.caller_first_name || '')
+    || detailDraft.lastName !== (detailMeta.caller_last_name || '')
+    || detailDraft.callbackNumber !== (detailMeta.callback_number || '')
+    || detailDraft.serviceRequired !== (detailMeta.service_required || '')
+    || detailDraft.addressLine1 !== (detailMeta.address_line1 || '')
+    || detailDraft.addressLine2 !== (detailMeta.address_line2 || '')
+    || detailDraft.city !== (detailMeta.city || '')
+    || detailDraft.state !== (detailMeta.state || '')
+    || detailDraft.postalCode !== (detailMeta.postal_code || '')
+    || detailDraft.requestedDate !== (detailMeta.requested_date || '')
+    || detailDraft.requestedTime !== (detailMeta.requested_time || '')
   );
 
   return (
@@ -437,51 +481,91 @@ export default function CallsPage() {
                 <div className={`mt-2 grid gap-2 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">First Name</div>
-                    <div className="text-sm text-slate-700">{detailMeta.caller_first_name || '-'}</div>
+                    <input
+                      value={detailDraft.firstName}
+                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, firstName: event.target.value }))}
+                      placeholder="First name"
+                    />
                   </div>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Last Name</div>
-                    <div className="text-sm text-slate-700">{detailMeta.caller_last_name || '-'}</div>
+                    <input
+                      value={detailDraft.lastName}
+                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, lastName: event.target.value }))}
+                      placeholder="Last name"
+                    />
                   </div>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Callback Number</div>
-                    <div className="text-sm text-slate-700">{formatPhoneNumber(detailMeta.callback_number) || '-'}</div>
+                    <input
+                      value={detailDraft.callbackNumber}
+                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, callbackNumber: event.target.value }))}
+                      placeholder="Callback number"
+                    />
                   </div>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Service Required</div>
-                    <div className="text-sm text-slate-700">{detailMeta.service_required || '-'}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Urgency</div>
-                    <div className="text-sm text-slate-700">{detailMeta.urgency_level || '-'}</div>
+                    <input
+                      value={detailDraft.serviceRequired}
+                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, serviceRequired: event.target.value }))}
+                      placeholder="Service required"
+                    />
                   </div>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Requested Date</div>
-                    <div className="text-sm text-slate-700">{detailMeta.requested_date || '-'}</div>
+                    <input
+                      type="date"
+                      value={detailDraft.requestedDate}
+                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, requestedDate: event.target.value }))}
+                    />
                   </div>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Requested Time</div>
-                    <div className="text-sm text-slate-700">{detailMeta.requested_time || '-'}</div>
+                    <input
+                      value={detailDraft.requestedTime}
+                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, requestedTime: event.target.value }))}
+                      placeholder="Requested time"
+                    />
                   </div>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Address Line 1</div>
-                    <div className="text-sm text-slate-700">{detailMeta.address_line1 || '-'}</div>
+                    <input
+                      value={detailDraft.addressLine1}
+                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, addressLine1: event.target.value }))}
+                      placeholder="Address line 1"
+                    />
                   </div>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Address Line 2</div>
-                    <div className="text-sm text-slate-700">{detailMeta.address_line2 || '-'}</div>
+                    <input
+                      value={detailDraft.addressLine2}
+                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, addressLine2: event.target.value }))}
+                      placeholder="Address line 2"
+                    />
                   </div>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">City</div>
-                    <div className="text-sm text-slate-700">{detailMeta.city || '-'}</div>
+                    <input
+                      value={detailDraft.city}
+                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, city: event.target.value }))}
+                      placeholder="City"
+                    />
                   </div>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">State</div>
-                    <div className="text-sm text-slate-700">{detailMeta.state || '-'}</div>
+                    <input
+                      value={detailDraft.state}
+                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, state: event.target.value }))}
+                      placeholder="State"
+                    />
                   </div>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Zip</div>
-                    <div className="text-sm text-slate-700">{detailMeta.postal_code || '-'}</div>
+                    <input
+                      value={detailDraft.postalCode}
+                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, postalCode: event.target.value }))}
+                      placeholder="Zip"
+                    />
                   </div>
                 </div>
               </div>
