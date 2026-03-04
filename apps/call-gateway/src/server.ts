@@ -25,6 +25,8 @@ const openAiRealtimeInputFormat = process.env.OPENAI_REALTIME_INPUT_FORMAT || "g
 const openAiRealtimeOutputFormat = process.env.OPENAI_REALTIME_OUTPUT_FORMAT || "g711_ulaw";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "rtp").toLowerCase();
+const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
+const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
 
 type StreamSession = {
   callControlId: string;
@@ -464,6 +466,39 @@ function createResponse(session: StreamSession, instructions?: string) {
   });
 }
 
+function logRealtimeRaw(session: StreamSession, payload: any) {
+  if (!realtimeDebug) return;
+  logInfo("realtime_raw_event", {
+    callSid: session.callSid,
+    type: payload?.type || "unknown",
+    payload
+  });
+}
+
+function logRealtimeTrace(session: StreamSession, payload: any) {
+  if (!realtimeTrace) return;
+  const type = payload?.type || "";
+  if (
+    type === "response.create" ||
+    type === "response.done" ||
+    type === "response.completed" ||
+    type === "response.output_audio_transcript.delta" ||
+    type === "response.audio_transcript.delta" ||
+    type === "response.output_audio_transcript.done" ||
+    type === "response.audio_transcript.done" ||
+    type === "input_audio_buffer.append" ||
+    type === "input_audio_buffer.commit" ||
+    type === "error"
+  ) {
+    logInfo("realtime_trace", {
+      callSid: session.callSid,
+      type,
+      text: payload?.delta || payload?.transcript || payload?.text || "",
+      responseId: payload?.response?.id || payload?.response_id || payload?.id || ""
+    });
+  }
+}
+
 function nextRequiredQuestion(session: StreamSession) {
   if (!session.collectedName) return "What’s your name?";
   if (!session.collectedPhone) return "What’s the best callback number for you?";
@@ -774,6 +809,8 @@ function connectOpenAiRealtime(session: StreamSession) {
       return;
     }
     const type = payload.type || "";
+    logRealtimeRaw(session, payload);
+    logRealtimeTrace(session, payload);
     if (type === "session.updated") {
       const model = payload?.session?.model || openAiRealtimeModel;
       session.realtimeModel = model;
