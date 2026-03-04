@@ -160,7 +160,9 @@ export default async function handler(req, res) {
     if (callSid) {
       const detail = await pool.query(
         `SELECT c.call_sid, c.status, c.from_number, c.to_number, c.summary, c.urgency, c.disposition, c.created_at,
-                d.transcript, d.transcript_combined, d.extracted_json, d.routing_json, d.state_json
+                d.transcript, d.transcript_combined, d.extracted_json, d.routing_json, d.state_json,
+                d.caller_first_name, d.caller_last_name, d.callback_number, d.service_required, d.urgency_level,
+                d.address_line1, d.address_line2, d.city, d.state, d.postal_code, d.requested_date, d.requested_time
          FROM calls c
          LEFT JOIN call_details d ON d.call_sid = c.call_sid
          WHERE c.tenant_key = $1 AND c.call_sid = $2
@@ -208,12 +210,57 @@ export default async function handler(req, res) {
         );
 
         if (extracted) {
+          const payload = typeof extracted === "object" ? extracted : {};
           await pool.query(
-            `INSERT INTO call_details (call_sid, extracted_json)
-             VALUES ($1, $2)
+            `INSERT INTO call_details (
+               call_sid,
+               extracted_json,
+               caller_first_name,
+               caller_last_name,
+               callback_number,
+               service_required,
+               urgency_level,
+               address_line1,
+               address_line2,
+               city,
+               state,
+               postal_code,
+               requested_date,
+               requested_time,
+               updated_at
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
              ON CONFLICT (call_sid)
-             DO UPDATE SET extracted_json = EXCLUDED.extracted_json`,
-            [callId, extracted]
+             DO UPDATE SET extracted_json = EXCLUDED.extracted_json,
+                           caller_first_name = EXCLUDED.caller_first_name,
+                           caller_last_name = EXCLUDED.caller_last_name,
+                           callback_number = EXCLUDED.callback_number,
+                           service_required = EXCLUDED.service_required,
+                           urgency_level = EXCLUDED.urgency_level,
+                           address_line1 = EXCLUDED.address_line1,
+                           address_line2 = EXCLUDED.address_line2,
+                           city = EXCLUDED.city,
+                           state = EXCLUDED.state,
+                           postal_code = EXCLUDED.postal_code,
+                           requested_date = EXCLUDED.requested_date,
+                           requested_time = EXCLUDED.requested_time,
+                           updated_at = NOW()`,
+            [
+              callId,
+              payload,
+              payload.first_name || null,
+              payload.last_name || null,
+              payload.callback_number || null,
+              payload.service_required || null,
+              payload.urgency || null,
+              payload.address_line1 || null,
+              payload.address_line2 || null,
+              payload.city || null,
+              payload.state || null,
+              payload.postal_code || null,
+              payload.requested_date || null,
+              payload.requested_time || null
+            ]
           );
         }
 

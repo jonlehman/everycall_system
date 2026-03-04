@@ -147,6 +147,18 @@ export async function ensureTables(pool) {
       extracted_json JSONB,
       routing_json JSONB,
       state_json JSONB,
+      caller_first_name TEXT,
+      caller_last_name TEXT,
+      callback_number TEXT,
+      service_required TEXT,
+      urgency_level TEXT,
+      address_line1 TEXT,
+      address_line2 TEXT,
+      city TEXT,
+      state TEXT,
+      postal_code TEXT,
+      requested_date TEXT,
+      requested_time TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -154,6 +166,18 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS state_json JSONB;`);
   await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS transcript_combined TEXT;`);
   await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS caller_first_name TEXT;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS caller_last_name TEXT;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS callback_number TEXT;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS service_required TEXT;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS urgency_level TEXT;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS address_line1 TEXT;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS address_line2 TEXT;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS city TEXT;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS state TEXT;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS postal_code TEXT;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS requested_date TEXT;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS requested_time TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS call_events (

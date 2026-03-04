@@ -432,6 +432,59 @@ export default function CallsPage() {
                   </select>
                 </div>
               </div>
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="text-sm font-semibold text-slate-700">Caller Details</div>
+                <div className={`mt-2 grid gap-2 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">First Name</div>
+                    <div className="text-sm text-slate-700">{detailMeta.caller_first_name || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Last Name</div>
+                    <div className="text-sm text-slate-700">{detailMeta.caller_last_name || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Callback Number</div>
+                    <div className="text-sm text-slate-700">{formatPhoneNumber(detailMeta.callback_number) || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Service Required</div>
+                    <div className="text-sm text-slate-700">{detailMeta.service_required || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Urgency</div>
+                    <div className="text-sm text-slate-700">{detailMeta.urgency_level || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Requested Date</div>
+                    <div className="text-sm text-slate-700">{detailMeta.requested_date || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Requested Time</div>
+                    <div className="text-sm text-slate-700">{detailMeta.requested_time || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Address Line 1</div>
+                    <div className="text-sm text-slate-700">{detailMeta.address_line1 || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Address Line 2</div>
+                    <div className="text-sm text-slate-700">{detailMeta.address_line2 || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">City</div>
+                    <div className="text-sm text-slate-700">{detailMeta.city || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">State</div>
+                    <div className="text-sm text-slate-700">{detailMeta.state || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Zip</div>
+                    <div className="text-sm text-slate-700">{detailMeta.postal_code || '-'}</div>
+                  </div>
+                </div>
+              </div>
               <div className={`mt-2 grid gap-2 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
                   <label>Urgency</label>

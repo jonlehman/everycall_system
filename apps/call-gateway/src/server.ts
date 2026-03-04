@@ -75,6 +75,14 @@ type StreamSession = {
   collectedPhone?: string;
   collectedAddress?: string;
   collectedTime?: string;
+  collectedDate?: string;
+  collectedServiceRequired?: string;
+  collectedUrgency?: string;
+  collectedAddressLine1?: string;
+  collectedAddressLine2?: string;
+  collectedCity?: string;
+  collectedState?: string;
+  collectedPostalCode?: string;
   readyToClose?: boolean;
   faqs?: Array<{ question: string; answer: string; category: string }>;
   awaitingAnswer?: boolean;
@@ -224,6 +232,19 @@ function detectTime(text: string) {
   return "";
 }
 
+function detectDate(text: string) {
+  const lower = String(text || "").toLowerCase();
+  const today = new Date();
+  const iso = (date: Date) => date.toISOString().slice(0, 10);
+  if (/\btoday\b/.test(lower) || /\btonight\b/.test(lower)) return iso(today);
+  if (/\btomorrow\b/.test(lower)) {
+    const next = new Date(today);
+    next.setDate(today.getDate() + 1);
+    return iso(next);
+  }
+  return "";
+}
+
 function detectAddress(text: string) {
   const lower = String(text || "").toLowerCase();
   if (!/\b\d{2,6}\b/.test(lower)) return "";
@@ -233,6 +254,71 @@ function detectAddress(text: string) {
     return String(text || "");
   }
   return "";
+}
+
+function parseNameParts(raw: string) {
+  const cleaned = normalizeText(raw);
+  const parts = cleaned.split(" ").filter(Boolean);
+  if (!parts.length) return { first: "", last: "" };
+  if (parts.length === 1) return { first: parts[0], last: "" };
+  return { first: parts[0], last: parts.slice(1).join(" ") };
+}
+
+function parseAddressParts(raw: string) {
+  const text = String(raw || "").trim();
+  if (!text) {
+    return {
+      address1: "",
+      address2: "",
+      city: "",
+      state: "",
+      postalCode: ""
+    };
+  }
+
+  let address1 = text;
+  let address2 = "";
+  let city = "";
+  let state = "";
+  let postalCode = "";
+
+  const parts = text.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    address1 = parts[0];
+    city = parts[1] || "";
+    const tail = parts.slice(2).join(" ").trim() || parts[1] || "";
+    const stateZipMatch = tail.match(/\b([A-Za-z]{2})\s+(\d{5})(?:-\d{4})?\b/);
+    if (stateZipMatch) {
+      state = stateZipMatch[1].toUpperCase();
+      postalCode = stateZipMatch[2];
+    } else {
+      const spelledZipMatch = tail.match(/\b([A-Za-z]+)\s+(\d{5})(?:-\d{4})?\b/);
+      if (spelledZipMatch) {
+        postalCode = spelledZipMatch[2];
+      }
+    }
+  }
+
+  const unitMatch = address1.match(/\b(?:apt|unit|suite|ste|#)\s*[\w-]+/i);
+  if (unitMatch) {
+    address2 = unitMatch[0];
+    address1 = address1.replace(unitMatch[0], "").replace(/\s+,?$/, "").trim();
+  }
+
+  return { address1, address2, city, state, postalCode };
+}
+
+function detectUrgency(text: string, intent: string) {
+  if (intent === "emergency_question") return "high";
+  const lower = String(text || "").toLowerCase();
+  if (/(emergency|urgent|asap|right away|immediately)/.test(lower)) return "high";
+  return "";
+}
+
+function detectServiceRequired(text: string, intent: string) {
+  if (!text || intent === "pricing_question" || intent === "availability_question") return "";
+  if (intent === "technical_question" || intent === "faq_business") return "";
+  return String(text || "").trim();
 }
 
 function detectName(text: string) {
@@ -371,14 +457,30 @@ async function handleCallerUtterance(session: StreamSession, transcript: string)
   const preClosePrompt = "Do you have any other questions, or anything else I can help with?";
   const needsPreCloseFollowup = Boolean(session.preCloseAsked && !session.preCloseAnswered);
 
+  const intent = detectIntent(text);
   const phone = detectPhone(text);
   const time = detectTime(text);
+  const date = detectDate(text);
   const address = detectAddress(text);
   const name = detectName(text);
+  const urgency = detectUrgency(text, intent);
+  const serviceRequired = detectServiceRequired(text, intent);
   if (phone) session.collectedPhone = phone;
   if (time) session.collectedTime = time;
+  if (date) session.collectedDate = date;
   if (address) session.collectedAddress = address;
   if (name) session.collectedName = name;
+  if (urgency) session.collectedUrgency = urgency;
+  if (serviceRequired && !session.collectedServiceRequired) session.collectedServiceRequired = serviceRequired;
+
+  if (session.collectedAddress) {
+    const parts = parseAddressParts(session.collectedAddress);
+    session.collectedAddressLine1 = parts.address1;
+    session.collectedAddressLine2 = parts.address2;
+    session.collectedCity = parts.city;
+    session.collectedState = parts.state;
+    session.collectedPostalCode = parts.postalCode;
+  }
 
   session.readyToClose = Boolean(session.collectedPhone && session.collectedAddress && session.collectedTime && session.collectedName);
 
@@ -405,7 +507,6 @@ async function handleCallerUtterance(session: StreamSession, transcript: string)
     return;
   }
 
-  const intent = detectIntent(text);
   const faqs = await loadFaqs(session);
   const faqAnswer = buildFaqAnswer(text, faqs);
 
@@ -1265,7 +1366,7 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
 
     const done = isDonePhrase(speech) || turn >= 6;
     if (done) {
-      await pool.query(`UPDATE calls SET status = 'completed' WHERE call_sid = $1`, [callSid]);
+      await pool.query(`UPDATE calls SET status = 'new' WHERE call_sid = $1`, [callSid]);
       const transcript = `${detailRow.rows[0]?.transcript || ""}\nCaller: ${speech}`.trim();
       await pool.query(
         `UPDATE call_details SET transcript = $2, updated_at = NOW() WHERE call_sid = $1`,
@@ -1283,7 +1384,21 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
             tenantKey,
             callSid,
             summary: "Call completed.",
-            extracted: { transcript }
+            extracted: {
+              transcript,
+              first_name: parseNameParts(session.collectedName || "").first || "",
+              last_name: parseNameParts(session.collectedName || "").last || "",
+              callback_number: session.collectedPhone || "",
+              service_required: session.collectedServiceRequired || "",
+              urgency: session.collectedUrgency || "",
+              address_line1: session.collectedAddressLine1 || session.collectedAddress || "",
+              address_line2: session.collectedAddressLine2 || "",
+              city: session.collectedCity || "",
+              state: session.collectedState || "",
+              postal_code: session.collectedPostalCode || "",
+              requested_date: session.collectedDate || "",
+              requested_time: session.collectedTime || ""
+            }
           })
         });
       }
@@ -1632,7 +1747,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
   ) {
     const callControlId = String(eventPayload.call_control_id || "");
     const callSid = callControlId || String(eventPayload.call_session_id || "unknown");
-    await pool.query(`UPDATE calls SET status = 'completed' WHERE call_sid = $1`, [callSid]);
+    await pool.query(`UPDATE calls SET status = 'new' WHERE call_sid = $1`, [callSid]);
     if (callControlId) {
       const session = streamSessions.get(callControlId);
       if (session?.openAiWs) {
