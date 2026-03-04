@@ -69,6 +69,8 @@ type StreamSession = {
   lastResponseId?: string;
   lastResponseDoneAt?: number;
   lastUserUtteranceAt?: number;
+  pendingResponseInstructions?: string;
+  pendingHangup?: boolean;
   preCloseAsked?: boolean;
   preCloseAnswered?: boolean;
   collectedName?: string;
@@ -83,6 +85,12 @@ type StreamSession = {
   collectedCity?: string;
   collectedState?: string;
   collectedPostalCode?: string;
+  askedName?: boolean;
+  askedPhone?: boolean;
+  askedAddress?: boolean;
+  askedTime?: boolean;
+  skipAddress?: boolean;
+  skipTime?: boolean;
   readyToClose?: boolean;
   faqs?: Array<{ question: string; answer: string; category: string }>;
   awaitingAnswer?: boolean;
@@ -445,9 +453,43 @@ function buildClosing(session: StreamSession) {
   const phone = session.collectedPhone || "the number you provided";
   const time = session.collectedTime || "";
   if (time) {
-    return `I've got you penciled in for ${time}. Someone from our team will call you at ${phone} to confirm the details. Thanks for calling ${session.companyName || "our team"}, ${name}—talk to you soon.`;
+    return `We’ll confirm availability for ${time} and call you at ${phone} to confirm the details. Thanks for calling ${session.companyName || "our team"}, ${name}—talk to you soon.`;
   }
   return `Someone from our team will call you at ${phone} shortly to confirm the details. Thanks for calling ${session.companyName || "our team"}, ${name}—talk to you soon.`;
+}
+
+function createResponse(session: StreamSession, instructions?: string) {
+  if (!session.openAiWs) return;
+  if (session.responseActive || session.outputActive) {
+    session.pendingResponseInstructions = instructions || "";
+    return;
+  }
+  session.responseActive = true;
+  sendOpenAiEvent(session.openAiWs, {
+    type: "response.create",
+    response: instructions
+      ? { modalities: ["audio", "text"], instructions }
+      : { modalities: ["audio", "text"] }
+  });
+}
+
+function nextRequiredQuestion(session: StreamSession) {
+  if (!session.collectedName) return "What’s your name?";
+  if (!session.collectedPhone) return "What’s the best callback number for you?";
+  if (!session.collectedAddress && !session.skipAddress) {
+    return "What’s the full service address, including zip code?";
+  }
+  if (!session.collectedTime && !session.skipTime) {
+    return "What time would you like someone to come out?";
+  }
+  return "";
+}
+
+function markAskedForQuestion(session: StreamSession, question: string) {
+  if (/name/i.test(question)) session.askedName = true;
+  if (/callback number/i.test(question)) session.askedPhone = true;
+  if (/address/i.test(question)) session.askedAddress = true;
+  if (/time/i.test(question)) session.askedTime = true;
 }
 
 async function handleCallerUtterance(session: StreamSession, transcript: string) {
@@ -482,16 +524,21 @@ async function handleCallerUtterance(session: StreamSession, transcript: string)
     session.collectedPostalCode = parts.postalCode;
   }
 
+  if (session.askedAddress && !session.collectedAddress) {
+    session.skipAddress = true;
+  }
+  if (session.askedTime && !session.collectedTime) {
+    session.skipTime = true;
+  }
+
   session.readyToClose = Boolean(session.collectedPhone && session.collectedAddress && session.collectedTime && session.collectedName);
 
   if (session.preCloseAsked && !session.preCloseAnswered) {
     if (isDonePhrase(text)) {
       session.preCloseAnswered = true;
       const closingText = buildClosing(session);
-      sendOpenAiEvent(session.openAiWs, {
-        type: "response.create",
-        response: { modalities: ["audio", "text"], instructions: `Say exactly: "${closingText}"` }
-      });
+      session.pendingHangup = true;
+      createResponse(session, `Say exactly: "${closingText}"`);
       return;
     }
   }
@@ -500,10 +547,7 @@ async function handleCallerUtterance(session: StreamSession, transcript: string)
   if (mismatch) {
     const industryLabel = session.industryKey ? session.industryKey.replace(/_/g, " ") : "our services";
     const reply = `We specialize in ${industryLabel}. Are you calling about ${industryLabel} service?`;
-    sendOpenAiEvent(session.openAiWs, {
-      type: "response.create",
-      response: { modalities: ["audio", "text"], instructions: `Say exactly: "${reply}"` }
-    });
+    createResponse(session, `Say exactly: "${reply}"`);
     return;
   }
 
@@ -512,69 +556,70 @@ async function handleCallerUtterance(session: StreamSession, transcript: string)
 
   if (intent === "technical_question") {
     const reply = "Great question — the technician will cover that when they call.";
-    sendOpenAiEvent(session.openAiWs, {
-      type: "response.create",
-      response: {
-        modalities: ["audio", "text"],
-        instructions: needsPreCloseFollowup
-          ? `Say exactly: "${reply}" Then ask: "${preClosePrompt}"`
-          : `Say exactly: "${reply}" Then continue the call flow with the next needed question in one short sentence.`
-      }
-    });
+    if (needsPreCloseFollowup) {
+      createResponse(session, `Say exactly: "${reply}" Then ask: "${preClosePrompt}"`);
+      return;
+    }
+    const nextQuestion = nextRequiredQuestion(session);
+    if (nextQuestion) {
+      markAskedForQuestion(session, nextQuestion);
+      createResponse(session, `Say exactly: "${reply}" Then ask: "${nextQuestion}"`);
+      return;
+    }
+    createResponse(session, `Say exactly: "${reply}"`);
     return;
   }
 
   if (faqAnswer) {
-    sendOpenAiEvent(session.openAiWs, {
-      type: "response.create",
-      response: {
-        modalities: ["audio", "text"],
-        instructions: needsPreCloseFollowup
-          ? `Say exactly: "${faqAnswer}" Then ask: "${preClosePrompt}"`
-          : `Say exactly: "${faqAnswer}" Then continue the call flow with the next needed question in one short sentence.`
-      }
-    });
+    if (needsPreCloseFollowup) {
+      createResponse(session, `Say exactly: "${faqAnswer}" Then ask: "${preClosePrompt}"`);
+      return;
+    }
+    const nextQuestion = nextRequiredQuestion(session);
+    if (nextQuestion) {
+      markAskedForQuestion(session, nextQuestion);
+      createResponse(session, `Say exactly: "${faqAnswer}" Then ask: "${nextQuestion}"`);
+      return;
+    }
+    createResponse(session, `Say exactly: "${faqAnswer}"`);
     return;
   }
 
   if (isFaqIntent(intent)) {
     const reply = "I don’t have that detail, but I can have someone call you with the specifics.";
-    sendOpenAiEvent(session.openAiWs, {
-      type: "response.create",
-      response: {
-        modalities: ["audio", "text"],
-        instructions: needsPreCloseFollowup
-          ? `Say exactly: "${reply}" Then ask: "${preClosePrompt}"`
-          : `Say exactly: "${reply}" Then continue the call flow with the next needed question in one short sentence.`
-      }
-    });
+    if (needsPreCloseFollowup) {
+      createResponse(session, `Say exactly: "${reply}" Then ask: "${preClosePrompt}"`);
+      return;
+    }
+    const nextQuestion = nextRequiredQuestion(session);
+    if (nextQuestion) {
+      markAskedForQuestion(session, nextQuestion);
+      createResponse(session, `Say exactly: "${reply}" Then ask: "${nextQuestion}"`);
+      return;
+    }
+    createResponse(session, `Say exactly: "${reply}"`);
     return;
   }
 
   if (session.readyToClose && !session.preCloseAsked) {
     session.preCloseAsked = true;
-    sendOpenAiEvent(session.openAiWs, {
-      type: "response.create",
-      response: { modalities: ["audio", "text"], instructions: `Say exactly: "${preClosePrompt}"` }
-    });
+    createResponse(session, `Say exactly: "${preClosePrompt}"`);
     return;
   }
 
   if (needsPreCloseFollowup) {
-    sendOpenAiEvent(session.openAiWs, {
-      type: "response.create",
-      response: {
-        modalities: ["audio", "text"],
-        instructions: `Answer the caller briefly, then ask: "${preClosePrompt}"`
-      }
-    });
+    createResponse(session, `Answer the caller briefly, then ask: "${preClosePrompt}"`);
     return;
   }
 
-  sendOpenAiEvent(session.openAiWs, {
-    type: "response.create",
-    response: { modalities: ["audio", "text"] }
-  });
+  const nextQuestion = nextRequiredQuestion(session);
+  if (nextQuestion) {
+    markAskedForQuestion(session, nextQuestion);
+    createResponse(session, `Say exactly: "${nextQuestion}"`);
+    return;
+  }
+
+  createResponse(session, `Say exactly: "${preClosePrompt}"`);
 }
 
 async function flushAssistantText(session: StreamSession) {
@@ -824,6 +869,27 @@ function connectOpenAiRealtime(session: StreamSession) {
       session.lastResponseId = responseId || session.lastResponseId;
       session.lastResponseDoneAt = Date.now();
       if (text) {
+        if (session.pendingHangup && session.callControlId) {
+          session.pendingHangup = false;
+          setTimeout(async () => {
+            try {
+              await telnyxCallAction(session.callControlId, "hangup", {});
+            } catch (err) {
+              logError("telnyx_call_control_hangup_error", {
+                message: err instanceof Error ? err.message : "unknown"
+              });
+            }
+          }, 1500);
+        }
+        if (session.pendingResponseInstructions !== undefined) {
+          const queued = session.pendingResponseInstructions;
+          session.pendingResponseInstructions = undefined;
+          if (queued) {
+            createResponse(session, queued);
+          } else {
+            createResponse(session);
+          }
+        }
         // Debounce short multi-part outputs into a single assistant message.
         session.pendingAssistantFlush = (session.pendingAssistantFlush || "").trim();
         const merged = session.pendingAssistantFlush
