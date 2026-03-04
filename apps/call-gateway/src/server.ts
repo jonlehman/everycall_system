@@ -5,6 +5,7 @@ import { readCallGatewayEnv } from "@everycall/config";
 import { logError, logInfo } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
 import pg from "pg";
+import fs from "node:fs";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -27,6 +28,7 @@ const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "rtp").toLowerCase();
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
+const realtimeLogFile = String(process.env.REALTIME_LOG_FILE || "/tmp/realtime-logs.jsonl");
 
 type StreamSession = {
   callControlId: string;
@@ -468,11 +470,22 @@ function createResponse(session: StreamSession, instructions?: string) {
 
 function logRealtimeRaw(session: StreamSession, payload: any) {
   if (!realtimeDebug) return;
-  logInfo("realtime_raw_event", {
+  const entry = {
+    ts: new Date().toISOString(),
+    kind: "raw",
     callSid: session.callSid,
     type: payload?.type || "unknown",
     payload
-  });
+  };
+  logInfo("realtime_raw_event", entry);
+  try {
+    fs.appendFileSync(realtimeLogFile, `${JSON.stringify(entry)}\n`);
+  } catch (err) {
+    logError("realtime_log_write_failed", {
+      callSid: session.callSid,
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
 }
 
 function logRealtimeTrace(session: StreamSession, payload: any) {
@@ -490,12 +503,23 @@ function logRealtimeTrace(session: StreamSession, payload: any) {
     type === "input_audio_buffer.commit" ||
     type === "error"
   ) {
-    logInfo("realtime_trace", {
+    const entry = {
+      ts: new Date().toISOString(),
+      kind: "trace",
       callSid: session.callSid,
       type,
       text: payload?.delta || payload?.transcript || payload?.text || "",
       responseId: payload?.response?.id || payload?.response_id || payload?.id || ""
-    });
+    };
+    logInfo("realtime_trace", entry);
+    try {
+      fs.appendFileSync(realtimeLogFile, `${JSON.stringify(entry)}\n`);
+    } catch (err) {
+      logError("realtime_log_write_failed", {
+        callSid: session.callSid,
+        message: err instanceof Error ? err.message : "unknown"
+      });
+    }
   }
 }
 
