@@ -1374,33 +1374,54 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
         [callSid, transcript]
       );
       if (appBaseUrl && callSummaryToken) {
-        await fetch(`${appBaseUrl}/api/v1/calls?tenantKey=${encodeURIComponent(tenantKey)}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-everycall-internal": callSummaryToken
-          },
-          body: JSON.stringify({
-            action: "summary",
-            tenantKey,
+        try {
+          const resp = await fetch(`${appBaseUrl}/api/v1/calls?tenantKey=${encodeURIComponent(tenantKey)}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-everycall-internal": callSummaryToken
+            },
+            body: JSON.stringify({
+              action: "summary",
+              tenantKey,
+              callSid,
+              summary: "Call completed.",
+              extracted: {
+                transcript,
+                first_name: parseNameParts(session?.collectedName || "").first || "",
+                last_name: parseNameParts(session?.collectedName || "").last || "",
+                callback_number: session?.collectedPhone || "",
+                service_required: session?.collectedServiceRequired || "",
+                urgency: session?.collectedUrgency || "",
+                address_line1: session?.collectedAddressLine1 || session?.collectedAddress || "",
+                address_line2: session?.collectedAddressLine2 || "",
+                city: session?.collectedCity || "",
+                state: session?.collectedState || "",
+                postal_code: session?.collectedPostalCode || "",
+                requested_date: session?.collectedDate || "",
+                requested_time: session?.collectedTime || ""
+              }
+            })
+          });
+          if (!resp.ok) {
+            const text = await resp.text();
+            logError("call_summary_post_failed", { callSid, tenantKey, status: resp.status, body: text.slice(0, 200) });
+          } else {
+            logInfo("call_summary_post_ok", { callSid, tenantKey });
+          }
+        } catch (err) {
+          logError("call_summary_post_error", {
             callSid,
-            summary: "Call completed.",
-            extracted: {
-              transcript,
-              first_name: parseNameParts(session?.collectedName || "").first || "",
-              last_name: parseNameParts(session?.collectedName || "").last || "",
-              callback_number: session?.collectedPhone || "",
-              service_required: session?.collectedServiceRequired || "",
-              urgency: session?.collectedUrgency || "",
-              address_line1: session?.collectedAddressLine1 || session?.collectedAddress || "",
-              address_line2: session?.collectedAddressLine2 || "",
-              city: session?.collectedCity || "",
-              state: session?.collectedState || "",
-              postal_code: session?.collectedPostalCode || "",
-              requested_date: session?.collectedDate || "",
-              requested_time: session?.collectedTime || ""
-            }
-          })
+            tenantKey,
+            message: err instanceof Error ? err.message : "unknown"
+          });
+        }
+      } else {
+        logError("call_summary_post_skipped", {
+          callSid,
+          tenantKey,
+          hasBaseUrl: Boolean(appBaseUrl),
+          hasToken: Boolean(callSummaryToken)
         });
       }
       res.type("text/xml").status(200).send(buildHangupResponse("Thanks. We have your details and will follow up soon."));
@@ -1751,6 +1772,59 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     await pool.query(`UPDATE calls SET status = 'new' WHERE call_sid = $1`, [callSid]);
     if (callControlId) {
       const session = streamSessions.get(callControlId);
+      if (session?.tenantKey && appBaseUrl && callSummaryToken) {
+        try {
+          const detailRow = await pool.query(
+            `SELECT transcript FROM call_details WHERE call_sid = $1`,
+            [callSid]
+          );
+          const transcript = String(detailRow.rows[0]?.transcript || "").trim();
+          if (transcript) {
+            const resp = await fetch(`${appBaseUrl}/api/v1/calls?tenantKey=${encodeURIComponent(session.tenantKey)}`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-everycall-internal": callSummaryToken
+              },
+              body: JSON.stringify({
+                action: "summary",
+                tenantKey: session.tenantKey,
+                callSid,
+                summary: "Call completed.",
+                extracted: {
+                  transcript,
+                  first_name: parseNameParts(session.collectedName || "").first || "",
+                  last_name: parseNameParts(session.collectedName || "").last || "",
+                  callback_number: session.collectedPhone || "",
+                  service_required: session.collectedServiceRequired || "",
+                  urgency: session.collectedUrgency || "",
+                  address_line1: session.collectedAddressLine1 || session.collectedAddress || "",
+                  address_line2: session.collectedAddressLine2 || "",
+                  city: session.collectedCity || "",
+                  state: session.collectedState || "",
+                  postal_code: session.collectedPostalCode || "",
+                  requested_date: session.collectedDate || "",
+                  requested_time: session.collectedTime || ""
+                }
+              })
+            });
+            if (!resp.ok) {
+              const text = await resp.text();
+              logError("call_summary_post_failed", { callSid, tenantKey: session.tenantKey, status: resp.status, body: text.slice(0, 200) });
+            } else {
+              logInfo("call_summary_post_ok", { callSid, tenantKey: session.tenantKey });
+            }
+          } else {
+            logError("call_summary_missing_transcript", { callSid, tenantKey: session.tenantKey });
+          }
+        } catch (err) {
+          logError("call_summary_post_error", {
+            callSid,
+            tenantKey: session.tenantKey,
+            message: err instanceof Error ? err.message : "unknown"
+          });
+        }
+      }
       if (session?.openAiWs) {
         session.openAiWs.close();
       }
