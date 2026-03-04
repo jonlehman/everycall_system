@@ -461,6 +461,24 @@ function createResponse(session: StreamSession, instructions?: string) {
     session.pendingResponseInstructions = instructions || "";
     return;
   }
+  if (realtimeDebug || realtimeTrace) {
+    const entry = {
+      ts: new Date().toISOString(),
+      kind: "outbound",
+      callSid: session.callSid,
+      type: "response.create",
+      instructions: instructions || ""
+    };
+    logInfo("realtime_outbound", entry);
+    try {
+      fs.appendFileSync(realtimeLogFile, `${JSON.stringify(entry)}\n`);
+    } catch (err) {
+      logError("realtime_log_write_failed", {
+        callSid: session.callSid,
+        message: err instanceof Error ? err.message : "unknown"
+      });
+    }
+  }
   session.responseActive = true;
   sendOpenAiEvent(session.openAiWs, {
     type: "response.create",
@@ -820,7 +838,7 @@ function connectOpenAiRealtime(session: StreamSession) {
       callSid: session.callSid,
       model: openAiRealtimeModel
     });
-    sendOpenAiEvent(ws, {
+    const sessionUpdate = {
       type: "session.update",
       session: {
         modalities: ["audio", "text"],
@@ -836,7 +854,26 @@ function connectOpenAiRealtime(session: StreamSession) {
         },
         input_audio_transcription: { model: "gpt-4o-mini-transcribe", language: "en" }
       }
-    });
+    };
+    if (realtimeDebug || realtimeTrace) {
+      const entry = {
+        ts: new Date().toISOString(),
+        kind: "outbound",
+        callSid: session.callSid,
+        type: "session.update",
+        instructions
+      };
+      logInfo("realtime_outbound", entry);
+      try {
+        fs.appendFileSync(realtimeLogFile, `${JSON.stringify(entry)}\n`);
+      } catch (err) {
+        logError("realtime_log_write_failed", {
+          callSid: session.callSid,
+          message: err instanceof Error ? err.message : "unknown"
+        });
+      }
+    }
+    sendOpenAiEvent(ws, sessionUpdate);
 
     if (session.greeting) {
       session.responseActive = true;
