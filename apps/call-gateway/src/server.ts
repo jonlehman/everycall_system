@@ -284,17 +284,17 @@ function parseAddressParts(raw: string) {
 
   const parts = text.split(",").map((part) => part.trim()).filter(Boolean);
   if (parts.length >= 2) {
-    address1 = parts[0];
+    address1 = parts[0] || "";
     city = parts[1] || "";
     const tail = parts.slice(2).join(" ").trim() || parts[1] || "";
     const stateZipMatch = tail.match(/\b([A-Za-z]{2})\s+(\d{5})(?:-\d{4})?\b/);
     if (stateZipMatch) {
-      state = stateZipMatch[1].toUpperCase();
-      postalCode = stateZipMatch[2];
+      state = (stateZipMatch[1] || "").toUpperCase();
+      postalCode = stateZipMatch[2] || "";
     } else {
       const spelledZipMatch = tail.match(/\b([A-Za-z]+)\s+(\d{5})(?:-\d{4})?\b/);
       if (spelledZipMatch) {
-        postalCode = spelledZipMatch[2];
+        postalCode = spelledZipMatch[2] || "";
       }
     }
   }
@@ -1364,6 +1364,7 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
     );
     await appendCombinedTranscript(callSid, "caller", speech);
 
+    const session = Array.from(streamSessions.values()).find((item) => item.callSid === callSid);
     const done = isDonePhrase(speech) || turn >= 6;
     if (done) {
       await pool.query(`UPDATE calls SET status = 'new' WHERE call_sid = $1`, [callSid]);
@@ -1386,18 +1387,18 @@ app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, re
             summary: "Call completed.",
             extracted: {
               transcript,
-              first_name: parseNameParts(session.collectedName || "").first || "",
-              last_name: parseNameParts(session.collectedName || "").last || "",
-              callback_number: session.collectedPhone || "",
-              service_required: session.collectedServiceRequired || "",
-              urgency: session.collectedUrgency || "",
-              address_line1: session.collectedAddressLine1 || session.collectedAddress || "",
-              address_line2: session.collectedAddressLine2 || "",
-              city: session.collectedCity || "",
-              state: session.collectedState || "",
-              postal_code: session.collectedPostalCode || "",
-              requested_date: session.collectedDate || "",
-              requested_time: session.collectedTime || ""
+              first_name: parseNameParts(session?.collectedName || "").first || "",
+              last_name: parseNameParts(session?.collectedName || "").last || "",
+              callback_number: session?.collectedPhone || "",
+              service_required: session?.collectedServiceRequired || "",
+              urgency: session?.collectedUrgency || "",
+              address_line1: session?.collectedAddressLine1 || session?.collectedAddress || "",
+              address_line2: session?.collectedAddressLine2 || "",
+              city: session?.collectedCity || "",
+              state: session?.collectedState || "",
+              postal_code: session?.collectedPostalCode || "",
+              requested_date: session?.collectedDate || "",
+              requested_time: session?.collectedTime || ""
             }
           })
         });
