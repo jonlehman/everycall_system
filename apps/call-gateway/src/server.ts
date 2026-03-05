@@ -166,11 +166,16 @@ function buildSessionInstructions(payload: PromptPayload) {
     .map((faq) => {
       const tags = Array.isArray(faq.tags) && faq.tags.length ? ` [tags: ${faq.tags.join(", ")}]` : "";
       const id = faq.id ? `[${faq.id}] ` : "";
-      return `${id}Q: ${faq.question}\nA: ${faq.answer}${tags}`;
+      return `${id}Q: ${faq.question}${tags}`;
     })
     .join("\n\n");
 
-  return [payload.system_prompt, payload.tenant_greeting, faqText].filter(Boolean).join("\n\n");
+  const faqUsagePolicy = `# FAQ TOOL POLICY
+For any tenant-specific factual question (hours, service area, location, pricing/payment, services, warranty, scheduling), call tool "faq_lookup" before answering.
+Do not answer tenant-specific facts from memory.
+If faq_lookup returns no match, say you do not have that detail and offer callback follow-up.`;
+
+  return [payload.system_prompt, faqUsagePolicy, payload.tenant_greeting, faqText].filter(Boolean).join("\n\n");
 }
 
 function validatePromptPayload(input: unknown): PromptPayload {
@@ -683,6 +688,12 @@ function connectOpenAiRealtime(session: StreamSession) {
       if (name === "faq_lookup") {
         const query = String((args as any).query || "");
         const matches = buildFaqMatches(session.promptPayload?.tenant_faqs || [], query);
+        logInfo("faq_lookup_tool_called", {
+          callSid: session.callSid,
+          query,
+          matchCount: matches.matches.length
+        });
+        await forwardToolResult(session.callSid, session.tenantKey, name, { query, matches }, { status: "accepted", errors: [] });
         sendOpenAiEvent(session.openAiWs, {
           type: "conversation.item.create",
           item: {
