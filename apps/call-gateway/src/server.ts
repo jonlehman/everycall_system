@@ -415,6 +415,18 @@ async function endCallSession(session: StreamSession | undefined, reason: string
   await markCallCompleted(session.callSid);
 }
 
+async function flushFinalAudioAndEnd(session: StreamSession | undefined, reason: string, shouldHangup: boolean) {
+  if (!session) return;
+  if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
+    try {
+      // Ensure final caller utterance is committed before shutdown.
+      sendOpenAiEvent(session.openAiWs, { type: "input_audio_buffer.commit" });
+      await sleep(250);
+    } catch {}
+  }
+  await endCallSession(session, reason, shouldHangup);
+}
+
 async function fetchPromptPayload(tenantKey: string, callSid: string, to: string, from: string): Promise<PromptPayload> {
   if (!appBaseUrl || !callSummaryToken) {
     throw new Error("missing_app_base_or_token");
@@ -984,7 +996,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     if (callControlId) {
       const session = streamSessions.get(callControlId);
       if (session) {
-        await endCallSession(session, "telnyx_streaming_stopped", false);
+        await flushFinalAudioAndEnd(session, "telnyx_streaming_stopped", false);
       } else {
         await markCallCompleted(callControlId);
       }
@@ -997,7 +1009,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     if (callControlId) {
       const session = streamSessions.get(callControlId);
       if (session) {
-        await endCallSession(session, "telnyx_hangup", false);
+        await flushFinalAudioAndEnd(session, "telnyx_hangup", false);
       } else {
         await markCallCompleted(callControlId);
       }
@@ -1083,7 +1095,7 @@ wss.on("connection", (ws) => {
       if (!callControlId) return;
       const session = streamSessions.get(callControlId);
       if (session) {
-        await endCallSession(session, "telnyx_stream_stop", false);
+        await flushFinalAudioAndEnd(session, "telnyx_stream_stop", false);
       } else {
         await markCallCompleted(callControlId);
       }
