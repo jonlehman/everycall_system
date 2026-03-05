@@ -13,6 +13,7 @@ The Client UI is the tenant-facing operations workspace for managing call handli
 - Make core configuration (FAQ, routing, greeting/settings) editable without engineering help.
 - Ensure call details and transcripts are easy to review and act on.
 - Preserve tenant safety: role-based access, clear destructive-action controls, deterministic behavior.
+- Gate assistant activation until setup readiness is complete and explicit.
 
 ## 4. Non-Goals
 - Full CRM pipeline management.
@@ -50,6 +51,10 @@ These principles are mandatory across all client UI screens.
 - Always show `Saving`, `Saved`, or actionable error.
 - No silent failures and no ambiguous save state.
 
+8. Global activation control:
+- A single assistant `Enabled/Disabled` toggle is visible at top-right on all client screens.
+- Toggle is grayed out and forced `Disabled` until setup readiness is complete.
+
 ## 6. UI Workflow (End-to-End)
 This is the intended day-to-day workflow in the Client UI. Navigation, defaults, and calls-to-action should reinforce this sequence.
 
@@ -57,14 +62,19 @@ This is the intended day-to-day workflow in the Client UI. Navigation, defaults,
 1. Land on `Overview`.
 2. If forwarding is not configured:
 - Show activation banner with clear action to complete forwarding setup.
-3. Guide user to "minimum viable setup":
+3. Show global assistant toggle in `Disabled` state with unmet-checklist reasons.
+4. Guide user to "minimum viable setup":
 - `Settings` (confirm business profile + timezone/greeting)
-- `FAQ` (review and edit top defaults)
+- `FAQ` (review industry defaults, fill blanks, or delete unwanted items)
 - `Routing` (confirm emergency/after-hours behavior)
-4. Return user to `Overview` with confirmation that setup baseline is complete.
+5. Return user to `Overview` with confirmation that setup baseline is complete.
+6. Enable toggle interaction only after all required setup items are complete.
 
 Completion condition:
-- At least one successful save in Settings, FAQ, and Routing.
+- Forwarding setup status is `acknowledged` or `configured`.
+- Required Settings save completed.
+- Required Routing save completed.
+- No unresolved blank required FAQs remain (each blank was answered or item deleted).
 
 ### 5.2 Daily Operations Workflow
 1. Start on `Overview` to triage:
@@ -124,6 +134,7 @@ Purpose:
 - Give users one clear starting place for daily work.
 
 Core layout:
+- Global top bar with assistant `Enabled/Disabled` toggle (top-right, all screens).
 - Top summary strip: Calls Today, Missed, Urgent, Callbacks Due.
 - Recent Calls panel.
 - Action Queue panel.
@@ -243,6 +254,8 @@ Acceptance criteria:
 - Empty state displayed when no calls exist.
 - API failure state shown with retry action.
 - Initial render target: <= 2.0s on standard broadband for cached users.
+- Assistant toggle is disabled/grayed out until setup readiness checks pass.
+- Toggle state is consistent across all client screens.
 
 ### 9.2 Calls Inbox
 Purpose:

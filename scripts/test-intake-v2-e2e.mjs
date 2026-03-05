@@ -32,7 +32,22 @@ function payload(seed) {
     averageCallsPerDay: 12,
     emergencyServices: true,
     servicesOffered: ["Drain cleaning"],
-    primaryGoals: ["reduce_missed_calls"]
+    primaryGoals: ["reduce_missed_calls"],
+    faqDrafts: [
+      {
+        question: "Do you handle drain clogs and backups?",
+        category: "Services",
+        answer: "Yes. We clear clogs and inspect lines.",
+        sourceType: "website",
+        sourceUrl: "https://example.com",
+        sourceConfidence: 0.88
+      },
+      {
+        question: "What should I do for a burst pipe?",
+        category: "Emergency",
+        answer: ""
+      }
+    ]
   };
 }
 
@@ -42,9 +57,22 @@ async function run() {
   const body = payload(seed);
 
   if (dryRun) {
-    console.log("DRY RUN: submit onboarding -> assert session -> save forwarding status -> assert tenant page access");
+    console.log("DRY RUN: enrichment preview -> onboarding -> forwarding -> assistant gated -> resolve blank FAQ -> enable assistant -> tenant page access");
     return;
   }
+
+  const previewResp = await fetch(`${baseUrl}/api/v1/tenants/enrichment/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ownerEmail: body.ownerEmail,
+      website: "https://example.com",
+      industry: body.industry
+    })
+  });
+  const previewData = await previewResp.json().catch(() => null);
+  assert(previewResp.status === 200, `Expected enrichment preview 200, got ${previewResp.status}`);
+  assert(Array.isArray(previewData?.enrichment?.faqs), "Expected enrichment FAQ list");
 
   const onboardResp = await fetch(`${baseUrl}/api/v1/tenants/onboard`, {
     method: "POST",
@@ -75,6 +103,36 @@ async function run() {
   assert(forwardingResp.status === 200, `Expected forwarding-status 200, got ${forwardingResp.status}`);
   assert(forwardingData?.ok === true, "Expected forwarding-status ok=true");
   assert(forwardingData?.forwarding?.status === "acknowledged", "Expected acknowledged forwarding status");
+
+  const statusBeforeEnableResp = await fetch(`${baseUrl}/api/v1/assistant/status`, {
+    headers: { cookie }
+  });
+  const statusBeforeEnableData = await statusBeforeEnableResp.json().catch(() => null);
+  assert(statusBeforeEnableResp.status === 200, `Expected assistant-status 200, got ${statusBeforeEnableResp.status}`);
+  assert(statusBeforeEnableData?.assistant?.ready === false, "Expected assistant not ready while blank FAQ exists");
+
+  const faqResp = await fetch(`${baseUrl}/api/v1/faq`, { headers: { cookie } });
+  const faqData = await faqResp.json().catch(() => null);
+  assert(faqResp.status === 200, `Expected faq 200, got ${faqResp.status}`);
+  const blankIndustryFaq = (faqData?.faqs || []).find((faq) => faq.is_industry_default && !String(faq.answer || "").trim());
+  assert(blankIndustryFaq?.id, "Expected at least one blank industry FAQ");
+
+  const deleteResp = await fetch(`${baseUrl}/api/v1/faq?id=${blankIndustryFaq.id}`, {
+    method: "DELETE",
+    headers: { cookie }
+  });
+  const deleteData = await deleteResp.json().catch(() => null);
+  assert(deleteResp.status === 200, `Expected FAQ delete 200, got ${deleteResp.status}`);
+  assert(deleteData?.ok === true, "Expected FAQ delete ok=true");
+
+  const enableResp = await fetch(`${baseUrl}/api/v1/assistant/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ enabled: true })
+  });
+  const enableData = await enableResp.json().catch(() => null);
+  assert(enableResp.status === 200, `Expected assistant enable 200, got ${enableResp.status}`);
+  assert(enableData?.assistant?.enabled === true, "Expected assistant enabled=true");
 
   const overviewResp = await fetch(`${baseUrl}/client/overview`, {
     headers: { cookie },

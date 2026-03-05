@@ -11,6 +11,12 @@ function id() {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 }
 
+function cookieFromHeaders(headers) {
+  const raw = headers.get("set-cookie");
+  if (!raw) return "";
+  return raw.split(",").map((chunk) => chunk.split(";")[0]).join("; ");
+}
+
 function makePayload(seed, overrides = {}) {
   return {
     businessName: `Intake QA ${seed}`,
@@ -58,6 +64,20 @@ async function run() {
       }
     },
     {
+      name: "enrichment preview: returns default FAQs and explicit-evidence behavior",
+      run: async () => {
+        const res = await postJson("/api/v1/tenants/enrichment/preview", {
+          ownerEmail: `owner.${seed}@example.com`,
+          website: "https://example.com",
+          industry: "plumbing"
+        });
+        assert(res.status === 200, `Expected 200, got ${res.status}`);
+        assert(res.data?.ok === true, "Expected ok=true");
+        assert(Array.isArray(res.data?.enrichment?.faqs), "Expected enrichment faqs array");
+        assert((res.data?.enrichment?.defaultFaqCount || 0) >= 1, "Expected default FAQ count >= 1");
+      }
+    },
+    {
       name: "happy path: onboarding succeeds with canonical response",
       run: async () => {
         const res = await postJson("/api/v1/tenants/onboard", validPayload);
@@ -66,6 +86,34 @@ async function run() {
         assert(typeof res.data?.tenantKey === "string" && res.data.tenantKey.length > 0, "Missing tenantKey");
         assert(res.data?.redirectTo === "/client/overview", `Unexpected redirectTo: ${res.data?.redirectTo}`);
         assert(res.data?.provisioning && typeof res.data.provisioning.voiceStatus === "string", "Missing provisioning block");
+      }
+    },
+    {
+      name: "assistant status: disabled until forwarding + blank FAQ resolution complete",
+      run: async () => {
+        const statusSeed = id();
+        const onboarding = await postJson("/api/v1/tenants/onboard", makePayload(statusSeed, {
+          faqDrafts: [
+            { question: "Do you handle drain clogs and backups?", category: "Services", answer: "Yes, we do.", sourceType: "website", sourceUrl: "https://example.com", sourceConfidence: 0.81 },
+            { question: "What should I do for a burst pipe?", category: "Emergency", answer: "" }
+          ]
+        }));
+        assert(onboarding.status === 200, `Expected 200, got ${onboarding.status}`);
+        const cookie = cookieFromHeaders(onboarding.headers);
+        assert(cookie.includes("everycall_session="), "Expected session cookie");
+
+        const statusBefore = await fetch(`${baseUrl}/api/v1/assistant/status`, { headers: { cookie } });
+        const statusBeforeData = await statusBefore.json().catch(() => null);
+        assert(statusBefore.status === 200, `Expected status 200, got ${statusBefore.status}`);
+        assert(statusBeforeData?.assistant?.ready === false, "Expected assistant not ready before forwarding");
+
+        const forwarding = await postJson("/api/v1/tenants/forwarding-status", { status: "acknowledged" }, { cookie });
+        assert(forwarding.status === 200, `Expected forwarding 200, got ${forwarding.status}`);
+
+        const statusMid = await fetch(`${baseUrl}/api/v1/assistant/status`, { headers: { cookie } });
+        const statusMidData = await statusMid.json().catch(() => null);
+        assert(statusMidData?.assistant?.ready === false, "Expected assistant not ready with unresolved blank FAQ");
+        assert((statusMidData?.assistant?.unresolvedBlankFaqCount || 0) > 0, "Expected unresolved blank FAQ count > 0");
       }
     },
     {

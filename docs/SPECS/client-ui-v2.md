@@ -13,6 +13,7 @@ Defines implementation requirements for the tenant-facing Client UI, including r
 - Keep full configuration capability without overwhelming users.
 - Enforce safe role-based write behavior.
 - Standardize loading/empty/error/save feedback across all client screens.
+- Expose one global assistant `Enabled/Disabled` control with deterministic setup gating.
 
 ## Non-Goals
 - CRM replacement features.
@@ -25,6 +26,8 @@ Defines implementation requirements for the tenant-facing Client UI, including r
 3. Consistent page skeleton: title -> status -> CTA -> content -> save state.
 4. Explicit save state (`Saving`, `Saved`, actionable error).
 5. Plain-language labels over system jargon.
+6. Global assistant toggle at top-right on all client screens.
+7. Toggle remains disabled/grayed-out until setup readiness checks pass.
 
 ## Role Contract
 | Capability | Owner | Manager | Staff |
@@ -44,6 +47,7 @@ Purpose:
 - Triage and prioritize work for current shift.
 
 Required modules:
+- Global top bar showing assistant `Enabled/Disabled` toggle and readiness status.
 - KPI cards: calls today, missed, urgent, callbacks due.
 - Recent calls list.
 - Action queue.
@@ -52,6 +56,13 @@ Required actions:
 - Open urgent call.
 - Open callback task.
 - Open full Calls Inbox.
+- Open unresolved setup checklist items when toggle is disabled.
+
+Setup readiness gate (toggle unlock conditions):
+- Forwarding setup is `acknowledged` or `configured`.
+- Required Settings section has a successful save.
+- Required Routing section has a successful save.
+- No unresolved blank industry-default FAQs remain (blank item must be answered or deleted).
 
 ### 2) Calls Inbox
 Purpose:
@@ -169,3 +180,5 @@ Track:
 3. Role gating and backend authorization are aligned.
 4. Required UI states exist on all screens.
 5. Regression and E2E test matrix passes in staging.
+6. Global assistant toggle is visible on all client screens and is state-consistent.
+7. Toggle cannot be enabled until setup readiness gate conditions are met.

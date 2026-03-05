@@ -5,6 +5,13 @@ import Link from 'next/link';
 
 export default function Header() {
   const [tenantName, setTenantName] = useState('Tenant');
+  const [assistant, setAssistant] = useState({
+    loading: true,
+    busy: false,
+    ready: false,
+    enabled: false,
+    reasons: []
+  });
   const [open, setOpen] = useState(false);
   const timerRef = useRef(null);
 
@@ -40,18 +47,85 @@ export default function Header() {
 
   useEffect(() => {
     let mounted = true;
-    fetch(`/api/v1/settings`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => {
-        if (!mounted || !data?.tenant?.name) return;
-        setTenantName(data.tenant.name);
+    Promise.all([
+      fetch('/api/v1/settings').then((resp) => resp.ok ? resp.json() : null).catch(() => null),
+      fetch('/api/v1/assistant/status').then((resp) => resp.ok ? resp.json() : null).catch(() => null)
+    ])
+      .then(([settingsData, assistantData]) => {
+        if (!mounted) return;
+        if (settingsData?.tenant?.name) setTenantName(settingsData.tenant.name);
+        setAssistant({
+          loading: false,
+          busy: false,
+          ready: Boolean(assistantData?.assistant?.ready),
+          enabled: Boolean(assistantData?.assistant?.enabled),
+          reasons: Array.isArray(assistantData?.assistant?.reasons) ? assistantData.assistant.reasons : []
+        });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!mounted) return;
+        setAssistant((prev) => ({ ...prev, loading: false }));
+      });
     return () => { mounted = false; };
   }, []);
 
+  const toggleAssistant = async () => {
+    if (assistant.busy || !assistant.ready) return;
+    const nextEnabled = !assistant.enabled;
+    setAssistant((prev) => ({ ...prev, busy: true }));
+    try {
+      const resp = await fetch('/api/v1/assistant/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: nextEnabled })
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        setAssistant((prev) => ({
+          ...prev,
+          busy: false,
+          ready: Boolean(data?.assistant?.ready),
+          enabled: Boolean(data?.assistant?.enabled),
+          reasons: Array.isArray(data?.assistant?.reasons) ? data.assistant.reasons : prev.reasons
+        }));
+        return;
+      }
+      setAssistant({
+        loading: false,
+        busy: false,
+        ready: Boolean(data?.assistant?.ready),
+        enabled: Boolean(data?.assistant?.enabled),
+        reasons: Array.isArray(data?.assistant?.reasons) ? data.assistant.reasons : []
+      });
+    } catch {
+      setAssistant((prev) => ({ ...prev, busy: false }));
+    }
+  };
+
   return (
-    <div className="mb-4 flex justify-end">
+    <div className="mb-4 flex items-start justify-end gap-3">
+      <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-sm">
+        <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">Assistant</div>
+        <button
+          type="button"
+          disabled={assistant.loading || assistant.busy || !assistant.ready}
+          onClick={toggleAssistant}
+          className={`rounded-full px-3 py-1 text-sm font-semibold ${
+            assistant.enabled
+              ? 'bg-emerald-600 text-white'
+              : assistant.ready
+                ? 'bg-slate-200 text-slate-700'
+                : 'cursor-not-allowed bg-slate-100 text-slate-400'
+          }`}
+        >
+          {assistant.enabled ? 'Enabled' : 'Disabled'}
+        </button>
+        {!assistant.ready ? (
+          <div className="mt-1 text-xs text-slate-500">
+            Setup incomplete. <Link className="underline" href="/client/setup">Finish setup</Link>.
+          </div>
+        ) : null}
+      </div>
       <div
         className="relative flex cursor-pointer items-center gap-2"
         onClick={(e) => {
@@ -87,7 +161,13 @@ export default function Header() {
             }}
           >
             <div className="px-2 py-1 text-xs uppercase tracking-wide text-slate-500">Setup</div>
+            {!assistant.ready && assistant.reasons.length ? (
+              <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                {assistant.reasons[0]}
+              </div>
+            ) : null}
             <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/faq">Questions and Answers</Link>
+            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/setup">Setup Checklist</Link>
             <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/team">Team Users</Link>
             <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/routing">Call Routing</Link>
             <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/settings">Account Settings</Link>

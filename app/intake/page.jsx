@@ -3,6 +3,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import './intake.css';
 
+const FREE_EMAIL_DOMAINS = new Set([
+  'gmail.com',
+  'yahoo.com',
+  'outlook.com',
+  'hotmail.com',
+  'icloud.com',
+  'aol.com',
+  'proton.me',
+  'protonmail.com',
+  'msn.com',
+  'live.com'
+]);
+
 const SERVICES_BY_INDUSTRY = {
   plumbing: ['Drain cleaning', 'Water heater repair', 'Leak detection', 'Sewer line repair', 'Fixture installation', 'Emergency plumbing'],
   window_installers: ['Window replacement', 'Glass repair', 'Energy-efficient upgrades', 'Custom windows', 'Installation estimates'],
@@ -40,15 +53,30 @@ const GOALS = [
   { value: 'call_quality', label: 'Improve call quality' }
 ];
 
+function websiteFromEmail(email) {
+  const raw = String(email || '').trim().toLowerCase();
+  const at = raw.lastIndexOf('@');
+  if (at < 0) return '';
+  const domain = raw.slice(at + 1);
+  if (!domain || FREE_EMAIL_DOMAINS.has(domain)) return '';
+  return `https://${domain}`;
+}
+
 export default function IntakePage() {
-  const [page, setPage] = useState(1);
+  const [step, setStep] = useState(0);
   const [status, setStatus] = useState({ message: 'Ready.', tone: 'normal' });
+  const [enrichmentBusy, setEnrichmentBusy] = useState(false);
   const [activation, setActivation] = useState(null);
   const [activationStatus, setActivationStatus] = useState({ message: '', tone: 'normal' });
   const [activationBusy, setActivationBusy] = useState(false);
+  const [websiteEdited, setWebsiteEdited] = useState(false);
+
   const [form, setForm] = useState({
-    businessName: '',
+    ownerName: '',
+    ownerEmail: '',
+    website: '',
     industry: '',
+    businessName: '',
     phone: '',
     address1: '',
     address2: '',
@@ -56,8 +84,6 @@ export default function IntakePage() {
     state: '',
     zip: '',
     serviceArea: '',
-    ownerName: '',
-    ownerEmail: '',
     password: '',
     confirmPassword: '',
     timezone: 'America/Los_Angeles',
@@ -65,13 +91,16 @@ export default function IntakePage() {
     avgCalls: '',
     emergencyServices: 'false'
   });
+
   const [serviceSearch, setServiceSearch] = useState('');
   const [selectedServices, setSelectedServices] = useState([]);
   const [primaryGoals, setPrimaryGoals] = useState([]);
+  const [faqDrafts, setFaqDrafts] = useState([]);
 
   useEffect(() => {
     setSelectedServices([]);
     setServiceSearch('');
+    setFaqDrafts([]);
   }, [form.industry]);
 
   const filteredServices = useMemo(() => {
@@ -79,6 +108,19 @@ export default function IntakePage() {
     if (!serviceSearch.trim()) return list;
     return list.filter((item) => item.toLowerCase().includes(serviceSearch.trim().toLowerCase()));
   }, [form.industry, serviceSearch]);
+
+  const setStatusMessage = (message, tone = 'normal') => setStatus({ message, tone });
+
+  const updateEmail = (value) => {
+    setForm((prev) => {
+      const next = { ...prev, ownerEmail: value };
+      if (!websiteEdited) {
+        const derived = websiteFromEmail(value);
+        next.website = derived || prev.website;
+      }
+      return next;
+    });
+  };
 
   const addService = (service) => {
     if (!service) return;
@@ -100,13 +142,60 @@ export default function IntakePage() {
     setPrimaryGoals((prev) => (prev.includes(goal) ? prev.filter((item) => item !== goal) : [...prev, goal]));
   };
 
-  const setStatusMessage = (message, tone = 'normal') => {
-    setStatus({ message, tone });
+  const updateFaqAnswer = (index, answer) => {
+    setFaqDrafts((prev) => prev.map((item, idx) => (idx === index ? { ...item, answer } : item)));
   };
 
-  const handleNext = () => {
-    if (!form.businessName.trim() || !form.industry || !form.ownerName.trim() || !form.ownerEmail.trim()) {
-      setStatusMessage('Please complete required fields before continuing.', 'bad');
+  const removeFaq = (index) => {
+    setFaqDrafts((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleContinueFromFastStart = async () => {
+    if (!form.ownerName.trim() || !form.ownerEmail.trim() || !form.industry || !form.website.trim()) {
+      setStatusMessage('Name, email, website, and industry are required.', 'bad');
+      return;
+    }
+
+    setEnrichmentBusy(true);
+    setStatusMessage('Analyzing website and loading industry FAQ drafts...', 'warn');
+
+    try {
+      const resp = await fetch('/api/v1/tenants/enrichment/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ownerEmail: form.ownerEmail.trim(),
+          website: form.website.trim(),
+          industry: form.industry
+        })
+      });
+
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        setFaqDrafts([]);
+        setStatusMessage(data?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
+      } else {
+        const previewFaqs = Array.isArray(data?.enrichment?.faqs) ? data.enrichment.faqs : [];
+        setFaqDrafts(previewFaqs);
+        if (!websiteEdited && data?.enrichment?.website) {
+          setForm((prev) => ({ ...prev, website: data.enrichment.website }));
+        }
+        setStatusMessage(`Loaded ${previewFaqs.length} industry FAQ drafts. Unmatched items remain blank for review.`, 'ok');
+      }
+    } catch (err) {
+      setFaqDrafts([]);
+      setStatusMessage(err?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
+    } finally {
+      setEnrichmentBusy(false);
+      setStep(1);
+    }
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!form.businessName.trim()) {
+      setStatusMessage('Business name is required.', 'bad');
       return;
     }
     if (!form.password || form.password.length < 8) {
@@ -117,16 +206,6 @@ export default function IntakePage() {
       setStatusMessage('Passwords do not match.', 'bad');
       return;
     }
-    setPage(2);
-    setStatusMessage('Ready.', 'normal');
-  };
-
-  const handleBack = () => {
-    setPage(1);
-  };
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
     if (!form.serviceArea.trim()) {
       setStatusMessage('Service area is required.', 'bad');
       return;
@@ -139,14 +218,16 @@ export default function IntakePage() {
       setStatusMessage('Please select at least one primary goal.', 'bad');
       return;
     }
+
     setStatusMessage('Submitting...', 'warn');
 
     const payload = {
       businessName: form.businessName.trim(),
       industry: form.industry,
       ownerName: form.ownerName.trim(),
-      ownerEmail: form.ownerEmail.trim(),
+      ownerEmail: form.ownerEmail.trim().toLowerCase(),
       password: form.password,
+      website: form.website.trim(),
       phone: form.phone.trim(),
       serviceArea: form.serviceArea.trim(),
       address: [
@@ -158,16 +239,28 @@ export default function IntakePage() {
       ].filter(Boolean).join(', '),
       timezone: form.timezone.trim() || 'America/Los_Angeles',
       businessHours: form.businessHours.trim(),
-      averageCallsPerDay: Number(form.avgCalls || 0),
+      averageCallsPerDay: form.avgCalls === '' ? null : Number(form.avgCalls),
       emergencyServices: form.emergencyServices === 'true',
       servicesOffered: selectedServices,
-      primaryGoals
+      primaryGoals,
+      faqDrafts: faqDrafts.map((faq) => ({
+        question: faq.question,
+        answer: String(faq.answer || '').trim(),
+        category: faq.category,
+        sourceType: faq.sourceType || null,
+        sourceUrl: faq.sourceUrl || null,
+        sourceRetrievedAt: faq.sourceRetrievedAt || null,
+        sourceConfidence: Number.isFinite(Number(faq.sourceConfidence)) ? Number(faq.sourceConfidence) : null
+      }))
     };
 
     try {
       const resp = await fetch('/api/v1/tenants/onboard', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': globalThis.crypto?.randomUUID?.() || `${Date.now()}`
+        },
         body: JSON.stringify(payload)
       });
 
@@ -185,7 +278,7 @@ export default function IntakePage() {
         voiceStatus: data?.provisioning?.voiceStatus || 'pending'
       });
     } catch (err) {
-      setStatusMessage(err.message || 'Request failed.', 'bad');
+      setStatusMessage(err?.message || 'Request failed.', 'bad');
     }
   };
 
@@ -209,7 +302,7 @@ export default function IntakePage() {
         window.location.href = '/client/overview';
       }, 900);
     } catch (err) {
-      setActivationStatus({ message: err.message || 'Could not save activation status.', tone: 'bad' });
+      setActivationStatus({ message: err?.message || 'Could not save activation status.', tone: 'bad' });
       setActivationBusy(false);
     }
   };
@@ -241,20 +334,10 @@ export default function IntakePage() {
               Route overflow or no-answer calls from your main business line to this EveryCall number. This is required for EveryCall to answer your calls.
             </p>
             <div className="intake-actions">
-              <button
-                className="btn brand"
-                type="button"
-                disabled={activationBusy}
-                onClick={() => completeActivation('configured')}
-              >
+              <button className="btn brand" type="button" disabled={activationBusy} onClick={() => completeActivation('configured')}>
                 I Configured Forwarding
               </button>
-              <button
-                className="btn"
-                type="button"
-                disabled={activationBusy}
-                onClick={() => completeActivation('acknowledged')}
-              >
+              <button className="btn" type="button" disabled={activationBusy} onClick={() => completeActivation('acknowledged')}>
                 I Will Do This Later
               </button>
               <span
@@ -278,25 +361,41 @@ export default function IntakePage() {
         <div className="intake-hero">
           <div className="intake-brand">everycall <span>intake</span></div>
           <h1 className="intake-headline">Launch your 24/7 call assistant in minutes.</h1>
-          <div className="intake-subhead">This short intake configures your AI receptionist, FAQs, routing, and onboarding defaults so you can start your free trial right away.</div>
+          <div className="intake-subhead">Start with business identity, then review AI draft FAQs and onboarding defaults.</div>
         </div>
         <div className="card intake-card">
           <h1>Free Trial Intake</h1>
-          <p className="intake-muted">Tell us about your service business so we can configure EveryCall for you.</p>
+          <p className="intake-muted">Fast start first, then review details before creating your workspace.</p>
           <div className="intake-progress" aria-hidden="true">
-            <span className={page === 1 ? 'active' : ''}></span>
-            <span className={page === 2 ? 'active' : ''}></span>
+            <span className={step === 0 ? 'active' : ''}></span>
+            <span className={step === 1 ? 'active' : ''}></span>
           </div>
+
           <form className="intake-stack" onSubmit={handleSubmit}>
-            {page === 1 && (
+            {step === 0 && (
               <div className="intake-stack">
-                <div className="intake-page-title">Step 1 — Business basics</div>
-                <div className="intake-page-hint">We use this to set your workspace defaults and onboarding profile.</div>
-                <div className="intake-section-title">Business Basics</div>
+                <div className="intake-page-title">Step 0 — Business identity</div>
+                <div className="intake-page-hint">Enter the minimum details to prefill onboarding with AI.</div>
                 <div className="intake-grid">
                   <div className="intake-stack">
-                    <label>Business Name</label>
-                    <input required placeholder="Acme Plumbing" value={form.businessName} onChange={(event) => setForm({ ...form, businessName: event.target.value })} />
+                    <label>Owner Name</label>
+                    <input required placeholder="Jane Smith" value={form.ownerName} onChange={(event) => setForm({ ...form, ownerName: event.target.value })} />
+                  </div>
+                  <div className="intake-stack">
+                    <label>Owner Email</label>
+                    <input type="email" required placeholder="jane@acme.com" value={form.ownerEmail} onChange={(event) => updateEmail(event.target.value)} />
+                  </div>
+                  <div className="intake-stack">
+                    <label>Website</label>
+                    <input
+                      required
+                      placeholder="https://acme.com"
+                      value={form.website}
+                      onChange={(event) => {
+                        setWebsiteEdited(true);
+                        setForm({ ...form, website: event.target.value });
+                      }}
+                    />
                   </div>
                   <div className="intake-stack">
                     <label>Industry</label>
@@ -307,11 +406,41 @@ export default function IntakePage() {
                       ))}
                     </select>
                   </div>
+                </div>
+                <div className="intake-actions">
+                  <button className="btn brand" type="button" onClick={handleContinueFromFastStart} disabled={enrichmentBusy}>
+                    {enrichmentBusy ? 'Analyzing...' : 'Continue'}
+                  </button>
+                  <span className="intake-muted" style={{ color: status.tone === 'bad' ? '#dc2626' : status.tone === 'ok' ? '#059669' : '#64748b' }}>{status.message}</span>
+                </div>
+              </div>
+            )}
+
+            {step === 1 && (
+              <div className="intake-stack">
+                <div className="intake-page-title">Step 1 — Review + operations</div>
+                <div className="intake-page-hint">Review generated FAQ answers. Items without explicit evidence are intentionally blank.</div>
+
+                <div className="intake-section-title">Business Basics</div>
+                <div className="intake-grid">
+                  <div className="intake-stack">
+                    <label>Business Name</label>
+                    <input required placeholder="Acme Plumbing" value={form.businessName} onChange={(event) => setForm({ ...form, businessName: event.target.value })} />
+                  </div>
                   <div className="intake-stack">
                     <label>Phone</label>
                     <input placeholder="+1 555 555 5555" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
                   </div>
+                  <div className="intake-stack">
+                    <label>Password</label>
+                    <input type="password" required placeholder="Create a password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+                  </div>
+                  <div className="intake-stack">
+                    <label>Confirm Password</label>
+                    <input type="password" required placeholder="Confirm password" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} />
+                  </div>
                 </div>
+
                 <div className="intake-section-title">Business Address</div>
                 <div className="intake-grid">
                   <div className="intake-stack intake-full">
@@ -336,27 +465,12 @@ export default function IntakePage() {
                   </div>
                   <div className="intake-stack intake-full">
                     <label>Service Area</label>
-                    <input placeholder="Seattle + Eastside" value={form.serviceArea} onChange={(event) => setForm({ ...form, serviceArea: event.target.value })} />
+                    <input required placeholder="Seattle + Eastside" value={form.serviceArea} onChange={(event) => setForm({ ...form, serviceArea: event.target.value })} />
                   </div>
                 </div>
-                <div className="intake-section-title">Owner & Ops</div>
+
+                <div className="intake-section-title">Operations</div>
                 <div className="intake-grid">
-                  <div className="intake-stack">
-                    <label>Owner Name</label>
-                    <input required placeholder="Jane Smith" value={form.ownerName} onChange={(event) => setForm({ ...form, ownerName: event.target.value })} />
-                  </div>
-                  <div className="intake-stack">
-                    <label>Owner Email (Username)</label>
-                    <input type="email" required placeholder="jane@acme.com" value={form.ownerEmail} onChange={(event) => setForm({ ...form, ownerEmail: event.target.value })} />
-                  </div>
-                  <div className="intake-stack">
-                    <label>Password</label>
-                    <input type="password" required placeholder="Create a password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
-                  </div>
-                  <div className="intake-stack">
-                    <label>Confirm Password</label>
-                    <input type="password" required placeholder="Confirm password" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} />
-                  </div>
                   <div className="intake-stack">
                     <label>Timezone</label>
                     <select value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}>
@@ -373,19 +487,6 @@ export default function IntakePage() {
                     <label>Business Hours</label>
                     <input placeholder="Mon-Fri 8 AM - 6 PM" value={form.businessHours} onChange={(event) => setForm({ ...form, businessHours: event.target.value })} />
                   </div>
-                </div>
-                <div className="intake-actions">
-                  <button className="btn brand" type="button" onClick={handleNext}>Continue</button>
-                </div>
-              </div>
-            )}
-
-            {page === 2 && (
-              <div className="intake-stack">
-                <div className="intake-page-title">Step 2 — Call handling preferences</div>
-                <div className="intake-page-hint">These settings help EveryCall build the right FAQ and intake prompts.</div>
-                <div className="intake-section-title">Call Volume</div>
-                <div className="intake-grid">
                   <div className="intake-stack">
                     <label>Average Calls Per Day</label>
                     <input type="number" min="0" placeholder="10" value={form.avgCalls} onChange={(event) => setForm({ ...form, avgCalls: event.target.value })} />
@@ -398,6 +499,7 @@ export default function IntakePage() {
                     </select>
                   </div>
                 </div>
+
                 <div className="intake-section-title">Services Offered</div>
                 <div className="intake-grid">
                   <div className="intake-stack intake-full">
@@ -437,6 +539,7 @@ export default function IntakePage() {
                     </div>
                   </div>
                 </div>
+
                 <div className="intake-section-title">Primary Goals</div>
                 <div className="intake-goal-panel">
                   <div className="intake-page-hint" style={{ margin: '0 0 8px' }}>Select one or more goals.</div>
@@ -454,8 +557,34 @@ export default function IntakePage() {
                     ))}
                   </div>
                 </div>
+
+                <div className="intake-section-title">Industry FAQ Drafts</div>
+                <div className="intake-stack">
+                  {faqDrafts.length === 0 ? (
+                    <div className="intake-muted">No industry FAQ drafts found. You can add FAQs after onboarding in the FAQ Manager.</div>
+                  ) : faqDrafts.map((faq, index) => (
+                    <div key={`${faq.question}-${index}`} className="card" style={{ padding: 12 }}>
+                      <div className="intake-stack">
+                        <label>{faq.question}</label>
+                        <textarea
+                          placeholder="No explicit source evidence found yet. Leave blank or add an answer."
+                          value={faq.answer || ''}
+                          onChange={(event) => updateFaqAnswer(index, event.target.value)}
+                        />
+                        <div className="intake-actions" style={{ justifyContent: 'space-between' }}>
+                          <span className="intake-muted">
+                            Source: {faq.sourceType ? `${faq.sourceType}${faq.sourceUrl ? ` (${faq.sourceUrl})` : ''}` : 'none'}
+                            {Number.isFinite(Number(faq.sourceConfidence)) ? ` • confidence ${Math.round(Number(faq.sourceConfidence) * 100)}%` : ''}
+                          </span>
+                          <button className="btn" type="button" onClick={() => removeFaq(index)}>Delete FAQ</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
                 <div className="intake-actions">
-                  <button className="btn" type="button" onClick={handleBack}>Back</button>
+                  <button className="btn" type="button" onClick={() => setStep(0)}>Back</button>
                   <button className="btn brand" type="submit">Create Free Trial</button>
                   <span className="intake-muted" style={{ color: status.tone === 'bad' ? '#dc2626' : status.tone === 'ok' ? '#059669' : '#64748b' }}>{status.message}</span>
                 </div>

@@ -116,10 +116,18 @@ export async function ensureTables(pool) {
       is_default BOOLEAN NOT NULL DEFAULT FALSE,
       is_industry_default BOOLEAN NOT NULL DEFAULT FALSE,
       industry TEXT,
+      source_type TEXT,
+      source_url TEXT,
+      source_retrieved_at TIMESTAMPTZ,
+      source_confidence DOUBLE PRECISION,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE faqs ADD COLUMN IF NOT EXISTS source_type TEXT;`);
+  await pool.query(`ALTER TABLE faqs ADD COLUMN IF NOT EXISTS source_url TEXT;`);
+  await pool.query(`ALTER TABLE faqs ADD COLUMN IF NOT EXISTS source_retrieved_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE faqs ADD COLUMN IF NOT EXISTS source_confidence DOUBLE PRECISION;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS calls (
@@ -223,9 +231,11 @@ export async function ensureTables(pool) {
       tenant_key TEXT PRIMARY KEY,
       timezone TEXT DEFAULT 'America/Los_Angeles',
       notes TEXT,
+      assistant_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS assistant_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_intake (
@@ -233,6 +243,7 @@ export async function ensureTables(pool) {
       tenant_key TEXT NOT NULL,
       owner_name TEXT NOT NULL,
       owner_email TEXT NOT NULL,
+      website TEXT,
       phone TEXT,
       service_area TEXT,
       address TEXT,
@@ -245,6 +256,7 @@ export async function ensureTables(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE onboarding_intake ADD COLUMN IF NOT EXISTS website TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS admin_users (

@@ -1,5 +1,6 @@
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { composePromptForTenant } from "../../_lib/agentConfig.js";
+import { getSetupReadiness } from "../../_lib/setupReadiness.js";
 
 const DEFAULT_SESSION_CONFIG = {
   model: "gpt-realtime-1.5",
@@ -86,6 +87,16 @@ export default async function handler(req, res) {
     const callSid = String(body.callSid || "").trim();
     if (!tenantKey || !callSid) {
       return res.status(400).json({ error: "missing_tenant_or_call" });
+    }
+
+    const readiness = await getSetupReadiness(pool, tenantKey);
+    if (!readiness.enabled) {
+      return res.status(403).json({
+        error: "assistant_disabled",
+        message: "Assistant is disabled until setup is complete and enabled.",
+        reasons: readiness.reasons,
+        checks: readiness.checks
+      });
     }
 
     const prompt = await composePromptForTenant(tenantKey);

@@ -52,6 +52,22 @@ Use this for staging signoff and pre-production verification of onboarding v2.
 6. Acknowledge forwarding setup.
 7. Verify redirect to `/client/overview` as authenticated user.
 
+### FAQ Enrichment Behavior
+1. Select an industry with default FAQ templates.
+2. Provide a website with clear FAQ evidence on some, but not all, default questions.
+3. Verify default industry FAQ questions are loaded first.
+4. Verify AI-filled answers appear only for questions with explicit source evidence.
+5. Verify questions without explicit evidence remain blank.
+6. Verify each AI-filled answer includes source attribution metadata.
+
+### Activation Toggle Gating
+1. After onboarding, verify global assistant toggle is visible and disabled/grayed out.
+2. Leave at least one required FAQ blank and verify toggle remains disabled.
+3. Resolve blank required FAQs by answering or deleting unwanted items.
+4. Verify settings and routing required saves are complete.
+5. Verify forwarding status is `acknowledged` or `configured`.
+6. Verify toggle can now be enabled.
+
 ### Error Handling
 1. Submit with duplicate email.
 2. Verify user-friendly error appears and form data is preserved.

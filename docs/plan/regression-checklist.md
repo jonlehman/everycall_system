@@ -12,6 +12,7 @@ Run this after major changes or before release. Mark each item pass/fail.
 ## Client Workspace
 - Login as client
 - Overview loads
+- Global assistant enabled/disabled toggle is visible at top-right across client screens
 - Calls page loads and list displays
 - FAQ Manager loads and can edit/save
 - Team Users: invite, update status, delete
@@ -28,9 +29,12 @@ Run this after major changes or before release. Mark each item pass/fail.
 - Intake page submit creates tenant + user
 - Intake submit creates authenticated owner session and lands in client workspace
 - Tenant receives industry defaults (prompt + FAQs)
+- Industry default FAQ questions load before AI enrichment answers are applied
+- AI leaves industry FAQ answers blank when no explicit website/Google Business Profile evidence exists
 - Telnyx voice number auto‑provisioning succeeds
 - Post-intake activation screen shows EveryCall number and forwarding instruction
 - Forwarding acknowledgment/configured status persists on tenant
+- Assistant toggle remains disabled until setup items are complete, including resolving blank required FAQs (answer or delete)
 
 ## SMS Alerts
 - Shared SMS number set in system config

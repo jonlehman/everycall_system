@@ -195,6 +195,21 @@ function normalizeStringArray(value) {
   return [];
 }
 
+function normalizeFaqDrafts(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      question: String(item?.question || "").trim(),
+      answer: String(item?.answer || "").trim(),
+      category: String(item?.category || "General").trim() || "General",
+      sourceType: String(item?.sourceType || "").trim() || null,
+      sourceUrl: String(item?.sourceUrl || "").trim() || null,
+      sourceRetrievedAt: String(item?.sourceRetrievedAt || "").trim() || null,
+      sourceConfidence: Number.isFinite(Number(item?.sourceConfidence)) ? Number(item.sourceConfidence) : null
+    }))
+    .filter((item) => item.question);
+}
+
 function parsePayload(body) {
   const ownerEmail = String(body.ownerEmail || "").trim().toLowerCase();
   const primaryGoals = normalizeStringArray(body.primaryGoals ?? body.primaryGoal);
@@ -214,6 +229,7 @@ function parsePayload(body) {
     ownerName: String(body.ownerName || "").trim(),
     ownerEmail,
     password: String(body.password || ""),
+    website: String(body.website || "").trim(),
     phone,
     serviceArea: String(body.serviceArea || "").trim(),
     address: String(body.address || "").trim(),
@@ -223,6 +239,8 @@ function parsePayload(body) {
     emergencyServices,
     servicesOffered,
     primaryGoals,
+    faqDraftsProvided: Array.isArray(body.faqDrafts),
+    faqDrafts: normalizeFaqDrafts(body.faqDrafts),
     status: String(body.status || "active"),
     dataRegion: String(body.dataRegion || "US"),
     plan: String(body.plan || "Trial")
@@ -423,12 +441,13 @@ export default async function handler(req, res) {
       ownerUserId = insertedUser.rows[0]?.id || null;
 
       await client.query(
-        `INSERT INTO onboarding_intake (tenant_key, owner_name, owner_email, phone, service_area, address, timezone, business_hours, average_calls_per_day, emergency_services, services_offered, primary_goal)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        `INSERT INTO onboarding_intake (tenant_key, owner_name, owner_email, website, phone, service_area, address, timezone, business_hours, average_calls_per_day, emergency_services, services_offered, primary_goal)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           tenantKey,
           payload.ownerName,
           payload.ownerEmail,
+          payload.website || null,
           payload.phone || null,
           payload.serviceArea,
           payload.address,
@@ -492,20 +511,34 @@ export default async function handler(req, res) {
       }
 
       let industryFaqs = [];
-      const industryFaqRows = await client.query(
-        `SELECT question, answer, category FROM industry_faqs WHERE industry_key = $1 ORDER BY id ASC`,
-        [industry]
-      );
-      if (industryFaqRows.rowCount) {
-        industryFaqs = industryFaqRows.rows;
+      if (payload.faqDraftsProvided) {
+        industryFaqs = payload.faqDrafts;
       } else {
-        industryFaqs = INDUSTRY_FAQS[industry] || [];
+        const industryFaqRows = await client.query(
+          `SELECT question, answer, category FROM industry_faqs WHERE industry_key = $1 ORDER BY id ASC`,
+          [industry]
+        );
+        if (industryFaqRows.rowCount) {
+          industryFaqs = industryFaqRows.rows;
+        } else {
+          industryFaqs = INDUSTRY_FAQS[industry] || [];
+        }
       }
       for (const faq of industryFaqs) {
         await client.query(
-          `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_industry_default, industry)
-           VALUES ($1, $2, $3, $4, true, true, $5)`,
-          [tenantKey, faq.question, faq.answer, faq.category, industry]
+          `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_industry_default, industry, source_type, source_url, source_retrieved_at, source_confidence)
+           VALUES ($1, $2, $3, $4, true, true, $5, $6, $7, $8, $9)`,
+          [
+            tenantKey,
+            faq.question,
+            String(faq.answer || ""),
+            faq.category,
+            industry,
+            faq.sourceType || null,
+            faq.sourceUrl || null,
+            faq.sourceRetrievedAt || null,
+            faq.sourceConfidence
+          ]
         );
       }
 

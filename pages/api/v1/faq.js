@@ -62,7 +62,7 @@ export default async function handler(req, res) {
 
     if (req.method === "GET") {
       const rows = await pool.query(
-        `SELECT id, question, answer, category, deletable, is_default, is_industry_default, industry, updated_at
+        `SELECT id, question, answer, category, deletable, is_default, is_industry_default, industry, source_type, source_url, source_retrieved_at, source_confidence, updated_at
          FROM faqs
          WHERE tenant_key = $1
          ORDER BY id ASC`,

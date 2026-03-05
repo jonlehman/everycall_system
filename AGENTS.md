@@ -52,3 +52,11 @@ This document captures operating guidelines for voice + SMS agents and the suppo
 - Run smoke tests against staging services.
 - Track latency per service (gateway, AI, voice, SMS).
 - Monitor error rates and alert on spikes.
+
+## Session Bootstrap
+- At the start of each session, load and summarize these core app docs before making edits:
+  - `docs/PRD.md`
+  - `docs/architecture/001-system-overview.md`
+  - `docs/DECISIONS.md`
+  - `docs/TESTS.md`
+  - `docs/RUNBOOK.md`

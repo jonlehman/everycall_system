@@ -1,12 +1,13 @@
 # SPEC: Intake Onboarding V2
 
 ## Status
-- Proposed
+- Implemented (production)
 - Owner: Platform
-- Last Updated: 2026-03-03
+- Last Updated: 2026-03-05
+- Rollout Note: API + E2E intake v2 tests passed in production at commit `4966b73`; monitoring window remains active.
 
 ## Scope
-Defines the v2 onboarding contract for `/api/v1/tenants/onboard`, including validation, transactional behavior, session creation, and forwarding-setup guidance.
+Defines the v2 onboarding contract for `/api/v1/tenants/onboard`, including fast-start identity capture, AI FAQ enrichment, validation, transactional behavior, session creation, and forwarding-setup guidance.
 
 ## Goals
 - Complete onboarding in one deterministic flow with no partial tenant state.
@@ -20,17 +21,23 @@ Defines the v2 onboarding contract for `/api/v1/tenants/onboard`, including vali
 - Full carrier-specific forwarding wizard.
 
 ## User Flow
-1. Step 1 (Business Basics)
-- Collect business and owner credentials.
-- Validate required fields and password policy before Step 2.
-2. Step 2 (Operations)
-- Collect service area, offered services, primary goals, and optional call profile fields.
-3. Submit
+1. Step 0 (Business Identity)
+- Collect owner name, owner email, website, and industry.
+- Attempt website auto-fill from owner email domain (best effort).
+2. AI Enrichment (Draft)
+- Load default industry FAQs first.
+- For each default FAQ, generate an answer only when explicit supporting evidence is found in official website content or Google Business Profile data.
+- Leave FAQ answer blank when explicit evidence is not found.
+- Mark generated values as draft for tenant review.
+3. Step 1 (Business + Ops Review)
+- Collect and confirm remaining onboarding fields.
+- Validate required fields and password policy before final submit.
+4. Submit
 - Execute onboarding transaction.
 - Attempt voice number provisioning (non-blocking for core onboarding success).
 - Create owner session cookie.
 - Return `redirectTo=/client/overview`.
-4. Activation Prompt
+5. Activation Prompt
 - Show assigned EveryCall number.
 - Show forwarding instruction: route overflow/no-answer calls to this number.
 - Require acknowledgment or explicit "do later" choice.
@@ -39,6 +46,7 @@ Defines the v2 onboarding contract for `/api/v1/tenants/onboard`, including vali
 
 ### Endpoint
 - `POST /api/v1/tenants/onboard`
+- `POST /api/v1/tenants/enrichment/preview` (proposed)
 
 ### Request (canonical)
 ```json
@@ -170,3 +178,5 @@ Defines the v2 onboarding contract for `/api/v1/tenants/onboard`, including vali
 4. Tenant key collision handled deterministically.
 5. UI shows EveryCall number + forwarding instruction on success.
 6. Forwarding acknowledgment is persisted and queryable.
+7. Industry default FAQs are loaded before enrichment and preserved unless tenant edits/deletes.
+8. AI leaves default FAQ answers blank when explicit evidence is not found.

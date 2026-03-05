@@ -1,12 +1,13 @@
 # ADR 0002: Intake V2 Migration and Activation State
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-03-03
 - Owners: platform
 - Related: `docs/SPECS/intake-onboarding-v2.md`, ADR 0001
+- Last Reviewed: 2026-03-05
 
 ## Context
-Current onboarding behavior is not fully aligned with product requirements:
+At decision time, onboarding behavior was not fully aligned with product requirements:
 - session creation is not guaranteed in onboarding response flow
 - onboarding writes are not atomic
 - forwarding activation status is not modeled

@@ -1,4 +1,6 @@
 import { DEFAULT_TENANT_KEY, getAgentConfig } from "../../../../_lib/agentConfig.js";
+import { ensureTables, getPool } from "../../../../_lib/db.js";
+import { getSetupReadiness } from "../../../../_lib/setupReadiness.js";
 
 function escapeXml(value) {
   return String(value)
@@ -58,6 +60,13 @@ function buildGatherTwiml(prompt, actionPath) {
 </Response>`;
 }
 
+function buildDisabledTwiml() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Our automated assistant is currently unavailable while setup is being completed. Please call again shortly.</Say>
+</Response>`;
+}
+
 async function generateReplyFromOpenAI(speechResult, systemPrompt) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -112,6 +121,19 @@ async function generateReplyFromOpenAI(speechResult, systemPrompt) {
 }
 
 export default async function handler(req, res) {
+  try {
+    const pool = getPool();
+    if (pool) {
+      await ensureTables(pool);
+      const readiness = await getSetupReadiness(pool, DEFAULT_TENANT_KEY);
+      if (!readiness.enabled) {
+        res.setHeader("Content-Type", "text/xml; charset=utf-8");
+        res.status(200).send(buildDisabledTwiml());
+        return;
+      }
+    }
+  } catch {}
+
   const cfg = await getAgentConfig(DEFAULT_TENANT_KEY);
   const body = parseBody(req);
   const speechResult = body.SpeechResult || body.speechresult;

@@ -1,9 +1,14 @@
 # Plan: Intake V2 Delivery
 
 ## Status
-- Proposed
+- In rollout monitoring
 - Target Start: 2026-03-03
 - Duration: 2 weeks (can compress with parallel staffing)
+- Progress Note (2026-03-05):
+  - M1 Contracts and schema: complete
+  - M2 Backend core onboarding: complete
+  - M3 Intake UI + activation UX: complete
+  - M4 Verification/rollout: functional exit criteria met; monitoring window active
 
 ## Milestones
 
