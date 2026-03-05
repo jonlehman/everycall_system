@@ -95,12 +95,24 @@ function websiteFromEmail(email) {
 }
 
 function textFromHtml(html) {
-  return String(html || "")
+  return decodeHtmlEntities(
+    String(html || "")
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+  );
+}
+
+function decodeHtmlEntities(text) {
+  return String(text || "")
+    .replace(/&#039;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ");
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
@@ -137,6 +149,30 @@ function splitSentences(text) {
     .slice(0, 700);
 }
 
+function normalizeQuestion(question) {
+  return String(question || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function dedupeFaqTemplates(items) {
+  const seen = new Set();
+  const deduped = [];
+  for (const item of items || []) {
+    const question = String(item?.question || "").trim();
+    if (!question) continue;
+    const key = normalizeQuestion(question);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push({
+      question,
+      category: String(item?.category || "General").trim() || "General"
+    });
+  }
+  return deduped;
+}
+
 function questionKeywords(question) {
   return String(question || "")
     .toLowerCase()
@@ -145,26 +181,50 @@ function questionKeywords(question) {
     .filter((token) => token.length >= 4 && !STOPWORDS.has(token));
 }
 
+function looksLikeNavOrBoilerplate(sentence) {
+  const text = String(sentence || "").toLowerCase();
+  if (!text.trim()) return true;
+  if (text.includes("privacy policy") || text.includes("terms of service") || text.includes("copyright")) return true;
+  if (text.includes("near you") || text.includes("areas areas")) return true;
+  if ((text.match(/\b(seattle|downtown|capitol hill|queen anne|belltown|greenwood|wallingford)\b/g) || []).length >= 4) return true;
+  const commaCount = (text.match(/,/g) || []).length;
+  if (commaCount >= 8) return true;
+  return false;
+}
+
+function cleanEvidenceText(sentence) {
+  return decodeHtmlEntities(String(sentence || ""))
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 320);
+}
+
 function findEvidenceHeuristic(question, sources) {
   const keys = questionKeywords(question);
   if (!keys.length) return null;
+  let best = null;
   for (const source of sources) {
     for (const sentence of source.sentences) {
+      if (looksLikeNavOrBoilerplate(sentence)) continue;
       const lower = sentence.toLowerCase();
       const matches = keys.filter((key) => lower.includes(key)).length;
-      const score = Number((matches / Math.max(keys.length, 1)).toFixed(2));
+      const matchRatio = matches / Math.max(keys.length, 1);
+      const score = Number((matchRatio * Math.min(sentence.length / 120, 1)).toFixed(2));
       if (matches >= Math.min(2, keys.length)) {
-        return {
-          answer: sentence.slice(0, 320),
+        const candidate = {
+          answer: cleanEvidenceText(sentence),
           sourceType: source.sourceType,
           sourceUrl: source.sourceUrl,
-          evidenceSnippet: sentence.slice(0, 200),
+          evidenceSnippet: cleanEvidenceText(sentence).slice(0, 200),
           sourceConfidence: score
         };
+        if (!best || candidate.sourceConfidence > best.sourceConfidence) {
+          best = candidate;
+        }
       }
     }
   }
-  return null;
+  return best;
 }
 
 function safeJsonParse(value) {
@@ -256,16 +316,27 @@ async function fetchGoogleBusinessProfile({ website, businessName, serviceArea }
     domain
   ].filter(Boolean)));
 
+  async function lookupPlaceId(query) {
+    const findUrl = new URL("https://maps.googleapis.com/maps/api/place/findplacefromtext/json");
+    findUrl.searchParams.set("input", query);
+    findUrl.searchParams.set("inputtype", "textquery");
+    findUrl.searchParams.set("fields", "name,place_id");
+    findUrl.searchParams.set("key", apiKey);
+    const findResp = await fetchWithTimeout(findUrl.toString(), {}, 8000);
+    const findData = await findResp.json().catch(() => null);
+    if (findData?.candidates?.[0]?.place_id) return findData.candidates[0].place_id;
+
+    const searchUrl = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
+    searchUrl.searchParams.set("query", query);
+    searchUrl.searchParams.set("key", apiKey);
+    const searchResp = await fetchWithTimeout(searchUrl.toString(), {}, 8000);
+    const searchData = await searchResp.json().catch(() => null);
+    return searchData?.results?.[0]?.place_id || null;
+  }
+
   for (const query of queryCandidates) {
     try {
-      const findUrl = new URL("https://maps.googleapis.com/maps/api/place/findplacefromtext/json");
-      findUrl.searchParams.set("input", query);
-      findUrl.searchParams.set("inputtype", "textquery");
-      findUrl.searchParams.set("fields", "name,place_id");
-      findUrl.searchParams.set("key", apiKey);
-      const findResp = await fetchWithTimeout(findUrl.toString(), {}, 8000);
-      const findData = await findResp.json().catch(() => null);
-      const placeId = findData?.candidates?.[0]?.place_id;
+      const placeId = await lookupPlaceId(query);
       if (!placeId) continue;
 
       const detailsUrl = new URL("https://maps.googleapis.com/maps/api/place/details/json");
@@ -284,7 +355,7 @@ async function fetchGoogleBusinessProfile({ website, businessName, serviceArea }
         name: result.name || "",
         url: result.url || null,
         website: result.website || null,
-        description: result.editorial_summary?.overview || "",
+        description: decodeHtmlEntities(result.editorial_summary?.overview || ""),
         services: Array.isArray(result.types) ? result.types.join(", ") : "",
         hours: Array.isArray(result.opening_hours?.weekday_text)
           ? result.opening_hours.weekday_text.join("; ")
@@ -331,9 +402,10 @@ export default async function handler(req, res) {
        ORDER BY id ASC`,
       [industry]
     );
-    const defaultFaqs = industryFaqRows.rowCount
+    const defaultFaqsRaw = industryFaqRows.rowCount
       ? industryFaqRows.rows
       : (FALLBACK_INDUSTRY_FAQS[industry] || []);
+    const defaultFaqs = dedupeFaqTemplates(defaultFaqsRaw);
 
     const websiteResult = normalizedWebsite ? await fetchWebsiteText(normalizedWebsite) : { ok: false, text: "" };
 
@@ -390,15 +462,29 @@ export default async function handler(req, res) {
         const confidence = Number.isFinite(Number(aiMatch.sourceConfidence)) ? Number(aiMatch.sourceConfidence) : 0;
         const answer = String(aiMatch.answer || "").trim();
         if (answer && confidence >= 0.6 && String(aiMatch.evidenceSnippet || "").trim()) {
+          const cleanedEvidence = cleanEvidenceText(aiMatch.evidenceSnippet || aiMatch.answer || "");
+          if (looksLikeNavOrBoilerplate(cleanedEvidence)) {
+            return {
+              question: faq.question,
+              category: faq.category || "General",
+              answer: "",
+              isIndustryDefault: true,
+              sourceType: null,
+              sourceUrl: null,
+              sourceRetrievedAt: null,
+              evidenceSnippet: null,
+              sourceConfidence: null
+            };
+          }
           return {
             question: faq.question,
             category: faq.category || "General",
-            answer,
+            answer: cleanEvidenceText(answer),
             isIndustryDefault: true,
             sourceType: String(aiMatch.sourceType || "").trim() || null,
             sourceUrl: String(aiMatch.sourceUrl || "").trim() || null,
             sourceRetrievedAt: retrievedAt,
-            evidenceSnippet: String(aiMatch.evidenceSnippet || "").trim() || null,
+            evidenceSnippet: cleanedEvidence || null,
             sourceConfidence: confidence
           };
         }

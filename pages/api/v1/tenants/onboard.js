@@ -196,6 +196,7 @@ function normalizeStringArray(value) {
 }
 
 function normalizeFaqDrafts(value) {
+  const seen = new Set();
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => ({
@@ -207,7 +208,13 @@ function normalizeFaqDrafts(value) {
       sourceRetrievedAt: String(item?.sourceRetrievedAt || "").trim() || null,
       sourceConfidence: Number.isFinite(Number(item?.sourceConfidence)) ? Number(item.sourceConfidence) : null
     }))
-    .filter((item) => item.question);
+    .filter((item) => item.question)
+    .filter((item) => {
+      const key = item.question.toLowerCase().replace(/\s+/g, " ").trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function parsePayload(body) {
@@ -519,7 +526,13 @@ export default async function handler(req, res) {
           [industry]
         );
         if (industryFaqRows.rowCount) {
-          industryFaqs = industryFaqRows.rows;
+          const seen = new Set();
+          industryFaqs = industryFaqRows.rows.filter((faq) => {
+            const key = String(faq.question || "").toLowerCase().replace(/\s+/g, " ").trim();
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
         } else {
           industryFaqs = INDUSTRY_FAQS[industry] || [];
         }
