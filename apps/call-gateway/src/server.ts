@@ -70,13 +70,13 @@ type StreamSession = {
   promptPayload?: PromptPayload;
   outputQueue?: Buffer[];
   outputBuffer?: Buffer;
-  outputTimer?: NodeJS.Timeout;
+  outputTimer?: NodeJS.Timeout | null;
   outputPrimed?: boolean;
   rtpSeq?: number;
   rtpTimestamp?: number;
   rtpSsrc?: number;
   realtimeModel?: string;
-  pendingToolCall?: PendingToolCall;
+  pendingToolCall?: PendingToolCall | null;
   realtimeLogInitialized?: boolean;
 };
 
@@ -202,7 +202,7 @@ function startOutputPump(session: StreamSession) {
     if (!session.outputQueue || session.outputQueue.length === 0) {
       if (session.outputTimer) {
         clearInterval(session.outputTimer);
-        session.outputTimer = undefined;
+        session.outputTimer = null;
       }
       return;
     }
@@ -433,7 +433,7 @@ function connectOpenAiRealtime(session: StreamSession) {
       const callId = payloadMsg.call_id || payloadMsg?.function_call?.call_id || session.pendingToolCall?.callId || "";
       const argsText = payloadMsg.arguments || session.pendingToolCall?.argumentsText || "";
       if (!name || !callId) return;
-      session.pendingToolCall = undefined;
+      session.pendingToolCall = null;
       let args: Record<string, unknown> = {};
       try {
         args = argsText ? JSON.parse(argsText) : {};
