@@ -10,6 +10,9 @@ export default function AdminSystemPage() {
   const [numbersSymbols, setNumbersSymbols] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [faqUsage, setFaqUsage] = useState('');
+  const [gatewayFieldSchema, setGatewayFieldSchema] = useState('');
+  const [gatewayToolDefinitions, setGatewayToolDefinitions] = useState('');
+  const [gatewaySessionConfig, setGatewaySessionConfig] = useState('');
   const [telnyxSmsNumber, setTelnyxSmsNumber] = useState('');
   const [telnyxSmsNumberId, setTelnyxSmsNumberId] = useState('');
   const [telnyxSmsMessagingProfileId, setTelnyxSmsMessagingProfileId] = useState('');
@@ -26,6 +29,9 @@ export default function AdminSystemPage() {
         setNumbersSymbols(data?.config?.numbers_symbols_prompt || '');
         setConfirmation(data?.config?.confirmation_prompt || '');
         setFaqUsage(data?.config?.faq_usage_prompt || '');
+        setGatewayFieldSchema(data?.config?.gateway_field_schema ? JSON.stringify(data.config.gateway_field_schema, null, 2) : '');
+        setGatewayToolDefinitions(data?.config?.gateway_tool_definitions ? JSON.stringify(data.config.gateway_tool_definitions, null, 2) : '');
+        setGatewaySessionConfig(data?.config?.gateway_session_config ? JSON.stringify(data.config.gateway_session_config, null, 2) : '');
         setTelnyxSmsNumber(data?.config?.telnyx_sms_number || '');
         setTelnyxSmsNumberId(data?.config?.telnyx_sms_number_id || '');
         setTelnyxSmsMessagingProfileId(data?.config?.telnyx_sms_messaging_profile_id || '');
@@ -50,6 +56,9 @@ export default function AdminSystemPage() {
         numbersSymbolsPrompt: numbersSymbols.trim(),
         confirmationPrompt: confirmation.trim(),
         faqUsagePrompt: faqUsage.trim(),
+        gatewayFieldSchema: gatewayFieldSchema.trim(),
+        gatewayToolDefinitions: gatewayToolDefinitions.trim(),
+        gatewaySessionConfig: gatewaySessionConfig.trim(),
         telnyxSmsNumber: telnyxSmsNumber.trim(),
         telnyxSmsNumberId: telnyxSmsNumberId.trim(),
         telnyxSmsMessagingProfileId: telnyxSmsMessagingProfileId.trim()
@@ -88,6 +97,12 @@ export default function AdminSystemPage() {
         <textarea value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
         <label className="mt-3">When to Use the FAQ</label>
         <textarea value={faqUsage} onChange={(event) => setFaqUsage(event.target.value)} />
+        <label className="mt-3">Gateway Field Schema (JSON)</label>
+        <textarea value={gatewayFieldSchema} onChange={(event) => setGatewayFieldSchema(event.target.value)} />
+        <label className="mt-3">Gateway Tool Definitions (JSON)</label>
+        <textarea value={gatewayToolDefinitions} onChange={(event) => setGatewayToolDefinitions(event.target.value)} />
+        <label className="mt-3">Gateway Session Config (JSON)</label>
+        <textarea value={gatewaySessionConfig} onChange={(event) => setGatewaySessionConfig(event.target.value)} />
         <label className="mt-3">Telnyx SMS Number (Shared)</label>
         <input value={telnyxSmsNumber} onChange={(event) => setTelnyxSmsNumber(event.target.value)} placeholder="+1XXXXXXXXXX" />
         <label className="mt-3">Telnyx SMS Number ID</label>
