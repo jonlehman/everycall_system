@@ -890,10 +890,68 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
 
   if (eventType === "call.answered" || eventType === "call_answered") {
     const callControlId = String(eventPayload.call_control_id || "");
-    const session = streamSessions.get(callControlId);
-    if (callControlId && session) {
+    if (!callControlId) return res.status(200).send("ok");
+
+    let session = streamSessions.get(callControlId);
+    if (!session) {
+      // Recover session on call.answered in case memory state was lost between webhook events.
+      const to = normalizePhone(String(eventPayload.to || ""));
+      const from = normalizePhone(String(eventPayload.from || ""));
+      const callSid = callControlId;
+      logInfo("call_answered_session_recovery_attempt", { callSid, callControlId, to, from });
+
+      let tenantKey = "";
+      const callRow = await pool.query(
+        `SELECT tenant_key FROM calls WHERE call_sid = $1 LIMIT 1`,
+        [callSid]
+      );
+      if (callRow.rowCount) {
+        tenantKey = String(callRow.rows[0].tenant_key || "");
+      } else if (to) {
+        const tenantRow = await pool.query(
+          `SELECT tenant_key FROM tenants WHERE telnyx_voice_number = $1 LIMIT 1`,
+          [to]
+        );
+        tenantKey = String(tenantRow.rows[0]?.tenant_key || "");
+      }
+
+      if (tenantKey) {
+        try {
+          const promptPayload = await fetchPromptPayload(tenantKey, callSid, to, from);
+          const realtimeLogPath = realtimeDebug || realtimeTrace ? initRealtimeLog(callSid) : undefined;
+          session = {
+            callControlId,
+            callSid,
+            tenantKey,
+            callActive: true,
+            isShuttingDown: false,
+            reconnectAttempted: false,
+            openAiSessionUpdated: false,
+            greetingSent: false,
+            promptPayload,
+            outputQueue: [],
+            outputBuffer: Buffer.alloc(0),
+            ...(realtimeLogPath ? { realtimeLogPath } : {})
+          };
+          streamSessions.set(callControlId, session);
+          logInfo("call_answered_session_recovered", { callSid, callControlId, tenantKey });
+        } catch (err) {
+          logError("call_answered_session_recovery_failed", {
+            callSid,
+            callControlId,
+            tenantKey,
+            message: err instanceof Error ? err.message : "unknown"
+          });
+        }
+      } else {
+        logError("call_answered_session_missing_tenant", { callSid, callControlId, to });
+      }
+    }
+
+    if (session) {
       const streamUrl = `${toWebSocketUrl(callGatewayBaseUrl || buildBaseUrl(req))}/v1/telnyx/stream`;
       try {
+        logInfo("telnyx_stream_start_request", { callSid: session.callSid, callControlId, streamUrl });
         await telnyxCallAction(callControlId, "streaming_start", {
           stream_url: streamUrl,
           stream_track: "both_tracks",
@@ -902,12 +960,17 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
           stream_bidirectional_sampling_rate: 8000,
           stream_codec: "PCMU"
         });
+        logInfo("telnyx_stream_start_requested", { callSid: session.callSid, callControlId });
       } catch (err) {
         logError("telnyx_call_control_stream_start_error", {
           callSid: session.callSid,
+          callControlId,
+          streamUrl,
           message: err instanceof Error ? err.message : "unknown"
         });
       }
+    } else {
+      logError("telnyx_stream_start_skipped_no_session", { callControlId });
     }
     return res.status(200).send("ok");
   }
