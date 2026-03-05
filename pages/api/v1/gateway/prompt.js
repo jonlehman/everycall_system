@@ -1,5 +1,5 @@
-import { ensureTables, getPool } from "../_lib/db.js";
-import { composePromptForTenant } from "../_lib/agentConfig.js";
+import { ensureTables, getPool } from "../../_lib/db.js";
+import { composePromptForTenant } from "../../_lib/agentConfig.js";
 
 const DEFAULT_SESSION_CONFIG = {
   model: "gpt-realtime-1.5",

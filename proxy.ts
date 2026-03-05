@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 const protectedPaths = ['/client', '/admin', '/dashboard', '/config'];
 
-export async function middleware(req: Request) {
+export async function proxy(req: Request) {
   const url = new URL(req.url);
   const pathname = url.pathname;
   const publicProtectedPaths = ['/admin/login'];
