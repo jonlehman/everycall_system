@@ -1,11 +1,13 @@
 import express from "express";
 import http from "node:http";
+import path from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
 import { readCallGatewayEnv } from "@everycall/config";
 import { logError, logInfo } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
 import pg from "pg";
 import fs from "node:fs";
+import * as AjvModule from "ajv";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -23,7 +25,9 @@ const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "rtp").toLowerCase();
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
-const realtimeLogFile = String(process.env.REALTIME_LOG_FILE || "/tmp/realtime-logs.jsonl");
+const realtimeLogRoot = String(process.env.REALTIME_LOG_FILE || "/tmp/realtime-logs.jsonl");
+const Ajv = (AjvModule as unknown as { default?: new (opts?: Record<string, unknown>) => any }).default || (AjvModule as unknown as new (opts?: Record<string, unknown>) => any);
+const ajv = new Ajv({ allErrors: true, strict: false });
 
 const streamIdToCall = new Map<string, string>();
 
@@ -64,9 +68,14 @@ type StreamSession = {
   callControlId: string;
   callSid: string;
   tenantKey: string;
+  callActive?: boolean;
+  isShuttingDown?: boolean;
   telnyxStreamId?: string;
   telnyxWs?: WebSocket;
   openAiWs?: WebSocket;
+  openAiReady?: boolean;
+  openAiSessionUpdated?: boolean;
+  reconnectAttempted?: boolean;
   promptPayload?: PromptPayload;
   outputQueue?: Buffer[];
   outputBuffer?: Buffer;
@@ -77,25 +86,53 @@ type StreamSession = {
   rtpSsrc?: number;
   realtimeModel?: string;
   pendingToolCall?: PendingToolCall | null;
-  realtimeLogInitialized?: boolean;
+  realtimeLogPath?: string;
 };
 
 const streamSessions = new Map<string, StreamSession>();
 
-function resetRealtimeLog() {
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeCallId(callId: string) {
+  return callId.replace(/[^a-zA-Z0-9_.-]/g, "_");
+}
+
+function getRealtimeLogPath(callId: string) {
+  const safeCallId = normalizeCallId(callId);
+  if (realtimeLogRoot.endsWith(".jsonl")) {
+    const dir = path.dirname(realtimeLogRoot);
+    return path.join(dir, `${safeCallId}.jsonl`);
+  }
+  return path.join(realtimeLogRoot, `${safeCallId}.jsonl`);
+}
+
+function ensureRealtimeLogDir(filePath: string) {
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+function initRealtimeLog(callSid: string) {
+  const logPath = getRealtimeLogPath(callSid);
   try {
-    fs.writeFileSync(realtimeLogFile, "");
+    ensureRealtimeLogDir(logPath);
+    fs.writeFileSync(logPath, "");
   } catch (err) {
-    logError("realtime_log_reset_failed", {
+    logError("realtime_log_init_failed", {
+      callSid,
       message: err instanceof Error ? err.message : "unknown"
     });
   }
+  return logPath;
 }
 
-function logRealtimeEntry(entry: Record<string, unknown>) {
+function logRealtimeEntry(session: StreamSession | undefined, entry: Record<string, unknown>) {
   if (!realtimeDebug && !realtimeTrace) return;
+  const logPath = session?.realtimeLogPath;
+  if (!logPath) return;
   try {
-    fs.appendFileSync(realtimeLogFile, `${JSON.stringify(entry)}\n`);
+    fs.appendFileSync(logPath, `${JSON.stringify(entry)}\n`);
   } catch (err) {
     logError("realtime_log_write_failed", {
       message: err instanceof Error ? err.message : "unknown"
@@ -105,7 +142,7 @@ function logRealtimeEntry(entry: Record<string, unknown>) {
 
 function logRealtimeRaw(session: StreamSession, payload: Record<string, unknown>) {
   if (!realtimeDebug) return;
-  logRealtimeEntry({
+  logRealtimeEntry(session, {
     ts: new Date().toISOString(),
     kind: "raw",
     callSid: session.callSid,
@@ -115,12 +152,95 @@ function logRealtimeRaw(session: StreamSession, payload: Record<string, unknown>
 
 function logRealtimeTrace(session: StreamSession, payload: Record<string, unknown>) {
   if (!realtimeTrace) return;
-  logRealtimeEntry({
+  logRealtimeEntry(session, {
     ts: new Date().toISOString(),
     kind: "trace",
     callSid: session.callSid,
     payload
   });
+}
+
+function buildSessionInstructions(payload: PromptPayload) {
+  const faqText = payload.tenant_faqs
+    .map((faq) => {
+      const tags = Array.isArray(faq.tags) && faq.tags.length ? ` [tags: ${faq.tags.join(", ")}]` : "";
+      const id = faq.id ? `[${faq.id}] ` : "";
+      return `${id}Q: ${faq.question}\nA: ${faq.answer}${tags}`;
+    })
+    .join("\n\n");
+
+  return [payload.system_prompt, payload.tenant_greeting, faqText].filter(Boolean).join("\n\n");
+}
+
+function validatePromptPayload(input: unknown): PromptPayload {
+  if (!input || typeof input !== "object") throw new Error("prompt_payload_not_object");
+  const payload = input as Record<string, unknown>;
+  const requiredKeys = ["system_prompt", "tenant_greeting", "tenant_faqs", "field_schema", "tool_definitions", "session_config"];
+  for (const key of requiredKeys) {
+    if (!(key in payload)) throw new Error(`prompt_payload_missing_${key}`);
+  }
+  if (typeof payload.system_prompt !== "string" || !payload.system_prompt.trim()) {
+    throw new Error("prompt_payload_invalid_system_prompt");
+  }
+  if (typeof payload.tenant_greeting !== "string") throw new Error("prompt_payload_invalid_tenant_greeting");
+  if (!Array.isArray(payload.tenant_faqs)) throw new Error("prompt_payload_invalid_tenant_faqs");
+  if (!Array.isArray(payload.tool_definitions)) throw new Error("prompt_payload_invalid_tool_definitions");
+  if (!payload.field_schema || typeof payload.field_schema !== "object") throw new Error("prompt_payload_invalid_field_schema");
+  if (!payload.session_config || typeof payload.session_config !== "object") throw new Error("prompt_payload_invalid_session_config");
+
+  const sessionConfig = payload.session_config as Record<string, unknown>;
+  if (typeof sessionConfig.model !== "string" || !sessionConfig.model.trim()) throw new Error("prompt_payload_invalid_session_model");
+  if (typeof sessionConfig.voice !== "string" || !sessionConfig.voice.trim()) throw new Error("prompt_payload_invalid_session_voice");
+  if (!sessionConfig.turn_detection || typeof sessionConfig.turn_detection !== "object") {
+    throw new Error("prompt_payload_invalid_turn_detection");
+  }
+  const turnDetection = sessionConfig.turn_detection as Record<string, unknown>;
+  if (typeof turnDetection.type !== "string") throw new Error("prompt_payload_invalid_turn_detection_type");
+
+  for (const faq of payload.tenant_faqs) {
+    if (!faq || typeof faq !== "object") throw new Error("prompt_payload_invalid_faq_item");
+    const item = faq as Record<string, unknown>;
+    if (typeof item.question !== "string" || typeof item.answer !== "string") {
+      throw new Error("prompt_payload_invalid_faq_shape");
+    }
+  }
+
+  return payload as unknown as PromptPayload;
+}
+
+async function notifyGatewayError(
+  callId: string,
+  tenantKey: string,
+  code: string,
+  message: string,
+  details: Record<string, unknown> = {}
+) {
+  if (!appBaseUrl || !callSummaryToken) return;
+  try {
+    const resp = await fetch(`${appBaseUrl}/api/v1/gateway/error`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-everycall-internal": callSummaryToken
+      },
+      body: JSON.stringify({
+        call_id: callId,
+        tenant_key: tenantKey,
+        code,
+        message,
+        details
+      })
+    });
+    if (!resp.ok) {
+      logError("gateway_error_callback_failed", { callId, code, status: resp.status });
+    }
+  } catch (err) {
+    logError("gateway_error_callback_failed", {
+      callId,
+      code,
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
 }
 
 function verifyTelnyx(req: express.Request, rawBody: string) {
@@ -228,6 +348,61 @@ async function telnyxCallAction(callControlId: string, action: string, payload: 
   }
 }
 
+async function markCallCompleted(callSid: string) {
+  if (!pool) return;
+  try {
+    await pool.query(
+      `UPDATE calls
+       SET status = 'completed'
+       WHERE call_sid = $1`,
+      [callSid]
+    );
+  } catch (err) {
+    logError("call_status_update_failed", {
+      callSid,
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
+}
+
+async function endCallSession(session: StreamSession | undefined, reason: string, shouldHangup: boolean) {
+  if (!session || session.isShuttingDown) return;
+  session.isShuttingDown = true;
+  session.callActive = false;
+
+  logInfo("gateway_call_session_end", {
+    callSid: session.callSid,
+    callControlId: session.callControlId,
+    reason
+  });
+
+  if (session.outputTimer) {
+    clearInterval(session.outputTimer);
+    session.outputTimer = null;
+  }
+
+  if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
+    session.openAiWs.close();
+  }
+
+  if (shouldHangup && session.callControlId) {
+    try {
+      await telnyxCallAction(session.callControlId, "hangup", {});
+    } catch (err) {
+      logError("telnyx_call_control_hangup_error", {
+        callSid: session.callSid,
+        message: err instanceof Error ? err.message : "unknown"
+      });
+    }
+  }
+
+  if (session.telnyxStreamId) {
+    streamIdToCall.delete(session.telnyxStreamId);
+  }
+  streamSessions.delete(session.callControlId);
+  await markCallCompleted(session.callSid);
+}
+
 async function fetchPromptPayload(tenantKey: string, callSid: string, to: string, from: string): Promise<PromptPayload> {
   if (!appBaseUrl || !callSummaryToken) {
     throw new Error("missing_app_base_or_token");
@@ -244,22 +419,23 @@ async function fetchPromptPayload(tenantKey: string, callSid: string, to: string
     const text = await resp.text();
     throw new Error(`prompt_fetch_failed:${resp.status}:${text.slice(0, 200)}`);
   }
-  return resp.json();
+  const body = await resp.json();
+  return validatePromptPayload(body);
 }
 
-function buildFaqMatches(faqs: Array<{ question: string; answer: string; tags?: string[] }>, query: string) {
+function buildFaqMatches(faqs: Array<{ id?: string; question: string; answer: string; tags?: string[] }>, query: string) {
   const q = query.toLowerCase();
   const scored = faqs
-    .map((faq) => {
+    .map((faq, index) => {
       const hay = `${faq.question} ${faq.answer} ${(faq.tags || []).join(" ")}`.toLowerCase();
       const score = hay.includes(q) ? 1 : 0;
-      return { faq, score };
+      return { faq, score, index };
     })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 5)
     .map((item) => ({
-      id: undefined,
+      id: item.faq.id || `faq_${item.index + 1}`,
       question: item.faq.question,
       answer: item.faq.answer,
       score: item.score
@@ -268,14 +444,19 @@ function buildFaqMatches(faqs: Array<{ question: string; answer: string; tags?: 
 }
 
 function validateAgainstSchema(schema: Record<string, unknown>, payload: Record<string, unknown>) {
-  const required = Array.isArray((schema as any).required) ? (schema as any).required : [];
-  const errors: string[] = [];
-  for (const field of required) {
-    if (!(field in payload)) {
-      errors.push(`missing:${field}`);
-    }
+  try {
+    const validate = ajv.compile(schema);
+    const isValid = validate(payload);
+    const errors = (validate.errors || []).map((err: { instancePath?: string; message?: string }) =>
+      `${err.instancePath || "/"}:${err.message || "invalid"}`
+    );
+    return { status: isValid ? "accepted" : "invalid", errors } as const;
+  } catch (err) {
+    return {
+      status: "invalid",
+      errors: [`schema_compile_failed:${err instanceof Error ? err.message : "unknown"}`]
+    } as const;
   }
-  return { status: errors.length ? "invalid" : "accepted", errors } as const;
 }
 
 async function forwardToolResult(
@@ -286,36 +467,57 @@ async function forwardToolResult(
   validation: { status: string; errors: string[] }
 ) {
   if (!appBaseUrl || !callSummaryToken) return;
-  try {
-    await fetch(`${appBaseUrl}/api/v1/gateway/tools/result`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-everycall-internal": callSummaryToken
-      },
-      body: JSON.stringify({ call_id: callId, tenant_key: tenantKey, tool, payload, validation })
-    });
-  } catch (err) {
-    logError("gateway_tool_result_forward_failed", {
-      callId,
-      tool,
-      message: err instanceof Error ? err.message : "unknown"
-    });
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const resp = await fetch(`${appBaseUrl}/api/v1/gateway/tools/result`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-everycall-internal": callSummaryToken
+        },
+        body: JSON.stringify({ call_id: callId, tenant_key: tenantKey, tool, payload, validation })
+      });
+      if (resp.ok) return;
+      throw new Error(`status_${resp.status}`);
+    } catch (err) {
+      if (attempt === maxAttempts) {
+        logError("gateway_tool_result_forward_failed", {
+          callId,
+          tool,
+          attempts: maxAttempts,
+          message: err instanceof Error ? err.message : "unknown"
+        });
+        return;
+      }
+      await sleep(100 * 2 ** (attempt - 1));
+    }
   }
 }
 
 function connectOpenAiRealtime(session: StreamSession) {
   if (!openAiKey) {
     logError("openai_realtime_missing_key", { callSid: session.callSid });
+    void notifyGatewayError(session.callSid, session.tenantKey, "openai_realtime_missing_key", "OPENAI_API_KEY is missing");
+    void endCallSession(session, "openai_key_missing", true);
     return;
   }
   const payload = session.promptPayload;
   if (!payload) {
     logError("openai_realtime_missing_prompt_payload", { callSid: session.callSid });
+    void notifyGatewayError(
+      session.callSid,
+      session.tenantKey,
+      "openai_realtime_missing_prompt_payload",
+      "Prompt payload was not present when realtime connection was attempted"
+    );
+    void endCallSession(session, "prompt_payload_missing", true);
     return;
   }
 
+  session.openAiReady = false;
   const model = payload.session_config.model;
+  const instructions = buildSessionInstructions(payload);
   const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
   const ws = new WebSocket(url, {
     headers: {
@@ -326,13 +528,14 @@ function connectOpenAiRealtime(session: StreamSession) {
   session.openAiWs = ws;
 
   ws.on("open", () => {
+    session.openAiReady = true;
     logInfo("openai_realtime_session_start", { callSid: session.callSid, model });
 
     const sessionUpdate = {
       type: "session.update",
       session: {
         modalities: ["audio", "text"],
-        instructions: payload.system_prompt,
+        instructions,
         tools: payload.tool_definitions,
         input_audio_format: payload.session_config.input_audio_format || "g711_ulaw",
         output_audio_format: payload.session_config.output_audio_format || "g711_ulaw",
@@ -353,12 +556,13 @@ function connectOpenAiRealtime(session: StreamSession) {
       }
     };
 
-    logRealtimeEntry({
+    logRealtimeEntry(session, {
       ts: new Date().toISOString(),
       kind: "outbound",
       callSid: session.callSid,
       type: "session.update",
-      instructions: payload.system_prompt
+      instructions,
+      tools: payload.tool_definitions
     });
 
     sendOpenAiEvent(ws, sessionUpdate);
@@ -377,6 +581,7 @@ function connectOpenAiRealtime(session: StreamSession) {
 
     if (type === "session.updated") {
       session.realtimeModel = payloadMsg?.session?.model || model;
+      session.openAiSessionUpdated = true;
       logInfo("openai_realtime_session_updated", {
         callSid: session.callSid,
         model: session.realtimeModel
@@ -486,7 +691,41 @@ function connectOpenAiRealtime(session: StreamSession) {
   });
 
   ws.on("close", () => {
-    logInfo("openai_realtime_session_closed", { callSid: session.callSid });
+    logInfo("openai_realtime_session_closed", {
+      callSid: session.callSid,
+      reconnectAttempted: Boolean(session.reconnectAttempted),
+      openAiReady: Boolean(session.openAiReady),
+      openAiSessionUpdated: Boolean(session.openAiSessionUpdated)
+    });
+
+    if (session.isShuttingDown || !session.callActive) return;
+
+    const wasInitialized = Boolean(session.openAiReady && session.openAiSessionUpdated);
+    if (!wasInitialized) {
+      void notifyGatewayError(
+        session.callSid,
+        session.tenantKey,
+        "openai_realtime_session_init_failed",
+        "Realtime session closed before initialization completed"
+      );
+      void endCallSession(session, "openai_init_failed", true);
+      return;
+    }
+
+    if (!session.reconnectAttempted) {
+      session.reconnectAttempted = true;
+      logInfo("openai_realtime_reconnect_attempt", { callSid: session.callSid });
+      connectOpenAiRealtime(session);
+      return;
+    }
+
+    void notifyGatewayError(
+      session.callSid,
+      session.tenantKey,
+      "openai_realtime_disconnected",
+      "Realtime session disconnected and reconnect attempt failed"
+    );
+    void endCallSession(session, "openai_disconnect_after_retry", true);
   });
 
   ws.on("error", (err) => {
@@ -572,10 +811,6 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
       [callSid, tenantKey, from, to]
     );
 
-    if (realtimeDebug || realtimeTrace) {
-      resetRealtimeLog();
-    }
-
     let promptPayload: PromptPayload;
     try {
       promptPayload = await fetchPromptPayload(tenantKey, callSid, to, from);
@@ -585,21 +820,37 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
         tenantKey,
         message: err instanceof Error ? err.message : "unknown"
       });
-      try {
-        if (callControlId) {
-          await telnyxCallAction(callControlId, "hangup", {});
-        }
-      } catch {}
+      await notifyGatewayError(
+        callSid,
+        tenantKey,
+        "prompt_payload_fetch_failed",
+        err instanceof Error ? err.message : "unknown"
+      );
+      await endCallSession(
+        {
+          callControlId,
+          callSid,
+          tenantKey
+        },
+        "prompt_payload_fetch_failed",
+        true
+      );
       return res.status(200).send("ok");
     }
 
+    const realtimeLogPath = realtimeDebug || realtimeTrace ? initRealtimeLog(callSid) : undefined;
     streamSessions.set(callControlId, {
       callControlId,
       callSid,
       tenantKey,
+      callActive: true,
+      isShuttingDown: false,
+      reconnectAttempted: false,
+      openAiSessionUpdated: false,
       promptPayload,
       outputQueue: [],
-      outputBuffer: Buffer.alloc(0)
+      outputBuffer: Buffer.alloc(0),
+      ...(realtimeLogPath ? { realtimeLogPath } : {})
     });
 
     try {
@@ -643,6 +894,15 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
   }
 
   if (eventType === "streaming.stopped" || eventType === "streaming.stopped.v1") {
+    const callControlId = String(eventPayload.call_control_id || "");
+    if (callControlId) {
+      const session = streamSessions.get(callControlId);
+      if (session) {
+        await endCallSession(session, "telnyx_streaming_stopped", false);
+      } else {
+        await markCallCompleted(callControlId);
+      }
+    }
     return res.status(200).send("ok");
   }
 
@@ -650,10 +910,11 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     const callControlId = String(eventPayload.call_control_id || "");
     if (callControlId) {
       const session = streamSessions.get(callControlId);
-      if (session?.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
-        session.openAiWs.close();
+      if (session) {
+        await endCallSession(session, "telnyx_hangup", false);
+      } else {
+        await markCallCompleted(callControlId);
       }
-      streamSessions.delete(callControlId);
     }
     return res.status(200).send("ok");
   }
@@ -665,23 +926,31 @@ app.get("/healthz", (_req, res) => {
   res.status(200).send("ok");
 });
 
-app.get("/v1/debug/realtime-log", (req, res) => {
+function handleRealtimeLogDownload(req: express.Request, res: express.Response) {
   const provided = String(req.header("x-everycall-internal") || req.query?.token || "");
   if (!callSummaryToken || provided !== callSummaryToken) {
     return res.status(401).json({ error: "unauthorized" });
   }
-  if (!fs.existsSync(realtimeLogFile)) {
+  const callId = String(req.query?.call_id || "").trim();
+  if (!callId) {
+    return res.status(400).json({ error: "missing_call_id" });
+  }
+  const logPath = getRealtimeLogPath(callId);
+  if (!fs.existsSync(logPath)) {
     return res.status(404).json({ error: "not_found" });
   }
   res.setHeader("Content-Type", "application/jsonl");
-  fs.createReadStream(realtimeLogFile).pipe(res);
-});
+  fs.createReadStream(logPath).pipe(res);
+}
+
+app.get("/v1/gateway/debug/realtime-log", handleRealtimeLogDownload);
+app.get("/v1/debug/realtime-log", handleRealtimeLogDownload);
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/v1/telnyx/stream" });
 
 wss.on("connection", (ws) => {
-  ws.on("message", (message) => {
+  ws.on("message", async (message) => {
     let payload: any = {};
     try {
       payload = JSON.parse(message.toString());
@@ -725,11 +994,11 @@ wss.on("connection", (ws) => {
       const callControlId = streamIdToCall.get(streamId);
       if (!callControlId) return;
       const session = streamSessions.get(callControlId);
-      if (session?.openAiWs) {
-        session.openAiWs.close();
+      if (session) {
+        await endCallSession(session, "telnyx_stream_stop", false);
+      } else {
+        await markCallCompleted(callControlId);
       }
-      streamIdToCall.delete(streamId);
-      streamSessions.delete(callControlId);
     }
   });
 });
