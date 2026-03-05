@@ -77,6 +77,7 @@ type StreamSession = {
   openAiSessionUpdated?: boolean;
   reconnectAttempted?: boolean;
   promptPayload?: PromptPayload;
+  greetingSent?: boolean;
   outputQueue?: Buffer[];
   outputBuffer?: Buffer;
   outputTimer?: NodeJS.Timeout | null;
@@ -279,6 +280,17 @@ function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined
       media: { payload: payloadBase64 }
     })
   );
+}
+
+function decodeInboundAudioPayload(encoded: string) {
+  const raw = Buffer.from(encoded, "base64");
+  if (bidirectionalPayloadMode !== "rtp") return raw;
+  // Telnyx RTP payloads include a 12-byte header that must be stripped before forwarding g711_ulaw audio.
+  const firstByte = raw.at(0) ?? 0;
+  if (raw.length > 12 && (firstByte & 0xc0) === 0x80) {
+    return raw.subarray(12);
+  }
+  return raw;
 }
 
 function buildRtpPacket(frame: Buffer, session: StreamSession) {
@@ -586,6 +598,16 @@ function connectOpenAiRealtime(session: StreamSession) {
         callSid: session.callSid,
         model: session.realtimeModel
       });
+      if (!session.greetingSent) {
+        session.greetingSent = true;
+        sendOpenAiEvent(session.openAiWs, {
+          type: "response.create",
+          response: {
+            modalities: ["audio", "text"],
+            instructions: `Call just connected. Greet the caller now using this greeting: ${payload.tenant_greeting || "Hi, thanks for calling. How can I help you?"}`
+          }
+        });
+      }
       return;
     }
 
@@ -847,6 +869,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
       isShuttingDown: false,
       reconnectAttempted: false,
       openAiSessionUpdated: false,
+      greetingSent: false,
       promptPayload,
       outputQueue: [],
       outputBuffer: Buffer.alloc(0),
@@ -975,12 +998,14 @@ wss.on("connection", (ws) => {
     if (payload.event === "media") {
       const streamId = payload.stream_id;
       const encoded = payload.media?.payload;
+      const track = String(payload.media?.track || payload.track || "").toLowerCase();
       if (!streamId || !encoded) return;
+      if (track && !track.includes("inbound")) return;
       const callControlId = streamIdToCall.get(streamId);
       if (!callControlId) return;
       const session = streamSessions.get(callControlId);
       if (!session?.openAiWs) return;
-      const pcm = Buffer.from(encoded, "base64");
+      const pcm = decodeInboundAudioPayload(encoded);
       sendOpenAiEvent(session.openAiWs, {
         type: "input_audio_buffer.append",
         audio: pcm.toString("base64")
