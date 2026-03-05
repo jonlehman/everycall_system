@@ -305,6 +305,9 @@ export async function ensureTables(pool) {
       numbers_symbols_prompt TEXT,
       confirmation_prompt TEXT,
       faq_usage_prompt TEXT,
+      gateway_field_schema JSONB,
+      gateway_tool_definitions JSONB,
+      gateway_session_config JSONB,
       telnyx_sms_number TEXT,
       telnyx_sms_number_id TEXT,
       telnyx_sms_messaging_profile_id TEXT,
@@ -317,6 +320,9 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS numbers_symbols_prompt TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS confirmation_prompt TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS faq_usage_prompt TEXT;`);
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS gateway_field_schema JSONB;`);
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS gateway_tool_definitions JSONB;`);
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS gateway_session_config JSONB;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_number TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_number_id TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_messaging_profile_id TEXT;`);

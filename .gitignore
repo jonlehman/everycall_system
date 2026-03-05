@@ -8,3 +8,5 @@ dist
 coverage
 .vercel
 .env*.local
+realtime-logs*.jsonl
+realtime-logs*.csv

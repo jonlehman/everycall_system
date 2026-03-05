@@ -6,132 +6,137 @@ import { logError, logInfo } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
 import pg from "pg";
 import fs from "node:fs";
-import path from "node:path";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
+app.set("trust proxy", true);
+
 const databaseUrl = process.env.DATABASE_URL || "";
 const pool = databaseUrl ? new pg.Pool({ connectionString: databaseUrl }) : null;
 const appBaseUrl = process.env.APP_BASE_URL || "";
 const callSummaryToken = process.env.CALL_SUMMARY_TOKEN || "";
 const callGatewayBaseUrl = process.env.CALL_GATEWAY_BASE_URL || "";
 const openAiKey = process.env.OPENAI_API_KEY || "";
-const openAiModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const signatureRequired = (process.env.TELNYX_SIGNATURE_REQUIRED || "true").toLowerCase() !== "false";
 const telnyxApiKey = process.env.TELNYX_API_KEY || "";
-const telnyxTranscriptionModel = process.env.TELNYX_TRANSCRIPTION_MODEL || "Telnyx";
-// Voice service removed; realtime uses OpenAI audio and Telnyx speak fallback.
-const openAiRealtimeModel = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime";
-const openAiRealtimeVoice = process.env.OPENAI_REALTIME_VOICE || "alloy";
-const openAiRealtimeInputFormat = process.env.OPENAI_REALTIME_INPUT_FORMAT || "g711_ulaw";
-const openAiRealtimeOutputFormat = process.env.OPENAI_REALTIME_OUTPUT_FORMAT || "g711_ulaw";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "rtp").toLowerCase();
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
 const realtimeLogFile = String(process.env.REALTIME_LOG_FILE || "/tmp/realtime-logs.jsonl");
 
+const streamIdToCall = new Map<string, string>();
+
+type PromptPayload = {
+  system_prompt: string;
+  tenant_greeting: string;
+  tenant_faqs: Array<{ id?: string; question: string; answer: string; tags?: string[] }>;
+  field_schema: Record<string, unknown>;
+  tool_definitions: Array<Record<string, unknown>>;
+  session_config: {
+    model: string;
+    voice: string;
+    max_output_tokens?: number;
+    turn_detection: {
+      type: string;
+      threshold: number;
+      prefix_padding_ms: number;
+      silence_duration_ms: number;
+      idle_timeout_ms: number | null;
+      create_response?: boolean;
+      interrupt_response?: boolean;
+    };
+    transcription_model?: string;
+    noise_reduction?: string;
+    input_audio_format?: string;
+    output_audio_format?: string;
+  };
+  metadata?: Record<string, unknown>;
+};
+
+type PendingToolCall = {
+  name: string;
+  callId: string;
+  argumentsText: string;
+};
+
 type StreamSession = {
   callControlId: string;
   callSid: string;
   tenantKey: string;
-  industryKey?: string;
-  companyName?: string;
   telnyxStreamId?: string;
-  telnyxWs?: WebSocket | undefined;
-  openAiWs?: WebSocket | undefined;
-  greeting?: string;
-  lastTranscript?: string;
-  outputActive?: boolean;
-  responseActive?: boolean;
-  instructions?: string;
-  voiceOverride?: string;
-  history?: { role: string; content: string }[];
-  lastUserUtterance?: string;
+  telnyxWs?: WebSocket;
+  openAiWs?: WebSocket;
+  promptPayload?: PromptPayload;
+  outputQueue?: Buffer[];
+  outputBuffer?: Buffer;
+  outputTimer?: NodeJS.Timeout;
+  outputPrimed?: boolean;
   rtpSeq?: number;
   rtpTimestamp?: number;
   rtpSsrc?: number;
-  outputBuffer?: Buffer;
-  outputQueue?: Buffer[];
-  outputTimer?: NodeJS.Timeout | undefined;
-  outputPrimed?: boolean;
-  lastResponseAt?: number;
-  pendingCallerText?: string;
-  pendingAssistantText?: string;
-  pendingAssistantAudioText?: string;
-  pendingAssistantFlush?: string;
-  pendingAssistantFlushTimer?: NodeJS.Timeout | undefined;
-  lastAssistantText?: string;
-  lastResponseId?: string;
-  lastResponseDoneAt?: number;
-  lastUserUtteranceAt?: number;
-  pendingResponseInstructions?: string | null;
-  pendingHangup?: boolean;
-  preCloseAsked?: boolean;
-  preCloseAnswered?: boolean;
-  collectedName?: string;
-  collectedPhone?: string;
-  collectedAddress?: string;
-  collectedTime?: string;
-  collectedDate?: string;
-  collectedServiceRequired?: string;
-  collectedUrgency?: string;
-  collectedAddressLine1?: string;
-  collectedAddressLine2?: string;
-  collectedCity?: string;
-  collectedState?: string;
-  collectedPostalCode?: string;
-  askedName?: boolean;
-  askedPhone?: boolean;
-  askedAddress?: boolean;
-  askedTime?: boolean;
-  skipAddress?: boolean;
-  skipTime?: boolean;
-  realtimeLogInitialized?: boolean;
-  readyToClose?: boolean;
-  faqs?: Array<{ question: string; answer: string; category: string }>;
-  awaitingAnswer?: boolean;
   realtimeModel?: string;
+  pendingToolCall?: PendingToolCall;
+  realtimeLogInitialized?: boolean;
 };
 
 const streamSessions = new Map<string, StreamSession>();
 
-app.set("trust proxy", true);
-
-function parseFormBody(raw: string): Record<string, string> {
-  const params = new URLSearchParams(raw);
-  return Object.fromEntries(params.entries());
+function resetRealtimeLog() {
+  try {
+    fs.writeFileSync(realtimeLogFile, "");
+  } catch (err) {
+    logError("realtime_log_reset_failed", {
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
 }
 
-function parseTelnyxParams(rawBody: string, contentType: string | undefined): Record<string, string> {
-  const ct = (contentType || "").toLowerCase();
-  if (ct.includes("application/json") && rawBody.trim().startsWith("{")) {
-    try {
-      const json = JSON.parse(rawBody);
-      if (json && typeof json === "object") {
-        return Object.fromEntries(
-          Object.entries(json).map(([key, value]) => [key, String(value ?? "")])
-        );
-      }
-    } catch {
-      return {};
-    }
+function logRealtimeEntry(entry: Record<string, unknown>) {
+  if (!realtimeDebug && !realtimeTrace) return;
+  try {
+    fs.appendFileSync(realtimeLogFile, `${JSON.stringify(entry)}\n`);
+  } catch (err) {
+    logError("realtime_log_write_failed", {
+      message: err instanceof Error ? err.message : "unknown"
+    });
   }
-  return parseFormBody(rawBody);
+}
+
+function logRealtimeRaw(session: StreamSession, payload: Record<string, unknown>) {
+  if (!realtimeDebug) return;
+  logRealtimeEntry({
+    ts: new Date().toISOString(),
+    kind: "raw",
+    callSid: session.callSid,
+    payload
+  });
+}
+
+function logRealtimeTrace(session: StreamSession, payload: Record<string, unknown>) {
+  if (!realtimeTrace) return;
+  logRealtimeEntry({
+    ts: new Date().toISOString(),
+    kind: "trace",
+    callSid: session.callSid,
+    payload
+  });
+}
+
+function verifyTelnyx(req: express.Request, rawBody: string) {
+  const signature = req.header("telnyx-signature-ed25519");
+  const timestamp = req.header("telnyx-timestamp");
+  return validateTelnyxSignature({
+    signatureHeader: signature,
+    timestampHeader: timestamp,
+    publicKey: env.TELNYX_PUBLIC_KEY,
+    rawBody
+  });
 }
 
 function buildBaseUrl(req: express.Request) {
   if (callGatewayBaseUrl) return callGatewayBaseUrl;
   return `${req.protocol}://${req.get("host")}`;
-}
-
-function buildBaseUrlFromAction(actionUrl: string) {
-  try {
-    const parsed = new URL(actionUrl);
-    return `${parsed.protocol}//${parsed.host}`;
-  } catch {
-    return callGatewayBaseUrl || "";
-  }
 }
 
 function toWebSocketUrl(baseUrl: string) {
@@ -140,646 +145,43 @@ function toWebSocketUrl(baseUrl: string) {
   return baseUrl;
 }
 
+function sendOpenAiEvent(ws: WebSocket | undefined, payload: Record<string, unknown>) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify(payload));
+}
+
 function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined, payloadBase64: string) {
   if (!ws || ws.readyState !== WebSocket.OPEN || !streamId) return;
   ws.send(
     JSON.stringify({
       event: "media",
       stream_id: streamId,
-      media: {
-        payload: payloadBase64
-      }
+      media: { payload: payloadBase64 }
     })
   );
 }
 
-function sendOpenAiEvent(ws: WebSocket | undefined, payload: Record<string, unknown>) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify(payload));
-}
-
-function shouldBargeIn(delta: string) {
-  const lower = normalizeText(delta);
-  if (!lower) return false;
-  if (/(stop|wait|hold on|excuse me|one sec|sorry|actually)/.test(lower)) return true;
-  const compact = lower.replace(/[^a-z0-9]/g, "");
-  return compact.length >= 2;
-}
-
-function cancelAssistantOutput(session: StreamSession, reason: string) {
-  if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
-    sendOpenAiEvent(session.openAiWs, { type: "response.cancel" });
-  }
-  session.responseActive = false;
-  session.outputActive = false;
-  session.pendingAssistantText = "";
-  session.pendingAssistantAudioText = "";
-  session.pendingAssistantFlush = "";
-  if (session.outputTimer) {
-    clearInterval(session.outputTimer);
-    session.outputTimer = undefined;
-  }
-  if (session.outputQueue) {
-    session.outputQueue = [];
-  }
-  session.outputBuffer = Buffer.alloc(0);
-  logInfo("assistant_response_canceled", { callSid: session.callSid, reason });
-}
-
-const STOPWORDS = new Set([
-  "the","a","an","and","or","but","if","then","to","of","in","on","for","with","at","by","from",
-  "is","are","was","were","be","been","being","it","this","that","these","those","i","you","we","they",
-  "my","your","our","their","me","us","him","her","them","as","so","do","does","did","can","could","should",
-  "would","will","just","now","please","thanks","thank"
-]);
-
-const INDUSTRY_KEYWORDS: Record<string, string[]> = {
-  plumbing: ["plumbing", "plumber", "leak", "leaking", "water heater", "drain", "toilet", "faucet", "pipe", "sewer", "clog"],
-  cleaning: ["cleaning", "cleaner", "house cleaning", "deep clean", "maid", "move-out", "move in", "janitorial"],
-  hvac: ["hvac", "air conditioning", "ac", "furnace", "heat", "cooling", "thermostat", "heat pump"],
-  electrical: ["electrical", "electrician", "outlet", "panel", "breaker", "wiring", "lights", "spark"],
-  roofing: ["roof", "roofing", "shingle", "leak in roof", "gutter"],
-  landscaping: ["landscaping", "lawn", "mow", "mulch", "yard", "irrigation"],
-  pest_control: ["pest", "pest control", "rodent", "ants", "termites", "bugs"],
-  garage_door: ["garage door", "opener", "spring", "track"],
-  window_installers: ["window", "glass", "window replacement", "window install"],
-  locksmith: ["locksmith", "lock", "lockout", "key", "rekey"],
-  general_contractor: ["remodel", "renovation", "general contractor", "construction", "addition"]
-};
-
-function normalizeText(text: string) {
-  return String(text || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function tokenize(text: string) {
-  return normalizeText(text)
-    .split(" ")
-    .filter((t) => t && !STOPWORDS.has(t));
-}
-
-function detectPhone(text: string) {
-  const match = String(text || "").match(/\b(\d{3})[-.\s]?(\d{3})[-.\s]?(\d{4})\b/);
-  if (!match) return "";
-  return `${match[1]}-${match[2]}-${match[3]}`;
-}
-
-function detectTime(text: string) {
-  const lower = String(text || "").toLowerCase();
-  const timeMatch = lower.match(/\b(\d{1,2})(:\d{2})?\s?(am|pm)\b/);
-  if (timeMatch) return timeMatch[0];
-  if (/(today|tonight|tomorrow|morning|afternoon|evening)/.test(lower)) {
-    return lower.match(/(today|tonight|tomorrow|morning|afternoon|evening)/)?.[0] || "";
-  }
-  return "";
-}
-
-function detectDate(text: string) {
-  const lower = String(text || "").toLowerCase();
-  const today = new Date();
-  const iso = (date: Date) => date.toISOString().slice(0, 10);
-  if (/\btoday\b/.test(lower) || /\btonight\b/.test(lower)) return iso(today);
-  if (/\btomorrow\b/.test(lower)) {
-    const next = new Date(today);
-    next.setDate(today.getDate() + 1);
-    return iso(next);
-  }
-  return "";
-}
-
-function detectAddress(text: string) {
-  const lower = String(text || "").toLowerCase();
-  if (!/\b\d{2,6}\b/.test(lower)) return "";
-  if (
-    /(street|st\b|avenue|ave\b|road|rd\b|drive|dr\b|boulevard|blvd\b|lane|ln\b|way\b|court|ct\b|circle|cir\b|place|pl\b|parkway|pkwy\b|highway|hwy\b)/.test(lower)
-  ) {
-    return String(text || "");
-  }
-  return "";
-}
-
-function parseNameParts(raw: string) {
-  const cleaned = normalizeText(raw);
-  const parts = cleaned.split(" ").filter(Boolean);
-  if (!parts.length) return { first: "", last: "" };
-  if (parts.length === 1) return { first: parts[0], last: "" };
-  return { first: parts[0], last: parts.slice(1).join(" ") };
-}
-
-function parseAddressParts(raw: string) {
-  const text = String(raw || "").trim();
-  if (!text) {
-    return {
-      address1: "",
-      address2: "",
-      city: "",
-      state: "",
-      postalCode: ""
-    };
-  }
-
-  let address1 = text;
-  let address2 = "";
-  let city = "";
-  let state = "";
-  let postalCode = "";
-
-  const parts = text.split(",").map((part) => part.trim()).filter(Boolean);
-  if (parts.length >= 2) {
-    address1 = parts[0] || "";
-    city = parts[1] || "";
-    const tail = parts.slice(2).join(" ").trim() || parts[1] || "";
-    const stateZipMatch = tail.match(/\b([A-Za-z]{2})\s+(\d{5})(?:-\d{4})?\b/);
-    if (stateZipMatch) {
-      state = (stateZipMatch[1] || "").toUpperCase();
-      postalCode = stateZipMatch[2] || "";
-    } else {
-      const spelledZipMatch = tail.match(/\b([A-Za-z]+)\s+(\d{5})(?:-\d{4})?\b/);
-      if (spelledZipMatch) {
-        postalCode = spelledZipMatch[2] || "";
-      }
-    }
-  }
-
-  const unitMatch = address1.match(/\b(?:apt|unit|suite|ste|#)\s*[\w-]+/i);
-  if (unitMatch) {
-    address2 = unitMatch[0];
-    address1 = address1.replace(unitMatch[0], "").replace(/\s+,?$/, "").trim();
-  }
-
-  return { address1, address2, city, state, postalCode };
-}
-
-function detectUrgency(text: string, intent: string) {
-  if (intent === "emergency_question") return "high";
-  const lower = String(text || "").toLowerCase();
-  if (/(emergency|urgent|asap|right away|immediately)/.test(lower)) return "high";
-  return "";
-}
-
-function detectServiceRequired(text: string, intent: string) {
-  if (!text || intent === "pricing_question" || intent === "availability_question") return "";
-  if (intent === "technical_question" || intent === "faq_business") return "";
-  return String(text || "").trim();
-}
-
-function detectName(text: string) {
-  const cleaned = normalizeText(text);
-  if (/\d/.test(cleaned)) return "";
-  const parts = cleaned.split(" ").filter(Boolean);
-  if (parts.length === 0 || parts.length > 3) return "";
-  if (/(name is|this is|i am|i'm)/.test(cleaned)) {
-    const tail = cleaned.split(/name is|this is|i am|i'm/)[1]?.trim() || "";
-    const tailParts = tail.split(" ").filter(Boolean);
-    if (tailParts.length) return tailParts[0];
-  }
-  return parts[0] || "";
-}
-
-function isQuestionLike(text: string) {
-  const lower = String(text || "").toLowerCase();
-  return /\?$/.test(text.trim()) || /\b(do you|can you|could you|what|how|when|where|why|is it|are you)\b/.test(lower);
-}
-
-function detectIndustryMismatch(industryKey: string | undefined, text: string) {
-  if (!industryKey) return "";
-  const lower = normalizeText(text);
-  const currentKeywords = INDUSTRY_KEYWORDS[industryKey] || [];
-  const mentionsCurrent = currentKeywords.some((kw) => lower.includes(kw));
-  for (const [key, keywords] of Object.entries(INDUSTRY_KEYWORDS)) {
-    if (key === industryKey) continue;
-    if (keywords.some((kw) => lower.includes(kw))) {
-      if (!mentionsCurrent) return key;
-    }
-  }
-  return "";
-}
-
-function detectIntent(text: string) {
-  const lower = normalizeText(text);
-  if (/(reschedule|change time|move it|different time|another time)/.test(lower)) return "reschedule_request";
-  if (/(price|cost|estimate|quote|fee|diagnostic)/.test(lower)) return "pricing_question";
-  if (/(warranty|guarantee)/.test(lower)) return "warranty_question";
-  if (/(insurance|claim)/.test(lower)) return "insurance_question";
-  if (/(payment|pay|credit card|cash|check|apple pay|google pay)/.test(lower)) return "payment_methods_question";
-  if (/(area|coverage|service area|serve|cover)/.test(lower)) return "coverage_area_question";
-  if (/(schedule|appointment|availability|how soon|soon can|when can|same day|tomorrow|tonight)/.test(lower)) return "availability_question";
-  if (/(what happens next|next steps|process|before you arrive|before the visit)/.test(lower)) return "process_question";
-  if (/(prepare|prep|before you come|anything i should do)/.test(lower)) return "preparation_question";
-  if (/(emergency|urgent|asap|right away)/.test(lower)) return "emergency_question";
-  if (/(should i|how do i|can i fix|what should i do|drano|troubleshoot|diagnose)/.test(lower)) return "technical_question";
-  if (isQuestionLike(text)) return "faq_business";
-  return "general";
-}
-
-async function loadFaqs(session: StreamSession): Promise<Array<{ question: string; answer: string; category: string }>> {
-  if (session.faqs || !pool) return session.faqs || [];
-  const rows = await pool.query(
-    `SELECT question, answer, category
-     FROM faqs
-     WHERE tenant_key = $1
-     ORDER BY id ASC`,
-    [session.tenantKey]
-  );
-  const rowsArray = Array.isArray(rows.rows) ? rows.rows : [];
-  session.faqs = rowsArray as Array<{ question: string; answer: string; category: string }>;
-  return rowsArray;
-}
-
-function scoreFaqMatch(text: string, faq: { question: string }) {
-  const textTokens = new Set(tokenize(text));
-  const questionTokens = tokenize(faq.question);
-  let score = 0;
-  for (const token of questionTokens) {
-    if (textTokens.has(token)) score += 1;
-  }
-  return score;
-}
-
-function findBestFaq(text: string, faqs: Array<{ question: string; answer: string; category: string }>) {
-  let best = null as null | { question: string; answer: string; category: string; score: number };
-  for (const faq of faqs) {
-    const score = scoreFaqMatch(text, faq);
-    if (!best || score > best.score) {
-      best = { ...faq, score };
-    }
-  }
-  if (!best || best.score < 2) return null;
-  return best;
-}
-
-function buildFaqAnswer(text: string, faqs: Array<{ question: string; answer: string; category: string }>) {
-  const intent = detectIntent(text);
-  const categoryMap: Record<string, string> = {
-    pricing_question: "Pricing",
-    warranty_question: "Warranty",
-    insurance_question: "Insurance",
-    payment_methods_question: "Payments",
-    coverage_area_question: "Coverage",
-    availability_question: "Scheduling",
-    process_question: "Process",
-    preparation_question: "Preparation",
-    emergency_question: "Emergency"
-  };
-  const targetCategory = categoryMap[intent];
-  const candidates = targetCategory ? faqs.filter((f) => f.category === targetCategory) : faqs;
-  const best = findBestFaq(text, candidates);
-  return best ? best.answer : "";
-}
-
-function isFaqIntent(intent: string) {
-  return (
-    intent === "pricing_question" ||
-    intent === "warranty_question" ||
-    intent === "insurance_question" ||
-    intent === "payment_methods_question" ||
-    intent === "coverage_area_question" ||
-    intent === "availability_question" ||
-    intent === "process_question" ||
-    intent === "preparation_question" ||
-    intent === "emergency_question" ||
-    intent === "faq_business"
-  );
-}
-
-function buildClosing(session: StreamSession) {
-  const name = session.collectedName || "there";
-  const phone = session.collectedPhone || "the number you provided";
-  const time = session.collectedTime || "";
-  if (time) {
-    return `We’ll confirm availability for ${time} and call you at ${phone} to confirm the details. Thanks for calling ${session.companyName || "our team"}, ${name}—talk to you soon.`;
-  }
-  return `Someone from our team will call you at ${phone} shortly to confirm the details. Thanks for calling ${session.companyName || "our team"}, ${name}—talk to you soon.`;
-}
-
-function createResponse(session: StreamSession, instructions?: string) {
-  if (!session.openAiWs) return;
-  if (session.responseActive || session.outputActive) {
-    session.pendingResponseInstructions = instructions || "";
-    return;
-  }
-  if (realtimeDebug || realtimeTrace) {
-    const entry = {
-      ts: new Date().toISOString(),
-      kind: "outbound",
-      callSid: session.callSid,
-      type: "response.create",
-      instructions: instructions || ""
-    };
-    logInfo("realtime_outbound", entry);
-    try {
-      fs.appendFileSync(realtimeLogFile, `${JSON.stringify(entry)}\n`);
-    } catch (err) {
-      logError("realtime_log_write_failed", {
-        callSid: session.callSid,
-        message: err instanceof Error ? err.message : "unknown"
-      });
-    }
-  }
-  session.responseActive = true;
-  sendOpenAiEvent(session.openAiWs, {
-    type: "response.create",
-    response: instructions
-      ? { modalities: ["audio", "text"], instructions }
-      : { modalities: ["audio", "text"] }
-  });
-}
-
-function resetRealtimeLog(session: StreamSession) {
-  if (!realtimeDebug && !realtimeTrace) return;
-  if (session.realtimeLogInitialized) return;
-  try {
-    fs.writeFileSync(realtimeLogFile, "");
-  } catch (err) {
-    logError("realtime_log_write_failed", {
-      callSid: session.callSid,
-      message: err instanceof Error ? err.message : "unknown"
-    });
-  }
-  session.realtimeLogInitialized = true;
-}
-
-function logRealtimeRaw(session: StreamSession, payload: any) {
-  if (!realtimeDebug) return;
-  resetRealtimeLog(session);
-  const entry = {
-    ts: new Date().toISOString(),
-    kind: "raw",
-    callSid: session.callSid,
-    type: payload?.type || "unknown",
-    payload
-  };
-  logInfo("realtime_raw_event", entry);
-  try {
-    fs.appendFileSync(realtimeLogFile, `${JSON.stringify(entry)}\n`);
-  } catch (err) {
-    logError("realtime_log_write_failed", {
-      callSid: session.callSid,
-      message: err instanceof Error ? err.message : "unknown"
-    });
-  }
-}
-
-function logRealtimeTrace(session: StreamSession, payload: any) {
-  if (!realtimeTrace) return;
-  resetRealtimeLog(session);
-  const type = payload?.type || "";
-  if (
-    type === "response.create" ||
-    type === "response.done" ||
-    type === "response.completed" ||
-    type === "response.output_audio_transcript.delta" ||
-    type === "response.audio_transcript.delta" ||
-    type === "response.output_audio_transcript.done" ||
-    type === "response.audio_transcript.done" ||
-    type === "input_audio_buffer.append" ||
-    type === "input_audio_buffer.commit" ||
-    type === "error"
-  ) {
-    const entry = {
-      ts: new Date().toISOString(),
-      kind: "trace",
-      callSid: session.callSid,
-      type,
-      text: payload?.delta || payload?.transcript || payload?.text || "",
-      responseId: payload?.response?.id || payload?.response_id || payload?.id || ""
-    };
-    logInfo("realtime_trace", entry);
-    try {
-      fs.appendFileSync(realtimeLogFile, `${JSON.stringify(entry)}\n`);
-    } catch (err) {
-      logError("realtime_log_write_failed", {
-        callSid: session.callSid,
-        message: err instanceof Error ? err.message : "unknown"
-      });
-    }
-  }
-}
-
-function nextRequiredQuestion(session: StreamSession) {
-  if (!session.collectedName) return "What’s your name?";
-  if (!session.collectedPhone) return "What’s the best callback number for you?";
-  if (!session.collectedAddress && !session.skipAddress) {
-    return "What’s the full service address, including zip code?";
-  }
-  if (!session.collectedTime && !session.skipTime) {
-    return "What time would you like someone to come out?";
-  }
-  return "";
-}
-
-function markAskedForQuestion(session: StreamSession, question: string) {
-  if (/name/i.test(question)) session.askedName = true;
-  if (/callback number/i.test(question)) session.askedPhone = true;
-  if (/address/i.test(question)) session.askedAddress = true;
-  if (/time/i.test(question)) session.askedTime = true;
-}
-
-async function handleCallerUtterance(session: StreamSession, transcript: string) {
-  const text = String(transcript || "").trim();
-  if (!text) return;
-
-  const preClosePrompt = "Do you have any other questions, or anything else I can help with?";
-  const needsPreCloseFollowup = Boolean(session.preCloseAsked && !session.preCloseAnswered);
-
-  const intent = detectIntent(text);
-  const phone = detectPhone(text);
-  const time = detectTime(text);
-  const date = detectDate(text);
-  const address = detectAddress(text);
-  const name = detectName(text);
-  const urgency = detectUrgency(text, intent);
-  const serviceRequired = detectServiceRequired(text, intent);
-  if (phone) session.collectedPhone = phone;
-  if (time) session.collectedTime = time;
-  if (date) session.collectedDate = date;
-  if (address) session.collectedAddress = address;
-  if (name) session.collectedName = name;
-  if (urgency) session.collectedUrgency = urgency;
-  if (serviceRequired && !session.collectedServiceRequired) session.collectedServiceRequired = serviceRequired;
-
-  if (session.collectedAddress) {
-    const parts = parseAddressParts(session.collectedAddress);
-    session.collectedAddressLine1 = parts.address1;
-    session.collectedAddressLine2 = parts.address2;
-    session.collectedCity = parts.city;
-    session.collectedState = parts.state;
-    session.collectedPostalCode = parts.postalCode;
-  }
-
-  if (session.askedAddress && !session.collectedAddress) {
-    session.skipAddress = true;
-  }
-  if (session.askedTime && !session.collectedTime) {
-    session.skipTime = true;
-  }
-
-  session.readyToClose = Boolean(session.collectedPhone && session.collectedAddress && session.collectedTime && session.collectedName);
-
-  if (session.preCloseAsked && !session.preCloseAnswered) {
-    if (isDonePhrase(text)) {
-      session.preCloseAnswered = true;
-      const closingText = buildClosing(session);
-      session.pendingHangup = true;
-      createResponse(session, `Say exactly: "${closingText}"`);
-      return;
-    }
-  }
-
-  const mismatch = detectIndustryMismatch(session.industryKey, text);
-  if (mismatch) {
-    const industryLabel = session.industryKey ? session.industryKey.replace(/_/g, " ") : "our services";
-    const reply = `We specialize in ${industryLabel}. Are you calling about ${industryLabel} service?`;
-    createResponse(session, `Say exactly: "${reply}"`);
-    return;
-  }
-
-  const faqs = await loadFaqs(session);
-  const faqAnswer = buildFaqAnswer(text, faqs);
-
-  if (intent === "technical_question") {
-    const reply = "Great question — the technician will cover that when they call.";
-    if (needsPreCloseFollowup) {
-      createResponse(session, `Say exactly: "${reply}" Then ask: "${preClosePrompt}"`);
-      return;
-    }
-    const nextQuestion = nextRequiredQuestion(session);
-    if (nextQuestion) {
-      markAskedForQuestion(session, nextQuestion);
-      createResponse(session, `Say exactly: "${reply}" Then ask: "${nextQuestion}"`);
-      return;
-    }
-    createResponse(session, `Say exactly: "${reply}"`);
-    return;
-  }
-
-  if (faqAnswer) {
-    if (needsPreCloseFollowup) {
-      createResponse(session, `Say exactly: "${faqAnswer}" Then ask: "${preClosePrompt}"`);
-      return;
-    }
-    const nextQuestion = nextRequiredQuestion(session);
-    if (nextQuestion) {
-      markAskedForQuestion(session, nextQuestion);
-      createResponse(session, `Say exactly: "${faqAnswer}" Then ask: "${nextQuestion}"`);
-      return;
-    }
-    createResponse(session, `Say exactly: "${faqAnswer}"`);
-    return;
-  }
-
-  if (isFaqIntent(intent)) {
-    const reply = "I don’t have that detail, but I can have someone call you with the specifics.";
-    if (needsPreCloseFollowup) {
-      createResponse(session, `Say exactly: "${reply}" Then ask: "${preClosePrompt}"`);
-      return;
-    }
-    const nextQuestion = nextRequiredQuestion(session);
-    if (nextQuestion) {
-      markAskedForQuestion(session, nextQuestion);
-      createResponse(session, `Say exactly: "${reply}" Then ask: "${nextQuestion}"`);
-      return;
-    }
-    createResponse(session, `Say exactly: "${reply}"`);
-    return;
-  }
-
-  if (session.readyToClose && !session.preCloseAsked) {
-    session.preCloseAsked = true;
-    createResponse(session, `Say exactly: "${preClosePrompt}"`);
-    return;
-  }
-
-  if (needsPreCloseFollowup) {
-    createResponse(session, `Answer the caller briefly, then ask: "${preClosePrompt}"`);
-    return;
-  }
-
-  const nextQuestion = nextRequiredQuestion(session);
-  if (nextQuestion) {
-    markAskedForQuestion(session, nextQuestion);
-    createResponse(session, `Say exactly: "${nextQuestion}"`);
-    return;
-  }
-
-  createResponse(session, `Say exactly: "${preClosePrompt}"`);
-}
-
-async function flushAssistantText(session: StreamSession) {
-  const text = (session.pendingAssistantFlush || "").trim();
-  session.pendingAssistantFlush = "";
-  session.pendingAssistantFlushTimer = undefined;
-  if (!text) return;
-  if (text === session.lastAssistantText) {
-    return;
-  }
-  await pool?.query(
-    `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-     VALUES ($1, $2, $3, $4, 'message')`,
-    [session.callSid, session.tenantKey, "assistant", text]
-  );
-  await appendCombinedTranscript(session.callSid, "assistant", text);
-  await pool?.query(
-    `UPDATE call_details
-     SET transcript = COALESCE(transcript, '') || $2,
-         updated_at = NOW()
-     WHERE call_sid = $1`,
-    [session.callSid, `\nAssistant: ${text}`]
-  );
-  session.history = (session.history || [])
-    .concat({ role: "assistant", content: text })
-    .slice(-12);
-  session.lastAssistantText = text;
-}
-
-function decodeRtpPayload(packet: Buffer): Buffer | null {
-  if (packet.length < 12) return null;
-  const first = packet[0];
-  if (first === undefined) return null;
-  const hasExtension = (first & 0x10) !== 0;
-  const csrcCount = first & 0x0f;
-  let headerLen = 12 + csrcCount * 4;
-  if (packet.length < headerLen) return null;
-  if (hasExtension) {
-    if (packet.length < headerLen + 4) return null;
-    const extLenWords = packet.readUInt16BE(headerLen + 2);
-    headerLen += 4 + extLenWords * 4;
-    if (packet.length < headerLen) return null;
-  }
-  return packet.subarray(headerLen);
-}
-
-function buildRtpPacket(payload: Buffer, session: StreamSession): Buffer {
-  if (session.rtpSeq === undefined) {
-    session.rtpSeq = Math.floor(Math.random() * 65535);
-  }
-  if (session.rtpTimestamp === undefined) {
-    session.rtpTimestamp = Math.floor(Math.random() * 0xffffffff);
-  }
-  if (session.rtpSsrc === undefined) {
-    session.rtpSsrc = Math.floor(Math.random() * 0xffffffff);
-  }
+function buildRtpPacket(frame: Buffer, session: StreamSession) {
+  const payloadType = rtpPayloadType & 0x7f;
+  session.rtpSeq = (session.rtpSeq ?? Math.floor(Math.random() * 65535)) + 1;
+  session.rtpTimestamp = (session.rtpTimestamp ?? Math.floor(Math.random() * 2 ** 32)) + frame.length;
+  session.rtpSsrc = session.rtpSsrc ?? Math.floor(Math.random() * 2 ** 32);
   const header = Buffer.alloc(12);
   header[0] = 0x80;
-  header[1] = rtpPayloadType & 0x7f;
-  header.writeUInt16BE(session.rtpSeq, 2);
-  header.writeUInt32BE(session.rtpTimestamp, 4);
-  header.writeUInt32BE(session.rtpSsrc, 8);
-  session.rtpSeq = (session.rtpSeq + 1) & 0xffff;
-  session.rtpTimestamp = (session.rtpTimestamp + 160) >>> 0;
-  return Buffer.concat([header, payload]);
+  header[1] = payloadType;
+  header.writeUInt16BE(session.rtpSeq % 65536, 2);
+  header.writeUInt32BE(session.rtpTimestamp >>> 0, 4);
+  header.writeUInt32BE(session.rtpSsrc >>> 0, 8);
+  return Buffer.concat([header, frame]);
 }
 
 function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
-  const buffer = session.outputBuffer ? Buffer.concat([session.outputBuffer, pcmChunk]) : pcmChunk;
   const frameSize = 160;
-  let offset = 0;
+  const buffer = session.outputBuffer ? Buffer.concat([session.outputBuffer, pcmChunk]) : pcmChunk;
   if (!session.outputQueue) {
     session.outputQueue = [];
   }
+  let offset = 0;
   while (buffer.length - offset >= frameSize) {
     const frame = buffer.subarray(offset, offset + frameSize);
     const payload = bidirectionalPayloadMode === "raw" ? frame : buildRtpPacket(frame, session);
@@ -792,7 +194,6 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
 
 function startOutputPump(session: StreamSession) {
   if (session.outputTimer) return;
-  // Pre-buffer a few frames to avoid initial underruns while keeping latency low.
   if (!session.outputPrimed && session.outputQueue && session.outputQueue.length < 3) {
     return;
   }
@@ -807,334 +208,13 @@ function startOutputPump(session: StreamSession) {
     }
     const payload = session.outputQueue.shift();
     if (!payload) return;
-    const base64 = payload.toString("base64");
-    sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, base64);
+    sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, payload.toString("base64"));
   }, 20);
 }
 
-function connectOpenAiRealtime(session: StreamSession) {
-  if (!openAiKey) {
-    logError("openai_realtime_missing_key", { callSid: session.callSid });
-    return;
-  }
-  const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(openAiRealtimeModel)}`;
-  const ws = new WebSocket(url, {
-    headers: {
-      Authorization: `Bearer ${openAiKey}`,
-      "OpenAI-Beta": "realtime=v1"
-    }
-  });
-  session.openAiWs = ws;
-
-  ws.on("open", () => {
-    const instructions = session.instructions || "";
-    logInfo("openai_realtime_session_start", {
-      callSid: session.callSid,
-      model: openAiRealtimeModel
-    });
-    const sessionUpdate = {
-      type: "session.update",
-      session: {
-        modalities: ["audio", "text"],
-        instructions,
-        input_audio_format: openAiRealtimeInputFormat,
-        output_audio_format: openAiRealtimeOutputFormat,
-        voice: session.voiceOverride || openAiRealtimeVoice,
-        turn_detection: {
-          type: "server_vad",
-          silence_duration_ms: 350,
-          prefix_padding_ms: 200,
-          create_response: false
-        },
-        input_audio_transcription: { model: "gpt-4o-mini-transcribe", language: "en" }
-      }
-    };
-    if (realtimeDebug || realtimeTrace) {
-      const entry = {
-        ts: new Date().toISOString(),
-        kind: "outbound",
-        callSid: session.callSid,
-        type: "session.update",
-        instructions
-      };
-      logInfo("realtime_outbound", entry);
-      try {
-        fs.appendFileSync(realtimeLogFile, `${JSON.stringify(entry)}\n`);
-      } catch (err) {
-        logError("realtime_log_write_failed", {
-          callSid: session.callSid,
-          message: err instanceof Error ? err.message : "unknown"
-        });
-      }
-    }
-    sendOpenAiEvent(ws, sessionUpdate);
-
-    if (session.greeting) {
-      session.responseActive = true;
-      sendOpenAiEvent(ws, {
-        type: "response.create",
-        response: {
-          modalities: ["audio", "text"]
-        }
-      });
-    }
-  });
-
-  ws.on("message", async (data) => {
-    let payload: any = {};
-    try {
-      payload = JSON.parse(data.toString());
-    } catch {
-      return;
-    }
-    const type = payload.type || "";
-    logRealtimeRaw(session, payload);
-    logRealtimeTrace(session, payload);
-    if (type === "session.updated") {
-      const model = payload?.session?.model || openAiRealtimeModel;
-      session.realtimeModel = model;
-      logInfo("openai_realtime_session_updated", {
-        callSid: session.callSid,
-        model
-      });
-    }
-    if (type === "response.audio.delta" || type === "response.output_audio.delta" || type === "output_audio.delta") {
-      const audioBase64 =
-        payload.delta ||
-        payload.audio?.delta ||
-        payload.audio?.data ||
-        payload.data ||
-        "";
-      if (audioBase64 && session.telnyxWs && session.telnyxStreamId) {
-        session.outputActive = true;
-        session.responseActive = true;
-        const pcm = Buffer.from(audioBase64, "base64");
-        enqueueOutputPcm(session, pcm);
-      }
-      return;
-    }
-    if (
-      type === "response.output_audio_transcript.delta" ||
-      type === "response.audio_transcript.delta"
-    ) {
-      const delta = payload.delta || payload.text || payload.data || "";
-      if (delta) {
-        session.pendingAssistantAudioText = (session.pendingAssistantAudioText || "") + String(delta);
-      }
-    }
-    if (
-      type === "response.output_audio_transcript.done" ||
-      type === "response.audio_transcript.done"
-    ) {
-      const doneText = payload.transcript || payload.text || payload.data || "";
-      if (doneText) {
-        // Prefer the finalized transcript to avoid duplicate text from deltas.
-        session.pendingAssistantAudioText = String(doneText);
-      }
-    }
-    if (
-      type === "response.output_text.delta" ||
-      type === "response.text.delta" ||
-      type === "output_text.delta"
-    ) {
-      const delta = payload.delta || payload.text || payload.data || "";
-      if (delta) {
-        session.pendingAssistantText = (session.pendingAssistantText || "") + String(delta);
-      }
-    }
-    if (
-      type === "response.output_text.done" ||
-      type === "response.text.done" ||
-      type === "output_text.done"
-    ) {
-      const doneText = payload.text || payload.data || "";
-      if (doneText) {
-        session.pendingAssistantText = String(doneText);
-      }
-    }
-    if (type === "response.done" || type === "response.completed") {
-      session.outputActive = false;
-      session.responseActive = false;
-      const responseId =
-        payload.response?.id ||
-        payload.response_id ||
-        payload.id ||
-        "";
-      if (responseId && responseId === session.lastResponseId) {
-        return;
-      }
-      const derivedText = extractAssistantText(payload);
-      const text = (session.pendingAssistantText || derivedText || session.pendingAssistantAudioText || "").trim();
-      session.pendingAssistantText = "";
-      session.pendingAssistantAudioText = "";
-      logInfo("openai_realtime_response_done", {
-        callSid: session.callSid,
-        model: session.realtimeModel || openAiRealtimeModel,
-        responseId: responseId || null,
-        textLength: text.length
-      });
-      session.lastResponseId = responseId || session.lastResponseId;
-      session.lastResponseDoneAt = Date.now();
-      if (text) {
-        if (session.pendingHangup && session.callControlId) {
-          session.pendingHangup = false;
-          setTimeout(async () => {
-            try {
-              await telnyxCallAction(session.callControlId, "hangup", {});
-            } catch (err) {
-              logError("telnyx_call_control_hangup_error", {
-                message: err instanceof Error ? err.message : "unknown"
-              });
-            }
-          }, 1500);
-        }
-        if (session.pendingResponseInstructions !== null && session.pendingResponseInstructions !== undefined) {
-          const queued = session.pendingResponseInstructions;
-          session.pendingResponseInstructions = null;
-          if (queued) {
-            createResponse(session, queued);
-          } else {
-            createResponse(session);
-          }
-        }
-        // Debounce short multi-part outputs into a single assistant message.
-        session.pendingAssistantFlush = (session.pendingAssistantFlush || "").trim();
-        const merged = session.pendingAssistantFlush
-          ? `${session.pendingAssistantFlush} ${text}`.trim()
-          : text;
-        session.pendingAssistantFlush = merged;
-        if (session.pendingAssistantFlushTimer) {
-          clearTimeout(session.pendingAssistantFlushTimer);
-        }
-        session.pendingAssistantFlushTimer = setTimeout(() => {
-          flushAssistantText(session).catch((err) => {
-            logError("assistant_transcript_flush_failed", {
-              callSid: session.callSid,
-              message: err instanceof Error ? err.message : "unknown"
-            });
-          });
-        }, 350);
-        return;
-      }
-      if (session.lastUserUtterance) {
-        logInfo("assistant_transcript_fallback_triggered", {
-          callSid: session.callSid,
-          responseId: responseId || null,
-          lastUserUtterance: session.lastUserUtterance,
-          derivedTextLength: derivedText ? derivedText.length : 0,
-          pendingTextLength: session.pendingAssistantText ? session.pendingAssistantText.length : 0,
-          pendingAudioTextLength: session.pendingAssistantAudioText ? session.pendingAssistantAudioText.length : 0,
-          outputTextLength: Number(payload?.response?.output_text?.length || 0)
-        });
-        try {
-          const fallbackText = await generateAssistantReply(
-            session.instructions || "",
-            session.history || [],
-            session.lastUserUtterance
-          );
-          if (fallbackText) {
-            await pool?.query(
-              `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-               VALUES ($1, $2, $3, $4, 'message')`,
-              [session.callSid, session.tenantKey, "assistant", fallbackText]
-            );
-            await appendCombinedTranscript(session.callSid, "assistant", fallbackText);
-            await pool?.query(
-              `UPDATE call_details
-               SET transcript = COALESCE(transcript, '') || $2,
-                   updated_at = NOW()
-               WHERE call_sid = $1`,
-              [session.callSid, `\nAssistant: ${fallbackText}`]
-            );
-            session.history = (session.history || [])
-              .concat({ role: "assistant", content: fallbackText })
-              .slice(-12);
-            session.lastAssistantText = fallbackText;
-            session.lastResponseId = responseId || session.lastResponseId;
-          }
-        } catch (err) {
-          logError("assistant_transcript_fallback_failed", {
-            callSid: session.callSid,
-            message: err instanceof Error ? err.message : "unknown"
-          });
-        }
-      }
-    }
-    if (type === "response.text.delta" || type === "response.output_text.delta" || type === "output_text.delta") {
-      const delta = payload.delta || payload.text || payload.data || "";
-      if (delta) {
-        session.pendingAssistantText = (session.pendingAssistantText || "") + String(delta);
-      }
-    }
-    if (type === "response.output_text.done" || type === "output_text.done") {
-      const doneText = payload.text || payload.data || payload.output_text || "";
-      if (doneText) {
-        // Prefer the finalized text to avoid duplicate text from deltas.
-        session.pendingAssistantText = String(doneText);
-      }
-    }
-    if (type === "conversation.item.input_audio_transcription.delta") {
-      const delta = payload.delta || payload.transcript || payload.text || "";
-      if (delta) {
-        session.pendingCallerText = (session.pendingCallerText || "") + String(delta);
-        if ((session.responseActive || session.outputActive) && shouldBargeIn(String(delta))) {
-          cancelAssistantOutput(session, "caller_barge_in");
-        }
-      }
-    }
-    if (
-      type === "conversation.item.input_audio_transcription.completed" ||
-      type === "input_audio_transcription.completed"
-    ) {
-      const transcript =
-        payload.transcript ||
-        payload.text ||
-        payload.data?.transcript ||
-        payload.data?.text ||
-        session.pendingCallerText ||
-        "";
-      session.pendingCallerText = "";
-      if (transcript) {
-        if ((session.responseActive || session.outputActive) && /stop talking|stop|be quiet|shut up|hold on|wait/i.test(String(transcript))) {
-          cancelAssistantOutput(session, "caller_interrupt_command");
-        }
-        await pool?.query(
-          `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-           VALUES ($1, $2, $3, $4, 'message')`,
-          [session.callSid, session.tenantKey, "caller", String(transcript)]
-        );
-        await appendCombinedTranscript(session.callSid, "caller", String(transcript));
-        session.history = (session.history || [])
-          .concat({ role: "user", content: String(transcript) })
-          .slice(-12);
-        session.lastUserUtterance = String(transcript);
-        session.lastUserUtteranceAt = Date.now();
-        await pool?.query(
-          `UPDATE call_details
-           SET transcript = COALESCE(transcript, '') || $2,
-               updated_at = NOW()
-           WHERE call_sid = $1`,
-          [session.callSid, `\nCaller: ${transcript}`]
-        );
-        await handleCallerUtterance(session, String(transcript));
-      }
-    }
-    // With server VAD auto-response enabled, we do not manually create responses here.
-    if (type === "error") {
-      logError("openai_realtime_error", { callSid: session.callSid, detail: payload });
-    }
-  });
-
-  ws.on("close", () => {
-    session.openAiWs = undefined;
-  });
-}
-
 async function telnyxCallAction(callControlId: string, action: string, payload: Record<string, unknown> = {}) {
-  if (!telnyxApiKey) {
-    throw new Error("missing_telnyx_api_key");
-  }
-  const resp = await fetch(`https://api.telnyx.com/v2/calls/${encodeURIComponent(callControlId)}/actions/${action}`, {
+  if (!telnyxApiKey) throw new Error("missing_telnyx_key");
+  const resp = await fetch(`https://api.telnyx.com/v2/calls/${callControlId}/actions/${action}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${telnyxApiKey}`,
@@ -1144,514 +224,278 @@ async function telnyxCallAction(callControlId: string, action: string, payload: 
   });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`telnyx_action_failed:${action}:${resp.status}:${text}`);
+    throw new Error(`telnyx_${action}_failed:${resp.status}:${text.slice(0, 200)}`);
+  }
+}
+
+async function fetchPromptPayload(tenantKey: string, callSid: string, to: string, from: string): Promise<PromptPayload> {
+  if (!appBaseUrl || !callSummaryToken) {
+    throw new Error("missing_app_base_or_token");
+  }
+  const resp = await fetch(`${appBaseUrl}/api/v1/gateway/prompt`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-everycall-internal": callSummaryToken
+    },
+    body: JSON.stringify({ tenantKey, callSid, to, from })
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`prompt_fetch_failed:${resp.status}:${text.slice(0, 200)}`);
   }
   return resp.json();
 }
 
-function buildTeXMLResponse(prompt: string, actionUrl: string) {
-  const escaped = prompt.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const escapedAction = actionUrl.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const transcriptionCallback = `${buildBaseUrlFromAction(actionUrl)}/v1/telnyx/texml/transcription`;
-  const escapedCallback = transcriptionCallback.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Start>\n    <Transcription language="en" transcriptionEngine="Telnyx" transcriptionCallback="${escapedCallback}" />\n  </Start>\n  <Gather input="speech" timeout="10" speechTimeout="4" language="en-US" action="${escapedAction}" method="POST">\n    <Say>${escaped}</Say>\n  </Gather>\n  <Say>We didn't catch that. Please call again.</Say>\n</Response>`;
+function buildFaqMatches(faqs: Array<{ question: string; answer: string; tags?: string[] }>, query: string) {
+  const q = query.toLowerCase();
+  const scored = faqs
+    .map((faq) => {
+      const hay = `${faq.question} ${faq.answer} ${(faq.tags || []).join(" ")}`.toLowerCase();
+      const score = hay.includes(q) ? 1 : 0;
+      return { faq, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map((item) => ({
+      id: undefined,
+      question: item.faq.question,
+      answer: item.faq.answer,
+      score: item.score
+    }));
+  return { matches: scored };
 }
 
-function buildHangupResponse(text: string) {
-  const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Say>${escaped}</Say>\n  <Hangup/>\n</Response>`;
-}
-
-function isDonePhrase(text: string) {
-  return /\b(no|nope|that'?s it|thats it|nothing else|done|goodbye|bye|stop)\b/i.test(String(text || ""));
-}
-
-function buildDefaultGreeting(companyName: string, agentName: string) {
-  return `Hi, thanks for calling ${companyName}. This is ${agentName}, how can I help you?`;
-}
-
-function extractAssistantText(payload: any): string {
-  const direct = payload?.response?.output_text || payload?.response?.text;
-  if (typeof direct === "string" && direct.trim()) return direct.trim();
-  const output = payload?.response?.output;
-  if (Array.isArray(output)) {
-    const parts: string[] = [];
-    for (const item of output) {
-      const content = item?.content;
-      if (Array.isArray(content)) {
-        for (const c of content) {
-          if (c?.type === "output_text" && typeof c.text === "string") {
-            parts.push(c.text);
-          }
-        }
-      }
+function validateAgainstSchema(schema: Record<string, unknown>, payload: Record<string, unknown>) {
+  const required = Array.isArray((schema as any).required) ? (schema as any).required : [];
+  const errors: string[] = [];
+  for (const field of required) {
+    if (!(field in payload)) {
+      errors.push(`missing:${field}`);
     }
-    const joined = parts.join("").trim();
-    if (joined) return joined;
   }
-  return "";
+  return { status: errors.length ? "invalid" : "accepted", errors } as const;
 }
 
-async function appendCombinedTranscript(callSid: string, role: string, text: string) {
-  if (!pool || !callSid || !text) return;
-  const firstChar = role ? role[0] : "";
-  const safeRole = firstChar ? firstChar.toUpperCase() + role.slice(1) : "Speaker";
+async function forwardToolResult(
+  callId: string,
+  tenantKey: string,
+  tool: string,
+  payload: Record<string, unknown>,
+  validation: { status: string; errors: string[] }
+) {
+  if (!appBaseUrl || !callSummaryToken) return;
   try {
-    await pool.query(
-      `UPDATE call_details
-       SET transcript_combined = COALESCE(transcript_combined, '') || $2,
-           updated_at = NOW()
-       WHERE call_sid = $1`,
-      [callSid, `\n${safeRole}: ${text}`]
-    );
+    await fetch(`${appBaseUrl}/api/v1/gateway/tools/result`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-everycall-internal": callSummaryToken
+      },
+      body: JSON.stringify({ call_id: callId, tenant_key: tenantKey, tool, payload, validation })
+    });
   } catch (err) {
-    logError("transcript_combined_update_failed", {
-      callSid,
+    logError("gateway_tool_result_forward_failed", {
+      callId,
+      tool,
       message: err instanceof Error ? err.message : "unknown"
     });
   }
 }
 
-async function composePromptForTenant(tenantKey: string, greeting?: string) {
-  if (!pool) return "";
-  const systemParts = await pool.query(
-    `SELECT global_emergency_phrase,
-            personality_prompt,
-            datetime_prompt,
-            numbers_symbols_prompt,
-            confirmation_prompt,
-            faq_usage_prompt
-     FROM system_config
-     WHERE id = 1`
-  );
-  const tenantRow = await pool.query(
-    `SELECT industry FROM tenants WHERE tenant_key = $1 LIMIT 1`,
-    [tenantKey]
-  );
-  const industryKey = tenantRow.rows[0]?.industry || null;
-  const industryPromptRow = industryKey
-    ? await pool.query(`SELECT prompt FROM industry_prompts WHERE industry_key = $1`, [industryKey])
-    : { rows: [] };
-  const tenantPromptRow = await pool.query(
-    `SELECT tenant_prompt_override, system_prompt FROM agents WHERE tenant_key = $1 LIMIT 1`,
-    [tenantKey]
-  );
-
-  const sections: string[] = [];
-  const format = (title: string, body?: string) => (body ? `# ${title}\n${body}` : "");
-  const singleUseGreeting = greeting
-    ? `Begin the conversation with: "${greeting}". Do not repeat it.`
-    : "";
-  sections.push(format("Single use greeting: begin the conversation with this. do not repeat it", singleUseGreeting));
-  const toneOverride =
-    "Always speak in a warm, inviting, lightly playful, leaning-in manner while staying professional. Avoid an announcer or broadcast cadence; aim for a softer, closer-mic delivery with lower energy and gentle warmth. Use contractions and natural phrasing. Do not mirror urgency or intensity from the caller; acknowledge briefly, then continue at a steady, soothing pace. Avoid pet names or overly intimate language unless the caller uses them first.";
-  sections.push(format("TONE OVERRIDE (highest priority)", toneOverride));
-  sections.push(format("SYSTEM EMERGENCY PHRASE", systemParts.rows[0]?.global_emergency_phrase));
-  const basePersonality = systemParts.rows[0]?.personality_prompt || "";
-  const voiceTone =
-    "Deliver speech with a warm, inviting, understanding tone. Avoid being insistent or pushy; keep a calm, helpful pace. Do not interrupt; allow the caller to finish and tolerate short pauses.";
-  const personalityWithTone = basePersonality
-    ? `${basePersonality}\n\n${voiceTone}`
-    : voiceTone;
-  sections.push(format("PERSONALITY", personalityWithTone));
-  sections.push(format("DATE & TIME", systemParts.rows[0]?.datetime_prompt));
-  sections.push(format("NUMBERS & SYMBOLS", systemParts.rows[0]?.numbers_symbols_prompt));
-  sections.push(format("CONFIRMATION", systemParts.rows[0]?.confirmation_prompt));
-  sections.push(format("WHEN TO USE FAQ", systemParts.rows[0]?.faq_usage_prompt));
-  sections.push(format("INDUSTRY PROMPT", industryPromptRow.rows[0]?.prompt));
-  const tenantOverride = tenantPromptRow.rows[0]?.tenant_prompt_override || tenantPromptRow.rows[0]?.system_prompt || "";
-  sections.push(format("TENANT PROMPT OVERRIDE", tenantOverride));
-  return sections.filter(Boolean).join("\n\n");
-}
-
-async function generateAssistantReply(prompt: string, history: Array<{ role: string; content: string }>, userText: string) {
+function connectOpenAiRealtime(session: StreamSession) {
   if (!openAiKey) {
-    return "Thanks. What is the service address and best callback number?";
+    logError("openai_realtime_missing_key", { callSid: session.callSid });
+    return;
   }
-  const input = [
-    { role: "system", content: prompt },
-    ...history,
-    { role: "user", content: userText }
-  ];
-  const resp = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
+  const payload = session.promptPayload;
+  if (!payload) {
+    logError("openai_realtime_missing_prompt_payload", { callSid: session.callSid });
+    return;
+  }
+
+  const model = payload.session_config.model;
+  const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
+  const ws = new WebSocket(url, {
     headers: {
       Authorization: `Bearer ${openAiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ model: openAiModel, input })
-  });
-  if (!resp.ok) {
-    return "Thanks. Can you share your service address and best callback number?";
-  }
-  const json = await resp.json();
-  const text =
-    json.output_text ||
-    json.output
-      ?.flatMap((item: any) => item.content || [])
-      .find((item: any) => item.type === "output_text" && typeof item.text === "string")
-      ?.text;
-  return String(text || "").slice(0, 400) || "Thanks. What is the service address?";
-}
-
-function verifyTelnyx(req: express.Request, rawBody: string) {
-  const signature = req.header("telnyx-signature-ed25519");
-  const timestamp = req.header("telnyx-timestamp");
-  return validateTelnyxSignature({
-    signatureHeader: signature,
-    timestampHeader: timestamp,
-    publicKey: env.TELNYX_PUBLIC_KEY,
-    rawBody
-  });
-}
-
-app.post("/v1/telnyx/texml/inbound", express.raw({ type: "*/*" }), async (req, res) => {
-  const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
-  logInfo("telnyx_texml_inbound_request", {
-    path: req.path,
-    contentLength: req.header("content-length"),
-    contentType: req.header("content-type"),
-    hasSignature: Boolean(req.header("telnyx-signature-ed25519")),
-    hasTimestamp: Boolean(req.header("telnyx-timestamp")),
-    bodyPreview: rawBody ? rawBody.slice(0, 200) : ""
-  });
-  if (signatureRequired && !verifyTelnyx(req, rawBody)) {
-    logError("telnyx_signature_invalid", {
-      path: req.path,
-      hasSignature: Boolean(req.header("telnyx-signature-ed25519")),
-      hasTimestamp: Boolean(req.header("telnyx-timestamp"))
-    });
-    return res.status(401).send("invalid_signature");
-  }
-  if (!pool) {
-    res.type("text/xml").status(200).send(buildHangupResponse("Thanks for calling. Goodbye."));
-    return;
-  }
-
-  try {
-    const params = parseTelnyxParams(rawBody, req.header("content-type"));
-    const toRaw = String(params.To || "");
-    const fromRaw = String(params.From || "");
-    const to = normalizePhone(toRaw);
-    const from = normalizePhone(fromRaw);
-    const callSid = String(params.CallSid || "unknown");
-    logInfo("telnyx_texml_inbound_params", {
-      callSid,
-      toRaw,
-      fromRaw,
-      to,
-      from
-    });
-
-    const tenantRow = await pool.query(
-      `SELECT tenant_key, status, name, industry
-       FROM tenants
-       WHERE telnyx_voice_number = $1
-       LIMIT 1`,
-      [to]
-    );
-    logInfo("telnyx_texml_inbound_tenant_lookup", {
-      callSid,
-      matched: Boolean(tenantRow.rowCount),
-      tenantKey: tenantRow.rows[0]?.tenant_key,
-      status: tenantRow.rows[0]?.status
-    });
-    if (!tenantRow.rowCount || tenantRow.rows[0].status !== "active") {
-      res.type("text/xml").status(200).send(buildHangupResponse("Thanks for calling. Goodbye."));
-      return;
+      "OpenAI-Beta": "realtime=v1"
     }
-    const tenantKey = tenantRow.rows[0].tenant_key;
-    const companyName = tenantRow.rows[0].name || "our team";
-    const industryKey = tenantRow.rows[0].industry || undefined;
-    const agentRow = await pool.query(
-      `SELECT agent_name, greeting_text, voice_type FROM agents WHERE tenant_key = $1 LIMIT 1`,
-      [tenantKey]
-    );
-    const agentName = agentRow.rows[0]?.agent_name || "our team";
-    const greetingText = agentRow.rows[0]?.greeting_text || "";
-    const voiceType = agentRow.rows[0]?.voice_type || "";
-
-    await pool.query(
-      `INSERT INTO calls (call_sid, tenant_key, from_number, to_number, status)
-       VALUES ($1, $2, $3, $4, 'in_progress')
-       ON CONFLICT (call_sid)
-       DO UPDATE SET from_number = EXCLUDED.from_number,
-                     to_number = EXCLUDED.to_number`,
-      [callSid, tenantKey, from, to]
-    );
-
-    await pool.query(
-      `INSERT INTO call_details (call_sid, state_json)
-       VALUES ($1, $2)
-       ON CONFLICT (call_sid)
-       DO UPDATE SET state_json = COALESCE(call_details.state_json, EXCLUDED.state_json)`,
-      [callSid, JSON.stringify({ turn: 0, history: [] })]
-    );
-
-    const greeting =
-      greetingText.trim() ||
-      buildDefaultGreeting(companyName, agentName);
-
-    await pool.query(
-      `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-       VALUES ($1, $2, $3, $4, 'message')`,
-      [callSid, tenantKey, "assistant", greeting]
-    );
-    await appendCombinedTranscript(callSid, "assistant", greeting);
-    await pool.query(
-      `UPDATE call_details
-       SET transcript = COALESCE(transcript, '') || $2,
-           updated_at = NOW()
-       WHERE call_sid = $1`,
-      [callSid, `\nAssistant: ${greeting}`]
-    );
-    const actionUrl = `${buildBaseUrl(req)}/v1/telnyx/texml/gather?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(callSid)}`;
-    logInfo("telnyx_texml_inbound_response", {
-      callSid,
-      tenantKey,
-      actionUrl
-    });
-    res.type("text/xml").status(200).send(buildTeXMLResponse(greeting, actionUrl));
-  } catch (err) {
-    logError("telnyx_texml_inbound_error", {
-      message: err instanceof Error ? err.message : "unknown"
-    });
-    res.type("text/xml").status(200).send(buildHangupResponse("We are unable to take your call right now."));
-  }
-});
-
-app.post("/v1/telnyx/texml/debug", express.raw({ type: "*/*" }), (_req, res) => {
-  res
-    .type("text/xml")
-    .status(200)
-    .send(
-      `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Say>Everycall debug endpoint is live.</Say>\n  <Hangup/>\n</Response>`
-    );
-});
-
-app.post("/v1/telnyx/texml/gather", express.raw({ type: "*/*" }), async (req, res) => {
-  const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
-  logInfo("telnyx_texml_gather_request", {
-    path: req.path,
-    contentLength: req.header("content-length"),
-    contentType: req.header("content-type"),
-    hasSignature: Boolean(req.header("telnyx-signature-ed25519")),
-    hasTimestamp: Boolean(req.header("telnyx-timestamp")),
-    bodyPreview: rawBody ? rawBody.slice(0, 200) : ""
   });
-  if (signatureRequired && !verifyTelnyx(req, rawBody)) {
-    logError("telnyx_signature_invalid", {
-      path: req.path,
-      hasSignature: Boolean(req.header("telnyx-signature-ed25519")),
-      hasTimestamp: Boolean(req.header("telnyx-timestamp"))
-    });
-    return res.status(401).send("invalid_signature");
-  }
-  if (!pool) {
-    res.type("text/xml").status(200).send(buildHangupResponse("Thanks for calling. Goodbye."));
-    return;
-  }
+  session.openAiWs = ws;
 
-  try {
-    const params = parseTelnyxParams(rawBody, req.header("content-type"));
-    const tenantKey = String(req.query?.tenantKey || "");
-    const callSid = String(req.query?.callSid || params.CallSid || "unknown");
-    let speech = String(params.SpeechResult || "");
-    logInfo("telnyx_texml_gather_params", {
-      callSid,
-      tenantKey,
-      speechLength: speech.trim().length,
-      speechPreview: speech.slice(0, 120),
-      confidence: params.Confidence || "",
-      digits: params.Digits || ""
-    });
+  ws.on("open", () => {
+    logInfo("openai_realtime_session_start", { callSid: session.callSid, model });
 
-    if (!speech.trim()) {
-      const retryPrompt = "Sorry, I didn't catch that. Please say your name and best callback number.";
-      const actionUrl = `${buildBaseUrl(req)}/v1/telnyx/texml/gather?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(callSid)}`;
-      res.type("text/xml").status(200).send(buildTeXMLResponse(retryPrompt, actionUrl));
-      return;
-    }
-
-    const detailRow = await pool.query(
-      `SELECT state_json, transcript FROM call_details WHERE call_sid = $1`,
-      [callSid]
-    );
-    const state = detailRow.rows[0]?.state_json || { turn: 0, history: [] };
-    const turn = Number(state.turn || 0) + 1;
-    const history = Array.isArray(state.history) ? state.history : [];
-
-    if (!speech.trim() && state.last_transcript) {
-      speech = String(state.last_transcript || "");
-      state.last_transcript = "";
-    }
-
-    if (!speech.trim()) {
-      const retryPrompt = "Sorry, I didn't catch that. Please say your name and best callback number.";
-      const actionUrl = `${buildBaseUrl(req)}/v1/telnyx/texml/gather?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(callSid)}`;
-      res.type("text/xml").status(200).send(buildTeXMLResponse(retryPrompt, actionUrl));
-      return;
-    }
-
-    await pool.query(
-      `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-       VALUES ($1, $2, $3, $4, 'message')`,
-      [callSid, tenantKey, "caller", speech]
-    );
-    await appendCombinedTranscript(callSid, "caller", speech);
-
-    const session = Array.from(streamSessions.values()).find((item) => item.callSid === callSid);
-    const done = isDonePhrase(speech) || turn >= 6;
-    if (done) {
-      await pool.query(`UPDATE calls SET status = 'new' WHERE call_sid = $1`, [callSid]);
-      const transcript = `${detailRow.rows[0]?.transcript || ""}\nCaller: ${speech}`.trim();
-      await pool.query(
-        `UPDATE call_details SET transcript = $2, updated_at = NOW() WHERE call_sid = $1`,
-        [callSid, transcript]
-      );
-      if (appBaseUrl && callSummaryToken) {
-        try {
-          const resp = await fetch(`${appBaseUrl}/api/v1/calls?tenantKey=${encodeURIComponent(tenantKey)}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-everycall-internal": callSummaryToken
-            },
-            body: JSON.stringify({
-              action: "summary",
-              tenantKey,
-              callSid,
-              summary: "Call completed.",
-              extracted: {
-                transcript,
-                first_name: parseNameParts(session?.collectedName || "").first || "",
-                last_name: parseNameParts(session?.collectedName || "").last || "",
-                callback_number: session?.collectedPhone || "",
-                service_required: session?.collectedServiceRequired || "",
-                urgency: session?.collectedUrgency || "",
-                address_line1: session?.collectedAddressLine1 || session?.collectedAddress || "",
-                address_line2: session?.collectedAddressLine2 || "",
-                city: session?.collectedCity || "",
-                state: session?.collectedState || "",
-                postal_code: session?.collectedPostalCode || "",
-                requested_date: session?.collectedDate || "",
-                requested_time: session?.collectedTime || ""
-              }
-            })
-          });
-          if (!resp.ok) {
-            const text = await resp.text();
-            logError("call_summary_post_failed", { callSid, tenantKey, status: resp.status, body: text.slice(0, 200) });
-          } else {
-            logInfo("call_summary_post_ok", { callSid, tenantKey });
-          }
-        } catch (err) {
-          logError("call_summary_post_error", {
-            callSid,
-            tenantKey,
-            message: err instanceof Error ? err.message : "unknown"
-          });
-        }
-      } else {
-        logError("call_summary_post_skipped", {
-          callSid,
-          tenantKey,
-          hasBaseUrl: Boolean(appBaseUrl),
-          hasToken: Boolean(callSummaryToken)
-        });
+    const sessionUpdate = {
+      type: "session.update",
+      session: {
+        modalities: ["audio", "text"],
+        instructions: payload.system_prompt,
+        tools: payload.tool_definitions,
+        input_audio_format: payload.session_config.input_audio_format || "g711_ulaw",
+        output_audio_format: payload.session_config.output_audio_format || "g711_ulaw",
+        voice: payload.session_config.voice,
+        turn_detection: {
+          ...payload.session_config.turn_detection,
+          create_response: payload.session_config.turn_detection.create_response ?? true,
+          interrupt_response: payload.session_config.turn_detection.interrupt_response ?? true
+        },
+        input_audio_transcription: {
+          model: payload.session_config.transcription_model || "gpt-4o-mini-transcribe",
+          language: "en"
+        },
+        input_audio_noise_reduction: payload.session_config.noise_reduction
+          ? { type: payload.session_config.noise_reduction }
+          : undefined,
+        max_response_output_tokens: payload.session_config.max_output_tokens ?? 4096
       }
-      res.type("text/xml").status(200).send(buildHangupResponse("Thanks. We have your details and will follow up soon."));
+    };
+
+    logRealtimeEntry({
+      ts: new Date().toISOString(),
+      kind: "outbound",
+      callSid: session.callSid,
+      type: "session.update",
+      instructions: payload.system_prompt
+    });
+
+    sendOpenAiEvent(ws, sessionUpdate);
+  });
+
+  ws.on("message", async (data) => {
+    let payloadMsg: any = {};
+    try {
+      payloadMsg = JSON.parse(data.toString());
+    } catch {
+      return;
+    }
+    const type = payloadMsg.type || "";
+    logRealtimeRaw(session, payloadMsg);
+    logRealtimeTrace(session, payloadMsg);
+
+    if (type === "session.updated") {
+      session.realtimeModel = payloadMsg?.session?.model || model;
+      logInfo("openai_realtime_session_updated", {
+        callSid: session.callSid,
+        model: session.realtimeModel
+      });
       return;
     }
 
-    const prompt = await composePromptForTenant(tenantKey);
-    const assistantReply = await generateAssistantReply(prompt, history, speech);
-    const updatedHistory = history
-      .concat({ role: "user", content: speech }, { role: "assistant", content: assistantReply })
-      .slice(-12);
-    const updatedTranscript = `${detailRow.rows[0]?.transcript || ""}\nCaller: ${speech}\nAssistant: ${assistantReply}`.trim();
-
-    await pool.query(
-      `UPDATE call_details
-       SET state_json = $2,
-           transcript = $3,
-           updated_at = NOW()
-       WHERE call_sid = $1`,
-      [callSid, JSON.stringify({ turn, history: updatedHistory }), updatedTranscript]
-    );
-
-    await pool.query(
-      `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-       VALUES ($1, $2, $3, $4, 'message')`,
-      [callSid, tenantKey, "assistant", assistantReply]
-    );
-    await appendCombinedTranscript(callSid, "assistant", assistantReply);
-
-    const actionUrl = `${buildBaseUrl(req)}/v1/telnyx/texml/gather?tenantKey=${encodeURIComponent(tenantKey)}&callSid=${encodeURIComponent(callSid)}`;
-    res.type("text/xml").status(200).send(buildTeXMLResponse(assistantReply, actionUrl));
-  } catch (err) {
-    logError("telnyx_texml_gather_error", {
-      message: err instanceof Error ? err.message : "unknown"
-    });
-    res.type("text/xml").status(200).send(buildHangupResponse("We are unable to take your call right now."));
-  }
-});
-
-app.post("/v1/telnyx/texml/transcription", express.raw({ type: "*/*" }), async (req, res) => {
-  const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
-  logInfo("telnyx_texml_transcription_request", {
-    path: req.path,
-    contentLength: req.header("content-length"),
-    contentType: req.header("content-type"),
-    hasSignature: Boolean(req.header("telnyx-signature-ed25519")),
-    hasTimestamp: Boolean(req.header("telnyx-timestamp")),
-    bodyPreview: rawBody ? rawBody.slice(0, 200) : ""
-  });
-  if (signatureRequired && !verifyTelnyx(req, rawBody)) {
-    logError("telnyx_signature_invalid", {
-      path: req.path,
-      hasSignature: Boolean(req.header("telnyx-signature-ed25519")),
-      hasTimestamp: Boolean(req.header("telnyx-timestamp"))
-    });
-    return res.status(401).send("invalid_signature");
-  }
-  if (!pool) {
-    return res.status(200).send("ok");
-  }
-  try {
-    const params = parseTelnyxParams(rawBody, req.header("content-type"));
-    const callSid = String(params.CallSid || "unknown");
-    const transcript = String(
-      params.TranscriptionText || params.Transcript || params.SpeechResult || ""
-    );
-    const isFinal = String(params.TranscriptionStatus || params.IsFinal || "true");
-    if (transcript.trim()) {
-      await pool.query(
-        `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-         VALUES ($1, $2, $3, $4, 'transcript')`,
-        [callSid, params.TenantKey || "unknown", "caller", transcript]
-      );
-      await appendCombinedTranscript(callSid, "caller", transcript);
-      await pool.query(
-        `UPDATE call_details
-         SET state_json = COALESCE(state_json, '{}'::jsonb) || jsonb_build_object('last_transcript', $2),
-             updated_at = NOW()
-         WHERE call_sid = $1`,
-        [callSid, transcript]
-      );
+    if (type === "response.output_audio.delta" || type === "response.audio.delta" || type === "output_audio.delta") {
+      const audioBase64 = payloadMsg.delta || payloadMsg.audio?.delta || payloadMsg.audio?.data || payloadMsg.data || "";
+      if (audioBase64) {
+        enqueueOutputPcm(session, Buffer.from(audioBase64, "base64"));
+      }
+      return;
     }
-    logInfo("telnyx_texml_transcription_params", {
-      callSid,
-      transcriptLength: transcript.trim().length,
-      isFinal
-    });
-  } catch (err) {
-    logError("telnyx_texml_transcription_error", {
+
+    if (type === "response.output_audio_transcript.done" || type === "response.audio_transcript.done") {
+      const transcript = payloadMsg.transcript || payloadMsg.text || payloadMsg.data || "";
+      if (transcript && pool) {
+        await pool.query(
+          `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
+           VALUES ($1, $2, $3, $4, 'message')`,
+          [session.callSid, session.tenantKey, "assistant", String(transcript)]
+        );
+      }
+      return;
+    }
+
+    if (type === "conversation.item.input_audio_transcription.completed" || type === "input_audio_transcription.completed") {
+      const transcript = payloadMsg.transcript || payloadMsg.text || "";
+      if (transcript && pool) {
+        await pool.query(
+          `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
+           VALUES ($1, $2, $3, $4, 'message')`,
+          [session.callSid, session.tenantKey, "caller", String(transcript)]
+        );
+      }
+      return;
+    }
+
+    if (type === "response.function_call_arguments.delta") {
+      const name = payloadMsg.name || payloadMsg?.function_call?.name || "";
+      const callId = payloadMsg.call_id || payloadMsg?.function_call?.call_id || payloadMsg?.response_id || "";
+      const delta = payloadMsg.delta || payloadMsg?.arguments_delta || "";
+      if (!name || !callId) return;
+      if (!session.pendingToolCall || session.pendingToolCall.callId !== callId) {
+        session.pendingToolCall = { name, callId, argumentsText: "" };
+      }
+      session.pendingToolCall.argumentsText += String(delta || "");
+      return;
+    }
+
+    if (type === "response.function_call_arguments.done") {
+      const name = payloadMsg.name || payloadMsg?.function_call?.name || session.pendingToolCall?.name || "";
+      const callId = payloadMsg.call_id || payloadMsg?.function_call?.call_id || session.pendingToolCall?.callId || "";
+      const argsText = payloadMsg.arguments || session.pendingToolCall?.argumentsText || "";
+      if (!name || !callId) return;
+      session.pendingToolCall = undefined;
+      let args: Record<string, unknown> = {};
+      try {
+        args = argsText ? JSON.parse(argsText) : {};
+      } catch {
+        args = {};
+      }
+
+      if (name === "faq_lookup") {
+        const query = String((args as any).query || "");
+        const matches = buildFaqMatches(session.promptPayload?.tenant_faqs || [], query);
+        sendOpenAiEvent(session.openAiWs, {
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify(matches)
+          }
+        });
+        sendOpenAiEvent(session.openAiWs, { type: "response.create", response: { modalities: ["audio", "text"] } });
+        return;
+      }
+
+      if (name === "data_capture") {
+        const schema = session.promptPayload?.field_schema || {};
+        const validation = validateAgainstSchema(schema, args);
+        await forwardToolResult(session.callSid, session.tenantKey, name, args, validation);
+        sendOpenAiEvent(session.openAiWs, {
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify(validation)
+          }
+        });
+        sendOpenAiEvent(session.openAiWs, { type: "response.create", response: { modalities: ["audio", "text"] } });
+        return;
+      }
+
+      await forwardToolResult(session.callSid, session.tenantKey, name, args, { status: "accepted", errors: [] });
+      sendOpenAiEvent(session.openAiWs, {
+        type: "conversation.item.create",
+        item: {
+          type: "function_call_output",
+          call_id: callId,
+          output: JSON.stringify({ status: "accepted" })
+        }
+      });
+      sendOpenAiEvent(session.openAiWs, { type: "response.create", response: { modalities: ["audio", "text"] } });
+    }
+  });
+
+  ws.on("close", () => {
+    logInfo("openai_realtime_session_closed", { callSid: session.callSid });
+  });
+
+  ws.on("error", (err) => {
+    logError("openai_realtime_session_error", {
+      callSid: session.callSid,
       message: err instanceof Error ? err.message : "unknown"
     });
-  }
-  res.status(200).send("ok");
-});
+  });
+}
 
 app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), async (req, res) => {
   const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
@@ -1671,6 +515,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     });
     return res.status(401).send("invalid_signature");
   }
+
   let payload: any = {};
   try {
     payload = rawBody ? JSON.parse(rawBody) : {};
@@ -1694,15 +539,10 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     const to = normalizePhone(String(eventPayload.to || ""));
     const from = normalizePhone(String(eventPayload.from || ""));
 
-    logInfo("telnyx_call_control_initiated", {
-      callSid,
-      callControlId,
-      to,
-      from
-    });
+    logInfo("telnyx_call_control_initiated", { callSid, callControlId, to, from });
 
     const tenantRow = await pool.query(
-      `SELECT tenant_key, status, name, industry
+      `SELECT tenant_key, status
        FROM tenants
        WHERE telnyx_voice_number = $1
        LIMIT 1`,
@@ -1722,15 +562,6 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     }
 
     const tenantKey = tenantRow.rows[0].tenant_key;
-    const companyName = tenantRow.rows[0].name || "our team";
-    const industryKey = tenantRow.rows[0].industry || undefined;
-    const agentRow = await pool.query(
-      `SELECT agent_name, greeting_text, voice_type FROM agents WHERE tenant_key = $1 LIMIT 1`,
-      [tenantKey]
-    );
-    const agentName = agentRow.rows[0]?.agent_name || "our team";
-    const greetingText = agentRow.rows[0]?.greeting_text || "";
-    const voiceType = agentRow.rows[0]?.voice_type || "";
 
     await pool.query(
       `INSERT INTO calls (call_sid, tenant_key, from_number, to_number, status)
@@ -1741,52 +572,54 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
       [callSid, tenantKey, from, to]
     );
 
-    await pool.query(
-      `INSERT INTO call_details (call_sid, state_json)
-       VALUES ($1, $2)
-       ON CONFLICT (call_sid)
-       DO UPDATE SET state_json = COALESCE(call_details.state_json, EXCLUDED.state_json)`,
-      [callSid, JSON.stringify({ turn: 0, history: [] })]
-    );
+    if (realtimeDebug || realtimeTrace) {
+      resetRealtimeLog();
+    }
 
-    const greeting =
-      greetingText.trim() ||
-      buildDefaultGreeting(companyName, agentName);
-    const instructions = await composePromptForTenant(tenantKey, greeting);
+    let promptPayload: PromptPayload;
+    try {
+      promptPayload = await fetchPromptPayload(tenantKey, callSid, to, from);
+    } catch (err) {
+      logError("prompt_payload_fetch_failed", {
+        callSid,
+        tenantKey,
+        message: err instanceof Error ? err.message : "unknown"
+      });
+      try {
+        if (callControlId) {
+          await telnyxCallAction(callControlId, "hangup", {});
+        }
+      } catch {}
+      return res.status(200).send("ok");
+    }
 
     streamSessions.set(callControlId, {
       callControlId,
       callSid,
       tenantKey,
-      industryKey,
-      companyName,
-      greeting,
-      instructions,
-      ...(voiceType ? { voiceOverride: voiceType } : {}),
-      awaitingAnswer: true
+      promptPayload,
+      outputQueue: [],
+      outputBuffer: Buffer.alloc(0)
     });
-    const session = streamSessions.get(callControlId);
-    if (session) {
-      resetRealtimeLog(session);
-    }
+
     try {
-      if (callControlId) {
-        await telnyxCallAction(callControlId, "answer", {});
-      }
+      await telnyxCallAction(callControlId, "answer", {});
     } catch (err) {
-      logError("telnyx_call_control_start_error", {
+      logError("telnyx_call_control_answer_error", {
+        callSid,
         message: err instanceof Error ? err.message : "unknown"
       });
     }
+
+    return res.status(200).send("ok");
   }
 
-  if (eventType === "call.answered") {
+  if (eventType === "call.answered" || eventType === "call_answered") {
     const callControlId = String(eventPayload.call_control_id || "");
-    const session = callControlId ? streamSessions.get(callControlId) : undefined;
-    if (callControlId && session?.awaitingAnswer) {
-      session.awaitingAnswer = false;
+    const session = streamSessions.get(callControlId);
+    if (callControlId && session) {
+      const streamUrl = `${toWebSocketUrl(callGatewayBaseUrl || buildBaseUrl(req))}/v1/telnyx/stream`;
       try {
-        const streamUrl = `${toWebSocketUrl(callGatewayBaseUrl || buildBaseUrl(req))}/v1/telnyx/stream`;
         await telnyxCallAction(callControlId, "streaming_start", {
           stream_url: streamUrl,
           stream_track: "both_tracks",
@@ -1797,241 +630,96 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
         });
       } catch (err) {
         logError("telnyx_call_control_stream_start_error", {
+          callSid: session.callSid,
           message: err instanceof Error ? err.message : "unknown"
         });
       }
     }
+    return res.status(200).send("ok");
   }
 
-  if (eventType === "call.transcription" || eventType === "call.transcription.updated") {
-    const callControlId = String(eventPayload.call_control_id || "");
-    const callSid = callControlId || String(eventPayload.call_session_id || "unknown");
-    const transcript =
-      String(
-        eventPayload.transcription_data?.transcript ||
-          eventPayload.transcription?.transcript ||
-          eventPayload.transcript ||
-          ""
-      ) || "";
-    const isFinal =
-      eventPayload.transcription_data?.is_final ??
-      eventPayload.transcription?.is_final ??
-      eventPayload.is_final ??
-      true;
-
-    if (!transcript.trim() || !isFinal) {
-      return res.status(200).send("ok");
-    }
-
-    const callRow = await pool.query(
-      `SELECT tenant_key FROM calls WHERE call_sid = $1 LIMIT 1`,
-      [callSid]
-    );
-    const tenantKey = callRow.rows[0]?.tenant_key || "";
-    if (!tenantKey) {
-      return res.status(200).send("ok");
-    }
-
-    const detailRow = await pool.query(
-      `SELECT state_json, transcript FROM call_details WHERE call_sid = $1`,
-      [callSid]
-    );
-    const state = detailRow.rows[0]?.state_json || { turn: 0, history: [], last_transcript: "" };
-    if (state.last_transcript && state.last_transcript === transcript) {
-      return res.status(200).send("ok");
-    }
-
-    state.last_transcript = transcript;
-    const turn = Number(state.turn || 0) + 1;
-    const history = Array.isArray(state.history) ? state.history : [];
-
-    await pool.query(
-      `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-       VALUES ($1, $2, $3, $4, 'transcript')`,
-      [callSid, tenantKey, "caller", transcript]
-    );
-    await appendCombinedTranscript(callSid, "caller", transcript);
-
-    const prompt = await composePromptForTenant(tenantKey);
-    const assistantReply = await generateAssistantReply(prompt, history, transcript);
-    const updatedHistory = history
-      .concat({ role: "user", content: transcript }, { role: "assistant", content: assistantReply })
-      .slice(-12);
-    const updatedTranscript = `${detailRow.rows[0]?.transcript || ""}\nCaller: ${transcript}\nAssistant: ${assistantReply}`.trim();
-
-    await pool.query(
-      `UPDATE call_details
-       SET state_json = $2,
-           transcript = $3,
-           updated_at = NOW()
-       WHERE call_sid = $1`,
-      [callSid, JSON.stringify({ ...state, turn, history: updatedHistory }), updatedTranscript]
-    );
-
-    await pool.query(
-      `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-       VALUES ($1, $2, $3, $4, 'message')`,
-      [callSid, tenantKey, "assistant", assistantReply]
-    );
-    await appendCombinedTranscript(callSid, "assistant", assistantReply);
-
-    try {
-      await telnyxCallAction(callControlId, "speak", { payload: assistantReply, voice: "female" });
-    } catch (err) {
-      logError("telnyx_call_control_playback_error", {
-        message: err instanceof Error ? err.message : "unknown"
-      });
-    }
+  if (eventType === "streaming.started" || eventType === "streaming.started.v1") {
+    return res.status(200).send("ok");
   }
 
-  if (
-    eventType === "call.conversation.ended" ||
-    eventType === "call.conversation_ended" ||
-    eventType === "call.hangup"
-  ) {
+  if (eventType === "streaming.stopped" || eventType === "streaming.stopped.v1") {
+    return res.status(200).send("ok");
+  }
+
+  if (eventType === "call.hangup" || eventType === "call.hangup.v1") {
     const callControlId = String(eventPayload.call_control_id || "");
-    const callSid = callControlId || String(eventPayload.call_session_id || "unknown");
-    await pool.query(`UPDATE calls SET status = 'new' WHERE call_sid = $1`, [callSid]);
     if (callControlId) {
       const session = streamSessions.get(callControlId);
-      if (session?.tenantKey && appBaseUrl && callSummaryToken) {
-        try {
-          const detailRow = await pool.query(
-            `SELECT transcript FROM call_details WHERE call_sid = $1`,
-            [callSid]
-          );
-          const transcript = String(detailRow.rows[0]?.transcript || "").trim();
-          if (transcript) {
-            const resp = await fetch(`${appBaseUrl}/api/v1/calls?tenantKey=${encodeURIComponent(session.tenantKey)}`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "x-everycall-internal": callSummaryToken
-              },
-              body: JSON.stringify({
-                action: "summary",
-                tenantKey: session.tenantKey,
-                callSid,
-                summary: "Call completed.",
-                extracted: {
-                  transcript,
-                  first_name: parseNameParts(session.collectedName || "").first || "",
-                  last_name: parseNameParts(session.collectedName || "").last || "",
-                  callback_number: session.collectedPhone || "",
-                  service_required: session.collectedServiceRequired || "",
-                  urgency: session.collectedUrgency || "",
-                  address_line1: session.collectedAddressLine1 || session.collectedAddress || "",
-                  address_line2: session.collectedAddressLine2 || "",
-                  city: session.collectedCity || "",
-                  state: session.collectedState || "",
-                  postal_code: session.collectedPostalCode || "",
-                  requested_date: session.collectedDate || "",
-                  requested_time: session.collectedTime || ""
-                }
-              })
-            });
-            if (!resp.ok) {
-              const text = await resp.text();
-              logError("call_summary_post_failed", { callSid, tenantKey: session.tenantKey, status: resp.status, body: text.slice(0, 200) });
-            } else {
-              logInfo("call_summary_post_ok", { callSid, tenantKey: session.tenantKey });
-            }
-          } else {
-            logError("call_summary_missing_transcript", { callSid, tenantKey: session.tenantKey });
-          }
-        } catch (err) {
-          logError("call_summary_post_error", {
-            callSid,
-            tenantKey: session.tenantKey,
-            message: err instanceof Error ? err.message : "unknown"
-          });
-        }
-      }
-      if (session?.openAiWs) {
+      if (session?.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
         session.openAiWs.close();
       }
       streamSessions.delete(callControlId);
     }
+    return res.status(200).send("ok");
   }
 
   return res.status(200).send("ok");
 });
 
-app.use(express.json());
-
 app.get("/healthz", (_req, res) => {
-  res.status(200).json({ ok: true, service: "call-gateway" });
+  res.status(200).send("ok");
 });
 
 app.get("/v1/debug/realtime-log", (req, res) => {
   const provided = String(req.header("x-everycall-internal") || req.query?.token || "");
   if (!callSummaryToken || provided !== callSummaryToken) {
-    return res.status(403).json({ error: "forbidden" });
+    return res.status(401).json({ error: "unauthorized" });
   }
   if (!fs.existsSync(realtimeLogFile)) {
     return res.status(404).json({ error: "not_found" });
   }
   res.setHeader("Content-Type", "application/jsonl");
-  res.setHeader("Content-Disposition", `attachment; filename="${path.basename(realtimeLogFile)}"`);
-  const stream = fs.createReadStream(realtimeLogFile);
-  stream.pipe(res);
-});
-
-app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  logError("call_gateway_unhandled_error", { message: err instanceof Error ? err.message : "unknown" });
-  res.status(500).json({ error: "internal_error" });
+  fs.createReadStream(realtimeLogFile).pipe(res);
 });
 
 const server = http.createServer(app);
-const streamIdToCall = new Map<string, string>();
 const wss = new WebSocketServer({ server, path: "/v1/telnyx/stream" });
 
 wss.on("connection", (ws) => {
-  ws.on("message", (data) => {
+  ws.on("message", (message) => {
     let payload: any = {};
     try {
-      payload = JSON.parse(data.toString());
+      payload = JSON.parse(message.toString());
     } catch {
       return;
     }
-    const event = payload.event;
-    if (event === "start") {
+
+    if (payload.event === "start") {
       const streamId = payload.stream_id;
-      const callControlId = payload.start?.call_control_id || payload.start?.call_control_id;
+      const callControlId = payload.start?.call_control_id || payload.call_control_id;
       if (!streamId || !callControlId) return;
       const session = streamSessions.get(callControlId);
       if (!session) return;
       session.telnyxWs = ws;
       session.telnyxStreamId = streamId;
-      session.outputBuffer = Buffer.alloc(0);
-      session.outputActive = false;
-      session.responseActive = false;
       streamIdToCall.set(streamId, callControlId);
       logInfo("telnyx_stream_started", { callSid: session.callSid, callControlId, streamId });
-      if (!session.openAiWs) {
-        connectOpenAiRealtime(session);
-      }
+      connectOpenAiRealtime(session);
       return;
     }
 
-    if (event === "media") {
+    if (payload.event === "media") {
       const streamId = payload.stream_id;
-      const media = payload.media || {};
-      const track = media.track || "inbound";
-      const encoded = media.payload || "";
+      const encoded = payload.media?.payload;
       if (!streamId || !encoded) return;
       const callControlId = streamIdToCall.get(streamId);
       if (!callControlId) return;
       const session = streamSessions.get(callControlId);
-      if (!session) return;
-      if (track === "inbound") {
-        // Telnyx streaming payload is raw audio (RTP payload) for the selected codec.
-        sendOpenAiEvent(session.openAiWs, { type: "input_audio_buffer.append", audio: encoded });
-      }
+      if (!session?.openAiWs) return;
+      const pcm = Buffer.from(encoded, "base64");
+      sendOpenAiEvent(session.openAiWs, {
+        type: "input_audio_buffer.append",
+        audio: pcm.toString("base64")
+      });
       return;
     }
 
-    if (event === "stop") {
+    if (payload.event === "stop") {
       const streamId = payload.stream_id;
       if (!streamId) return;
       const callControlId = streamIdToCall.get(streamId);
@@ -2041,13 +729,12 @@ wss.on("connection", (ws) => {
         session.openAiWs.close();
       }
       streamIdToCall.delete(streamId);
-      return;
+      streamSessions.delete(callControlId);
     }
   });
 });
 
-server.listen(env.PORT, () => {
-  logInfo("call_gateway_started", {
-    port: env.PORT
-  });
+const port = Number(process.env.PORT || 3101);
+server.listen(port, () => {
+  logInfo("call_gateway_started", { port });
 });

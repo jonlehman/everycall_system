@@ -5,7 +5,7 @@ Natural, interruptible speech with low latency and consistent tone.
 
 ## Current Notes
 - OpenAI Realtime is used via WebSocket in `call-gateway`.
-- Server VAD is enabled, but responses are manually triggered.
+- Session behavior is driven by EveryCall-provided configuration at session start.
 
 ## Desired Behavior
 - Barge-in should stop assistant speech.
@@ -13,7 +13,9 @@ Natural, interruptible speech with low latency and consistent tone.
 - Avoid duplicate assistant messages.
 
 ## Key Parameters
-- VAD: tune `silence_duration_ms` and `prefix_padding_ms`.
+- VAD: use `server_vad` with threshold `0.75`, prefix padding `300ms`, silence duration `500ms`, idle timeout off.
+- Voice: `marin` (demo-aligned default).
+- Transcription: `gpt-4o-mini-transcribe` with `far_field` noise reduction.
 - Output pump: queue length and pump interval.
 
 ## Logging
@@ -21,4 +23,4 @@ Natural, interruptible speech with low latency and consistent tone.
 - Barge-in cancels.
 
 ## TODOs
-- Evaluate alternate Realtime voices for less "announcer" tone.
+- If tone requires adjustment, update voice in admin configuration instead of hardcoding.
