@@ -310,7 +310,7 @@ function createAudioTextResponseEvent(response: Record<string, unknown> = {}) {
   return {
     type: "response.create",
     response: {
-      output_modalities: ["audio", "text"],
+      modalities: ["audio", "text"],
       ...response
     }
   };
@@ -462,13 +462,6 @@ async function endCallSession(session: StreamSession | undefined, reason: string
 
 async function flushFinalAudioAndEnd(session: StreamSession | undefined, reason: string, shouldHangup: boolean) {
   if (!session) return;
-  if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
-    try {
-      // Ensure final caller utterance is committed before shutdown.
-      sendOpenAiEvent(session.openAiWs, { type: "input_audio_buffer.commit" });
-      await sleep(250);
-    } catch {}
-  }
   await endCallSession(session, reason, shouldHangup);
 }
 
