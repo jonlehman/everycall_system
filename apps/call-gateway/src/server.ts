@@ -22,7 +22,7 @@ const openAiKey = process.env.OPENAI_API_KEY || "";
 const signatureRequired = (process.env.TELNYX_SIGNATURE_REQUIRED || "true").toLowerCase() !== "false";
 const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
-const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "rtp").toLowerCase();
+const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "raw").toLowerCase();
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
 const realtimeLogRoot = String(process.env.REALTIME_LOG_FILE || "/tmp/realtime-logs.jsonl");
@@ -91,6 +91,10 @@ type StreamSession = {
 };
 
 const streamSessions = new Map<string, StreamSession>();
+
+function resolveBidirectionalPayloadMode() {
+  return bidirectionalPayloadMode === "rtp" ? "rtp" : "raw";
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -289,7 +293,7 @@ function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined
 
 function decodeInboundAudioPayload(encoded: string) {
   const raw = Buffer.from(encoded, "base64");
-  if (bidirectionalPayloadMode !== "rtp") return raw;
+  if (resolveBidirectionalPayloadMode() !== "rtp") return raw;
   // Telnyx RTP payloads include a 12-byte header that must be stripped before forwarding g711_ulaw audio.
   const firstByte = raw.at(0) ?? 0;
   if (raw.length > 12 && (firstByte & 0xc0) === 0x80) {
@@ -321,7 +325,7 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
   let offset = 0;
   while (buffer.length - offset >= frameSize) {
     const frame = buffer.subarray(offset, offset + frameSize);
-    const payload = bidirectionalPayloadMode === "raw" ? frame : buildRtpPacket(frame, session);
+    const payload = resolveBidirectionalPayloadMode() === "raw" ? frame : buildRtpPacket(frame, session);
     session.outputQueue.push(payload);
     offset += frameSize;
   }
@@ -992,7 +996,12 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     if (session) {
       const streamUrl = `${toWebSocketUrl(callGatewayBaseUrl || buildBaseUrl(req))}/v1/telnyx/stream`;
       try {
-        logInfo("telnyx_stream_start_request", { callSid: session.callSid, callControlId, streamUrl });
+        logInfo("telnyx_stream_start_request", {
+          callSid: session.callSid,
+          callControlId,
+          streamUrl,
+          bidirectionalPayloadMode: resolveBidirectionalPayloadMode()
+        });
         await telnyxCallAction(callControlId, "streaming_start", {
           stream_url: streamUrl,
           stream_track: "both_tracks",
@@ -1134,5 +1143,9 @@ wss.on("connection", (ws) => {
 
 const port = Number(process.env.PORT || 3101);
 server.listen(port, () => {
-  logInfo("call_gateway_started", { port });
+  logInfo("call_gateway_started", {
+    port,
+    bidirectionalPayloadMode: resolveBidirectionalPayloadMode(),
+    rtpPayloadType
+  });
 });
