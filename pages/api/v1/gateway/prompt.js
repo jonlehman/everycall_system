@@ -60,6 +60,17 @@ function buildDefaultToolDefinitions(fieldSchema) {
       name: "data_capture",
       description: "Send structured call data back to the gateway.",
       parameters: fieldSchema
+    },
+    {
+      type: "function",
+      name: "end_call",
+      description: "End the phone call after the closing is complete.",
+      parameters: {
+        type: "object",
+        properties: {
+          reason: { type: "string", description: "Short reason for ending the call." }
+        }
+      }
     }
   ];
 }

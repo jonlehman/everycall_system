@@ -64,6 +64,10 @@ type PendingToolCall = {
   argumentsText: string;
 };
 
+type EndCallArgs = {
+  reason?: string;
+};
+
 type StreamSession = {
   callControlId: string;
   callSid: string;
@@ -81,6 +85,7 @@ type StreamSession = {
   outputQueue?: Buffer[];
   outputBuffer?: Buffer;
   outputTimer?: NodeJS.Timeout | null;
+  hangupTimer?: NodeJS.Timeout | null;
   outputPrimed?: boolean;
   rtpSeq?: number;
   rtpTimestamp?: number;
@@ -416,6 +421,11 @@ async function endCallSession(session: StreamSession | undefined, reason: string
     session.outputTimer = null;
   }
 
+  if (session.hangupTimer) {
+    clearTimeout(session.hangupTimer);
+    session.hangupTimer = null;
+  }
+
   if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
     session.openAiWs.close();
   }
@@ -587,6 +597,35 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       callId
     });
     sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent());
+    return;
+  }
+
+  if (name === "end_call") {
+    const endCallArgs = args as EndCallArgs;
+    const reason = String(endCallArgs.reason || "assistant_completed_call");
+    logInfo("assistant_end_call_requested", {
+      callSid: session.callSid,
+      callId,
+      reason
+    });
+    await forwardToolResult(session.callSid, session.tenantKey, name, { reason }, { status: "accepted", errors: [] });
+    sendOpenAiEvent(session.openAiWs, {
+      type: "conversation.item.create",
+      item: {
+        type: "function_call_output",
+        call_id: callId,
+        output: JSON.stringify({ status: "accepted", reason })
+      }
+    });
+
+    const queuedFrames = session.outputQueue?.length || 0;
+    const drainMs = Math.min(Math.max(queuedFrames * 20 + 1200, 1200), 4000);
+    if (session.hangupTimer) {
+      clearTimeout(session.hangupTimer);
+    }
+    session.hangupTimer = setTimeout(() => {
+      void endCallSession(session, "assistant_end_call", true);
+    }, drainMs);
     return;
   }
 
