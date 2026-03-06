@@ -64,7 +64,7 @@ function buildDefaultToolDefinitions(fieldSchema) {
     {
       type: "function",
       name: "end_call",
-      description: "End the phone call after the closing is complete.",
+      description: "End the phone call only after you have already spoken your final closing sentence aloud.",
       parameters: {
         type: "object",
         properties: {
