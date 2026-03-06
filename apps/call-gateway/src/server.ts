@@ -93,7 +93,22 @@ type StreamSession = {
 const streamSessions = new Map<string, StreamSession>();
 
 function resolveBidirectionalPayloadMode() {
-  return bidirectionalPayloadMode === "rtp" ? "rtp" : "raw";
+  return bidirectionalPayloadMode === "rtp" ? "rtp" : "rtp";
+}
+
+function getConfiguredBidirectionalPayloadMode() {
+  return bidirectionalPayloadMode;
+}
+
+function logBidirectionalPayloadModeNormalization() {
+  const configuredMode = getConfiguredBidirectionalPayloadMode();
+  const resolvedMode = resolveBidirectionalPayloadMode();
+  if (configuredMode !== resolvedMode) {
+    logInfo("telnyx_bidirectional_payload_mode_normalized", {
+      configuredMode,
+      resolvedMode
+    });
+  }
 }
 
 function getTelnyxStreamingStartPayload(baseUrl: string) {
@@ -1151,6 +1166,7 @@ wss.on("connection", (ws) => {
 
 const port = Number(process.env.PORT || 3101);
 server.listen(port, () => {
+  logBidirectionalPayloadModeNormalization();
   logInfo("call_gateway_started", {
     port,
     bidirectionalPayloadMode: resolveBidirectionalPayloadMode(),
