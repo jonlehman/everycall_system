@@ -524,6 +524,63 @@ async function forwardToolResult(
   }
 }
 
+async function executeToolCall(session: StreamSession, name: string, callId: string, argsText: string) {
+  let args: Record<string, unknown> = {};
+  try {
+    args = argsText ? JSON.parse(argsText) : {};
+  } catch {
+    args = {};
+  }
+
+  if (name === "faq_lookup") {
+    const query = String((args as any).query || "");
+    const matches = buildFaqMatches(session.promptPayload?.tenant_faqs || [], query);
+    logInfo("faq_lookup_tool_called", {
+      callSid: session.callSid,
+      query,
+      matchCount: matches.matches.length
+    });
+    await forwardToolResult(session.callSid, session.tenantKey, name, { query, matches }, { status: "accepted", errors: [] });
+    sendOpenAiEvent(session.openAiWs, {
+      type: "conversation.item.create",
+      item: {
+        type: "function_call_output",
+        call_id: callId,
+        output: JSON.stringify(matches)
+      }
+    });
+    sendOpenAiEvent(session.openAiWs, { type: "response.create", response: { modalities: ["audio", "text"] } });
+    return;
+  }
+
+  if (name === "data_capture") {
+    const schema = session.promptPayload?.field_schema || {};
+    const validation = validateAgainstSchema(schema, args);
+    await forwardToolResult(session.callSid, session.tenantKey, name, args, validation);
+    sendOpenAiEvent(session.openAiWs, {
+      type: "conversation.item.create",
+      item: {
+        type: "function_call_output",
+        call_id: callId,
+        output: JSON.stringify(validation)
+      }
+    });
+    sendOpenAiEvent(session.openAiWs, { type: "response.create", response: { modalities: ["audio", "text"] } });
+    return;
+  }
+
+  await forwardToolResult(session.callSid, session.tenantKey, name, args, { status: "accepted", errors: [] });
+  sendOpenAiEvent(session.openAiWs, {
+    type: "conversation.item.create",
+    item: {
+      type: "function_call_output",
+      call_id: callId,
+      output: JSON.stringify({ status: "accepted" })
+    }
+  });
+  sendOpenAiEvent(session.openAiWs, { type: "response.create", response: { modalities: ["audio", "text"] } });
+}
+
 function connectOpenAiRealtime(session: StreamSession) {
   if (!openAiKey) {
     logError("openai_realtime_missing_key", { callSid: session.callSid });
@@ -678,60 +735,21 @@ function connectOpenAiRealtime(session: StreamSession) {
       const argsText = payloadMsg.arguments || session.pendingToolCall?.argumentsText || "";
       if (!name || !callId) return;
       session.pendingToolCall = null;
-      let args: Record<string, unknown> = {};
-      try {
-        args = argsText ? JSON.parse(argsText) : {};
-      } catch {
-        args = {};
-      }
+      await executeToolCall(session, String(name), String(callId), String(argsText || ""));
+      return;
+    }
 
-      if (name === "faq_lookup") {
-        const query = String((args as any).query || "");
-        const matches = buildFaqMatches(session.promptPayload?.tenant_faqs || [], query);
-        logInfo("faq_lookup_tool_called", {
-          callSid: session.callSid,
-          query,
-          matchCount: matches.matches.length
-        });
-        await forwardToolResult(session.callSid, session.tenantKey, name, { query, matches }, { status: "accepted", errors: [] });
-        sendOpenAiEvent(session.openAiWs, {
-          type: "conversation.item.create",
-          item: {
-            type: "function_call_output",
-            call_id: callId,
-            output: JSON.stringify(matches)
-          }
-        });
-        sendOpenAiEvent(session.openAiWs, { type: "response.create", response: { modalities: ["audio", "text"] } });
-        return;
+    // Handle newer Realtime format where function calls are emitted in output items.
+    if (type === "response.output_item.done") {
+      const item = payloadMsg.item || payloadMsg.output_item || {};
+      const itemType = String(item?.type || "");
+      if (itemType === "function_call") {
+        const name = String(item?.name || "");
+        const callId = String(item?.call_id || item?.id || "");
+        const argsText = String(item?.arguments || "");
+        if (!name || !callId) return;
+        await executeToolCall(session, name, callId, argsText);
       }
-
-      if (name === "data_capture") {
-        const schema = session.promptPayload?.field_schema || {};
-        const validation = validateAgainstSchema(schema, args);
-        await forwardToolResult(session.callSid, session.tenantKey, name, args, validation);
-        sendOpenAiEvent(session.openAiWs, {
-          type: "conversation.item.create",
-          item: {
-            type: "function_call_output",
-            call_id: callId,
-            output: JSON.stringify(validation)
-          }
-        });
-        sendOpenAiEvent(session.openAiWs, { type: "response.create", response: { modalities: ["audio", "text"] } });
-        return;
-      }
-
-      await forwardToolResult(session.callSid, session.tenantKey, name, args, { status: "accepted", errors: [] });
-      sendOpenAiEvent(session.openAiWs, {
-        type: "conversation.item.create",
-        item: {
-          type: "function_call_output",
-          call_id: callId,
-          output: JSON.stringify({ status: "accepted" })
-        }
-      });
-      sendOpenAiEvent(session.openAiWs, { type: "response.create", response: { modalities: ["audio", "text"] } });
     }
   });
 
