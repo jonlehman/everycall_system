@@ -96,6 +96,17 @@ function resolveBidirectionalPayloadMode() {
   return bidirectionalPayloadMode === "rtp" ? "rtp" : "raw";
 }
 
+function getTelnyxStreamingStartPayload(baseUrl: string) {
+  return {
+    stream_url: baseUrl,
+    stream_track: "both_tracks",
+    stream_bidirectional_mode: resolveBidirectionalPayloadMode(),
+    stream_bidirectional_codec: "PCMU",
+    stream_bidirectional_sampling_rate: 8000,
+    stream_codec: "PCMU"
+  };
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -678,6 +689,10 @@ function connectOpenAiRealtime(session: StreamSession) {
       });
       if (!session.greetingSent) {
         session.greetingSent = true;
+        logInfo("openai_realtime_greeting_requested", {
+          callSid: session.callSid,
+          callControlId: session.callControlId
+        });
         sendOpenAiEvent(session.openAiWs, {
           type: "response.create",
           response: {
@@ -1002,14 +1017,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
           streamUrl,
           bidirectionalPayloadMode: resolveBidirectionalPayloadMode()
         });
-        await telnyxCallAction(callControlId, "streaming_start", {
-          stream_url: streamUrl,
-          stream_track: "both_tracks",
-          stream_bidirectional_mode: "rtp",
-          stream_bidirectional_codec: "PCMU",
-          stream_bidirectional_sampling_rate: 8000,
-          stream_codec: "PCMU"
-        });
+        await telnyxCallAction(callControlId, "streaming_start", getTelnyxStreamingStartPayload(streamUrl));
         logInfo("telnyx_stream_start_requested", { callSid: session.callSid, callControlId });
       } catch (err) {
         logError("telnyx_call_control_stream_start_error", {
