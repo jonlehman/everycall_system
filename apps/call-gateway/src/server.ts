@@ -328,28 +328,7 @@ function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined
 }
 
 function decodeInboundAudioPayload(encoded: string) {
-  const raw = Buffer.from(encoded, "base64");
-  if (resolveBidirectionalPayloadMode() !== "rtp") return raw;
-  // Telnyx RTP payloads include a 12-byte header that must be stripped before forwarding g711_ulaw audio.
-  const firstByte = raw.at(0) ?? 0;
-  if (raw.length > 12 && (firstByte & 0xc0) === 0x80) {
-    return raw.subarray(12);
-  }
-  return raw;
-}
-
-function buildRtpPacket(frame: Buffer, session: StreamSession) {
-  const payloadType = rtpPayloadType & 0x7f;
-  session.rtpSeq = (session.rtpSeq ?? Math.floor(Math.random() * 65535)) + 1;
-  session.rtpTimestamp = (session.rtpTimestamp ?? Math.floor(Math.random() * 2 ** 32)) + frame.length;
-  session.rtpSsrc = session.rtpSsrc ?? Math.floor(Math.random() * 2 ** 32);
-  const header = Buffer.alloc(12);
-  header[0] = 0x80;
-  header[1] = payloadType;
-  header.writeUInt16BE(session.rtpSeq % 65536, 2);
-  header.writeUInt32BE(session.rtpTimestamp >>> 0, 4);
-  header.writeUInt32BE(session.rtpSsrc >>> 0, 8);
-  return Buffer.concat([header, frame]);
+  return Buffer.from(encoded, "base64");
 }
 
 function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
@@ -361,8 +340,7 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
   let offset = 0;
   while (buffer.length - offset >= frameSize) {
     const frame = buffer.subarray(offset, offset + frameSize);
-    const payload = resolveBidirectionalPayloadMode() === "raw" ? frame : buildRtpPacket(frame, session);
-    session.outputQueue.push(payload);
+    session.outputQueue.push(frame);
     offset += frameSize;
   }
   session.outputBuffer = buffer.subarray(offset);
@@ -1177,7 +1155,14 @@ wss.on("connection", (ws) => {
       session.telnyxWs = ws;
       session.telnyxStreamId = streamId;
       streamIdToCall.set(streamId, callControlId);
-      logInfo("telnyx_stream_started", { callSid: session.callSid, callControlId, streamId });
+      logInfo("telnyx_stream_started", {
+        callSid: session.callSid,
+        callControlId,
+        streamId,
+        mediaEncoding: payload.start?.media_format?.encoding,
+        mediaSampleRate: payload.start?.media_format?.sample_rate,
+        mediaChannels: payload.start?.media_format?.channels
+      });
       connectOpenAiRealtime(session);
       return;
     }
