@@ -306,6 +306,16 @@ function sendOpenAiEvent(ws: WebSocket | undefined, payload: Record<string, unkn
   ws.send(JSON.stringify(payload));
 }
 
+function createAudioTextResponseEvent(response: Record<string, unknown> = {}) {
+  return {
+    type: "response.create",
+    response: {
+      output_modalities: ["audio", "text"],
+      ...response
+    }
+  };
+}
+
 function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined, payloadBase64: string) {
   if (!ws || ws.readyState !== WebSocket.OPEN || !streamId) return;
   ws.send(
@@ -579,7 +589,12 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
         output: JSON.stringify(matches)
       }
     });
-    sendOpenAiEvent(session.openAiWs, { type: "response.create", response: { modalities: ["audio", "text"] } });
+    logInfo("openai_realtime_tool_response_requested", {
+      callSid: session.callSid,
+      tool: name,
+      callId
+    });
+    sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent());
     return;
   }
 
@@ -595,7 +610,12 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
         output: JSON.stringify(validation)
       }
     });
-    sendOpenAiEvent(session.openAiWs, { type: "response.create", response: { modalities: ["audio", "text"] } });
+    logInfo("openai_realtime_tool_response_requested", {
+      callSid: session.callSid,
+      tool: name,
+      callId
+    });
+    sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent());
     return;
   }
 
@@ -608,7 +628,12 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       output: JSON.stringify({ status: "accepted" })
     }
   });
-  sendOpenAiEvent(session.openAiWs, { type: "response.create", response: { modalities: ["audio", "text"] } });
+  logInfo("openai_realtime_tool_response_requested", {
+    callSid: session.callSid,
+    tool: name,
+    callId
+  });
+  sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent());
 }
 
 function connectOpenAiRealtime(session: StreamSession) {
@@ -708,14 +733,42 @@ function connectOpenAiRealtime(session: StreamSession) {
           callSid: session.callSid,
           callControlId: session.callControlId
         });
-        sendOpenAiEvent(session.openAiWs, {
-          type: "response.create",
-          response: {
-            modalities: ["audio", "text"],
+        sendOpenAiEvent(
+          session.openAiWs,
+          createAudioTextResponseEvent({
             instructions: `Call just connected. Greet the caller now using this greeting: ${payload.tenant_greeting || "Hi, thanks for calling. How can I help you?"}`
-          }
-        });
+          })
+        );
       }
+      return;
+    }
+
+    if (type === "error") {
+      logError("openai_realtime_server_error", {
+        callSid: session.callSid,
+        errorType: payloadMsg?.error?.type,
+        errorCode: payloadMsg?.error?.code,
+        errorParam: payloadMsg?.error?.param,
+        eventId: payloadMsg?.error?.event_id || payloadMsg?.event_id,
+        message: payloadMsg?.error?.message || "unknown"
+      });
+      return;
+    }
+
+    if (type === "response.created") {
+      logInfo("openai_realtime_response_created", {
+        callSid: session.callSid,
+        responseId: payloadMsg?.response?.id || payloadMsg?.response_id
+      });
+      return;
+    }
+
+    if (type === "response.done") {
+      logInfo("openai_realtime_response_done", {
+        callSid: session.callSid,
+        responseId: payloadMsg?.response?.id || payloadMsg?.response_id,
+        status: payloadMsg?.response?.status || payloadMsg?.status
+      });
       return;
     }
 
