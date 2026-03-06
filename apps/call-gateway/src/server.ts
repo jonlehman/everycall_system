@@ -757,10 +757,15 @@ function connectOpenAiRealtime(session: StreamSession) {
     }
 
     if (type === "response.done") {
+      const statusDetails = payloadMsg?.response?.status_details || payloadMsg?.status_details;
       logInfo("openai_realtime_response_done", {
         callSid: session.callSid,
         responseId: payloadMsg?.response?.id || payloadMsg?.response_id,
-        status: payloadMsg?.response?.status || payloadMsg?.status
+        status: payloadMsg?.response?.status || payloadMsg?.status,
+        statusDetailsType: statusDetails?.type,
+        statusDetailsReason: statusDetails?.reason,
+        errorType: statusDetails?.error?.type,
+        errorCode: statusDetails?.error?.code
       });
       return;
     }
