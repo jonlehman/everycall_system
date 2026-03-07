@@ -106,11 +106,11 @@ export default function BillingPage() {
   return (
     <ClientPage
       title="Billing"
-      subtitle="Manage trial status, payment setup, and your monthly plan."
+      subtitle=""
       status={status}
       primaryAction={viewer.canManage && billing?.status !== 'deactivated'
         ? {
-            label: billing?.stripeSubscriptionId ? 'Manage Billing' : 'Activate Billing',
+            label: billing?.stripeSubscriptionId ? 'Open Billing Portal' : 'Activate Billing',
             brand: true,
             onClick: billing?.stripeSubscriptionId ? openPortal : startCheckout,
             disabled: actionState.checkout || actionState.portal || loadState === 'loading'
