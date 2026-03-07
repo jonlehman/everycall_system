@@ -99,9 +99,7 @@ function isCurrentSubscriptionStatus(status) {
 export async function retrieveSubscription(subscriptionId) {
   if (!subscriptionId) return null;
   const stripe = getStripe();
-  return stripe.subscriptions.retrieve(subscriptionId, {
-    expand: ["items.data.price.product"]
-  });
+  return stripe.subscriptions.retrieve(subscriptionId);
 }
 
 export async function findCurrentSubscriptionForCustomer(customerId) {
@@ -110,8 +108,7 @@ export async function findCurrentSubscriptionForCustomer(customerId) {
   const result = await stripe.subscriptions.list({
     customer: customerId,
     status: "all",
-    limit: 20,
-    expand: ["data.items.data.price.product"]
+    limit: 20
   });
   const current = result.data
     .filter((subscription) => isCurrentSubscriptionStatus(subscription.status))
@@ -128,8 +125,7 @@ export async function findCurrentSubscriptionForTenantKey(tenantKey) {
   const stripe = getStripe();
   const result = await stripe.subscriptions.search({
     query: `metadata['tenant_key']:'${String(tenantKey).replace(/'/g, "\\'")}'`,
-    limit: 20,
-    expand: ["data.items.data.price.product"]
+    limit: 20
   });
   const current = result.data
     .filter((subscription) => isCurrentSubscriptionStatus(subscription.status))
