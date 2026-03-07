@@ -1,7 +1,7 @@
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { buildPlanDisplay, ensureTenantBillingAccount, requireTenantOwner, resolveEffectiveMonthlyAmount, syncTenantStripeSubscription } from "../../_lib/billing.js";
-import { createCheckoutSession, findCurrentSubscriptionForCustomer, findOrCreateCustomer, retrieveSubscription } from "../../_lib/stripe.js";
+import { createCheckoutSession, findCurrentSubscriptionForCustomer, findCurrentSubscriptionForTenantKey, findOrCreateCustomer, retrieveSubscription } from "../../_lib/stripe.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
@@ -34,6 +34,18 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "tenant_not_found" });
     }
 
+    const existingSubscription = await findCurrentSubscriptionForTenantKey(tenantKey).catch(() => null) || (row.stripe_subscription_id
+      ? await retrieveSubscription(row.stripe_subscription_id).catch(() => null)
+      : null);
+    if (existingSubscription && ["trialing", "active", "past_due", "unpaid", "incomplete"].includes(String(existingSubscription.status || ""))) {
+      row = await syncTenantStripeSubscription(pool, tenantKey, row, existingSubscription, "billing.checkout.sync");
+      return res.status(409).json({
+        error: "subscription_already_exists",
+        message: "Billing is already active for this account.",
+        stripeSubscriptionId: existingSubscription.id
+      });
+    }
+
     const customer = await findOrCreateCustomer({
       tenantKey,
       stripeCustomerId: row.stripe_customer_id,
@@ -55,15 +67,13 @@ export default async function handler(req, res) {
       [tenantKey, customer.id, Number(row.monthly_amount_cents || resolveEffectiveMonthlyAmount(row)), row.stripe_product_id || null]
     );
 
-    const existingSubscription = row.stripe_subscription_id
-      ? await retrieveSubscription(row.stripe_subscription_id).catch(() => null)
-      : await findCurrentSubscriptionForCustomer(customer.id).catch(() => null);
-    if (existingSubscription && ["trialing", "active", "past_due", "unpaid", "incomplete"].includes(String(existingSubscription.status || ""))) {
-      row = await syncTenantStripeSubscription(pool, tenantKey, row, existingSubscription, "billing.checkout.sync");
+    const currentCustomerSubscription = await findCurrentSubscriptionForCustomer(customer.id).catch(() => null);
+    if (currentCustomerSubscription && ["trialing", "active", "past_due", "unpaid", "incomplete"].includes(String(currentCustomerSubscription.status || ""))) {
+      row = await syncTenantStripeSubscription(pool, tenantKey, row, currentCustomerSubscription, "billing.checkout.sync");
       return res.status(409).json({
         error: "subscription_already_exists",
         message: "Billing is already active for this account.",
-        stripeSubscriptionId: existingSubscription.id
+        stripeSubscriptionId: currentCustomerSubscription.id
       });
     }
 

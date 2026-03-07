@@ -123,6 +123,24 @@ export async function findCurrentSubscriptionForCustomer(customerId) {
   return current || null;
 }
 
+export async function findCurrentSubscriptionForTenantKey(tenantKey) {
+  if (!tenantKey) return null;
+  const stripe = getStripe();
+  const result = await stripe.subscriptions.search({
+    query: `metadata['tenant_key']:'${String(tenantKey).replace(/'/g, "\\'")}'`,
+    limit: 20,
+    expand: ["data.items.data.price.product"]
+  });
+  const current = result.data
+    .filter((subscription) => isCurrentSubscriptionStatus(subscription.status))
+    .sort((a, b) => {
+      const aEnd = Number(a.current_period_end || a.trial_end || a.created || 0);
+      const bEnd = Number(b.current_period_end || b.trial_end || b.created || 0);
+      return bEnd - aEnd;
+    })[0];
+  return current || null;
+}
+
 export function buildRecurringPriceData({
   unitAmount,
   productId,

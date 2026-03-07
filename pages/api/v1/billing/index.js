@@ -1,7 +1,7 @@
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { buildPlanDisplay, computeTrialDaysRemaining, ensureTenantBillingAccount, requireActiveTenantUser, requireTenantOwner, syncTenantStripeSubscription } from "../../_lib/billing.js";
-import { findCurrentSubscriptionForCustomer, retrieveSubscription } from "../../_lib/stripe.js";
+import { findCurrentSubscriptionForCustomer, findCurrentSubscriptionForTenantKey, retrieveSubscription } from "../../_lib/stripe.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
@@ -38,8 +38,9 @@ export default async function handler(req, res) {
     const stripeSubscription = row.stripe_subscription_id
       ? await retrieveSubscription(row.stripe_subscription_id).catch(() => null)
       : await findCurrentSubscriptionForCustomer(row.stripe_customer_id).catch(() => null);
-    if (stripeSubscription) {
-      row = await syncTenantStripeSubscription(pool, tenantKey, row, stripeSubscription, "billing.summary.sync");
+    const tenantSubscription = stripeSubscription || await findCurrentSubscriptionForTenantKey(tenantKey).catch(() => null);
+    if (tenantSubscription) {
+      row = await syncTenantStripeSubscription(pool, tenantKey, row, tenantSubscription, "billing.summary.sync");
     }
 
     const invoices = row.last_invoice_id ? [{ id: row.last_invoice_id }] : [];
