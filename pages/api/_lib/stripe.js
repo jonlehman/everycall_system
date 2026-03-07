@@ -92,6 +92,37 @@ export async function findOrCreateCustomer({
   return createCustomer({ tenantKey, email, name, phone, metadata });
 }
 
+function isCurrentSubscriptionStatus(status) {
+  return ["trialing", "active", "past_due", "unpaid", "incomplete"].includes(String(status || ""));
+}
+
+export async function retrieveSubscription(subscriptionId) {
+  if (!subscriptionId) return null;
+  const stripe = getStripe();
+  return stripe.subscriptions.retrieve(subscriptionId, {
+    expand: ["items.data.price.product"]
+  });
+}
+
+export async function findCurrentSubscriptionForCustomer(customerId) {
+  if (!customerId) return null;
+  const stripe = getStripe();
+  const result = await stripe.subscriptions.list({
+    customer: customerId,
+    status: "all",
+    limit: 20,
+    expand: ["data.items.data.price.product"]
+  });
+  const current = result.data
+    .filter((subscription) => isCurrentSubscriptionStatus(subscription.status))
+    .sort((a, b) => {
+      const aEnd = Number(a.current_period_end || a.trial_end || a.created || 0);
+      const bEnd = Number(b.current_period_end || b.trial_end || b.created || 0);
+      return bEnd - aEnd;
+    })[0];
+  return current || null;
+}
+
 export function buildRecurringPriceData({
   unitAmount,
   productId,

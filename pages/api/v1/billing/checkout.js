@@ -1,7 +1,7 @@
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { buildPlanDisplay, ensureTenantBillingAccount, requireTenantOwner, resolveEffectiveMonthlyAmount } from "../../_lib/billing.js";
-import { createCheckoutSession, findOrCreateCustomer } from "../../_lib/stripe.js";
+import { buildPlanDisplay, ensureTenantBillingAccount, requireTenantOwner, resolveEffectiveMonthlyAmount, syncTenantStripeSubscription } from "../../_lib/billing.js";
+import { createCheckoutSession, findCurrentSubscriptionForCustomer, findOrCreateCustomer, retrieveSubscription } from "../../_lib/stripe.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     }
 
     const tenantKey = resolveTenantKey(session, getTenantKey(req));
-    const row = await ensureTenantBillingAccount(pool, tenantKey);
+    let row = await ensureTenantBillingAccount(pool, tenantKey);
     if (!row) {
       return res.status(404).json({ error: "tenant_not_found" });
     }
@@ -54,6 +54,18 @@ export default async function handler(req, res) {
                      updated_at = NOW()`,
       [tenantKey, customer.id, Number(row.monthly_amount_cents || resolveEffectiveMonthlyAmount(row)), row.stripe_product_id || null]
     );
+
+    const existingSubscription = row.stripe_subscription_id
+      ? await retrieveSubscription(row.stripe_subscription_id).catch(() => null)
+      : await findCurrentSubscriptionForCustomer(customer.id).catch(() => null);
+    if (existingSubscription && ["trialing", "active", "past_due", "unpaid", "incomplete"].includes(String(existingSubscription.status || ""))) {
+      row = await syncTenantStripeSubscription(pool, tenantKey, row, existingSubscription, "billing.checkout.sync");
+      return res.status(409).json({
+        error: "subscription_already_exists",
+        message: "Billing is already active for this account.",
+        stripeSubscriptionId: existingSubscription.id
+      });
+    }
 
     const trialEnd = row.billing_status === "trialing" && row.trial_end && new Date(row.trial_end).getTime() > Date.now()
       ? row.trial_end

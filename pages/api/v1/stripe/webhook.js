@@ -1,73 +1,13 @@
 import { readRawBody } from "../../_lib/telnyx.js";
-import { constructWebhookEvent } from "../../_lib/stripe.js";
+import { constructWebhookEvent, retrieveSubscription } from "../../_lib/stripe.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { recordBillingLifecycleEvent } from "../../_lib/billing.js";
+import { syncTenantStripeSubscription } from "../../_lib/billing.js";
 
 export const config = {
   api: {
     bodyParser: false
   }
 };
-
-function mapSubscriptionStatus(subscriptionStatus, currentRow) {
-  const currentBillingStatus = String(currentRow?.billing_status || "");
-  const currentServiceAccessStatus = String(currentRow?.service_access_status || "enabled");
-  const currentAppAccessStatus = String(currentRow?.app_access_status || "enabled");
-
-  if (subscriptionStatus === "trialing") {
-    return {
-      billingStatus: currentBillingStatus === "trial_expired" ? "trial_expired" : "trialing",
-      serviceAccessStatus: "enabled",
-      appAccessStatus: currentBillingStatus === "trial_expired" ? "billing_locked" : "enabled"
-    };
-  }
-
-  if (subscriptionStatus === "active") {
-    return {
-      billingStatus: "active",
-      serviceAccessStatus: "enabled",
-      appAccessStatus: "enabled"
-    };
-  }
-
-  if (subscriptionStatus === "past_due") {
-    return {
-      billingStatus: "past_due",
-      serviceAccessStatus: currentServiceAccessStatus || "enabled",
-      appAccessStatus: currentAppAccessStatus || "enabled"
-    };
-  }
-
-  if (subscriptionStatus === "unpaid") {
-    return {
-      billingStatus: "unpaid",
-      serviceAccessStatus: "restricted",
-      appAccessStatus: currentAppAccessStatus || "enabled"
-    };
-  }
-
-  if (subscriptionStatus === "canceled" || subscriptionStatus === "incomplete_expired") {
-    return {
-      billingStatus: subscriptionStatus === "canceled" ? "canceled" : "incomplete_expired",
-      serviceAccessStatus: "disabled",
-      appAccessStatus: "billing_locked"
-    };
-  }
-
-  if (subscriptionStatus === "incomplete") {
-    return {
-      billingStatus: "incomplete",
-      serviceAccessStatus: "disabled",
-      appAccessStatus: "billing_locked"
-    };
-  }
-
-  return {
-    billingStatus: currentBillingStatus || "trialing",
-    serviceAccessStatus: currentServiceAccessStatus,
-    appAccessStatus: currentAppAccessStatus
-  };
-}
 
 async function getTenantBillingRow(pool, { tenantKey, customerId, subscriptionId }) {
   if (tenantKey) {
@@ -106,92 +46,6 @@ async function getTenantBillingRow(pool, { tenantKey, customerId, subscriptionId
   }
 
   return null;
-}
-
-async function upsertBillingAccountFromSubscription(pool, tenantKey, subscription) {
-  const item = subscription?.items?.data?.[0] || {};
-  await pool.query(
-    `INSERT INTO tenant_billing_accounts (
-       tenant_key,
-       stripe_customer_id,
-       stripe_subscription_id,
-       stripe_product_id,
-       stripe_price_id,
-       current_period_start,
-       current_period_end,
-       cancel_at_period_end,
-       canceled_at,
-       trial_end,
-       updated_at
-     )
-     VALUES ($1, $2, $3, $4, $5, to_timestamp($6), to_timestamp($7), $8, $9, $10, NOW())
-     ON CONFLICT (tenant_key)
-     DO UPDATE SET
-       stripe_customer_id = EXCLUDED.stripe_customer_id,
-       stripe_subscription_id = EXCLUDED.stripe_subscription_id,
-       stripe_product_id = EXCLUDED.stripe_product_id,
-       stripe_price_id = EXCLUDED.stripe_price_id,
-       current_period_start = EXCLUDED.current_period_start,
-       current_period_end = EXCLUDED.current_period_end,
-       cancel_at_period_end = EXCLUDED.cancel_at_period_end,
-       canceled_at = EXCLUDED.canceled_at,
-       trial_end = EXCLUDED.trial_end,
-       updated_at = NOW()`,
-    [
-      tenantKey,
-      subscription.customer ? String(subscription.customer) : null,
-      subscription.id || null,
-      item.price?.product ? String(item.price.product) : null,
-      item.price?.id || null,
-      subscription.current_period_start || null,
-      subscription.current_period_end || null,
-      Boolean(subscription.cancel_at_period_end),
-      subscription.canceled_at ? new Date(subscription.canceled_at * 1000).toISOString() : null,
-      subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null
-    ]
-  );
-}
-
-async function applySubscriptionState(pool, tenantRow, subscription, eventType) {
-  const mapped = mapSubscriptionStatus(subscription.status, tenantRow);
-  await upsertBillingAccountFromSubscription(pool, tenantRow.tenant_key, subscription);
-  await pool.query(
-    `UPDATE tenants
-     SET billing_status = $2,
-         service_access_status = $3,
-         app_access_status = $4,
-         billing_status_updated_at = NOW()
-     WHERE tenant_key = $1`,
-    [
-      tenantRow.tenant_key,
-      mapped.billingStatus,
-      mapped.serviceAccessStatus,
-      mapped.appAccessStatus
-    ]
-  );
-
-  if (
-    tenantRow.billing_status !== mapped.billingStatus ||
-    tenantRow.service_access_status !== mapped.serviceAccessStatus ||
-    tenantRow.app_access_status !== mapped.appAccessStatus
-  ) {
-    await recordBillingLifecycleEvent(pool, {
-      tenantKey: tenantRow.tenant_key,
-      eventType,
-      fromBillingStatus: tenantRow.billing_status,
-      toBillingStatus: mapped.billingStatus,
-      fromServiceAccessStatus: tenantRow.service_access_status,
-      toServiceAccessStatus: mapped.serviceAccessStatus,
-      fromAppAccessStatus: tenantRow.app_access_status,
-      toAppAccessStatus: mapped.appAccessStatus,
-      reason: `stripe_subscription_${subscription.status}`,
-      metadata: {
-        stripeSubscriptionId: subscription.id
-      },
-      createdByType: "stripe_webhook",
-      createdById: subscription.id
-    });
-  }
 }
 
 async function decrementOverrideCyclesIfNeeded(pool, tenantKey) {
@@ -269,6 +123,10 @@ export default async function handler(req, res) {
             object.subscription ? String(object.subscription) : null
           ]
         );
+        if (object.subscription) {
+          const subscription = await retrieveSubscription(String(object.subscription));
+          await syncTenantStripeSubscription(pool, tenantRow.tenant_key, tenantRow, subscription, event.type);
+        }
       }
     }
 
@@ -283,7 +141,7 @@ export default async function handler(req, res) {
         subscriptionId: object.id || null
       });
       if (tenantRow) {
-        await applySubscriptionState(pool, tenantRow, object, event.type);
+        await syncTenantStripeSubscription(pool, tenantRow.tenant_key, tenantRow, object, event.type);
       }
     }
 

@@ -1,6 +1,7 @@
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { buildPlanDisplay, computeTrialDaysRemaining, ensureTenantBillingAccount, requireActiveTenantUser, requireTenantOwner } from "../../_lib/billing.js";
+import { buildPlanDisplay, computeTrialDaysRemaining, ensureTenantBillingAccount, requireActiveTenantUser, requireTenantOwner, syncTenantStripeSubscription } from "../../_lib/billing.js";
+import { findCurrentSubscriptionForCustomer, retrieveSubscription } from "../../_lib/stripe.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
@@ -29,9 +30,16 @@ export default async function handler(req, res) {
     const owner = session.role === "tenant" ? await requireTenantOwner(session) : null;
 
     const tenantKey = resolveTenantKey(session, getTenantKey(req));
-    const row = await ensureTenantBillingAccount(pool, tenantKey);
+    let row = await ensureTenantBillingAccount(pool, tenantKey);
     if (!row) {
       return res.status(404).json({ error: "tenant_not_found" });
+    }
+
+    const stripeSubscription = row.stripe_subscription_id
+      ? await retrieveSubscription(row.stripe_subscription_id).catch(() => null)
+      : await findCurrentSubscriptionForCustomer(row.stripe_customer_id).catch(() => null);
+    if (stripeSubscription) {
+      row = await syncTenantStripeSubscription(pool, tenantKey, row, stripeSubscription, "billing.summary.sync");
     }
 
     const invoices = row.last_invoice_id ? [{ id: row.last_invoice_id }] : [];
