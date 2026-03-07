@@ -137,7 +137,6 @@ export default function BillingPage() {
             </div>
             <div className="mt-4 grid gap-2 text-sm md:grid-cols-[220px_1fr]">
               <div>Trial ends</div><div>{formatDate(billing?.trialEnd)}</div>
-              <div>Post-trial access ends</div><div>{formatDate(billing?.postTrialAccessEndsAt)}</div>
               <div>Current period end</div><div>{formatDate(billing?.currentPeriodEnd)}</div>
               <div>Application access</div><div>{billing?.appAccessStatus || '-'}</div>
               <div>Service access</div><div>{billing?.serviceAccessStatus || '-'}</div>
@@ -154,6 +153,25 @@ export default function BillingPage() {
               <p className="text-sm text-slate-500">
                 Please email support@everycall.io to reactivate your account.
               </p>
+            ) : billing?.stripeSubscriptionId ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={openPortal}
+                  disabled={actionState.checkout || actionState.portal || !billing?.stripeCustomerId}
+                >
+                  {actionState.portal ? 'Opening portal...' : 'Open Billing Portal'}
+                </Button>
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={loadBilling}
+                  disabled={actionState.checkout || actionState.portal}
+                >
+                  Refresh
+                </Button>
+              </div>
             ) : (
               <div className="flex flex-wrap gap-2">
                 <Button
