@@ -92,3 +92,17 @@ export function resolveTenantKey(session, requestedTenantKey) {
   }
   return session?.tenant_key || String(requestedTenantKey || "default");
 }
+
+export async function getAdminActor(session) {
+  if (!session || session.role !== "admin") return null;
+  const pool = getPool();
+  if (!pool) return null;
+  const row = await pool.query(
+    `SELECT id, email, role
+     FROM admin_users
+     WHERE id = $1
+     LIMIT 1`,
+    [session.user_id]
+  );
+  return row.rows[0] || null;
+}

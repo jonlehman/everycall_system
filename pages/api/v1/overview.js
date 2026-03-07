@@ -1,5 +1,6 @@
 import { ensureTables, getPool } from "../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../_lib/auth.js";
+import { requireTenantBillingAccess } from "../_lib/billing.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
@@ -17,6 +18,8 @@ export default async function handler(req, res) {
     const session = await requireSession(req, res);
     if (!session) return;
     const tenantKey = resolveTenantKey(session, getTenantKey(req));
+    const access = await requireTenantBillingAccess(res, pool, session, tenantKey);
+    if (!access) return;
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const stats = await pool.query(

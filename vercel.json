@@ -3,6 +3,12 @@
   "framework": "nextjs",
   "installCommand": "corepack pnpm install --frozen-lockfile --prod=false",
   "buildCommand": "corepack pnpm build",
+  "crons": [
+    {
+      "path": "/api/cron/billing-lifecycle",
+      "schedule": "15 8 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/v1/(.*)",

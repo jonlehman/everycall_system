@@ -2,6 +2,7 @@ import { ensureTables, getPool } from "../_lib/db.js";
 import { getSession, requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { buildCallSummarySms, getSharedSmsNumber } from "../_lib/alerts.js";
 import { sendTelnyxSms } from "../_lib/telnyx.js";
+import { requireTenantBillingAccess } from "../_lib/billing.js";
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
 const openAiModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
@@ -104,6 +105,10 @@ export default async function handler(req, res) {
       : await requireSession(req, res);
     if (!session && req.method !== "POST") return;
     const tenantKey = session ? resolveTenantKey(session, getTenantKey(req)) : getTenantKey(req);
+    if (session) {
+      const access = await requireTenantBillingAccess(res, pool, session, tenantKey);
+      if (!access) return;
+    }
     const callSid = req.query?.callSid;
     const mode = String(req.query?.mode || "");
 

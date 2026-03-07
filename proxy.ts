@@ -1,13 +1,25 @@
 import { NextResponse } from 'next/server';
 
 const protectedPaths = ['/client', '/admin', '/dashboard', '/config'];
+const clientBillingPath = '/client/billing';
+
+async function getBillingState(url: URL, cookieHeader: string) {
+  const resp = await fetch(new URL('/api/v1/billing', url.origin), {
+    headers: { cookie: cookieHeader }
+  });
+  if (!resp.ok) {
+    return null;
+  }
+  return resp.json().catch(() => null);
+}
 
 export async function proxy(req: Request) {
   const url = new URL(req.url);
   const pathname = url.pathname;
   const publicProtectedPaths = ['/admin/login'];
+  const cookieHeader = req.headers.get('cookie') || '';
   const meResp = await fetch(new URL('/api/v1/auth/me', url.origin), {
-    headers: { cookie: req.headers.get('cookie') || '' }
+    headers: { cookie: cookieHeader }
   });
   const me = await meResp.json().catch(() => ({ authenticated: false }));
 
@@ -19,6 +31,13 @@ export async function proxy(req: Request) {
       return NextResponse.redirect(new URL('/admin/overview', url.origin));
     }
     const clientUrl = new URL('/client/overview', url.origin);
+    if (me.role === 'tenant') {
+      const billing = await getBillingState(url, cookieHeader);
+      const locked = billing?.billing?.appAccessStatus === 'billing_locked' || billing?.billing?.status === 'deactivated';
+      if (locked) {
+        clientUrl.pathname = clientBillingPath;
+      }
+    }
     if (me.tenantKey) {
       clientUrl.searchParams.set('tenantKey', String(me.tenantKey));
     }
@@ -45,6 +64,18 @@ export async function proxy(req: Request) {
 
   if (pathname.startsWith('/client') && me.role !== 'tenant') {
     return NextResponse.redirect(new URL('/login', url.origin));
+  }
+
+  if (pathname.startsWith('/client') && me.role === 'tenant') {
+    const billing = await getBillingState(url, cookieHeader);
+    const locked = billing?.billing?.appAccessStatus === 'billing_locked' || billing?.billing?.status === 'deactivated';
+    if (locked && pathname !== clientBillingPath) {
+      const redirectUrl = new URL(clientBillingPath, url.origin);
+      if (me.tenantKey) {
+        redirectUrl.searchParams.set('tenantKey', String(me.tenantKey));
+      }
+      return NextResponse.redirect(redirectUrl);
+    }
   }
 
   return NextResponse.next();

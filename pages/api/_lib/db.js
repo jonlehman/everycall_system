@@ -48,6 +48,17 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS forwarding_setup_status TEXT NOT NULL DEFAULT 'not_started';`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS forwarding_acknowledged_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS forwarding_configured_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_status TEXT NOT NULL DEFAULT 'trialing';`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS plan_code TEXT;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_end TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS post_trial_access_ends_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_grace_ends_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS service_access_status TEXT NOT NULL DEFAULT 'enabled';`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS app_access_status TEXT NOT NULL DEFAULT 'enabled';`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_status_updated_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_lock_reason TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tenant_users (
@@ -351,6 +362,90 @@ export async function ensureTables(pool) {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_billing_accounts (
+      tenant_key TEXT PRIMARY KEY,
+      stripe_customer_id TEXT UNIQUE,
+      stripe_subscription_id TEXT UNIQUE,
+      stripe_product_id TEXT,
+      stripe_price_id TEXT,
+      monthly_amount_cents INTEGER,
+      monthly_amount_override_cents INTEGER,
+      price_override_reason TEXT,
+      price_override_cycles_remaining INTEGER,
+      current_period_start TIMESTAMPTZ,
+      current_period_end TIMESTAMPTZ,
+      cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
+      canceled_at TIMESTAMPTZ,
+      trial_end TIMESTAMPTZ,
+      last_invoice_id TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS stripe_product_id TEXT;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS stripe_price_id TEXT;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS monthly_amount_cents INTEGER;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS monthly_amount_override_cents INTEGER;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS price_override_reason TEXT;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS price_override_cycles_remaining INTEGER;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS current_period_start TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS canceled_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS trial_end TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS last_invoice_id TEXT;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS billing_events (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT,
+      stripe_event_id TEXT NOT NULL UNIQUE,
+      event_type TEXT NOT NULL,
+      payload_json JSONB NOT NULL,
+      processed_at TIMESTAMPTZ,
+      status TEXT NOT NULL DEFAULT 'processed',
+      error_message TEXT
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS billing_lifecycle_events (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      from_billing_status TEXT,
+      to_billing_status TEXT,
+      from_service_access_status TEXT,
+      to_service_access_status TEXT,
+      from_app_access_status TEXT,
+      to_app_access_status TEXT,
+      reason TEXT,
+      metadata_json JSONB,
+      created_by_type TEXT NOT NULL DEFAULT 'system',
+      created_by_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notification_channel_health (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      destination TEXT,
+      status TEXT NOT NULL DEFAULT 'unknown',
+      last_attempted_at TIMESTAMPTZ,
+      last_succeeded_at TIMESTAMPTZ,
+      last_failed_at TIMESTAMPTZ,
+      last_error_code TEXT,
+      last_error_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS provisioning_jobs (
       id BIGSERIAL PRIMARY KEY,
       tenant_key TEXT NOT NULL,
@@ -422,6 +517,10 @@ export async function ensureTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS dispatch_queue_tenant_status_idx ON dispatch_queue (tenant_key, status, due_at);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS faqs_tenant_category_idx ON faqs (tenant_key, category);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS audit_log_tenant_created_idx ON audit_log (tenant_key, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS billing_events_tenant_processed_idx ON billing_events (tenant_key, processed_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS billing_lifecycle_events_tenant_created_idx ON billing_lifecycle_events (tenant_key, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS notification_channel_health_tenant_channel_idx ON notification_channel_health (tenant_key, channel, updated_at DESC);`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS notification_channel_health_unique_destination_idx ON notification_channel_health (tenant_key, channel, destination);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS provisioning_jobs_tenant_updated_idx ON provisioning_jobs (tenant_key, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS incidents_tenant_created_idx ON incidents (tenant_key, created_at DESC);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS tenant_users_email_unique ON tenant_users (email);`);

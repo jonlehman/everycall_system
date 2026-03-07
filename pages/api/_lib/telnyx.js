@@ -110,3 +110,13 @@ export async function orderVoiceNumber({ phoneNumber, connectionId }) {
   });
   return data;
 }
+
+export async function releaseVoiceNumber({ phoneNumber }) {
+  if (!phoneNumber) throw new Error("phone_number_required");
+  return telnyxRequest("/v2/phone_numbers/jobs/delete_phone_numbers", {
+    method: "POST",
+    body: JSON.stringify({
+      phone_numbers: [phoneNumber]
+    })
+  });
+}

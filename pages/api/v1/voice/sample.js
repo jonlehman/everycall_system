@@ -1,4 +1,6 @@
 import { requireSession } from "../../_lib/auth.js";
+import { ensureTables, getPool } from "../../_lib/db.js";
+import { requireTenantBillingAccess } from "../../_lib/billing.js";
 
 const DEFAULT_SAMPLE_TEXT = "Hi, thanks for calling. This is the Everycall assistant. How can I help you today?";
 const REALTIME_VOICES = new Set([
@@ -16,8 +18,17 @@ const REALTIME_VOICES = new Set([
 
 export default async function handler(req, res) {
   try {
+    const pool = getPool();
+    if (!pool) {
+      return res.status(500).json({ error: "database_unavailable" });
+    }
+    await ensureTables(pool);
     const session = await requireSession(req, res);
     if (!session) return;
+    if (session.role === "tenant") {
+      const access = await requireTenantBillingAccess(res, pool, session, String(session.tenant_key || ""));
+      if (!access) return;
+    }
 
     if (req.method !== "GET") {
       res.setHeader("Allow", "GET");

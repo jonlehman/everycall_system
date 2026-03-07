@@ -34,7 +34,8 @@ function NavIcon({ kind }) {
 const navItems = [
   { href: '/client/overview', label: 'Dashboard', icon: 'dashboard' },
   { href: '/client/calls', label: 'Calls', icon: 'calls' },
-  { href: '/client/setup', label: 'Setup', icon: 'setup' }
+  { href: '/client/setup', label: 'Setup', icon: 'setup' },
+  { href: '/client/billing', label: 'Billing', icon: 'setup' }
 ];
 
 const setupSubItems = [

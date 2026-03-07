@@ -5,6 +5,14 @@ import Link from 'next/link';
 
 export default function Header() {
   const [tenantName, setTenantName] = useState('Tenant');
+  const [billing, setBilling] = useState({
+    loading: true,
+    status: null,
+    trialDaysRemaining: null,
+    appAccessStatus: null,
+    stripeSubscriptionId: null,
+    canManage: false
+  });
   const [assistant, setAssistant] = useState({
     loading: true,
     busy: false,
@@ -49,9 +57,10 @@ export default function Header() {
     let mounted = true;
     Promise.all([
       fetch('/api/v1/settings').then((resp) => resp.ok ? resp.json() : null).catch(() => null),
-      fetch('/api/v1/assistant/status').then((resp) => resp.ok ? resp.json() : null).catch(() => null)
+      fetch('/api/v1/assistant/status').then((resp) => resp.ok ? resp.json() : null).catch(() => null),
+      fetch('/api/v1/billing').then((resp) => resp.ok ? resp.json() : null).catch(() => null)
     ])
-      .then(([settingsData, assistantData]) => {
+      .then(([settingsData, assistantData, billingData]) => {
         if (!mounted) return;
         if (settingsData?.tenant?.name) setTenantName(settingsData.tenant.name);
         setAssistant({
@@ -61,10 +70,19 @@ export default function Header() {
           enabled: Boolean(assistantData?.assistant?.enabled),
           reasons: Array.isArray(assistantData?.assistant?.reasons) ? assistantData.assistant.reasons : []
         });
+        setBilling({
+          loading: false,
+          status: billingData?.billing?.status || null,
+          trialDaysRemaining: typeof billingData?.billing?.trialDaysRemaining === 'number' ? billingData.billing.trialDaysRemaining : null,
+          appAccessStatus: billingData?.billing?.appAccessStatus || null,
+          stripeSubscriptionId: billingData?.billing?.stripeSubscriptionId || null,
+          canManage: Boolean(billingData?.viewer?.canManage)
+        });
       })
       .catch(() => {
         if (!mounted) return;
         setAssistant((prev) => ({ ...prev, loading: false }));
+        setBilling((prev) => ({ ...prev, loading: false }));
       });
     return () => { mounted = false; };
   }, []);
@@ -102,8 +120,37 @@ export default function Header() {
     }
   };
 
+  const showTrialBadge = !billing.loading && billing.status === 'trialing' && !billing.stripeSubscriptionId;
+  const showBillingBadge = !billing.loading && !showTrialBadge && (billing.appAccessStatus === 'billing_locked' || billing.status === 'deactivated');
+
   return (
     <div className="mb-4 flex items-start justify-end gap-3">
+      {showTrialBadge ? (
+        <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sky-900 shadow-sm">
+          <div className="mb-1 text-xs uppercase tracking-wide">Trial mode</div>
+          <div className="text-sm font-semibold">
+            {billing.trialDaysRemaining === 1 ? '1 day left' : `${billing.trialDaysRemaining ?? 0} days left`}
+          </div>
+          {billing.canManage ? (
+            <Link className="mt-1 inline-block text-xs underline" href="/client/billing">
+              Add billing
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+      {showBillingBadge ? (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900 shadow-sm">
+          <div className="mb-1 text-xs uppercase tracking-wide">
+            {billing.status === 'deactivated' ? 'Account deactivated' : 'Billing required'}
+          </div>
+          <div className="text-sm font-semibold">
+            {billing.status === 'deactivated' ? 'Contact support to reactivate' : 'Activate billing to unlock'}
+          </div>
+          <Link className="mt-1 inline-block text-xs underline" href="/client/billing">
+            Open billing
+          </Link>
+        </div>
+      ) : null}
       <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-sm">
         <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">Assistant</div>
         <button
@@ -171,6 +218,7 @@ export default function Header() {
             <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/team">Team Users</Link>
             <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/routing">Call Routing</Link>
             <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/settings">Account Settings</Link>
+            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/billing">Billing</Link>
             <div className="my-2 h-px bg-slate-200"></div>
             <button
               className="block w-full rounded-md px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
