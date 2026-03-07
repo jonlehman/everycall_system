@@ -34,9 +34,35 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "tenant_not_found" });
     }
 
-    const existingSubscription = await findCurrentSubscriptionForTenantKey(tenantKey).catch(() => null) || (row.stripe_subscription_id
-      ? await retrieveSubscription(row.stripe_subscription_id).catch(() => null)
-      : null);
+    let existingSubscription = null;
+    let checkoutLookupSource = "none";
+    let checkoutLookupError = null;
+
+    try {
+      existingSubscription = await findCurrentSubscriptionForTenantKey(tenantKey);
+      checkoutLookupSource = existingSubscription ? "tenant_key_lookup" : "tenant_key_lookup_empty";
+    } catch (error) {
+      checkoutLookupError = error?.message || "unknown";
+    }
+
+    if (!existingSubscription && row.stripe_subscription_id) {
+      try {
+        existingSubscription = await retrieveSubscription(row.stripe_subscription_id);
+        checkoutLookupSource = existingSubscription ? "stored_subscription_id" : "stored_subscription_id_empty";
+      } catch (error) {
+        checkoutLookupError = `${checkoutLookupError ? `${checkoutLookupError};` : ""}${error?.message || "unknown"}`;
+      }
+    }
+
+    console.info("billing_checkout_existing_subscription_lookup", {
+      tenantKey,
+      storedStripeCustomerId: row.stripe_customer_id || null,
+      storedStripeSubscriptionId: row.stripe_subscription_id || null,
+      source: checkoutLookupSource,
+      foundSubscriptionId: existingSubscription?.id || null,
+      foundSubscriptionStatus: existingSubscription?.status || null,
+      checkoutLookupError
+    });
     if (existingSubscription && ["trialing", "active", "past_due", "unpaid", "incomplete"].includes(String(existingSubscription.status || ""))) {
       row = await syncTenantStripeSubscription(pool, tenantKey, row, existingSubscription, "billing.checkout.sync");
       return res.status(409).json({
@@ -68,6 +94,12 @@ export default async function handler(req, res) {
     );
 
     const currentCustomerSubscription = await findCurrentSubscriptionForCustomer(customer.id).catch(() => null);
+    console.info("billing_checkout_customer_subscription_lookup", {
+      tenantKey,
+      stripeCustomerId: customer.id,
+      foundSubscriptionId: currentCustomerSubscription?.id || null,
+      foundSubscriptionStatus: currentCustomerSubscription?.status || null
+    });
     if (currentCustomerSubscription && ["trialing", "active", "past_due", "unpaid", "incomplete"].includes(String(currentCustomerSubscription.status || ""))) {
       row = await syncTenantStripeSubscription(pool, tenantKey, row, currentCustomerSubscription, "billing.checkout.sync");
       return res.status(409).json({

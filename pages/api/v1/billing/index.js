@@ -35,10 +35,45 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "tenant_not_found" });
     }
 
-    const stripeSubscription = row.stripe_subscription_id
-      ? await retrieveSubscription(row.stripe_subscription_id).catch(() => null)
-      : await findCurrentSubscriptionForCustomer(row.stripe_customer_id).catch(() => null);
-    const tenantSubscription = stripeSubscription || await findCurrentSubscriptionForTenantKey(tenantKey).catch(() => null);
+    let stripeSubscription = null;
+    let stripeSubscriptionSource = "none";
+    let stripeLookupError = null;
+
+    try {
+      if (row.stripe_subscription_id) {
+        stripeSubscription = await retrieveSubscription(row.stripe_subscription_id);
+        stripeSubscriptionSource = "stored_subscription_id";
+      } else if (row.stripe_customer_id) {
+        stripeSubscription = await findCurrentSubscriptionForCustomer(row.stripe_customer_id);
+        stripeSubscriptionSource = stripeSubscription ? "customer_lookup" : "customer_lookup_empty";
+      }
+    } catch (error) {
+      stripeLookupError = error?.message || "unknown";
+    }
+
+    let tenantSubscription = stripeSubscription;
+    if (!tenantSubscription) {
+      try {
+        tenantSubscription = await findCurrentSubscriptionForTenantKey(tenantKey);
+        if (tenantSubscription) {
+          stripeSubscriptionSource = "tenant_key_lookup";
+        } else if (stripeSubscriptionSource === "none") {
+          stripeSubscriptionSource = "tenant_key_lookup_empty";
+        }
+      } catch (error) {
+        stripeLookupError = `${stripeLookupError ? `${stripeLookupError};` : ""}${error?.message || "unknown"}`;
+      }
+    }
+
+    console.info("billing_summary_stripe_lookup", {
+      tenantKey,
+      storedStripeCustomerId: row.stripe_customer_id || null,
+      storedStripeSubscriptionId: row.stripe_subscription_id || null,
+      source: stripeSubscriptionSource,
+      foundSubscriptionId: tenantSubscription?.id || null,
+      foundSubscriptionStatus: tenantSubscription?.status || null,
+      stripeLookupError
+    });
     if (tenantSubscription) {
       row = await syncTenantStripeSubscription(pool, tenantKey, row, tenantSubscription, "billing.summary.sync");
     }
