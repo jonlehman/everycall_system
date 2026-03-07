@@ -35,7 +35,7 @@ export function getStripeSuccessUrl() {
   if (!baseUrl) {
     throw new Error("APP_BASE_URL_missing");
   }
-  return `${baseUrl}/billing?checkout=success`;
+  return `${baseUrl}/client/billing?checkout=success`;
 }
 
 export function getStripeCancelUrl() {
@@ -43,7 +43,7 @@ export function getStripeCancelUrl() {
   if (!baseUrl) {
     throw new Error("APP_BASE_URL_missing");
   }
-  return `${baseUrl}/billing?checkout=cancel`;
+  return `${baseUrl}/client/billing?checkout=cancel`;
 }
 
 export async function findCustomerByTenantKey(tenantKey) {
