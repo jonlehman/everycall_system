@@ -162,6 +162,10 @@ export default function IntakePage() {
     setFaqDrafts((prev) => prev.filter((_, idx) => idx !== index));
   };
 
+  const saveFaqDraft = () => {
+    setStatusMessage('FAQ saved locally. It will be included when you create your workspace.', 'ok');
+  };
+
   const handleContinueFromFastStart = async () => {
     if (!form.ownerName.trim() || !form.ownerEmail.trim() || !form.industry) {
       setStatusMessage('Name, email, and industry are required.', 'bad');
@@ -604,8 +608,9 @@ export default function IntakePage() {
                 <section className="intake-panel">
                   <div className="intake-panel-header">
                     <div>
-                      <div className="intake-section-title">FAQs</div>
-                      <div className="intake-muted">Answers you want your virtual assistant to give to your customers.</div>
+                      <div className="intake-faq-heading">FAQs</div>
+                      <div className="intake-muted">How do you want your assistant to respond to customer questions?</div>
+                      <div className="intake-muted">Note that wording of the question and answer doesn&apos;t have to be exact for it to be used.</div>
                     </div>
                     <div className="intake-faq-count">{faqDrafts.length} draft{faqDrafts.length === 1 ? '' : 's'}</div>
                   </div>
@@ -632,12 +637,9 @@ export default function IntakePage() {
                               value={faq.answer || ''}
                               onChange={(event) => updateFaqAnswer(index, event.target.value)}
                             />
-                            <div className="intake-actions" style={{ justifyContent: 'space-between' }}>
-                              <span className="intake-muted">
-                                Source: {faq.sourceType ? `${faq.sourceType}${faq.sourceUrl ? ` (${faq.sourceUrl})` : ''}` : 'none'}
-                                {Number.isFinite(Number(faq.sourceConfidence)) ? ` • confidence ${Math.round(Number(faq.sourceConfidence) * 100)}%` : ''}
-                              </span>
+                            <div className="intake-actions intake-faq-actions">
                               <button className="btn" type="button" onClick={() => removeFaq(index)}>Remove</button>
+                              <button className="btn intake-save-btn" type="button" onClick={saveFaqDraft}>Save</button>
                             </div>
                           </div>
                         </div>

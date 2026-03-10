@@ -95,6 +95,13 @@
   align-items: flex-start;
   gap: 12px;
 }
+.intake-faq-heading {
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 6px;
+}
 .intake-inline-note {
   border: 1px dashed #cbd5e1;
   border-radius: 12px;
@@ -176,6 +183,18 @@
 }
 .intake-faq-content {
   padding: 0 0 18px;
+}
+.intake-faq-actions {
+  justify-content: flex-end;
+}
+.intake-save-btn {
+  background: #16a34a;
+  border-color: #15803d;
+  color: #fff;
+}
+.intake-save-btn:hover {
+  background: #15803d;
+  border-color: #166534;
 }
 .intake-faq-count {
   flex: 0 0 auto;
