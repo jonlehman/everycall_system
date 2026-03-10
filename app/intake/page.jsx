@@ -370,7 +370,7 @@ export default function IntakePage() {
         <div className="intake-hero">
           <div className="intake-brand">everycall</div>
           <h1 className="intake-headline">Let&apos;s get this set up</h1>
-          <div className="intake-subhead">Setup takes about 5 minutes.</div>
+          <div className="intake-subhead">Should take about 5 minutes.</div>
         </div>
         <div className="card intake-card">
           <h1>AI Assisted Setup</h1>
@@ -382,8 +382,7 @@ export default function IntakePage() {
           <form className="intake-stack" onSubmit={handleSubmit}>
             {step === 0 && (
               <div className="intake-stack">
-                <div className="intake-page-title">Step 0 — Business identity</div>
-                <div className="intake-page-hint">Enter the minimum details to prefill onboarding with AI.</div>
+                <div className="intake-page-title">Step 1 — Business identity</div>
                 <div className="intake-grid">
                   <div className="intake-stack">
                     <label>Owner Name</label>
