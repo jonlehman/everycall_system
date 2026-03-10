@@ -424,92 +424,109 @@ export default function IntakePage() {
 
             {step === 1 && (
               <div className="intake-stack">
-                <div className="intake-page-title">Step 1 — Review + operations</div>
-                <div className="intake-page-hint">Review generated FAQ answers. Items without explicit evidence are intentionally blank.</div>
+                <div className="intake-page-title">Step 2 — Review and finish setup</div>
+                <div className="intake-page-hint">Confirm the key details below, then create your workspace.</div>
 
-                <div className="intake-section-title">Business Basics</div>
-                <div className="intake-grid">
-                  <div className="intake-stack">
-                    <label>Business Name</label>
-                    <input required placeholder="Acme Plumbing" value={form.businessName} onChange={(event) => setForm({ ...form, businessName: event.target.value })} />
-                  </div>
-                  <div className="intake-stack">
-                    <label>Phone</label>
-                    <input placeholder="+1 555 555 5555" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
-                  </div>
-                  <div className="intake-stack">
-                    <label>Password</label>
-                    <input type="password" required placeholder="Create a password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
-                  </div>
-                  <div className="intake-stack">
-                    <label>Confirm Password</label>
-                    <input type="password" required placeholder="Confirm password" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} />
-                  </div>
-                </div>
+                <div className="intake-review-grid">
+                  <section className="intake-panel">
+                    <div className="intake-panel-header">
+                      <div className="intake-section-title">Business Profile</div>
+                      <div className="intake-muted">Add the main business details and login credentials.</div>
+                    </div>
+                    <div className="intake-grid">
+                      <div className="intake-stack">
+                        <label>Business Name</label>
+                        <input required placeholder="Acme Plumbing" value={form.businessName} onChange={(event) => setForm({ ...form, businessName: event.target.value })} />
+                      </div>
+                      <div className="intake-stack">
+                        <label>Business Phone</label>
+                        <input placeholder="+1 555 555 5555" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+                      </div>
+                      <div className="intake-stack">
+                        <label>Password</label>
+                        <input type="password" required placeholder="Create a password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+                      </div>
+                      <div className="intake-stack">
+                        <label>Confirm Password</label>
+                        <input type="password" required placeholder="Confirm password" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} />
+                      </div>
+                    </div>
+                  </section>
 
-                <div className="intake-section-title">Business Address</div>
-                <div className="intake-grid">
-                  <div className="intake-stack intake-full">
-                    <label>Address Line 1</label>
-                    <input placeholder="123 Main St" value={form.address1} onChange={(event) => setForm({ ...form, address1: event.target.value })} />
-                  </div>
-                  <div className="intake-stack intake-full">
-                    <label>Address Line 2</label>
-                    <input placeholder="Suite 200" value={form.address2} onChange={(event) => setForm({ ...form, address2: event.target.value })} />
-                  </div>
-                  <div className="intake-stack">
-                    <label>City</label>
-                    <input placeholder="Seattle" value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} />
-                  </div>
-                  <div className="intake-stack">
-                    <label>State</label>
-                    <input placeholder="WA" value={form.state} onChange={(event) => setForm({ ...form, state: event.target.value })} />
-                  </div>
-                  <div className="intake-stack">
-                    <label>ZIP</label>
-                    <input placeholder="98101" value={form.zip} onChange={(event) => setForm({ ...form, zip: event.target.value })} />
-                  </div>
-                  <div className="intake-stack intake-full">
-                    <label>Service Area</label>
-                    <input required placeholder="Seattle + Eastside" value={form.serviceArea} onChange={(event) => setForm({ ...form, serviceArea: event.target.value })} />
-                  </div>
-                </div>
+                  <section className="intake-panel">
+                    <div className="intake-panel-header">
+                      <div className="intake-section-title">Location & Coverage</div>
+                      <div className="intake-muted">Set your business address and the areas you serve.</div>
+                    </div>
+                    <div className="intake-grid">
+                      <div className="intake-stack intake-full">
+                        <label>Address Line 1</label>
+                        <input placeholder="123 Main St" value={form.address1} onChange={(event) => setForm({ ...form, address1: event.target.value })} />
+                      </div>
+                      <div className="intake-stack intake-full">
+                        <label>Address Line 2</label>
+                        <input placeholder="Suite 200" value={form.address2} onChange={(event) => setForm({ ...form, address2: event.target.value })} />
+                      </div>
+                      <div className="intake-stack">
+                        <label>City</label>
+                        <input placeholder="Seattle" value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} />
+                      </div>
+                      <div className="intake-stack">
+                        <label>State</label>
+                        <input placeholder="WA" value={form.state} onChange={(event) => setForm({ ...form, state: event.target.value })} />
+                      </div>
+                      <div className="intake-stack">
+                        <label>ZIP</label>
+                        <input placeholder="98101" value={form.zip} onChange={(event) => setForm({ ...form, zip: event.target.value })} />
+                      </div>
+                      <div className="intake-stack intake-full">
+                        <label>Service Area</label>
+                        <input required placeholder="Seattle + Eastside" value={form.serviceArea} onChange={(event) => setForm({ ...form, serviceArea: event.target.value })} />
+                      </div>
+                    </div>
+                  </section>
 
-                <div className="intake-section-title">Operations</div>
-                <div className="intake-grid">
-                  <div className="intake-stack">
-                    <label>Timezone</label>
-                    <select value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}>
-                      <option value="America/New_York">Eastern (ET)</option>
-                      <option value="America/Chicago">Central (CT)</option>
-                      <option value="America/Denver">Mountain (MT)</option>
-                      <option value="America/Phoenix">Arizona (MST)</option>
-                      <option value="America/Los_Angeles">Pacific (PT)</option>
-                      <option value="America/Anchorage">Alaska (AK)</option>
-                      <option value="Pacific/Honolulu">Hawaii (HST)</option>
-                    </select>
-                  </div>
-                  <div className="intake-stack">
-                    <label>Business Hours</label>
-                    <input placeholder="Mon-Fri 8 AM - 6 PM" value={form.businessHours} onChange={(event) => setForm({ ...form, businessHours: event.target.value })} />
-                  </div>
-                  <div className="intake-stack">
-                    <label>Average Calls Per Day</label>
-                    <input type="number" min="0" placeholder="10" value={form.avgCalls} onChange={(event) => setForm({ ...form, avgCalls: event.target.value })} />
-                  </div>
-                  <div className="intake-stack">
-                    <label>Emergency Services?</label>
-                    <select value={form.emergencyServices} onChange={(event) => setForm({ ...form, emergencyServices: event.target.value })}>
-                      <option value="false">No</option>
-                      <option value="true">Yes</option>
-                    </select>
-                  </div>
-                </div>
+                  <section className="intake-panel">
+                    <div className="intake-panel-header">
+                      <div className="intake-section-title">Operations</div>
+                      <div className="intake-muted">Set the defaults the assistant should use when handling calls.</div>
+                    </div>
+                    <div className="intake-grid">
+                      <div className="intake-stack">
+                        <label>Timezone</label>
+                        <select value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}>
+                          <option value="America/New_York">Eastern (ET)</option>
+                          <option value="America/Chicago">Central (CT)</option>
+                          <option value="America/Denver">Mountain (MT)</option>
+                          <option value="America/Phoenix">Arizona (MST)</option>
+                          <option value="America/Los_Angeles">Pacific (PT)</option>
+                          <option value="America/Anchorage">Alaska (AK)</option>
+                          <option value="Pacific/Honolulu">Hawaii (HST)</option>
+                        </select>
+                      </div>
+                      <div className="intake-stack">
+                        <label>Business Hours</label>
+                        <input placeholder="Mon-Fri 8 AM - 6 PM" value={form.businessHours} onChange={(event) => setForm({ ...form, businessHours: event.target.value })} />
+                      </div>
+                      <div className="intake-stack">
+                        <label>Estimated Calls Per Day</label>
+                        <input type="number" min="0" placeholder="10" value={form.avgCalls} onChange={(event) => setForm({ ...form, avgCalls: event.target.value })} />
+                      </div>
+                      <div className="intake-stack">
+                        <label>Do You Offer Emergency Service?</label>
+                        <select value={form.emergencyServices} onChange={(event) => setForm({ ...form, emergencyServices: event.target.value })}>
+                          <option value="false">No</option>
+                          <option value="true">Yes</option>
+                        </select>
+                      </div>
+                    </div>
+                  </section>
 
-                <div className="intake-section-title">Services Offered</div>
-                <div className="intake-grid">
-                  <div className="intake-stack intake-full">
-                    <label>Services Offered</label>
+                  <section className="intake-panel">
+                    <div className="intake-panel-header">
+                      <div className="intake-section-title">Services Offered</div>
+                      <div className="intake-muted">Choose the services callers are most likely to mention first.</div>
+                    </div>
                     <div className="intake-stack intake-service-picker">
                       <input
                         placeholder="Search services or type a custom one"
@@ -524,7 +541,7 @@ export default function IntakePage() {
                       />
                       <div className="intake-service-results">
                         {filteredServices.length === 0 ? (
-                          <div className="intake-muted">No matches. Add a custom service.</div>
+                          <div className="intake-muted">No matches found. Add a custom service.</div>
                         ) : (
                           filteredServices.map((service) => (
                             <button type="button" key={service} onClick={() => addService(service)}>{service}</button>
@@ -532,44 +549,59 @@ export default function IntakePage() {
                         )}
                       </div>
                       <div className="intake-actions">
-                        <button className="btn" type="button" onClick={addCustomService}>Add Custom Service</button>
-                        <span className="intake-muted">Search above, or type your own and add it.</span>
+                        <button className="btn" type="button" onClick={addCustomService}>Add Service</button>
+                        <span className="intake-muted">Search above or type your own service and add it.</span>
                       </div>
-                      <div className="intake-actions" style={{ gap: 6 }}>
-                        {selectedServices.map((service) => (
-                          <button key={service} type="button" className="btn intake-tag-button" onClick={() => removeService(service)}>
-                            {service} ✕
-                          </button>
+                      <div className="intake-selected-services">
+                        {selectedServices.length === 0 ? (
+                          <div className="intake-inline-note">No services added yet.</div>
+                        ) : (
+                          selectedServices.map((service) => (
+                            <button key={service} type="button" className="btn intake-tag-button" onClick={() => removeService(service)}>
+                              {service} ✕
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="intake-panel">
+                    <div className="intake-panel-header">
+                      <div className="intake-section-title">Primary Goals</div>
+                      <div className="intake-muted">Choose the outcomes you want EveryCall to improve first.</div>
+                    </div>
+                    <div className="intake-goal-panel">
+                      <div className="intake-goal-list">
+                        {GOALS.map((goal) => (
+                          <label key={goal.value}>
+                            <input
+                              type="checkbox"
+                              value={goal.value}
+                              checked={primaryGoals.includes(goal.value)}
+                              onChange={() => toggleGoal(goal.value)}
+                            />
+                            {goal.label}
+                          </label>
                         ))}
                       </div>
                     </div>
-                  </div>
+                  </section>
                 </div>
 
-                <div className="intake-section-title">Primary Goals</div>
-                <div className="intake-goal-panel">
-                  <div className="intake-page-hint" style={{ margin: '0 0 8px' }}>Select one or more goals.</div>
-                  <div className="intake-goal-list">
-                    {GOALS.map((goal) => (
-                      <label key={goal.value}>
-                        <input
-                          type="checkbox"
-                          value={goal.value}
-                          checked={primaryGoals.includes(goal.value)}
-                          onChange={() => toggleGoal(goal.value)}
-                        />
-                        {goal.label}
-                      </label>
-                    ))}
+                <section className="intake-panel">
+                  <div className="intake-panel-header">
+                    <div>
+                      <div className="intake-section-title">AI Draft Answers</div>
+                      <div className="intake-muted">Review these suggested answers. Anything without clear source evidence stays blank.</div>
+                    </div>
+                    <div className="intake-faq-count">{faqDrafts.length} draft{faqDrafts.length === 1 ? '' : 's'}</div>
                   </div>
-                </div>
-
-                <div className="intake-section-title">Industry FAQ Drafts</div>
-                <div className="intake-stack">
+                  <div className="intake-faq-list">
                   {faqDrafts.length === 0 ? (
-                    <div className="intake-muted">No industry FAQ drafts found. You can add FAQs after onboarding in the FAQ Manager.</div>
+                    <div className="intake-inline-note">No draft answers were found. You can add FAQs after setup in the FAQ Manager.</div>
                   ) : faqDrafts.map((faq, index) => (
-                    <div key={`${faq.question}-${index}`} className="card" style={{ padding: 12 }}>
+                    <div key={`${faq.question}-${index}`} className="intake-faq-card">
                       <div className="intake-stack">
                         <label>{faq.question}</label>
                         <textarea
@@ -582,16 +614,17 @@ export default function IntakePage() {
                             Source: {faq.sourceType ? `${faq.sourceType}${faq.sourceUrl ? ` (${faq.sourceUrl})` : ''}` : 'none'}
                             {Number.isFinite(Number(faq.sourceConfidence)) ? ` • confidence ${Math.round(Number(faq.sourceConfidence) * 100)}%` : ''}
                           </span>
-                          <button className="btn" type="button" onClick={() => removeFaq(index)}>Delete FAQ</button>
+                          <button className="btn" type="button" onClick={() => removeFaq(index)}>Remove</button>
                         </div>
                       </div>
                     </div>
                   ))}
-                </div>
+                  </div>
+                </section>
 
                 <div className="intake-actions">
                   <button className="btn" type="button" onClick={() => setStep(0)}>Back</button>
-                  <button className="btn brand" type="submit">Create Free Trial</button>
+                  <button className="btn brand" type="submit">Create workspace</button>
                   <span className="intake-muted" style={{ color: status.tone === 'bad' ? '#dc2626' : status.tone === 'ok' ? '#059669' : '#64748b' }}>{status.message}</span>
                 </div>
               </div>
