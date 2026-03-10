@@ -151,8 +151,17 @@ export default function IntakePage() {
   };
 
   const handleContinueFromFastStart = async () => {
-    if (!form.ownerName.trim() || !form.ownerEmail.trim() || !form.industry || !form.website.trim()) {
-      setStatusMessage('Name, email, website, and industry are required.', 'bad');
+    if (!form.ownerName.trim() || !form.ownerEmail.trim() || !form.industry) {
+      setStatusMessage('Name, email, and industry are required.', 'bad');
+      return;
+    }
+
+    if (!form.website.trim()) {
+      const confirmed = window.confirm("You didn't add a website. Continue without analyzing your site?");
+      if (!confirmed) return;
+      setFaqDrafts([]);
+      setStatusMessage('No website provided. Continue with manual setup.', 'warn');
+      setStep(1);
       return;
     }
 
@@ -312,7 +321,7 @@ export default function IntakePage() {
       <div className="intake-body">
         <div className="intake-shell">
           <div className="intake-hero">
-            <div className="intake-brand">everycall <span>intake</span></div>
+            <div className="intake-brand">everycall</div>
             <h1 className="intake-headline">One final activation step.</h1>
             <div className="intake-subhead">Your workspace is ready. To activate call handling, route overflow/no-answer calls to your EveryCall number.</div>
           </div>
@@ -359,13 +368,12 @@ export default function IntakePage() {
     <div className="intake-body">
       <div className="intake-shell">
         <div className="intake-hero">
-          <div className="intake-brand">everycall <span>intake</span></div>
-          <h1 className="intake-headline">Launch your 24/7 call assistant in minutes.</h1>
-          <div className="intake-subhead">Start with business identity, then review AI draft FAQs and onboarding defaults.</div>
+          <div className="intake-brand">everycall</div>
+          <h1 className="intake-headline">Let&apos;s get this set up</h1>
+          <div className="intake-subhead">Setup takes about 5 minutes.</div>
         </div>
         <div className="card intake-card">
-          <h1>Free Trial Intake</h1>
-          <p className="intake-muted">Fast start first, then review details before creating your workspace.</p>
+          <h1>AI Assisted Setup</h1>
           <div className="intake-progress" aria-hidden="true">
             <span className={step === 0 ? 'active' : ''}></span>
             <span className={step === 1 ? 'active' : ''}></span>
@@ -388,7 +396,6 @@ export default function IntakePage() {
                   <div className="intake-stack">
                     <label>Website</label>
                     <input
-                      required
                       placeholder="https://acme.com"
                       value={form.website}
                       onChange={(event) => {
@@ -409,7 +416,7 @@ export default function IntakePage() {
                 </div>
                 <div className="intake-actions">
                   <button className="btn brand" type="button" onClick={handleContinueFromFastStart} disabled={enrichmentBusy}>
-                    {enrichmentBusy ? 'Analyzing...' : 'Continue'}
+                    {enrichmentBusy ? 'Analyzing...' : 'Analyze your site'}
                   </button>
                   <span className="intake-muted" style={{ color: status.tone === 'bad' ? '#dc2626' : status.tone === 'ok' ? '#059669' : '#64748b' }}>{status.message}</span>
                 </div>
