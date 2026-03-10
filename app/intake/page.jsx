@@ -96,12 +96,24 @@ export default function IntakePage() {
   const [selectedServices, setSelectedServices] = useState([]);
   const [primaryGoals, setPrimaryGoals] = useState([]);
   const [faqDrafts, setFaqDrafts] = useState([]);
+  const [openFaqIndex, setOpenFaqIndex] = useState(0);
 
   useEffect(() => {
     setSelectedServices([]);
     setServiceSearch('');
     setFaqDrafts([]);
+    setOpenFaqIndex(0);
   }, [form.industry]);
+
+  useEffect(() => {
+    if (faqDrafts.length === 0) {
+      setOpenFaqIndex(0);
+      return;
+    }
+    if (openFaqIndex >= faqDrafts.length) {
+      setOpenFaqIndex(Math.max(0, faqDrafts.length - 1));
+    }
+  }, [faqDrafts, openFaqIndex]);
 
   const filteredServices = useMemo(() => {
     const list = SERVICES_BY_INDUSTRY[form.industry] || [];
@@ -592,8 +604,8 @@ export default function IntakePage() {
                 <section className="intake-panel">
                   <div className="intake-panel-header">
                     <div>
-                      <div className="intake-section-title">AI Draft Answers</div>
-                      <div className="intake-muted">Review these suggested answers. Anything without clear source evidence stays blank.</div>
+                      <div className="intake-section-title">FAQs</div>
+                      <div className="intake-muted">Answers you want your virtual assistant to give to your customers.</div>
                     </div>
                     <div className="intake-faq-count">{faqDrafts.length} draft{faqDrafts.length === 1 ? '' : 's'}</div>
                   </div>
@@ -601,22 +613,35 @@ export default function IntakePage() {
                   {faqDrafts.length === 0 ? (
                     <div className="intake-inline-note">No draft answers were found. You can add FAQs after setup in the FAQ Manager.</div>
                   ) : faqDrafts.map((faq, index) => (
-                    <div key={`${faq.question}-${index}`} className="intake-faq-card">
-                      <div className="intake-stack">
-                        <label>{faq.question}</label>
-                        <textarea
-                          placeholder="No explicit source evidence found yet. Leave blank or add an answer."
-                          value={faq.answer || ''}
-                          onChange={(event) => updateFaqAnswer(index, event.target.value)}
-                        />
-                        <div className="intake-actions" style={{ justifyContent: 'space-between' }}>
-                          <span className="intake-muted">
-                            Source: {faq.sourceType ? `${faq.sourceType}${faq.sourceUrl ? ` (${faq.sourceUrl})` : ''}` : 'none'}
-                            {Number.isFinite(Number(faq.sourceConfidence)) ? ` • confidence ${Math.round(Number(faq.sourceConfidence) * 100)}%` : ''}
-                          </span>
-                          <button className="btn" type="button" onClick={() => removeFaq(index)}>Remove</button>
+                    <div key={`${faq.question}-${index}`} className="intake-faq-item">
+                      <button
+                        className="intake-faq-trigger"
+                        type="button"
+                        aria-expanded={openFaqIndex === index}
+                        onClick={() => setOpenFaqIndex((current) => (current === index ? -1 : index))}
+                      >
+                        <span className="intake-faq-question">{faq.question}</span>
+                        <span className="intake-faq-chevron" aria-hidden="true">{openFaqIndex === index ? '−' : '+'}</span>
+                      </button>
+                      {openFaqIndex === index && (
+                        <div className="intake-faq-content">
+                          <div className="intake-stack">
+                            <label>Answer</label>
+                            <textarea
+                              placeholder="No explicit source evidence found yet. Leave blank or add an answer."
+                              value={faq.answer || ''}
+                              onChange={(event) => updateFaqAnswer(index, event.target.value)}
+                            />
+                            <div className="intake-actions" style={{ justifyContent: 'space-between' }}>
+                              <span className="intake-muted">
+                                Source: {faq.sourceType ? `${faq.sourceType}${faq.sourceUrl ? ` (${faq.sourceUrl})` : ''}` : 'none'}
+                                {Number.isFinite(Number(faq.sourceConfidence)) ? ` • confidence ${Math.round(Number(faq.sourceConfidence) * 100)}%` : ''}
+                              </span>
+                              <button className="btn" type="button" onClick={() => removeFaq(index)}>Remove</button>
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   ))}
                   </div>
