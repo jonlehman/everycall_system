@@ -200,6 +200,86 @@ function cleanEvidenceText(sentence) {
     .slice(0, 320);
 }
 
+function receptionistStyleAnswer(answer) {
+  const text = cleanEvidenceText(answer)
+    .replace(/\bwe specialize in\b/gi, "We handle")
+    .replace(/\bwe proudly offer\b/gi, "We offer")
+    .replace(/\bour team\b/gi, "We")
+    .replace(/\bcustomers\b/gi, "you")
+    .replace(/\bclients\b/gi, "you");
+
+  if (!text) return "";
+
+  const normalized = text
+    .replace(/\bcontact us today\b/gi, "give us a call")
+    .replace(/\blearn more\b/gi, "we can share more details")
+    .replace(/\bfor more information\b/gi, "for details")
+    .replace(/\bstate-of-the-art\b/gi, "")
+    .replace(/\btop-quality\b/gi, "quality")
+    .replace(/\bhigh-quality\b/gi, "quality")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function titleCaseWords(value) {
+  return String(value || "")
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function guessBusinessName({ googleBusinessProfile, website, ownerEmail }) {
+  const gbpName = String(googleBusinessProfile?.name || "").trim();
+  if (gbpName) return gbpName;
+  const domain = domainFromWebsite(website) || domainFromEmail(ownerEmail);
+  if (!domain) return "";
+  return titleCaseWords(domain.replace(/\.(com|net|org|biz|co|io|us)$/i, ""));
+}
+
+function parseUsAddress(address) {
+  const raw = String(address || "").trim().replace(/,\s*USA$/i, "");
+  if (!raw) {
+    return { address1: "", city: "", state: "", zip: "" };
+  }
+
+  const match = raw.match(/^(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/i);
+  if (match) {
+    return {
+      address1: match[1].trim(),
+      city: match[2].trim(),
+      state: match[3].trim().toUpperCase(),
+      zip: match[4].trim()
+    };
+  }
+
+  const parts = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  return {
+    address1: parts[0] || raw,
+    city: parts[1] || "",
+    state: "",
+    zip: ""
+  };
+}
+
+function inferEmergencyServices(text) {
+  const lower = String(text || "").toLowerCase();
+  if (!lower) return null;
+  if (
+    lower.includes("24/7") ||
+    lower.includes("24 hours") ||
+    lower.includes("after hours") ||
+    lower.includes("emergency service") ||
+    lower.includes("emergency repair") ||
+    lower.includes("urgent service")
+  ) {
+    return true;
+  }
+  return null;
+}
+
 function findEvidenceHeuristic(question, sources) {
   const keys = questionKeywords(question);
   if (!keys.length) return null;
@@ -213,7 +293,7 @@ function findEvidenceHeuristic(question, sources) {
       const score = Number((matchRatio * Math.min(sentence.length / 120, 1)).toFixed(2));
       if (matches >= Math.min(2, keys.length)) {
         const candidate = {
-          answer: cleanEvidenceText(sentence),
+          answer: receptionistStyleAnswer(sentence),
           sourceType: source.sourceType,
           sourceUrl: source.sourceUrl,
           evidenceSnippet: cleanEvidenceText(sentence).slice(0, 200),
@@ -270,6 +350,9 @@ async function extractWithAi(faqs, sources) {
     "2) If no explicit evidence exists, return answer as empty string.",
     "3) Return confidence from 0 to 1.",
     "4) Keep answer concise and faithful to evidence.",
+    "5) Write the answer the way a friendly receptionist would say it on a call, not like website marketing copy.",
+    "6) Do not use hype, slogans, exclamation points, or promotional language.",
+    "7) Prefer plain spoken phrasing like 'Yes, we can help with that' or 'We can schedule that' when supported by evidence.",
     "Output strict JSON with shape:",
     '{"items":[{"question":"...","answer":"...","sourceType":"website|google_business_profile|null","sourceUrl":"...|null","evidenceSnippet":"...|null","sourceConfidence":0.0}]}'
   ].join("\n");
@@ -480,7 +563,7 @@ export default async function handler(req, res) {
           return {
             question: faq.question,
             category: normalizeFaqCategory(faq),
-            answer: cleanEvidenceText(answer),
+            answer: receptionistStyleAnswer(answer),
             isIndustryDefault: true,
             sourceType: String(aiMatch.sourceType || "").trim() || null,
             sourceUrl: String(aiMatch.sourceUrl || "").trim() || null,
@@ -505,6 +588,27 @@ export default async function handler(req, res) {
       };
     });
 
+    const businessName = guessBusinessName({ googleBusinessProfile, website: normalizedWebsite, ownerEmail });
+    const parsedAddress = parseUsAddress(googleBusinessProfile?.serviceArea || "");
+    const serviceText = [
+      googleBusinessProfile?.description,
+      googleBusinessProfile?.services,
+      websiteResult.text.slice(0, 6000)
+    ].filter(Boolean).join(". ");
+    const emergencyServices = inferEmergencyServices([serviceText, ...faqs.map((faq) => faq.answer)].join(". "));
+    const profile = {
+      businessName,
+      phone: String(googleBusinessProfile?.phone || "").trim(),
+      address1: parsedAddress.address1,
+      city: parsedAddress.city,
+      state: parsedAddress.state,
+      zip: parsedAddress.zip,
+      serviceArea: String(googleBusinessProfile?.serviceArea || "").trim(),
+      businessHours: String(googleBusinessProfile?.hours || "").trim(),
+      emergencyServices,
+      serviceText
+    };
+
     return res.status(200).json({
       ok: true,
       enrichment: {
@@ -513,6 +617,7 @@ export default async function handler(req, res) {
         websiteFetched: Boolean(websiteResult.ok),
         googleBusinessProfileFound: Boolean(googleBusinessProfile),
         googleBusinessProfile,
+        profile,
         defaultFaqCount: defaultFaqs.length,
         faqs
       }
