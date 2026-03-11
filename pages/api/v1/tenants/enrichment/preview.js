@@ -224,7 +224,8 @@ function dedupeFaqTemplates(items) {
     seen.add(key);
     deduped.push({
       question,
-      category: normalizeFaqCategory(item)
+      category: normalizeFaqCategory(item),
+      answer: String(item?.answer || "").trim()
     });
   }
   return deduped;
@@ -285,9 +286,30 @@ function receptionistStyleAnswer(answer) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
+function finalizeFaqAnswer(faq, evidenceAnswer) {
+  const templateAnswer = String(faq?.answer || "").trim();
+  if (templateAnswer) return templateAnswer;
+
+  const question = String(faq?.question || "").trim().toLowerCase();
+  const styled = receptionistStyleAnswer(evidenceAnswer);
+  if (!styled) return "";
+
+  if (/^(do|can|are|is|will)\b/.test(question)) {
+    if (/^(yes|we can|we do|absolutely)\b/i.test(styled)) return styled;
+    return `Yes, ${styled.charAt(0).toLowerCase()}${styled.slice(1)}`;
+  }
+
+  return styled;
+}
+
 function extractAddressCandidates(text) {
   return Array.from(String(text || "").matchAll(/\b\d{3,6}\s+[A-Za-z0-9.\- ]+,\s*[A-Za-z .'-]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/g))
     .map((match) => match[0].trim());
+}
+
+function extractLabeledAddress(text) {
+  const match = String(text || "").match(/\b(?:office|warehouse|address|location)\s*:\s*([^.\n]+,\s*[A-Za-z .'-]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?)/i);
+  return match ? match[1].trim() : "";
 }
 
 function extractBusinessHours(text) {
@@ -416,7 +438,7 @@ async function extractWithAi(faqs, sources) {
   }));
 
   const prompt = {
-    faqs: faqs.map((f) => ({ question: f.question, category: f.category })),
+    faqs: faqs.map((f) => ({ question: f.question, category: f.category, answer: f.answer || "" })),
     sources: sourcePayload
   };
 
@@ -557,7 +579,7 @@ export default async function handler(req, res) {
     const normalizedWebsite = normalizeWebsite(explicitWebsite || derivedWebsite);
 
     const industryFaqRows = await pool.query(
-      `SELECT question, category
+      `SELECT question, answer, category
        FROM industry_faqs
        WHERE industry_key = $1
        ORDER BY id ASC`,
@@ -644,7 +666,7 @@ export default async function handler(req, res) {
           return {
             question: faq.question,
             category: normalizeFaqCategory(faq),
-            answer: receptionistStyleAnswer(answer),
+            answer: finalizeFaqAnswer(faq, answer),
             isIndustryDefault: true,
             sourceType: String(aiMatch.sourceType || "").trim() || null,
             sourceUrl: String(aiMatch.sourceUrl || "").trim() || null,
@@ -659,7 +681,7 @@ export default async function handler(req, res) {
       return {
         question: faq.question,
         category: normalizeFaqCategory(faq),
-        answer: heuristic?.answer || "",
+        answer: heuristic ? finalizeFaqAnswer(faq, heuristic.answer) : "",
         isIndustryDefault: true,
         sourceType: heuristic?.sourceType || null,
         sourceUrl: heuristic?.sourceUrl || null,
@@ -670,8 +692,10 @@ export default async function handler(req, res) {
     });
 
     const businessName = guessBusinessName({ googleBusinessProfile, website: normalizedWebsite, ownerEmail });
-    const addressCandidates = extractAddressCandidates([websiteResult.text, googleBusinessProfile?.serviceArea].filter(Boolean).join(" "));
-    const parsedAddress = parseUsAddress(addressCandidates[0] || googleBusinessProfile?.serviceArea || "");
+    const addressText = [websiteResult.text, googleBusinessProfile?.serviceArea].filter(Boolean).join(" ");
+    const labeledAddress = extractLabeledAddress(addressText);
+    const addressCandidates = extractAddressCandidates(addressText);
+    const parsedAddress = parseUsAddress(labeledAddress || addressCandidates[0] || googleBusinessProfile?.serviceArea || "");
     const serviceText = [
       googleBusinessProfile?.description,
       googleBusinessProfile?.services,
