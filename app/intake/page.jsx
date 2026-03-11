@@ -55,6 +55,40 @@ const FAQ_CATEGORY_ORDER = [
   'Warranties & Follow-Up'
 ];
 
+function parseServiceMatches(industry, enrichment) {
+  const options = SERVICES_BY_INDUSTRY[industry] || [];
+  const text = [
+    enrichment?.profile?.serviceText,
+    ...(Array.isArray(enrichment?.faqs) ? enrichment.faqs.map((faq) => `${faq.question} ${faq.answer || ''}`) : [])
+  ].join(' ').toLowerCase();
+
+  return options.filter((service) => {
+    const parts = service.toLowerCase().split(/[^a-z0-9]+/).filter((part) => part.length >= 4);
+    return parts.some((part) => text.includes(part));
+  });
+}
+
+function mergePrefill(prev, enrichment) {
+  const profile = enrichment?.profile || {};
+  return {
+    ...prev,
+    businessName: prev.businessName || profile.businessName || '',
+    phone: prev.phone || profile.phone || '',
+    address1: prev.address1 || profile.address1 || '',
+    city: prev.city || profile.city || '',
+    state: prev.state || profile.state || '',
+    zip: prev.zip || profile.zip || '',
+    serviceArea: prev.serviceArea || profile.serviceArea || '',
+    businessHours: prev.businessHours || profile.businessHours || '',
+    emergencyServices:
+      prev.emergencyServices !== 'false'
+        ? prev.emergencyServices
+        : profile.emergencyServices === true
+          ? 'true'
+          : prev.emergencyServices
+  };
+}
+
 function websiteFromEmail(email) {
   const raw = String(email || '').trim().toLowerCase();
   const at = raw.lastIndexOf('@');
@@ -215,12 +249,23 @@ export default function IntakePage() {
         setFaqDrafts([]);
         setStatusMessage(data?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
       } else {
-        const previewFaqs = Array.isArray(data?.enrichment?.faqs) ? data.enrichment.faqs : [];
+        const enrichment = data?.enrichment || {};
+        const previewFaqs = Array.isArray(enrichment?.faqs) ? enrichment.faqs : [];
+        const matchedServices = parseServiceMatches(form.industry, enrichment);
         setFaqDrafts(previewFaqs);
-        if (!websiteEdited && data?.enrichment?.website) {
-          setForm((prev) => ({ ...prev, website: data.enrichment.website }));
-        }
-        setStatusMessage(`Loaded ${previewFaqs.length} industry FAQ drafts. Unmatched items remain blank for review.`, 'ok');
+        setSelectedServices((prev) => {
+          const next = new Set(prev);
+          matchedServices.forEach((service) => next.add(service));
+          return Array.from(next);
+        });
+        setForm((prev) => mergePrefill(
+          !websiteEdited && enrichment?.website ? { ...prev, website: enrichment.website } : prev,
+          enrichment
+        ));
+        setStatusMessage(
+          `Loaded ${previewFaqs.length} FAQ drafts and prefilled business details from your site.`,
+          'ok'
+        );
       }
     } catch (err) {
       setFaqDrafts([]);
