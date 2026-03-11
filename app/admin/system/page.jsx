@@ -16,7 +16,7 @@ export default function AdminSystemPage() {
   const [telnyxSmsNumber, setTelnyxSmsNumber] = useState('');
   const [telnyxSmsNumberId, setTelnyxSmsNumberId] = useState('');
   const [telnyxSmsMessagingProfileId, setTelnyxSmsMessagingProfileId] = useState('');
-  const [status, setStatus] = useState('Ready.');
+  const [status, setStatus] = useState('');
 
   const loadConfig = () => {
     setStatus('Loading...');

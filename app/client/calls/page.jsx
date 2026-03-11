@@ -174,7 +174,7 @@ export default function CallsPage() {
       setDetailTranscript(data.transcript || '');
     }
 
-    setDetailStatus('Ready.');
+    setDetailStatus('');
   };
 
   const saveDetail = async (mode = 'all') => {

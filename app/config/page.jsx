@@ -12,7 +12,7 @@ export default function ConfigPage() {
   const [systemPrompt, setSystemPrompt] = useState('');
   const [greetingText, setGreetingText] = useState('');
   const [voiceType, setVoiceType] = useState('alloy');
-  const [status, setStatus] = useState({ message: 'Ready.', tone: '' });
+  const [status, setStatus] = useState({ message: '', tone: '' });
   const [storage, setStorage] = useState('-');
   const [versions, setVersions] = useState([]);
   const [lastSaved, setLastSaved] = useState(null);

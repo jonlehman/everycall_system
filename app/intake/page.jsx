@@ -100,7 +100,7 @@ function websiteFromEmail(email) {
 
 export default function IntakePage() {
   const [step, setStep] = useState(0);
-  const [status, setStatus] = useState({ message: 'Ready.', tone: 'normal' });
+  const [status, setStatus] = useState({ message: '', tone: 'normal' });
   const [enrichmentBusy, setEnrichmentBusy] = useState(false);
   const [activation, setActivation] = useState(null);
   const [activationStatus, setActivationStatus] = useState({ message: '', tone: 'normal' });
@@ -474,7 +474,7 @@ export default function IntakePage() {
                     <div className="intake-intro-card intake-intro-card-accent">
                       <div className="intake-section-title">One simple step after setup</div>
                       <p className="intake-muted">
-                        After setup, all you have to do is forward missed or no-answer calls from your main business line to your new EveryCall number.
+                        After setup, all you have to do is forward missed or no-answer calls from your cell phone or business phone system to your new EveryCall number.
                       </p>
                     </div>
                   </div>

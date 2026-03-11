@@ -24,7 +24,7 @@ export default function IndustryConfigPage() {
   const [industryName, setIndustryName] = useState('');
   const [industryKey, setIndustryKey] = useState('');
   const [copyFromKey, setCopyFromKey] = useState('');
-  const [status, setStatus] = useState('Ready.');
+  const [status, setStatus] = useState('');
 
   const promptTemplates = [
     {

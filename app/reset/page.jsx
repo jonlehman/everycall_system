@@ -5,7 +5,7 @@ import { useState } from 'react';
 export default function ResetPage() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [status, setStatus] = useState('Ready.');
+  const [status, setStatus] = useState('');
   const token = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('token') : '';
 
   const submit = async () => {
