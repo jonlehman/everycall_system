@@ -439,8 +439,8 @@ export default function IntakePage() {
       <div className="intake-shell">
         <div className="intake-hero">
           <div className="intake-brand">everycall</div>
-          <h1 className="intake-headline">Let&apos;s get this set up</h1>
-          <div className="intake-subhead">Should take about 5 minutes.</div>
+          <h1 className="intake-headline">You&apos;re 5 minutes away from turning missed calls into new jobs</h1>
+          <div className="intake-subhead">We&apos;ll get your EveryCall setup ready so missed calls are answered, customer details are captured, and new leads get sent back to you.</div>
         </div>
         <div className="card intake-card">
           <h1>AI Assisted Setup</h1>
@@ -453,32 +453,32 @@ export default function IntakePage() {
           <form className="intake-stack" onSubmit={handleSubmit}>
             {step === 0 && (
               <div className="intake-stack">
-                <div className="intake-page-title">Step 1 — What you&apos;ll have when this is done</div>
-                <div className="intake-page-hint">We&apos;ll set up your EveryCall workspace, draft your assistant configuration, and assign you a new number for missed-call coverage.</div>
+                <div className="intake-page-title">Step 1 — What this gives you</div>
+                <div className="intake-page-hint">In a few minutes, you&apos;ll have an EveryCall number ready to catch missed calls and turn them into qualified leads.</div>
                 <section className="intake-intro-panel">
                   <div className="intake-intro-grid">
                     <div className="intake-intro-card">
                       <div className="intake-section-title">By the end</div>
                       <p className="intake-muted">
-                        You&apos;ll have a live EveryCall number, a workspace with your business details, and FAQ drafts your assistant can use to answer callers.
+                        You&apos;ll have a live EveryCall number that answers missed calls, captures customer details, and helps you respond faster.
                       </p>
                     </div>
                     <div className="intake-intro-card">
-                      <div className="intake-section-title">What you need to do</div>
+                      <div className="intake-section-title">How it works for you</div>
                       <p className="intake-muted">
-                        After setup, all you have to do is forward missed or no-answer calls from your main line to your new EveryCall number.
+                        When you can&apos;t pick up, EveryCall answers right away, talks to the customer, and sends the lead back to you with the details.
                       </p>
                     </div>
                     <div className="intake-intro-card intake-intro-card-accent">
-                      <div className="intake-section-title">What happens here</div>
+                      <div className="intake-section-title">What you need to do</div>
                       <p className="intake-muted">
-                        First we collect a few basics, then we prefill the rest from your website, and finally you review everything before creating your workspace.
+                        After setup, all you have to do is forward missed or no-answer calls from your main business line to your new EveryCall number.
                       </p>
                     </div>
                   </div>
                 </section>
                 <div className="intake-actions">
-                  <button className="btn brand" type="button" onClick={() => setStep(1)}>Start setup</button>
+                  <button className="btn brand" type="button" onClick={() => setStep(1)}>Set up my number</button>
                   <span className="intake-muted" style={{ color: status.tone === 'bad' ? '#dc2626' : status.tone === 'ok' ? '#059669' : '#64748b' }}>{status.message}</span>
                 </div>
               </div>
