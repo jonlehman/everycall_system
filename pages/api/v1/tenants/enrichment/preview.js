@@ -1,4 +1,5 @@
 import { ensureTables, getPool } from "../../../_lib/db.js";
+import { normalizeFaqCategory } from "../../../_lib/faqCategories.js";
 
 const FREE_EMAIL_DOMAINS = new Set([
   "gmail.com",
@@ -167,7 +168,7 @@ function dedupeFaqTemplates(items) {
     seen.add(key);
     deduped.push({
       question,
-      category: String(item?.category || "General").trim() || "General"
+      category: normalizeFaqCategory(item)
     });
   }
   return deduped;
@@ -466,7 +467,7 @@ export default async function handler(req, res) {
           if (looksLikeNavOrBoilerplate(cleanedEvidence)) {
             return {
               question: faq.question,
-              category: faq.category || "General",
+              category: normalizeFaqCategory(faq),
               answer: "",
               isIndustryDefault: true,
               sourceType: null,
@@ -478,7 +479,7 @@ export default async function handler(req, res) {
           }
           return {
             question: faq.question,
-            category: faq.category || "General",
+            category: normalizeFaqCategory(faq),
             answer: cleanEvidenceText(answer),
             isIndustryDefault: true,
             sourceType: String(aiMatch.sourceType || "").trim() || null,
@@ -493,7 +494,7 @@ export default async function handler(req, res) {
       const heuristic = findEvidenceHeuristic(faq.question, sources);
       return {
         question: faq.question,
-        category: faq.category || "General",
+        category: normalizeFaqCategory(faq),
         answer: heuristic?.answer || "",
         isIndustryDefault: true,
         sourceType: heuristic?.sourceType || null,

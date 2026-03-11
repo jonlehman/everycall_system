@@ -1,5 +1,6 @@
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { requireSession } from "../../_lib/auth.js";
+import { normalizeFaqCategory } from "../../_lib/faqCategories.js";
 
 function getIndustryKey(req) {
   return String(req.query?.industryKey || "");
@@ -26,7 +27,7 @@ async function fetchSeedDefaults(pool, industryKey, defaultFaqs, defaultPrompts,
       await pool.query(
         `INSERT INTO industry_faqs (industry_key, question, answer, category)
          VALUES ($1, $2, $3, $4)`,
-        [industryKey, faq.question, faq.answer, faq.category]
+        [industryKey, faq.question, faq.answer, normalizeFaqCategory(faq)]
       );
     }
     inserted.faqs = faqs.length;
@@ -690,7 +691,7 @@ export default async function handler(req, res) {
             await pool.query(
               `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_industry_default, industry)
                VALUES ($1, $2, $3, $4, true, true, $5)`,
-              [tenant.tenant_key, faq.question, faq.answer, faq.category, industryKey]
+              [tenant.tenant_key, faq.question, faq.answer, normalizeFaqCategory(faq), industryKey]
             );
           }
         }
@@ -721,7 +722,7 @@ export default async function handler(req, res) {
           await pool.query(
             `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_industry_default, industry)
              VALUES ($1, $2, $3, $4, true, true, $5)`,
-            [targetTenant, faq.question, faq.answer, faq.category, industryKey]
+            [targetTenant, faq.question, faq.answer, normalizeFaqCategory(faq), industryKey]
           );
         }
         return res.status(200).json({ ok: true, updated: 1 });

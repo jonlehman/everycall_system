@@ -1,6 +1,7 @@
 import { ensureTables, getPool } from "../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess } from "../_lib/billing.js";
+import { normalizeFaqCategory } from "../_lib/faqCategories.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
@@ -71,7 +72,10 @@ export default async function handler(req, res) {
          ORDER BY id ASC`,
         [tenantKey]
       );
-      return res.status(200).json({ ok: true, faqs: rows.rows });
+      return res.status(200).json({
+        ok: true,
+        faqs: rows.rows.map((faq) => ({ ...faq, category: normalizeFaqCategory(faq) }))
+      });
     }
 
     if (req.method === "POST") {
@@ -95,7 +99,7 @@ export default async function handler(req, res) {
           await pool.query(
             `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_industry_default, industry)
              VALUES ($1, $2, $3, $4, true, true, $5)`,
-            [tenantKey, item.question, item.answer, item.category, industry]
+            [tenantKey, item.question, item.answer, normalizeFaqCategory(item), industry]
           );
           added += 1;
         }
@@ -109,7 +113,7 @@ export default async function handler(req, res) {
         return fail(400, "missing_fields", "Question and answer are required.");
       }
 
-      const category = String(body.category || "General").trim();
+      const category = normalizeFaqCategory(body.category || body);
       const id = body.id ? Number(body.id) : null;
       if (id !== null && (!Number.isFinite(id) || id <= 0)) {
         return fail(400, "invalid_id", "FAQ id must be a positive number.");

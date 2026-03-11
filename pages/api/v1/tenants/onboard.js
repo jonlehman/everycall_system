@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { ensureTables, getPool } from "../../_lib/db.js";
+import { normalizeFaqCategory } from "../../_lib/faqCategories.js";
 import { findAvailableVoiceNumber, orderVoiceNumber } from "../../_lib/telnyx.js";
 import { normalizePhoneNumber } from "../../_lib/phone.js";
 import { createSession, setSessionCookie } from "../../_lib/auth.js";
@@ -202,7 +203,7 @@ function normalizeFaqDrafts(value) {
     .map((item) => ({
       question: String(item?.question || "").trim(),
       answer: String(item?.answer || "").trim(),
-      category: String(item?.category || "General").trim() || "General",
+      category: normalizeFaqCategory(item),
       sourceType: String(item?.sourceType || "").trim() || null,
       sourceUrl: String(item?.sourceUrl || "").trim() || null,
       sourceRetrievedAt: String(item?.sourceRetrievedAt || "").trim() || null,
@@ -513,7 +514,7 @@ export default async function handler(req, res) {
         await client.query(
           `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_default)
            VALUES ($1, $2, $3, $4, false, true)`,
-          [tenantKey, faq.question, faq.answer, faq.category]
+          [tenantKey, faq.question, faq.answer, normalizeFaqCategory(faq)]
         );
       }
 
@@ -545,7 +546,7 @@ export default async function handler(req, res) {
             tenantKey,
             faq.question,
             String(faq.answer || ""),
-            faq.category,
+            normalizeFaqCategory(faq),
             industry,
             faq.sourceType || null,
             faq.sourceUrl || null,

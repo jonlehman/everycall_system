@@ -53,6 +53,17 @@ const GOALS = [
   { value: 'call_quality', label: 'Improve call quality' }
 ];
 
+const FAQ_CATEGORY_ORDER = [
+  'Emergency',
+  'Technical Questions',
+  'Services Offered',
+  'Scheduling & Availability',
+  'Pricing & Payment',
+  'Service Area & Eligibility',
+  'Policies & Process',
+  'Warranties & Follow-Up'
+];
+
 function websiteFromEmail(email) {
   const raw = String(email || '').trim().toLowerCase();
   const at = raw.lastIndexOf('@');
@@ -120,6 +131,24 @@ export default function IntakePage() {
     if (!serviceSearch.trim()) return list;
     return list.filter((item) => item.toLowerCase().includes(serviceSearch.trim().toLowerCase()));
   }, [form.industry, serviceSearch]);
+
+  const groupedFaqDrafts = useMemo(() => {
+    const groups = new Map();
+    faqDrafts.forEach((faq, index) => {
+      const category = String(faq?.category || 'Policies & Process').trim() || 'Policies & Process';
+      if (!groups.has(category)) {
+        groups.set(category, []);
+      }
+      groups.get(category).push({ faq, index });
+    });
+
+    return FAQ_CATEGORY_ORDER
+      .filter((category) => groups.has(category))
+      .map((category) => ({
+        category,
+        items: groups.get(category)
+      }));
+  }, [faqDrafts]);
 
   const setStatusMessage = (message, tone = 'normal') => setStatus({ message, tone });
 
@@ -617,33 +646,38 @@ export default function IntakePage() {
                   <div className="intake-faq-list">
                   {faqDrafts.length === 0 ? (
                     <div className="intake-inline-note">No draft answers were found. You can add FAQs after setup in the FAQ Manager.</div>
-                  ) : faqDrafts.map((faq, index) => (
-                    <div key={`${faq.question}-${index}`} className="intake-faq-item">
-                      <button
-                        className="intake-faq-trigger"
-                        type="button"
-                        aria-expanded={openFaqIndex === index}
-                        onClick={() => setOpenFaqIndex((current) => (current === index ? -1 : index))}
-                      >
-                        <span className="intake-faq-question">{faq.question}</span>
-                        <span className="intake-faq-chevron" aria-hidden="true">{openFaqIndex === index ? '−' : '+'}</span>
-                      </button>
-                      {openFaqIndex === index && (
-                        <div className="intake-faq-content">
-                          <div className="intake-stack">
-                            <label>Answer</label>
-                            <textarea
-                              placeholder="No explicit source evidence found yet. Leave blank or add an answer."
-                              value={faq.answer || ''}
-                              onChange={(event) => updateFaqAnswer(index, event.target.value)}
-                            />
-                            <div className="intake-actions intake-faq-actions">
-                              <button className="btn" type="button" onClick={() => removeFaq(index)}>Remove</button>
-                              <button className="btn intake-save-btn" type="button" onClick={saveFaqDraft}>Save</button>
+                  ) : groupedFaqDrafts.map((group) => (
+                    <div key={group.category} className="intake-faq-group">
+                      <div className="intake-faq-group-title">{group.category}</div>
+                      {group.items.map(({ faq, index }) => (
+                        <div key={`${faq.question}-${index}`} className="intake-faq-item">
+                          <button
+                            className="intake-faq-trigger"
+                            type="button"
+                            aria-expanded={openFaqIndex === index}
+                            onClick={() => setOpenFaqIndex((current) => (current === index ? -1 : index))}
+                          >
+                            <span className="intake-faq-question">{faq.question}</span>
+                            <span className="intake-faq-chevron" aria-hidden="true">{openFaqIndex === index ? '−' : '+'}</span>
+                          </button>
+                          {openFaqIndex === index && (
+                            <div className="intake-faq-content">
+                              <div className="intake-stack">
+                                <label>Answer</label>
+                                <textarea
+                                  placeholder="Add the answer you want your assistant to give."
+                                  value={faq.answer || ''}
+                                  onChange={(event) => updateFaqAnswer(index, event.target.value)}
+                                />
+                                <div className="intake-actions intake-faq-actions">
+                                  <button className="btn" type="button" onClick={() => removeFaq(index)}>Remove</button>
+                                  <button className="btn intake-save-btn" type="button" onClick={saveFaqDraft}>Save</button>
+                                </div>
+                              </div>
                             </div>
-                          </div>
+                          )}
                         </div>
-                      )}
+                      ))}
                     </div>
                   ))}
                   </div>

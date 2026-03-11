@@ -152,6 +152,21 @@
   display: grid;
   gap: 0;
 }
+.intake-faq-group {
+  display: grid;
+  gap: 0;
+}
+.intake-faq-group + .intake-faq-group {
+  margin-top: 18px;
+}
+.intake-faq-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #334155;
+  margin-bottom: 6px;
+}
 .intake-faq-item {
   border-top: 1px solid #e2e8f0;
 }
