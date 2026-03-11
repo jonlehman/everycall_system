@@ -9,27 +9,27 @@ import crypto from "crypto";
 const BASE_FAQS = [
   {
     question: "What areas do you serve?",
-    answer: "We serve the local metro area and nearby suburbs. Share your address and we will confirm coverage.",
+    answer: "We serve the local metro area and nearby suburbs. If you give me the address, I can confirm coverage.",
     category: "Service Area"
   },
   {
     question: "What are your hours and availability?",
-    answer: "We are available weekdays with emergency support as needed. Call for the next available slot.",
+    answer: "We are available on weekdays, and emergency availability depends on the situation. Tell me what you need, and I can help from there.",
     category: "Availability"
   },
   {
     question: "Where are you located?",
-    answer: "We are locally based and dispatch the nearest available team.",
+    answer: "We are locally based. Tell me where you are, and I can help with the next step.",
     category: "Location"
   },
   {
     question: "Do you offer free estimates?",
-    answer: "Yes. We provide no-obligation estimates after we review the details of your request.",
+    answer: "Yes. I can get a few details and help set up the next step for an estimate.",
     category: "Pricing"
   },
   {
     question: "What payment methods do you accept?",
-    answer: "We accept credit cards, checks, and cash. Financing may be available for larger jobs.",
+    answer: "We accept common payment methods, and I can confirm the options when we book your service.",
     category: "Billing"
   }
 ];
@@ -38,132 +38,132 @@ const INDUSTRY_FAQS = {
   plumbing: [
     {
       question: "What should I do for a burst pipe?",
-      answer: "Shut off the main water valve if safe to do so, then call us immediately.",
+      answer: "If you can do it safely, shut off the main water valve. Then tell me what's going on, and I can help from there.",
       category: "Emergency"
     },
     {
       question: "Do you handle drain clogs and backups?",
-      answer: "Yes. We clear clogs, inspect lines, and recommend next steps to prevent repeat issues.",
+      answer: "Yes, we do. We clear clogs, inspect lines, and recommend next steps. Tell me a little about what you need, and I can help from there.",
       category: "Services"
     }
   ],
   window_installers: [
     {
       question: "Do you replace broken glass or only full windows?",
-      answer: "We can assess whether a glass-only replacement is possible or if a full unit is required.",
+      answer: "It depends on the window and frame condition. Tell me a little about what's going on, and I can help from there.",
       category: "Services"
     },
     {
       question: "What is the typical lead time for installation?",
-      answer: "Lead time varies by product availability and scope. We will confirm the schedule after measuring.",
+      answer: "Lead time depends on the product and scope. Once I know a little more, I can help with the next step.",
       category: "Scheduling"
     }
   ],
   electrical: [
     {
       question: "What should I do if I smell burning or see sparks?",
-      answer: "Turn off power at the breaker if safe, evacuate if needed, and call us immediately.",
+      answer: "If it's safe, shut off power at the breaker. If there's smoke or fire, call 911 first.",
       category: "Emergency"
     },
     {
       question: "Do you upgrade electrical panels?",
-      answer: "Yes. We can inspect your panel, confirm code requirements, and provide upgrade options.",
+      answer: "Yes, we do. We inspect your panel and recommend upgrade options. Tell me a little about what you need, and I can help from there.",
       category: "Services"
     }
   ],
   hvac: [
     {
       question: "What should I do if I have no heat or no cooling?",
-      answer: "Check the thermostat and breaker. If it is still out, call us for priority service.",
+      answer: "Check the thermostat and filter first. If it's still not working, I can help from there.",
       category: "Emergency"
     },
     {
       question: "Do you offer maintenance plans?",
-      answer: "Yes. We provide seasonal tune-ups and priority scheduling for plan members.",
+      answer: "Yes, we do. We provide seasonal tune-ups and priority scheduling. If you want, tell me a little more about what's going on and I can help from there.",
       category: "Maintenance"
     }
   ],
   roofing: [
     {
       question: "Do you handle emergency leaks?",
-      answer: "Yes. We can tarp and stabilize leaks quickly, then schedule permanent repairs.",
+      answer: "Yes, we do. If you're dealing with an active leak, tell me what's going on and I'll help with the next step.",
       category: "Emergency"
     },
     {
       question: "Do you work with insurance claims?",
-      answer: "Yes. We can document damage and provide estimates to support your claim.",
+      answer: "Yes. If insurance is involved, I can help with documentation and talk through the next step.",
       category: "Billing"
     }
   ],
   landscaping: [
     {
       question: "Do you offer recurring maintenance?",
-      answer: "Yes. We offer weekly or bi-weekly maintenance plans.",
+      answer: "Yes, we do. We offer recurring maintenance plans. If you want, tell me a little more about what you need and I can help from there.",
       category: "Maintenance"
     },
     {
       question: "Can you handle irrigation issues?",
-      answer: "Yes. We can diagnose and repair irrigation systems.",
+      answer: "Yes, we can. We diagnose and repair irrigation systems. Tell me a little about what you need, and I can help from there.",
       category: "Services"
     }
   ],
   cleaning: [
     {
       question: "Do you provide recurring cleanings?",
-      answer: "Yes. We offer weekly, bi-weekly, and monthly service plans.",
+      answer: "Yes, we do. We offer weekly, bi-weekly, and monthly service plans. If you want, tell me a little more about what you need and I can help from there.",
       category: "Maintenance"
     },
     {
       question: "Do you bring your own supplies?",
-      answer: "Yes. We bring standard supplies and can use client-provided products upon request.",
+      answer: "Yes, we do. We bring supplies, and if you have a preference, tell me and I can help from there.",
       category: "Services"
     }
   ],
   pest_control: [
     {
       question: "Do you offer one-time treatments?",
-      answer: "Yes. We offer one-time and recurring plans depending on the issue.",
+      answer: "Yes, we do. We offer one-time and recurring plans depending on the issue. Tell me a little about what you need, and I can help from there.",
       category: "Services"
     },
     {
       question: "How soon can you come out for an infestation?",
-      answer: "We prioritize urgent cases and can often schedule within 24-48 hours.",
+      answer: "I'll look for the earliest opening and do my best to move urgent situations up. Tell me what's going on, and I can help with the next step.",
       category: "Scheduling"
     }
   ],
   garage_door: [
     {
       question: "Do you repair broken springs?",
-      answer: "Yes. We can replace springs and tune up doors for safe operation.",
+      answer: "Yes, we do. We replace springs and tune up doors. Tell me a little about what you need, and I can help from there.",
       category: "Services"
     },
     {
       question: "Do you install new openers?",
-      answer: "Yes. We install and configure new openers and smart controls.",
+      answer: "Yes, we do. We install and configure new openers and smart controls. Tell me a little about what you need, and I can help from there.",
       category: "Services"
     }
   ],
   general_contractor: [
     {
       question: "Do you handle permits?",
-      answer: "Yes. We can manage permits and inspections as part of the project.",
+      answer: "Yes, we do. We coordinate permits and inspections as part of the project. Tell me a little about what you need, and I can help from there.",
       category: "Process"
     },
     {
       question: "Can you provide a project timeline?",
-      answer: "Yes. After a scope review, we provide a timeline and milestones.",
+      answer: "Yes, we can. We provide a timeline after scope review. Tell me what you're dealing with, and I can help from there.",
       category: "Scheduling"
     }
   ],
   locksmith: [
     {
       question: "Do you offer emergency lockout service?",
-      answer: "Yes. We provide emergency lockout service and prioritize urgent calls.",
+      answer: "Yes, we do. If you're locked out now, tell me what's going on and I'll help with the next step.",
       category: "Emergency"
     },
     {
       question: "Can you rekey locks?",
-      answer: "Yes. We rekey residential and commercial locks.",
+      answer: "Yes, we can. We rekey residential and commercial locks. Tell me a little about what you need, and I can help from there.",
       category: "Services"
     }
   ]
