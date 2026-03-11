@@ -98,6 +98,17 @@ function websiteFromEmail(email) {
   return `https://${domain}`;
 }
 
+function normalizeDefaultAnswerMap(faqs) {
+  const map = new Map();
+  for (const faq of faqs || []) {
+    const question = String(faq?.question || '').trim();
+    const answer = String(faq?.defaultAnswer || '').trim();
+    if (!question || !answer || map.has(question)) continue;
+    map.set(question, answer);
+  }
+  return map;
+}
+
 export default function IntakePage() {
   const [step, setStep] = useState(0);
   const [status, setStatus] = useState({ message: '', tone: 'normal' });
@@ -132,11 +143,13 @@ export default function IntakePage() {
   const [selectedServices, setSelectedServices] = useState([]);
   const [faqDrafts, setFaqDrafts] = useState([]);
   const [openFaqIndex, setOpenFaqIndex] = useState(0);
+  const [defaultFaqAnswers, setDefaultFaqAnswers] = useState(new Map());
 
   useEffect(() => {
     setSelectedServices([]);
     setServiceSearch('');
     setFaqDrafts([]);
+    setDefaultFaqAnswers(new Map());
     setOpenFaqIndex(0);
   }, [form.industry]);
 
@@ -211,6 +224,14 @@ export default function IntakePage() {
     setFaqDrafts((prev) => prev.filter((_, idx) => idx !== index));
   };
 
+  const addDefaultFaqAnswer = (index) => {
+    const question = String(faqDrafts[index]?.question || '').trim();
+    const defaultAnswer = defaultFaqAnswers.get(question);
+    if (!defaultAnswer) return;
+    updateFaqAnswer(index, defaultAnswer);
+    setStatusMessage('Default answer added. You can edit it before creating your workspace.', 'ok');
+  };
+
   const saveFaqDraft = () => {
     setStatusMessage('FAQ saved locally. It will be included when you create your workspace.', 'ok');
   };
@@ -225,6 +246,7 @@ export default function IntakePage() {
         const confirmed = window.confirm("You didn't add a website. Continue without analyzing your site?");
         if (!confirmed) return;
         setFaqDrafts([]);
+        setDefaultFaqAnswers(new Map());
         setStatusMessage('No website provided. Continue with manual setup.', 'warn');
         setStep(2);
         return;
@@ -247,12 +269,14 @@ export default function IntakePage() {
       const data = await resp.json().catch(() => null);
       if (!resp.ok) {
         setFaqDrafts([]);
+        setDefaultFaqAnswers(new Map());
         setStatusMessage(data?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
       } else {
         const enrichment = data?.enrichment || {};
         const previewFaqs = Array.isArray(enrichment?.faqs) ? enrichment.faqs : [];
         const matchedServices = parseServiceMatches(form.industry, enrichment);
         setFaqDrafts(previewFaqs);
+        setDefaultFaqAnswers(normalizeDefaultAnswerMap(previewFaqs));
         setSelectedServices((prev) => {
           const next = new Set(prev);
           matchedServices.forEach((service) => next.add(service));
@@ -269,6 +293,7 @@ export default function IntakePage() {
       }
     } catch (err) {
       setFaqDrafts([]);
+      setDefaultFaqAnswers(new Map());
       setStatusMessage(err?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
     } finally {
       setEnrichmentBusy(false);
@@ -707,6 +732,14 @@ export default function IntakePage() {
                                   onChange={(event) => updateFaqAnswer(index, event.target.value)}
                                 />
                                 <div className="intake-actions intake-faq-actions">
+                                  <button
+                                    className="btn"
+                                    type="button"
+                                    onClick={() => addDefaultFaqAnswer(index)}
+                                    disabled={!defaultFaqAnswers.get(String(faq.question || '').trim())}
+                                  >
+                                    Add Default
+                                  </button>
                                   <button className="btn" type="button" onClick={() => removeFaq(index)}>Remove</button>
                                   <button className="btn intake-save-btn" type="button" onClick={saveFaqDraft}>Save</button>
                                 </div>
@@ -718,6 +751,7 @@ export default function IntakePage() {
                     </div>
                   ))}
                   </div>
+                  <div className="intake-muted intake-faq-footer">Need custom FAQ&apos;s? Add those in your workspace once we create it for you.</div>
                 </section>
 
                 <div className="intake-actions">
