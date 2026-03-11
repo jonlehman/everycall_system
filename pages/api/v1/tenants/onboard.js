@@ -326,6 +326,39 @@ Emergency services: ${emergency ? "Yes" : "No"}
 Ask if there is anything else you can help with, then close politely.`;
 }
 
+function truncateText(value, limit = 400) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function parseProvisioningError(err) {
+  const raw = String(err?.message || err || "unknown_error").trim();
+  if (raw.startsWith("telnyx_request_failed:")) {
+    const [, status, ...rest] = raw.split(":");
+    return {
+      errorCode: `telnyx_request_failed_${status || "unknown"}`,
+      errorMessage: truncateText(rest.join(":") || "Telnyx request failed.")
+    };
+  }
+  if (raw === "TELNYX_VOICE_CONNECTION_ID missing") {
+    return {
+      errorCode: "missing_voice_connection_id",
+      errorMessage: raw
+    };
+  }
+  if (raw === "TELNYX_API_KEY missing") {
+    return {
+      errorCode: "missing_telnyx_api_key",
+      errorMessage: raw
+    };
+  }
+  return {
+    errorCode: truncateText(raw.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").toLowerCase(), 80) || "provisioning_error",
+    errorMessage: truncateText(raw)
+  };
+}
+
 export default async function handler(req, res) {
   const pool = getPool();
   if (!pool) {
@@ -557,9 +590,9 @@ export default async function handler(req, res) {
       }
 
       await client.query(
-        `INSERT INTO provisioning_jobs (tenant_key, stage, status, updated_at)
-         VALUES ($1, 'workflow_seed', 'running', NOW()),
-                ($1, 'number_setup', 'pending', NOW())`,
+        `INSERT INTO provisioning_jobs (tenant_key, stage, status, status_detail, provider, updated_at)
+         VALUES ($1, 'workflow_seed', 'running', 'Seeding tenant workflow and defaults.', NULL, NOW()),
+                ($1, 'number_setup', 'pending', 'Waiting to provision a voice number.', 'telnyx', NOW())`,
         [tenantKey]
       );
 
@@ -567,6 +600,17 @@ export default async function handler(req, res) {
         `INSERT INTO audit_log (tenant_key, actor, action, details)
          VALUES ($1, 'system', 'onboarding.completed', $2)`,
         [tenantKey, `industry=${industry} owner=${payload.ownerEmail}`]
+      );
+
+      await client.query(
+        `UPDATE provisioning_jobs
+         SET status = 'done',
+             status_detail = 'Tenant workflow seeded.',
+             completed_at = NOW(),
+             updated_at = NOW()
+         WHERE tenant_key = $1
+           AND stage = 'workflow_seed'`,
+        [tenantKey]
       );
 
       await client.query("COMMIT");
@@ -591,6 +635,20 @@ export default async function handler(req, res) {
     let voiceStatus = "pending";
     let voiceNumber = null;
     try {
+      await pool.query(
+        `UPDATE provisioning_jobs
+         SET status = 'running',
+             status_detail = 'Searching for an available local voice number.',
+             attempted_at = COALESCE(attempted_at, NOW()),
+             provider = 'telnyx',
+             error_code = NULL,
+             error_message = NULL,
+             updated_at = NOW()
+         WHERE tenant_key = $1
+           AND stage = 'number_setup'`,
+        [tenantKey]
+      );
+
       const normalizedPrimary = normalizePhoneNumber(payload.phone || null);
       const digits = String(normalizedPrimary || "").replace(/[^\d]/g, "");
       const areaCode = digits.length >= 10 ? digits.slice(-10, -7) : null;
@@ -607,8 +665,27 @@ export default async function handler(req, res) {
                telnyx_voice_order_id = $3,
                telnyx_voice_status = 'active',
                updated_at = NOW()
-           WHERE tenant_key = $1`,
+          WHERE tenant_key = $1`,
           [tenantKey, voiceNumber, voiceOrder?.data?.id || null]
+        );
+        await pool.query(
+          `UPDATE provisioning_jobs
+           SET status = 'done',
+               status_detail = $2,
+               provider = 'telnyx',
+               provider_reference = $3,
+               error_code = NULL,
+               error_message = NULL,
+               completed_at = NOW(),
+               updated_at = NOW()
+           WHERE tenant_key = $1
+             AND stage = 'number_setup'`,
+          [tenantKey, truncateText(`Provisioned ${voiceNumber}.`), voiceOrder?.data?.id || null]
+        );
+        await pool.query(
+          `INSERT INTO audit_log (tenant_key, actor, action, details)
+           VALUES ($1, 'system', 'provisioning.number_setup_succeeded', $2)`,
+          [tenantKey, `provider=telnyx phone=${voiceNumber} order_id=${voiceOrder?.data?.id || ""}`]
         );
         voiceStatus = "active";
       } else {
@@ -619,15 +696,53 @@ export default async function handler(req, res) {
            WHERE tenant_key = $1`,
           [tenantKey]
         );
+        await pool.query(
+          `UPDATE provisioning_jobs
+           SET status = 'failed',
+               status_detail = 'No voice number was available to assign.',
+               provider = 'telnyx',
+               error_code = 'no_available_number',
+               error_message = 'No local voice number was available from Telnyx.',
+               completed_at = NOW(),
+               updated_at = NOW()
+           WHERE tenant_key = $1
+             AND stage = 'number_setup'`,
+          [tenantKey]
+        );
+        await pool.query(
+          `INSERT INTO audit_log (tenant_key, actor, action, details)
+           VALUES ($1, 'system', 'provisioning.number_setup_failed', $2)`,
+          [tenantKey, 'provider=telnyx code=no_available_number']
+        );
         voiceStatus = "unavailable";
       }
     } catch (err) {
+      const { errorCode, errorMessage } = parseProvisioningError(err);
       await pool.query(
         `UPDATE tenants
          SET telnyx_voice_status = 'failed',
              updated_at = NOW()
          WHERE tenant_key = $1`,
         [tenantKey]
+      );
+      await pool.query(
+        `UPDATE provisioning_jobs
+         SET status = 'failed',
+             status_detail = $2,
+             provider = 'telnyx',
+             provider_reference = NULL,
+             error_code = $3,
+             error_message = $4,
+             completed_at = NOW(),
+             updated_at = NOW()
+         WHERE tenant_key = $1
+           AND stage = 'number_setup'`,
+        [tenantKey, 'Voice number provisioning failed.', errorCode, errorMessage]
+      );
+      await pool.query(
+        `INSERT INTO audit_log (tenant_key, actor, action, details)
+         VALUES ($1, 'system', 'provisioning.number_setup_failed', $2)`,
+        [tenantKey, truncateText(`provider=telnyx code=${errorCode} message=${errorMessage}`, 800)]
       );
       voiceStatus = "failed";
     }
@@ -637,13 +752,15 @@ export default async function handler(req, res) {
       if (sessionId) setSessionCookie(res, sessionId);
     }
 
+    const assignedVoiceNumber = voiceStatus === "active" ? voiceNumber : null;
+
     const successBody = {
       ok: true,
       tenantKey,
       redirectTo: "/client/overview",
       provisioning: {
         voiceStatus,
-        voiceNumber
+        voiceNumber: assignedVoiceNumber
       }
     };
     await storeIdempotentResult(pool, idempotencyKey, requestHash, 200, successBody);

@@ -451,9 +451,23 @@ export async function ensureTables(pool) {
       tenant_key TEXT NOT NULL,
       stage TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'running',
+      status_detail TEXT,
+      provider TEXT,
+      provider_reference TEXT,
+      error_code TEXT,
+      error_message TEXT,
+      attempted_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE provisioning_jobs ADD COLUMN IF NOT EXISTS status_detail TEXT;`);
+  await pool.query(`ALTER TABLE provisioning_jobs ADD COLUMN IF NOT EXISTS provider TEXT;`);
+  await pool.query(`ALTER TABLE provisioning_jobs ADD COLUMN IF NOT EXISTS provider_reference TEXT;`);
+  await pool.query(`ALTER TABLE provisioning_jobs ADD COLUMN IF NOT EXISTS error_code TEXT;`);
+  await pool.query(`ALTER TABLE provisioning_jobs ADD COLUMN IF NOT EXISTS error_message TEXT;`);
+  await pool.query(`ALTER TABLE provisioning_jobs ADD COLUMN IF NOT EXISTS attempted_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE provisioning_jobs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS incidents (
@@ -522,6 +536,7 @@ export async function ensureTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS notification_channel_health_tenant_channel_idx ON notification_channel_health (tenant_key, channel, updated_at DESC);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS notification_channel_health_unique_destination_idx ON notification_channel_health (tenant_key, channel, destination);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS provisioning_jobs_tenant_updated_idx ON provisioning_jobs (tenant_key, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS provisioning_jobs_stage_status_idx ON provisioning_jobs (stage, status, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS incidents_tenant_created_idx ON incidents (tenant_key, created_at DESC);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS tenant_users_email_unique ON tenant_users (email);`);
 

@@ -16,7 +16,8 @@ export default async function handler(req, res) {
       const tenantKey = req.query?.tenantKey;
       if (tenantKey) {
         const row = await pool.query(
-          `SELECT tenant_key, name, status, data_region, plan, primary_number, industry
+          `SELECT tenant_key, name, status, data_region, plan, primary_number, industry,
+                  telnyx_voice_number, telnyx_voice_status, telnyx_voice_order_id
            FROM tenants
            WHERE tenant_key = $1
            LIMIT 1`,

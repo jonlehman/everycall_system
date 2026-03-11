@@ -436,13 +436,30 @@ export default function IntakePage() {
   };
 
   if (activation) {
+    const voiceStatus = String(activation.voiceStatus || 'pending');
+    const voiceNumberReady = voiceStatus === 'active' && activation.voiceNumber;
+    const activationTone = voiceStatus === 'active' ? 'ok' : voiceStatus === 'pending' ? 'warn' : 'bad';
+    const activationStatusLabel = voiceStatus.charAt(0).toUpperCase() + voiceStatus.slice(1);
+    const activationIntro = voiceStatus === 'active'
+      ? 'Your workspace is ready. To activate call handling, route overflow or no-answer calls to your EveryCall number.'
+      : voiceStatus === 'pending'
+        ? 'Your workspace is ready. Your EveryCall number is still being provisioned, so hold off on forwarding until it is active.'
+        : 'Your workspace is ready, but your EveryCall number was not provisioned successfully. Do not forward calls yet.';
+    const activationHelpText = voiceStatus === 'active'
+      ? 'Route overflow or no-answer calls from your main business line to this EveryCall number. This is required for EveryCall to answer your calls.'
+      : voiceStatus === 'pending'
+        ? 'Your EveryCall number is still being set up. Once it shows as active, you can forward overflow or no-answer calls to it.'
+        : voiceStatus === 'unavailable'
+          ? 'No EveryCall number was available to assign during setup. Please email support@everycall.io and include your tenant name so we can finish provisioning.'
+          : 'There was a problem provisioning your EveryCall number. Please email support@everycall.io and include your tenant name so we can finish setup.';
+
     return (
       <div className="intake-body">
         <div className="intake-shell">
           <div className="intake-hero">
             <div className="intake-brand">everycall</div>
             <h1 className="intake-headline">One final activation step.</h1>
-            <div className="intake-subhead">Your workspace is ready. To activate call handling, route overflow/no-answer calls to your EveryCall number.</div>
+            <div className="intake-subhead">{activationIntro}</div>
           </div>
           <div className="card intake-card">
             <h1>Activate Call Routing</h1>
@@ -451,18 +468,18 @@ export default function IntakePage() {
             <div className="card" style={{ marginBottom: 12 }}>
               <div className="stat">Voice Number</div>
               <div className="value" style={{ fontSize: 24 }}>
-                {activation.voiceNumber || 'Provisioning in progress'}
+                {voiceNumberReady ? activation.voiceNumber : voiceStatus === 'pending' ? 'Provisioning in progress' : 'Not available yet'}
               </div>
-              <p className="muted" style={{ marginTop: 8 }}>
-                Status: {activation.voiceStatus}
+              <p className={`intake-activation-status intake-activation-status-${activationTone}`} style={{ marginTop: 8 }}>
+                Status: {activationStatusLabel}
               </p>
             </div>
             <div className="intake-section-title">Required Setup</div>
             <p className="intake-muted">
-              Route overflow or no-answer calls from your main business line to this EveryCall number. This is required for EveryCall to answer your calls.
+              {activationHelpText}
             </p>
             <div className="intake-actions">
-              <button className="btn brand" type="button" disabled={activationBusy} onClick={() => completeActivation('configured')}>
+              <button className="btn brand" type="button" disabled={activationBusy || !voiceNumberReady} onClick={() => completeActivation('configured')}>
                 I Configured Forwarding
               </button>
               <button className="btn" type="button" disabled={activationBusy} onClick={() => completeActivation('acknowledged')}>

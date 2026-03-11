@@ -61,6 +61,18 @@
   font-size: 12px;
   color: #b91c1c;
 }
+.intake-activation-status {
+  font-size: 13px;
+}
+.intake-activation-status-ok {
+  color: #059669;
+}
+.intake-activation-status-warn {
+  color: #b45309;
+}
+.intake-activation-status-bad {
+  color: #b91c1c;
+}
 .intake-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .intake-muted { color: #64748b; font-size: 13px; }
 .intake-section-title { font-size: 15px; font-weight: 700; letter-spacing: 0; color: #0f172a; margin-top: 0; }

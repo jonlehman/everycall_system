@@ -19,6 +19,7 @@ export default function TenantManagePage() {
   const [editing, setEditing] = useState({ status: '', plan: '', data_region: '', primary_number: '', industry: '' });
   const [industries, setIndustries] = useState([]);
   const [faqs, setFaqs] = useState([]);
+  const [provisioningJobs, setProvisioningJobs] = useState([]);
 
   useEffect(() => {
     let mounted = true;
@@ -67,6 +68,11 @@ export default function TenantManagePage() {
     fetch(`/api/v1/faq?tenantKey=${encodeURIComponent(tenantKey)}`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => { if (mounted) setFaqs(data?.faqs || []); })
+      .catch(() => {});
+
+    fetch(`/api/v1/admin/jobs?tenantKey=${encodeURIComponent(tenantKey)}`)
+      .then((resp) => resp.ok ? resp.json() : null)
+      .then((data) => { if (mounted) setProvisioningJobs(data?.jobs || []); })
       .catch(() => {});
 
     return () => { mounted = false; };
@@ -267,6 +273,12 @@ export default function TenantManagePage() {
                 ))}
               </select>
             </div>
+            <div>Voice Status</div>
+            <div>{tenant?.telnyx_voice_status || 'unknown'}</div>
+            <div>Voice Number</div>
+            <div>{tenant?.telnyx_voice_number || 'Not assigned'}</div>
+            <div>Voice Order ID</div>
+            <div>{tenant?.telnyx_voice_order_id || 'None'}</div>
           </div>
           <div className="mt-3 flex items-center gap-2">
             <Button onClick={saveTenantDetails}>Save Tenant Details</Button>
@@ -316,6 +328,56 @@ export default function TenantManagePage() {
           pageSizeOptions={[10, 25, 50]}
           initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
           localeText={{ noRowsLabel: 'No users yet.' }}
+          sx={{
+            border: 'none',
+            '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
+            '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
+            '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
+          }}
+        />
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+        <label>Provisioning Log</label>
+        <DataGrid
+          rows={provisioningJobs.map((job, idx) => ({
+            id: job.id ?? `${job.stage || 'stage'}-${job.updated_at || idx}`,
+            stage: job.stage,
+            status: job.status,
+            detail: job.status_detail || '',
+            provider: job.provider || '',
+            providerReference: job.provider_reference || '',
+            errorCode: job.error_code || '',
+            errorMessage: job.error_message || '',
+            attempted: job.attempted_at ? new Date(job.attempted_at).toLocaleString() : '',
+            completed: job.completed_at ? new Date(job.completed_at).toLocaleString() : '',
+            updated: job.updated_at ? new Date(job.updated_at).toLocaleString() : ''
+          }))}
+          columns={[
+            { field: 'stage', headerName: 'Stage', flex: 0.7, minWidth: 140 },
+            {
+              field: 'status',
+              headerName: 'Status',
+              flex: 0.5,
+              minWidth: 120,
+              renderCell: (params) => (
+                <span className={`badge ${params.value === 'done' ? 'ok' : params.value === 'failed' ? 'bad' : 'warn'}`}>{params.value}</span>
+              )
+            },
+            { field: 'detail', headerName: 'Detail', flex: 1.4, minWidth: 220 },
+            { field: 'errorCode', headerName: 'Error Code', flex: 0.9, minWidth: 160 },
+            { field: 'errorMessage', headerName: 'Error Message', flex: 1.6, minWidth: 260 },
+            { field: 'provider', headerName: 'Provider', flex: 0.6, minWidth: 110 },
+            { field: 'providerReference', headerName: 'Provider Ref', flex: 0.9, minWidth: 160 },
+            { field: 'attempted', headerName: 'Attempted', flex: 0.9, minWidth: 180 },
+            { field: 'completed', headerName: 'Completed', flex: 0.9, minWidth: 180 },
+            { field: 'updated', headerName: 'Updated', flex: 0.9, minWidth: 180 }
+          ]}
+          autoHeight
+          disableRowSelectionOnClick
+          pageSizeOptions={[10, 25, 50]}
+          initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
+          localeText={{ noRowsLabel: 'No provisioning log yet.' }}
           sx={{
             border: 'none',
             '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },

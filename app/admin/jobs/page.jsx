@@ -20,8 +20,15 @@ export default function JobsPage() {
     job: job.id ?? `${job.tenant_key || 'tenant'}-${job.stage || 'stage'}-${job.updated_at || idx}`,
     tenant: job.tenant_key,
     stage: job.stage,
-    updated: new Date(job.updated_at).toLocaleTimeString(),
-    status: job.status
+    updated: job.updated_at ? new Date(job.updated_at).toLocaleString() : '',
+    attempted: job.attempted_at ? new Date(job.attempted_at).toLocaleString() : '',
+    completed: job.completed_at ? new Date(job.completed_at).toLocaleString() : '',
+    status: job.status,
+    detail: job.status_detail || '',
+    provider: job.provider || '',
+    providerReference: job.provider_reference || '',
+    errorCode: job.error_code || '',
+    errorMessage: job.error_message || ''
   }));
 
   const columns = [
@@ -34,14 +41,21 @@ export default function JobsPage() {
     },
     { field: 'tenant', headerName: 'Tenant', flex: 1, minWidth: 160 },
     { field: 'stage', headerName: 'Stage', flex: 1, minWidth: 140 },
-    { field: 'updated', headerName: 'Updated', flex: 0.6, minWidth: 120 },
+    { field: 'provider', headerName: 'Provider', flex: 0.7, minWidth: 120 },
+    { field: 'detail', headerName: 'Detail', flex: 1.6, minWidth: 240 },
+    { field: 'errorCode', headerName: 'Error Code', flex: 0.9, minWidth: 160 },
+    { field: 'errorMessage', headerName: 'Error Message', flex: 1.8, minWidth: 280 },
+    { field: 'providerReference', headerName: 'Provider Ref', flex: 0.9, minWidth: 160 },
+    { field: 'attempted', headerName: 'Attempted', flex: 0.9, minWidth: 180 },
+    { field: 'completed', headerName: 'Completed', flex: 0.9, minWidth: 180 },
+    { field: 'updated', headerName: 'Updated', flex: 0.9, minWidth: 180 },
     {
       field: 'status',
       headerName: 'Status',
       flex: 0.6,
       minWidth: 120,
       renderCell: (params) => (
-        <span className={`badge ${params.value === 'done' ? 'ok' : 'warn'}`}>{params.value}</span>
+        <span className={`badge ${params.value === 'done' ? 'ok' : params.value === 'failed' ? 'bad' : 'warn'}`}>{params.value}</span>
       )
     }
   ];

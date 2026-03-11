@@ -14,11 +14,15 @@ export default async function handler(req, res) {
     if (!session) return;
 
     if (req.method === "GET") {
+      const tenantKey = String(req.query?.tenantKey || "").trim();
       const rows = await pool.query(
-        `SELECT id, tenant_key, stage, status, updated_at
+        `SELECT id, tenant_key, stage, status, status_detail, provider, provider_reference,
+                error_code, error_message, attempted_at, completed_at, updated_at
          FROM provisioning_jobs
+         ${tenantKey ? "WHERE tenant_key = $1" : ""}
          ORDER BY updated_at DESC
-         LIMIT 50`
+         LIMIT 50`,
+        tenantKey ? [tenantKey] : []
       );
       return res.status(200).json({ jobs: rows.rows });
     }
