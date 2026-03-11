@@ -439,8 +439,11 @@ export default function IntakePage() {
       <div className="intake-shell">
         <div className="intake-hero">
           <div className="intake-brand">everycall</div>
-          <h1 className="intake-headline">You&apos;re 5 minutes away from turning missed calls into new jobs</h1>
-          <div className="intake-subhead">We&apos;ll get your EveryCall setup ready so missed calls are answered, customer details are captured, and new leads get sent back to you.</div>
+          <h1 className="intake-headline">
+            You&apos;re 5 minutes away from
+            <br />
+            turning missed calls into new jobs
+          </h1>
         </div>
         <div className="card intake-card">
           <h1>AI Assisted Setup</h1>
@@ -454,23 +457,22 @@ export default function IntakePage() {
             {step === 0 && (
               <div className="intake-stack">
                 <div className="intake-page-title">Step 1 — What this gives you</div>
-                <div className="intake-page-hint">In a few minutes, you&apos;ll have an EveryCall number ready to catch missed calls and turn them into qualified leads.</div>
                 <section className="intake-intro-panel">
                   <div className="intake-intro-grid">
                     <div className="intake-intro-card">
-                      <div className="intake-section-title">By the end</div>
+                      <div className="intake-section-title">Your own EveryCall forwarding number</div>
                       <p className="intake-muted">
                         You&apos;ll have a live EveryCall number that answers missed calls, captures customer details, and helps you respond faster.
                       </p>
                     </div>
                     <div className="intake-intro-card">
-                      <div className="intake-section-title">How it works for you</div>
+                      <div className="intake-section-title">Missed calls answered and sent back to you</div>
                       <p className="intake-muted">
                         When you can&apos;t pick up, EveryCall answers right away, talks to the customer, and sends the lead back to you with the details.
                       </p>
                     </div>
                     <div className="intake-intro-card intake-intro-card-accent">
-                      <div className="intake-section-title">What you need to do</div>
+                      <div className="intake-section-title">One simple step after setup</div>
                       <p className="intake-muted">
                         After setup, all you have to do is forward missed or no-answer calls from your main business line to your new EveryCall number.
                       </p>
