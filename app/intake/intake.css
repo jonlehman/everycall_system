@@ -56,7 +56,7 @@
 .intake-full { grid-column: 1 / -1; }
 .intake-progress {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
   margin: 14px 0 18px;
 }
@@ -75,6 +75,33 @@
   font-size: 13px;
   color: #64748b;
   margin-bottom: 8px;
+}
+.intake-intro-panel {
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
+  padding: 18px;
+  background: linear-gradient(180deg, #f4f7fb 0%, #edf2f8 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.intake-intro-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.intake-intro-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #dbe3ee;
+}
+.intake-intro-card p {
+  margin: 0;
+}
+.intake-intro-card-accent {
+  background: linear-gradient(180deg, #e8f0ff 0%, #f8fbff 100%);
+  border-color: #bfdbfe;
 }
 .intake-review-grid {
   display: grid;
@@ -237,6 +264,7 @@
   background: radial-gradient(circle at top, #f8fafc 0%, #eef2f7 52%, #e2e8f0 100%);
 }
 @media (max-width: 780px) {
+  .intake-intro-grid { grid-template-columns: 1fr; }
   .intake-review-grid { grid-template-columns: 1fr; }
   .intake-grid { grid-template-columns: 1fr; }
   .intake-headline { font-size: 26px; }

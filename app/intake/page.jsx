@@ -221,14 +221,14 @@ export default function IntakePage() {
       return;
     }
 
-    if (!form.website.trim()) {
-      const confirmed = window.confirm("You didn't add a website. Continue without analyzing your site?");
-      if (!confirmed) return;
-      setFaqDrafts([]);
-      setStatusMessage('No website provided. Continue with manual setup.', 'warn');
-      setStep(1);
-      return;
-    }
+      if (!form.website.trim()) {
+        const confirmed = window.confirm("You didn't add a website. Continue without analyzing your site?");
+        if (!confirmed) return;
+        setFaqDrafts([]);
+        setStatusMessage('No website provided. Continue with manual setup.', 'warn');
+        setStep(2);
+        return;
+      }
 
     setEnrichmentBusy(true);
     setStatusMessage('Analyzing website and loading industry FAQ drafts...', 'warn');
@@ -272,7 +272,7 @@ export default function IntakePage() {
       setStatusMessage(err?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
     } finally {
       setEnrichmentBusy(false);
-      setStep(1);
+      setStep(2);
     }
   };
 
@@ -447,12 +447,46 @@ export default function IntakePage() {
           <div className="intake-progress" aria-hidden="true">
             <span className={step === 0 ? 'active' : ''}></span>
             <span className={step === 1 ? 'active' : ''}></span>
+            <span className={step === 2 ? 'active' : ''}></span>
           </div>
 
           <form className="intake-stack" onSubmit={handleSubmit}>
             {step === 0 && (
               <div className="intake-stack">
-                <div className="intake-page-title">Step 1 — Business identity</div>
+                <div className="intake-page-title">Step 1 — What you&apos;ll have when this is done</div>
+                <div className="intake-page-hint">We&apos;ll set up your EveryCall workspace, draft your assistant configuration, and assign you a new number for missed-call coverage.</div>
+                <section className="intake-intro-panel">
+                  <div className="intake-intro-grid">
+                    <div className="intake-intro-card">
+                      <div className="intake-section-title">By the end</div>
+                      <p className="intake-muted">
+                        You&apos;ll have a live EveryCall number, a workspace with your business details, and FAQ drafts your assistant can use to answer callers.
+                      </p>
+                    </div>
+                    <div className="intake-intro-card">
+                      <div className="intake-section-title">What you need to do</div>
+                      <p className="intake-muted">
+                        After setup, all you have to do is forward missed or no-answer calls from your main line to your new EveryCall number.
+                      </p>
+                    </div>
+                    <div className="intake-intro-card intake-intro-card-accent">
+                      <div className="intake-section-title">What happens here</div>
+                      <p className="intake-muted">
+                        First we collect a few basics, then we prefill the rest from your website, and finally you review everything before creating your workspace.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+                <div className="intake-actions">
+                  <button className="btn brand" type="button" onClick={() => setStep(1)}>Start setup</button>
+                  <span className="intake-muted" style={{ color: status.tone === 'bad' ? '#dc2626' : status.tone === 'ok' ? '#059669' : '#64748b' }}>{status.message}</span>
+                </div>
+              </div>
+            )}
+
+            {step === 1 && (
+              <div className="intake-stack">
+                <div className="intake-page-title">Step 2 — Business identity</div>
                 <div className="intake-grid">
                   <div className="intake-stack">
                     <label>Owner Name</label>
@@ -484,6 +518,7 @@ export default function IntakePage() {
                   </div>
                 </div>
                 <div className="intake-actions">
+                  <button className="btn" type="button" onClick={() => setStep(0)}>Back</button>
                   <button className="btn brand" type="button" onClick={handleContinueFromFastStart} disabled={enrichmentBusy}>
                     {enrichmentBusy ? 'Analyzing...' : 'Analyze your site'}
                   </button>
@@ -492,9 +527,9 @@ export default function IntakePage() {
               </div>
             )}
 
-            {step === 1 && (
+            {step === 2 && (
               <div className="intake-stack">
-                <div className="intake-page-title">Step 2 — Review and finish setup</div>
+                <div className="intake-page-title">Step 3 — Review and finish setup</div>
                 <div className="intake-page-hint">Confirm the key details below, then create your workspace.</div>
 
                 <div className="intake-review-grid">
@@ -684,7 +719,7 @@ export default function IntakePage() {
                 </section>
 
                 <div className="intake-actions">
-                  <button className="btn" type="button" onClick={() => setStep(0)}>Back</button>
+                  <button className="btn" type="button" onClick={() => setStep(1)}>Back</button>
                   <button className="btn brand" type="submit">Create workspace</button>
                   <span className="intake-muted" style={{ color: status.tone === 'bad' ? '#dc2626' : status.tone === 'ok' ? '#059669' : '#64748b' }}>{status.message}</span>
                 </div>
