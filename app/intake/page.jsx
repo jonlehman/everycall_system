@@ -44,15 +44,6 @@ const INDUSTRIES = [
   { value: 'window_installers', label: 'Window Installers' }
 ];
 
-const GOALS = [
-  { value: 'reduce_missed_calls', label: 'Reduce missed calls' },
-  { value: 'improve_response_time', label: 'Improve response time' },
-  { value: 'book_more_jobs', label: 'Book more jobs' },
-  { value: 'after_hours_coverage', label: 'After-hours coverage' },
-  { value: 'better_dispatch', label: 'Better dispatching' },
-  { value: 'call_quality', label: 'Improve call quality' }
-];
-
 const FAQ_CATEGORY_ORDER = [
   'Emergency',
   'Technical Questions',
@@ -105,7 +96,6 @@ export default function IntakePage() {
 
   const [serviceSearch, setServiceSearch] = useState('');
   const [selectedServices, setSelectedServices] = useState([]);
-  const [primaryGoals, setPrimaryGoals] = useState([]);
   const [faqDrafts, setFaqDrafts] = useState([]);
   const [openFaqIndex, setOpenFaqIndex] = useState(0);
 
@@ -177,10 +167,6 @@ export default function IntakePage() {
 
   const removeService = (service) => {
     setSelectedServices((prev) => prev.filter((item) => item !== service));
-  };
-
-  const toggleGoal = (goal) => {
-    setPrimaryGoals((prev) => (prev.includes(goal) ? prev.filter((item) => item !== goal) : [...prev, goal]));
   };
 
   const updateFaqAnswer = (index, answer) => {
@@ -268,11 +254,6 @@ export default function IntakePage() {
       setStatusMessage('Please add at least one service offered.', 'bad');
       return;
     }
-    if (primaryGoals.length < 1) {
-      setStatusMessage('Please select at least one primary goal.', 'bad');
-      return;
-    }
-
     setStatusMessage('Submitting...', 'warn');
 
     const payload = {
@@ -296,7 +277,6 @@ export default function IntakePage() {
       averageCallsPerDay: form.avgCalls === '' ? null : Number(form.avgCalls),
       emergencyServices: form.emergencyServices === 'true',
       servicesOffered: selectedServices,
-      primaryGoals,
       faqDrafts: faqDrafts.map((faq) => ({
         question: faq.question,
         answer: String(faq.answer || '').trim(),
@@ -476,7 +456,6 @@ export default function IntakePage() {
                   <section className="intake-panel">
                     <div className="intake-panel-header">
                       <div className="intake-section-title">Business Profile</div>
-                      <div className="intake-muted">Add the main business details and login credentials.</div>
                     </div>
                     <div className="intake-grid">
                       <div className="intake-stack">
@@ -501,7 +480,6 @@ export default function IntakePage() {
                   <section className="intake-panel">
                     <div className="intake-panel-header">
                       <div className="intake-section-title">Location & Coverage</div>
-                      <div className="intake-muted">Set your business address and the areas you serve.</div>
                     </div>
                     <div className="intake-grid">
                       <div className="intake-stack intake-full">
@@ -525,7 +503,7 @@ export default function IntakePage() {
                         <input placeholder="98101" value={form.zip} onChange={(event) => setForm({ ...form, zip: event.target.value })} />
                       </div>
                       <div className="intake-stack intake-full">
-                        <label>Service Area</label>
+                        <label>Describe Your Service Area</label>
                         <input required placeholder="Seattle + Eastside" value={form.serviceArea} onChange={(event) => setForm({ ...form, serviceArea: event.target.value })} />
                       </div>
                     </div>
@@ -534,7 +512,6 @@ export default function IntakePage() {
                   <section className="intake-panel">
                     <div className="intake-panel-header">
                       <div className="intake-section-title">Operations</div>
-                      <div className="intake-muted">Set the defaults the assistant should use when handling calls.</div>
                     </div>
                     <div className="intake-grid">
                       <div className="intake-stack">
@@ -570,7 +547,6 @@ export default function IntakePage() {
                   <section className="intake-panel">
                     <div className="intake-panel-header">
                       <div className="intake-section-title">Services Offered</div>
-                      <div className="intake-muted">Choose the services callers are most likely to mention first.</div>
                     </div>
                     <div className="intake-stack intake-service-picker">
                       <input
@@ -611,27 +587,6 @@ export default function IntakePage() {
                     </div>
                   </section>
 
-                  <section className="intake-panel">
-                    <div className="intake-panel-header">
-                      <div className="intake-section-title">Primary Goals</div>
-                      <div className="intake-muted">Choose the outcomes you want EveryCall to improve first.</div>
-                    </div>
-                    <div className="intake-goal-panel">
-                      <div className="intake-goal-list">
-                        {GOALS.map((goal) => (
-                          <label key={goal.value}>
-                            <input
-                              type="checkbox"
-                              value={goal.value}
-                              checked={primaryGoals.includes(goal.value)}
-                              onChange={() => toggleGoal(goal.value)}
-                            />
-                            {goal.label}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </section>
                 </div>
 
                 <section className="intake-panel">
