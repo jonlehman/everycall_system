@@ -150,14 +150,15 @@
 }
 .intake-faq-list {
   display: grid;
-  gap: 0;
+  gap: 14px;
 }
 .intake-faq-group {
   display: grid;
-  gap: 0;
-}
-.intake-faq-group + .intake-faq-group {
-  margin-top: 18px;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid #dbe3ee;
+  border-radius: 14px;
+  background: #f8fafc;
 }
 .intake-faq-group-title {
   font-size: 12px;
@@ -165,13 +166,11 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #334155;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
 }
 .intake-faq-item {
-  border-top: 1px solid #e2e8f0;
-}
-.intake-faq-item:last-child {
-  border-bottom: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
 }
 .intake-faq-trigger {
   width: 100%;
@@ -179,7 +178,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 0;
+  padding: 14px 16px;
   border: 0;
   background: transparent;
   text-align: left;
@@ -197,7 +196,7 @@
   color: #64748b;
 }
 .intake-faq-content {
-  padding: 0 0 18px;
+  padding: 0 16px 16px;
 }
 .intake-faq-actions {
   justify-content: flex-end;
