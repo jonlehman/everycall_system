@@ -286,12 +286,53 @@ function receptionistStyleAnswer(answer) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
+function conversationalizeFaqAnswer(question, answer) {
+  const q = String(question || "").trim().toLowerCase();
+  let text = cleanEvidenceText(answer);
+  if (!text) return "";
+
+  text = text
+    .replace(/\bcall us right away\b/gi, "we can help you from here")
+    .replace(/\bcall us immediately\b/gi, "we can help you from here")
+    .replace(/\bcall us back\b/gi, "we can help you from here")
+    .replace(/\bgive us a call\b/gi, "we can help with that")
+    .replace(/\bcontact us today\b/gi, "we can help with that")
+    .replace(/\bcontact us\b/gi, "we can help with that")
+    .replace(/\bthen call\b/gi, "then we can help")
+    .replace(/\.\s*we can help you from here$/i, ". We can help you from here.")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (/^what should i do\b/.test(q)) {
+    return text;
+  }
+
+  if (/^(do|can|are|is|will)\b/.test(q)) {
+    if (/^yes\b/i.test(text)) {
+      text = text.replace(/^yes[,.]?\s*/i, "Yes, we sure do. ");
+    } else if (/^no\b/i.test(text)) {
+      text = text.replace(/^no[,.]?\s*/i, "No, we don't. ");
+    }
+
+    if (
+      /(fix|repair|replace|install|handle|offer|service|rekey|clean|treat|upgrade)/.test(q) &&
+      !/[?]$/.test(text)
+    ) {
+      text = `${text.replace(/[.]\s*$/,"")}. Is that something you'd like help with?`;
+    }
+  }
+
+  return text;
+}
+
 function finalizeFaqAnswer(faq, evidenceAnswer) {
   const templateAnswer = String(faq?.answer || "").trim();
-  if (templateAnswer) return templateAnswer;
+  if (templateAnswer) {
+    return conversationalizeFaqAnswer(faq?.question, templateAnswer);
+  }
 
   const question = String(faq?.question || "").trim().toLowerCase();
-  const styled = receptionistStyleAnswer(evidenceAnswer);
+  const styled = conversationalizeFaqAnswer(question, receptionistStyleAnswer(evidenceAnswer));
   if (!styled) return "";
 
   if (/^(do|can|are|is|will)\b/.test(question)) {
