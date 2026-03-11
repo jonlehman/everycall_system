@@ -136,10 +136,66 @@ async function fetchWebsiteText(url) {
     });
     if (!resp.ok) return { ok: false, text: "" };
     const html = await resp.text();
-    return { ok: true, text: textFromHtml(html).slice(0, 24000) };
+    return { ok: true, html, text: textFromHtml(html).slice(0, 24000) };
   } catch {
-    return { ok: false, text: "" };
+    return { ok: false, html: "", text: "" };
   }
+}
+
+function extractRelevantInternalLinks(baseUrl, html) {
+  const source = String(html || "");
+  if (!source) return [];
+  const base = new URL(baseUrl);
+  const matches = Array.from(source.matchAll(/href=["']([^"'#]+)["']/gi));
+  const seen = new Set();
+  const urls = [];
+
+  for (const match of matches) {
+    const href = String(match[1] || "").trim();
+    if (!href) continue;
+    try {
+      const resolved = new URL(href, base);
+      if (resolved.hostname !== base.hostname) continue;
+      const path = resolved.pathname.toLowerCase();
+      if (!/(contact|about|service|area|location|plumbing|hvac)/.test(path)) continue;
+      const normalized = `${resolved.origin}${resolved.pathname}`.replace(/\/$/, "") || resolved.origin;
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      urls.push(normalized);
+    } catch {
+      continue;
+    }
+    if (urls.length >= 6) break;
+  }
+
+  return urls;
+}
+
+async function fetchRelevantWebsiteSources(baseUrl) {
+  const primary = await fetchWebsiteText(baseUrl);
+  if (!primary.ok) return { pages: [], combinedText: "" };
+
+  const pages = [{
+    sourceType: "website",
+    sourceUrl: baseUrl,
+    text: primary.text
+  }];
+
+  const links = extractRelevantInternalLinks(baseUrl, primary.html);
+  for (const link of links) {
+    const page = await fetchWebsiteText(link);
+    if (!page.ok || !page.text) continue;
+    pages.push({
+      sourceType: "website",
+      sourceUrl: link,
+      text: page.text
+    });
+  }
+
+  return {
+    pages,
+    combinedText: pages.map((page) => page.text).filter(Boolean).join(" ").slice(0, 80000)
+  };
 }
 
 function splitSentences(text) {
@@ -217,10 +273,31 @@ function receptionistStyleAnswer(answer) {
     .replace(/\bstate-of-the-art\b/gi, "")
     .replace(/\btop-quality\b/gi, "quality")
     .replace(/\bhigh-quality\b/gi, "quality")
+    .replace(/\btrust the licensed plumbers at .*? to\b/gi, "We can")
+    .replace(/\byou can always count on .*? to\b/gi, "We can")
+    .replace(/\bour local and reliable plumbers and technicians are just a call away for\b/gi, "We handle")
+    .replace(/\bwe offer premium and affordable\b/gi, "We offer")
+    .replace(/\bwe take pride in\b/gi, "We")
+    .replace(/\bchoosing .*? is choosing peace of mind\.?/gi, "")
     .replace(/\s+/g, " ")
     .trim();
 
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function extractAddressCandidates(text) {
+  return Array.from(String(text || "").matchAll(/\b\d{3,6}\s+[A-Za-z0-9.\- ]+,\s*[A-Za-z .'-]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/g))
+    .map((match) => match[0].trim());
+}
+
+function extractBusinessHours(text) {
+  const match = String(text || "").match(/\b(?:mon|monday)[^.\n;]{0,80}(?:am|pm)\s*-\s*(?:\d{1,2}:?\d{0,2}\s*)?(?:am|pm)\b/i);
+  return match ? cleanEvidenceText(match[0]) : "";
+}
+
+function extractPhone(text) {
+  const match = String(text || "").match(/\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/);
+  return match ? match[0].replace(/\s+/g, " ").trim() : "";
 }
 
 function titleCaseWords(value) {
@@ -491,7 +568,11 @@ export default async function handler(req, res) {
       : (FALLBACK_INDUSTRY_FAQS[industry] || []);
     const defaultFaqs = dedupeFaqTemplates(defaultFaqsRaw);
 
-    const websiteResult = normalizedWebsite ? await fetchWebsiteText(normalizedWebsite) : { ok: false, text: "" };
+    const websiteSources = normalizedWebsite ? await fetchRelevantWebsiteSources(normalizedWebsite) : { pages: [], combinedText: "" };
+    const websiteResult = {
+      ok: websiteSources.pages.length > 0,
+      text: websiteSources.combinedText
+    };
 
     let googleBusinessProfile = body.googleBusinessProfile && typeof body.googleBusinessProfile === "object"
       ? body.googleBusinessProfile
@@ -515,11 +596,11 @@ export default async function handler(req, res) {
       : "";
 
     const sources = [];
-    if (websiteResult.ok && websiteResult.text) {
+    for (const page of websiteSources.pages) {
       sources.push({
-        sourceType: "website",
-        sourceUrl: normalizedWebsite,
-        sentences: splitSentences(websiteResult.text)
+        sourceType: page.sourceType,
+        sourceUrl: page.sourceUrl,
+        sentences: splitSentences(page.text)
       });
     }
     if (gbpText.trim()) {
@@ -589,22 +670,23 @@ export default async function handler(req, res) {
     });
 
     const businessName = guessBusinessName({ googleBusinessProfile, website: normalizedWebsite, ownerEmail });
-    const parsedAddress = parseUsAddress(googleBusinessProfile?.serviceArea || "");
+    const addressCandidates = extractAddressCandidates([websiteResult.text, googleBusinessProfile?.serviceArea].filter(Boolean).join(" "));
+    const parsedAddress = parseUsAddress(addressCandidates[0] || googleBusinessProfile?.serviceArea || "");
     const serviceText = [
       googleBusinessProfile?.description,
       googleBusinessProfile?.services,
-      websiteResult.text.slice(0, 6000)
+      websiteResult.text.slice(0, 10000)
     ].filter(Boolean).join(". ");
     const emergencyServices = inferEmergencyServices([serviceText, ...faqs.map((faq) => faq.answer)].join(". "));
     const profile = {
       businessName,
-      phone: String(googleBusinessProfile?.phone || "").trim(),
+      phone: String(googleBusinessProfile?.phone || "").trim() || extractPhone(websiteResult.text),
       address1: parsedAddress.address1,
       city: parsedAddress.city,
       state: parsedAddress.state,
       zip: parsedAddress.zip,
       serviceArea: String(googleBusinessProfile?.serviceArea || "").trim(),
-      businessHours: String(googleBusinessProfile?.hours || "").trim(),
+      businessHours: String(googleBusinessProfile?.hours || "").trim() || extractBusinessHours(websiteResult.text),
       emergencyServices,
       serviceText
     };
