@@ -112,6 +112,7 @@ function normalizeDefaultAnswerMap(faqs) {
 export default function IntakePage() {
   const [step, setStep] = useState(0);
   const [status, setStatus] = useState({ message: '', tone: 'normal' });
+  const [fieldErrors, setFieldErrors] = useState({});
   const [enrichmentBusy, setEnrichmentBusy] = useState(false);
   const [activation, setActivation] = useState(null);
   const [activationStatus, setActivationStatus] = useState({ message: '', tone: 'normal' });
@@ -189,7 +190,25 @@ export default function IntakePage() {
 
   const setStatusMessage = (message, tone = 'normal') => setStatus({ message, tone });
 
+  const clearFieldError = (field) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const setFormValue = (field, value) => {
+    clearFieldError(field);
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const inputClassName = (field) => (fieldErrors[field] ? 'intake-input-error' : '');
+  const fieldErrorText = (field) => fieldErrors[field] ? <div className="intake-field-error">{fieldErrors[field]}</div> : null;
+
   const updateEmail = (value) => {
+    clearFieldError('ownerEmail');
     setForm((prev) => {
       const next = { ...prev, ownerEmail: value };
       if (!websiteEdited) {
@@ -202,6 +221,7 @@ export default function IntakePage() {
 
   const addService = (service) => {
     if (!service) return;
+    clearFieldError('servicesOffered');
     setSelectedServices((prev) => (prev.includes(service) ? prev : [...prev, service]));
   };
 
@@ -237,10 +257,16 @@ export default function IntakePage() {
   };
 
   const handleContinueFromFastStart = async () => {
-    if (!form.ownerName.trim() || !form.ownerEmail.trim() || !form.industry) {
+    const nextFieldErrors = {};
+    if (!form.ownerName.trim()) nextFieldErrors.ownerName = 'Owner name is required.';
+    if (!form.ownerEmail.trim()) nextFieldErrors.ownerEmail = 'Owner email is required.';
+    if (!form.industry) nextFieldErrors.industry = 'Industry is required.';
+    if (Object.keys(nextFieldErrors).length) {
+      setFieldErrors(nextFieldErrors);
       setStatusMessage('Name, email, and industry are required.', 'bad');
       return;
     }
+    setFieldErrors({});
 
       if (!form.website.trim()) {
         const confirmed = window.confirm("You didn't add a website. Continue without analyzing your site?");
@@ -303,27 +329,22 @@ export default function IntakePage() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-
-    if (!form.businessName.trim()) {
-      setStatusMessage('Business name is required.', 'bad');
+    const nextFieldErrors = {};
+    if (!form.businessName.trim()) nextFieldErrors.businessName = 'Business name is required.';
+    if (!form.password) nextFieldErrors.password = 'Password is required.';
+    if (form.password && form.password.length < 8) nextFieldErrors.password = 'Password must be at least 8 characters.';
+    if (form.password !== form.confirmPassword) nextFieldErrors.confirmPassword = 'Passwords do not match.';
+    if (!form.serviceArea.trim()) nextFieldErrors.serviceArea = 'Service area is required.';
+    if (selectedServices.length < 1) nextFieldErrors.servicesOffered = 'Please add at least one service offered.';
+    if (form.avgCalls !== '' && (!Number.isFinite(Number(form.avgCalls)) || Number(form.avgCalls) < 0)) {
+      nextFieldErrors.averageCallsPerDay = 'Average calls per day must be a non-negative number.';
+    }
+    if (Object.keys(nextFieldErrors).length) {
+      setFieldErrors(nextFieldErrors);
+      setStatusMessage('Please correct the highlighted fields.', 'bad');
       return;
     }
-    if (!form.password || form.password.length < 8) {
-      setStatusMessage('Password must be at least 8 characters.', 'bad');
-      return;
-    }
-    if (form.password !== form.confirmPassword) {
-      setStatusMessage('Passwords do not match.', 'bad');
-      return;
-    }
-    if (!form.serviceArea.trim()) {
-      setStatusMessage('Service area is required.', 'bad');
-      return;
-    }
-    if (selectedServices.length < 1) {
-      setStatusMessage('Please add at least one service offered.', 'bad');
-      return;
-    }
+    setFieldErrors({});
     setStatusMessage('Submitting...', 'warn');
 
     const payload = {
@@ -347,6 +368,7 @@ export default function IntakePage() {
       averageCallsPerDay: form.avgCalls === '' ? null : Number(form.avgCalls),
       emergencyServices: form.emergencyServices === 'true',
       servicesOffered: selectedServices,
+      primaryGoals: ['Capture missed-call leads'],
       faqDrafts: faqDrafts.map((faq) => ({
         question: faq.question,
         answer: String(faq.answer || '').trim(),
@@ -370,11 +392,13 @@ export default function IntakePage() {
 
       if (!resp.ok) {
         const data = await resp.json().catch(() => null);
+        setFieldErrors(data?.fieldErrors || {});
         setStatusMessage(data?.message || data?.error || `Request failed (${resp.status})`, 'bad');
         return;
       }
 
       const data = await resp.json();
+      setFieldErrors({});
       setStatusMessage('Trial created.', 'ok');
       setActivation({
         tenantKey: data?.tenantKey || '',
@@ -517,11 +541,13 @@ export default function IntakePage() {
                 <div className="intake-grid">
                   <div className="intake-stack">
                     <label>Owner Name</label>
-                    <input required placeholder="Jane Smith" value={form.ownerName} onChange={(event) => setForm({ ...form, ownerName: event.target.value })} />
+                    <input required className={inputClassName('ownerName')} aria-invalid={fieldErrors.ownerName ? 'true' : undefined} placeholder="Jane Smith" value={form.ownerName} onChange={(event) => setFormValue('ownerName', event.target.value)} />
+                    {fieldErrorText('ownerName')}
                   </div>
                   <div className="intake-stack">
                     <label>Owner Email</label>
-                    <input type="email" required placeholder="jane@acme.com" value={form.ownerEmail} onChange={(event) => updateEmail(event.target.value)} />
+                    <input type="email" required className={inputClassName('ownerEmail')} aria-invalid={fieldErrors.ownerEmail ? 'true' : undefined} placeholder="jane@acme.com" value={form.ownerEmail} onChange={(event) => updateEmail(event.target.value)} />
+                    {fieldErrorText('ownerEmail')}
                   </div>
                   <div className="intake-stack">
                     <label>Website</label>
@@ -536,12 +562,13 @@ export default function IntakePage() {
                   </div>
                   <div className="intake-stack">
                     <label>Industry</label>
-                    <select required value={form.industry} onChange={(event) => setForm({ ...form, industry: event.target.value })}>
+                    <select required className={inputClassName('industry')} aria-invalid={fieldErrors.industry ? 'true' : undefined} value={form.industry} onChange={(event) => setFormValue('industry', event.target.value)}>
                       <option value="">Select industry</option>
                       {INDUSTRIES.map((industry) => (
                         <option key={industry.value} value={industry.value}>{industry.label}</option>
                       ))}
                     </select>
+                    {fieldErrorText('industry')}
                   </div>
                 </div>
                 <div className="intake-actions">
@@ -567,7 +594,8 @@ export default function IntakePage() {
                     <div className="intake-grid">
                       <div className="intake-stack">
                         <label>Business Name</label>
-                        <input required placeholder="Acme Plumbing" value={form.businessName} onChange={(event) => setForm({ ...form, businessName: event.target.value })} />
+                        <input required className={inputClassName('businessName')} aria-invalid={fieldErrors.businessName ? 'true' : undefined} placeholder="Acme Plumbing" value={form.businessName} onChange={(event) => setFormValue('businessName', event.target.value)} />
+                        {fieldErrorText('businessName')}
                       </div>
                       <div className="intake-stack">
                         <label>Business Phone</label>
@@ -575,11 +603,13 @@ export default function IntakePage() {
                       </div>
                       <div className="intake-stack">
                         <label>Password</label>
-                        <input type="password" required placeholder="Create a password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+                        <input type="password" required className={inputClassName('password')} aria-invalid={fieldErrors.password ? 'true' : undefined} placeholder="Create a password" value={form.password} onChange={(event) => setFormValue('password', event.target.value)} />
+                        {fieldErrorText('password')}
                       </div>
                       <div className="intake-stack">
                         <label>Confirm Password</label>
-                        <input type="password" required placeholder="Confirm password" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} />
+                        <input type="password" required className={inputClassName('confirmPassword')} aria-invalid={fieldErrors.confirmPassword ? 'true' : undefined} placeholder="Confirm password" value={form.confirmPassword} onChange={(event) => setFormValue('confirmPassword', event.target.value)} />
+                        {fieldErrorText('confirmPassword')}
                       </div>
                     </div>
                   </section>
@@ -611,7 +641,8 @@ export default function IntakePage() {
                       </div>
                       <div className="intake-stack intake-full">
                         <label>Describe Your Service Area</label>
-                        <input required placeholder="Seattle + Eastside" value={form.serviceArea} onChange={(event) => setForm({ ...form, serviceArea: event.target.value })} />
+                        <input required className={inputClassName('serviceArea')} aria-invalid={fieldErrors.serviceArea ? 'true' : undefined} placeholder="Seattle + Eastside" value={form.serviceArea} onChange={(event) => setFormValue('serviceArea', event.target.value)} />
+                        {fieldErrorText('serviceArea')}
                       </div>
                     </div>
                   </section>
@@ -639,7 +670,8 @@ export default function IntakePage() {
                       </div>
                       <div className="intake-stack">
                         <label>Estimated Calls Per Day</label>
-                        <input type="number" min="0" placeholder="10" value={form.avgCalls} onChange={(event) => setForm({ ...form, avgCalls: event.target.value })} />
+                        <input type="number" min="0" className={inputClassName('averageCallsPerDay')} aria-invalid={fieldErrors.averageCallsPerDay ? 'true' : undefined} placeholder="10" value={form.avgCalls} onChange={(event) => setFormValue('avgCalls', event.target.value)} />
+                        {fieldErrorText('averageCallsPerDay')}
                       </div>
                       <div className="intake-stack">
                         <label>Do You Offer Emergency Service?</label>
@@ -691,6 +723,7 @@ export default function IntakePage() {
                           ))
                         )}
                       </div>
+                      {fieldErrorText('servicesOffered')}
                     </div>
                   </section>
 

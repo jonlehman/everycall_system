@@ -246,7 +246,7 @@ function parsePayload(body) {
     averageCallsPerDay,
     emergencyServices,
     servicesOffered,
-    primaryGoals,
+    primaryGoals: primaryGoals.length ? primaryGoals : ["Capture missed-call leads"],
     faqDraftsProvided: Array.isArray(body.faqDrafts),
     faqDrafts: normalizeFaqDrafts(body.faqDrafts),
     status: String(body.status || "active"),
