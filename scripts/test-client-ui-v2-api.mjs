@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
+import { cleanupTenantByKey } from "./_tenantCleanup.mjs";
 
 const baseUrl = process.env.APP_BASE_URL ?? "http://localhost:3000";
 const dryRun = process.env.CLIENT_UI_TEST_DRY_RUN === "1";
+const cleanupEnabled = process.env.CLIENT_UI_TEST_KEEP_TENANT !== "1";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -50,98 +52,107 @@ async function run() {
   }
 
   const seed = id();
-  const onboard = await request("/api/v1/tenants/onboard", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(onboardingPayload(seed))
-  });
-  assert(onboard.status === 200 && onboard.data?.ok === true, `onboard failed: ${onboard.status}`);
-
-  const cookie = cookieFromHeaders(onboard.headers);
-  assert(cookie.includes("everycall_session="), "missing session cookie");
-
-  const authed = (path, opts = {}) =>
-    request(path, {
-      ...opts,
-      headers: {
-        ...(opts.headers || {}),
-        cookie
-      }
+  let tenantKey = "";
+  try {
+    const onboard = await request("/api/v1/tenants/onboard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(onboardingPayload(seed))
     });
+    assert(onboard.status === 200 && onboard.data?.ok === true, `onboard failed: ${onboard.status}`);
+    tenantKey = onboard.data?.tenantKey || "";
 
-  const overview = await authed("/api/v1/overview");
-  assert(overview.status === 200 && overview.data?.stats, "overview contract failed");
+    const cookie = cookieFromHeaders(onboard.headers);
+    assert(cookie.includes("everycall_session="), "missing session cookie");
 
-  const calls = await authed("/api/v1/calls");
-  assert(calls.status === 200 && Array.isArray(calls.data?.calls), "calls contract failed");
+    const authed = (path, opts = {}) =>
+      request(path, {
+        ...opts,
+        headers: {
+          ...(opts.headers || {}),
+          cookie
+        }
+      });
 
-  const faqCreate = await authed("/api/v1/faq", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      question: "Do you service weekends?",
-      answer: "Yes, we have weekend availability.",
-      category: "Scheduling"
-    })
-  });
-  assert(faqCreate.status === 200 && faqCreate.data?.ok === true, "faq create failed");
+    const overview = await authed("/api/v1/overview");
+    assert(overview.status === 200 && overview.data?.stats, "overview contract failed");
 
-  const faqList = await authed("/api/v1/faq");
-  assert(faqList.status === 200 && faqList.data?.ok === true, "faq list failed");
-  assert(Array.isArray(faqList.data?.faqs) && faqList.data.faqs.length > 0, "faq list empty");
+    const calls = await authed("/api/v1/calls");
+    assert(calls.status === 200 && Array.isArray(calls.data?.calls), "calls contract failed");
 
-  const routingSave = await authed("/api/v1/routing", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      primaryQueue: "Dispatch Team",
-      emergencyBehavior: "Priority Queue",
-      afterHoursBehavior: "Collect details and dispatch callback",
-      businessHours: "Mon-Fri 8 AM - 6 PM"
-    })
-  });
-  assert(routingSave.status === 200 && routingSave.data?.ok === true, "routing save failed");
+    const faqCreate = await authed("/api/v1/faq", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: "Do you service weekends?",
+        answer: "Yes, we have weekend availability.",
+        category: "Scheduling"
+      })
+    });
+    assert(faqCreate.status === 200 && faqCreate.data?.ok === true, "faq create failed");
 
-  const settingsSave = await authed("/api/v1/settings", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      timezone: "America/Los_Angeles",
-      notes: "Client UI v2 test note"
-    })
-  });
-  assert(settingsSave.status === 200 && settingsSave.data?.ok === true, "settings save failed");
+    const faqList = await authed("/api/v1/faq");
+    assert(faqList.status === 200 && faqList.data?.ok === true, "faq list failed");
+    assert(Array.isArray(faqList.data?.faqs) && faqList.data.faqs.length > 0, "faq list empty");
 
-  const inviteEmail = `invite.${seed}@example.test`;
-  const teamInvite = await authed("/api/v1/tenant/users", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: "QA Team Member",
-      email: inviteEmail,
-      role: "member",
-      status: "invited"
-    })
-  });
-  assert(teamInvite.status === 200 && teamInvite.data?.ok === true, "team invite failed");
+    const routingSave = await authed("/api/v1/routing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        primaryQueue: "Dispatch Team",
+        emergencyBehavior: "Priority Queue",
+        afterHoursBehavior: "Collect details and dispatch callback",
+        businessHours: "Mon-Fri 8 AM - 6 PM"
+      })
+    });
+    assert(routingSave.status === 200 && routingSave.data?.ok === true, "routing save failed");
 
-  const teamList = await authed("/api/v1/tenant/users");
-  assert(teamList.status === 200 && teamList.data?.ok === true, "team list failed");
-  const invitedUser = (teamList.data?.users || []).find((u) => u.email === inviteEmail);
-  assert(invitedUser?.id, "invited user missing from team list");
+    const settingsSave = await authed("/api/v1/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        timezone: "America/Los_Angeles",
+        notes: "Client UI v2 test note"
+      })
+    });
+    assert(settingsSave.status === 200 && settingsSave.data?.ok === true, "settings save failed");
 
-  const statusUpdate = await authed("/api/v1/tenant/users", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: "status",
-      id: invitedUser.id,
-      status: "active"
-    })
-  });
-  assert(statusUpdate.status === 200 && statusUpdate.data?.ok === true, "team status update failed");
+    const inviteEmail = `invite.${seed}@example.test`;
+    const teamInvite = await authed("/api/v1/tenant/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "QA Team Member",
+        email: inviteEmail,
+        role: "member",
+        status: "invited"
+      })
+    });
+    assert(teamInvite.status === 200 && teamInvite.data?.ok === true, "team invite failed");
 
-  console.log("[client-ui-v2-api] complete");
+    const teamList = await authed("/api/v1/tenant/users");
+    assert(teamList.status === 200 && teamList.data?.ok === true, "team list failed");
+    const invitedUser = (teamList.data?.users || []).find((u) => u.email === inviteEmail);
+    assert(invitedUser?.id, "invited user missing from team list");
+
+    const statusUpdate = await authed("/api/v1/tenant/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "status",
+        id: invitedUser.id,
+        status: "active"
+      })
+    });
+    assert(statusUpdate.status === 200 && statusUpdate.data?.ok === true, "team status update failed");
+
+    console.log("[client-ui-v2-api] complete");
+  } finally {
+    if (cleanupEnabled && tenantKey) {
+      const result = await cleanupTenantByKey(tenantKey, { releaseNumber: true });
+      console.log(`[client-ui-v2-api] cleanup deleted=${result.deleted} tenant=${result.tenantKey}`);
+    }
+  }
 }
 
 run().catch((err) => {

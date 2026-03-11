@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
+import { cleanupTenantByKey } from "./_tenantCleanup.mjs";
 
 const baseUrl = process.env.APP_BASE_URL ?? "http://localhost:3000";
 const dryRun = process.env.INTAKE_TEST_DRY_RUN === "1";
+const cleanupEnabled = process.env.INTAKE_TEST_KEEP_TENANTS !== "1";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -52,6 +54,7 @@ async function run() {
 
   const seed = id();
   const validPayload = makePayload(seed);
+  const createdTenantKeys = new Set();
 
   const tests = [
     {
@@ -86,6 +89,7 @@ async function run() {
         assert(typeof res.data?.tenantKey === "string" && res.data.tenantKey.length > 0, "Missing tenantKey");
         assert(res.data?.redirectTo === "/client/overview", `Unexpected redirectTo: ${res.data?.redirectTo}`);
         assert(res.data?.provisioning && typeof res.data.provisioning.voiceStatus === "string", "Missing provisioning block");
+        createdTenantKeys.add(res.data.tenantKey);
       }
     },
     {
@@ -99,6 +103,7 @@ async function run() {
           ]
         }));
         assert(onboarding.status === 200, `Expected 200, got ${onboarding.status}`);
+        createdTenantKeys.add(onboarding.data?.tenantKey);
         const cookie = cookieFromHeaders(onboarding.headers);
         assert(cookie.includes("everycall_session="), "Expected session cookie");
 
@@ -133,6 +138,7 @@ async function run() {
         assert(res.status === 200, `Expected 200, got ${res.status}`);
         assert(res.data?.ok === true, "Expected ok=true");
         assert(res.data?.tenantKey && res.data.tenantKey !== validPayload.businessName, "Missing tenantKey");
+        createdTenantKeys.add(res.data?.tenantKey);
       }
     },
     {
@@ -145,6 +151,7 @@ async function run() {
         const second = await postJson("/api/v1/tenants/onboard", idemPayload, { "Idempotency-Key": idemKey });
         assert(first.status === 200 && second.status === 200, `Expected 200/200, got ${first.status}/${second.status}`);
         assert(first.data?.tenantKey === second.data?.tenantKey, "Idempotent replay returned different tenantKey");
+        createdTenantKeys.add(first.data?.tenantKey);
       }
     },
     {
@@ -155,6 +162,7 @@ async function run() {
         const p2 = makePayload(`${seed}d2`);
         const first = await postJson("/api/v1/tenants/onboard", p1, { "Idempotency-Key": idemKey });
         assert(first.status === 200, `Expected first 200, got ${first.status}`);
+        createdTenantKeys.add(first.data?.tenantKey);
         const second = await postJson("/api/v1/tenants/onboard", p2, { "Idempotency-Key": idemKey });
         assert(second.status === 409, `Expected second 409, got ${second.status}`);
         assert(second.data?.error === "idempotency_key_reused", `Expected idempotency_key_reused, got ${second.data?.error}`);
@@ -162,17 +170,26 @@ async function run() {
     }
   ];
 
-  for (const test of tests) {
-    if (dryRun) {
-      console.log(`DRY RUN: ${test.name}`);
-      continue;
+  try {
+    for (const test of tests) {
+      if (dryRun) {
+        console.log(`DRY RUN: ${test.name}`);
+        continue;
+      }
+      process.stdout.write(`- ${test.name} ... `);
+      await test.run();
+      console.log("ok");
     }
-    process.stdout.write(`- ${test.name} ... `);
-    await test.run();
-    console.log("ok");
-  }
 
-  console.log("[intake-v2-api] complete");
+    console.log("[intake-v2-api] complete");
+  } finally {
+    if (cleanupEnabled && createdTenantKeys.size > 0) {
+      for (const tenantKey of createdTenantKeys) {
+        const result = await cleanupTenantByKey(tenantKey, { releaseNumber: true });
+        console.log(`[intake-v2-api] cleanup deleted=${result.deleted} tenant=${result.tenantKey}`);
+      }
+    }
+  }
 }
 
 run().catch((err) => {
