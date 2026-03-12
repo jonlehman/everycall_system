@@ -89,34 +89,12 @@ function normalizeDefaultAnswerMap(faqs) {
 }
 
 function createInitialForm(qaMode = false) {
-  if (qaMode) {
-    return {
-      ownerName: 'QA Operator',
-      ownerEmail: 'intake.qa.smoke@example.test',
-      website: 'https://example.com',
-      industry: 'plumbing',
-      businessName: 'Intake QA Smoke',
-      phone: '+12065550123',
-      address1: '123 Main St',
-      address2: '',
-      city: 'Seattle',
-      state: 'WA',
-      zip: '98101',
-      serviceArea: 'Seattle Metro',
-      password: 'qa-password-123',
-      confirmPassword: 'qa-password-123',
-      timezone: 'America/Los_Angeles',
-      businessHours: 'Mon-Fri 8 AM - 6 PM',
-      avgCalls: '10',
-      emergencyServices: 'true'
-    };
-  }
-  return {
+  const base = {
     ownerName: '',
     ownerEmail: '',
     website: '',
     industry: '',
-    businessName: '',
+    businessName: qaMode ? 'Intake QA Smoke' : '',
     phone: '',
     address1: '',
     address2: '',
@@ -131,6 +109,7 @@ function createInitialForm(qaMode = false) {
     avgCalls: '',
     emergencyServices: 'false'
   };
+  return base;
 }
 
 export function IntakePageClient({ qaMode = false } = {}) {
@@ -143,7 +122,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const [activation, setActivation] = useState(null);
   const [activationStatus, setActivationStatus] = useState({ message: '', tone: 'normal' });
   const [activationBusy, setActivationBusy] = useState(false);
-  const [websiteEdited, setWebsiteEdited] = useState(isQaMode);
+  const [websiteEdited, setWebsiteEdited] = useState(false);
   const [qaResult, setQaResult] = useState(null);
   const [enrichmentReport, setEnrichmentReport] = useState(null);
 
@@ -234,7 +213,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
       {
         field: 'Business Name',
         currentValue: form.businessName,
-        currentSource: form.businessName === initialForm.businessName ? 'qa_default' : 'user_input',
+        currentSource: form.businessName === initialForm.businessName ? 'qa_fixed' : 'user_input',
         suggestedValue: enrichmentReport?.profile?.businessName || null,
         suggestedSource: provenance?.businessName?.source || null
       },
@@ -699,7 +678,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
           <h1>{isQaMode ? 'AI Assisted Setup (QA Mode)' : 'AI Assisted Setup'}</h1>
           {isQaMode && (
             <div className="intake-inline-note">
-              QA mode recreates an <code>intake_qa_*</code> tenant from this form and skips paid voice provisioning. It requires an active admin session.
+              QA mode reuses a fixed business name so the same <code>intake_qa_*</code> tenant is recreated on each run. All other fields are entered and enriched like the normal intake flow. It requires an active admin session.
             </div>
           )}
           <div className="intake-progress" aria-hidden="true">
@@ -864,7 +843,18 @@ export function IntakePageClient({ qaMode = false } = {}) {
                     <div className="intake-grid">
                       <div className="intake-stack">
                         <label>Business Name</label>
-                        <input required name="businessName" autoComplete="organization" className={inputClassName('businessName')} aria-invalid={fieldErrors.businessName ? 'true' : undefined} placeholder="Acme Plumbing" value={form.businessName} onChange={(event) => setFormValue('businessName', event.target.value)} />
+                        <input
+                          required
+                          name="businessName"
+                          autoComplete="organization"
+                          readOnly={isQaMode}
+                          className={inputClassName('businessName')}
+                          aria-invalid={fieldErrors.businessName ? 'true' : undefined}
+                          placeholder="Acme Plumbing"
+                          value={form.businessName}
+                          onChange={(event) => setFormValue('businessName', event.target.value)}
+                        />
+                        {isQaMode && <div className="intake-muted">Fixed in QA mode so each run recreates the same tenant.</div>}
                         {fieldErrorText('businessName')}
                       </div>
                       <div className="intake-stack">
