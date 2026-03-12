@@ -9,6 +9,7 @@ const items = [
   { label: 'Call Monitoring', href: '/admin/monitoring', group: 'Platform' },
   { label: 'Provisioning Jobs', href: '/admin/jobs', group: 'Platform' },
   { label: 'Phone Numbers', href: '/admin/phone-numbers', group: 'Platform' },
+  { label: 'AI Usage', href: '/admin/usage', group: 'Platform' },
   { label: 'Industry Config', href: '/admin/industries', group: 'Controls' },
   { label: 'Admin Users', href: '/admin/users', group: 'Controls' },
   { label: 'System Config', href: '/admin/system', group: 'Controls' },

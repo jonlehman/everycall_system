@@ -68,6 +68,18 @@ type EndCallArgs = {
   reason?: string;
 };
 
+type UsageTotals = {
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  inputTextTokens: number;
+  inputAudioTokens: number;
+  outputTextTokens: number;
+  outputAudioTokens: number;
+  estimatedCostMicrosUsd: number;
+  responseCount: number;
+};
+
 type StreamSession = {
   callControlId: string;
   callSid: string;
@@ -91,11 +103,111 @@ type StreamSession = {
   rtpTimestamp?: number;
   rtpSsrc?: number;
   realtimeModel?: string;
+  aiInputRateMicrosUsd?: number;
+  aiOutputRateMicrosUsd?: number;
+  usageTotals?: UsageTotals;
   pendingToolCall?: PendingToolCall | null;
   realtimeLogPath?: string;
 };
 
 const streamSessions = new Map<string, StreamSession>();
+
+function parseUsdRatePerMillion(value: string | undefined, fallback: number) {
+  const parsed = Number(value || "");
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+const realtimeInputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_INPUT_RATE_PER_1M_USD, 4);
+const realtimeOutputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_OUTPUT_RATE_PER_1M_USD, 16);
+const realtimeInputRateMicrosUsd = Math.round(realtimeInputRatePer1MUsd * 1_000_000);
+const realtimeOutputRateMicrosUsd = Math.round(realtimeOutputRatePer1MUsd * 1_000_000);
+
+function emptyUsageTotals(): UsageTotals {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedInputTokens: 0,
+    inputTextTokens: 0,
+    inputAudioTokens: 0,
+    outputTextTokens: 0,
+    outputAudioTokens: 0,
+    estimatedCostMicrosUsd: 0,
+    responseCount: 0
+  };
+}
+
+function toInt(value: unknown) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
+}
+
+function collectUsage(payloadMsg: any) {
+  const usage = payloadMsg?.response?.usage || payloadMsg?.usage || {};
+  const inputTokens = toInt(usage?.input_tokens ?? usage?.prompt_tokens);
+  const outputTokens = toInt(usage?.output_tokens ?? usage?.completion_tokens);
+  const cachedInputTokens = toInt(usage?.input_token_details?.cached_tokens);
+  const inputTextTokens = toInt(usage?.input_token_details?.text_tokens);
+  const inputAudioTokens = toInt(usage?.input_token_details?.audio_tokens);
+  const outputTextTokens = toInt(usage?.output_token_details?.text_tokens);
+  const outputAudioTokens = toInt(usage?.output_token_details?.audio_tokens);
+  return {
+    inputTokens,
+    outputTokens,
+    cachedInputTokens,
+    inputTextTokens,
+    inputAudioTokens,
+    outputTextTokens,
+    outputAudioTokens
+  };
+}
+
+function estimateUsageCostMicrosUsd(inputTokens: number, outputTokens: number) {
+  return Math.round((inputTokens * realtimeInputRateMicrosUsd) / 1_000_000)
+    + Math.round((outputTokens * realtimeOutputRateMicrosUsd) / 1_000_000);
+}
+
+async function persistCallUsage(session: StreamSession) {
+  if (!pool) return;
+  const usage = session.usageTotals || emptyUsageTotals();
+  try {
+    await pool.query(
+      `UPDATE calls
+       SET ai_model = $2,
+           ai_input_tokens = $3,
+           ai_output_tokens = $4,
+           ai_cached_input_tokens = $5,
+           ai_input_text_tokens = $6,
+           ai_input_audio_tokens = $7,
+           ai_output_text_tokens = $8,
+           ai_output_audio_tokens = $9,
+           ai_input_rate_micros_usd = $10,
+           ai_output_rate_micros_usd = $11,
+           ai_estimated_cost_micros_usd = $12,
+           ai_response_count = $13
+       WHERE call_sid = $1`,
+      [
+        session.callSid,
+        session.realtimeModel || null,
+        usage.inputTokens,
+        usage.outputTokens,
+        usage.cachedInputTokens,
+        usage.inputTextTokens,
+        usage.inputAudioTokens,
+        usage.outputTextTokens,
+        usage.outputAudioTokens,
+        session.aiInputRateMicrosUsd ?? realtimeInputRateMicrosUsd,
+        session.aiOutputRateMicrosUsd ?? realtimeOutputRateMicrosUsd,
+        usage.estimatedCostMicrosUsd,
+        usage.responseCount
+      ]
+    );
+  } catch (err) {
+    logError("call_usage_persist_failed", {
+      callSid: session.callSid,
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
+}
 
 function resolveBidirectionalPayloadMode() {
   return bidirectionalPayloadMode === "rtp" ? "rtp" : "rtp";
@@ -409,6 +521,7 @@ async function endCallSession(session: StreamSession | undefined, reason: string
   if (!session || session.isShuttingDown) return;
   session.isShuttingDown = true;
   session.callActive = false;
+  await persistCallUsage(session);
 
   logInfo("gateway_call_session_end", {
     callSid: session.callSid,
@@ -775,6 +888,19 @@ function connectOpenAiRealtime(session: StreamSession) {
 
     if (type === "response.done") {
       const statusDetails = payloadMsg?.response?.status_details || payloadMsg?.status_details;
+      const usage = collectUsage(payloadMsg);
+      const totals = session.usageTotals || emptyUsageTotals();
+      totals.inputTokens += usage.inputTokens;
+      totals.outputTokens += usage.outputTokens;
+      totals.cachedInputTokens += usage.cachedInputTokens;
+      totals.inputTextTokens += usage.inputTextTokens;
+      totals.inputAudioTokens += usage.inputAudioTokens;
+      totals.outputTextTokens += usage.outputTextTokens;
+      totals.outputAudioTokens += usage.outputAudioTokens;
+      totals.responseCount += 1;
+      totals.estimatedCostMicrosUsd += estimateUsageCostMicrosUsd(usage.inputTokens, usage.outputTokens);
+      session.usageTotals = totals;
+      void persistCallUsage(session);
       logInfo("openai_realtime_response_done", {
         callSid: session.callSid,
         responseId: payloadMsg?.response?.id || payloadMsg?.response_id,
@@ -782,7 +908,10 @@ function connectOpenAiRealtime(session: StreamSession) {
         statusDetailsType: statusDetails?.type,
         statusDetailsReason: statusDetails?.reason,
         errorType: statusDetails?.error?.type,
-        errorCode: statusDetails?.error?.code
+        errorCode: statusDetails?.error?.code,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        estimatedCostMicrosUsd: estimateUsageCostMicrosUsd(usage.inputTokens, usage.outputTokens)
       });
       return;
     }
@@ -1013,6 +1142,9 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
       reconnectAttempted: false,
       openAiSessionUpdated: false,
       greetingSent: false,
+      aiInputRateMicrosUsd: realtimeInputRateMicrosUsd,
+      aiOutputRateMicrosUsd: realtimeOutputRateMicrosUsd,
+      usageTotals: emptyUsageTotals(),
       promptPayload,
       outputQueue: [],
       outputBuffer: Buffer.alloc(0),
@@ -1071,6 +1203,9 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
             reconnectAttempted: false,
             openAiSessionUpdated: false,
             greetingSent: false,
+            aiInputRateMicrosUsd: realtimeInputRateMicrosUsd,
+            aiOutputRateMicrosUsd: realtimeOutputRateMicrosUsd,
+            usageTotals: emptyUsageTotals(),
             promptPayload,
             outputQueue: [],
             outputBuffer: Buffer.alloc(0),

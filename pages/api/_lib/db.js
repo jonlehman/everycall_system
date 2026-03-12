@@ -154,12 +154,36 @@ export async function ensureTables(pool) {
       summary TEXT,
       urgency TEXT,
       disposition TEXT,
+      ai_model TEXT,
+      ai_input_tokens BIGINT,
+      ai_output_tokens BIGINT,
+      ai_cached_input_tokens BIGINT,
+      ai_input_text_tokens BIGINT,
+      ai_input_audio_tokens BIGINT,
+      ai_output_text_tokens BIGINT,
+      ai_output_audio_tokens BIGINT,
+      ai_input_rate_micros_usd BIGINT,
+      ai_output_rate_micros_usd BIGINT,
+      ai_estimated_cost_micros_usd BIGINT,
+      ai_response_count INTEGER NOT NULL DEFAULT 0,
       latency_ms INTEGER,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
   await pool.query(`ALTER TABLE calls ALTER COLUMN status SET DEFAULT 'new';`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_model TEXT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_input_tokens BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_output_tokens BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_cached_input_tokens BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_input_text_tokens BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_input_audio_tokens BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_output_text_tokens BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_output_audio_tokens BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_input_rate_micros_usd BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_output_rate_micros_usd BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_estimated_cost_micros_usd BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_response_count INTEGER NOT NULL DEFAULT 0;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS call_details (

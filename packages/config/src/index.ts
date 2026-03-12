@@ -12,6 +12,8 @@ const callGatewayEnvSchema = baseSchema.extend({
   TELNYX_OPENAI_API_KEY_REF: z.string().min(1).optional(),
   TELNYX_TRANSCRIPTION_MODEL: z.string().min(1).optional(),
   OPENAI_REALTIME_MODEL: z.string().min(1).optional(),
+  OPENAI_REALTIME_INPUT_RATE_PER_1M_USD: z.string().min(1).optional(),
+  OPENAI_REALTIME_OUTPUT_RATE_PER_1M_USD: z.string().min(1).optional(),
   OPENAI_REALTIME_VOICE: z.string().min(1).optional(),
   OPENAI_REALTIME_INPUT_FORMAT: z.string().min(1).optional(),
   OPENAI_REALTIME_OUTPUT_FORMAT: z.string().min(1).optional(),
