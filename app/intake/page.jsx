@@ -135,6 +135,7 @@ function createInitialForm(qaMode = false) {
 
 export function IntakePageClient({ qaMode = false } = {}) {
   const isQaMode = Boolean(qaMode);
+  const initialForm = useMemo(() => createInitialForm(isQaMode), [isQaMode]);
   const [step, setStep] = useState(0);
   const [status, setStatus] = useState({ message: '', tone: 'normal' });
   const [fieldErrors, setFieldErrors] = useState({});
@@ -144,6 +145,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const [activationBusy, setActivationBusy] = useState(false);
   const [websiteEdited, setWebsiteEdited] = useState(isQaMode);
   const [qaResult, setQaResult] = useState(null);
+  const [enrichmentReport, setEnrichmentReport] = useState(null);
 
   const [form, setForm] = useState(() => createInitialForm(isQaMode));
 
@@ -203,6 +205,126 @@ export function IntakePageClient({ qaMode = false } = {}) {
       return count + (hasDefault && isBlank ? 1 : 0);
     }, 0)
   ), [defaultFaqAnswers, faqDrafts]);
+
+  const qaReport = useMemo(() => {
+    if (!isQaMode) return null;
+    const provenance = enrichmentReport?.provenance || {};
+    const fieldRows = [
+      {
+        field: 'Owner Name',
+        currentValue: form.ownerName,
+        currentSource: form.ownerName === initialForm.ownerName ? 'qa_default' : 'user_input',
+        suggestedValue: null,
+        suggestedSource: null
+      },
+      {
+        field: 'Owner Email',
+        currentValue: form.ownerEmail,
+        currentSource: form.ownerEmail === initialForm.ownerEmail ? 'qa_default' : 'user_input',
+        suggestedValue: null,
+        suggestedSource: null
+      },
+      {
+        field: 'Website',
+        currentValue: form.website,
+        currentSource: form.website === initialForm.website ? 'qa_default' : 'user_input',
+        suggestedValue: enrichmentReport?.website || null,
+        suggestedSource: provenance?.website?.source || null
+      },
+      {
+        field: 'Business Name',
+        currentValue: form.businessName,
+        currentSource: form.businessName === initialForm.businessName ? 'qa_default' : 'user_input',
+        suggestedValue: enrichmentReport?.profile?.businessName || null,
+        suggestedSource: provenance?.businessName?.source || null
+      },
+      {
+        field: 'Business Phone',
+        currentValue: form.phone,
+        currentSource: form.phone === initialForm.phone ? 'qa_default' : 'user_input',
+        suggestedValue: enrichmentReport?.profile?.phone || null,
+        suggestedSource: provenance?.phone?.source || null
+      },
+      {
+        field: 'Address Line 1',
+        currentValue: form.address1,
+        currentSource: form.address1 === initialForm.address1 ? 'qa_default' : 'user_input',
+        suggestedValue: enrichmentReport?.profile?.address1 || null,
+        suggestedSource: provenance?.address?.source || null
+      },
+      {
+        field: 'City',
+        currentValue: form.city,
+        currentSource: form.city === initialForm.city ? 'qa_default' : 'user_input',
+        suggestedValue: enrichmentReport?.profile?.city || null,
+        suggestedSource: provenance?.address?.source || null
+      },
+      {
+        field: 'State',
+        currentValue: form.state,
+        currentSource: form.state === initialForm.state ? 'qa_default' : 'user_input',
+        suggestedValue: enrichmentReport?.profile?.state || null,
+        suggestedSource: provenance?.address?.source || null
+      },
+      {
+        field: 'ZIP',
+        currentValue: form.zip,
+        currentSource: form.zip === initialForm.zip ? 'qa_default' : 'user_input',
+        suggestedValue: enrichmentReport?.profile?.zip || null,
+        suggestedSource: provenance?.address?.source || null
+      },
+      {
+        field: 'Service Area',
+        currentValue: form.serviceArea,
+        currentSource: form.serviceArea === initialForm.serviceArea ? 'qa_default' : 'user_input',
+        suggestedValue: enrichmentReport?.profile?.serviceArea || null,
+        suggestedSource: provenance?.serviceArea?.source || null
+      },
+      {
+        field: 'Business Hours',
+        currentValue: form.businessHours,
+        currentSource: form.businessHours === initialForm.businessHours ? 'qa_default' : 'user_input',
+        suggestedValue: enrichmentReport?.profile?.businessHours || null,
+        suggestedSource: provenance?.businessHours?.source || null
+      },
+      {
+        field: 'Emergency Services',
+        currentValue: form.emergencyServices,
+        currentSource: form.emergencyServices === initialForm.emergencyServices ? 'qa_default' : 'user_input',
+        suggestedValue: enrichmentReport?.profile?.emergencyServices === null || enrichmentReport?.profile?.emergencyServices === undefined
+          ? null
+          : String(enrichmentReport.profile.emergencyServices),
+        suggestedSource: provenance?.emergencyServices?.source || null
+      },
+      {
+        field: 'Estimated Calls Per Day',
+        currentValue: form.avgCalls,
+        currentSource: form.avgCalls === initialForm.avgCalls ? 'qa_default' : 'user_input',
+        suggestedValue: null,
+        suggestedSource: null
+      }
+    ];
+    const faqRows = (faqDrafts || []).map((faq) => ({
+      question: faq.question,
+      currentAnswer: String(faq.answer || '').trim(),
+      currentSource: String(faq.answer || '').trim()
+        ? (String(faq.answer || '').trim() === String(faq.defaultAnswer || '').trim() ? 'industry_default_applied' : 'website_or_manual')
+        : 'blank',
+      defaultAnswer: String(faq.defaultAnswer || '').trim(),
+      sourceType: faq.sourceType || null,
+      sourceUrl: faq.sourceUrl || null,
+      sourceConfidence: Number.isFinite(Number(faq.sourceConfidence)) ? Number(faq.sourceConfidence) : null
+    }));
+    return {
+      fieldRows,
+      faqRows,
+      raw: {
+        currentForm: form,
+        initialQaDefaults: initialForm,
+        enrichment: enrichmentReport
+      }
+    };
+  }, [enrichmentReport, faqDrafts, form, initialForm, isQaMode]);
 
   const setStatusMessage = (message, tone = 'normal') => setStatus({ message, tone });
 
@@ -324,6 +446,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
       if (!resp.ok) {
         setFaqDrafts([]);
         setDefaultFaqAnswers(new Map());
+        if (isQaMode) setEnrichmentReport(null);
         setStatusMessage(data?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
       } else {
         const enrichment = data?.enrichment || {};
@@ -331,6 +454,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
         const matchedServices = parseServiceMatches(form.industry, enrichment);
         setFaqDrafts(previewFaqs);
         setDefaultFaqAnswers(normalizeDefaultAnswerMap(previewFaqs));
+        if (isQaMode) setEnrichmentReport(enrichment);
         setSelectedServices((prev) => {
           const next = new Set(prev);
           matchedServices.forEach((service) => next.add(service));
@@ -347,6 +471,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
     } catch (err) {
       setFaqDrafts([]);
       setDefaultFaqAnswers(new Map());
+      if (isQaMode) setEnrichmentReport(null);
       setStatusMessage(err?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
     } finally {
       setEnrichmentBusy(false);
@@ -670,6 +795,66 @@ export function IntakePageClient({ qaMode = false } = {}) {
               <div className="intake-stack">
                 <div className="intake-page-title">Step 3 — Review and finish setup</div>
                 <div className="intake-page-hint">Confirm the key details below, then create your workspace.</div>
+                {isQaMode && qaReport && (
+                  <section className="intake-panel">
+                    <div className="intake-panel-header">
+                      <div className="intake-section-title">QA Data Provenance</div>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
+                            <th style={{ padding: '8px 6px' }}>Field</th>
+                            <th style={{ padding: '8px 6px' }}>Current Value</th>
+                            <th style={{ padding: '8px 6px' }}>Current Source</th>
+                            <th style={{ padding: '8px 6px' }}>Enrichment Suggestion</th>
+                            <th style={{ padding: '8px 6px' }}>Suggestion Source</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {qaReport.fieldRows.map((row) => (
+                            <tr key={row.field} style={{ borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' }}>
+                              <td style={{ padding: '8px 6px', fontWeight: 600 }}>{row.field}</td>
+                              <td style={{ padding: '8px 6px' }}>{row.currentValue || '—'}</td>
+                              <td style={{ padding: '8px 6px' }}>{row.currentSource || '—'}</td>
+                              <td style={{ padding: '8px 6px' }}>{row.suggestedValue || '—'}</td>
+                              <td style={{ padding: '8px 6px' }}>{row.suggestedSource || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="intake-section-title" style={{ marginTop: 16 }}>FAQ Sources</div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
+                            <th style={{ padding: '8px 6px' }}>Question</th>
+                            <th style={{ padding: '8px 6px' }}>Current Answer Source</th>
+                            <th style={{ padding: '8px 6px' }}>Detected Source</th>
+                            <th style={{ padding: '8px 6px' }}>Confidence</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {qaReport.faqRows.map((row) => (
+                            <tr key={row.question} style={{ borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' }}>
+                              <td style={{ padding: '8px 6px', fontWeight: 600 }}>{row.question}</td>
+                              <td style={{ padding: '8px 6px' }}>{row.currentSource}</td>
+                              <td style={{ padding: '8px 6px' }}>
+                                {row.sourceType || row.sourceUrl
+                                  ? [row.sourceType || null, row.sourceUrl || null].filter(Boolean).join(' | ')
+                                  : '—'}
+                              </td>
+                              <td style={{ padding: '8px 6px' }}>{row.sourceConfidence ?? '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="intake-section-title" style={{ marginTop: 16 }}>Raw Report</div>
+                    <textarea readOnly value={JSON.stringify(qaReport.raw, null, 2)} style={{ minHeight: 280, fontFamily: 'monospace' }} />
+                  </section>
+                )}
 
                 <div className="intake-review-grid">
                   <section className="intake-panel">

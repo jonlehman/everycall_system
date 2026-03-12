@@ -420,6 +420,93 @@ function inferEmergencyServices(text) {
   return null;
 }
 
+function findWebsitePageForText(pages, value) {
+  const needle = String(value || "").trim().toLowerCase();
+  if (!needle) return null;
+  for (const page of pages || []) {
+    if (String(page?.text || "").toLowerCase().includes(needle)) {
+      return page?.sourceUrl || null;
+    }
+  }
+  return null;
+}
+
+function buildProfileProvenance({
+  explicitWebsite,
+  derivedWebsite,
+  normalizedWebsite,
+  websiteSources,
+  googleBusinessProfile,
+  businessName,
+  phone,
+  extractedWebsitePhone,
+  selectedAddressRaw,
+  addressSourceType,
+  addressSourceUrl,
+  serviceArea,
+  businessHours,
+  extractedHours,
+  emergencyServices,
+  websiteResult
+}) {
+  const gbpName = String(googleBusinessProfile?.name || "").trim();
+  const gbpPhone = String(googleBusinessProfile?.phone || "").trim();
+  const gbpAddress = String(googleBusinessProfile?.serviceArea || "").trim();
+  const gbpHours = String(googleBusinessProfile?.hours || "").trim();
+  return {
+    website: {
+      value: normalizedWebsite || "",
+      source: explicitWebsite ? "user_input" : derivedWebsite ? "derived_from_email" : null,
+      sourceUrl: normalizedWebsite || null
+    },
+    businessName: {
+      value: businessName || "",
+      source: gbpName ? "google_business_profile.name" : normalizedWebsite ? "website_domain" : "email_domain",
+      sourceUrl: googleBusinessProfile?.url || googleBusinessProfile?.website || normalizedWebsite || null
+    },
+    phone: {
+      value: phone || "",
+      source: gbpPhone ? "google_business_profile.phone" : extractedWebsitePhone ? "website_text" : null,
+      sourceUrl: gbpPhone
+        ? (googleBusinessProfile?.url || googleBusinessProfile?.website || null)
+        : findWebsitePageForText(websiteSources.pages, extractedWebsitePhone),
+      evidence: gbpPhone || extractedWebsitePhone || null
+    },
+    address: {
+      value: selectedAddressRaw || "",
+      source: addressSourceType,
+      sourceUrl: addressSourceUrl,
+      evidence: selectedAddressRaw || null
+    },
+    serviceArea: {
+      value: serviceArea || "",
+      source: gbpAddress ? "google_business_profile.formatted_address" : null,
+      sourceUrl: gbpAddress ? (googleBusinessProfile?.url || googleBusinessProfile?.website || null) : null,
+      evidence: gbpAddress || null
+    },
+    businessHours: {
+      value: businessHours || "",
+      source: gbpHours ? "google_business_profile.hours" : extractedHours ? "website_text" : null,
+      sourceUrl: gbpHours
+        ? (googleBusinessProfile?.url || googleBusinessProfile?.website || null)
+        : findWebsitePageForText(websiteSources.pages, extractedHours),
+      evidence: gbpHours || extractedHours || null
+    },
+    emergencyServices: {
+      value: emergencyServices,
+      source: emergencyServices === null ? null : "inferred_from_website_and_faqs",
+      sourceUrl: websiteResult.ok ? normalizedWebsite || null : null
+    },
+    fetchedSources: {
+      websitePages: (websiteSources.pages || []).map((page) => ({
+        sourceType: page.sourceType || "website",
+        sourceUrl: page.sourceUrl || null
+      })),
+      googleBusinessProfileFound: Boolean(googleBusinessProfile)
+    }
+  };
+}
+
 function findEvidenceHeuristic(question, sources) {
   const keys = questionKeywords(question);
   if (!keys.length) return null;
@@ -739,25 +826,58 @@ export default async function handler(req, res) {
     const addressText = [websiteResult.text, googleBusinessProfile?.serviceArea].filter(Boolean).join(" ");
     const labeledAddress = extractLabeledAddress(addressText);
     const addressCandidates = extractAddressCandidates(addressText);
-    const parsedAddress = parseUsAddress(labeledAddress || addressCandidates[0] || googleBusinessProfile?.serviceArea || "");
+    const selectedAddressRaw = labeledAddress || addressCandidates[0] || googleBusinessProfile?.serviceArea || "";
+    let addressSourceType = null;
+    let addressSourceUrl = null;
+    if (labeledAddress) {
+      addressSourceType = "website_labeled_address";
+      addressSourceUrl = findWebsitePageForText(websiteSources.pages, labeledAddress);
+    } else if (addressCandidates[0]) {
+      addressSourceType = "website_address_match";
+      addressSourceUrl = findWebsitePageForText(websiteSources.pages, addressCandidates[0]);
+    } else if (googleBusinessProfile?.serviceArea) {
+      addressSourceType = "google_business_profile.formatted_address";
+      addressSourceUrl = googleBusinessProfile?.url || googleBusinessProfile?.website || null;
+    }
+    const parsedAddress = parseUsAddress(selectedAddressRaw);
     const serviceText = [
       googleBusinessProfile?.description,
       googleBusinessProfile?.services,
       websiteResult.text.slice(0, 10000)
     ].filter(Boolean).join(". ");
     const emergencyServices = inferEmergencyServices([serviceText, ...faqs.map((faq) => faq.answer)].join(". "));
+    const extractedWebsitePhone = extractPhone(websiteResult.text);
+    const extractedHours = extractBusinessHours(websiteResult.text);
     const profile = {
       businessName,
-      phone: String(googleBusinessProfile?.phone || "").trim() || extractPhone(websiteResult.text),
+      phone: String(googleBusinessProfile?.phone || "").trim() || extractedWebsitePhone,
       address1: parsedAddress.address1,
       city: parsedAddress.city,
       state: parsedAddress.state,
       zip: parsedAddress.zip,
       serviceArea: String(googleBusinessProfile?.serviceArea || "").trim(),
-      businessHours: String(googleBusinessProfile?.hours || "").trim() || extractBusinessHours(websiteResult.text),
+      businessHours: String(googleBusinessProfile?.hours || "").trim() || extractedHours,
       emergencyServices,
       serviceText
     };
+    const provenance = buildProfileProvenance({
+      explicitWebsite,
+      derivedWebsite,
+      normalizedWebsite,
+      websiteSources,
+      googleBusinessProfile,
+      businessName,
+      phone: profile.phone,
+      extractedWebsitePhone,
+      selectedAddressRaw,
+      addressSourceType,
+      addressSourceUrl,
+      serviceArea: profile.serviceArea,
+      businessHours: profile.businessHours,
+      extractedHours,
+      emergencyServices,
+      websiteResult
+    });
 
     return res.status(200).json({
       ok: true,
@@ -768,6 +888,7 @@ export default async function handler(req, res) {
         googleBusinessProfileFound: Boolean(googleBusinessProfile),
         googleBusinessProfile,
         profile,
+        provenance,
         defaultFaqCount: defaultFaqs.length,
         faqs
       }
