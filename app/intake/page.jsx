@@ -886,7 +886,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                       <div className="intake-section-title">Business Profile</div>
                     </div>
                     <div className="intake-grid">
-                      <div className="intake-stack">
+                      <div className="intake-stack intake-full">
                         <label>Business Name</label>
                         <input
                           required
@@ -902,19 +902,21 @@ export function IntakePageClient({ qaMode = false } = {}) {
                         {isQaMode && <div className="intake-muted">Fixed in QA mode so each run recreates the same tenant.</div>}
                         {fieldErrorText('businessName')}
                       </div>
-                      <div className="intake-stack">
+                      <div className="intake-stack intake-full">
                         <label>Business Phone</label>
                         <input type="tel" name="businessPhone" autoComplete="tel" inputMode="tel" placeholder="+1 555 555 5555" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
                       </div>
-                      <div className="intake-stack">
-                        <label>Password</label>
-                        <input type="password" required name="password" autoComplete="new-password" className={inputClassName('password')} aria-invalid={fieldErrors.password ? 'true' : undefined} placeholder="Create a password" value={form.password} onChange={(event) => setFormValue('password', event.target.value)} />
-                        {fieldErrorText('password')}
-                      </div>
-                      <div className="intake-stack">
-                        <label>Confirm Password</label>
-                        <input type="password" required name="confirmPassword" autoComplete="new-password" className={inputClassName('confirmPassword')} aria-invalid={fieldErrors.confirmPassword ? 'true' : undefined} placeholder="Confirm password" value={form.confirmPassword} onChange={(event) => setFormValue('confirmPassword', event.target.value)} />
-                        {fieldErrorText('confirmPassword')}
+                      <div className="intake-inline-row intake-full">
+                        <div className="intake-stack">
+                          <label>Password</label>
+                          <input type="password" required name="password" autoComplete="new-password" className={inputClassName('password')} aria-invalid={fieldErrors.password ? 'true' : undefined} placeholder="Create a password" value={form.password} onChange={(event) => setFormValue('password', event.target.value)} />
+                          {fieldErrorText('password')}
+                        </div>
+                        <div className="intake-stack">
+                          <label>Confirm Password</label>
+                          <input type="password" required name="confirmPassword" autoComplete="new-password" className={inputClassName('confirmPassword')} aria-invalid={fieldErrors.confirmPassword ? 'true' : undefined} placeholder="Confirm password" value={form.confirmPassword} onChange={(event) => setFormValue('confirmPassword', event.target.value)} />
+                          {fieldErrorText('confirmPassword')}
+                        </div>
                       </div>
                     </div>
                   </section>
@@ -964,7 +966,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                       <div className="intake-section-title">Operations</div>
                     </div>
                     <div className="intake-grid">
-                      <div className="intake-stack">
+                      <div className="intake-stack intake-full">
                         <label>Timezone</label>
                         <select value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}>
                           <option value="America/New_York">Eastern (ET)</option>
@@ -976,21 +978,23 @@ export function IntakePageClient({ qaMode = false } = {}) {
                           <option value="Pacific/Honolulu">Hawaii (HST)</option>
                         </select>
                       </div>
-                      <div className="intake-stack">
+                      <div className="intake-stack intake-full">
                         <label>Business Hours</label>
                         <input placeholder="Mon-Fri 8 AM - 6 PM" value={form.businessHours} onChange={(event) => setForm({ ...form, businessHours: event.target.value })} />
                       </div>
-                      <div className="intake-stack">
-                        <label>Estimated Calls Per Day</label>
-                        <input type="number" min="0" className={inputClassName('averageCallsPerDay')} aria-invalid={fieldErrors.averageCallsPerDay ? 'true' : undefined} placeholder="10" value={form.avgCalls} onChange={(event) => setFormValue('avgCalls', event.target.value)} />
-                        {fieldErrorText('averageCallsPerDay')}
-                      </div>
-                      <div className="intake-stack">
-                        <label>Do You Offer Emergency Service?</label>
-                        <select value={form.emergencyServices} onChange={(event) => setForm({ ...form, emergencyServices: event.target.value })}>
-                          <option value="false">No</option>
-                          <option value="true">Yes</option>
-                        </select>
+                      <div className="intake-inline-row intake-full">
+                        <div className="intake-stack">
+                          <label>Estimated Calls Per Day</label>
+                          <input type="number" min="0" className={inputClassName('averageCallsPerDay')} aria-invalid={fieldErrors.averageCallsPerDay ? 'true' : undefined} placeholder="10" value={form.avgCalls} onChange={(event) => setFormValue('avgCalls', event.target.value)} />
+                          {fieldErrorText('averageCallsPerDay')}
+                        </div>
+                        <div className="intake-stack">
+                          <label>Do You Offer Emergency Service?</label>
+                          <select value={form.emergencyServices} onChange={(event) => setForm({ ...form, emergencyServices: event.target.value })}>
+                            <option value="false">No</option>
+                            <option value="true">Yes</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                   </section>
