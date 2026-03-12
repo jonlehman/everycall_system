@@ -406,10 +406,10 @@ export default function TenantManagePage() {
             <span className="text-sm text-slate-500">{status}</span>
           </div>
         </div>
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm xl:row-span-2 flex flex-col">
           <label>Agent Prompt &amp; Behavior</label>
           <p className="text-sm text-slate-500">This is the tenant override prompt. Final prompt is composed at runtime.</p>
-          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} style={{ minHeight: 180 }}></textarea>
+          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} className="flex-1" style={{ minHeight: 520 }}></textarea>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button onClick={savePrompt}>Save Prompt</Button>
             <Button variant="outline" onClick={importIndustryPrompt}>Import Industry Prompt</Button>
@@ -436,7 +436,7 @@ export default function TenantManagePage() {
 
       <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <label>Final Prompt Preview</label>
-        <textarea value={composedPrompt} readOnly style={{ minHeight: 220 }}></textarea>
+        <textarea value={composedPrompt} readOnly style={{ minHeight: 660 }}></textarea>
       </div>
 
       <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
