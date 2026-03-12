@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { DataGrid } from '@mui/x-data-grid';
 import { Button } from '../../../../components/ui/button';
 
 export default function TenantManagePage() {
   const params = useParams();
+  const router = useRouter();
   const tenantKey = params.tenantKey;
   const voiceOptions = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'];
   const [tenant, setTenant] = useState(null);
@@ -20,6 +21,7 @@ export default function TenantManagePage() {
   const [industries, setIndustries] = useState([]);
   const [faqs, setFaqs] = useState([]);
   const [provisioningJobs, setProvisioningJobs] = useState([]);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -182,6 +184,34 @@ export default function TenantManagePage() {
       .catch(() => {});
   };
 
+  const deleteTenant = async () => {
+    const label = tenant?.name || tenantKey;
+    const confirmed = window.confirm(`Delete tenant "${label}" and all associated data? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeleteBusy(true);
+    setStatus('Deleting tenant...');
+    try {
+      const resp = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || !data?.ok) {
+        setStatus(data?.message || data?.error || 'Delete failed.');
+        setDeleteBusy(false);
+        return;
+      }
+      setStatus('Tenant deleted. Redirecting...');
+      setTimeout(() => {
+        router.push('/admin/tenants');
+      }, 500);
+    } catch (err) {
+      setStatus(err?.message || 'Delete failed.');
+      setDeleteBusy(false);
+    }
+  };
+
   const rows = users.map((u, idx) => ({
     id: u.id || idx,
     name: u.name,
@@ -227,6 +257,9 @@ export default function TenantManagePage() {
           <h1 className="m-0 text-2xl font-semibold tracking-tight">{tenant?.name || tenantKey}</h1>
         </div>
         <div className="flex gap-2">
+          <Button variant="destructive" onClick={deleteTenant} disabled={deleteBusy}>
+            {deleteBusy ? 'Deleting...' : 'Delete Tenant'}
+          </Button>
           <Button variant="outline" onClick={toggleTenantStatus}>
             {editing.status === 'active' ? 'Pause Tenant' : 'Resume Tenant'}
           </Button>
