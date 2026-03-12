@@ -68,6 +68,27 @@ function parseServiceMatches(industry, enrichment) {
   });
 }
 
+function mergeEnrichmentProfileIntoForm(prev, enrichment, { includeBusinessName = true } = {}) {
+  const profile = enrichment?.profile || {};
+  return {
+    ...prev,
+    businessName: includeBusinessName ? (prev.businessName || profile.businessName || '') : prev.businessName,
+    phone: prev.phone || profile.phone || '',
+    address1: prev.address1 || profile.address1 || '',
+    city: prev.city || profile.city || '',
+    state: prev.state || profile.state || '',
+    zip: prev.zip || profile.zip || '',
+    serviceArea: prev.serviceArea || profile.serviceArea || '',
+    businessHours: prev.businessHours || profile.businessHours || '',
+    emergencyServices:
+      prev.emergencyServices !== 'false'
+        ? prev.emergencyServices
+        : profile.emergencyServices === true
+          ? 'true'
+          : prev.emergencyServices
+  };
+}
+
 function websiteFromEmail(email) {
   const raw = String(email || '').trim().toLowerCase();
   const at = raw.lastIndexOf('@');
@@ -188,88 +209,103 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const qaReport = useMemo(() => {
     if (!isQaMode) return null;
     const provenance = enrichmentReport?.provenance || {};
+    const resolveCurrentSource = (currentValue, initialValue, suggestedValue, { fixed = false } = {}) => {
+      if (fixed && currentValue === initialValue) return 'qa_fixed';
+      if (currentValue && suggestedValue && String(currentValue).trim() === String(suggestedValue).trim()) {
+        return 'enrichment_applied';
+      }
+      if (currentValue === initialValue) return 'qa_default';
+      return 'user_input';
+    };
+
     const fieldRows = [
       {
         field: 'Owner Name',
         currentValue: form.ownerName,
-        currentSource: form.ownerName === initialForm.ownerName ? 'qa_default' : 'user_input',
+        currentSource: resolveCurrentSource(form.ownerName, initialForm.ownerName, null),
         suggestedValue: null,
         suggestedSource: null
       },
       {
         field: 'Owner Email',
         currentValue: form.ownerEmail,
-        currentSource: form.ownerEmail === initialForm.ownerEmail ? 'qa_default' : 'user_input',
+        currentSource: resolveCurrentSource(form.ownerEmail, initialForm.ownerEmail, null),
         suggestedValue: null,
         suggestedSource: null
       },
       {
         field: 'Website',
         currentValue: form.website,
-        currentSource: form.website === initialForm.website ? 'qa_default' : 'user_input',
+        currentSource: resolveCurrentSource(form.website, initialForm.website, enrichmentReport?.website || null),
         suggestedValue: enrichmentReport?.website || null,
         suggestedSource: provenance?.website?.source || null
       },
       {
         field: 'Business Name',
         currentValue: form.businessName,
-        currentSource: form.businessName === initialForm.businessName ? 'qa_fixed' : 'user_input',
+        currentSource: resolveCurrentSource(form.businessName, initialForm.businessName, enrichmentReport?.profile?.businessName || null, { fixed: true }),
         suggestedValue: enrichmentReport?.profile?.businessName || null,
         suggestedSource: provenance?.businessName?.source || null
       },
       {
         field: 'Business Phone',
         currentValue: form.phone,
-        currentSource: form.phone === initialForm.phone ? 'qa_default' : 'user_input',
+        currentSource: resolveCurrentSource(form.phone, initialForm.phone, enrichmentReport?.profile?.phone || null),
         suggestedValue: enrichmentReport?.profile?.phone || null,
         suggestedSource: provenance?.phone?.source || null
       },
       {
         field: 'Address Line 1',
         currentValue: form.address1,
-        currentSource: form.address1 === initialForm.address1 ? 'qa_default' : 'user_input',
+        currentSource: resolveCurrentSource(form.address1, initialForm.address1, enrichmentReport?.profile?.address1 || null),
         suggestedValue: enrichmentReport?.profile?.address1 || null,
         suggestedSource: provenance?.address?.source || null
       },
       {
         field: 'City',
         currentValue: form.city,
-        currentSource: form.city === initialForm.city ? 'qa_default' : 'user_input',
+        currentSource: resolveCurrentSource(form.city, initialForm.city, enrichmentReport?.profile?.city || null),
         suggestedValue: enrichmentReport?.profile?.city || null,
         suggestedSource: provenance?.address?.source || null
       },
       {
         field: 'State',
         currentValue: form.state,
-        currentSource: form.state === initialForm.state ? 'qa_default' : 'user_input',
+        currentSource: resolveCurrentSource(form.state, initialForm.state, enrichmentReport?.profile?.state || null),
         suggestedValue: enrichmentReport?.profile?.state || null,
         suggestedSource: provenance?.address?.source || null
       },
       {
         field: 'ZIP',
         currentValue: form.zip,
-        currentSource: form.zip === initialForm.zip ? 'qa_default' : 'user_input',
+        currentSource: resolveCurrentSource(form.zip, initialForm.zip, enrichmentReport?.profile?.zip || null),
         suggestedValue: enrichmentReport?.profile?.zip || null,
         suggestedSource: provenance?.address?.source || null
       },
       {
         field: 'Service Area',
         currentValue: form.serviceArea,
-        currentSource: form.serviceArea === initialForm.serviceArea ? 'qa_default' : 'user_input',
+        currentSource: resolveCurrentSource(form.serviceArea, initialForm.serviceArea, enrichmentReport?.profile?.serviceArea || null),
         suggestedValue: enrichmentReport?.profile?.serviceArea || null,
         suggestedSource: provenance?.serviceArea?.source || null
       },
       {
         field: 'Business Hours',
         currentValue: form.businessHours,
-        currentSource: form.businessHours === initialForm.businessHours ? 'qa_default' : 'user_input',
+        currentSource: resolveCurrentSource(form.businessHours, initialForm.businessHours, enrichmentReport?.profile?.businessHours || null),
         suggestedValue: enrichmentReport?.profile?.businessHours || null,
         suggestedSource: provenance?.businessHours?.source || null
       },
       {
         field: 'Emergency Services',
         currentValue: form.emergencyServices,
-        currentSource: form.emergencyServices === initialForm.emergencyServices ? 'qa_default' : 'user_input',
+        currentSource: resolveCurrentSource(
+          form.emergencyServices,
+          initialForm.emergencyServices,
+          enrichmentReport?.profile?.emergencyServices === null || enrichmentReport?.profile?.emergencyServices === undefined
+            ? null
+            : String(enrichmentReport.profile.emergencyServices)
+        ),
         suggestedValue: enrichmentReport?.profile?.emergencyServices === null || enrichmentReport?.profile?.emergencyServices === undefined
           ? null
           : String(enrichmentReport.profile.emergencyServices),
@@ -278,7 +314,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
       {
         field: 'Estimated Calls Per Day',
         currentValue: form.avgCalls,
-        currentSource: form.avgCalls === initialForm.avgCalls ? 'qa_default' : 'user_input',
+        currentSource: resolveCurrentSource(form.avgCalls, initialForm.avgCalls, null),
         suggestedValue: null,
         suggestedSource: null
       }
@@ -439,9 +475,12 @@ export function IntakePageClient({ qaMode = false } = {}) {
           matchedServices.forEach((service) => next.add(service));
           return Array.from(next);
         });
-        setForm((prev) => (
-          !websiteEdited && enrichment?.website ? { ...prev, website: enrichment.website } : prev
-        ));
+        setForm((prev) => {
+          const next = !websiteEdited && enrichment?.website ? { ...prev, website: enrichment.website } : prev;
+          return isQaMode
+            ? mergeEnrichmentProfileIntoForm(next, enrichment, { includeBusinessName: false })
+            : next;
+        });
         setStatusMessage(
           `Loaded ${previewFaqs.length} FAQ drafts and matched services from your site.`,
           'ok'
