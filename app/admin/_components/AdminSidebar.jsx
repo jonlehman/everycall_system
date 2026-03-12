@@ -8,6 +8,7 @@ const items = [
   { label: 'Tenants', href: '/admin/tenants', group: 'Platform' },
   { label: 'Call Monitoring', href: '/admin/monitoring', group: 'Platform' },
   { label: 'Provisioning Jobs', href: '/admin/jobs', group: 'Platform' },
+  { label: 'Test Intake', href: '/intake/test', group: 'Platform' },
   { label: 'Phone Numbers', href: '/admin/phone-numbers', group: 'Platform' },
   { label: 'AI Usage', href: '/admin/usage', group: 'Platform' },
   { label: 'Industry Config', href: '/admin/industries', group: 'Controls' },

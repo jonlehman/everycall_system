@@ -88,17 +88,30 @@ function normalizeDefaultAnswerMap(faqs) {
   return map;
 }
 
-export default function IntakePage() {
-  const [step, setStep] = useState(0);
-  const [status, setStatus] = useState({ message: '', tone: 'normal' });
-  const [fieldErrors, setFieldErrors] = useState({});
-  const [enrichmentBusy, setEnrichmentBusy] = useState(false);
-  const [activation, setActivation] = useState(null);
-  const [activationStatus, setActivationStatus] = useState({ message: '', tone: 'normal' });
-  const [activationBusy, setActivationBusy] = useState(false);
-  const [websiteEdited, setWebsiteEdited] = useState(false);
-
-  const [form, setForm] = useState({
+function createInitialForm(qaMode = false) {
+  if (qaMode) {
+    return {
+      ownerName: 'QA Operator',
+      ownerEmail: 'intake.qa.smoke@example.test',
+      website: 'https://example.com',
+      industry: 'plumbing',
+      businessName: 'Intake QA Smoke',
+      phone: '+12065550123',
+      address1: '123 Main St',
+      address2: '',
+      city: 'Seattle',
+      state: 'WA',
+      zip: '98101',
+      serviceArea: 'Seattle Metro',
+      password: 'qa-password-123',
+      confirmPassword: 'qa-password-123',
+      timezone: 'America/Los_Angeles',
+      businessHours: 'Mon-Fri 8 AM - 6 PM',
+      avgCalls: '10',
+      emergencyServices: 'true'
+    };
+  }
+  return {
     ownerName: '',
     ownerEmail: '',
     website: '',
@@ -117,7 +130,22 @@ export default function IntakePage() {
     businessHours: '',
     avgCalls: '',
     emergencyServices: 'false'
-  });
+  };
+}
+
+export function IntakePageClient({ qaMode = false } = {}) {
+  const isQaMode = Boolean(qaMode);
+  const [step, setStep] = useState(0);
+  const [status, setStatus] = useState({ message: '', tone: 'normal' });
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [enrichmentBusy, setEnrichmentBusy] = useState(false);
+  const [activation, setActivation] = useState(null);
+  const [activationStatus, setActivationStatus] = useState({ message: '', tone: 'normal' });
+  const [activationBusy, setActivationBusy] = useState(false);
+  const [websiteEdited, setWebsiteEdited] = useState(isQaMode);
+  const [qaResult, setQaResult] = useState(null);
+
+  const [form, setForm] = useState(() => createInitialForm(isQaMode));
 
   const [serviceSearch, setServiceSearch] = useState('');
   const [selectedServices, setSelectedServices] = useState([]);
@@ -355,7 +383,8 @@ export default function IntakePage() {
         sourceUrl: faq.sourceUrl || null,
         sourceRetrievedAt: faq.sourceRetrievedAt || null,
         sourceConfidence: Number.isFinite(Number(faq.sourceConfidence)) ? Number(faq.sourceConfidence) : null
-      }))
+      })),
+      qaMode: isQaMode
     };
 
     try {
@@ -377,7 +406,14 @@ export default function IntakePage() {
 
       const data = await resp.json();
       setFieldErrors({});
-      setStatusMessage('Trial created.', 'ok');
+      setStatusMessage(isQaMode ? 'QA tenant created.' : 'Trial created.', 'ok');
+      if (isQaMode) {
+        setQaResult({
+          tenantKey: data?.tenantKey || '',
+          voiceStatus: data?.provisioning?.voiceStatus || 'skipped'
+        });
+        return;
+      }
       setActivation({
         tenantKey: data?.tenantKey || '',
         voiceNumber: data?.provisioning?.voiceNumber || '',
@@ -412,6 +448,30 @@ export default function IntakePage() {
       setActivationBusy(false);
     }
   };
+
+  if (qaResult) {
+    const voiceStatusLabel = String(qaResult.voiceStatus || 'skipped');
+    return (
+      <div className="intake-body">
+        <div className="intake-shell">
+          <div className="intake-hero">
+            <div className="intake-brand">everycall</div>
+            <h1 className="intake-headline">QA intake completed.</h1>
+            <div className="intake-subhead">This flow recreated a deterministic QA tenant and skipped paid voice provisioning.</div>
+          </div>
+          <div className="card intake-card">
+            <h1>QA Tenant Ready</h1>
+            <p className="intake-muted">Tenant: {qaResult.tenantKey || '-'}</p>
+            <p className="intake-muted">Voice provisioning: {voiceStatusLabel}</p>
+            <div className="intake-actions">
+              <a className="btn brand" href={`/admin/tenants/${qaResult.tenantKey}`}>Open tenant</a>
+              <button className="btn" type="button" onClick={() => setQaResult(null)}>Run again</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (activation) {
     const voiceStatus = String(activation.voiceStatus || 'pending');
@@ -490,7 +550,12 @@ export default function IntakePage() {
           </h1>
         </div>
         <div className="card intake-card">
-          <h1>AI Assisted Setup</h1>
+          <h1>{isQaMode ? 'AI Assisted Setup (QA Mode)' : 'AI Assisted Setup'}</h1>
+          {isQaMode && (
+            <div className="intake-inline-note">
+              QA mode recreates an <code>intake_qa_*</code> tenant from this form and skips paid voice provisioning. It requires an active admin session.
+            </div>
+          )}
           <div className="intake-progress" aria-hidden="true">
             <span className={step === 0 ? 'active' : ''}></span>
             <span className={step === 1 ? 'active' : ''}></span>
@@ -524,7 +589,7 @@ export default function IntakePage() {
                   </div>
                 </section>
                 <div className="intake-actions">
-                  <button className="btn brand" type="button" onClick={() => setStep(1)}>Set up my number</button>
+                  <button className="btn brand" type="button" onClick={() => setStep(1)}>{isQaMode ? 'Start QA intake' : 'Set up my number'}</button>
                   <span className="intake-muted" style={{ color: status.tone === 'bad' ? '#dc2626' : status.tone === 'ok' ? '#059669' : '#64748b' }}>{status.message}</span>
                 </div>
               </div>
@@ -788,7 +853,7 @@ export default function IntakePage() {
 
                 <div className="intake-actions">
                   <button className="btn" type="button" onClick={() => setStep(1)}>Back</button>
-                  <button className="btn brand" type="submit">Create workspace</button>
+                  <button className="btn brand" type="submit">{isQaMode ? 'Recreate QA tenant' : 'Create workspace'}</button>
                   <span className="intake-muted" style={{ color: status.tone === 'bad' ? '#dc2626' : status.tone === 'ok' ? '#059669' : '#64748b' }}>{status.message}</span>
                 </div>
               </div>
@@ -798,4 +863,8 @@ export default function IntakePage() {
       </div>
     </div>
   );
+}
+
+export default function IntakePage() {
+  return <IntakePageClient />;
 }

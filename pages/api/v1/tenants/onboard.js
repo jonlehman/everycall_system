@@ -3,7 +3,8 @@ import { ensureTables, getPool } from "../../_lib/db.js";
 import { normalizeFaqCategory } from "../../_lib/faqCategories.js";
 import { findAvailableVoiceNumber, orderVoiceNumber } from "../../_lib/telnyx.js";
 import { normalizePhoneNumber } from "../../_lib/phone.js";
-import { createSession, setSessionCookie } from "../../_lib/auth.js";
+import { createSession, getSession, setSessionCookie } from "../../_lib/auth.js";
+import { cleanupTenantByKey } from "../../_lib/tenantCleanup.js";
 import crypto from "crypto";
 
 const BASE_FAQS = [
@@ -230,6 +231,7 @@ function parsePayload(body) {
 
   const emergencyRaw = body.emergencyServices;
   const emergencyServices = emergencyRaw === true || emergencyRaw === "true" || emergencyRaw === 1 || emergencyRaw === "1";
+  const qaMode = body.qaMode === true || body.qaMode === "true" || body.qaMode === 1 || body.qaMode === "1";
 
   return {
     businessName: String(body.businessName || "").trim(),
@@ -251,7 +253,8 @@ function parsePayload(body) {
     faqDrafts: normalizeFaqDrafts(body.faqDrafts),
     status: String(body.status || "active"),
     dataRegion: String(body.dataRegion || "US"),
-    plan: String(body.plan || "Trial")
+    plan: String(body.plan || "Trial"),
+    qaMode
   };
 }
 
@@ -326,6 +329,27 @@ Emergency services: ${emergency ? "Yes" : "No"}
 Ask if there is anything else you can help with, then close politely.`;
 }
 
+async function resolveTenantPrompt(client, payload) {
+  const industryPromptRow = await client.query(
+    `SELECT prompt
+     FROM industry_prompts
+     WHERE industry_key = $1
+     LIMIT 1`,
+    [payload.industry]
+  );
+  const industryPrompt = String(industryPromptRow.rows[0]?.prompt || "").trim();
+  if (industryPrompt) {
+    return industryPrompt;
+  }
+  return buildPrompt({
+    businessName: payload.businessName,
+    industry: payload.industry,
+    serviceArea: payload.serviceArea,
+    businessHours: payload.businessHours,
+    emergency: payload.emergencyServices
+  });
+}
+
 function truncateText(value, limit = 400) {
   const text = String(value || "").trim();
   if (!text) return null;
@@ -359,6 +383,10 @@ function parseProvisioningError(err) {
   };
 }
 
+function intakeSkipVoiceProvisioningEnabled() {
+  return String(process.env.INTAKE_SKIP_VOICE_PROVISIONING || "").trim() === "1";
+}
+
 export default async function handler(req, res) {
   const pool = getPool();
   if (!pool) {
@@ -379,6 +407,16 @@ export default async function handler(req, res) {
     if (Object.keys(validationErrors).length) {
       return jsonError(res, 400, "invalid_payload", "Please correct the highlighted fields.", validationErrors);
     }
+    const skipVoiceProvisioning = payload.qaMode && intakeSkipVoiceProvisioningEnabled();
+    if (payload.qaMode) {
+      const session = await getSession(req);
+      if (!session || session.role !== "admin") {
+        return jsonError(res, 403, "qa_mode_requires_admin", "QA intake requires an active admin session.");
+      }
+      if (!skipVoiceProvisioning) {
+        return jsonError(res, 403, "qa_mode_disabled", "QA intake is disabled until INTAKE_SKIP_VOICE_PROVISIONING=1 is set.");
+      }
+    }
 
     const idempotencyKey = String(req.headers["idempotency-key"] || "").trim();
     const requestHash = crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
@@ -388,7 +426,7 @@ export default async function handler(req, res) {
     }
     if (existingResult) {
       const existingBody = existingResult.body || {};
-      if (existingBody?.ok && payload.ownerEmail) {
+      if (existingBody?.ok && payload.ownerEmail && !payload.qaMode) {
         const userRow = await pool.query(
           `SELECT id, tenant_key
            FROM tenant_users
@@ -423,10 +461,16 @@ export default async function handler(req, res) {
 
     let tenantKey = "";
     let ownerUserId = null;
-    const baseTenantKey = slugify(payload.businessName) || "tenant";
+    const baseTenantKey = payload.qaMode
+      ? `intake_qa_${slugify(payload.businessName) || "tenant"}`
+      : slugify(payload.businessName) || "tenant";
     const servicesOfferedText = payload.servicesOffered.join(", ");
     const primaryGoalsText = payload.primaryGoals.join(", ");
-    const maxTenantKeyAttempts = 50;
+    const maxTenantKeyAttempts = payload.qaMode ? 1 : 50;
+
+    if (payload.qaMode) {
+      await cleanupTenantByKey(baseTenantKey, { releaseNumber: true });
+    }
 
     const client = await pool.connect();
     try {
@@ -519,13 +563,7 @@ export default async function handler(req, res) {
         [tenantKey, payload.timezone, primaryGoalsText || null]
       );
 
-      let prompt = buildPrompt({
-        businessName: payload.businessName,
-        industry: payload.industry,
-        serviceArea: payload.serviceArea,
-        businessHours: payload.businessHours,
-        emergency: payload.emergencyServices
-      });
+      const prompt = await resolveTenantPrompt(client, payload);
 
       const agentName = "Alex";
       const greetingText = `Hi, thanks for calling ${payload.businessName}. This is ${agentName}, how can I help you?`;
@@ -649,82 +687,112 @@ export default async function handler(req, res) {
         [tenantKey]
       );
 
-      const normalizedPrimary = normalizePhoneNumber(payload.phone || null);
-      const digits = String(normalizedPrimary || "").replace(/[^\d]/g, "");
-      const areaCode = digits.length >= 10 ? digits.slice(-10, -7) : null;
-      let availableNumber = await findAvailableVoiceNumber({ areaCode });
-      if (!availableNumber) {
-        availableNumber = await findAvailableVoiceNumber();
-      }
-      if (availableNumber?.phoneNumber) {
-        voiceNumber = availableNumber.phoneNumber;
-        const connectionId = process.env.TELNYX_VOICE_CONNECTION_ID || "";
-        const voiceOrder = await orderVoiceNumber({ phoneNumber: voiceNumber, connectionId });
+      if (skipVoiceProvisioning) {
         await pool.query(
           `UPDATE tenants
-           SET telnyx_voice_number = $2,
-               telnyx_voice_order_id = $3,
-               telnyx_voice_monthly_cost_cents = $4,
-               telnyx_voice_upfront_cost_cents = $5,
-               telnyx_voice_purchased_at = NOW(),
-               telnyx_voice_status = 'active',
+           SET telnyx_voice_status = 'skipped',
                updated_at = NOW()
            WHERE tenant_key = $1`,
-          [
-            tenantKey,
-            voiceNumber,
-            voiceOrder?.data?.id || null,
-            Number.isFinite(Number(availableNumber.monthlyCost)) ? Math.round(Number(availableNumber.monthlyCost) * 100) : null,
-            Number.isFinite(Number(availableNumber.upfrontCost)) ? Math.round(Number(availableNumber.upfrontCost) * 100) : null
-          ]
+          [tenantKey]
         );
         await pool.query(
           `UPDATE provisioning_jobs
            SET status = 'done',
                status_detail = $2,
-               provider = 'telnyx',
-               provider_reference = $3,
+               provider = 'test',
+               provider_reference = NULL,
                error_code = NULL,
                error_message = NULL,
                completed_at = NOW(),
                updated_at = NOW()
            WHERE tenant_key = $1
              AND stage = 'number_setup'`,
-          [tenantKey, truncateText(`Provisioned ${voiceNumber}.`), voiceOrder?.data?.id || null]
+          [tenantKey, 'Skipped voice number provisioning in QA intake mode.']
         );
         await pool.query(
           `INSERT INTO audit_log (tenant_key, actor, action, details)
-           VALUES ($1, 'system', 'provisioning.number_setup_succeeded', $2)`,
-          [tenantKey, `provider=telnyx phone=${voiceNumber} order_id=${voiceOrder?.data?.id || ""}`]
+           VALUES ($1, 'system', 'provisioning.number_setup_skipped', $2)`,
+          [tenantKey, 'provider=test qa_mode=true number_setup=skipped']
         );
-        voiceStatus = "active";
+        voiceStatus = "skipped";
       } else {
-        await pool.query(
-          `UPDATE tenants
-           SET telnyx_voice_status = 'unavailable',
-               updated_at = NOW()
-           WHERE tenant_key = $1`,
-          [tenantKey]
-        );
-        await pool.query(
-          `UPDATE provisioning_jobs
-           SET status = 'failed',
-               status_detail = 'No voice number was available to assign.',
-               provider = 'telnyx',
-               error_code = 'no_available_number',
-               error_message = 'No local voice number was available from Telnyx.',
-               completed_at = NOW(),
-               updated_at = NOW()
-           WHERE tenant_key = $1
-             AND stage = 'number_setup'`,
-          [tenantKey]
-        );
-        await pool.query(
-          `INSERT INTO audit_log (tenant_key, actor, action, details)
-           VALUES ($1, 'system', 'provisioning.number_setup_failed', $2)`,
-          [tenantKey, 'provider=telnyx code=no_available_number']
-        );
-        voiceStatus = "unavailable";
+        const normalizedPrimary = normalizePhoneNumber(payload.phone || null);
+        const digits = String(normalizedPrimary || "").replace(/[^\d]/g, "");
+        const areaCode = digits.length >= 10 ? digits.slice(-10, -7) : null;
+        let availableNumber = await findAvailableVoiceNumber({ areaCode });
+        if (!availableNumber) {
+          availableNumber = await findAvailableVoiceNumber();
+        }
+        if (availableNumber?.phoneNumber) {
+          voiceNumber = availableNumber.phoneNumber;
+          const connectionId = process.env.TELNYX_VOICE_CONNECTION_ID || "";
+          const voiceOrder = await orderVoiceNumber({ phoneNumber: voiceNumber, connectionId });
+          await pool.query(
+            `UPDATE tenants
+             SET telnyx_voice_number = $2,
+                 telnyx_voice_order_id = $3,
+                 telnyx_voice_monthly_cost_cents = $4,
+                 telnyx_voice_upfront_cost_cents = $5,
+                 telnyx_voice_purchased_at = NOW(),
+                 telnyx_voice_status = 'active',
+                 updated_at = NOW()
+             WHERE tenant_key = $1`,
+            [
+              tenantKey,
+              voiceNumber,
+              voiceOrder?.data?.id || null,
+              Number.isFinite(Number(availableNumber.monthlyCost)) ? Math.round(Number(availableNumber.monthlyCost) * 100) : null,
+              Number.isFinite(Number(availableNumber.upfrontCost)) ? Math.round(Number(availableNumber.upfrontCost) * 100) : null
+            ]
+          );
+          await pool.query(
+            `UPDATE provisioning_jobs
+             SET status = 'done',
+                 status_detail = $2,
+                 provider = 'telnyx',
+                 provider_reference = $3,
+                 error_code = NULL,
+                 error_message = NULL,
+                 completed_at = NOW(),
+                 updated_at = NOW()
+             WHERE tenant_key = $1
+               AND stage = 'number_setup'`,
+            [tenantKey, truncateText(`Provisioned ${voiceNumber}.`), voiceOrder?.data?.id || null]
+          );
+          await pool.query(
+            `INSERT INTO audit_log (tenant_key, actor, action, details)
+             VALUES ($1, 'system', 'provisioning.number_setup_succeeded', $2)`,
+            [tenantKey, `provider=telnyx phone=${voiceNumber} order_id=${voiceOrder?.data?.id || ""}`]
+          );
+          voiceStatus = "active";
+        } else {
+          await pool.query(
+            `UPDATE tenants
+             SET telnyx_voice_status = 'unavailable',
+                 updated_at = NOW()
+             WHERE tenant_key = $1`,
+            [tenantKey]
+          );
+          await pool.query(
+            `UPDATE provisioning_jobs
+             SET status = 'failed',
+                 status_detail = 'No voice number was available to assign.',
+                 provider = 'telnyx',
+                 error_code = 'no_available_number',
+                 error_message = 'No local voice number was available from Telnyx.',
+                 completed_at = NOW(),
+                 updated_at = NOW()
+             WHERE tenant_key = $1
+               AND stage = 'number_setup'`,
+            [tenantKey]
+          );
+          await pool.query(
+            `INSERT INTO audit_log (tenant_key, actor, action, details)
+             VALUES ($1, 'system', 'provisioning.number_setup_failed', $2)`,
+            [tenantKey, 'provider=telnyx code=no_available_number']
+          );
+          voiceStatus = "unavailable";
+        }
       }
     } catch (err) {
       const { errorCode, errorMessage } = parseProvisioningError(err);
@@ -757,7 +825,7 @@ export default async function handler(req, res) {
       voiceStatus = "failed";
     }
 
-    if (ownerUserId) {
+    if (ownerUserId && !payload.qaMode) {
       const sessionId = await createSession({ userId: ownerUserId, tenantKey, role: "tenant" });
       if (sessionId) setSessionCookie(res, sessionId);
     }
@@ -767,7 +835,7 @@ export default async function handler(req, res) {
     const successBody = {
       ok: true,
       tenantKey,
-      redirectTo: "/client/overview",
+      redirectTo: payload.qaMode ? `/admin/tenants/${tenantKey}` : "/client/overview",
       provisioning: {
         voiceStatus,
         voiceNumber: assignedVoiceNumber
