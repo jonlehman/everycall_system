@@ -1,6 +1,6 @@
 import { requireSession } from "../../../_lib/auth.js";
 import { ensureTables, getPool } from "../../../_lib/db.js";
-import { cleanupQaTenantsByNamePatterns, findQaTenantsByNamePatterns, QA_TENANT_NAME_PATTERNS } from "../../../_lib/tenantCleanup.js";
+import { cleanupQaTenants, findQaTenants, QA_TENANT_PATTERNS } from "../../../_lib/tenantCleanup.js";
 
 export default async function handler(req, res) {
   try {
@@ -14,15 +14,15 @@ export default async function handler(req, res) {
     if (!session) return;
 
     if (req.method === "GET") {
-      const matches = await findQaTenantsByNamePatterns(QA_TENANT_NAME_PATTERNS);
-      return res.status(200).json({ ok: true, patterns: QA_TENANT_NAME_PATTERNS, matches });
+      const matches = await findQaTenants(QA_TENANT_PATTERNS);
+      return res.status(200).json({ ok: true, patterns: QA_TENANT_PATTERNS, matches });
     }
 
     if (req.method === "POST") {
-      const result = await cleanupQaTenantsByNamePatterns(QA_TENANT_NAME_PATTERNS, { releaseNumber: true });
+      const result = await cleanupQaTenants(QA_TENANT_PATTERNS, { releaseNumber: true });
       return res.status(200).json({
         ok: true,
-        patterns: QA_TENANT_NAME_PATTERNS,
+        patterns: QA_TENANT_PATTERNS,
         matchCount: result.matches.length,
         deletedCount: result.deleted.filter((item) => item.deleted).length,
         matches: result.matches,

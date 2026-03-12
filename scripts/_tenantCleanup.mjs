@@ -1,6 +1,6 @@
 export {
   cleanupTenantByKey,
-  cleanupQaTenantsByNamePatterns,
-  findQaTenantsByNamePatterns,
-  QA_TENANT_NAME_PATTERNS
+  cleanupQaTenants,
+  findQaTenants,
+  QA_TENANT_PATTERNS
 } from "../pages/api/_lib/tenantCleanup.js";

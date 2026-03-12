@@ -24,7 +24,10 @@ const TENANT_KEY_TABLES = [
   "tenants"
 ];
 
-export const QA_TENANT_NAME_PATTERNS = ["ClientUI QA %", "Intake QA %", "Collision QA %"];
+export const QA_TENANT_PATTERNS = {
+  name: ["ClientUI QA %", "Intake QA %", "Collision QA %"],
+  tenantKey: ["clientui_e2e_%", "intake_e2e_%", "dbg_%", "clientui_qa_%", "intake_qa_%", "collision_qa_%"]
+};
 
 export async function cleanupTenantByKey(tenantKey, { releaseNumber = true } = {}) {
   if (!tenantKey) return { tenantKey, deleted: false, reason: "missing_tenant_key" };
@@ -81,17 +84,26 @@ export async function cleanupTenantByKey(tenantKey, { releaseNumber = true } = {
   }
 }
 
-export async function findQaTenantsByNamePatterns(patterns = QA_TENANT_NAME_PATTERNS) {
-  const names = Array.isArray(patterns) ? patterns.map((item) => String(item || "").trim()).filter(Boolean) : [];
-  if (names.length === 0) return [];
+export async function findQaTenants(patterns = QA_TENANT_PATTERNS) {
+  const namePatterns = Array.isArray(patterns?.name) ? patterns.name.map((item) => String(item || "").trim()).filter(Boolean) : [];
+  const tenantKeyPatterns = Array.isArray(patterns?.tenantKey) ? patterns.tenantKey.map((item) => String(item || "").trim()).filter(Boolean) : [];
+  if (namePatterns.length === 0 && tenantKeyPatterns.length === 0) return [];
 
   const pool = getPool();
   if (!pool) {
     throw new Error("DATABASE_URL is required for tenant cleanup.");
   }
 
-  const clauses = names.map((_, index) => `name ILIKE $${index + 1}`);
-  const values = names.map((pattern) => pattern.includes("%") ? pattern : `${pattern}%`);
+  const values = [];
+  const clauses = [];
+  for (const pattern of namePatterns) {
+    values.push(pattern.includes("%") ? pattern : `${pattern}%`);
+    clauses.push(`name ILIKE $${values.length}`);
+  }
+  for (const pattern of tenantKeyPatterns) {
+    values.push(pattern.includes("%") ? pattern : `${pattern}%`);
+    clauses.push(`tenant_key ILIKE $${values.length}`);
+  }
   const rows = await pool.query(
     `SELECT tenant_key, name
      FROM tenants
@@ -102,8 +114,8 @@ export async function findQaTenantsByNamePatterns(patterns = QA_TENANT_NAME_PATT
   return rows.rows || [];
 }
 
-export async function cleanupQaTenantsByNamePatterns(patterns = QA_TENANT_NAME_PATTERNS, options = {}) {
-  const matches = await findQaTenantsByNamePatterns(patterns);
+export async function cleanupQaTenants(patterns = QA_TENANT_PATTERNS, options = {}) {
+  const matches = await findQaTenants(patterns);
   const deleted = [];
   for (const row of matches) {
     deleted.push(await cleanupTenantByKey(row.tenant_key, options));

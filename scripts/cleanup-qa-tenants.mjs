@@ -1,10 +1,8 @@
-import { cleanupTenantByKey, findQaTenantsByNamePatterns } from "./_tenantCleanup.mjs";
-
-const patterns = ["ClientUI QA %", "Intake QA %", "Collision QA %"];
+import { cleanupTenantByKey, findQaTenants, QA_TENANT_PATTERNS } from "./_tenantCleanup.mjs";
 const dryRun = process.env.QA_CLEANUP_DRY_RUN === "1";
 
 async function run() {
-  const matches = await findQaTenantsByNamePatterns(patterns);
+  const matches = await findQaTenants(QA_TENANT_PATTERNS);
   console.log(`[cleanup-qa-tenants] matched=${matches.length} dryRun=${dryRun}`);
 
   for (const match of matches) {
