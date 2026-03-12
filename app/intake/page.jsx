@@ -477,9 +477,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
         });
         setForm((prev) => {
           const next = !websiteEdited && enrichment?.website ? { ...prev, website: enrichment.website } : prev;
-          return isQaMode
-            ? mergeEnrichmentProfileIntoForm(next, enrichment, { includeBusinessName: false })
-            : next;
+          return mergeEnrichmentProfileIntoForm(next, enrichment, { includeBusinessName: !isQaMode });
         });
         setStatusMessage(
           `Loaded ${previewFaqs.length} FAQ drafts and matched services from your site.`,
