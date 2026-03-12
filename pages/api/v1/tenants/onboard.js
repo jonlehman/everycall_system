@@ -652,21 +652,31 @@ export default async function handler(req, res) {
       const normalizedPrimary = normalizePhoneNumber(payload.phone || null);
       const digits = String(normalizedPrimary || "").replace(/[^\d]/g, "");
       const areaCode = digits.length >= 10 ? digits.slice(-10, -7) : null;
-      voiceNumber = await findAvailableVoiceNumber({ areaCode });
-      if (!voiceNumber) {
-        voiceNumber = await findAvailableVoiceNumber();
+      let availableNumber = await findAvailableVoiceNumber({ areaCode });
+      if (!availableNumber) {
+        availableNumber = await findAvailableVoiceNumber();
       }
-      if (voiceNumber) {
+      if (availableNumber?.phoneNumber) {
+        voiceNumber = availableNumber.phoneNumber;
         const connectionId = process.env.TELNYX_VOICE_CONNECTION_ID || "";
         const voiceOrder = await orderVoiceNumber({ phoneNumber: voiceNumber, connectionId });
         await pool.query(
           `UPDATE tenants
            SET telnyx_voice_number = $2,
                telnyx_voice_order_id = $3,
+               telnyx_voice_monthly_cost_cents = $4,
+               telnyx_voice_upfront_cost_cents = $5,
+               telnyx_voice_purchased_at = NOW(),
                telnyx_voice_status = 'active',
                updated_at = NOW()
-          WHERE tenant_key = $1`,
-          [tenantKey, voiceNumber, voiceOrder?.data?.id || null]
+           WHERE tenant_key = $1`,
+          [
+            tenantKey,
+            voiceNumber,
+            voiceOrder?.data?.id || null,
+            Number.isFinite(Number(availableNumber.monthlyCost)) ? Math.round(Number(availableNumber.monthlyCost) * 100) : null,
+            Number.isFinite(Number(availableNumber.upfrontCost)) ? Math.round(Number(availableNumber.upfrontCost) * 100) : null
+          ]
         );
         await pool.query(
           `UPDATE provisioning_jobs

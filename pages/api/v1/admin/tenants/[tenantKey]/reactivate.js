@@ -53,10 +53,10 @@ export default async function handler(req, res) {
 
     const connectionId = process.env.TELNYX_VOICE_CONNECTION_ID || "";
     const availableNumber = await findAvailableVoiceNumber({});
-    if (!availableNumber || !connectionId) {
+    if (!availableNumber?.phoneNumber || !connectionId) {
       return res.status(500).json({ error: "voice_number_unavailable" });
     }
-    await orderVoiceNumber({ phoneNumber: availableNumber, connectionId });
+    await orderVoiceNumber({ phoneNumber: availableNumber.phoneNumber, connectionId });
 
     const trialStartedAt = new Date();
     const trialEnd = addDays(remainingTrialDays);
@@ -72,15 +72,25 @@ export default async function handler(req, res) {
            trial_end = $3,
            post_trial_access_ends_at = NULL,
            telnyx_voice_number = $4,
+           telnyx_voice_monthly_cost_cents = $5,
+           telnyx_voice_upfront_cost_cents = $6,
+           telnyx_voice_purchased_at = NOW(),
            billing_status_updated_at = NOW()
        WHERE tenant_key = $1`,
-      [tenantKey, trialStartedAt.toISOString(), trialEnd.toISOString(), availableNumber]
+      [
+        tenantKey,
+        trialStartedAt.toISOString(),
+        trialEnd.toISOString(),
+        availableNumber.phoneNumber,
+        Number.isFinite(Number(availableNumber.monthlyCost)) ? Math.round(Number(availableNumber.monthlyCost) * 100) : null,
+        Number.isFinite(Number(availableNumber.upfrontCost)) ? Math.round(Number(availableNumber.upfrontCost) * 100) : null
+      ]
     );
 
     await pool.query(
       `INSERT INTO audit_log (tenant_key, actor, action, details)
        VALUES ($1, $2, 'billing.reactivated', $3)`,
-      [tenantKey, `admin:${admin.id}`, `remaining_trial_days=${remainingTrialDays} phone=${availableNumber}`]
+      [tenantKey, `admin:${admin.id}`, `remaining_trial_days=${remainingTrialDays} phone=${availableNumber.phoneNumber}`]
     );
 
     const current = tenantRow.rows[0];
@@ -96,7 +106,7 @@ export default async function handler(req, res) {
       reason: "admin_reactivated_tenant",
       metadata: {
         remainingTrialDays,
-        newPhoneNumber: availableNumber
+        newPhoneNumber: availableNumber.phoneNumber
       },
       createdByType: "admin",
       createdById: String(admin.id)
@@ -106,7 +116,7 @@ export default async function handler(req, res) {
       ok: true,
       tenantKey,
       trialEnd: trialEnd.toISOString(),
-      phoneNumber: availableNumber
+      phoneNumber: availableNumber.phoneNumber
     });
   } catch (err) {
     return res.status(500).json({ error: "admin_reactivate_error", message: err?.message || "unknown" });

@@ -107,8 +107,14 @@ export async function findAvailableVoiceNumber({ areaCode } = {}) {
   const data = await telnyxRequest(`/v2/available_phone_numbers?${params.toString()}`, {
     method: "GET"
   });
-  const phone = data?.data?.[0]?.phone_number || null;
-  return phone;
+  const record = data?.data?.[0] || null;
+  if (!record?.phone_number) return null;
+  return {
+    phoneNumber: record.phone_number,
+    monthlyCost: Number(record?.cost_information?.monthly_cost || 0) || null,
+    upfrontCost: Number(record?.cost_information?.upfront_cost || 0) || null,
+    currency: record?.cost_information?.currency || null
+  };
 }
 
 export async function orderVoiceNumber({ phoneNumber, connectionId }) {
@@ -133,4 +139,13 @@ export async function releaseVoiceNumber({ phoneNumber }) {
       phone_numbers: [phoneNumber]
     })
   });
+}
+
+export async function listOwnedPhoneNumbers({ pageSize = 250 } = {}) {
+  const params = new URLSearchParams();
+  params.set("page[size]", String(pageSize));
+  const data = await telnyxRequest(`/v2/phone_numbers?${params.toString()}`, {
+    method: "GET"
+  });
+  return Array.isArray(data?.data) ? data.data : [];
 }
