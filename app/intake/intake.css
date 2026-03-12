@@ -40,6 +40,11 @@
 .intake-card h1 { margin: 0 0 6px; }
 .intake-card p { margin: 0 0 14px; }
 .intake-stack { display: grid; gap: 10px; }
+.intake-grid > .intake-stack,
+.intake-location-row > .intake-stack,
+.intake-faq-content > .intake-stack {
+  gap: 5px;
+}
 .intake-stack label { font-size: 11px; text-transform: uppercase; color: #64748b; letter-spacing: .12em; }
 .intake-stack input, .intake-stack select, .intake-stack textarea {
   width: 100%;
