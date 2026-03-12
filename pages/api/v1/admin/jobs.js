@@ -16,10 +16,12 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const tenantKey = String(req.query?.tenantKey || "").trim();
       const rows = await pool.query(
-        `SELECT id, tenant_key, stage, status, status_detail, provider, provider_reference,
-                error_code, error_message, attempted_at, completed_at, updated_at
-         FROM provisioning_jobs
-         ${tenantKey ? "WHERE tenant_key = $1" : ""}
+        `SELECT pj.id, pj.tenant_key, pj.stage, pj.status, pj.status_detail, pj.provider, pj.provider_reference,
+                pj.error_code, pj.error_message, pj.attempted_at, pj.completed_at, pj.updated_at,
+                oi.owner_name, oi.owner_email
+         FROM provisioning_jobs pj
+         LEFT JOIN onboarding_intake oi ON oi.tenant_key = pj.tenant_key
+         ${tenantKey ? "WHERE pj.tenant_key = $1" : ""}
          ORDER BY updated_at DESC
          LIMIT 50`,
         tenantKey ? [tenantKey] : []

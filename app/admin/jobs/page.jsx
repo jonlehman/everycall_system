@@ -64,6 +64,8 @@ export default function JobsPage() {
     id: job.id ?? `${job.tenant_key || 'tenant'}-${job.stage || 'stage'}-${job.updated_at || idx}`,
     job: job.id ?? `${job.tenant_key || 'tenant'}-${job.stage || 'stage'}-${job.updated_at || idx}`,
     tenant: job.tenant_key,
+    ownerName: job.owner_name || '',
+    ownerEmail: job.owner_email || '',
     stage: job.stage,
     updated: job.updated_at ? new Date(job.updated_at).toLocaleString() : '',
     attempted: job.attempted_at ? new Date(job.attempted_at).toLocaleString() : '',
@@ -85,6 +87,8 @@ export default function JobsPage() {
       valueFormatter: ({ value }) => `prov_${value}`
     },
     { field: 'tenant', headerName: 'Tenant', flex: 1, minWidth: 160 },
+    { field: 'ownerName', headerName: 'Owner Name', flex: 1, minWidth: 180 },
+    { field: 'ownerEmail', headerName: 'Owner Email', flex: 1.2, minWidth: 220 },
     { field: 'stage', headerName: 'Stage', flex: 1, minWidth: 140 },
     { field: 'provider', headerName: 'Provider', flex: 0.7, minWidth: 120 },
     { field: 'detail', headerName: 'Detail', flex: 1.6, minWidth: 240 },
