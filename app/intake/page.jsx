@@ -195,6 +195,15 @@ export function IntakePageClient({ qaMode = false } = {}) {
       }));
   }, [faqDrafts]);
 
+  const blankFaqsWithDefaultsCount = useMemo(() => (
+    faqDrafts.reduce((count, faq) => {
+      const question = String(faq?.question || '').trim();
+      const hasDefault = Boolean(defaultFaqAnswers.get(question));
+      const isBlank = !String(faq?.answer || '').trim();
+      return count + (hasDefault && isBlank ? 1 : 0);
+    }, 0)
+  ), [defaultFaqAnswers, faqDrafts]);
+
   const setStatusMessage = (message, tone = 'normal') => setStatus({ message, tone });
 
   const clearFieldError = (field) => {
@@ -257,6 +266,18 @@ export function IntakePageClient({ qaMode = false } = {}) {
     if (!defaultAnswer) return;
     updateFaqAnswer(index, defaultAnswer);
     setStatusMessage('Default answer added. You can edit it before creating your workspace.', 'ok');
+  };
+
+  const fillBlankFaqAnswers = () => {
+    if (blankFaqsWithDefaultsCount === 0) return;
+    setFaqDrafts((prev) => prev.map((faq) => {
+      if (String(faq?.answer || '').trim()) return faq;
+      const question = String(faq?.question || '').trim();
+      const defaultAnswer = defaultFaqAnswers.get(question);
+      if (!defaultAnswer) return faq;
+      return { ...faq, answer: defaultAnswer };
+    }));
+    setStatusMessage(`Filled ${blankFaqsWithDefaultsCount} blank FAQ entr${blankFaqsWithDefaultsCount === 1 ? 'y' : 'ies'} with industry defaults.`, 'ok');
   };
 
   const saveFaqDraft = () => {
@@ -800,7 +821,14 @@ export function IntakePageClient({ qaMode = false } = {}) {
                       <div className="intake-muted">How do you want your assistant to respond to customer questions?</div>
                       <div className="intake-muted">Note that wording of the question and answer doesn&apos;t have to be exact for it to be used.</div>
                     </div>
-                    <div className="intake-faq-count">{faqDrafts.length} draft{faqDrafts.length === 1 ? '' : 's'}</div>
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={fillBlankFaqAnswers}
+                      disabled={blankFaqsWithDefaultsCount === 0}
+                    >
+                      Fill blanks with industry defaults
+                    </button>
                   </div>
                   <div className="intake-faq-list">
                   {faqDrafts.length === 0 ? (
