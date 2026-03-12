@@ -2,18 +2,63 @@
 
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
+import { Button } from '../../../components/ui/button';
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState([]);
+  const [qaMatches, setQaMatches] = useState([]);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [status, setStatus] = useState('');
 
-  useEffect(() => {
+  const loadPageData = () => {
     let mounted = true;
-    fetch('/api/v1/admin/jobs')
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => { if (mounted && data) setJobs(data.jobs || []); })
-      .catch(() => {});
+    Promise.all([
+      fetch('/api/v1/admin/jobs').then((resp) => resp.ok ? resp.json() : null),
+      fetch('/api/v1/admin/tenants/cleanup-qa').then((resp) => resp.ok ? resp.json() : null)
+    ])
+      .then(([jobsData, cleanupData]) => {
+        if (!mounted) return;
+        setJobs(jobsData?.jobs || []);
+        setQaMatches(cleanupData?.matches || []);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setStatus('Failed to load admin job data.');
+      });
     return () => { mounted = false; };
-  }, []);
+  };
+
+  useEffect(() => loadPageData(), []);
+
+  const runQaCleanup = async () => {
+    if (qaMatches.length === 0) {
+      setStatus('No QA tenants found.');
+      return;
+    }
+    const confirmed = window.confirm(`Delete ${qaMatches.length} QA tenant${qaMatches.length === 1 ? '' : 's'}? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setCleanupBusy(true);
+    setStatus('Deleting QA tenants...');
+    try {
+      const resp = await fetch('/api/v1/admin/tenants/cleanup-qa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || !data?.ok) {
+        setStatus(data?.message || data?.error || 'QA tenant cleanup failed.');
+        setCleanupBusy(false);
+        return;
+      }
+      setStatus(`Deleted ${data?.deletedCount || 0} QA tenant${(data?.deletedCount || 0) === 1 ? '' : 's'}.`);
+      loadPageData();
+    } catch (err) {
+      setStatus(err?.message || 'QA tenant cleanup failed.');
+    } finally {
+      setCleanupBusy(false);
+    }
+  };
 
   const rows = jobs.map((job, idx) => ({
     id: job.id ?? `${job.tenant_key || 'tenant'}-${job.stage || 'stage'}-${job.updated_at || idx}`,
@@ -63,7 +108,18 @@ export default function JobsPage() {
   return (
     <section className="grid gap-3">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="m-0 text-2xl font-semibold tracking-tight">Provisioning Jobs</h1>
+        <div>
+          <h1 className="m-0 text-2xl font-semibold tracking-tight">Provisioning Jobs</h1>
+          <div className="text-sm text-slate-500">
+            QA tenants found: {qaMatches.length}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="destructive" onClick={runQaCleanup} disabled={cleanupBusy || qaMatches.length === 0}>
+            {cleanupBusy ? 'Deleting...' : 'Delete QA Tenants'}
+          </Button>
+          <span className="text-sm text-slate-500">{status}</span>
+        </div>
       </div>
       <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <DataGrid
