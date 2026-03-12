@@ -68,27 +68,6 @@ function parseServiceMatches(industry, enrichment) {
   });
 }
 
-function mergePrefill(prev, enrichment) {
-  const profile = enrichment?.profile || {};
-  return {
-    ...prev,
-    businessName: prev.businessName || profile.businessName || '',
-    phone: prev.phone || profile.phone || '',
-    address1: prev.address1 || profile.address1 || '',
-    city: prev.city || profile.city || '',
-    state: prev.state || profile.state || '',
-    zip: prev.zip || profile.zip || '',
-    serviceArea: prev.serviceArea || profile.serviceArea || '',
-    businessHours: prev.businessHours || profile.businessHours || '',
-    emergencyServices:
-      prev.emergencyServices !== 'false'
-        ? prev.emergencyServices
-        : profile.emergencyServices === true
-          ? 'true'
-          : prev.emergencyServices
-  };
-}
-
 function websiteFromEmail(email) {
   const raw = String(email || '').trim().toLowerCase();
   const at = raw.lastIndexOf('@');
@@ -308,12 +287,11 @@ export default function IntakePage() {
           matchedServices.forEach((service) => next.add(service));
           return Array.from(next);
         });
-        setForm((prev) => mergePrefill(
-          !websiteEdited && enrichment?.website ? { ...prev, website: enrichment.website } : prev,
-          enrichment
+        setForm((prev) => (
+          !websiteEdited && enrichment?.website ? { ...prev, website: enrichment.website } : prev
         ));
         setStatusMessage(
-          `Loaded ${previewFaqs.length} FAQ drafts and prefilled business details from your site.`,
+          `Loaded ${previewFaqs.length} FAQ drafts and matched services from your site.`,
           'ok'
         );
       }
@@ -558,17 +536,21 @@ export default function IntakePage() {
                 <div className="intake-grid">
                   <div className="intake-stack">
                     <label>Owner Name</label>
-                    <input required className={inputClassName('ownerName')} aria-invalid={fieldErrors.ownerName ? 'true' : undefined} placeholder="Jane Smith" value={form.ownerName} onChange={(event) => setFormValue('ownerName', event.target.value)} />
+                    <input required name="ownerName" autoComplete="name" className={inputClassName('ownerName')} aria-invalid={fieldErrors.ownerName ? 'true' : undefined} placeholder="Jane Smith" value={form.ownerName} onChange={(event) => setFormValue('ownerName', event.target.value)} />
                     {fieldErrorText('ownerName')}
                   </div>
                   <div className="intake-stack">
                     <label>Owner Email</label>
-                    <input type="email" required className={inputClassName('ownerEmail')} aria-invalid={fieldErrors.ownerEmail ? 'true' : undefined} placeholder="jane@acme.com" value={form.ownerEmail} onChange={(event) => updateEmail(event.target.value)} />
+                    <input type="email" required name="ownerEmail" autoComplete="email" className={inputClassName('ownerEmail')} aria-invalid={fieldErrors.ownerEmail ? 'true' : undefined} placeholder="jane@acme.com" value={form.ownerEmail} onChange={(event) => updateEmail(event.target.value)} />
                     {fieldErrorText('ownerEmail')}
                   </div>
                   <div className="intake-stack">
                     <label>Website</label>
                     <input
+                      type="url"
+                      name="website"
+                      autoComplete="url"
+                      inputMode="url"
                       placeholder="https://acme.com"
                       value={form.website}
                       onChange={(event) => {
@@ -611,21 +593,21 @@ export default function IntakePage() {
                     <div className="intake-grid">
                       <div className="intake-stack">
                         <label>Business Name</label>
-                        <input required className={inputClassName('businessName')} aria-invalid={fieldErrors.businessName ? 'true' : undefined} placeholder="Acme Plumbing" value={form.businessName} onChange={(event) => setFormValue('businessName', event.target.value)} />
+                        <input required name="businessName" autoComplete="organization" className={inputClassName('businessName')} aria-invalid={fieldErrors.businessName ? 'true' : undefined} placeholder="Acme Plumbing" value={form.businessName} onChange={(event) => setFormValue('businessName', event.target.value)} />
                         {fieldErrorText('businessName')}
                       </div>
                       <div className="intake-stack">
                         <label>Business Phone</label>
-                        <input placeholder="+1 555 555 5555" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+                        <input type="tel" name="businessPhone" autoComplete="tel" inputMode="tel" placeholder="+1 555 555 5555" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
                       </div>
                       <div className="intake-stack">
                         <label>Password</label>
-                        <input type="password" required className={inputClassName('password')} aria-invalid={fieldErrors.password ? 'true' : undefined} placeholder="Create a password" value={form.password} onChange={(event) => setFormValue('password', event.target.value)} />
+                        <input type="password" required name="password" autoComplete="new-password" className={inputClassName('password')} aria-invalid={fieldErrors.password ? 'true' : undefined} placeholder="Create a password" value={form.password} onChange={(event) => setFormValue('password', event.target.value)} />
                         {fieldErrorText('password')}
                       </div>
                       <div className="intake-stack">
                         <label>Confirm Password</label>
-                        <input type="password" required className={inputClassName('confirmPassword')} aria-invalid={fieldErrors.confirmPassword ? 'true' : undefined} placeholder="Confirm password" value={form.confirmPassword} onChange={(event) => setFormValue('confirmPassword', event.target.value)} />
+                        <input type="password" required name="confirmPassword" autoComplete="new-password" className={inputClassName('confirmPassword')} aria-invalid={fieldErrors.confirmPassword ? 'true' : undefined} placeholder="Confirm password" value={form.confirmPassword} onChange={(event) => setFormValue('confirmPassword', event.target.value)} />
                         {fieldErrorText('confirmPassword')}
                       </div>
                     </div>
@@ -638,23 +620,23 @@ export default function IntakePage() {
                     <div className="intake-grid">
                       <div className="intake-stack intake-full">
                         <label>Address Line 1</label>
-                        <input placeholder="123 Main St" value={form.address1} onChange={(event) => setForm({ ...form, address1: event.target.value })} />
+                        <input name="address1" autoComplete="address-line1" placeholder="123 Main St" value={form.address1} onChange={(event) => setForm({ ...form, address1: event.target.value })} />
                       </div>
                       <div className="intake-stack intake-full">
                         <label>Address Line 2</label>
-                        <input placeholder="Suite 200" value={form.address2} onChange={(event) => setForm({ ...form, address2: event.target.value })} />
+                        <input name="address2" autoComplete="address-line2" placeholder="Suite 200" value={form.address2} onChange={(event) => setForm({ ...form, address2: event.target.value })} />
                       </div>
                       <div className="intake-stack">
                         <label>City</label>
-                        <input placeholder="Seattle" value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} />
+                        <input name="city" autoComplete="address-level2" placeholder="Seattle" value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} />
                       </div>
                       <div className="intake-stack">
                         <label>State</label>
-                        <input placeholder="WA" value={form.state} onChange={(event) => setForm({ ...form, state: event.target.value })} />
+                        <input name="state" autoComplete="address-level1" placeholder="WA" value={form.state} onChange={(event) => setForm({ ...form, state: event.target.value })} />
                       </div>
                       <div className="intake-stack">
                         <label>ZIP</label>
-                        <input placeholder="98101" value={form.zip} onChange={(event) => setForm({ ...form, zip: event.target.value })} />
+                        <input name="zip" autoComplete="postal-code" inputMode="numeric" placeholder="98101" value={form.zip} onChange={(event) => setForm({ ...form, zip: event.target.value })} />
                       </div>
                       <div className="intake-stack intake-full">
                         <label>Describe Your Service Area</label>

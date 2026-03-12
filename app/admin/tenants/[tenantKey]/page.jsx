@@ -22,25 +22,45 @@ export default function TenantManagePage() {
   const [faqs, setFaqs] = useState([]);
   const [provisioningJobs, setProvisioningJobs] = useState([]);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [provisionBusy, setProvisionBusy] = useState(false);
+  const [deprovisionBusy, setDeprovisionBusy] = useState(false);
+
+  const loadTenant = async (canUpdate = () => true) => {
+    const data = await fetch(`/api/v1/tenants?tenantKey=${encodeURIComponent(tenantKey)}`)
+      .then((resp) => resp.ok ? resp.json() : null)
+      .catch(() => null);
+    if (!canUpdate()) return;
+    setTenant(data?.tenant || null);
+    if (data?.tenant) {
+      setEditing({
+        status: data.tenant.status || 'active',
+        plan: data.tenant.plan || 'Growth',
+        data_region: data.tenant.data_region || 'US',
+        primary_number: data.tenant.primary_number || '',
+        industry: data.tenant.industry || ''
+      });
+    }
+  };
+
+  const loadProvisioningJobs = async (canUpdate = () => true) => {
+    const data = await fetch(`/api/v1/admin/jobs?tenantKey=${encodeURIComponent(tenantKey)}`)
+      .then((resp) => resp.ok ? resp.json() : null)
+      .catch(() => null);
+    if (!canUpdate()) return;
+    setProvisioningJobs(data?.jobs || []);
+  };
+
+  const refreshVoiceNumberState = async () => {
+    await Promise.all([
+      loadTenant(),
+      loadProvisioningJobs()
+    ]);
+  };
 
   useEffect(() => {
     let mounted = true;
-    fetch(`/api/v1/tenants?tenantKey=${encodeURIComponent(tenantKey)}`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => {
-        if (!mounted) return;
-        setTenant(data?.tenant || null);
-        if (data?.tenant) {
-          setEditing({
-            status: data.tenant.status || 'active',
-            plan: data.tenant.plan || 'Growth',
-            data_region: data.tenant.data_region || 'US',
-            primary_number: data.tenant.primary_number || '',
-            industry: data.tenant.industry || ''
-          });
-        }
-      })
-      .catch(() => {});
+    const canUpdate = () => mounted;
+    loadTenant(canUpdate);
 
     fetch(`/api/v1/config/agent?tenantKey=${encodeURIComponent(tenantKey)}`)
       .then((resp) => resp.ok ? resp.json() : null)
@@ -72,10 +92,7 @@ export default function TenantManagePage() {
       .then((data) => { if (mounted) setFaqs(data?.faqs || []); })
       .catch(() => {});
 
-    fetch(`/api/v1/admin/jobs?tenantKey=${encodeURIComponent(tenantKey)}`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => { if (mounted) setProvisioningJobs(data?.jobs || []); })
-      .catch(() => {});
+    loadProvisioningJobs(canUpdate);
 
     return () => { mounted = false; };
   }, [tenantKey]);
@@ -212,6 +229,64 @@ export default function TenantManagePage() {
     }
   };
 
+  const provisionVoiceNumber = async () => {
+    if (tenant?.telnyx_voice_number) {
+      setStatus('This tenant already has a voice number.');
+      return;
+    }
+
+    setProvisionBusy(true);
+    setStatus('Provisioning voice number...');
+    try {
+      const resp = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/phone-number/provision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || !data?.ok) {
+        setStatus(data?.message || data?.error || 'Provisioning failed.');
+        return;
+      }
+      await refreshVoiceNumberState();
+      setStatus(`Provisioned ${data.phoneNumber}.`);
+    } catch (err) {
+      setStatus(err?.message || 'Provisioning failed.');
+    } finally {
+      setProvisionBusy(false);
+    }
+  };
+
+  const deprovisionVoiceNumber = async () => {
+    const phoneNumber = tenant?.telnyx_voice_number;
+    if (!phoneNumber) {
+      setStatus('This tenant does not have a voice number to deprovision.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete the associated phone number ${phoneNumber}? This will deprovision it from Telnyx.`);
+    if (!confirmed) return;
+
+    setDeprovisionBusy(true);
+    setStatus('Deprovisioning voice number...');
+    try {
+      const resp = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/phone-number/deprovision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || !data?.ok) {
+        setStatus(data?.message || data?.error || 'Deprovisioning failed.');
+        return;
+      }
+      await refreshVoiceNumberState();
+      setStatus(`Deprovisioned ${data.phoneNumber}.`);
+    } catch (err) {
+      setStatus(err?.message || 'Deprovisioning failed.');
+    } finally {
+      setDeprovisionBusy(false);
+    }
+  };
+
   const rows = users.map((u, idx) => ({
     id: u.id || idx,
     name: u.name,
@@ -312,6 +387,19 @@ export default function TenantManagePage() {
             <div>{tenant?.telnyx_voice_number || 'Not assigned'}</div>
             <div>Voice Order ID</div>
             <div>{tenant?.telnyx_voice_order_id || 'None'}</div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button onClick={provisionVoiceNumber} disabled={provisionBusy || deprovisionBusy || Boolean(tenant?.telnyx_voice_number)}>
+              {provisionBusy ? 'Provisioning...' : 'Provision Number'}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={deprovisionVoiceNumber}
+              disabled={deprovisionBusy || provisionBusy || !tenant?.telnyx_voice_number}
+            >
+              {deprovisionBusy ? 'Deprovisioning...' : 'Deprovision Number'}
+            </Button>
+            <span className="text-sm text-slate-500">One voice number per tenant.</span>
           </div>
           <div className="mt-3 flex items-center gap-2">
             <Button onClick={saveTenantDetails}>Save Tenant Details</Button>
