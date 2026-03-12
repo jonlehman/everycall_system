@@ -44,6 +44,14 @@ const INDUSTRIES = [
   { value: 'window_installers', label: 'Window Installers' }
 ];
 
+const US_STATE_OPTIONS = [
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+  'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+  'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+  'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+  'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
+];
+
 const FAQ_CATEGORY_ORDER = [
   'Emergency',
   'Technical Questions',
@@ -918,27 +926,34 @@ export function IntakePageClient({ qaMode = false } = {}) {
                     <div className="intake-grid">
                       <div className="intake-stack intake-full">
                         <label>Address Line 1</label>
-                        <input name="address1" autoComplete="address-line1" placeholder="123 Main St" value={form.address1} onChange={(event) => setForm({ ...form, address1: event.target.value })} />
+                        <input name="address1" autoComplete="address-line1" value={form.address1} onChange={(event) => setForm({ ...form, address1: event.target.value })} />
                       </div>
                       <div className="intake-stack intake-full">
                         <label>Address Line 2</label>
-                        <input name="address2" autoComplete="address-line2" placeholder="Suite 200" value={form.address2} onChange={(event) => setForm({ ...form, address2: event.target.value })} />
+                        <input name="address2" autoComplete="address-line2" value={form.address2} onChange={(event) => setForm({ ...form, address2: event.target.value })} />
                       </div>
-                      <div className="intake-stack">
-                        <label>City</label>
-                        <input name="city" autoComplete="address-level2" placeholder="Seattle" value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} />
-                      </div>
-                      <div className="intake-stack">
-                        <label>State</label>
-                        <input name="state" autoComplete="address-level1" placeholder="WA" value={form.state} onChange={(event) => setForm({ ...form, state: event.target.value })} />
-                      </div>
-                      <div className="intake-stack">
-                        <label>ZIP</label>
-                        <input name="zip" autoComplete="postal-code" inputMode="numeric" placeholder="98101" value={form.zip} onChange={(event) => setForm({ ...form, zip: event.target.value })} />
+                      <div className="intake-location-row intake-full">
+                        <div className="intake-stack">
+                          <label>City</label>
+                          <input name="city" autoComplete="address-level2" value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} />
+                        </div>
+                        <div className="intake-stack">
+                          <label>State</label>
+                          <select name="state" autoComplete="address-level1" value={form.state} onChange={(event) => setForm({ ...form, state: event.target.value })}>
+                            <option value="">Select</option>
+                            {US_STATE_OPTIONS.map((state) => (
+                              <option key={state} value={state}>{state}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="intake-stack">
+                          <label>ZIP</label>
+                          <input name="zip" autoComplete="postal-code" inputMode="numeric" value={form.zip} onChange={(event) => setForm({ ...form, zip: event.target.value })} />
+                        </div>
                       </div>
                       <div className="intake-stack intake-full">
                         <label>Describe Your Service Area</label>
-                        <input required className={inputClassName('serviceArea')} aria-invalid={fieldErrors.serviceArea ? 'true' : undefined} placeholder="Seattle + Eastside" value={form.serviceArea} onChange={(event) => setFormValue('serviceArea', event.target.value)} />
+                        <input required className={inputClassName('serviceArea')} aria-invalid={fieldErrors.serviceArea ? 'true' : undefined} value={form.serviceArea} onChange={(event) => setFormValue('serviceArea', event.target.value)} />
                         {fieldErrorText('serviceArea')}
                       </div>
                     </div>
