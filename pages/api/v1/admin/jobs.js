@@ -18,15 +18,34 @@ export default async function handler(req, res) {
       const rows = await pool.query(
         `SELECT pj.id, pj.tenant_key, pj.stage, pj.status, pj.status_detail, pj.provider, pj.provider_reference,
                 pj.error_code, pj.error_message, pj.attempted_at, pj.completed_at, pj.updated_at,
-                oi.owner_name, oi.owner_email
+                oi.owner_name, oi.owner_email,
+                t.telnyx_voice_status
          FROM provisioning_jobs pj
          LEFT JOIN onboarding_intake oi ON oi.tenant_key = pj.tenant_key
+         LEFT JOIN tenants t ON t.tenant_key = pj.tenant_key
          ${tenantKey ? "WHERE pj.tenant_key = $1" : ""}
          ORDER BY updated_at DESC
          LIMIT 50`,
         tenantKey ? [tenantKey] : []
       );
-      return res.status(200).json({ jobs: rows.rows });
+      const jobs = rows.rows.map((row) => {
+        if (
+          row.stage === "number_setup" &&
+          row.status === "pending" &&
+          !row.error_code &&
+          !row.error_message &&
+          row.telnyx_voice_status === "failed"
+        ) {
+          return {
+            ...row,
+            status_detail: row.status_detail || "Legacy provisioning record before detailed logging was added.",
+            error_code: "legacy_missing_failure_detail",
+            error_message: "This signup failed before detailed Telnyx error logging was deployed. Retry onboarding again to capture the actual provider error."
+          };
+        }
+        return row;
+      });
+      return res.status(200).json({ jobs });
     }
 
     if (req.method === "POST") {

@@ -62,7 +62,6 @@ export default function JobsPage() {
 
   const rows = jobs.map((job, idx) => ({
     id: job.id ?? `${job.tenant_key || 'tenant'}-${job.stage || 'stage'}-${job.updated_at || idx}`,
-    job: job.id ?? `${job.tenant_key || 'tenant'}-${job.stage || 'stage'}-${job.updated_at || idx}`,
     tenant: job.tenant_key,
     ownerName: job.owner_name || '',
     ownerEmail: job.owner_email || '',
@@ -79,13 +78,6 @@ export default function JobsPage() {
   }));
 
   const columns = [
-    {
-      field: 'job',
-      headerName: 'Job',
-      flex: 0.4,
-      minWidth: 120,
-      valueFormatter: ({ value }) => `prov_${value}`
-    },
     { field: 'tenant', headerName: 'Tenant', flex: 1, minWidth: 160 },
     { field: 'ownerName', headerName: 'Owner Name', flex: 1, minWidth: 180 },
     { field: 'ownerEmail', headerName: 'Owner Email', flex: 1.2, minWidth: 220 },
@@ -116,6 +108,9 @@ export default function JobsPage() {
           <h1 className="m-0 text-2xl font-semibold tracking-tight">Provisioning Jobs</h1>
           <div className="text-sm text-slate-500">
             QA tenants found: {qaMatches.length}
+          </div>
+          <div className="text-sm text-slate-500">
+            Each tenant normally has two provisioning stages: `workflow_seed` and `number_setup`.
           </div>
         </div>
         <div className="flex items-center gap-2">

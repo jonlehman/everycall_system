@@ -76,7 +76,21 @@ async function telnyxRequest(path, options = {}) {
   });
   if (!resp.ok) {
     const body = await resp.text().catch(() => "");
-    throw new Error(`telnyx_request_failed:${resp.status}:${body.slice(0, 200)}`);
+    let detail = body.slice(0, 500);
+    try {
+      const parsed = JSON.parse(body);
+      const errors = Array.isArray(parsed?.errors) ? parsed.errors : [];
+      const first = errors[0] || parsed?.error || null;
+      if (first && typeof first === "object") {
+        const code = first?.code || first?.status || "";
+        const title = first?.title || first?.message || "";
+        const description = first?.detail || first?.description || "";
+        detail = [code, title, description].filter(Boolean).join(" | ") || detail;
+      }
+    } catch {
+      // Keep raw response snippet when JSON parsing fails.
+    }
+    throw new Error(`telnyx_request_failed:${resp.status}:${detail.slice(0, 500)}`);
   }
   return resp.json();
 }
