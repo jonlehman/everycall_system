@@ -74,6 +74,44 @@ const MARKETING_PHRASES = [
   "forever covered. forever comfortable"
 ];
 
+const EXCLUDED_TOPIC_PAGE_CLASSES = new Set([
+  "geo_landing",
+  "blog",
+  "careers",
+  "reviews",
+  "press",
+  "community",
+  "promo"
+]);
+
+const TOPIC_GUARDRAIL_PAGE_CLASS_WEIGHTS = {
+  homepage: 12,
+  core: 11,
+  policy: 10,
+  service_area: 10,
+  locations: 9,
+  service_canonical: 8,
+  legal: 6,
+  geo_landing: 2,
+  misc: 1,
+  promo: -2,
+  reviews: -4,
+  blog: -6,
+  community: -6,
+  press: -6,
+  careers: -8
+};
+
+const GUARDRAIL_SOURCE_PATH_HINTS = {
+  warranty: ["forever-warranty", "warranty", "home-care-plan", "services/plumbing", "services/electrical", "services/hvac"],
+  guarantees: ["forever-warranty", "services/plumbing", "services/electrical", "services", "home-care-plan"],
+  emergency_service: ["contact", "locations", "services", "emergency", "service-areas"],
+  service_area: ["service-areas", "locations", "contact", "services"],
+  availability: ["contact", "locations", "service-areas", "home-care-plan"],
+  financing: ["financing", "home-care-plan", "contact", "locations"],
+  pricing: ["financing", "discount", "promotions", "services", "contact"]
+};
+
 function normalizeText(value) {
   return String(value || "").trim();
 }
@@ -334,6 +372,59 @@ function normalizeCrawlUrl(baseOrigin, href) {
   }
 }
 
+function getPathname(sourceUrl) {
+  try {
+    return new URL(sourceUrl).pathname.toLowerCase().replace(/\/+$/g, "") || "/";
+  } catch {
+    return "/";
+  }
+}
+
+function isLikelyGeoLandingPath(pathname) {
+  const path = String(pathname || "").toLowerCase().replace(/\/+$/g, "");
+  const segments = path.split("/").filter(Boolean);
+  if (segments.length > 2) return false;
+  const leaf = segments[segments.length - 1] || "";
+  if (!leaf || /^locations?$/.test(leaf)) return false;
+  if (/^(forever-warranty|home-care-plan|contact-us|privacy-policy|terms-and-conditions|reviews|promotions|rainiers)$/.test(leaf)) {
+    return false;
+  }
+  return /(plumber|electrician|hvac|furnace|ac-|air-conditioning|drain|sewer|water-heater|generator|lighting|electrical|heat-pump|pipe|kitchen|bathroom|home-rewire|repiping|hydro-jetting|trenchless|repair|installation|replacement|service)/.test(leaf)
+    && /-/.test(leaf);
+}
+
+function classifyWebsitePage(sourceUrl) {
+  const path = getPathname(sourceUrl);
+  if (path === "/") return "homepage";
+  if (path.startsWith("/blog")) return "blog";
+  if (path.startsWith("/careers")) return "careers";
+  if (path.startsWith("/press-releases")) return "press";
+  if (path === "/reviews") return "reviews";
+  if (/\/(our-community|rainiers|heroes-giveaway)\b/.test(path)) return "community";
+  if (/\/(promotions|discount)\b/.test(path)) return "promo";
+  if (/\/(privacy-policy|terms-and-conditions)\b/.test(path)) return "legal";
+  if (path.startsWith("/locations/")) return "locations";
+  if (path.startsWith("/about/service-areas")) return "service_area";
+  if (path.startsWith("/services/")) return "service_canonical";
+  if (
+    path === "/services"
+    || path === "/about"
+    || path === "/contact-us"
+    || path.startsWith("/about/")
+    || path === "/forever-warranty"
+    || path === "/home-care-plan"
+  ) {
+    return "core";
+  }
+  if (/\/(financing|warranty|payment|plan)\b/.test(path)) return "policy";
+  if (isLikelyGeoLandingPath(path)) return "geo_landing";
+  return "misc";
+}
+
+function pageClassWeight(pageClass) {
+  return TOPIC_GUARDRAIL_PAGE_CLASS_WEIGHTS[pageClass] ?? 0;
+}
+
 function shouldSkipCrawlUrl(url) {
   const path = `${url.pathname}`.toLowerCase();
   if (!path) return false;
@@ -454,6 +545,7 @@ function finalizeWebsitePages(rawPages) {
       });
       return {
         ...page,
+        pageClass: page.pageClass || classifyWebsitePage(page.sourceUrl),
         headings: uniqueValues(page.headings || []).slice(0, 8),
         lines: filteredLines.slice(0, 120),
         text: filteredLines.join(" ").slice(0, 24000)
@@ -495,6 +587,7 @@ async function fetchRelevantWebsiteSources(baseUrl, { onProgress } = {}) {
   const rawPages = [{
     sourceType: "website",
     sourceUrl: primaryUrl,
+    pageClass: classifyWebsitePage(primaryUrl),
     title: primary.title,
     headings: primary.headings,
     lines: primary.lines,
@@ -534,6 +627,7 @@ async function fetchRelevantWebsiteSources(baseUrl, { onProgress } = {}) {
       rawPages.push({
         sourceType: "website",
         sourceUrl: result.url,
+        pageClass: classifyWebsitePage(result.url),
         title: result.page.title,
         headings: result.page.headings,
         lines: result.page.lines,
@@ -583,6 +677,110 @@ function extractBusinessHours(text) {
 function extractPhone(text) {
   const match = String(text || "").match(/\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/);
   return match ? match[0].replace(/\s+/g, " ").trim() : "";
+}
+
+function pickBestPhoneCandidate(pages) {
+  const candidates = [];
+  for (const page of pages || []) {
+    const pageClass = page.pageClass || classifyWebsitePage(page.sourceUrl);
+    const pageBonus = pageClassWeight(pageClass);
+    for (const line of page.lines || []) {
+      const phone = extractPhone(line);
+      if (!phone) continue;
+      const context = `${page.title || ""} ${(page.headings || []).join(" ")} ${line}`.toLowerCase();
+      const score = pageBonus
+        + (/contact|call us|phone|talk to|book online/.test(context) ? 4 : 0)
+        + (pageClass === "homepage" || pageClass === "core" || pageClass === "locations" ? 3 : 0)
+        - (pageClass === "geo_landing" ? 2 : 0);
+      candidates.push({
+        value: phone,
+        sourceUrl: page.sourceUrl || null,
+        score
+      });
+    }
+  }
+  return candidates.sort((left, right) => right.score - left.score)[0] || null;
+}
+
+function pickBestAddressCandidate(pages, googleBusinessProfile) {
+  const candidates = [];
+  for (const page of pages || []) {
+    const pageClass = page.pageClass || classifyWebsitePage(page.sourceUrl);
+    const pageBonus = pageClassWeight(pageClass);
+    const labeled = extractLabeledAddress(page.text);
+    const matches = labeled ? [labeled] : extractAddressCandidates(page.text);
+    for (const value of matches) {
+      const context = `${page.title || ""} ${(page.headings || []).join(" ")} ${page.text.slice(0, 800)}`.toLowerCase();
+      const score = pageBonus
+        + (labeled ? 8 : 0)
+        + (/contact|location|visit|office|showroom|tacoma|tukwila/.test(context) ? 4 : 0)
+        + (pageClass === "homepage" || pageClass === "core" || pageClass === "locations" ? 4 : 0)
+        - (pageClass === "geo_landing" ? 3 : 0);
+      candidates.push({
+        value,
+        sourceType: labeled ? "website_labeled_address" : "website_address_match",
+        sourceUrl: page.sourceUrl || null,
+        score
+      });
+    }
+  }
+
+  if (!candidates.length && googleBusinessProfile?.serviceArea) {
+    return {
+      value: googleBusinessProfile.serviceArea,
+      sourceType: "google_business_profile.formatted_address",
+      sourceUrl: googleBusinessProfile.url || googleBusinessProfile.website || null,
+      score: 1
+    };
+  }
+
+  return candidates.sort((left, right) => right.score - left.score)[0] || null;
+}
+
+function pickBestBusinessHoursCandidate(pages) {
+  const candidates = [];
+  const regularPattern = /\b(?:mon|monday|tue|tues|tuesday|wed|wednesday|thu|thurs|thursday|fri|friday|sat|saturday|sun|sunday)\b/i;
+  const hoursPattern = /\b(\d{1,2}(?::\d{2})?\s?(?:am|pm)|24\/7|24 hours|24-hour|24 hour)\b/i;
+
+  for (const page of pages || []) {
+    const pageClass = page.pageClass || classifyWebsitePage(page.sourceUrl);
+    const pageBonus = pageClassWeight(pageClass);
+    for (const line of page.lines || []) {
+      const cleaned = cleanEvidenceText(line);
+      const lower = cleaned.toLowerCase();
+      if (!hoursPattern.test(cleaned)) continue;
+      if (!regularPattern.test(cleaned) && !/hours|open|business hours|office hours|24\/7|after hours|always open/.test(lower)) {
+        continue;
+      }
+      const isRegularHours = regularPattern.test(cleaned) || /business hours|office hours|open monday|open tuesday|weekday/.test(lower);
+      const isEmergencyHours = /24\/7|24 hours|24-hour|after hours|emergency/.test(lower);
+      const score = pageBonus
+        + (pageClass === "homepage" || pageClass === "core" || pageClass === "locations" ? 5 : 0)
+        + (isRegularHours ? 6 : 0)
+        + (isEmergencyHours ? 3 : 0)
+        + (/hours|office hours|business hours/.test(lower) ? 4 : 0)
+        - (pageClass === "geo_landing" ? 2 : 0);
+      candidates.push({
+        value: cleaned,
+        sourceUrl: page.sourceUrl || null,
+        score,
+        isRegularHours,
+        isEmergencyHours
+      });
+    }
+  }
+
+  const regular = candidates
+    .filter((item) => item.isRegularHours)
+    .sort((left, right) => right.score - left.score)[0] || null;
+  const emergency = candidates
+    .filter((item) => item.isEmergencyHours)
+    .sort((left, right) => right.score - left.score)[0] || null;
+
+  return {
+    regular,
+    emergency
+  };
 }
 
 function titleCaseWords(value) {
@@ -662,12 +860,14 @@ function buildProfileProvenance({
   businessName,
   phone,
   extractedWebsitePhone,
+  websitePhoneSourceUrl,
   selectedAddressRaw,
   addressSourceType,
   addressSourceUrl,
   serviceArea,
   businessHours,
   extractedHours,
+  businessHoursSourceUrl,
   emergencyServices,
   websiteResult
 }) {
@@ -691,7 +891,7 @@ function buildProfileProvenance({
       source: gbpPhone ? "google_business_profile.phone" : extractedWebsitePhone ? "website_text" : null,
       sourceUrl: gbpPhone
         ? (googleBusinessProfile?.url || googleBusinessProfile?.website || null)
-        : findWebsitePageForText(websiteSources.pages, extractedWebsitePhone),
+        : websitePhoneSourceUrl || findWebsitePageForText(websiteSources.pages, extractedWebsitePhone),
       evidence: gbpPhone || extractedWebsitePhone || null
     },
     address: {
@@ -711,7 +911,7 @@ function buildProfileProvenance({
       source: gbpHours ? "google_business_profile.hours" : extractedHours ? "website_text" : null,
       sourceUrl: gbpHours
         ? (googleBusinessProfile?.url || googleBusinessProfile?.website || null)
-        : findWebsitePageForText(websiteSources.pages, extractedHours),
+        : businessHoursSourceUrl || findWebsitePageForText(websiteSources.pages, extractedHours),
       evidence: gbpHours || extractedHours || null
     },
     emergencyServices: {
@@ -875,10 +1075,23 @@ function normalizeTopicRiskLevel(value, fallbackText = "") {
   return inferTopicRiskLevelFromText(fallbackText);
 }
 
+function selectTopicSourcePages(websitePages) {
+  return (websitePages || [])
+    .filter((page) => !EXCLUDED_TOPIC_PAGE_CLASSES.has(page.pageClass || classifyWebsitePage(page.sourceUrl)))
+    .sort((left, right) =>
+      pageClassWeight(right.pageClass || classifyWebsitePage(right.sourceUrl))
+        - pageClassWeight(left.pageClass || classifyWebsitePage(left.sourceUrl))
+      || (right.lines?.length || 0) - (left.lines?.length || 0)
+      || String(left.sourceUrl || "").length - String(right.sourceUrl || "").length
+    )
+    .slice(0, 72);
+}
+
 function buildAiTopicPromptPages(websitePages) {
-  return (websitePages || []).map((page) => ({
+  return selectTopicSourcePages(websitePages).map((page) => ({
     sourceUrl: page.sourceUrl || null,
     title: page.title || "",
+    pageClass: page.pageClass || classifyWebsitePage(page.sourceUrl),
     headings: Array.isArray(page.headings) ? page.headings.slice(0, 6) : [],
     pageSummary: buildObjectiveSummaryFromLines(page.lines || [], 3),
     excerptLines: Array.isArray(page.lines) ? page.lines.slice(0, 4) : []
@@ -1338,6 +1551,19 @@ function findSiteTopicFallbackSummary(siteTopics, topic) {
   };
 }
 
+function buildAvailabilityFallbackAnswer(profile) {
+  const hours = normalizeText(profile?.businessHours);
+  const emergency = profile?.emergencyServices === true;
+  if (hours && emergency) {
+    return `${hours}. Emergency service appears to be available 24/7, but exact dispatch timing should still be confirmed before making a promise.`;
+  }
+  if (hours) return hours;
+  if (emergency) {
+    return "Emergency or after-hours service appears to be available 24/7, but exact dispatch timing should be confirmed before making a promise.";
+  }
+  return "";
+}
+
 function buildGuardrailQuestionTests({ profile, sources, defaults, siteTopics, aiByQuestion }) {
   return (defaults || []).map((template) => {
     const aiMatch = aiByQuestion.get(normalizeText(template.questionText));
@@ -1371,6 +1597,19 @@ function buildGuardrailQuestionTests({ profile, sources, defaults, siteTopics, a
         sourceUrl: siteTopicFallback.sourceUrl || null,
         sourceConfidence: toNumberOrNull(siteTopicFallback.sourceConfidence)
       };
+    }
+
+    if (template.topic === "availability") {
+      const availabilityAnswer = buildAvailabilityFallbackAnswer(profile);
+      if (availabilityAnswer) {
+        return {
+          ...template,
+          answer: availabilityAnswer,
+          sourceType: profile.businessHours ? "derived_profile" : "derived_profile",
+          sourceUrl: null,
+          sourceConfidence: profile.businessHours ? 0.82 : 0.72
+        };
+      }
     }
 
     if (template.topic === "emergency_service" && profile.emergencyServices === true) {
@@ -1407,34 +1646,89 @@ function extractJsonObject(text) {
   return null;
 }
 
-async function extractGuardrailAnswersWithAi(questionTemplates, sources) {
-  const apiKey = process.env.OPENAI_API_KEY || "";
-  if (!apiKey || !questionTemplates.length || !sources.length) return null;
+function scoreSourceForGuardrailQuestion(source, template) {
+  const pageClass = source.pageClass || classifyWebsitePage(source.sourceUrl);
+  const path = getPathname(source.sourceUrl);
+  const context = `${source.title || ""} ${(source.headings || []).join(" ")} ${source.sourceUrl || ""}`.toLowerCase();
+  const keywords = GUARDRAIL_TOPIC_KEYWORDS[template.topic] || [];
+  const keywordMatches = keywords.filter((keyword) => context.includes(String(keyword).toLowerCase())).length;
+  const pathHints = (GUARDRAIL_SOURCE_PATH_HINTS[template.topic] || [])
+    .filter((hint) => path.includes(String(hint).toLowerCase()))
+    .length;
+  return pageClassWeight(pageClass)
+    + keywordMatches * 3
+    + pathHints * 5
+    + (pageClass === "homepage" || pageClass === "core" ? 3 : 0)
+    + (pageClass === "locations" && ["availability", "service_area"].includes(template.topic) ? 4 : 0)
+    + (pageClass === "service_canonical" && ["warranty", "guarantees", "emergency_service"].includes(template.topic) ? 3 : 0)
+    - (pageClass === "geo_landing" ? 3 : 0);
+}
 
-  const prompt = {
-    guardrailQuestions: questionTemplates.map((item) => ({
-      questionText: item.questionText,
-      topic: item.topic,
-      answer: item.answer || ""
-    })),
-    sources: sources.map((source) => ({
-      sourceType: source.sourceType,
-      sourceUrl: source.sourceUrl,
-      title: source.title || "",
-      sentences: source.sentences.slice(0, 18)
-    }))
-  };
+function selectRelevantSentencesForGuardrailQuestion(source, template) {
+  const topicKeywords = GUARDRAIL_TOPIC_KEYWORDS[template.topic] || [];
+  const questionKeywords = keywordsFromText(template.questionText);
+  const allKeywords = uniqueValues([...topicKeywords, ...questionKeywords]).map((item) => String(item).toLowerCase());
+
+  return (source.sentences || [])
+    .map((sentence) => {
+      const cleaned = cleanEvidenceText(sentence);
+      if (!cleaned || looksLikeNavOrBoilerplate(cleaned)) return null;
+      const lower = cleaned.toLowerCase();
+      const keywordMatches = allKeywords.filter((keyword) => lower.includes(keyword)).length;
+      const topicBonus =
+        template.topic === "availability" && /\b(hours|open|monday|friday|24\/7|after hours|available|availability)\b/.test(lower)
+          ? 4
+          : template.topic === "service_area" && /\b(serving|serve|service area|locations|tacoma|seattle|olympia|renton|silverdale)\b/.test(lower)
+            ? 4
+            : template.topic === "pricing" && /\b(price|pricing|fee|fees|diagnostic|estimate)\b/.test(lower)
+              ? 4
+              : template.topic === "financing" && /\b(financing|payment plan|approved credit|monthly)\b/.test(lower)
+                ? 4
+                : 0;
+      const score = keywordMatches * 3 + topicBonus + Math.min(cleaned.length / 120, 1);
+      return score > 0 ? { sentence: cleaned, score } : null;
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.score - left.score || left.sentence.length - right.sentence.length)
+    .slice(0, 6)
+    .map((item) => item.sentence);
+}
+
+function selectSourcesForGuardrailQuestion(template, sources) {
+  return (sources || [])
+    .map((source) => {
+      const sentences = selectRelevantSentencesForGuardrailQuestion(source, template);
+      if (!sentences.length) return null;
+      return {
+        sourceType: source.sourceType,
+        sourceUrl: source.sourceUrl,
+        pageClass: source.pageClass || classifyWebsitePage(source.sourceUrl),
+        title: source.title || "",
+        headings: Array.isArray(source.headings) ? source.headings.slice(0, 4) : [],
+        sentences,
+        sourceScore: scoreSourceForGuardrailQuestion(source, template)
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.sourceScore - left.sourceScore || left.sentences.length - right.sentences.length)
+    .slice(0, 8);
+}
+
+async function extractGuardrailAnswerWithAi(template, sources, apiKey) {
+  const selectedSources = selectSourcesForGuardrailQuestion(template, sources);
+  if (!selectedSources.length) return null;
 
   const instruction = [
-    "You extract approved business answers for high-risk guardrail questions from source text.",
+    "You extract an approved business answer for a single high-risk receptionist question from source text.",
     "Rules:",
-    "1) Answer only when explicit evidence appears in a source sentence.",
-    "2) If no explicit evidence exists, return answer as empty string.",
-    "3) Return confidence from 0 to 1.",
-    "4) Keep the answer concise, faithful to evidence, and suitable for a receptionist.",
-    "5) Do not add promises, pricing, or policy details that are not explicit in the source text.",
-    "Output strict JSON with shape:",
-    '{"items":[{"questionText":"...","answer":"...","sourceType":"website|google_business_profile|null","sourceUrl":"...|null","evidenceSnippet":"...|null","sourceConfidence":0.0}]}'
+    "1) Answer only when the source text explicitly supports the answer.",
+    "2) If the source text is partial, answer conservatively and do not add missing details.",
+    "3) Keep the answer concise, objective, and suitable for a receptionist.",
+    "4) Prefer general business-wide answers over city-specific landing-page wording when both exist.",
+    "5) If the site only supports emergency-hours availability, say that clearly instead of inventing normal business hours.",
+    "6) Do not add promises, prices, or policy details that are not explicit in the sources.",
+    "Return strict JSON with shape:",
+    '{"item":{"questionText":"...","answer":"...","sourceType":"website|google_business_profile|null","sourceUrl":"...|null","sourceConfidence":0.0}}'
   ].join("\n");
 
   try {
@@ -1448,7 +1742,16 @@ async function extractGuardrailAnswersWithAi(questionTemplates, sources) {
         model: process.env.OPENAI_ENRICH_MODEL || "gpt-4.1-mini",
         input: [
           { role: "system", content: instruction },
-          { role: "user", content: JSON.stringify(prompt) }
+          {
+            role: "user",
+            content: JSON.stringify({
+              question: {
+                questionText: template.questionText,
+                topic: template.topic
+              },
+              sources: selectedSources
+            })
+          }
         ]
       })
     }, 15000);
@@ -1462,11 +1765,20 @@ async function extractGuardrailAnswersWithAi(questionTemplates, sources) {
         .find((item) => item.type === "output_text" && typeof item.text === "string")
         ?.text || "";
     const parsed = extractJsonObject(outputText);
-    if (!parsed || !Array.isArray(parsed.items)) return null;
-    return parsed.items;
+    if (!parsed || !parsed.item || !normalizeText(parsed.item.questionText || template.questionText)) return null;
+    return parsed.item;
   } catch {
     return null;
   }
+}
+
+async function extractGuardrailAnswersWithAi(questionTemplates, sources) {
+  const apiKey = process.env.OPENAI_API_KEY || "";
+  if (!apiKey || !questionTemplates.length || !sources.length) return null;
+  const results = await mapWithConcurrency(questionTemplates, 4, (template) =>
+    extractGuardrailAnswerWithAi(template, sources, apiKey)
+  );
+  return results.filter(Boolean);
 }
 
 async function fetchGoogleBusinessProfile({ website, businessName, serviceArea }) {
@@ -1627,6 +1939,7 @@ export default async function handler(req, res) {
       sources.push({
         sourceType: page.sourceType,
         sourceUrl: page.sourceUrl,
+        pageClass: page.pageClass || classifyWebsitePage(page.sourceUrl),
         title: page.title || "",
         headings: Array.isArray(page.headings) ? page.headings : [],
         sentences: Array.isArray(page.lines) && page.lines.length ? page.lines.slice(0, 80) : splitSentences(page.text)
@@ -1636,6 +1949,7 @@ export default async function handler(req, res) {
       sources.push({
         sourceType: "google_business_profile",
         sourceUrl: normalizeText(googleBusinessProfile?.url || googleBusinessProfile?.website) || null,
+        pageClass: "core",
         title: normalizeText(googleBusinessProfile?.name) || "Google Business Profile",
         headings: [],
         sentences: splitSentences(gbpText)
@@ -1643,26 +1957,16 @@ export default async function handler(req, res) {
     }
 
     const businessName = guessBusinessName({ googleBusinessProfile, website: normalizedWebsite, ownerEmail });
-    const addressText = [websiteResult.text, googleBusinessProfile?.serviceArea].filter(Boolean).join(" ");
-    const labeledAddress = extractLabeledAddress(addressText);
-    const addressCandidates = extractAddressCandidates(addressText);
-    const selectedAddressRaw = labeledAddress || addressCandidates[0] || googleBusinessProfile?.serviceArea || "";
-    let addressSourceType = null;
-    let addressSourceUrl = null;
-    if (labeledAddress) {
-      addressSourceType = "website_labeled_address";
-      addressSourceUrl = findWebsitePageForText(websiteSources.pages, labeledAddress);
-    } else if (addressCandidates[0]) {
-      addressSourceType = "website_address_match";
-      addressSourceUrl = findWebsitePageForText(websiteSources.pages, addressCandidates[0]);
-    } else if (googleBusinessProfile?.serviceArea) {
-      addressSourceType = "google_business_profile.formatted_address";
-      addressSourceUrl = googleBusinessProfile?.url || googleBusinessProfile?.website || null;
-    }
+    const bestAddress = pickBestAddressCandidate(websiteSources.pages, googleBusinessProfile);
+    const selectedAddressRaw = bestAddress?.value || "";
+    const addressSourceType = bestAddress?.sourceType || null;
+    const addressSourceUrl = bestAddress?.sourceUrl || null;
 
     const parsedAddress = parseUsAddress(selectedAddressRaw);
-    const extractedWebsitePhone = extractPhone(websiteResult.text);
-    const extractedHours = extractBusinessHours(websiteResult.text);
+    const bestPhone = pickBestPhoneCandidate(websiteSources.pages);
+    const extractedWebsitePhone = bestPhone?.value || extractPhone(websiteResult.text);
+    const businessHoursCandidate = pickBestBusinessHoursCandidate(websiteSources.pages);
+    const extractedHours = businessHoursCandidate?.regular?.value || "";
 
     const profile = {
       businessName,
@@ -1673,7 +1977,7 @@ export default async function handler(req, res) {
       zip: parsedAddress.zip,
       serviceArea: normalizeText(googleBusinessProfile?.serviceArea),
       businessHours: normalizeText(googleBusinessProfile?.hours) || extractedHours,
-      emergencyServices: null,
+      emergencyServices: inferEmergencyServices([websiteResult.text, gbpText].join(". ")),
       serviceText: [
         normalizeText(googleBusinessProfile?.description),
         normalizeText(googleBusinessProfile?.services),
@@ -1731,12 +2035,14 @@ export default async function handler(req, res) {
       businessName,
       phone: profile.phone,
       extractedWebsitePhone,
+      websitePhoneSourceUrl: bestPhone?.sourceUrl || null,
       selectedAddressRaw,
       addressSourceType,
       addressSourceUrl,
       serviceArea: profile.serviceArea,
       businessHours: profile.businessHours,
       extractedHours,
+      businessHoursSourceUrl: businessHoursCandidate?.regular?.sourceUrl || null,
       emergencyServices,
       websiteResult
     });

@@ -485,7 +485,10 @@ export function IntakePageClient({ qaMode = false } = {}) {
         })
       });
 
-      const data = await readEnrichmentPreviewResponse(resp, (progress) => setEnrichmentProgress(progress));
+      const data = await readEnrichmentPreviewResponse(resp, (progress) => {
+        setEnrichmentProgress(progress);
+        setStatusMessage(formatEnrichmentProgress(progress), 'warn');
+      });
       if (!resp.ok) {
         setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
         setSiteTopics([]);
