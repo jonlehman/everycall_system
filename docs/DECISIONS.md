@@ -13,6 +13,10 @@
 - Tooling is limited to FAQ lookup and data capture; fields are defined by EveryCall schema.
 - Realtime session config is admin-driven and demo-aligned (model `gpt-realtime-1.5`, voice `marin`, `server_vad` threshold `0.75`).
 
+## 2026-03-12
+- Replace the FAQ-centric tenant knowledge model with a tenant-scoped knowledge system built around knowledge entries, grounded facts, retrieval cards, overrides, guardrails, and Guardrail Questions.
+- Keep final conversational relevance and wording decisions in the realtime phone AI; the knowledge subsystem retrieves and packages relevant knowledge only.
+
 ## 2026-03-02
 - Added `docs/HISTORY.md` to preserve high-level project timeline.
 

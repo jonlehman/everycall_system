@@ -536,6 +536,218 @@ export async function ensureTables(pool) {
 
   await pool.query(`CREATE INDEX IF NOT EXISTS industry_faqs_industry_idx ON industry_faqs (industry_key);`);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS site_crawls (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      root_url TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      crawl_mode TEXT NOT NULL DEFAULT 'website',
+      started_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      pages_discovered_count INTEGER NOT NULL DEFAULT 0,
+      pages_fetched_count INTEGER NOT NULL DEFAULT 0,
+      pages_failed_count INTEGER NOT NULL DEFAULT 0,
+      error_message TEXT,
+      metadata_json JSONB,
+      created_by_type TEXT NOT NULL DEFAULT 'system',
+      created_by_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS site_pages (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      crawl_id BIGINT REFERENCES site_crawls(id) ON DELETE SET NULL,
+      source_url TEXT NOT NULL,
+      canonical_url TEXT,
+      page_title TEXT,
+      content_hash TEXT,
+      fetch_status TEXT NOT NULL DEFAULT 'pending',
+      http_status INTEGER,
+      content_type TEXT,
+      last_seen_at TIMESTAMPTZ,
+      fetched_at TIMESTAMPTZ,
+      metadata_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS site_sections (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      crawl_id BIGINT REFERENCES site_crawls(id) ON DELETE SET NULL,
+      page_id BIGINT REFERENCES site_pages(id) ON DELETE CASCADE,
+      section_key TEXT,
+      heading_path TEXT,
+      section_order INTEGER NOT NULL DEFAULT 0,
+      content_text TEXT NOT NULL,
+      content_hash TEXT,
+      metadata_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS knowledge_entries (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      entry_type TEXT NOT NULL DEFAULT 'manual_note',
+      section_type TEXT NOT NULL DEFAULT 'general',
+      title TEXT,
+      content_text TEXT NOT NULL,
+      source_url TEXT,
+      compilation_status TEXT NOT NULL DEFAULT 'pending',
+      last_compiled_at TIMESTAMPTZ,
+      metadata_json JSONB,
+      created_by_type TEXT NOT NULL DEFAULT 'tenant',
+      created_by_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS knowledge_facts (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      page_id BIGINT REFERENCES site_pages(id) ON DELETE SET NULL,
+      section_id BIGINT REFERENCES site_sections(id) ON DELETE SET NULL,
+      knowledge_entry_id BIGINT REFERENCES knowledge_entries(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      review_status TEXT NOT NULL DEFAULT 'unreviewed',
+      source_type TEXT NOT NULL DEFAULT 'website_extracted',
+      topic TEXT,
+      trade TEXT,
+      service_tags TEXT[] NOT NULL DEFAULT '{}',
+      claim TEXT NOT NULL,
+      evidence_text TEXT,
+      source_url TEXT,
+      confidence DOUBLE PRECISION,
+      risk_level TEXT NOT NULL DEFAULT 'normal',
+      explicit BOOLEAN NOT NULL DEFAULT TRUE,
+      metadata_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS knowledge_cards (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      card_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      topic TEXT,
+      trade TEXT,
+      service_tags TEXT[] NOT NULL DEFAULT '{}',
+      audience TEXT NOT NULL DEFAULT 'general',
+      title TEXT NOT NULL,
+      summary TEXT,
+      usage_notes TEXT,
+      metadata_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS knowledge_card_facts (
+      card_id BIGINT NOT NULL REFERENCES knowledge_cards(id) ON DELETE CASCADE,
+      fact_id BIGINT NOT NULL REFERENCES knowledge_facts(id) ON DELETE CASCADE,
+      fact_rank INTEGER NOT NULL DEFAULT 0,
+      required BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (card_id, fact_id)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS knowledge_overrides (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      topic TEXT,
+      trade TEXT,
+      service_tags TEXT[] NOT NULL DEFAULT '{}',
+      audience TEXT NOT NULL DEFAULT 'general',
+      trigger_text TEXT,
+      preferred_answer TEXT NOT NULL,
+      applies_when_json JSONB,
+      source_feedback_event_id BIGINT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS knowledge_guardrails (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      rule_type TEXT NOT NULL,
+      topic TEXT,
+      trade TEXT,
+      service_tags TEXT[] NOT NULL DEFAULT '{}',
+      severity TEXT NOT NULL DEFAULT 'high',
+      instruction_text TEXT NOT NULL,
+      applies_when_json JSONB,
+      source_feedback_event_id BIGINT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS knowledge_feedback_events (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      source_kind TEXT NOT NULL DEFAULT 'knowledge_review',
+      question_text TEXT,
+      draft_answer TEXT,
+      user_feedback_text TEXT,
+      edited_answer TEXT,
+      route_decision TEXT,
+      route_confidence DOUBLE PRECISION,
+      route_reason TEXT,
+      target_artifact_type TEXT,
+      target_artifact_id BIGINT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      metadata_json JSONB,
+      created_by_type TEXT NOT NULL DEFAULT 'tenant',
+      created_by_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS guardrail_question_tests (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      topic TEXT,
+      trade TEXT,
+      service_tags TEXT[] NOT NULL DEFAULT '{}',
+      question_text TEXT NOT NULL,
+      risk_level TEXT NOT NULL DEFAULT 'high',
+      draft_answer TEXT,
+      approved_answer TEXT,
+      review_status TEXT NOT NULL DEFAULT 'pending',
+      last_run_at TIMESTAMPTZ,
+      last_run_confidence DOUBLE PRECISION,
+      supporting_artifacts_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
   const industryCount = await pool.query(`SELECT COUNT(*)::int AS count FROM industries`);
   if ((industryCount.rows[0]?.count || 0) === 0) {
     await pool.query(
@@ -566,6 +778,26 @@ export async function ensureTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS provisioning_jobs_stage_status_idx ON provisioning_jobs (stage, status, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS incidents_tenant_created_idx ON incidents (tenant_key, created_at DESC);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS tenant_users_email_unique ON tenant_users (email);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS site_crawls_tenant_created_idx ON site_crawls (tenant_key, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS site_crawls_status_updated_idx ON site_crawls (status, updated_at DESC);`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS site_pages_tenant_source_url_idx ON site_pages (tenant_key, source_url);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS site_pages_tenant_status_updated_idx ON site_pages (tenant_key, fetch_status, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS site_sections_tenant_page_order_idx ON site_sections (tenant_key, page_id, section_order);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_entries_tenant_section_updated_idx ON knowledge_entries (tenant_key, section_type, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_entries_compilation_status_idx ON knowledge_entries (tenant_key, compilation_status, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_facts_tenant_topic_idx ON knowledge_facts (tenant_key, topic, trade, status, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_facts_tenant_risk_idx ON knowledge_facts (tenant_key, risk_level, review_status, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_facts_service_tags_idx ON knowledge_facts USING GIN (service_tags);`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS knowledge_cards_tenant_card_key_idx ON knowledge_cards (tenant_key, card_key);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_cards_tenant_topic_idx ON knowledge_cards (tenant_key, topic, trade, status, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_cards_service_tags_idx ON knowledge_cards USING GIN (service_tags);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_overrides_tenant_topic_idx ON knowledge_overrides (tenant_key, topic, trade, status, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_overrides_service_tags_idx ON knowledge_overrides USING GIN (service_tags);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_guardrails_tenant_topic_idx ON knowledge_guardrails (tenant_key, topic, trade, status, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_guardrails_service_tags_idx ON knowledge_guardrails USING GIN (service_tags);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_feedback_events_tenant_status_idx ON knowledge_feedback_events (tenant_key, status, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS guardrail_question_tests_tenant_review_idx ON guardrail_question_tests (tenant_key, review_status, risk_level, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS guardrail_question_tests_service_tags_idx ON guardrail_question_tests USING GIN (service_tags);`);
 
   tablesReady = true;
 }
