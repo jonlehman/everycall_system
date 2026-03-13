@@ -1,5 +1,7 @@
 import { ensureTables, getPool } from "../../../_lib/db.js";
 import { loadIndustryKnowledgeDefaults } from "../../../_lib/industryKnowledge.js";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
 
 const FREE_EMAIL_DOMAINS = new Set([
   "gmail.com",
@@ -114,6 +116,10 @@ const GUARDRAIL_SOURCE_PATH_HINTS = {
 
 function normalizeText(value) {
   return String(value || "").trim();
+}
+
+function formatDumpTimestamp(date = new Date()) {
+  return date.toISOString().replace(/[:.]/g, "-");
 }
 
 function truthy(value) {
@@ -789,6 +795,77 @@ function titleCaseWords(value) {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function buildTopicOutlineText(siteTopics) {
+  return (siteTopics || [])
+    .map((topic) => {
+      const depth = Math.max(String(topic.topicPath || "").split(">").filter(Boolean).length - 1, 0);
+      const indent = "  ".repeat(depth);
+      const title = topic.displayTitle || topic.topicPath || "Topic";
+      const summary = normalizeText(topic.summaryObjective);
+      const source = normalizeText(topic.sourceUrl);
+      const extras = [
+        topic.topicType ? `type=${topic.topicType}` : null,
+        topic.riskLevel ? `risk=${topic.riskLevel}` : null,
+        source ? `source=${source}` : null
+      ].filter(Boolean).join(" | ");
+      return `${indent}- ${title}${extras ? ` [${extras}]` : ""}${summary ? `\n${indent}  ${summary}` : ""}`;
+    })
+    .join("\n");
+}
+
+function buildSiteTextDump(websitePages) {
+  return (websitePages || [])
+    .map((page, index) => {
+      const headings = Array.isArray(page.headings) ? page.headings.filter(Boolean).join(" | ") : "";
+      const body = normalizeText(page.text);
+      return [
+        `===== PAGE ${index + 1} =====`,
+        `URL: ${page.sourceUrl || ""}`,
+        `CLASS: ${page.pageClass || classifyWebsitePage(page.sourceUrl)}`,
+        `TITLE: ${page.title || ""}`,
+        headings ? `HEADINGS: ${headings}` : "",
+        "",
+        body
+      ].filter(Boolean).join("\n");
+    })
+    .join("\n\n");
+}
+
+async function writeCrawlDebugDump({ normalizedWebsite, siteTopics, websitePages }) {
+  if (process.env.VERCEL) {
+    return {
+      enabled: false,
+      skippedReason: "local_only_on_vercel"
+    };
+  }
+
+  try {
+    const baseName = slugify(domainFromWebsite(normalizedWebsite) || "site");
+    const dumpDir = path.join(process.cwd(), "tmp", "site-crawl-debug", `${baseName}-${formatDumpTimestamp()}`);
+    await mkdir(dumpDir, { recursive: true });
+
+    const topicsPath = path.join(dumpDir, "topics.txt");
+    const siteTextPath = path.join(dumpDir, "site-text.txt");
+
+    await writeFile(topicsPath, `${buildTopicOutlineText(siteTopics)}\n`, "utf8");
+    await writeFile(siteTextPath, `${buildSiteTextDump(websitePages)}\n`, "utf8");
+
+    return {
+      enabled: true,
+      directoryPath: dumpDir,
+      topicsPath,
+      siteTextPath,
+      pageCount: Array.isArray(websitePages) ? websitePages.length : 0,
+      topicCount: Array.isArray(siteTopics) ? siteTopics.length : 0
+    };
+  } catch (error) {
+    return {
+      enabled: false,
+      error: String(error?.message || "debug_dump_write_failed")
+    };
+  }
 }
 
 function guessBusinessName({ googleBusinessProfile, website, ownerEmail }) {
@@ -1883,6 +1960,7 @@ export default async function handler(req, res) {
 
     const body = typeof req.body === "object" && req.body ? req.body : {};
     const streamProgress = truthy(body.streamProgress);
+    const debugDumpFiles = truthy(body.debugDumpFiles);
     streamWriter = streamProgress ? createStreamingPreviewWriter(res) : null;
     const emitProgress = (payload) => streamWriter?.progress(payload);
 
@@ -2021,6 +2099,13 @@ export default async function handler(req, res) {
       siteTopics,
       guardrailQuestionTests
     });
+    const debugDump = debugDumpFiles
+      ? await writeCrawlDebugDump({
+          normalizedWebsite,
+          siteTopics,
+          websitePages: websiteSources.pages
+        })
+      : null;
     emitProgress({
       phase: "complete",
       pagesScanned: websiteSources.crawlStats?.pagesScanned || websiteSources.pages.length
@@ -2058,6 +2143,7 @@ export default async function handler(req, res) {
         profile,
         provenance,
         crawlStats: websiteSources.crawlStats || null,
+        debugDump,
         guardrailQuestionTests,
         siteTopics,
         coverageChecklist

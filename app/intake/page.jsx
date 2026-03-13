@@ -481,7 +481,8 @@ export function IntakePageClient({ qaMode = false } = {}) {
           ownerEmail: form.ownerEmail.trim(),
           website: form.website.trim(),
           industry: form.industry,
-          streamProgress: true
+          streamProgress: true,
+          debugDumpFiles: isQaMode
         })
       });
 
@@ -517,8 +518,11 @@ export function IntakePageClient({ qaMode = false } = {}) {
           const next = !websiteEdited && enrichment?.website ? { ...prev, website: enrichment.website } : prev;
           return mergeEnrichmentProfileIntoForm(next, enrichment, { includeBusinessName: !isQaMode });
         });
+        const debugDumpMessage = isQaMode && enrichment?.debugDump?.enabled
+          ? ` Debug dump saved to ${enrichment.debugDump.directoryPath}.`
+          : "";
         setStatusMessage(
-          `Loaded ${previewSiteTopics.length} site topics and ${previewGuardrailQuestions.length} guardrail question previews from your site.`,
+          `Loaded ${previewSiteTopics.length} site topics and ${previewGuardrailQuestions.length} guardrail question previews from your site.${debugDumpMessage}`,
           'ok'
         );
       }
@@ -977,6 +981,22 @@ export function IntakePageClient({ qaMode = false } = {}) {
                           ))}
                         </tbody>
                       </table>
+                    </div>
+                    <div className="intake-section-title" style={{ marginTop: 16 }}>Debug Dump Files</div>
+                    <div className="intake-muted">
+                      {qaReport.raw?.enrichment?.debugDump?.enabled ? (
+                        <>
+                          <div><strong>Directory:</strong> <code>{qaReport.raw.enrichment.debugDump.directoryPath}</code></div>
+                          <div><strong>Topics:</strong> <code>{qaReport.raw.enrichment.debugDump.topicsPath}</code></div>
+                          <div><strong>Site Text:</strong> <code>{qaReport.raw.enrichment.debugDump.siteTextPath}</code></div>
+                        </>
+                      ) : qaReport.raw?.enrichment?.debugDump?.skippedReason ? (
+                        <div>Debug dump skipped: <code>{qaReport.raw.enrichment.debugDump.skippedReason}</code></div>
+                      ) : qaReport.raw?.enrichment?.debugDump?.error ? (
+                        <div>Debug dump failed: <code>{qaReport.raw.enrichment.debugDump.error}</code></div>
+                      ) : (
+                        <div>No debug dump was written for this run.</div>
+                      )}
                     </div>
                     <div className="intake-section-title" style={{ marginTop: 16 }}>Raw Report</div>
                     <textarea readOnly value={JSON.stringify(qaReport.raw, null, 2)} style={{ minHeight: 280, fontFamily: 'monospace' }} />
