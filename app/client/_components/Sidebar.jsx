@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const setupPaths = ['/client/setup', '/client/faq', '/client/team', '/client/routing', '/client/settings'];
+const setupPaths = ['/client/setup', '/client/knowledge', '/client/faq', '/client/team', '/client/routing', '/client/settings'];
 
 function NavIcon({ kind }) {
   if (kind === 'dashboard') {
@@ -39,7 +39,7 @@ const navItems = [
 ];
 
 const setupSubItems = [
-  { href: '/client/faq', label: 'Questions and Answers', icon: 'QA' },
+  { href: '/client/knowledge', label: 'Knowledge', icon: 'KN' },
   { href: '/client/team', label: 'Team Users', icon: 'TM' },
   { href: '/client/routing', label: 'Call Routing', icon: 'RT' },
   { href: '/client/settings', label: 'Account Settings', icon: 'AC' }

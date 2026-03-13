@@ -28,7 +28,10 @@ export default async function handler(req, res) {
                 telnyx_sms_messaging_profile_id
          FROM system_config WHERE id = 1`
       );
-      return res.status(200).json({ config: row.rows[0] || null });
+      const config = row.rows[0] || null;
+      return res.status(200).json({
+        config: config ? { ...config, knowledge_usage_prompt: config.faq_usage_prompt || "" } : null
+      });
     }
 
     if (req.method === "POST") {
@@ -38,7 +41,7 @@ export default async function handler(req, res) {
       const dateTime = String(body.dateTimePrompt || "").trim();
       const numbersSymbols = String(body.numbersSymbolsPrompt || "").trim();
       const confirmation = String(body.confirmationPrompt || "").trim();
-      const faqUsage = String(body.faqUsagePrompt || "").trim();
+      const faqUsage = String(body.knowledgeUsagePrompt || body.faqUsagePrompt || "").trim();
       const parseJsonField = (value) => {
         if (!value) return null;
         if (typeof value === "object") return value;

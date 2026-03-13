@@ -19,7 +19,8 @@ export default function TenantManagePage() {
   const [composedPrompt, setComposedPrompt] = useState('');
   const [editing, setEditing] = useState({ status: '', plan: '', data_region: '', primary_number: '', industry: '' });
   const [industries, setIndustries] = useState([]);
-  const [faqs, setFaqs] = useState([]);
+  const [knowledgeEntries, setKnowledgeEntries] = useState([]);
+  const [guardrailQuestionTests, setGuardrailQuestionTests] = useState([]);
   const [provisioningJobs, setProvisioningJobs] = useState([]);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [provisionBusy, setProvisionBusy] = useState(false);
@@ -87,9 +88,13 @@ export default function TenantManagePage() {
       .then((data) => { if (mounted) setIndustries(data?.industries || []); })
       .catch(() => {});
 
-    fetch(`/api/v1/faq?tenantKey=${encodeURIComponent(tenantKey)}`)
+    fetch(`/api/v1/knowledge?tenantKey=${encodeURIComponent(tenantKey)}`)
       .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => { if (mounted) setFaqs(data?.faqs || []); })
+      .then((data) => {
+        if (!mounted) return;
+        setKnowledgeEntries(data?.knowledgeEntries || []);
+        setGuardrailQuestionTests(data?.guardrailQuestionTests || []);
+      })
       .catch(() => {});
 
     loadProvisioningJobs(canUpdate);
@@ -176,28 +181,6 @@ export default function TenantManagePage() {
     fetch(`/api/v1/config/agent?mode=preview&tenantKey=${encodeURIComponent(tenantKey)}`)
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => setComposedPrompt(data?.composedPrompt || ''))
-      .catch(() => {});
-  };
-
-  const importIndustryFaqs = async () => {
-    if (!editing.industry) {
-      setStatus('Set an industry first.');
-      return;
-    }
-    setStatus('Importing FAQs...');
-    const resp = await fetch(`/api/v1/admin/industries?mode=importFaqs&industryKey=${encodeURIComponent(editing.industry)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantKey })
-    });
-    if (!resp.ok) {
-      setStatus('Import FAQs failed.');
-      return;
-    }
-    setStatus('FAQs imported.');
-    fetch(`/api/v1/faq?tenantKey=${encodeURIComponent(tenantKey)}`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => setFaqs(data?.faqs || []))
       .catch(() => {});
   };
 
@@ -413,7 +396,6 @@ export default function TenantManagePage() {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button onClick={savePrompt}>Save Prompt</Button>
             <Button variant="outline" onClick={importIndustryPrompt}>Import Industry Prompt</Button>
-            <Button variant="outline" onClick={importIndustryFaqs}>Import Industry FAQs</Button>
             <span className="text-sm text-slate-500">{status}</span>
           </div>
         </div>
@@ -509,24 +491,65 @@ export default function TenantManagePage() {
       </div>
 
       <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-        <label>Current FAQs</label>
+        <label>Current Knowledge</label>
         <DataGrid
-          rows={faqs.map((faq) => ({
-            id: faq.id,
-            question: faq.question,
-            answer: faq.answer,
-            category: faq.category
+          rows={knowledgeEntries.map((entry, index) => ({
+            id: entry.id || `knowledge-${index}`,
+            title: entry.title,
+            sectionType: entry.sectionType,
+            contentText: entry.contentText,
+            sourceType: entry.sourceType || '',
+            sourceUrl: entry.sourceUrl || ''
           }))}
           columns={[
-            { field: 'question', headerName: 'Question', flex: 1.2, minWidth: 200 },
-            { field: 'answer', headerName: 'Answer', flex: 1.8, minWidth: 300 },
-            { field: 'category', headerName: 'Category', flex: 0.6, minWidth: 140 }
+            { field: 'title', headerName: 'Section', flex: 0.8, minWidth: 180 },
+            { field: 'sectionType', headerName: 'Type', flex: 0.6, minWidth: 160 },
+            { field: 'contentText', headerName: 'Content', flex: 1.8, minWidth: 320 },
+            { field: 'sourceType', headerName: 'Source', flex: 0.6, minWidth: 140 }
           ]}
           autoHeight
           disableRowSelectionOnClick
           pageSizeOptions={[10, 25, 50]}
           initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
-          localeText={{ noRowsLabel: 'No FAQs yet.' }}
+          localeText={{ noRowsLabel: 'No knowledge yet.' }}
+          sx={{
+            border: 'none',
+            '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
+            '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
+            '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
+          }}
+        />
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+        <label>Guardrail Questions</label>
+        <DataGrid
+          rows={guardrailQuestionTests.map((item, index) => ({
+            id: item.id || `guardrail-${index}`,
+            questionText: item.questionText,
+            answer: item.answer,
+            riskLevel: item.riskLevel,
+            reviewStatus: item.reviewStatus
+          }))}
+          columns={[
+            { field: 'questionText', headerName: 'Question', flex: 1.1, minWidth: 240 },
+            { field: 'answer', headerName: 'Approved Answer', flex: 1.8, minWidth: 340 },
+            { field: 'riskLevel', headerName: 'Risk', flex: 0.5, minWidth: 110 },
+            {
+              field: 'reviewStatus',
+              headerName: 'Status',
+              flex: 0.6,
+              minWidth: 130,
+              renderCell: (params) => (
+                <span className={`badge ${params.value === 'approved' ? 'ok' : 'warn'}`}>{params.value || 'pending'}</span>
+              )
+            }
+          ]}
+          autoHeight
+          disableRowSelectionOnClick
+          pageSizeOptions={[10, 25, 50]}
+          initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
+          localeText={{ noRowsLabel: 'No guardrail questions yet.' }}
           sx={{
             border: 'none',
             '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },

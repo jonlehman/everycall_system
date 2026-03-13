@@ -93,13 +93,36 @@ async function run() {
       }
     },
     {
-      name: "assistant status: disabled until forwarding + blank FAQ resolution complete",
+      name: "assistant status: disabled until forwarding + blank Guardrail Question resolution complete",
       run: async () => {
         const statusSeed = id();
         const onboarding = await postJson("/api/v1/tenants/onboard", makePayload(statusSeed, {
-          faqDrafts: [
-            { question: "Do you handle drain clogs and backups?", category: "Services", answer: "Yes, we do.", sourceType: "website", sourceUrl: "https://example.com", sourceConfidence: 0.81 },
-            { question: "What should I do for a burst pipe?", category: "Emergency", answer: "" }
+          knowledgeEntries: [
+            {
+              sectionType: "services_and_capabilities",
+              title: "Services and Capabilities",
+              contentText: "We handle drain cleaning and pipe repair.",
+              sourceType: "website",
+              sourceUrl: "https://example.com/services",
+              sourceConfidence: 0.81
+            }
+          ],
+          guardrailQuestionTests: [
+            {
+              questionText: "Do you offer emergency service?",
+              topic: "emergency_service",
+              riskLevel: "high",
+              answer: "Yes. We offer emergency service and prioritize urgent situations.",
+              sourceType: "website",
+              sourceUrl: "https://example.com/emergency",
+              sourceConfidence: 0.92
+            },
+            {
+              questionText: "How does your warranty work?",
+              topic: "warranty",
+              riskLevel: "critical",
+              answer: ""
+            }
           ]
         }));
         assert(onboarding.status === 200, `Expected 200, got ${onboarding.status}`);
@@ -117,8 +140,8 @@ async function run() {
 
         const statusMid = await fetch(`${baseUrl}/api/v1/assistant/status`, { headers: { cookie } });
         const statusMidData = await statusMid.json().catch(() => null);
-        assert(statusMidData?.assistant?.ready === false, "Expected assistant not ready with unresolved blank FAQ");
-        assert((statusMidData?.assistant?.unresolvedBlankFaqCount || 0) > 0, "Expected unresolved blank FAQ count > 0");
+        assert(statusMidData?.assistant?.ready === false, "Expected assistant not ready with unresolved blank Guardrail Question");
+        assert((statusMidData?.assistant?.unresolvedBlankGuardrailCount || 0) > 0, "Expected unresolved blank Guardrail Question count > 0");
       }
     },
     {

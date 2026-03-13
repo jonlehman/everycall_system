@@ -34,7 +34,13 @@ const streamIdToCall = new Map<string, string>();
 type PromptPayload = {
   system_prompt: string;
   tenant_greeting: string;
-  tenant_faqs: Array<{ id?: string; question: string; answer: string; tags?: string[] }>;
+  tenant_knowledge: {
+    entries: Array<{ id?: string; title: string; section_type?: string; content: string; tags?: string[]; source_url?: string | null }>;
+    guardrail_questions: Array<{ id?: string; topic?: string | null; question: string; answer: string; risk_level?: string; tags?: string[]; source_url?: string | null }>;
+    guardrails: Array<{ id?: string; rule_type: string; topic?: string | null; severity?: string; instruction: string; service_tags?: string[] }>;
+    overrides: Array<{ id?: string; topic?: string | null; trade?: string | null; trigger_text?: string | null; preferred_answer: string; service_tags?: string[] }>;
+    usage_instructions: string[];
+  };
   field_schema: Record<string, unknown>;
   tool_definitions: Array<Record<string, unknown>>;
   session_config: {
@@ -309,26 +315,38 @@ function logRealtimeTrace(session: StreamSession, payload: Record<string, unknow
 }
 
 function buildSessionInstructions(payload: PromptPayload) {
-  const faqText = payload.tenant_faqs
-    .map((faq) => {
-      const tags = Array.isArray(faq.tags) && faq.tags.length ? ` [tags: ${faq.tags.join(", ")}]` : "";
-      const id = faq.id ? `[${faq.id}] ` : "";
-      return `${id}Q: ${faq.question}${tags}`;
-    })
-    .join("\n\n");
+  const entryIndex = payload.tenant_knowledge.entries
+    .map((entry) => `- ${entry.title}${entry.section_type ? ` [${entry.section_type}]` : ""}`)
+    .join("\n");
+  const guardrailIndex = payload.tenant_knowledge.guardrail_questions
+    .map((item) => `- ${item.question}${item.topic ? ` [${item.topic}]` : ""}`)
+    .join("\n");
+  const usageInstructions = payload.tenant_knowledge.usage_instructions
+    .map((instruction) => `- ${instruction}`)
+    .join("\n");
+  const activeGuardrails = payload.tenant_knowledge.guardrails
+    .map((rule) => `- ${rule.rule_type}${rule.topic ? ` [${rule.topic}]` : ""}: ${rule.instruction}`)
+    .join("\n");
 
-  const faqUsagePolicy = `# FAQ TOOL POLICY
-For any tenant-specific factual question (hours, service area, location, pricing/payment, services, warranty, scheduling), call tool "faq_lookup" before answering.
+  const knowledgeUsagePolicy = `# KNOWLEDGE TOOL POLICY
+For any tenant-specific factual question (hours, service area, location, pricing/payment, services, warranty, scheduling), call tool "knowledge_lookup" before answering.
 Do not answer tenant-specific facts from memory.
-If faq_lookup returns no match, say you do not have that detail and offer callback follow-up.`;
+If knowledge_lookup returns no match, say you do not have that detail and offer callback follow-up.`;
 
-  return [payload.system_prompt, faqUsagePolicy, payload.tenant_greeting, faqText].filter(Boolean).join("\n\n");
+  const knowledgeIndexSections = [
+    entryIndex ? `# AVAILABLE KNOWLEDGE SECTIONS\n${entryIndex}` : "",
+    guardrailIndex ? `# AVAILABLE GUARDRAIL QUESTIONS\n${guardrailIndex}` : "",
+    activeGuardrails ? `# ACTIVE KNOWLEDGE GUARDRAILS\n${activeGuardrails}` : "",
+    usageInstructions ? `# KNOWLEDGE USAGE INSTRUCTIONS\n${usageInstructions}` : ""
+  ].filter(Boolean).join("\n\n");
+
+  return [payload.system_prompt, knowledgeUsagePolicy, payload.tenant_greeting, knowledgeIndexSections].filter(Boolean).join("\n\n");
 }
 
 function validatePromptPayload(input: unknown): PromptPayload {
   if (!input || typeof input !== "object") throw new Error("prompt_payload_not_object");
   const payload = input as Record<string, unknown>;
-  const requiredKeys = ["system_prompt", "tenant_greeting", "tenant_faqs", "field_schema", "tool_definitions", "session_config"];
+  const requiredKeys = ["system_prompt", "tenant_greeting", "tenant_knowledge", "field_schema", "tool_definitions", "session_config"];
   for (const key of requiredKeys) {
     if (!(key in payload)) throw new Error(`prompt_payload_missing_${key}`);
   }
@@ -336,10 +354,12 @@ function validatePromptPayload(input: unknown): PromptPayload {
     throw new Error("prompt_payload_invalid_system_prompt");
   }
   if (typeof payload.tenant_greeting !== "string") throw new Error("prompt_payload_invalid_tenant_greeting");
-  if (!Array.isArray(payload.tenant_faqs)) throw new Error("prompt_payload_invalid_tenant_faqs");
   if (!Array.isArray(payload.tool_definitions)) throw new Error("prompt_payload_invalid_tool_definitions");
   if (!payload.field_schema || typeof payload.field_schema !== "object") throw new Error("prompt_payload_invalid_field_schema");
   if (!payload.session_config || typeof payload.session_config !== "object") throw new Error("prompt_payload_invalid_session_config");
+  if (!payload.tenant_knowledge || typeof payload.tenant_knowledge !== "object") {
+    throw new Error("prompt_payload_invalid_tenant_knowledge");
+  }
 
   const sessionConfig = payload.session_config as Record<string, unknown>;
   if (typeof sessionConfig.model !== "string" || !sessionConfig.model.trim()) throw new Error("prompt_payload_invalid_session_model");
@@ -350,11 +370,39 @@ function validatePromptPayload(input: unknown): PromptPayload {
   const turnDetection = sessionConfig.turn_detection as Record<string, unknown>;
   if (typeof turnDetection.type !== "string") throw new Error("prompt_payload_invalid_turn_detection_type");
 
-  for (const faq of payload.tenant_faqs) {
-    if (!faq || typeof faq !== "object") throw new Error("prompt_payload_invalid_faq_item");
-    const item = faq as Record<string, unknown>;
+  const tenantKnowledge = payload.tenant_knowledge as Record<string, unknown>;
+  const knowledgeKeys = ["entries", "guardrail_questions", "guardrails", "overrides", "usage_instructions"];
+  for (const key of knowledgeKeys) {
+    if (!Array.isArray(tenantKnowledge[key])) {
+      throw new Error(`prompt_payload_invalid_tenant_knowledge_${key}`);
+    }
+  }
+
+  for (const entry of tenantKnowledge.entries as Array<Record<string, unknown>>) {
+    if (!entry || typeof entry !== "object") throw new Error("prompt_payload_invalid_knowledge_entry");
+    if (typeof entry.title !== "string" || typeof entry.content !== "string") {
+      throw new Error("prompt_payload_invalid_knowledge_entry_shape");
+    }
+  }
+
+  for (const item of tenantKnowledge.guardrail_questions as Array<Record<string, unknown>>) {
+    if (!item || typeof item !== "object") throw new Error("prompt_payload_invalid_guardrail_question");
     if (typeof item.question !== "string" || typeof item.answer !== "string") {
-      throw new Error("prompt_payload_invalid_faq_shape");
+      throw new Error("prompt_payload_invalid_guardrail_question_shape");
+    }
+  }
+
+  for (const rule of tenantKnowledge.guardrails as Array<Record<string, unknown>>) {
+    if (!rule || typeof rule !== "object") throw new Error("prompt_payload_invalid_guardrail");
+    if (typeof rule.rule_type !== "string" || typeof rule.instruction !== "string") {
+      throw new Error("prompt_payload_invalid_guardrail_shape");
+    }
+  }
+
+  for (const override of tenantKnowledge.overrides as Array<Record<string, unknown>>) {
+    if (!override || typeof override !== "object") throw new Error("prompt_payload_invalid_override");
+    if (typeof override.preferred_answer !== "string") {
+      throw new Error("prompt_payload_invalid_override_shape");
     }
   }
 
@@ -586,24 +634,94 @@ async function fetchPromptPayload(tenantKey: string, callSid: string, to: string
   return validatePromptPayload(body);
 }
 
-function buildFaqMatches(faqs: Array<{ id?: string; question: string; answer: string; tags?: string[] }>, query: string) {
-  const q = query.toLowerCase();
-  const scored = faqs
-    .map((faq, index) => {
-      const hay = `${faq.question} ${faq.answer} ${(faq.tags || []).join(" ")}`.toLowerCase();
-      const score = hay.includes(q) ? 1 : 0;
-      return { faq, score, index };
-    })
+function tokenizeLookupText(text: string) {
+  return Array.from(
+    new Set(
+      String(text || "")
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((token) => token.length > 2)
+    )
+  );
+}
+
+function scoreLookupText(query: string, haystack: string) {
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  const normalizedHaystack = String(haystack || "").trim().toLowerCase();
+  if (!normalizedQuery || !normalizedHaystack) return 0;
+  const queryTokens = tokenizeLookupText(normalizedQuery);
+  let score = normalizedHaystack.includes(normalizedQuery)
+    ? Math.max(3, queryTokens.length + 2)
+    : 0;
+  for (const token of queryTokens) {
+    if (normalizedHaystack.includes(token)) {
+      score += 1;
+    }
+  }
+  return score;
+}
+
+function buildKnowledgeMatches(knowledge: PromptPayload["tenant_knowledge"], query: string) {
+  const matches = [
+    ...(knowledge.entries || []).map((entry, index) => ({
+      id: entry.id || `knowledge_entry_${index + 1}`,
+      artifactType: "knowledge_entry",
+      title: entry.title,
+      topic: entry.section_type || null,
+      content: entry.content,
+      sourceUrl: entry.source_url || null,
+      score: scoreLookupText(query, `${entry.title} ${entry.section_type || ""} ${entry.content} ${(entry.tags || []).join(" ")}`)
+    })),
+    ...(knowledge.guardrail_questions || []).map((item, index) => ({
+      id: item.id || `guardrail_question_${index + 1}`,
+      artifactType: "guardrail_question",
+      title: item.question,
+      topic: item.topic || null,
+      content: item.answer,
+      riskLevel: item.risk_level || "high",
+      sourceUrl: item.source_url || null,
+      score: scoreLookupText(query, `${item.question} ${item.answer} ${item.topic || ""} ${(item.tags || []).join(" ")}`)
+    }))
+  ]
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 5)
-    .map((item) => ({
-      id: item.faq.id || `faq_${item.index + 1}`,
-      question: item.faq.question,
-      answer: item.faq.answer,
-      score: item.score
-    }));
-  return { matches: scored };
+    .slice(0, 5);
+
+  const overrides = (knowledge.overrides || [])
+    .map((item, index) => ({
+      id: item.id || `knowledge_override_${index + 1}`,
+      topic: item.topic || null,
+      triggerText: item.trigger_text || null,
+      preferredAnswer: item.preferred_answer,
+      score: scoreLookupText(query, `${item.topic || ""} ${item.trigger_text || ""} ${item.preferred_answer} ${(item.service_tags || []).join(" ")}`)
+    }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+
+  const guardrails = (knowledge.guardrails || [])
+    .map((item, index) => ({
+      id: item.id || `knowledge_guardrail_${index + 1}`,
+      ruleType: item.rule_type,
+      topic: item.topic || null,
+      severity: item.severity || "high",
+      instruction: item.instruction,
+      score: scoreLookupText(query, `${item.rule_type} ${item.topic || ""} ${item.instruction} ${(item.service_tags || []).join(" ")}`)
+    }))
+    .filter((item) => item.score > 0);
+
+  return {
+    matches,
+    overrides,
+    guardrails: guardrails.length ? guardrails.slice(0, 5) : (knowledge.guardrails || []).slice(0, 3).map((item, index) => ({
+      id: item.id || `knowledge_guardrail_${index + 1}`,
+      ruleType: item.rule_type,
+      topic: item.topic || null,
+      severity: item.severity || "high",
+      instruction: item.instruction
+    })),
+    usage_instructions: Array.isArray(knowledge.usage_instructions) ? knowledge.usage_instructions : []
+  };
 }
 
 function validateAgainstSchema(schema: Record<string, unknown>, payload: Record<string, unknown>) {
@@ -666,10 +784,13 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     args = {};
   }
 
-  if (name === "faq_lookup") {
+  if (name === "knowledge_lookup") {
     const query = String((args as any).query || "");
-    const matches = buildFaqMatches(session.promptPayload?.tenant_faqs || [], query);
-    logInfo("faq_lookup_tool_called", {
+    const matches = buildKnowledgeMatches(
+      session.promptPayload?.tenant_knowledge || { entries: [], guardrail_questions: [], guardrails: [], overrides: [], usage_instructions: [] },
+      query
+    );
+    logInfo("knowledge_lookup_tool_called", {
       callSid: session.callSid,
       query,
       matchCount: matches.matches.length

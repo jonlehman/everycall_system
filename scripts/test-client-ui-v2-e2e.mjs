@@ -66,13 +66,13 @@ async function run() {
 
   await getHtml("/client/overview");
   await getHtml("/client/calls");
-  await getHtml("/client/faq");
+  await getHtml("/client/knowledge");
   await getHtml("/client/routing");
   await getHtml("/client/settings");
   await getHtml("/client/team");
   const setupHtml = await getHtml("/client/setup");
 
-  assert(setupHtml.includes("/client/faq"), "setup missing FAQ deep link");
+  assert(setupHtml.includes("/client/knowledge"), "setup missing Knowledge deep link");
   assert(setupHtml.includes("/client/team"), "setup missing Team deep link");
   assert(setupHtml.includes("/client/routing"), "setup missing Routing deep link");
   assert(setupHtml.includes("/client/settings"), "setup missing Settings deep link");

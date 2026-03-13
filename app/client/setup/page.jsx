@@ -24,12 +24,12 @@ export default function SetupOverviewPage() {
   const [savingForwarding, setSavingForwarding] = useState(false);
   const [status, setStatus] = useState({ message: 'Loading setup checklist...', tone: 'warn' });
   const [summary, setSummary] = useState({
-    faqCount: 0,
+    knowledgeEntryCount: 0,
     teamCount: 0,
     routingReady: false,
     settingsReady: false,
     forwardingReady: false,
-    unresolvedBlankFaqCount: 0,
+    unresolvedBlankGuardrailCount: 0,
     assistantReady: false
   });
 
@@ -37,23 +37,25 @@ export default function SetupOverviewPage() {
     setLoading(true);
     setStatus({ message: 'Loading setup checklist...', tone: 'warn' });
     try {
-      const [faqResp, teamResp, routingResp, settingsResp, assistantResp] = await Promise.all([
-        fetch('/api/v1/faq'),
+      const [knowledgeResp, teamResp, routingResp, settingsResp, assistantResp] = await Promise.all([
+        fetch('/api/v1/knowledge'),
         fetch('/api/v1/tenant/users'),
         fetch('/api/v1/routing'),
         fetch('/api/v1/settings'),
         fetch('/api/v1/assistant/status')
       ]);
 
-      const [faqData, teamData, routingData, settingsData, assistantData] = await Promise.all([
-        faqResp.ok ? faqResp.json() : null,
+      const [knowledgeData, teamData, routingData, settingsData, assistantData] = await Promise.all([
+        knowledgeResp.ok ? knowledgeResp.json() : null,
         teamResp.ok ? teamResp.json() : null,
         routingResp.ok ? routingResp.json() : null,
         settingsResp.ok ? settingsResp.json() : null,
         assistantResp.ok ? assistantResp.json() : null
       ]);
 
-      const faqCount = Array.isArray(faqData?.faqs) ? faqData.faqs.length : 0;
+      const knowledgeEntryCount = Array.isArray(knowledgeData?.knowledgeEntries)
+        ? knowledgeData.knowledgeEntries.filter((entry) => Boolean(String(entry?.contentText || '').trim())).length
+        : 0;
       const teamCount = Array.isArray(teamData?.users) ? teamData.users.length : 0;
       const routingReady = Boolean(
         routingData?.routing?.primary_queue &&
@@ -67,12 +69,12 @@ export default function SetupOverviewPage() {
       );
 
       setSummary({
-        faqCount,
+        knowledgeEntryCount,
         teamCount,
         routingReady,
         settingsReady,
         forwardingReady: Boolean(assistantData?.assistant?.checks?.forwardingReady),
-        unresolvedBlankFaqCount: Number(assistantData?.assistant?.unresolvedBlankFaqCount || 0),
+        unresolvedBlankGuardrailCount: Number(assistantData?.assistant?.unresolvedBlankGuardrailCount || 0),
         assistantReady: Boolean(assistantData?.assistant?.ready)
       });
       setStatus({ message: 'Checklist loaded. Review any items marked "Needs Review".', tone: 'ok' });
@@ -112,12 +114,12 @@ export default function SetupOverviewPage() {
 
   const completedCount = useMemo(() => {
     let done = 0;
-    if (summary.faqCount > 0) done += 1;
+    if (summary.knowledgeEntryCount > 0) done += 1;
     if (summary.teamCount > 0) done += 1;
     if (summary.routingReady) done += 1;
     if (summary.settingsReady) done += 1;
     if (summary.forwardingReady) done += 1;
-    if (summary.unresolvedBlankFaqCount === 0) done += 1;
+    if (summary.unresolvedBlankGuardrailCount === 0) done += 1;
     return done;
   }, [summary]);
 
@@ -134,17 +136,17 @@ export default function SetupOverviewPage() {
             <div className="text-xs uppercase tracking-wide text-slate-500">Setup Progress</div>
             <div className="text-2xl font-bold">{completedCount}/6 complete</div>
           </div>
-          <div className="text-sm text-slate-500">Complete forwarding, FAQ, Team, Routing, and Settings to unlock assistant enablement.</div>
+          <div className="text-sm text-slate-500">Complete forwarding, knowledge review, team, routing, and settings to unlock assistant enablement.</div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <TaskCard
-          title="Questions and Answers"
-          description={`Current FAQ items: ${summary.faqCount}. Resolve ${summary.unresolvedBlankFaqCount} blank industry FAQ items (answer or delete).`}
-          href="/client/faq"
-          done={summary.faqCount > 0 && summary.unresolvedBlankFaqCount === 0}
-          cta="Open FAQ Manager"
+          title="Knowledge"
+          description={`Current knowledge sections: ${summary.knowledgeEntryCount}. Resolve ${summary.unresolvedBlankGuardrailCount} unanswered Guardrail Questions.`}
+          href="/client/knowledge"
+          done={summary.knowledgeEntryCount > 0 && summary.unresolvedBlankGuardrailCount === 0}
+          cta="Open Knowledge"
         />
         <TaskCard
           title="Team Users"

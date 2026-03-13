@@ -1,5 +1,7 @@
+import { loadTenantKnowledge } from "./knowledge.js";
+
 export async function getSetupReadiness(pool, tenantKey) {
-  const [tenantRes, settingsRes, routingRes, faqRes] = await Promise.all([
+  const [tenantRes, settingsRes, routingRes, knowledge] = await Promise.all([
     pool.query(
       `SELECT forwarding_setup_status
        FROM tenants
@@ -18,20 +20,14 @@ export async function getSetupReadiness(pool, tenantKey) {
        WHERE tenant_key = $1`,
       [tenantKey]
     ),
-    pool.query(
-      `SELECT COUNT(*)::int AS unresolved_blank_count
-       FROM faqs
-       WHERE tenant_key = $1
-         AND is_industry_default = true
-         AND LENGTH(TRIM(COALESCE(answer, ''))) = 0`,
-      [tenantKey]
-    )
+    loadTenantKnowledge(pool, tenantKey, { includeEmptyTemplates: true })
   ]);
 
   const forwardingStatus = tenantRes.rows[0]?.forwarding_setup_status || "not_started";
   const settings = settingsRes.rows[0] || null;
   const routing = routingRes.rows[0] || null;
-  const unresolvedBlankFaqCount = faqRes.rows[0]?.unresolved_blank_count || 0;
+  const knowledgeEntryCount = knowledge?.counts?.knowledgeEntryCount || 0;
+  const unresolvedBlankGuardrailCount = knowledge?.counts?.unresolvedBlankGuardrailCount || 0;
 
   const forwardingReady = forwardingStatus === "acknowledged" || forwardingStatus === "configured";
   const settingsReady = Boolean(String(settings?.timezone || "").trim());
@@ -41,15 +37,17 @@ export async function getSetupReadiness(pool, tenantKey) {
     String(routing?.after_hours_behavior || "").trim() &&
     String(routing?.business_hours || "").trim()
   );
-  const faqReady = unresolvedBlankFaqCount === 0;
+  const knowledgeReady = knowledgeEntryCount > 0;
+  const guardrailReady = unresolvedBlankGuardrailCount === 0;
 
   const reasons = [];
   if (!forwardingReady) reasons.push("Confirm forwarding setup in onboarding activation.");
   if (!settingsReady) reasons.push("Save required Account Settings fields.");
   if (!routingReady) reasons.push("Save required Call Routing fields.");
-  if (!faqReady) reasons.push("Resolve blank industry FAQs by answering or deleting them.");
+  if (!knowledgeReady) reasons.push("Add business details in Knowledge.");
+  if (!guardrailReady) reasons.push("Resolve blank Guardrail Questions by approving answers.");
 
-  const ready = forwardingReady && settingsReady && routingReady && faqReady;
+  const ready = forwardingReady && settingsReady && routingReady && knowledgeReady && guardrailReady;
   const requestedEnabled = Boolean(settings?.assistant_enabled);
   return {
     ready,
@@ -58,9 +56,11 @@ export async function getSetupReadiness(pool, tenantKey) {
       forwardingReady,
       settingsReady,
       routingReady,
-      faqReady
+      knowledgeReady,
+      guardrailReady
     },
-    unresolvedBlankFaqCount,
+    knowledgeEntryCount,
+    unresolvedBlankGuardrailCount,
     requestedEnabled,
     enabled: ready && requestedEnabled
   };

@@ -3,9 +3,9 @@
 ## Purpose
 Define tool schemas required for the realtime AI to interact with the gateway.
 
-## Tool 1: FAQ Lookup
-**Name:** `faq_lookup`  
-**Purpose:** Answer tenant-specific questions using the FAQ corpus.
+## Tool 1: Knowledge Lookup
+**Name:** `knowledge_lookup`
+**Purpose:** Retrieve tenant-specific knowledge, guardrail answers, overrides, and rules relevant to the caller's question.
 
 ### Input Schema
 ```json
@@ -13,7 +13,8 @@ Define tool schemas required for the realtime AI to interact with the gateway.
   "type": "object",
   "properties": {
     "query": { "type": "string", "description": "Caller question or topic" },
-    "tags": { "type": "array", "items": { "type": "string" }, "description": "Optional tags to filter FAQs" }
+    "topic": { "type": "string", "description": "Optional topic hint such as warranty or pricing" },
+    "service_tags": { "type": "array", "items": { "type": "string" }, "description": "Optional service tags to narrow lookup" }
   },
   "required": ["query"]
 }
@@ -30,13 +31,17 @@ Define tool schemas required for the realtime AI to interact with the gateway.
         "type": "object",
         "properties": {
           "id": { "type": "string" },
-          "question": { "type": "string" },
-          "answer": { "type": "string" },
+          "artifactType": { "type": "string" },
+          "title": { "type": "string" },
+          "content": { "type": "string" },
           "score": { "type": "number" }
         },
-        "required": ["id", "answer"]
+        "required": ["id", "content"]
       }
-    }
+    },
+    "overrides": { "type": "array" },
+    "guardrails": { "type": "array" },
+    "usage_instructions": { "type": "array", "items": { "type": "string" } }
   },
   "required": ["matches"]
 }

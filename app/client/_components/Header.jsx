@@ -213,7 +213,7 @@ export default function Header() {
                 {assistant.reasons[0]}
               </div>
             ) : null}
-            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/faq">Questions and Answers</Link>
+            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/knowledge">Knowledge</Link>
             <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/setup">Setup Checklist</Link>
             <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/team">Team Users</Link>
             <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/routing">Call Routing</Link>

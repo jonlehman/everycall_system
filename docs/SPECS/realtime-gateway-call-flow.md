@@ -9,13 +9,13 @@ Define the step-by-step sequence of events for an inbound call.
    - Gateway verifies signature and resolves tenant.
 
 2. **Prompt Contract Fetch**
-   - Gateway requests prompt payload from EveryCall (system prompt, tenant greeting, FAQs, field schema, tool definitions, session config).
+   - Gateway requests prompt payload from EveryCall (system prompt, tenant greeting, tenant knowledge, field schema, tool definitions, session config).
    - Gateway validates required fields.
 
 3. **Realtime Session Setup**
    - Gateway opens OpenAI Realtime session.
    - Gateway sends `session.update` with:
-     - System prompt + tenant greeting + FAQs
+     - System prompt + tenant greeting + knowledge tool policy
      - Tool definitions
      - Session config
 
@@ -26,7 +26,7 @@ Define the step-by-step sequence of events for an inbound call.
    - Gateway relays audio to caller.
 
 5. **Tool Calls**
-   - If OpenAI requests `faq_lookup`, gateway performs lookup and returns matches.
+   - If OpenAI requests `knowledge_lookup`, gateway performs lookup and returns relevant knowledge matches, overrides, and guardrails.
    - If OpenAI requests `data_capture`, gateway validates payload against schema and forwards it to EveryCall.
 
 6. **Call End**
