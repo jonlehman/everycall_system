@@ -5,11 +5,17 @@ This repo includes runnable service scaffolds for:
 
 ## Quick start
 1. Install dependencies:
+   - `nvm use`
+   - `corepack enable`
    - `pnpm install`
 2. Run services in separate terminals:
    - `pnpm dev:call-gateway`
 3. Run smoke test:
    - `pnpm smoke`
+
+## Runtime
+- Node.js `24.14.0` or later
+- pnpm `10+`
 
 ## Env
 See `.env.example` for required variables.

@@ -1,12 +1,14 @@
 # Local Development Runbook
 
 ## Prerequisites
-- Node.js 20+
+- Node.js 24.14.0+
 - pnpm 10+
 
 ## Setup
-1. `pnpm install`
-2. Copy `.env.example` values into your environment.
+1. `nvm use`
+2. `corepack enable`
+3. `pnpm install`
+4. Copy `.env.example` values into your environment.
 
 ## Start services
 - `pnpm dev:call-gateway` (port 3101)
