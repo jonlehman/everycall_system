@@ -41,7 +41,10 @@ const GUARDRAIL_TOPIC_KEYWORDS = {
   pricing: ["fee", "fees", "diagnostic", "estimate", "estimates", "pricing", "price"]
 };
 
-const MAX_WEBSITE_PAGES = 20;
+const MAX_WEBSITE_PAGES = 250;
+const WEBSITE_CRAWL_BATCH_SIZE = 8;
+const MAX_SITEMAP_URLS = 500;
+const AI_TOPIC_CHUNK_SIZE = 24;
 
 const COVERAGE_CHECKLIST_TEMPLATES = [
   { checkKey: "warranty", title: "Warranty", keywords: ["warranty", "coverage", "covered", "guarantee"], guardrailTopics: ["warranty", "guarantees"] },
@@ -312,26 +315,49 @@ function uniqueValues(values) {
   return output;
 }
 
-function scoreRelevantInternalUrl(url, anchorText = "") {
-  const path = `${url.pathname} ${anchorText}`.toLowerCase();
-  if (!path) return -1;
-  if (/\.(jpg|jpeg|png|webp|svg|gif|pdf|xml)$/i.test(url.pathname)) return -1;
-  if (/\/(privacy|terms|careers|press|blog|feed|author)\b/.test(path)) return -2;
+function normalizeCrawlUrl(baseOrigin, href) {
+  try {
+    const resolved = new URL(href, baseOrigin);
+    if (!["http:", "https:"].includes(resolved.protocol)) return null;
+    if (resolved.origin !== new URL(baseOrigin).origin) return null;
+    resolved.hash = "";
+    resolved.search = "";
+    const normalizedPath = resolved.pathname.replace(/\/{2,}/g, "/").replace(/\/$/, "");
+    return `${resolved.origin}${normalizedPath}` || resolved.origin;
+  } catch {
+    return null;
+  }
+}
 
+function shouldSkipCrawlUrl(url) {
+  const path = `${url.pathname}`.toLowerCase();
+  if (!path) return false;
+  if (/\.(jpg|jpeg|png|webp|svg|gif|pdf|xml|zip|mp4|mp3|mov|avi|webm|woff2?|ttf|eot|css|js|json|txt)$/i.test(path)) return true;
+  if (/\/(wp-json|cdn-cgi|cart|checkout|account|login)\b/.test(path)) return true;
+  return false;
+}
+
+function scoreRelevantInternalUrl(url, anchorText = "") {
+  if (shouldSkipCrawlUrl(url)) return -1;
+  const path = `${url.pathname} ${anchorText}`.toLowerCase();
   let score = 0;
+
+  const depth = url.pathname.split("/").filter(Boolean).length;
+  score += Math.max(0, 4 - Math.min(depth, 4));
+
   for (const keywords of Object.values(KNOWLEDGE_SECTION_KEYWORDS)) {
     score += keywords.filter((keyword) => path.includes(String(keyword).toLowerCase())).length * 2;
   }
-  if (/(contact|about|service|area|location|pricing|warranty|guarantee|membership|plan|financing|payment|plumbing|hvac|electrical|home-care)/.test(path)) {
+  if (/(contact|about|service|area|location|pricing|warranty|guarantee|membership|plan|financing|payment|plumbing|hvac|electrical|home-care|legal|policy|privacy|terms)/.test(path)) {
     score += 4;
   }
+
   return score;
 }
 
-function extractRelevantInternalLinks(baseUrl, html) {
+function extractInternalLinks(baseUrl, html) {
   const source = String(html || "");
   if (!source) return [];
-  const base = new URL(baseUrl);
   const matches = Array.from(source.matchAll(/<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi));
   const scored = [];
   const seen = new Set();
@@ -339,28 +365,21 @@ function extractRelevantInternalLinks(baseUrl, html) {
   for (const match of matches) {
     const href = normalizeText(match[1]);
     if (!href) continue;
-    try {
-      const resolved = new URL(href, base);
-      if (resolved.hostname !== base.hostname) continue;
-      const normalized = `${resolved.origin}${resolved.pathname}`.replace(/\/$/, "") || resolved.origin;
-      if (seen.has(normalized)) continue;
-      seen.add(normalized);
-      const anchorText = cleanLineText(match[2].replace(/<[^>]+>/g, " "));
-      const score = scoreRelevantInternalUrl(resolved, anchorText);
-      if (score <= 0) continue;
-      scored.push({ url: normalized, score });
-    } catch {
-      continue;
-    }
+    const normalized = normalizeCrawlUrl(baseUrl, href);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    const anchorText = cleanLineText(match[2].replace(/<[^>]+>/g, " "));
+    const score = scoreRelevantInternalUrl(new URL(normalized), anchorText);
+    if (score < 0) continue;
+    scored.push({ url: normalized, score });
   }
 
   return scored
     .sort((a, b) => b.score - a.score || a.url.length - b.url.length)
-    .slice(0, MAX_WEBSITE_PAGES * 2)
-    .map((item) => item.url);
+    .slice(0, MAX_WEBSITE_PAGES * 4);
 }
 
-async function fetchSitemapUrls(baseUrl, maxUrls = 80) {
+async function fetchSitemapUrls(baseUrl, maxUrls = MAX_SITEMAP_URLS) {
   try {
     const origin = new URL(baseUrl).origin;
     const queue = [`${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`];
@@ -387,14 +406,14 @@ async function fetchSitemapUrls(baseUrl, maxUrls = 80) {
         try {
           const resolved = new URL(loc);
           if (resolved.origin !== origin) continue;
-          const normalized = `${resolved.origin}${resolved.pathname}`.replace(/\/$/, "") || resolved.origin;
+          const normalized = normalizeCrawlUrl(origin, resolved.toString());
+          if (!normalized) continue;
           if (/\.xml$/i.test(resolved.pathname)) {
             if (!seenSitemaps.has(normalized)) queue.push(normalized);
             continue;
           }
           if (seenUrls.has(normalized)) continue;
           seenUrls.add(normalized);
-          if (scoreRelevantInternalUrl(resolved) <= 0) continue;
           collected.push(normalized);
           if (collected.length >= maxUrls) break;
         } catch {
@@ -442,25 +461,31 @@ async function fetchRelevantWebsiteSources(baseUrl) {
   const primary = await fetchWebsiteText(baseUrl);
   if (!primary.ok) return { pages: [], combinedText: "" };
 
-  const primaryUrl = `${new URL(baseUrl).origin}${new URL(baseUrl).pathname}`.replace(/\/$/, "") || new URL(baseUrl).origin;
+  const primaryUrl = normalizeCrawlUrl(baseUrl, baseUrl) || new URL(baseUrl).origin;
   const sitemapUrls = await fetchSitemapUrls(baseUrl);
-  const candidateUrls = uniqueValues([
-    ...extractRelevantInternalLinks(baseUrl, primary.html),
-    ...sitemapUrls
-  ])
-    .filter((url) => url !== primaryUrl)
-    .sort((left, right) => {
-      try {
-        const leftScore = scoreRelevantInternalUrl(new URL(left));
-        const rightScore = scoreRelevantInternalUrl(new URL(right));
-        return rightScore - leftScore || left.length - right.length;
-      } catch {
-        return 0;
-      }
-    })
-    .slice(0, MAX_WEBSITE_PAGES - 1);
+  const queue = [];
+  const queued = new Set();
+  const visited = new Set([primaryUrl]);
 
-  const fetchedPages = await Promise.all(candidateUrls.map((url) => fetchWebsiteText(url)));
+  function enqueue(url, depth, score = null) {
+    const normalized = normalizeText(url);
+    if (!normalized || queued.has(normalized) || visited.has(normalized)) return;
+    queued.add(normalized);
+    queue.push({
+      url: normalized,
+      depth,
+      score: Number.isFinite(Number(score)) ? Number(score) : scoreRelevantInternalUrl(new URL(normalized)),
+      order: queue.length
+    });
+  }
+
+  for (const item of extractInternalLinks(baseUrl, primary.html)) {
+    enqueue(item.url, 1, item.score);
+  }
+  for (const url of sitemapUrls) {
+    enqueue(url, 1);
+  }
+
   const rawPages = [{
     sourceType: "website",
     sourceUrl: primaryUrl,
@@ -470,17 +495,40 @@ async function fetchRelevantWebsiteSources(baseUrl) {
     text: primary.text
   }];
 
-  for (let index = 0; index < fetchedPages.length; index += 1) {
-    const page = fetchedPages[index];
-    if (!page.ok || !page.text) continue;
-    rawPages.push({
-      sourceType: "website",
-      sourceUrl: candidateUrls[index],
-      title: page.title,
-      headings: page.headings,
-      lines: page.lines,
-      text: page.text
-    });
+  while (queue.length && rawPages.length < MAX_WEBSITE_PAGES) {
+    queue.sort((left, right) =>
+      left.depth - right.depth
+      || right.score - left.score
+      || left.url.length - right.url.length
+      || left.order - right.order
+    );
+
+    const batch = queue.splice(0, Math.min(WEBSITE_CRAWL_BATCH_SIZE, MAX_WEBSITE_PAGES - rawPages.length));
+    const fetchedPages = await Promise.all(
+      batch.map(async (item) => ({
+        ...item,
+        page: await fetchWebsiteText(item.url)
+      }))
+    );
+
+    for (const result of fetchedPages) {
+      visited.add(result.url);
+      queued.delete(result.url);
+      if (!result.page.ok || !result.page.text) continue;
+
+      rawPages.push({
+        sourceType: "website",
+        sourceUrl: result.url,
+        title: result.page.title,
+        headings: result.page.headings,
+        lines: result.page.lines,
+        text: result.page.text
+      });
+
+      for (const link of extractInternalLinks(result.url, result.page.html)) {
+        enqueue(link.url, result.depth + 1, link.score);
+      }
+    }
   }
 
   const pages = finalizeWebsitePages(rawPages);
@@ -912,9 +960,19 @@ function buildAiTopicPromptPages(websitePages) {
   return (websitePages || []).map((page) => ({
     sourceUrl: page.sourceUrl || null,
     title: page.title || "",
-    headings: Array.isArray(page.headings) ? page.headings.slice(0, 8) : [],
-    excerptLines: Array.isArray(page.lines) ? page.lines.slice(0, 12) : []
+    headings: Array.isArray(page.headings) ? page.headings.slice(0, 6) : [],
+    pageSummary: buildObjectiveSummaryFromLines(page.lines || [], 3),
+    excerptLines: Array.isArray(page.lines) ? page.lines.slice(0, 4) : []
   }));
+}
+
+function chunkArray(items, size) {
+  const normalizedSize = Math.max(1, Number(size) || 1);
+  const chunks = [];
+  for (let index = 0; index < (items || []).length; index += normalizedSize) {
+    chunks.push(items.slice(index, index + normalizedSize));
+  }
+  return chunks;
 }
 
 function normalizeAiSiteTopics(rawItems, websitePages, businessName) {
@@ -1013,18 +1071,48 @@ function normalizeAiSiteTopics(rawItems, websitePages, businessName) {
   );
 }
 
-async function extractSiteTopicsWithAi({ websitePages, businessName }) {
+async function requestAiSiteTopicItems({ instruction, payload, timeoutMs = 20000 }) {
   const apiKey = process.env.OPENAI_API_KEY || "";
+  if (!apiKey) return null;
+
+  try {
+    const resp = await fetchWithTimeout("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_ENRICH_MODEL || "gpt-4.1-mini",
+        input: [
+          { role: "system", content: instruction },
+          { role: "user", content: JSON.stringify(payload) }
+        ]
+      })
+    }, timeoutMs);
+
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    const outputText =
+      json.output_text ||
+      json.output
+        ?.flatMap((item) => item.content || [])
+        .find((item) => item.type === "output_text" && typeof item.text === "string")
+        ?.text || "";
+    const parsed = extractJsonObject(outputText);
+    if (!parsed || !Array.isArray(parsed.items)) return null;
+    return parsed.items;
+  } catch {
+    return null;
+  }
+}
+
+async function extractSiteTopicsWithAi({ websitePages, businessName }) {
   const pages = buildAiTopicPromptPages(websitePages);
-  if (!apiKey || !pages.length) return null;
+  if (!pages.length) return null;
 
-  const prompt = {
-    businessName: normalizeText(businessName) || null,
-    pages
-  };
-
-  const instruction = [
-    "You analyze cleaned same-site business website pages and produce a topic tree for a voice-agent knowledge system.",
+  const extractionInstruction = [
+    "You analyze cleaned same-site business website pages and extract candidate topics for a voice-agent knowledge system.",
     "The website defines the topics. Do not force the site into a fixed template.",
     "Include all meaningful explicit topics from the site, including services, warranties, guarantees, financing, memberships, service areas, hours, policies, legal or niche operational topics when present.",
     "Use objective summaries, not marketing language.",
@@ -1039,37 +1127,50 @@ async function extractSiteTopicsWithAi({ websitePages, businessName }) {
     '{"items":[{"topicPath":"...","displayTitle":"...","topicType":"group|page|section","summaryObjective":"...","sourceUrl":"https://...","sourceConfidence":0.0,"riskLevel":"critical|high|normal"}]}'
   ].join("\n");
 
-  try {
-    const resp = await fetchWithTimeout("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_ENRICH_MODEL || "gpt-4.1-mini",
-        input: [
-          { role: "system", content: instruction },
-          { role: "user", content: JSON.stringify(prompt) }
-        ]
-      })
-    }, 20000);
-
-    if (!resp.ok) return null;
-    const json = await resp.json();
-    const outputText =
-      json.output_text ||
-      json.output
-        ?.flatMap((item) => item.content || [])
-        .find((item) => item.type === "output_text" && typeof item.text === "string")
-        ?.text || "";
-    const parsed = extractJsonObject(outputText);
-    if (!parsed || !Array.isArray(parsed.items)) return null;
-    const normalized = normalizeAiSiteTopics(parsed.items, websitePages, businessName);
-    return normalized.length ? normalized : null;
-  } catch {
-    return null;
+  const pageChunks = chunkArray(pages, AI_TOPIC_CHUNK_SIZE);
+  const chunkResponses = [];
+  for (const chunk of pageChunks) {
+    const items = await requestAiSiteTopicItems({
+      instruction: extractionInstruction,
+      payload: {
+        businessName: normalizeText(businessName) || null,
+        pages: chunk
+      }
+    });
+    if (Array.isArray(items) && items.length) {
+      chunkResponses.push(...items);
+    }
   }
+
+  if (!chunkResponses.length) return null;
+
+  const consolidationInstruction = [
+    "You consolidate candidate business-website topics into a final hierarchical topic tree for a voice-agent knowledge system.",
+    "Merge duplicates and near-duplicates.",
+    "Preserve meaningful hierarchy when it helps retrieval.",
+    "Keep objective summaries and remove marketing phrasing.",
+    "Do not invent details not present in the candidate topics.",
+    "Keep legal and policy topics when present.",
+    "Favor the clearest sourceUrl and strongest summary for each final topic.",
+    "Return strict JSON with shape:",
+    '{"items":[{"topicPath":"...","displayTitle":"...","topicType":"group|page|section","summaryObjective":"...","sourceUrl":"https://...","sourceConfidence":0.0,"riskLevel":"critical|high|normal"}]}'
+  ].join("\n");
+
+  const consolidatedItems = await requestAiSiteTopicItems({
+    instruction: consolidationInstruction,
+    payload: {
+      businessName: normalizeText(businessName) || null,
+      candidateTopics: chunkResponses.slice(0, 240)
+    },
+    timeoutMs: 25000
+  });
+
+  const normalized = normalizeAiSiteTopics(
+    Array.isArray(consolidatedItems) && consolidatedItems.length ? consolidatedItems : chunkResponses,
+    websitePages,
+    businessName
+  );
+  return normalized.length ? normalized : null;
 }
 
 function buildSiteTopicsHeuristically({ websitePages, businessName }) {
