@@ -79,6 +79,56 @@ function normalizeGuardrailQuestionTests(value) {
     });
 }
 
+function normalizeSiteTopics(value) {
+  const seen = new Set();
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      topicKey: String(item?.topicKey || "").trim() || null,
+      parentTopicKey: String(item?.parentTopicKey || "").trim() || null,
+      topicPath: String(item?.topicPath || "").trim(),
+      parentTopicPath: String(item?.parentTopicPath || "").trim() || null,
+      displayTitle: String(item?.displayTitle || item?.title || "").trim() || "Topic",
+      topicType: String(item?.topicType || "").trim() || "page",
+      summaryObjective: String(item?.summaryObjective || "").trim(),
+      sourceUrl: String(item?.sourceUrl || "").trim() || null,
+      sourceConfidence: Number.isFinite(Number(item?.sourceConfidence)) ? Number(item.sourceConfidence) : null,
+      riskLevel: String(item?.riskLevel || "").trim() || "normal",
+      metadata: item?.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata) ? item.metadata : {}
+    }))
+    .filter((item) => item.topicPath)
+    .filter((item) => {
+      const key = item.topicPath.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function normalizeCoverageChecklist(value) {
+  const seen = new Set();
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      checkKey: String(item?.checkKey || "").trim(),
+      title: String(item?.title || "").trim() || "Coverage review",
+      status: String(item?.status || "").trim() || "missing",
+      coverageConfidence: Number.isFinite(Number(item?.coverageConfidence)) ? Number(item.coverageConfidence) : null,
+      matchedTopicPaths: Array.isArray(item?.matchedTopicPaths)
+        ? item.matchedTopicPaths.map((path) => String(path || "").trim()).filter(Boolean)
+        : [],
+      notes: String(item?.notes || "").trim(),
+      metadata: item?.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata) ? item.metadata : {}
+    }))
+    .filter((item) => item.checkKey)
+    .filter((item) => {
+      const key = item.checkKey.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function parsePayload(body) {
   const ownerEmail = String(body.ownerEmail || "").trim().toLowerCase();
   const primaryGoals = normalizeStringArray(body.primaryGoals ?? body.primaryGoal);
@@ -113,6 +163,10 @@ function parsePayload(body) {
     knowledgeEntries: normalizeKnowledgeEntries(body.knowledgeEntries),
     guardrailQuestionTestsProvided: Array.isArray(body.guardrailQuestionTests),
     guardrailQuestionTests: normalizeGuardrailQuestionTests(body.guardrailQuestionTests),
+    siteTopicsProvided: Array.isArray(body.siteTopics),
+    siteTopics: normalizeSiteTopics(body.siteTopics),
+    coverageChecklistProvided: Array.isArray(body.coverageChecklist),
+    coverageChecklist: normalizeCoverageChecklist(body.coverageChecklist),
     status: String(body.status || "active"),
     dataRegion: String(body.dataRegion || "US"),
     plan: String(body.plan || "Trial"),
@@ -562,6 +616,44 @@ export default async function handler(req, res) {
               sourceUrl: item.sourceUrl || null,
               sourceConfidence: item.sourceConfidence ?? null
             })
+          ]
+        );
+      }
+
+      for (const topic of payload.siteTopics) {
+        await client.query(
+          `INSERT INTO site_topics (tenant_key, topic_key, parent_topic_key, topic_path, parent_topic_path, display_title, topic_type, summary_objective, source_url, source_confidence, risk_level, metadata_json)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)`,
+          [
+            tenantKey,
+            topic.topicKey || slugify(topic.topicPath) || null,
+            topic.parentTopicKey || null,
+            topic.topicPath,
+            topic.parentTopicPath || null,
+            topic.displayTitle,
+            topic.topicType || "page",
+            topic.summaryObjective || null,
+            topic.sourceUrl || null,
+            topic.sourceConfidence,
+            topic.riskLevel || "normal",
+            JSON.stringify(topic.metadata || {})
+          ]
+        );
+      }
+
+      for (const item of payload.coverageChecklist) {
+        await client.query(
+          `INSERT INTO knowledge_coverage_checks (tenant_key, check_key, title, status, coverage_confidence, matched_topic_paths_json, notes, metadata_json)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb)`,
+          [
+            tenantKey,
+            item.checkKey,
+            item.title,
+            item.status || "missing",
+            item.coverageConfidence,
+            JSON.stringify(item.matchedTopicPaths || []),
+            item.notes || null,
+            JSON.stringify(item.metadata || {})
           ]
         );
       }

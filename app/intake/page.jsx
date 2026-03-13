@@ -141,6 +141,8 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const [selectedServices, setSelectedServices] = useState([]);
   const [knowledgeEntries, setKnowledgeEntries] = useState(() => createBlankKnowledgeEntries());
   const [guardrailQuestionTests, setGuardrailQuestionTests] = useState(() => createBlankGuardrailQuestionTests());
+  const [siteTopics, setSiteTopics] = useState([]);
+  const [coverageChecklist, setCoverageChecklist] = useState([]);
   const [openGuardrailIndex, setOpenGuardrailIndex] = useState(0);
 
   useEffect(() => {
@@ -148,6 +150,8 @@ export function IntakePageClient({ qaMode = false } = {}) {
     setServiceSearch('');
     setKnowledgeEntries(createBlankKnowledgeEntries());
     setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
+    setSiteTopics([]);
+    setCoverageChecklist([]);
     setOpenGuardrailIndex(0);
   }, [form.industry]);
 
@@ -294,19 +298,36 @@ export function IntakePageClient({ qaMode = false } = {}) {
       sourceUrl: item.sourceUrl || null,
       sourceConfidence: Number.isFinite(Number(item.sourceConfidence)) ? Number(item.sourceConfidence) : null
     }));
+    const siteTopicRows = (siteTopics || []).map((topic) => ({
+      topicPath: topic.topicPath,
+      topicType: topic.topicType || 'page',
+      riskLevel: topic.riskLevel || 'normal',
+      sourceUrl: topic.sourceUrl || null,
+      summaryObjective: String(topic.summaryObjective || '').trim()
+    }));
+    const coverageRows = (coverageChecklist || []).map((item) => ({
+      title: item.title,
+      status: item.status || 'missing',
+      coverageConfidence: Number.isFinite(Number(item.coverageConfidence)) ? Number(item.coverageConfidence) : null,
+      matchedTopicPaths: Array.isArray(item.matchedTopicPaths) ? item.matchedTopicPaths : []
+    }));
     return {
       fieldRows,
       knowledgeEntryRows,
       guardrailRows,
+      siteTopicRows,
+      coverageRows,
       raw: {
         currentForm: form,
         initialQaDefaults: initialForm,
         enrichment: enrichmentReport,
         knowledgeEntries,
-        guardrailQuestionTests
+        guardrailQuestionTests,
+        siteTopics,
+        coverageChecklist
       }
     };
-  }, [enrichmentReport, form, guardrailQuestionTests, initialForm, isQaMode, knowledgeEntries]);
+  }, [coverageChecklist, enrichmentReport, form, guardrailQuestionTests, initialForm, isQaMode, knowledgeEntries, siteTopics]);
 
   const setStatusMessage = (message, tone = 'normal') => setStatus({ message, tone });
 
@@ -381,6 +402,8 @@ export function IntakePageClient({ qaMode = false } = {}) {
         if (!confirmed) return;
         setKnowledgeEntries(createBlankKnowledgeEntries());
         setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
+        setSiteTopics([]);
+        setCoverageChecklist([]);
         setStatusMessage('No website provided. Continue with manual knowledge setup.', 'warn');
         setStep(2);
         return;
@@ -404,6 +427,8 @@ export function IntakePageClient({ qaMode = false } = {}) {
       if (!resp.ok) {
         setKnowledgeEntries(createBlankKnowledgeEntries());
         setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
+        setSiteTopics([]);
+        setCoverageChecklist([]);
         if (isQaMode) setEnrichmentReport(null);
         setStatusMessage(data?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
       } else {
@@ -414,9 +439,13 @@ export function IntakePageClient({ qaMode = false } = {}) {
         const previewGuardrailQuestions = Array.isArray(enrichment?.guardrailQuestionTests) && enrichment.guardrailQuestionTests.length
           ? enrichment.guardrailQuestionTests
           : createBlankGuardrailQuestionTests();
+        const previewSiteTopics = Array.isArray(enrichment?.siteTopics) ? enrichment.siteTopics : [];
+        const previewCoverageChecklist = Array.isArray(enrichment?.coverageChecklist) ? enrichment.coverageChecklist : [];
         const matchedServices = parseServiceMatches(form.industry, enrichment);
         setKnowledgeEntries(previewKnowledgeEntries);
         setGuardrailQuestionTests(previewGuardrailQuestions);
+        setSiteTopics(previewSiteTopics);
+        setCoverageChecklist(previewCoverageChecklist);
         if (isQaMode) setEnrichmentReport(enrichment);
         setSelectedServices((prev) => {
           const next = new Set(prev);
@@ -435,6 +464,8 @@ export function IntakePageClient({ qaMode = false } = {}) {
     } catch (err) {
       setKnowledgeEntries(createBlankKnowledgeEntries());
       setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
+      setSiteTopics([]);
+      setCoverageChecklist([]);
       if (isQaMode) setEnrichmentReport(null);
       setStatusMessage(err?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
     } finally {
@@ -501,6 +532,28 @@ export function IntakePageClient({ qaMode = false } = {}) {
         sourceType: item.sourceType || null,
         sourceUrl: item.sourceUrl || null,
         sourceConfidence: Number.isFinite(Number(item.sourceConfidence)) ? Number(item.sourceConfidence) : null
+      })),
+      siteTopics: siteTopics.map((topic) => ({
+        topicKey: topic.topicKey,
+        parentTopicKey: topic.parentTopicKey || null,
+        topicPath: topic.topicPath,
+        parentTopicPath: topic.parentTopicPath || null,
+        displayTitle: topic.displayTitle,
+        topicType: topic.topicType || 'page',
+        summaryObjective: String(topic.summaryObjective || '').trim(),
+        sourceUrl: topic.sourceUrl || null,
+        sourceConfidence: Number.isFinite(Number(topic.sourceConfidence)) ? Number(topic.sourceConfidence) : null,
+        riskLevel: topic.riskLevel || 'normal',
+        metadata: topic.metadata || {}
+      })),
+      coverageChecklist: coverageChecklist.map((item) => ({
+        checkKey: item.checkKey,
+        title: item.title,
+        status: item.status || 'missing',
+        coverageConfidence: Number.isFinite(Number(item.coverageConfidence)) ? Number(item.coverageConfidence) : null,
+        matchedTopicPaths: Array.isArray(item.matchedTopicPaths) ? item.matchedTopicPaths : [],
+        notes: item.notes || '',
+        metadata: item.metadata || {}
       })),
       qaMode: isQaMode
     };
@@ -845,6 +898,52 @@ export function IntakePageClient({ qaMode = false } = {}) {
                                   : '—'}
                               </td>
                               <td style={{ padding: '8px 6px' }}>{row.sourceConfidence ?? '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="intake-section-title" style={{ marginTop: 16 }}>Discovered Site Topics</div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
+                            <th style={{ padding: '8px 6px' }}>Topic Path</th>
+                            <th style={{ padding: '8px 6px' }}>Type</th>
+                            <th style={{ padding: '8px 6px' }}>Risk</th>
+                            <th style={{ padding: '8px 6px' }}>Source</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {qaReport.siteTopicRows.map((row) => (
+                            <tr key={row.topicPath} style={{ borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' }}>
+                              <td style={{ padding: '8px 6px', fontWeight: 600 }}>{row.topicPath}</td>
+                              <td style={{ padding: '8px 6px' }}>{row.topicType}</td>
+                              <td style={{ padding: '8px 6px' }}>{row.riskLevel}</td>
+                              <td style={{ padding: '8px 6px' }}>{row.sourceUrl || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="intake-section-title" style={{ marginTop: 16 }}>Coverage Checklist</div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
+                            <th style={{ padding: '8px 6px' }}>Topic</th>
+                            <th style={{ padding: '8px 6px' }}>Status</th>
+                            <th style={{ padding: '8px 6px' }}>Confidence</th>
+                            <th style={{ padding: '8px 6px' }}>Matched Topic Paths</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {qaReport.coverageRows.map((row) => (
+                            <tr key={row.title} style={{ borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' }}>
+                              <td style={{ padding: '8px 6px', fontWeight: 600 }}>{row.title}</td>
+                              <td style={{ padding: '8px 6px' }}>{row.status}</td>
+                              <td style={{ padding: '8px 6px' }}>{row.coverageConfidence ?? '—'}</td>
+                              <td style={{ padding: '8px 6px' }}>{row.matchedTopicPaths.length ? row.matchedTopicPaths.join(' | ') : '—'}</td>
                             </tr>
                           ))}
                         </tbody>

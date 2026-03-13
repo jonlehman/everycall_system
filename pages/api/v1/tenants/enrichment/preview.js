@@ -43,8 +43,43 @@ const GUARDRAIL_TOPIC_KEYWORDS = {
 
 const MAX_WEBSITE_PAGES = 20;
 
+const COVERAGE_CHECKLIST_TEMPLATES = [
+  { checkKey: "warranty", title: "Warranty", keywords: ["warranty", "coverage", "covered", "guarantee"], guardrailTopics: ["warranty", "guarantees"] },
+  { checkKey: "service_area", title: "Service area", keywords: ["service area", "serve", "locations", "coverage area"], guardrailTopics: ["service_area"] },
+  { checkKey: "emergency_service", title: "Emergency service", keywords: ["emergency", "urgent", "24/7", "after hours"], guardrailTopics: ["emergency_service"] },
+  { checkKey: "availability", title: "Hours and availability", keywords: ["hours", "availability", "open", "weekend", "schedule"], guardrailTopics: ["availability"] },
+  { checkKey: "pricing", title: "Pricing and fees", keywords: ["pricing", "price", "fees", "diagnostic", "estimate"], guardrailTopics: ["pricing"] },
+  { checkKey: "financing", title: "Financing and payment", keywords: ["financing", "payment plan", "credit", "monthly"], guardrailTopics: ["financing"] },
+  { checkKey: "guarantees", title: "Guarantees and promises", keywords: ["guarantee", "satisfaction", "make it right"], guardrailTopics: ["guarantees"] }
+];
+
+const GENERIC_PATH_SEGMENTS = new Set([
+  "about", "services", "service", "locations", "location", "areas", "area", "resources", "company", "contact", "home", "blog"
+]);
+
+const MARKETING_PHRASES = [
+  "peace of mind",
+  "quality you can count on",
+  "trusted by homeowners",
+  "full-service with heart",
+  "proudly serving",
+  "call today",
+  "book online",
+  "trusted choice",
+  "locally owned team",
+  "forever covered. forever comfortable"
+];
+
 function normalizeText(value) {
   return String(value || "").trim();
+}
+
+function slugify(input) {
+  return String(input || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
 }
 
 function toNumberOrNull(value) {
@@ -776,6 +811,226 @@ function buildAdditionalPageKnowledgeEntries(pages, existingEntries = []) {
   return extras;
 }
 
+function normalizeObjectiveText(text) {
+  let cleaned = cleanEvidenceText(text);
+  for (const phrase of MARKETING_PHRASES) {
+    cleaned = cleaned.replace(new RegExp(phrase, "ig"), "");
+  }
+  return cleaned.replace(/\s+/g, " ").replace(/\s+([,.;:!?])/g, "$1").trim();
+}
+
+function buildObjectiveSummaryFromLines(lines, limit = 2) {
+  const candidates = uniqueValues(lines)
+    .map((line) => normalizeObjectiveText(line))
+    .filter((line) => line && !looksLowQualityKnowledgeText(line))
+    .filter((line) => !MARKETING_PHRASES.some((phrase) => line.toLowerCase().includes(phrase)));
+  return candidates.slice(0, limit).join(" ");
+}
+
+function friendlySegmentName(segment) {
+  return titleCaseWords(
+    decodeURIComponent(String(segment || ""))
+      .replace(/\.(html|php|aspx?)$/i, "")
+      .replace(/[-_]+/g, " ")
+      .trim()
+  );
+}
+
+function derivePageTopicSegments(page, businessName) {
+  try {
+    const url = new URL(page.sourceUrl);
+    const pathSegments = url.pathname.split("/").filter(Boolean).slice(0, 4).map(friendlySegmentName).filter(Boolean);
+    const leafTitle = cleanPageEntryTitle(page, businessName || "Home");
+    if (!pathSegments.length) {
+      return [leafTitle || businessName || "Home"];
+    }
+
+    const segments = [...pathSegments];
+    const lastSegment = segments[segments.length - 1];
+    if (leafTitle && normalizeLineKey(leafTitle) !== normalizeLineKey(lastSegment) && !GENERIC_PATH_SEGMENTS.has(normalizeLineKey(lastSegment))) {
+      segments.push(leafTitle);
+    } else if (GENERIC_PATH_SEGMENTS.has(normalizeLineKey(lastSegment)) && leafTitle) {
+      segments[segments.length - 1] = leafTitle;
+    }
+    return uniqueValues(segments);
+  } catch {
+    return [cleanPageEntryTitle(page, businessName || "Home")];
+  }
+}
+
+function inferTopicRiskLevelFromText(text) {
+  const lower = normalizeText(text).toLowerCase();
+  if (!lower) return "normal";
+  if (/\b(warranty|guarantee|pricing|price|fee|fees|diagnostic|estimate|estimates)\b/.test(lower)) return "critical";
+  if (/\b(emergency|urgent|24\/7|after hours|service area|locations|hours|availability|financing|payment plan)\b/.test(lower)) return "high";
+  return "normal";
+}
+
+function buildTopicLinesForHeading(page, heading) {
+  const headingTokens = keywordsFromText(heading).slice(0, 6);
+  const scored = (page.lines || [])
+    .map((line) => {
+      const lower = line.toLowerCase();
+      const matchCount = headingTokens.filter((token) => lower.includes(token)).length;
+      return {
+        line: normalizeObjectiveText(line),
+        score: matchCount + (line.length >= 90 ? 1 : 0)
+      };
+    })
+    .filter((item) => item.score > 0 && !looksLowQualityKnowledgeText(item.line))
+    .sort((a, b) => b.score - a.score || b.line.length - a.line.length);
+  return uniqueValues(scored.map((item) => item.line)).slice(0, 2);
+}
+
+function buildSiteTopics({ websitePages, businessName }) {
+  const topicMap = new Map();
+
+  function ensureTopicNode({
+    topicPath,
+    parentTopicPath,
+    displayTitle,
+    topicType,
+    sourceUrl = null,
+    summaryObjective = "",
+    sourceConfidence = null,
+    riskLevel = "normal",
+    metadata = {}
+  }) {
+    const key = normalizeText(topicPath);
+    if (!key) return;
+    const existing = topicMap.get(key);
+    if (existing) {
+      const mergedSources = uniqueValues([...(existing.sourceUrls || []), sourceUrl].filter(Boolean));
+      topicMap.set(key, {
+        ...existing,
+        sourceUrls: mergedSources,
+        sourceUrl: existing.sourceUrl || sourceUrl || null,
+        summaryObjective: existing.summaryObjective || summaryObjective || "",
+        sourceConfidence: existing.sourceConfidence ?? sourceConfidence ?? null,
+        riskLevel: existing.riskLevel === "critical" || riskLevel === "critical"
+          ? "critical"
+          : existing.riskLevel === "high" || riskLevel === "high"
+            ? "high"
+            : existing.riskLevel,
+        metadata: { ...(existing.metadata || {}), ...metadata }
+      });
+      return;
+    }
+
+    topicMap.set(key, {
+      topicKey: slugify(topicPath),
+      parentTopicKey: parentTopicPath ? slugify(parentTopicPath) : null,
+      topicPath,
+      parentTopicPath: parentTopicPath || null,
+      displayTitle,
+      topicType,
+      sourceUrl,
+      sourceUrls: sourceUrl ? [sourceUrl] : [],
+      summaryObjective,
+      sourceConfidence,
+      riskLevel,
+      metadata
+    });
+  }
+
+  for (const page of websitePages || []) {
+    const segments = derivePageTopicSegments(page, businessName);
+    if (!segments.length) continue;
+
+    let currentPath = "";
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      const nextPath = currentPath ? `${currentPath} > ${segment}` : segment;
+      const isLeaf = index === segments.length - 1;
+      const summaryLines = isLeaf
+        ? buildObjectiveSummaryFromLines(page.lines, 2)
+        : [];
+      ensureTopicNode({
+        topicPath: nextPath,
+        parentTopicPath: currentPath || null,
+        displayTitle: segment,
+        topicType: isLeaf ? "page" : "group",
+        sourceUrl: page.sourceUrl || null,
+        summaryObjective: Array.isArray(summaryLines) ? summaryLines.join(" ") : summaryLines,
+        sourceConfidence: isLeaf ? 0.8 : 0.7,
+        riskLevel: inferTopicRiskLevelFromText(`${nextPath} ${page.text || ""}`),
+        metadata: {
+          pageTitle: page.title || "",
+          headings: page.headings || []
+        }
+      });
+      currentPath = nextPath;
+    }
+
+    const leafPath = segments.join(" > ");
+    for (const heading of (page.headings || []).slice(1, 4)) {
+      const headingTitle = normalizeText(heading);
+      if (!headingTitle) continue;
+      const summaryLines = buildTopicLinesForHeading(page, headingTitle);
+      if (!summaryLines.length) continue;
+      const topicPath = `${leafPath} > ${headingTitle}`;
+      ensureTopicNode({
+        topicPath,
+        parentTopicPath: leafPath,
+        displayTitle: headingTitle,
+        topicType: "section",
+        sourceUrl: page.sourceUrl || null,
+        summaryObjective: buildObjectiveSummaryFromLines(summaryLines, 2),
+        sourceConfidence: 0.72,
+        riskLevel: inferTopicRiskLevelFromText(`${topicPath} ${summaryLines.join(" ")}`),
+        metadata: {
+          pageTitle: page.title || "",
+          derivedFromHeading: true
+        }
+      });
+    }
+  }
+
+  return Array.from(topicMap.values()).sort((left, right) =>
+    left.topicPath.split(">").length - right.topicPath.split(">").length
+    || left.topicPath.localeCompare(right.topicPath)
+  );
+}
+
+function buildCoverageChecklist({ siteTopics, guardrailQuestionTests }) {
+  return COVERAGE_CHECKLIST_TEMPLATES.map((template) => {
+    const matchingTopics = (siteTopics || []).filter((topic) => {
+      const haystack = `${topic.topicPath} ${topic.displayTitle} ${topic.summaryObjective}`.toLowerCase();
+      return template.keywords.some((keyword) => haystack.includes(String(keyword).toLowerCase()));
+    });
+    const matchingGuardrails = (guardrailQuestionTests || []).filter((item) => template.guardrailTopics.includes(item.topic));
+    const strongGuardrail = matchingGuardrails.some((item) => isUsableGuardrailAnswer(item.answer, item.topic) && Number(item.sourceConfidence || 0) >= 0.55);
+    const mediumGuardrail = matchingGuardrails.some((item) => isUsableGuardrailAnswer(item.answer, item.topic));
+    const topicConfidence = matchingTopics.length
+      ? Math.max(...matchingTopics.map((topic) => Number(topic.sourceConfidence || 0.5)))
+      : 0;
+
+    let status = "missing";
+    if ((matchingTopics.length >= 1 && topicConfidence >= 0.72) && strongGuardrail) {
+      status = "ready";
+    } else if (matchingTopics.length || mediumGuardrail) {
+      status = "partial";
+    }
+
+    return {
+      checkKey: template.checkKey,
+      title: template.title,
+      status,
+      coverageConfidence: Number(Math.max(topicConfidence, strongGuardrail ? 0.85 : mediumGuardrail ? 0.55 : 0).toFixed(2)),
+      matchedTopicPaths: matchingTopics.map((topic) => topic.topicPath).slice(0, 8),
+      notes: status === "ready"
+        ? "Grounded site topics and guardrail coverage were found."
+        : status === "partial"
+          ? "Some relevant site knowledge exists, but review is still needed."
+          : "No reliable grounded coverage was found yet.",
+      metadata: {
+        topicCount: matchingTopics.length,
+        guardrailCount: matchingGuardrails.length
+      }
+    };
+  });
+}
+
 function isUsableGuardrailAnswer(answer, topic) {
   const cleaned = cleanEvidenceText(answer);
   if (!cleaned) return false;
@@ -1214,6 +1469,14 @@ export default async function handler(req, res) {
       industryDefaults: industryDefaults.knowledgeEntries,
       websitePages: websiteSources.pages
     });
+    const siteTopics = buildSiteTopics({
+      websitePages: websiteSources.pages,
+      businessName
+    });
+    const coverageChecklist = buildCoverageChecklist({
+      siteTopics,
+      guardrailQuestionTests
+    });
 
     const provenance = buildProfileProvenance({
       explicitWebsite,
@@ -1245,7 +1508,9 @@ export default async function handler(req, res) {
         profile,
         provenance,
         knowledgeEntries,
-        guardrailQuestionTests
+        guardrailQuestionTests,
+        siteTopics,
+        coverageChecklist
       }
     });
   } catch (err) {

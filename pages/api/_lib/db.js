@@ -654,6 +654,44 @@ export async function ensureTables(pool) {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS site_topics (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      crawl_id BIGINT REFERENCES site_crawls(id) ON DELETE SET NULL,
+      page_id BIGINT REFERENCES site_pages(id) ON DELETE SET NULL,
+      topic_key TEXT NOT NULL,
+      parent_topic_key TEXT,
+      topic_path TEXT NOT NULL,
+      parent_topic_path TEXT,
+      display_title TEXT NOT NULL,
+      topic_type TEXT NOT NULL DEFAULT 'page',
+      summary_objective TEXT,
+      source_url TEXT,
+      source_confidence DOUBLE PRECISION,
+      risk_level TEXT NOT NULL DEFAULT 'normal',
+      metadata_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS knowledge_coverage_checks (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      check_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'missing',
+      coverage_confidence DOUBLE PRECISION,
+      matched_topic_paths_json JSONB,
+      notes TEXT,
+      metadata_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS knowledge_entries (
       id BIGSERIAL PRIMARY KEY,
       tenant_key TEXT NOT NULL,
@@ -841,6 +879,11 @@ export async function ensureTables(pool) {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS site_pages_tenant_source_url_idx ON site_pages (tenant_key, source_url);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS site_pages_tenant_status_updated_idx ON site_pages (tenant_key, fetch_status, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS site_sections_tenant_page_order_idx ON site_sections (tenant_key, page_id, section_order);`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS site_topics_tenant_topic_path_idx ON site_topics (tenant_key, topic_path);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS site_topics_tenant_parent_idx ON site_topics (tenant_key, parent_topic_path, topic_type, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS site_topics_tenant_risk_idx ON site_topics (tenant_key, risk_level, updated_at DESC);`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS knowledge_coverage_checks_tenant_check_idx ON knowledge_coverage_checks (tenant_key, check_key);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_coverage_checks_tenant_status_idx ON knowledge_coverage_checks (tenant_key, status, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_entries_tenant_section_updated_idx ON knowledge_entries (tenant_key, section_type, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_entries_compilation_status_idx ON knowledge_entries (tenant_key, compilation_status, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS knowledge_facts_tenant_topic_idx ON knowledge_facts (tenant_key, topic, trade, status, updated_at DESC);`);
