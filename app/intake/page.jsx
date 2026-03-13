@@ -125,6 +125,71 @@ function getTopicDepth(topicPath) {
   return String(topicPath || '').split('>').filter(Boolean).length;
 }
 
+function formatEnrichmentProgress(progress) {
+  if (!progress || typeof progress !== 'object') return '';
+  const pagesScanned = Number.isFinite(Number(progress.pagesScanned)) ? Number(progress.pagesScanned) : 0;
+  if (progress.phase === 'crawling') {
+    return `Scanning ${pagesScanned} page${pagesScanned === 1 ? '' : 's'}`;
+  }
+  if (progress.phase === 'compiling_topics') {
+    const completed = Number.isFinite(Number(progress.aiChunksCompleted)) ? Number(progress.aiChunksCompleted) : 0;
+    const total = Number.isFinite(Number(progress.aiChunksTotal)) ? Number(progress.aiChunksTotal) : 0;
+    return total
+      ? `Scanned ${pagesScanned} pages · compiling topics ${completed}/${total}`
+      : `Scanned ${pagesScanned} pages · compiling topics`;
+  }
+  if (progress.phase === 'consolidating_topics') {
+    return `Scanned ${pagesScanned} pages · consolidating topics`;
+  }
+  if (progress.phase === 'complete') {
+    return `Scanned ${pagesScanned} pages`;
+  }
+  return 'Starting analysis…';
+}
+
+async function readEnrichmentPreviewResponse(response, onProgress) {
+  const contentType = String(response.headers?.get('content-type') || '').toLowerCase();
+  if (!contentType.includes('application/x-ndjson') || !response.body?.getReader) {
+    return response.json().catch(() => null);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let resultBody = null;
+  let streamError = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const event = JSON.parse(trimmed);
+      if (event.type === 'progress') {
+        onProgress?.(event);
+      } else if (event.type === 'result') {
+        resultBody = event.body || null;
+      } else if (event.type === 'error') {
+        streamError = event;
+      }
+    }
+
+    if (done) break;
+  }
+
+  if (streamError) {
+    const error = new Error(streamError.message || 'Could not load enrichment preview. Continue with manual setup.');
+    error.code = streamError.error || 'enrichment_preview_error';
+    throw error;
+  }
+
+  return resultBody;
+}
+
 export function IntakePageClient({ qaMode = false } = {}) {
   const isQaMode = Boolean(qaMode);
   const initialForm = useMemo(() => createInitialForm(isQaMode), [isQaMode]);
@@ -138,6 +203,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const [websiteEdited, setWebsiteEdited] = useState(false);
   const [qaResult, setQaResult] = useState(null);
   const [enrichmentReport, setEnrichmentReport] = useState(null);
+  const [enrichmentProgress, setEnrichmentProgress] = useState(null);
 
   const [form, setForm] = useState(() => createInitialForm(isQaMode));
 
@@ -155,6 +221,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
     setSiteTopics([]);
     setCoverageChecklist([]);
     setOpenGuardrailIndex(0);
+    setEnrichmentProgress(null);
   }, [form.industry]);
 
   useEffect(() => {
@@ -396,13 +463,15 @@ export function IntakePageClient({ qaMode = false } = {}) {
         setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
         setSiteTopics([]);
         setCoverageChecklist([]);
+        setEnrichmentProgress(null);
         setStatusMessage('No website provided. Continue with profile setup and add manual knowledge later in your workspace.', 'warn');
         setStep(2);
         return;
       }
 
     setEnrichmentBusy(true);
-    setStatusMessage('Analyzing website and building knowledge drafts...', 'warn');
+    setEnrichmentProgress({ phase: 'starting', pagesScanned: 0 });
+    setStatusMessage('Analyzing website and compiling site knowledge...', 'warn');
 
     try {
       const resp = await fetch('/api/v1/tenants/enrichment/preview', {
@@ -411,16 +480,18 @@ export function IntakePageClient({ qaMode = false } = {}) {
         body: JSON.stringify({
           ownerEmail: form.ownerEmail.trim(),
           website: form.website.trim(),
-          industry: form.industry
+          industry: form.industry,
+          streamProgress: true
         })
       });
 
-      const data = await resp.json().catch(() => null);
+      const data = await readEnrichmentPreviewResponse(resp, (progress) => setEnrichmentProgress(progress));
       if (!resp.ok) {
         setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
         setSiteTopics([]);
         setCoverageChecklist([]);
         if (isQaMode) setEnrichmentReport(null);
+        setEnrichmentProgress(null);
         setStatusMessage(data?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
       } else {
         const enrichment = data?.enrichment || {};
@@ -453,6 +524,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
       setSiteTopics([]);
       setCoverageChecklist([]);
       if (isQaMode) setEnrichmentReport(null);
+      setEnrichmentProgress(null);
       setStatusMessage(err?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
     } finally {
       setEnrichmentBusy(false);
@@ -789,6 +861,9 @@ export function IntakePageClient({ qaMode = false } = {}) {
                   <button className="btn brand" type="button" onClick={handleContinueFromFastStart} disabled={enrichmentBusy}>
                     {enrichmentBusy ? 'Analyzing...' : 'Analyze your site'}
                   </button>
+                  {enrichmentBusy && enrichmentProgress ? (
+                    <span className="intake-muted">{formatEnrichmentProgress(enrichmentProgress)}</span>
+                  ) : null}
                   <span className="intake-muted" style={{ color: status.tone === 'bad' ? '#dc2626' : status.tone === 'ok' ? '#059669' : '#64748b' }}>{status.message}</span>
                 </div>
               </div>

@@ -41,9 +41,11 @@ const GUARDRAIL_TOPIC_KEYWORDS = {
 };
 
 const MAX_WEBSITE_PAGES = 250;
-const WEBSITE_CRAWL_BATCH_SIZE = 8;
+const WEBSITE_CRAWL_BATCH_SIZE = 12;
 const MAX_SITEMAP_URLS = 500;
-const AI_TOPIC_CHUNK_SIZE = 24;
+const CRAWL_TIME_BUDGET_MS = 90000;
+const AI_TOPIC_CHUNK_SIZE = 16;
+const AI_TOPIC_CONCURRENCY = 6;
 
 const COVERAGE_CHECKLIST_TEMPLATES = [
   { checkKey: "warranty", title: "Warranty", keywords: ["warranty", "coverage", "covered", "guarantee"], guardrailTopics: ["warranty", "guarantees"] },
@@ -74,6 +76,10 @@ const MARKETING_PHRASES = [
 
 function normalizeText(value) {
   return String(value || "").trim();
+}
+
+function truthy(value) {
+  return value === true || value === "true" || value === 1 || value === "1";
 }
 
 function slugify(input) {
@@ -456,7 +462,8 @@ function finalizeWebsitePages(rawPages) {
     .filter((page) => page.text);
 }
 
-async function fetchRelevantWebsiteSources(baseUrl) {
+async function fetchRelevantWebsiteSources(baseUrl, { onProgress } = {}) {
+  const crawlStartedAt = Date.now();
   const primary = await fetchWebsiteText(baseUrl);
   if (!primary.ok) return { pages: [], combinedText: "" };
 
@@ -493,8 +500,17 @@ async function fetchRelevantWebsiteSources(baseUrl) {
     lines: primary.lines,
     text: primary.text
   }];
+  onProgress?.({
+    phase: "crawling",
+    pagesScanned: rawPages.length,
+    pagesQueued: queue.length,
+    maxPages: MAX_WEBSITE_PAGES
+  });
 
   while (queue.length && rawPages.length < MAX_WEBSITE_PAGES) {
+    if (Date.now() - crawlStartedAt >= CRAWL_TIME_BUDGET_MS) {
+      break;
+    }
     queue.sort((left, right) =>
       left.depth - right.depth
       || right.score - left.score
@@ -523,6 +539,12 @@ async function fetchRelevantWebsiteSources(baseUrl) {
         lines: result.page.lines,
         text: result.page.text
       });
+      onProgress?.({
+        phase: "crawling",
+        pagesScanned: rawPages.length,
+        pagesQueued: queue.length,
+        maxPages: MAX_WEBSITE_PAGES
+      });
 
       for (const link of extractInternalLinks(result.url, result.page.html)) {
         enqueue(link.url, result.depth + 1, link.score);
@@ -533,7 +555,13 @@ async function fetchRelevantWebsiteSources(baseUrl) {
   const pages = finalizeWebsitePages(rawPages);
   return {
     pages,
-    combinedText: pages.map((page) => page.text).filter(Boolean).join(" ").slice(0, 120000)
+    combinedText: pages.map((page) => page.text).filter(Boolean).join(" ").slice(0, 120000),
+    crawlStats: {
+      pagesScanned: rawPages.length,
+      pagesRetained: pages.length,
+      queueRemaining: queue.length,
+      crawlTimeBudgetReached: queue.length > 0 && rawPages.length < MAX_WEBSITE_PAGES && (Date.now() - crawlStartedAt >= CRAWL_TIME_BUDGET_MS)
+    }
   };
 }
 
@@ -866,6 +894,24 @@ function chunkArray(items, size) {
   return chunks;
 }
 
+async function mapWithConcurrency(items, concurrency, worker) {
+  const list = Array.isArray(items) ? items : [];
+  const limit = Math.max(1, Math.min(Number(concurrency) || 1, list.length || 1));
+  const results = new Array(list.length);
+  let cursor = 0;
+
+  async function runWorker() {
+    while (cursor < list.length) {
+      const currentIndex = cursor;
+      cursor += 1;
+      results[currentIndex] = await worker(list[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, () => runWorker()));
+  return results;
+}
+
 function normalizeAiSiteTopics(rawItems, websitePages, businessName) {
   const topicMap = new Map();
   const pageUrlSet = new Set((websitePages || []).map((page) => normalizeText(page.sourceUrl)).filter(Boolean));
@@ -998,7 +1044,7 @@ async function requestAiSiteTopicItems({ instruction, payload, timeoutMs = 20000
   }
 }
 
-async function extractSiteTopicsWithAi({ websitePages, businessName }) {
+async function extractSiteTopicsWithAi({ websitePages, businessName, onProgress }) {
   const pages = buildAiTopicPromptPages(websitePages);
   if (!pages.length) return null;
 
@@ -1019,8 +1065,15 @@ async function extractSiteTopicsWithAi({ websitePages, businessName }) {
   ].join("\n");
 
   const pageChunks = chunkArray(pages, AI_TOPIC_CHUNK_SIZE);
-  const chunkResponses = [];
-  for (const chunk of pageChunks) {
+  let completedChunks = 0;
+  onProgress?.({
+    phase: "compiling_topics",
+    pagesScanned: websitePages.length,
+    aiChunksCompleted: 0,
+    aiChunksTotal: pageChunks.length
+  });
+
+  const chunkResults = await mapWithConcurrency(pageChunks, AI_TOPIC_CONCURRENCY, async (chunk) => {
     const items = await requestAiSiteTopicItems({
       instruction: extractionInstruction,
       payload: {
@@ -1028,10 +1081,16 @@ async function extractSiteTopicsWithAi({ websitePages, businessName }) {
         pages: chunk
       }
     });
-    if (Array.isArray(items) && items.length) {
-      chunkResponses.push(...items);
-    }
-  }
+    completedChunks += 1;
+    onProgress?.({
+      phase: "compiling_topics",
+      pagesScanned: websitePages.length,
+      aiChunksCompleted: completedChunks,
+      aiChunksTotal: pageChunks.length
+    });
+    return Array.isArray(items) ? items : [];
+  });
+  const chunkResponses = chunkResults.flat();
 
   if (!chunkResponses.length) return null;
 
@@ -1047,6 +1106,12 @@ async function extractSiteTopicsWithAi({ websitePages, businessName }) {
     '{"items":[{"topicPath":"...","displayTitle":"...","topicType":"group|page|section","summaryObjective":"...","sourceUrl":"https://...","sourceConfidence":0.0,"riskLevel":"critical|high|normal"}]}'
   ].join("\n");
 
+  onProgress?.({
+    phase: "consolidating_topics",
+    pagesScanned: websitePages.length,
+    aiChunksCompleted: completedChunks,
+    aiChunksTotal: pageChunks.length
+  });
   const consolidatedItems = await requestAiSiteTopicItems({
     instruction: consolidationInstruction,
     payload: {
@@ -1174,8 +1239,12 @@ function buildSiteTopicsHeuristically({ websitePages, businessName }) {
   );
 }
 
-async function buildSiteTopics({ websitePages, businessName }) {
-  const aiTopics = await extractSiteTopicsWithAi({ websitePages, businessName });
+async function buildSiteTopics({ websitePages, businessName }, { onProgress } = {}) {
+  const aiTopics = await extractSiteTopicsWithAi({
+    websitePages,
+    businessName,
+    onProgress: typeof onProgress === "function" ? onProgress : null
+  });
   if (Array.isArray(aiTopics) && aiTopics.length) {
     return aiTopics;
   }
@@ -1470,20 +1539,54 @@ function fail(res, status, error, message) {
   return res.status(status).json({ ok: false, error, message });
 }
 
+function createStreamingPreviewWriter(res) {
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+
+  return {
+    progress(payload) {
+      res.write(`${JSON.stringify({ type: "progress", ...payload })}\n`);
+    },
+    result(body) {
+      res.write(`${JSON.stringify({ type: "result", ok: true, body })}\n`);
+      res.end();
+    },
+    error(error, message) {
+      res.write(`${JSON.stringify({ type: "error", ok: false, error, message })}\n`);
+      res.end();
+    }
+  };
+}
+
 export default async function handler(req, res) {
+  let streamWriter = null;
   try {
     if (req.method !== "POST") {
       res.setHeader("Allow", "POST");
       return fail(res, 405, "method_not_allowed", "Method not allowed.");
     }
 
+    const body = typeof req.body === "object" && req.body ? req.body : {};
+    const streamProgress = truthy(body.streamProgress);
+    streamWriter = streamProgress ? createStreamingPreviewWriter(res) : null;
+    const emitProgress = (payload) => streamWriter?.progress(payload);
+
     const pool = getPool();
-    if (!pool) return fail(res, 500, "database_unavailable", "Database is unavailable.");
+    if (!pool) {
+      if (streamWriter) return streamWriter.error("database_unavailable", "Database is unavailable.");
+      return fail(res, 500, "database_unavailable", "Database is unavailable.");
+    }
     await ensureTables(pool);
 
-    const body = typeof req.body === "object" && req.body ? req.body : {};
     const industry = normalizeText(body.industry);
-    if (!industry) return fail(res, 400, "missing_industry", "Industry is required.");
+    if (!industry) {
+      if (streamWriter) return streamWriter.error("missing_industry", "Industry is required.");
+      return fail(res, 400, "missing_industry", "Industry is required.");
+    }
+    emitProgress({ phase: "starting", pagesScanned: 0 });
 
     const ownerEmail = normalizeText(body.ownerEmail).toLowerCase();
     const explicitWebsite = normalizeText(body.website);
@@ -1491,22 +1594,23 @@ export default async function handler(req, res) {
     const normalizedWebsite = normalizeWebsite(explicitWebsite || derivedWebsite);
     const industryDefaults = await loadIndustryKnowledgeDefaults(pool, industry);
 
-    const websiteSources = normalizedWebsite ? await fetchRelevantWebsiteSources(normalizedWebsite) : { pages: [], combinedText: "" };
+    const googleBusinessProfilePromise = body.googleBusinessProfile && typeof body.googleBusinessProfile === "object"
+      ? Promise.resolve(body.googleBusinessProfile)
+      : fetchGoogleBusinessProfile({
+          website: normalizedWebsite,
+          businessName: normalizeText(body.businessName),
+          serviceArea: normalizeText(body.serviceArea)
+        });
+
+    const websiteSources = normalizedWebsite
+      ? await fetchRelevantWebsiteSources(normalizedWebsite, { onProgress: emitProgress })
+      : { pages: [], combinedText: "", crawlStats: { pagesScanned: 0, pagesRetained: 0, queueRemaining: 0, crawlTimeBudgetReached: false } };
     const websiteResult = {
       ok: websiteSources.pages.length > 0,
       text: websiteSources.combinedText
     };
 
-    let googleBusinessProfile = body.googleBusinessProfile && typeof body.googleBusinessProfile === "object"
-      ? body.googleBusinessProfile
-      : null;
-    if (!googleBusinessProfile) {
-      googleBusinessProfile = await fetchGoogleBusinessProfile({
-        website: normalizedWebsite,
-        businessName: normalizeText(body.businessName),
-        serviceArea: normalizeText(body.serviceArea)
-      });
-    }
+    const googleBusinessProfile = await googleBusinessProfilePromise;
 
     const gbpText = googleBusinessProfile
       ? [
@@ -1537,15 +1641,6 @@ export default async function handler(req, res) {
         sentences: splitSentences(gbpText)
       });
     }
-
-    const aiItems = await extractGuardrailAnswersWithAi(industryDefaults.guardrailQuestionTests, sources);
-    const aiByQuestion = new Map(
-      Array.isArray(aiItems)
-        ? aiItems
-            .filter((item) => normalizeText(item?.questionText))
-            .map((item) => [normalizeText(item.questionText), item])
-        : []
-    );
 
     const businessName = guessBusinessName({ googleBusinessProfile, website: normalizedWebsite, ownerEmail });
     const addressText = [websiteResult.text, googleBusinessProfile?.serviceArea].filter(Boolean).join(" ");
@@ -1586,10 +1681,20 @@ export default async function handler(req, res) {
       ].filter(Boolean).join(". ")
     };
 
-    const siteTopics = await buildSiteTopics({
-      websitePages: websiteSources.pages,
-      businessName
-    });
+    const [aiItems, siteTopics] = await Promise.all([
+      extractGuardrailAnswersWithAi(industryDefaults.guardrailQuestionTests, sources),
+      buildSiteTopics({
+        websitePages: websiteSources.pages,
+        businessName
+      }, { onProgress: emitProgress })
+    ]);
+    const aiByQuestion = new Map(
+      Array.isArray(aiItems)
+        ? aiItems
+            .filter((item) => normalizeText(item?.questionText))
+            .map((item) => [normalizeText(item.questionText), item])
+        : []
+    );
 
     const guardrailQuestionTests = buildGuardrailQuestionTests({
       profile,
@@ -1612,6 +1717,10 @@ export default async function handler(req, res) {
       siteTopics,
       guardrailQuestionTests
     });
+    emitProgress({
+      phase: "complete",
+      pagesScanned: websiteSources.crawlStats?.pagesScanned || websiteSources.pages.length
+    });
 
     const provenance = buildProfileProvenance({
       explicitWebsite,
@@ -1632,7 +1741,7 @@ export default async function handler(req, res) {
       websiteResult
     });
 
-    return res.status(200).json({
+    const responseBody = {
       ok: true,
       enrichment: {
         website: normalizedWebsite || "",
@@ -1642,12 +1751,21 @@ export default async function handler(req, res) {
         googleBusinessProfile,
         profile,
         provenance,
+        crawlStats: websiteSources.crawlStats || null,
         guardrailQuestionTests,
         siteTopics,
         coverageChecklist
       }
-    });
+    };
+
+    if (streamWriter) {
+      return streamWriter.result(responseBody);
+    }
+    return res.status(200).json(responseBody);
   } catch (err) {
+    if (streamWriter) {
+      return streamWriter.error("enrichment_preview_error", err?.message || "unknown");
+    }
     return fail(res, 500, "enrichment_preview_error", err?.message || "unknown");
   }
 }
