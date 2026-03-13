@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { createBlankGuardrailQuestionTests, createBlankKnowledgeEntries } from '../../lib/knowledgeTemplates.js';
+import { createBlankGuardrailQuestionTests } from '../../lib/knowledgeTemplates.js';
 import './intake.css';
 
 const FREE_EMAIL_DOMAINS = new Set([
@@ -57,7 +57,7 @@ function parseServiceMatches(industry, enrichment) {
   const options = SERVICES_BY_INDUSTRY[industry] || [];
   const text = [
     enrichment?.profile?.serviceText,
-    ...(Array.isArray(enrichment?.knowledgeEntries) ? enrichment.knowledgeEntries.map((entry) => `${entry.title || ''} ${entry.contentText || ''}`) : []),
+    ...(Array.isArray(enrichment?.siteTopics) ? enrichment.siteTopics.map((topic) => `${topic.topicPath || ''} ${topic.summaryObjective || ''}`) : []),
     ...(Array.isArray(enrichment?.guardrailQuestionTests) ? enrichment.guardrailQuestionTests.map((item) => `${item.questionText || ''} ${item.answer || ''}`) : [])
   ].join(' ').toLowerCase();
 
@@ -121,6 +121,10 @@ function createInitialForm(qaMode = false) {
   return base;
 }
 
+function getTopicDepth(topicPath) {
+  return String(topicPath || '').split('>').filter(Boolean).length;
+}
+
 export function IntakePageClient({ qaMode = false } = {}) {
   const isQaMode = Boolean(qaMode);
   const initialForm = useMemo(() => createInitialForm(isQaMode), [isQaMode]);
@@ -139,7 +143,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
 
   const [serviceSearch, setServiceSearch] = useState('');
   const [selectedServices, setSelectedServices] = useState([]);
-  const [knowledgeEntries, setKnowledgeEntries] = useState(() => createBlankKnowledgeEntries());
   const [guardrailQuestionTests, setGuardrailQuestionTests] = useState(() => createBlankGuardrailQuestionTests());
   const [siteTopics, setSiteTopics] = useState([]);
   const [coverageChecklist, setCoverageChecklist] = useState([]);
@@ -148,7 +151,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
   useEffect(() => {
     setSelectedServices([]);
     setServiceSearch('');
-    setKnowledgeEntries(createBlankKnowledgeEntries());
     setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
     setSiteTopics([]);
     setCoverageChecklist([]);
@@ -284,13 +286,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
         suggestedSource: null
       }
     ];
-    const knowledgeEntryRows = (knowledgeEntries || []).map((entry) => ({
-      title: entry.title,
-      currentValue: String(entry.contentText || '').trim(),
-      currentSource: String(entry.contentText || '').trim() ? (entry.sourceType || 'manual_or_reviewed') : 'blank',
-      sourceUrl: entry.sourceUrl || null,
-      sourceConfidence: Number.isFinite(Number(entry.sourceConfidence)) ? Number(entry.sourceConfidence) : null
-    }));
     const guardrailRows = (guardrailQuestionTests || []).map((item) => ({
       question: item.questionText,
       currentAnswer: String(item.answer || '').trim(),
@@ -313,7 +308,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
     }));
     return {
       fieldRows,
-      knowledgeEntryRows,
       guardrailRows,
       siteTopicRows,
       coverageRows,
@@ -321,13 +315,12 @@ export function IntakePageClient({ qaMode = false } = {}) {
         currentForm: form,
         initialQaDefaults: initialForm,
         enrichment: enrichmentReport,
-        knowledgeEntries,
         guardrailQuestionTests,
         siteTopics,
         coverageChecklist
       }
     };
-  }, [coverageChecklist, enrichmentReport, form, guardrailQuestionTests, initialForm, isQaMode, knowledgeEntries, siteTopics]);
+  }, [coverageChecklist, enrichmentReport, form, guardrailQuestionTests, initialForm, isQaMode, siteTopics]);
 
   const setStatusMessage = (message, tone = 'normal') => setStatus({ message, tone });
 
@@ -377,8 +370,8 @@ export function IntakePageClient({ qaMode = false } = {}) {
     setSelectedServices((prev) => prev.filter((item) => item !== service));
   };
 
-  const updateKnowledgeEntry = (index, contentText) => {
-    setKnowledgeEntries((prev) => prev.map((item, idx) => (idx === index ? { ...item, contentText } : item)));
+  const updateSiteTopicSummary = (index, summaryObjective) => {
+    setSiteTopics((prev) => prev.map((item, idx) => (idx === index ? { ...item, summaryObjective } : item)));
   };
 
   const updateGuardrailQuestionAnswer = (index, answer) => {
@@ -400,11 +393,10 @@ export function IntakePageClient({ qaMode = false } = {}) {
       if (!form.website.trim()) {
         const confirmed = window.confirm("You didn't add a website. Continue without analyzing your site?");
         if (!confirmed) return;
-        setKnowledgeEntries(createBlankKnowledgeEntries());
         setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
         setSiteTopics([]);
         setCoverageChecklist([]);
-        setStatusMessage('No website provided. Continue with manual knowledge setup.', 'warn');
+        setStatusMessage('No website provided. Continue with profile setup and add manual knowledge later in your workspace.', 'warn');
         setStep(2);
         return;
       }
@@ -425,7 +417,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
 
       const data = await resp.json().catch(() => null);
       if (!resp.ok) {
-        setKnowledgeEntries(createBlankKnowledgeEntries());
         setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
         setSiteTopics([]);
         setCoverageChecklist([]);
@@ -433,16 +424,12 @@ export function IntakePageClient({ qaMode = false } = {}) {
         setStatusMessage(data?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
       } else {
         const enrichment = data?.enrichment || {};
-        const previewKnowledgeEntries = Array.isArray(enrichment?.knowledgeEntries) && enrichment.knowledgeEntries.length
-          ? enrichment.knowledgeEntries
-          : createBlankKnowledgeEntries();
         const previewGuardrailQuestions = Array.isArray(enrichment?.guardrailQuestionTests) && enrichment.guardrailQuestionTests.length
           ? enrichment.guardrailQuestionTests
           : createBlankGuardrailQuestionTests();
         const previewSiteTopics = Array.isArray(enrichment?.siteTopics) ? enrichment.siteTopics : [];
         const previewCoverageChecklist = Array.isArray(enrichment?.coverageChecklist) ? enrichment.coverageChecklist : [];
         const matchedServices = parseServiceMatches(form.industry, enrichment);
-        setKnowledgeEntries(previewKnowledgeEntries);
         setGuardrailQuestionTests(previewGuardrailQuestions);
         setSiteTopics(previewSiteTopics);
         setCoverageChecklist(previewCoverageChecklist);
@@ -457,12 +444,11 @@ export function IntakePageClient({ qaMode = false } = {}) {
           return mergeEnrichmentProfileIntoForm(next, enrichment, { includeBusinessName: !isQaMode });
         });
         setStatusMessage(
-          `Loaded ${previewKnowledgeEntries.length} knowledge drafts and ${previewGuardrailQuestions.length} guardrail question previews from your site.`,
+          `Loaded ${previewSiteTopics.length} site topics and ${previewGuardrailQuestions.length} guardrail question previews from your site.`,
           'ok'
         );
       }
     } catch (err) {
-      setKnowledgeEntries(createBlankKnowledgeEntries());
       setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
       setSiteTopics([]);
       setCoverageChecklist([]);
@@ -516,14 +502,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
       emergencyServices: form.emergencyServices === 'true',
       servicesOffered: selectedServices,
       primaryGoals: ['Capture missed-call leads'],
-      knowledgeEntries: knowledgeEntries.map((entry) => ({
-        sectionType: entry.sectionType,
-        title: entry.title,
-        contentText: String(entry.contentText || '').trim(),
-        sourceType: entry.sourceType || null,
-        sourceUrl: entry.sourceUrl || null,
-        sourceConfidence: Number.isFinite(Number(entry.sourceConfidence)) ? Number(entry.sourceConfidence) : null
-      })),
       guardrailQuestionTests: guardrailQuestionTests.map((item) => ({
         questionText: item.questionText,
         topic: item.topic,
@@ -849,33 +827,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
                         </tbody>
                       </table>
                     </div>
-                    <div className="intake-section-title" style={{ marginTop: 16 }}>Knowledge Entry Sources</div>
-                    <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                        <thead>
-                          <tr style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
-                            <th style={{ padding: '8px 6px' }}>Entry</th>
-                            <th style={{ padding: '8px 6px' }}>Current Source</th>
-                            <th style={{ padding: '8px 6px' }}>Detected Source</th>
-                            <th style={{ padding: '8px 6px' }}>Confidence</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {qaReport.knowledgeEntryRows.map((row) => (
-                            <tr key={row.title} style={{ borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' }}>
-                              <td style={{ padding: '8px 6px', fontWeight: 600 }}>{row.title}</td>
-                              <td style={{ padding: '8px 6px' }}>{row.currentSource}</td>
-                              <td style={{ padding: '8px 6px' }}>
-                                {row.sourceUrl
-                                  ? [row.currentSource || null, row.sourceUrl || null].filter(Boolean).join(' | ')
-                                  : '—'}
-                              </td>
-                              <td style={{ padding: '8px 6px' }}>{row.sourceConfidence ?? '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
                     <div className="intake-section-title" style={{ marginTop: 16 }}>Guardrail Question Sources</div>
                     <div style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -1122,29 +1073,63 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 <section className="intake-panel">
                   <div className="intake-panel-header">
                     <div>
-                      <div className="intake-review-heading">Knowledge</div>
-                      <div className="intake-muted">Review and refine the business knowledge your assistant should pull from.</div>
+                      <div className="intake-review-heading">Discovered Site Topics</div>
+                      <div className="intake-muted">The site defines the knowledge structure. Review the objective summaries here; runtime cards and facts compile from these topics.</div>
                     </div>
                   </div>
                   <div className="intake-review-list">
-                    {knowledgeEntries.length === 0 ? (
-                      <div className="intake-inline-note">No knowledge drafts were found. Add the details you want your assistant to know.</div>
+                    {siteTopics.length === 0 ? (
+                      <div className="intake-inline-note">No site topics were compiled. You can still complete setup and add manual knowledge later in your workspace.</div>
                     ) : (
-                      knowledgeEntries.map((entry, index) => (
-                        <div key={`${entry.sectionType}-${index}`} className="intake-review-group">
-                          <div className="intake-review-group-title">{entry.title}</div>
+                      siteTopics.map((topic, index) => (
+                        <div
+                          key={`${topic.topicPath}-${index}`}
+                          className="intake-review-group"
+                          style={{ marginLeft: `${Math.min(Math.max(getTopicDepth(topic.topicPath) - 1, 0), 4) * 16}px` }}
+                        >
+                          <div className="intake-review-group-title">{topic.displayTitle || topic.topicPath}</div>
+                          <div className="intake-muted" style={{ marginBottom: 8 }}>
+                            {[topic.topicPath, topic.topicType || 'topic', topic.riskLevel || 'normal'].filter(Boolean).join(' | ')}
+                          </div>
                           <div className="intake-stack">
-                            <label>{entry.title}</label>
+                            <label>Objective Summary</label>
                             <textarea
-                              placeholder={`Add ${entry.title.toLowerCase()} details`}
-                              value={entry.contentText || ''}
-                              onChange={(event) => updateKnowledgeEntry(index, event.target.value)}
+                              placeholder="No objective summary compiled yet."
+                              value={topic.summaryObjective || ''}
+                              onChange={(event) => updateSiteTopicSummary(index, event.target.value)}
                             />
                             <div className="intake-muted">
-                              {entry.sourceUrl
-                                ? `Source: ${entry.sourceType || 'website'} | ${entry.sourceUrl}`
-                                : 'No source detected. Add or refine this manually.'}
+                              {topic.sourceUrl
+                                ? `Source: ${topic.sourceUrl}`
+                                : 'No source detected. Review this topic in the client workspace.'}
                             </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+
+                <section className="intake-panel">
+                  <div className="intake-panel-header">
+                    <div>
+                      <div className="intake-review-heading">Coverage Checklist</div>
+                      <div className="intake-muted">This is a review overlay only. It helps confirm broad customer-risk areas without constraining the stored topic tree.</div>
+                    </div>
+                  </div>
+                  <div className="intake-review-list">
+                    {coverageChecklist.length === 0 ? (
+                      <div className="intake-inline-note">No coverage checklist is available yet.</div>
+                    ) : (
+                      coverageChecklist.map((item) => (
+                        <div key={item.checkKey} className="intake-review-group">
+                          <div className="intake-review-group-title">{item.title}</div>
+                          <div className="intake-muted" style={{ marginBottom: 8 }}>
+                            {[item.status || 'missing', Number.isFinite(Number(item.coverageConfidence)) ? Number(item.coverageConfidence).toFixed(2) : null].filter(Boolean).join(' | ')}
+                          </div>
+                          {item.notes ? <div className="intake-muted" style={{ marginBottom: 8 }}>{item.notes}</div> : null}
+                          <div className="intake-muted">
+                            Matched topics: {item.matchedTopicPaths?.length ? item.matchedTopicPaths.join(' | ') : 'none yet'}
                           </div>
                         </div>
                       ))

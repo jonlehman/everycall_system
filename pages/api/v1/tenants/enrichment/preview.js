@@ -1,5 +1,4 @@
 import { ensureTables, getPool } from "../../../_lib/db.js";
-import { createBlankKnowledgeEntries } from "../../../../../lib/knowledgeTemplates.js";
 import { loadIndustryKnowledgeDefaults } from "../../../_lib/industryKnowledge.js";
 
 const FREE_EMAIL_DOMAINS = new Set([
@@ -538,36 +537,6 @@ async function fetchRelevantWebsiteSources(baseUrl) {
   };
 }
 
-function findSentenceMatchesByKeywords(keywords, sources, limit = 3) {
-  const keys = uniqueValues(keywords).map((keyword) => keyword.toLowerCase());
-  if (!keys.length) return [];
-  const matches = [];
-  for (const source of sources || []) {
-    const sourceContext = `${source.title || ""} ${(source.headings || []).join(" ")} ${source.sourceUrl || ""}`.toLowerCase();
-    const sourceBonus = keys.filter((key) => sourceContext.includes(key)).length;
-    for (const sentence of source.sentences || []) {
-      if (looksLikeNavOrBoilerplate(sentence)) continue;
-      const lower = String(sentence || "").toLowerCase();
-      const matchCount = keys.filter((key) => lower.includes(key)).length;
-      if (!matchCount) continue;
-      matches.push({
-        sentence: cleanEvidenceText(sentence),
-        sourceType: source.sourceType || "website",
-        sourceUrl: source.sourceUrl || null,
-        score: matchCount + sourceBonus
-      });
-    }
-  }
-  return matches
-    .sort((a, b) => b.score - a.score || b.sentence.length - a.sentence.length)
-    .filter((match, index, items) => items.findIndex((item) => item.sentence === match.sentence) === index)
-    .slice(0, limit);
-}
-
-function joinSentences(matches, limit = 2) {
-  return uniqueValues((matches || []).map((match) => match.sentence)).slice(0, limit).join(" ");
-}
-
 function extractAddressCandidates(text) {
   return Array.from(String(text || "").matchAll(/\b\d{3,6}\s+[A-Za-z0-9.\- ]+,\s*[A-Za-z .'-]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/g))
     .map((match) => match[0].trim());
@@ -765,14 +734,6 @@ function findHeuristicMatch(queryText, sources, keywordHints = []) {
   return best;
 }
 
-function entrySourceFromFallback(fallbackEntry) {
-  return {
-    sourceType: normalizeText(fallbackEntry?.sourceType) || null,
-    sourceUrl: normalizeText(fallbackEntry?.sourceUrl) || null,
-    sourceConfidence: toNumberOrNull(fallbackEntry?.sourceConfidence)
-  };
-}
-
 function looksLowQualityKnowledgeText(text) {
   const cleaned = cleanEvidenceText(text);
   if (!cleaned) return true;
@@ -782,81 +743,11 @@ function looksLowQualityKnowledgeText(text) {
   return false;
 }
 
-function inferKnowledgeSectionTypeForPage(page) {
-  const haystack = `${page.title || ""} ${(page.headings || []).join(" ")} ${page.sourceUrl || ""} ${(page.text || "").slice(0, 2400)}`.toLowerCase();
-  let bestSectionType = null;
-  let bestScore = 0;
-  for (const [sectionType, keywords] of Object.entries(KNOWLEDGE_SECTION_KEYWORDS)) {
-    const score = keywords.filter((keyword) => haystack.includes(String(keyword).toLowerCase())).length;
-    if (score > bestScore) {
-      bestScore = score;
-      bestSectionType = sectionType;
-    }
-  }
-  return bestScore >= 2 ? { sectionType: bestSectionType, score: bestScore } : { sectionType: null, score: 0 };
-}
-
 function cleanPageEntryTitle(page, fallbackTitle) {
   const heading = normalizeText(page.headings?.[0]);
   const title = normalizeText(page.title).split("|")[0].trim();
   const candidate = heading || title || fallbackTitle;
   return candidate.replace(/\s{2,}/g, " ").trim();
-}
-
-function buildPageSnippet(page, sectionType) {
-  const keywords = KNOWLEDGE_SECTION_KEYWORDS[sectionType] || [];
-  const lineScores = (page.lines || [])
-    .map((line) => {
-      const lower = line.toLowerCase();
-      const keywordMatches = keywords.filter((keyword) => lower.includes(String(keyword).toLowerCase())).length;
-      const headingBonus = (page.headings || []).some((heading) => lower.includes(String(heading).toLowerCase())) ? 1 : 0;
-      const lengthBonus = line.length >= 90 ? 1 : 0;
-      return {
-        line: cleanEvidenceText(line),
-        score: keywordMatches * 2 + headingBonus + lengthBonus
-      };
-    })
-    .filter((item) => item.score > 0 && !looksLowQualityKnowledgeText(item.line))
-    .sort((a, b) => b.score - a.score || b.line.length - a.line.length);
-
-  return uniqueValues(lineScores.map((item) => item.line)).slice(0, 3).join(" ");
-}
-
-function buildAdditionalPageKnowledgeEntries(pages, existingEntries = []) {
-  const seen = new Set(
-    (existingEntries || [])
-      .map((entry) => `${normalizeText(entry.sectionType)}::${normalizeLineKey(entry.title)}::${normalizeLineKey(entry.contentText).slice(0, 120)}`)
-      .filter(Boolean)
-  );
-
-  const candidates = (pages || [])
-    .map((page) => ({
-      page,
-      ...inferKnowledgeSectionTypeForPage(page)
-    }))
-    .filter((item) => item.sectionType)
-    .sort((a, b) => b.score - a.score || String(a.page.sourceUrl || "").length - String(b.page.sourceUrl || "").length);
-
-  const extras = [];
-  for (const item of candidates) {
-    const contentText = buildPageSnippet(item.page, item.sectionType);
-    const title = cleanPageEntryTitle(item.page, titleCaseWords(item.sectionType.replace(/_/g, " ")));
-    if (!contentText || looksLowQualityKnowledgeText(contentText)) continue;
-    const key = `${item.sectionType}::${normalizeLineKey(title)}::${normalizeLineKey(contentText).slice(0, 120)}`;
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    extras.push({
-      sectionType: item.sectionType,
-      title,
-      contentText,
-      sourceType: item.page.sourceType || "website",
-      sourceUrl: item.page.sourceUrl || null,
-      sourceConfidence: Number(Math.min(0.55 + item.score * 0.08, 0.95).toFixed(2))
-    });
-    if (extras.length >= 12) break;
-  }
-
-  return extras;
 }
 
 function normalizeObjectiveText(text) {
@@ -1343,63 +1234,42 @@ function isUsableGuardrailAnswer(answer, topic) {
   return true;
 }
 
-function buildKnowledgeEntries({ profile, sources, industryDefaults, websitePages }) {
-  const defaultsBySection = new Map((industryDefaults || []).map((entry) => [entry.sectionType, entry]));
-  const templates = createBlankKnowledgeEntries();
-  const addressSummary = [profile.address1, profile.city, profile.state, profile.zip].filter(Boolean).join(", ");
+function findSiteTopicFallbackSummary(siteTopics, topic) {
+  const keywords = GUARDRAIL_TOPIC_KEYWORDS[topic] || [];
+  if (!keywords.length) return null;
 
-  const baseEntries = templates.map((template) => {
-    const defaultEntry = defaultsBySection.get(template.sectionType) || template;
-    const matches = findSentenceMatchesByKeywords(
-      KNOWLEDGE_SECTION_KEYWORDS[template.sectionType] || [],
-      sources,
-      template.sectionType === "services_and_capabilities" ? 3 : 2
-    );
-    const matchedText = joinSentences(matches, template.sectionType === "services_and_capabilities" ? 3 : 2);
-    const preferredMatchedText = looksLowQualityKnowledgeText(matchedText) ? "" : matchedText;
+  const candidates = (siteTopics || [])
+    .map((item) => {
+      const summary = normalizeText(item?.summaryObjective);
+      if (!summary || looksLowQualityKnowledgeText(summary)) return null;
+      const haystack = `${item?.topicPath || ""} ${item?.displayTitle || ""} ${summary}`.toLowerCase();
+      const keywordMatches = keywords.filter((keyword) => haystack.includes(String(keyword).toLowerCase())).length;
+      if (!keywordMatches) return null;
+      const depth = String(item?.topicPath || "").split(">").filter(Boolean).length;
+      const typeBonus = item?.topicType === "section" ? 0.2 : item?.topicType === "page" ? 0.12 : 0;
+      const confidence = Math.max(0, Math.min(Number(item?.sourceConfidence || 0.55), 1));
+      return {
+        answer: summary,
+        sourceType: "site_topic",
+        sourceUrl: item?.sourceUrl || null,
+        sourceConfidence: Number(Math.min((keywordMatches * 0.2) + typeBonus + confidence, 0.95).toFixed(2)),
+        matchScore: keywordMatches * 10 + depth + typeBonus + confidence
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.matchScore - left.matchScore);
 
-    let fallbackText = "";
-    let fallbackSource = entrySourceFromFallback(defaultEntry);
-    if (template.sectionType === "service_area" && (profile.serviceArea || addressSummary)) {
-      fallbackText = [profile.serviceArea, addressSummary].filter(Boolean).join(" ").trim();
-      fallbackSource = { sourceType: "derived_profile", sourceUrl: null, sourceConfidence: 1 };
-    } else if (template.sectionType === "hours_and_availability" && profile.businessHours) {
-      fallbackText = profile.businessHours;
-      fallbackSource = { sourceType: "derived_profile", sourceUrl: null, sourceConfidence: 1 };
-    } else if (template.sectionType === "emergency_service" && profile.emergencyServices === true) {
-      fallbackText = "Emergency or after-hours service appears to be offered. Verify exact availability before promising dispatch timing.";
-      fallbackSource = { sourceType: "derived_profile", sourceUrl: null, sourceConfidence: 0.8 };
-    } else {
-      fallbackText = normalizeText(defaultEntry.contentText);
-    }
-
-    return {
-      sectionType: template.sectionType,
-      title: defaultEntry.title || template.title,
-      contentText: preferredMatchedText || fallbackText,
-      sourceType: preferredMatchedText ? (matches[0]?.sourceType || fallbackSource.sourceType) : fallbackSource.sourceType,
-      sourceUrl: preferredMatchedText ? (matches[0]?.sourceUrl || fallbackSource.sourceUrl) : fallbackSource.sourceUrl,
-      sourceConfidence: preferredMatchedText
-        ? Number((Math.min(Number(matches[0].score) / 3, 1)).toFixed(2))
-        : fallbackSource.sourceConfidence
-    };
-  });
-
-  const extraEntries = buildAdditionalPageKnowledgeEntries(websitePages, baseEntries);
-  return [...baseEntries, ...extraEntries];
+  if (!candidates.length) return null;
+  const best = candidates[0];
+  return {
+    answer: best.answer,
+    sourceType: best.sourceType,
+    sourceUrl: best.sourceUrl,
+    sourceConfidence: best.sourceConfidence
+  };
 }
 
-function buildGuardrailQuestionTests({ profile, sources, defaults, knowledgeEntries, aiByQuestion }) {
-  const sectionByType = new Map((knowledgeEntries || []).map((entry) => [entry.sectionType, entry]));
-  const sectionTypeByTopic = {
-    warranty: "warranties_and_guarantees",
-    guarantees: "warranties_and_guarantees",
-    service_area: "service_area",
-    availability: "hours_and_availability",
-    financing: "financing_and_payment",
-    pricing: "pricing_and_fees"
-  };
-
+function buildGuardrailQuestionTests({ profile, sources, defaults, siteTopics, aiByQuestion }) {
   return (defaults || []).map((template) => {
     const aiMatch = aiByQuestion.get(normalizeText(template.questionText));
     if (aiMatch && isUsableGuardrailAnswer(aiMatch.answer, template.topic)) {
@@ -1423,14 +1293,14 @@ function buildGuardrailQuestionTests({ profile, sources, defaults, knowledgeEntr
       };
     }
 
-    const section = sectionByType.get(sectionTypeByTopic[template.topic]);
-    if (normalizeText(section?.contentText) && !looksLowQualityKnowledgeText(section.contentText)) {
+    const siteTopicFallback = findSiteTopicFallbackSummary(siteTopics, template.topic);
+    if (siteTopicFallback && isUsableGuardrailAnswer(siteTopicFallback.answer, template.topic)) {
       return {
         ...template,
-        answer: normalizeText(section.contentText),
-        sourceType: section.sourceType || null,
-        sourceUrl: section.sourceUrl || null,
-        sourceConfidence: toNumberOrNull(section.sourceConfidence)
+        answer: normalizeText(siteTopicFallback.answer),
+        sourceType: siteTopicFallback.sourceType || null,
+        sourceUrl: siteTopicFallback.sourceUrl || null,
+        sourceConfidence: toNumberOrNull(siteTopicFallback.sourceConfidence)
       };
     }
 
@@ -1442,32 +1312,6 @@ function buildGuardrailQuestionTests({ profile, sources, defaults, knowledgeEntr
         sourceUrl: null,
         sourceConfidence: 0.8
       };
-    }
-
-    if (template.topic === "service_area") {
-      const section = sectionByType.get("service_area");
-      if (normalizeText(section?.contentText)) {
-        return {
-          ...template,
-          answer: normalizeText(section.contentText),
-          sourceType: section.sourceType || null,
-          sourceUrl: section.sourceUrl || null,
-          sourceConfidence: toNumberOrNull(section.sourceConfidence)
-        };
-      }
-    }
-
-    if (template.topic === "availability") {
-      const section = sectionByType.get("hours_and_availability");
-      if (normalizeText(section?.contentText)) {
-        return {
-          ...template,
-          answer: normalizeText(section.contentText),
-          sourceType: section.sourceType || null,
-          sourceUrl: section.sourceUrl || null,
-          sourceConfidence: toNumberOrNull(section.sourceConfidence)
-        };
-      }
     }
 
     return template;
@@ -1742,36 +1586,28 @@ export default async function handler(req, res) {
       ].filter(Boolean).join(". ")
     };
 
-    const preliminaryKnowledgeEntries = buildKnowledgeEntries({
-      profile,
-      sources,
-      industryDefaults: industryDefaults.knowledgeEntries,
-      websitePages: websiteSources.pages
+    const siteTopics = await buildSiteTopics({
+      websitePages: websiteSources.pages,
+      businessName
     });
 
     const guardrailQuestionTests = buildGuardrailQuestionTests({
       profile,
       sources,
       defaults: industryDefaults.guardrailQuestionTests,
-      knowledgeEntries: preliminaryKnowledgeEntries,
+      siteTopics,
       aiByQuestion
     });
 
     const emergencyServices = inferEmergencyServices(
-      [profile.serviceText, ...preliminaryKnowledgeEntries.map((entry) => entry.contentText), ...guardrailQuestionTests.map((item) => item.answer)].join(". ")
+      [
+        profile.serviceText,
+        ...(siteTopics || []).map((topic) => topic.summaryObjective),
+        ...guardrailQuestionTests.map((item) => item.answer)
+      ].join(". ")
     );
     profile.emergencyServices = emergencyServices;
 
-    const knowledgeEntries = buildKnowledgeEntries({
-      profile,
-      sources,
-      industryDefaults: industryDefaults.knowledgeEntries,
-      websitePages: websiteSources.pages
-    });
-    const siteTopics = await buildSiteTopics({
-      websitePages: websiteSources.pages,
-      businessName
-    });
     const coverageChecklist = buildCoverageChecklist({
       siteTopics,
       guardrailQuestionTests
@@ -1806,7 +1642,6 @@ export default async function handler(req, res) {
         googleBusinessProfile,
         profile,
         provenance,
-        knowledgeEntries,
         guardrailQuestionTests,
         siteTopics,
         coverageChecklist

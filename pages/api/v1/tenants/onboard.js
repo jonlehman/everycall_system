@@ -7,7 +7,7 @@ import { normalizePhoneNumber } from "../../_lib/phone.js";
 import { createSession, getSession, setSessionCookie } from "../../_lib/auth.js";
 import { cleanupTenantByKey } from "../../_lib/tenantCleanup.js";
 import crypto from "crypto";
-import { createBlankGuardrailQuestionTests, createBlankKnowledgeEntries } from "../../../../lib/knowledgeTemplates.js";
+import { createBlankGuardrailQuestionTests } from "../../../../lib/knowledgeTemplates.js";
 
 function slugify(input) {
   return String(input || "")
@@ -34,27 +34,6 @@ function normalizeStringArray(value) {
     return [value.trim()];
   }
   return [];
-}
-
-function normalizeKnowledgeEntries(value) {
-  const seen = new Set();
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => ({
-      sectionType: String(item?.sectionType || "").trim() || "general",
-      title: String(item?.title || "").trim() || "General",
-      contentText: String(item?.contentText || item?.content || "").trim(),
-      sourceType: String(item?.sourceType || "").trim() || null,
-      sourceUrl: String(item?.sourceUrl || "").trim() || null,
-      sourceConfidence: Number.isFinite(Number(item?.sourceConfidence)) ? Number(item.sourceConfidence) : null
-    }))
-    .filter((item) => item.sectionType)
-    .filter((item) => {
-      const key = `${item.sectionType}::${item.title}`.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
 }
 
 function normalizeGuardrailQuestionTests(value) {
@@ -159,8 +138,6 @@ function parsePayload(body) {
     emergencyServices,
     servicesOffered,
     primaryGoals: primaryGoals.length ? primaryGoals : ["Capture missed-call leads"],
-    knowledgeEntriesProvided: Array.isArray(body.knowledgeEntries),
-    knowledgeEntries: normalizeKnowledgeEntries(body.knowledgeEntries),
     guardrailQuestionTestsProvided: Array.isArray(body.guardrailQuestionTests),
     guardrailQuestionTests: normalizeGuardrailQuestionTests(body.guardrailQuestionTests),
     siteTopicsProvided: Array.isArray(body.siteTopics),
@@ -270,58 +247,6 @@ function truncateText(value, limit = 400) {
   const text = String(value || "").trim();
   if (!text) return null;
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
-}
-
-function joinKnowledgeText(primary, secondary) {
-  const a = String(primary || "").trim();
-  const b = String(secondary || "").trim();
-  if (!a) return b;
-  if (!b) return a;
-  return `${a} ${b}`;
-}
-
-function buildKnowledgeEntriesFromDefaults(payload, defaults = []) {
-  const bySection = new Map((defaults || []).map((entry) => [String(entry.sectionType || ""), entry]));
-  const serviceSummary = [
-    payload.businessName ? `${payload.businessName} is a ${payload.industry} business.` : "",
-    payload.servicesOffered.length ? `Services include ${payload.servicesOffered.join(", ")}.` : ""
-  ].filter(Boolean).join(" ");
-
-  return createBlankKnowledgeEntries().map((template) => {
-    const base = bySection.get(template.sectionType) || template;
-    if (template.sectionType === "services_and_capabilities" && serviceSummary) {
-      return {
-        ...base,
-        contentText: joinKnowledgeText(serviceSummary, base.contentText),
-        sourceType: "intake_form"
-      };
-    }
-    if (template.sectionType === "service_area" && payload.serviceArea) {
-      return {
-        ...base,
-        contentText: payload.serviceArea,
-        sourceType: "intake_form"
-      };
-    }
-    if (template.sectionType === "hours_and_availability" && payload.businessHours) {
-      return {
-        ...base,
-        contentText: payload.businessHours,
-        sourceType: "intake_form"
-      };
-    }
-    if (template.sectionType === "emergency_service" && payload.emergencyServices) {
-      return {
-        ...base,
-        contentText: joinKnowledgeText(
-          "Emergency or after-hours service may be offered. Exact availability should be confirmed before promising dispatch timing.",
-          base.contentText
-        ),
-        sourceType: "intake_form"
-      };
-    }
-    return base;
-  });
 }
 
 function buildGuardrailQuestionTestsFromDefaults(payload, defaults = []) {
@@ -570,30 +495,9 @@ export default async function handler(req, res) {
         [tenantKey, agentName, payload.businessName, prompt, prompt, greetingText, voiceType]
       );
 
-      const industryDefaults = (!payload.knowledgeEntriesProvided || !payload.guardrailQuestionTestsProvided)
+      const industryDefaults = !payload.guardrailQuestionTestsProvided
         ? await loadIndustryKnowledgeDefaults(client, industry)
-        : { knowledgeEntries: [], guardrailQuestionTests: [] };
-
-      const knowledgeEntries = payload.knowledgeEntriesProvided
-        ? payload.knowledgeEntries
-        : buildKnowledgeEntriesFromDefaults(payload, industryDefaults.knowledgeEntries);
-      for (const entry of knowledgeEntries) {
-        await client.query(
-          `INSERT INTO knowledge_entries (tenant_key, entry_type, section_type, title, content_text, source_url, compilation_status, metadata_json, created_by_type)
-           VALUES ($1, 'intake_review', $2, $3, $4, $5, 'compiled', $6::jsonb, 'tenant')`,
-          [
-            tenantKey,
-            entry.sectionType,
-            entry.title,
-            entry.contentText || "",
-            entry.sourceUrl || null,
-            JSON.stringify({
-              sourceType: entry.sourceType || null,
-              sourceConfidence: entry.sourceConfidence ?? null
-            })
-          ]
-        );
-      }
+        : { guardrailQuestionTests: [] };
 
       const guardrailQuestionTests = payload.guardrailQuestionTestsProvided
         ? payload.guardrailQuestionTests
