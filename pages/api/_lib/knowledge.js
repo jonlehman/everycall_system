@@ -80,6 +80,10 @@ const COVERAGE_CHECKLIST_TEMPLATES = [
   { checkKey: "guarantees", title: "Guarantees and promises", keywords: ["guarantee", "satisfaction", "make it right"], guardrailTopics: ["guarantees"] }
 ];
 
+const ALLOWED_RUNTIME_TOPICS = ["warranty", "guarantees", "emergency_service", "service_area", "availability", "financing", "pricing", "services", "policies", "general"];
+const ALLOWED_SERVICE_TAGS = SERVICE_TAG_PATTERNS.map(([tag]) => tag);
+const AI_RUNTIME_COMPILE_CHUNK_SIZE = 24;
+
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -235,6 +239,36 @@ function splitIntoClaims(text) {
   }
 
   return unique.length ? unique : [raw];
+}
+
+function safeJsonParse(value) {
+  try {
+    return JSON.parse(String(value || ""));
+  } catch {
+    return null;
+  }
+}
+
+function extractJsonObject(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  const direct = safeJsonParse(raw);
+  if (direct && typeof direct === "object") return direct;
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    return safeJsonParse(raw.slice(start, end + 1));
+  }
+  return null;
+}
+
+function chunkArray(items, size) {
+  const normalizedSize = Math.max(1, Number(size) || 1);
+  const chunks = [];
+  for (let index = 0; index < (items || []).length; index += normalizedSize) {
+    chunks.push(items.slice(index, index + normalizedSize));
+  }
+  return chunks;
 }
 
 function isUsableGuardrailAnswer(answer, topic) {
@@ -584,6 +618,178 @@ async function linkCardFact(db, cardId, factId, factRank, required = false) {
   );
 }
 
+function buildCompileSourceItems(siteTopics, knowledgeEntries) {
+  const topicItems = selectSiteTopicCompileRows(siteTopics).map((item, index) => ({
+    sourceRef: `site_topic:${item.id || item.topicKey || slugify(item.topicPath) || index + 1}`,
+    sourceKind: "site_topic",
+    cardKey: `site_topic:${item.topicKey || slugify(item.topicPath) || index + 1}`,
+    title: item.displayTitle || item.topicPath,
+    summaryText: item.summaryObjective,
+    contextText: `${item.topicPath} ${item.displayTitle} ${item.summaryObjective}`,
+    topicPath: item.topicPath,
+    topicType: item.topicType,
+    sourceUrl: item.sourceUrl,
+    sourceConfidence: item.sourceConfidence ?? 0.8,
+    riskLevel: item.riskLevel || "normal",
+    knowledgeEntryId: null,
+    metadata: {
+      compiledFrom: "site_topic",
+      siteTopicId: item.id,
+      topicPath: item.topicPath,
+      topicType: item.topicType
+    }
+  }));
+
+  const entryItems = (knowledgeEntries || []).map((entry, index) => ({
+    sourceRef: `knowledge_entry:${entry.id || `${entry.sectionType}:${index + 1}`}`,
+    sourceKind: "knowledge_entry",
+    cardKey: `entry:${entry.sectionType}:${entry.id || index + 1}`,
+    title: entry.title || entry.sectionType,
+    summaryText: entry.contentText,
+    contextText: `${entry.sectionType} ${entry.title} ${entry.contentText}`,
+    sectionType: entry.sectionType,
+    sourceUrl: entry.sourceUrl,
+    sourceConfidence: entry.sourceConfidence ?? (entry.sourceType ? 0.9 : 1),
+    riskLevel: inferRiskLevel(inferTopic(entry.sectionType)),
+    sourceType: entry.sourceType || "manual_business_provided",
+    knowledgeEntryId: entry.id ? Number(entry.id) : null,
+    metadata: {
+      compiledFrom: "knowledge_entry",
+      knowledgeEntryId: entry.id || null,
+      sectionType: entry.sectionType
+    }
+  }));
+
+  return [...topicItems, ...entryItems];
+}
+
+async function requestAiRuntimeCompile({ trade, sourceItems }) {
+  const apiKey = process.env.OPENAI_API_KEY || "";
+  if (!apiKey || !(sourceItems || []).length) return null;
+
+  const instruction = [
+    "You compile tenant authoring knowledge into runtime retrieval cards and facts for a phone AI assistant.",
+    `Allowed topic values: ${ALLOWED_RUNTIME_TOPICS.join(", ")}.`,
+    `Allowed serviceTags values: ${ALLOWED_SERVICE_TAGS.join(", ")}.`,
+    "For each input source item, return exactly one runtime card using the same sourceRef.",
+    "Use objective summaries, not marketing language.",
+    "Facts must be grounded only in the provided source item summary/context.",
+    "Do not invent details, coverage, pricing, guarantees, or policies.",
+    "Keep summaries concise and useful for retrieval.",
+    "Each card should contain 1 to 5 facts when possible.",
+    "If serviceTags are not clear, return an empty array.",
+    "Return strict JSON with shape:",
+    '{"items":[{"sourceRef":"...","title":"...","topic":"general","serviceTags":["..."],"summary":"...","usageNotes":"...","riskLevel":"critical|high|normal","facts":[{"claim":"...","evidenceText":"...","sourceUrl":"https://...|null","confidence":0.0,"riskLevel":"critical|high|normal"}]}]}'
+  ].join("\n");
+
+  try {
+    const resp = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_KNOWLEDGE_COMPILE_MODEL || process.env.OPENAI_ENRICH_MODEL || "gpt-4.1-mini",
+        input: [
+          { role: "system", content: instruction },
+          {
+            role: "user",
+            content: JSON.stringify({
+              trade,
+              sourceItems: (sourceItems || []).map((item) => ({
+                sourceRef: item.sourceRef,
+                sourceKind: item.sourceKind,
+                title: item.title,
+                summaryText: item.summaryText,
+                contextText: item.contextText,
+                topicPath: item.topicPath || null,
+                sectionType: item.sectionType || null,
+                sourceUrl: item.sourceUrl || null,
+                sourceConfidence: item.sourceConfidence ?? null,
+                riskLevel: item.riskLevel || "normal"
+              }))
+            })
+          }
+        ]
+      })
+    });
+
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    const outputText =
+      json.output_text ||
+      json.output
+        ?.flatMap((item) => item.content || [])
+        .find((item) => item.type === "output_text" && typeof item.text === "string")
+        ?.text || "";
+    const parsed = extractJsonObject(outputText);
+    if (!parsed || !Array.isArray(parsed.items)) return null;
+    return parsed.items;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeAiRuntimeCards(rawItems, sourceItemMap, trade) {
+  const normalized = [];
+  const seenRefs = new Set();
+
+  for (const raw of Array.isArray(rawItems) ? rawItems : []) {
+    const sourceRef = normalizeText(raw?.sourceRef);
+    const sourceItem = sourceItemMap.get(sourceRef);
+    if (!sourceItem || seenRefs.has(sourceRef)) continue;
+    seenRefs.add(sourceRef);
+
+    const aiTopic = normalizeText(raw?.topic).toLowerCase();
+    const topic = ALLOWED_RUNTIME_TOPICS.includes(aiTopic)
+      ? aiTopic
+      : inferTopicFromFreeformText(`${sourceItem.contextText} ${raw?.summary || ""}`);
+    const serviceTags = uniqueValues(
+      Array.isArray(raw?.serviceTags)
+        ? raw.serviceTags.map((item) => normalizeText(item)).filter((item) => ALLOWED_SERVICE_TAGS.includes(item))
+        : []
+    );
+    const mergedServiceTags = uniqueValues([
+      ...serviceTags,
+      ...extractServiceTags(`${sourceItem.contextText} ${raw?.summary || ""}`)
+    ]);
+    const riskLevel = ["critical", "high", "normal"].includes(normalizeText(raw?.riskLevel).toLowerCase())
+      ? normalizeText(raw.riskLevel).toLowerCase()
+      : inferRiskLevel(topic, sourceItem.riskLevel);
+    const facts = Array.isArray(raw?.facts)
+      ? raw.facts
+          .map((fact) => ({
+            claim: normalizeText(fact?.claim),
+            evidenceText: normalizeText(fact?.evidenceText || sourceItem.summaryText),
+            sourceUrl: normalizeText(fact?.sourceUrl || sourceItem.sourceUrl) || null,
+            confidence: toNumberOrNull(fact?.confidence) ?? sourceItem.sourceConfidence ?? 0.8,
+            riskLevel: ["critical", "high", "normal"].includes(normalizeText(fact?.riskLevel).toLowerCase())
+              ? normalizeText(fact.riskLevel).toLowerCase()
+              : riskLevel
+          }))
+          .filter((fact) => fact.claim)
+          .slice(0, 5)
+      : [];
+
+    normalized.push({
+      sourceRef,
+      sourceItem,
+      cardKey: sourceItem.cardKey,
+      title: normalizeText(raw?.title) || sourceItem.title,
+      topic,
+      trade: normalizeText(trade) || null,
+      serviceTags: mergedServiceTags,
+      summary: truncateText(normalizeText(raw?.summary) || sourceItem.summaryText),
+      usageNotes: normalizeText(raw?.usageNotes) || "Use when the caller asks about this tenant-specific topic. Stay grounded in the compiled facts.",
+      riskLevel,
+      facts
+    });
+  }
+
+  return normalized;
+}
+
 function inferTopicFromFreeformText(text) {
   const haystack = normalizeText(text).toLowerCase();
   if (!haystack) return "general";
@@ -679,6 +885,116 @@ async function replaceCoverageChecklist(db, tenantKey, siteTopics, guardrailQues
   }
 }
 
+async function insertCompiledRuntimeCard(db, tenantKey, compiled) {
+  const cardId = await insertCompiledCard(db, tenantKey, {
+    cardKey: compiled.cardKey,
+    topic: compiled.topic,
+    trade: compiled.trade,
+    serviceTags: compiled.serviceTags,
+    title: compiled.title,
+    summary: compiled.summary,
+    usageNotes: compiled.usageNotes,
+    metadata: {
+      ...(compiled.sourceItem?.metadata || {}),
+      compiledFrom: compiled.sourceItem?.sourceKind || compiled.sourceItem?.metadata?.compiledFrom || "unknown",
+      sourceRef: compiled.sourceRef,
+      aiCompiled: true
+    }
+  });
+
+  let factCount = 0;
+  for (let factIndex = 0; factIndex < compiled.facts.length; factIndex += 1) {
+    const fact = compiled.facts[factIndex];
+    const factId = await insertCompiledFact(db, tenantKey, {
+      knowledgeEntryId: compiled.sourceItem?.knowledgeEntryId ?? null,
+      reviewStatus: "reviewed",
+      sourceType: compiled.sourceItem?.sourceType || compiled.sourceItem?.sourceKind || "ai_compiled_knowledge",
+      topic: compiled.topic,
+      trade: compiled.trade,
+      serviceTags: compiled.serviceTags,
+      claim: fact.claim,
+      evidenceText: fact.evidenceText || compiled.sourceItem?.summaryText || compiled.summary,
+      sourceUrl: fact.sourceUrl || compiled.sourceItem?.sourceUrl || null,
+      confidence: fact.confidence,
+      riskLevel: fact.riskLevel || compiled.riskLevel,
+      metadata: {
+        ...(compiled.sourceItem?.metadata || {}),
+        sourceRef: compiled.sourceRef,
+        compiledFrom: compiled.sourceItem?.sourceKind || compiled.sourceItem?.metadata?.compiledFrom || "unknown",
+        aiCompiled: true
+      }
+    });
+    factCount += 1;
+    await linkCardFact(db, cardId, factId, factIndex, factIndex === 0);
+  }
+
+  return { cardId, factCount };
+}
+
+async function insertDeterministicCompiledSourceItem(db, tenantKey, sourceItem, trade) {
+  const topic = sourceItem.sourceKind === "knowledge_entry"
+    ? inferTopic(sourceItem.sectionType)
+    : inferTopicFromFreeformText(sourceItem.contextText);
+  const riskLevel = inferRiskLevel(topic, sourceItem.riskLevel);
+  const serviceTags = extractServiceTags(sourceItem.contextText);
+  const cardId = await insertCompiledCard(db, tenantKey, {
+    cardKey: sourceItem.cardKey,
+    topic,
+    trade,
+    serviceTags,
+    title: sourceItem.title,
+    summary: truncateText(sourceItem.summaryText),
+    usageNotes: sourceItem.sourceKind === "knowledge_entry"
+      ? "Use when the caller is asking about tenant-specific business details in this section."
+      : "Use when the caller asks about this site-derived topic. Prefer this grounded summary over marketing phrasing.",
+    metadata: {
+      ...(sourceItem.metadata || {}),
+      sourceRef: sourceItem.sourceRef,
+      aiCompiled: false
+    }
+  });
+
+  const claims = splitIntoClaims(sourceItem.summaryText);
+  let factCount = 0;
+  for (let claimIndex = 0; claimIndex < claims.length; claimIndex += 1) {
+    const claim = claims[claimIndex];
+    const factId = await insertCompiledFact(db, tenantKey, {
+      knowledgeEntryId: sourceItem.knowledgeEntryId ?? null,
+      reviewStatus: "reviewed",
+      sourceType: sourceItem.sourceType || `${sourceItem.sourceKind}_compiled`,
+      topic,
+      trade,
+      serviceTags,
+      claim,
+      evidenceText: sourceItem.summaryText,
+      sourceUrl: sourceItem.sourceUrl,
+      confidence: sourceItem.sourceConfidence ?? 0.8,
+      riskLevel,
+      metadata: {
+        ...(sourceItem.metadata || {}),
+        sourceRef: sourceItem.sourceRef,
+        aiCompiled: false
+      }
+    });
+    factCount += 1;
+    await linkCardFact(db, cardId, factId, claimIndex, claimIndex === 0);
+  }
+
+  if (sourceItem.sourceKind === "knowledge_entry" && sourceItem.knowledgeEntryId) {
+    await db.query(
+      `UPDATE knowledge_entries
+       SET compilation_status = 'compiled',
+           last_compiled_at = NOW(),
+           updated_at = NOW()
+       WHERE tenant_key = $1
+         AND id = $2`,
+      [tenantKey, Number(sourceItem.knowledgeEntryId)]
+    );
+  }
+
+  return { cardId, factCount };
+}
+
 export async function compileTenantKnowledge(db, tenantKey) {
   const tenantRes = await db.query(
     `SELECT industry
@@ -710,114 +1026,39 @@ export async function compileTenantKnowledge(db, tenantKey) {
 
   let runtimeCardCount = 0;
   let runtimeFactCount = 0;
-  let compiledTopicCount = 0;
+  const compiledTopicCount = selectSiteTopicCompileRows(siteTopics).length;
+  const compileSourceItems = buildCompileSourceItems(siteTopics, knowledgeEntries);
+  const sourceItemMap = new Map(compileSourceItems.map((item) => [item.sourceRef, item]));
+  const aiCompiledRefs = new Set();
 
-  const compiledSiteTopics = selectSiteTopicCompileRows(siteTopics);
-  for (let index = 0; index < compiledSiteTopics.length; index += 1) {
-    const item = compiledSiteTopics[index];
-    const topicText = `${item.topicPath} ${item.displayTitle} ${item.summaryObjective}`;
-    const topic = inferTopicFromFreeformText(topicText);
-    const riskLevel = inferRiskLevel(topic, item.riskLevel);
-    const serviceTags = extractServiceTags(topicText);
-    const cardId = await insertCompiledCard(db, tenantKey, {
-      cardKey: `site_topic:${item.topicKey || slugify(item.topicPath) || index + 1}`,
-      topic,
-      trade,
-      serviceTags,
-      title: item.displayTitle || item.topicPath,
-      summary: truncateText(item.summaryObjective),
-      usageNotes: "Use when the caller asks about this site-derived topic. Prefer this grounded summary over marketing phrasing.",
-      metadata: {
-        compiledFrom: "site_topic",
-        siteTopicId: item.id,
-        topicPath: item.topicPath,
-        topicType: item.topicType
+  for (const chunk of chunkArray(compileSourceItems, AI_RUNTIME_COMPILE_CHUNK_SIZE)) {
+    const aiItems = await requestAiRuntimeCompile({ trade, sourceItems: chunk });
+    const normalizedCards = normalizeAiRuntimeCards(aiItems, sourceItemMap, trade);
+    for (const compiled of normalizedCards) {
+      if (!compiled.facts.length) continue;
+      aiCompiledRefs.add(compiled.sourceRef);
+      const inserted = await insertCompiledRuntimeCard(db, tenantKey, compiled);
+      runtimeCardCount += 1;
+      runtimeFactCount += inserted.factCount;
+      if (compiled.sourceItem?.sourceKind === "knowledge_entry" && compiled.sourceItem?.knowledgeEntryId) {
+        await db.query(
+          `UPDATE knowledge_entries
+           SET compilation_status = 'compiled',
+               last_compiled_at = NOW(),
+               updated_at = NOW()
+           WHERE tenant_key = $1
+             AND id = $2`,
+          [tenantKey, Number(compiled.sourceItem.knowledgeEntryId)]
+        );
       }
-    });
-    runtimeCardCount += 1;
-    compiledTopicCount += 1;
-
-    const claims = splitIntoClaims(item.summaryObjective);
-    for (let claimIndex = 0; claimIndex < claims.length; claimIndex += 1) {
-      const claim = claims[claimIndex];
-      const factId = await insertCompiledFact(db, tenantKey, {
-        knowledgeEntryId: null,
-        reviewStatus: "reviewed",
-        sourceType: "site_topic_compiled",
-        topic,
-        trade,
-        serviceTags,
-        claim,
-        evidenceText: item.summaryObjective,
-        sourceUrl: item.sourceUrl,
-        confidence: item.sourceConfidence ?? 0.8,
-        riskLevel,
-        metadata: {
-          compiledFrom: "site_topic",
-          siteTopicId: item.id,
-          topicPath: item.topicPath
-        }
-      });
-      runtimeFactCount += 1;
-      await linkCardFact(db, cardId, factId, claimIndex, claimIndex === 0);
     }
   }
 
-  for (let index = 0; index < knowledgeEntries.length; index += 1) {
-    const entry = knowledgeEntries[index];
-    const topic = inferTopic(entry.sectionType);
-    const riskLevel = inferRiskLevel(topic);
-    const serviceTags = extractServiceTags(`${entry.title} ${entry.contentText}`);
-    const cardId = await insertCompiledCard(db, tenantKey, {
-      cardKey: `entry:${entry.sectionType}:${entry.id || index + 1}`,
-      topic,
-      trade,
-      serviceTags,
-      title: entry.title || entry.sectionType,
-      summary: truncateText(entry.contentText),
-      usageNotes: "Use when the caller is asking about tenant-specific business details in this section.",
-      metadata: {
-        compiledFrom: "knowledge_entry",
-        knowledgeEntryId: entry.id
-      }
-    });
+  for (const sourceItem of compileSourceItems) {
+    if (aiCompiledRefs.has(sourceItem.sourceRef)) continue;
+    const inserted = await insertDeterministicCompiledSourceItem(db, tenantKey, sourceItem, trade);
     runtimeCardCount += 1;
-
-    const claims = splitIntoClaims(entry.contentText);
-    for (let claimIndex = 0; claimIndex < claims.length; claimIndex += 1) {
-      const claim = claims[claimIndex];
-      const factId = await insertCompiledFact(db, tenantKey, {
-        knowledgeEntryId: entry.id ? Number(entry.id) : null,
-        reviewStatus: "reviewed",
-        sourceType: entry.sourceType || "manual_business_provided",
-        topic,
-        trade,
-        serviceTags,
-        claim,
-        evidenceText: entry.contentText,
-        sourceUrl: entry.sourceUrl,
-        confidence: entry.sourceConfidence ?? (entry.sourceType ? 0.9 : 1),
-        riskLevel,
-        metadata: {
-          compiledFrom: "knowledge_entry",
-          sectionType: entry.sectionType
-        }
-      });
-      runtimeFactCount += 1;
-      await linkCardFact(db, cardId, factId, claimIndex, claimIndex === 0);
-    }
-
-    if (entry.id) {
-      await db.query(
-        `UPDATE knowledge_entries
-         SET compilation_status = 'compiled',
-             last_compiled_at = NOW(),
-             updated_at = NOW()
-         WHERE tenant_key = $1
-           AND id = $2`,
-        [tenantKey, Number(entry.id)]
-      );
-    }
+    runtimeFactCount += inserted.factCount;
   }
 
   for (let index = 0; index < guardrailQuestionTests.length; index += 1) {
