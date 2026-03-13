@@ -47,6 +47,8 @@ type PromptPayload = {
       usage_notes?: string | null;
       facts?: Array<{
         id?: string;
+        topic?: string | null;
+        trade?: string | null;
         claim: string;
         evidence_text?: string | null;
         source_url?: string | null;
@@ -66,7 +68,7 @@ type PromptPayload = {
       confidence?: number | null;
       risk_level?: string;
     }>;
-    guardrails: Array<{ id?: string; rule_type: string; topic?: string | null; severity?: string; instruction: string; service_tags?: string[] }>;
+    guardrails: Array<{ id?: string; rule_type: string; topic?: string | null; trade?: string | null; severity?: string; instruction: string; service_tags?: string[] }>;
     overrides: Array<{ id?: string; topic?: string | null; trade?: string | null; trigger_text?: string | null; preferred_answer: string; service_tags?: string[] }>;
     usage_instructions: string[];
   };
@@ -667,59 +669,213 @@ async function fetchPromptPayload(tenantKey: string, callSid: string, to: string
   return validatePromptPayload(body);
 }
 
+const LOOKUP_STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "for", "to", "of", "in", "on", "at", "with", "about", "your", "you", "we", "our",
+  "is", "are", "do", "does", "did", "can", "could", "would", "should", "what", "when", "where", "how", "why"
+]);
+
+const LOOKUP_TOPIC_KEYWORDS: Record<string, string[]> = {
+  warranty: ["warranty", "coverage", "covered", "forever warranty", "lifetime", "guarantee"],
+  guarantees: ["guarantee", "guaranteed", "satisfaction guarantee", "make it right"],
+  emergency_service: ["emergency", "urgent", "24/7", "after hours", "after-hours", "same day", "same-day"],
+  service_area: ["service area", "areas you serve", "areas you cover", "coverage area", "service territory", "serve"],
+  availability: ["hours", "availability", "open", "weekend", "after hours", "same day", "schedule"],
+  financing: ["financing", "payment plan", "payment plans", "monthly payment", "credit"],
+  pricing: ["fee", "fees", "price", "pricing", "estimate", "diagnostic", "cost"],
+  services: ["repair", "replace", "install", "service", "services", "fix", "handle"],
+  policies: ["policy", "process", "cancel", "reschedule", "insurance", "claim"]
+};
+
+const LOOKUP_SERVICE_TAG_PATTERNS: Array<[string, RegExp]> = [
+  ["water_heater", /\bwater heater|tankless\b/i],
+  ["drain_cleaning", /\bdrain|clog|hydro jet\b/i],
+  ["sewer", /\bsewer|septic\b/i],
+  ["leak_detection", /\bleak\b/i],
+  ["fixture_installation", /\bfixture|faucet|toilet|sink\b/i],
+  ["emergency_service", /\bemergency|after[- ]hours|urgent\b/i],
+  ["electrical_panel", /\bpanel|breaker|rewire\b/i],
+  ["generator", /\bgenerator\b/i],
+  ["hvac", /\bfurnace|heat pump|air conditioner|ac repair|mini split|hvac\b/i],
+  ["garage_door", /\bgarage door|opener|spring\b/i],
+  ["insurance", /\binsurance|claim\b/i],
+  ["financing", /\bfinancing|payment plan|credit\b/i],
+  ["warranty", /\bwarranty|guarantee|satisfaction\b/i],
+  ["service_area", /\bservice area|serve|coverage\b/i]
+];
+
+function normalizeLookupText(value: unknown) {
+  return String(value || "").trim();
+}
+
+function uniqueLookupValues(values: string[]) {
+  return Array.from(new Set(values.map((value) => normalizeLookupText(value)).filter(Boolean)));
+}
+
 function tokenizeLookupText(text: string) {
-  return Array.from(
-    new Set(
-      String(text || "")
-        .toLowerCase()
-        .split(/[^a-z0-9]+/)
-        .filter((token) => token.length > 2)
-    )
+  return uniqueLookupValues(
+    String(text || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]+/g, " ")
+      .split(/\s+/)
+      .filter((token) => token.length >= 2 && !LOOKUP_STOPWORDS.has(token))
   );
 }
 
-function scoreLookupText(query: string, haystack: string) {
-  const normalizedQuery = String(query || "").trim().toLowerCase();
-  const normalizedHaystack = String(haystack || "").trim().toLowerCase();
-  if (!normalizedQuery || !normalizedHaystack) return 0;
-  const queryTokens = tokenizeLookupText(normalizedQuery);
-  let score = normalizedHaystack.includes(normalizedQuery)
-    ? Math.max(3, queryTokens.length + 2)
-    : 0;
-  for (const token of queryTokens) {
+function extractLookupServiceTags(text: string) {
+  const haystack = normalizeLookupText(text);
+  if (!haystack) return [];
+  return LOOKUP_SERVICE_TAG_PATTERNS.filter(([, pattern]) => pattern.test(haystack)).map(([tag]) => tag);
+}
+
+function inferLookupTopics(query: string, explicitTopic?: string | null) {
+  const topics = new Set<string>();
+  if (normalizeLookupText(explicitTopic)) {
+    topics.add(normalizeLookupText(explicitTopic));
+  }
+  const lower = normalizeLookupText(query).toLowerCase();
+  for (const [topic, keywords] of Object.entries(LOOKUP_TOPIC_KEYWORDS)) {
+    if (keywords.some((keyword) => lower.includes(keyword.toLowerCase()))) {
+      topics.add(topic);
+    }
+  }
+  return topics.size ? Array.from(topics) : ["general"];
+}
+
+function buildLookupContext(query: string, topic?: string | null, serviceTags?: string[], tradeHint?: string | null) {
+  const normalizedQuery = normalizeLookupText(query);
+  return {
+    query: normalizedQuery,
+    tokens: tokenizeLookupText(normalizedQuery),
+    topicHints: uniqueLookupValues(inferLookupTopics(normalizedQuery, topic)),
+    serviceTags: uniqueLookupValues([...(serviceTags || []), ...extractLookupServiceTags(normalizedQuery)]),
+    tradeHint: normalizeLookupText(tradeHint) || null
+  };
+}
+
+function scoreLookupText(context: ReturnType<typeof buildLookupContext>, haystack: string) {
+  const normalizedHaystack = normalizeLookupText(haystack).toLowerCase();
+  if (!context.query || !normalizedHaystack) return 0;
+  let score = normalizedHaystack.includes(context.query.toLowerCase()) ? 12 : 0;
+  for (const token of context.tokens) {
     if (normalizedHaystack.includes(token)) {
-      score += 1;
+      score += token.length >= 5 ? 2 : 1;
     }
   }
   return score;
 }
 
-function buildKnowledgeMatches(knowledge: PromptPayload["tenant_knowledge"], query: string) {
-  const matches = [
-    ...(knowledge.cards || []).map((card, index) => ({
-      id: card.id || `knowledge_card_${index + 1}`,
-      artifactType: "knowledge_card",
-      title: card.title,
-      topic: card.topic || null,
-      content: card.summary || (card.facts || []).map((fact) => fact.claim).join(" "),
-      sourceUrl: (card.facts || []).find((fact) => typeof fact.source_url === "string" && fact.source_url)?.source_url || null,
-      score: scoreLookupText(
-        query,
-        `${card.title} ${card.topic || ""} ${card.trade || ""} ${card.summary || ""} ${(card.service_tags || []).join(" ")} ${(card.facts || []).map((fact) => `${fact.claim} ${fact.evidence_text || ""}`).join(" ")}`
-      )
-    })),
-    ...(knowledge.facts || []).map((fact, index) => ({
-      id: fact.id || `knowledge_fact_${index + 1}`,
-      artifactType: "knowledge_fact",
-      title: fact.claim,
-      topic: fact.topic || null,
-      content: fact.claim,
-      riskLevel: fact.risk_level || "normal",
-      sourceUrl: fact.source_url || null,
-      score: scoreLookupText(query, `${fact.claim} ${fact.evidence_text || ""} ${fact.topic || ""} ${(fact.service_tags || []).join(" ")}`)
-    }))
-  ]
+function scoreLookupTopicAndTags(
+  context: ReturnType<typeof buildLookupContext>,
+  topic: string | null | undefined,
+  serviceTags: string[] | undefined,
+  trade: string | null | undefined
+) {
+  let score = 0;
+  const normalizedTopic = normalizeLookupText(topic).toLowerCase();
+  if (normalizedTopic && context.topicHints.map((item) => item.toLowerCase()).includes(normalizedTopic)) {
+    score += 8;
+  }
+  for (const tag of serviceTags || []) {
+    if (context.serviceTags.map((item) => item.toLowerCase()).includes(String(tag).toLowerCase())) {
+      score += 5;
+    }
+  }
+  if (context.tradeHint && normalizeLookupText(trade).toLowerCase() === normalizeLookupText(context.tradeHint).toLowerCase()) {
+    score += 3;
+  }
+  return score;
+}
+
+function scoreKnowledgeCard(context: ReturnType<typeof buildLookupContext>, card: PromptPayload["tenant_knowledge"]["cards"][number]) {
+  const facts = Array.isArray(card.facts) ? card.facts : [];
+  const factScores = facts.map((fact) => {
+    const score = scoreLookupText(context, `${fact.claim} ${fact.evidence_text || ""}`)
+      + scoreLookupTopicAndTags(context, fact.topic, fact.service_tags || [], card.trade);
+    return { fact, score: score + (Number(fact.confidence) || 0) };
+  });
+  const cardScore = scoreLookupText(
+    context,
+    `${card.title} ${card.topic || ""} ${card.trade || ""} ${card.summary || ""} ${card.usage_notes || ""}`
+  ) + scoreLookupTopicAndTags(context, card.topic, card.service_tags || [], card.trade);
+
+  const topFacts = factScores
     .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+
+  return {
+    score: cardScore + topFacts.reduce((sum, item) => sum + item.score, 0),
+    topFacts
+  };
+}
+
+function scoreKnowledgeFact(context: ReturnType<typeof buildLookupContext>, fact: PromptPayload["tenant_knowledge"]["facts"][number]) {
+  return scoreLookupText(context, `${fact.claim} ${fact.evidence_text || ""}`)
+    + scoreLookupTopicAndTags(context, fact.topic, fact.service_tags || [], fact.trade)
+    + (Number(fact.confidence) || 0);
+}
+
+function scoreKnowledgeOverride(context: ReturnType<typeof buildLookupContext>, item: PromptPayload["tenant_knowledge"]["overrides"][number]) {
+  return scoreLookupText(context, `${item.trigger_text || ""} ${item.preferred_answer || ""}`)
+    + scoreLookupTopicAndTags(context, item.topic, item.service_tags || [], item.trade);
+}
+
+function scoreKnowledgeGuardrail(context: ReturnType<typeof buildLookupContext>, item: PromptPayload["tenant_knowledge"]["guardrails"][number]) {
+  return scoreLookupText(context, `${item.rule_type || ""} ${item.instruction || ""}`)
+    + scoreLookupTopicAndTags(context, item.topic, item.service_tags || [], item.trade);
+}
+
+function buildKnowledgeMatches(
+  knowledge: PromptPayload["tenant_knowledge"],
+  request: { query: string; topic?: string | null; serviceTags?: string[]; tradeHint?: string | null }
+) {
+  const context = buildLookupContext(request.query, request.topic, request.serviceTags, request.tradeHint);
+  const cards = (knowledge.cards || [])
+    .map((card, index) => {
+      const scoring = scoreKnowledgeCard(context, card);
+      return {
+        id: card.id || `knowledge_card_${index + 1}`,
+        card_key: card.card_key || null,
+        topic: card.topic || null,
+        trade: card.trade || null,
+        title: card.title,
+        summary: card.summary || "",
+        usage_notes: card.usage_notes || null,
+        service_tags: card.service_tags || [],
+        source_url: scoring.topFacts.find((item) => item.fact.source_url)?.fact.source_url || null,
+        facts: scoring.topFacts.map((item) => ({
+          id: item.fact.id || null,
+          claim: item.fact.claim,
+          evidence_text: item.fact.evidence_text || null,
+          source_url: item.fact.source_url || null,
+          confidence: item.fact.confidence ?? null,
+          risk_level: item.fact.risk_level || "normal",
+          service_tags: item.fact.service_tags || [],
+          score: Number(item.score.toFixed(2))
+        })),
+        score: Number(scoring.score.toFixed(2))
+      };
+    })
+    .filter((card) => card.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4);
+
+  const cardFactIds = new Set(cards.flatMap((card) => card.facts.map((fact) => fact.id).filter(Boolean)));
+
+  const facts = (knowledge.facts || [])
+    .map((fact, index) => ({
+      id: fact.id || `knowledge_fact_${index + 1}`,
+      topic: fact.topic || null,
+      trade: fact.trade || null,
+      service_tags: fact.service_tags || [],
+      claim: fact.claim,
+      evidence_text: fact.evidence_text || null,
+      source_url: fact.source_url || null,
+      confidence: fact.confidence ?? null,
+      risk_level: fact.risk_level || "normal",
+      score: Number(scoreKnowledgeFact(context, fact).toFixed(2))
+    }))
+    .filter((fact) => fact.score > 0 && !cardFactIds.has(fact.id))
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
 
@@ -727,35 +883,63 @@ function buildKnowledgeMatches(knowledge: PromptPayload["tenant_knowledge"], que
     .map((item, index) => ({
       id: item.id || `knowledge_override_${index + 1}`,
       topic: item.topic || null,
-      triggerText: item.trigger_text || null,
-      preferredAnswer: item.preferred_answer,
-      score: scoreLookupText(query, `${item.topic || ""} ${item.trigger_text || ""} ${item.preferred_answer} ${(item.service_tags || []).join(" ")}`)
+      trade: item.trade || null,
+      service_tags: item.service_tags || [],
+      trigger_text: item.trigger_text || null,
+      preferred_answer: item.preferred_answer,
+      score: Number(scoreKnowledgeOverride(context, item).toFixed(2))
     }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 3);
 
-  const guardrails = (knowledge.guardrails || [])
+  const scoredGuardrails = (knowledge.guardrails || [])
     .map((item, index) => ({
       id: item.id || `knowledge_guardrail_${index + 1}`,
-      ruleType: item.rule_type,
+      rule_type: item.rule_type,
       topic: item.topic || null,
+      trade: item.trade || null,
       severity: item.severity || "high",
       instruction: item.instruction,
-      score: scoreLookupText(query, `${item.rule_type} ${item.topic || ""} ${item.instruction} ${(item.service_tags || []).join(" ")}`)
+      service_tags: item.service_tags || [],
+      score: Number(scoreKnowledgeGuardrail(context, item).toFixed(2))
     }))
-    .filter((item) => item.score > 0);
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  const guardrails = scoredGuardrails.length
+    ? scoredGuardrails
+    : (knowledge.guardrails || []).slice(0, 3).map((item, index) => ({
+        id: item.id || `knowledge_guardrail_${index + 1}`,
+        rule_type: item.rule_type,
+        topic: item.topic || null,
+        trade: item.trade || null,
+        severity: item.severity || "high",
+        instruction: item.instruction,
+        service_tags: item.service_tags || [],
+        score: 0
+      }));
+
+  const topScore = Math.max(
+    cards[0]?.score || 0,
+    facts[0]?.score || 0,
+    overrides[0]?.score || 0,
+    scoredGuardrails[0]?.score || 0
+  );
 
   return {
-    matches,
+    query_context: {
+      query: context.query,
+      topic_hints: context.topicHints,
+      service_tags: context.serviceTags,
+      trade_hint: context.tradeHint
+    },
+    result_strength: topScore >= 20 ? "strong" : topScore >= 9 ? "medium" : topScore > 0 ? "weak" : "none",
+    cards,
+    facts,
     overrides,
-    guardrails: guardrails.length ? guardrails.slice(0, 5) : (knowledge.guardrails || []).slice(0, 3).map((item, index) => ({
-      id: item.id || `knowledge_guardrail_${index + 1}`,
-      ruleType: item.rule_type,
-      topic: item.topic || null,
-      severity: item.severity || "high",
-      instruction: item.instruction
-    })),
+    guardrails,
     usage_instructions: Array.isArray(knowledge.usage_instructions) ? knowledge.usage_instructions : []
   };
 }
@@ -822,22 +1006,36 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
 
   if (name === "knowledge_lookup") {
     const query = String((args as any).query || "");
-    const matches = buildKnowledgeMatches(
+    const topic = normalizeLookupText((args as any).topic) || null;
+    const serviceTags = Array.isArray((args as any).service_tags)
+      ? (args as any).service_tags.map((item: unknown) => normalizeLookupText(item)).filter(Boolean)
+      : [];
+    const tradeHint = normalizeLookupText((args as any).trade) || null;
+    const retrieval = buildKnowledgeMatches(
       session.promptPayload?.tenant_knowledge || { cards: [], facts: [], guardrails: [], overrides: [], usage_instructions: [] },
-      query
+      { query, topic, serviceTags, tradeHint }
     );
     logInfo("knowledge_lookup_tool_called", {
       callSid: session.callSid,
       query,
-      matchCount: matches.matches.length
+      cardCount: retrieval.cards.length,
+      factCount: retrieval.facts.length,
+      overrideCount: retrieval.overrides.length,
+      guardrailCount: retrieval.guardrails.length
     });
-    await forwardToolResult(session.callSid, session.tenantKey, name, { query, matches }, { status: "accepted", errors: [] });
+    await forwardToolResult(
+      session.callSid,
+      session.tenantKey,
+      name,
+      { query, topic, service_tags: serviceTags, trade: tradeHint, retrieval },
+      { status: "accepted", errors: [] }
+    );
     sendOpenAiEvent(session.openAiWs, {
       type: "conversation.item.create",
       item: {
         type: "function_call_output",
         call_id: callId,
-        output: JSON.stringify(matches)
+        output: JSON.stringify(retrieval)
       }
     });
     logInfo("openai_realtime_tool_response_requested", {

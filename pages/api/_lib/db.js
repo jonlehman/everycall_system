@@ -17,6 +17,27 @@ export function getPool() {
 
 let tablesReady = false;
 
+function normalizeGatewayToolDefinitions(value) {
+  if (!Array.isArray(value)) return value;
+  const seen = new Set();
+  const normalized = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const next = item.name === "faq_lookup"
+      ? {
+          ...item,
+          name: "knowledge_lookup",
+          description: "Retrieve tenant knowledge relevant to the caller's question."
+        }
+      : item;
+    const name = String(next?.name || "").trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    normalized.push(next);
+  }
+  return normalized;
+}
+
 export async function ensureTables(pool) {
   if (tablesReady) {
     return;
@@ -331,7 +352,6 @@ export async function ensureTables(pool) {
       numbers_symbols_prompt TEXT,
       confirmation_prompt TEXT,
       knowledge_usage_prompt TEXT,
-      faq_usage_prompt TEXT,
       gateway_field_schema JSONB,
       gateway_tool_definitions JSONB,
       gateway_session_config JSONB,
@@ -347,13 +367,50 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS numbers_symbols_prompt TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS confirmation_prompt TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS knowledge_usage_prompt TEXT;`);
-  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS faq_usage_prompt TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS gateway_field_schema JSONB;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS gateway_tool_definitions JSONB;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS gateway_session_config JSONB;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_number TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_number_id TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_messaging_profile_id TEXT;`);
+
+  const hasLegacyFaqPromptColumn = await pool.query(
+    `SELECT 1
+     FROM information_schema.columns
+     WHERE table_name = 'system_config'
+       AND column_name = 'faq_usage_prompt'
+     LIMIT 1`
+  );
+  if (hasLegacyFaqPromptColumn.rowCount) {
+    const legacySystemConfig = await pool.query(
+      `SELECT knowledge_usage_prompt, faq_usage_prompt, gateway_tool_definitions
+       FROM system_config
+       WHERE id = 1`
+    );
+    const legacyRow = legacySystemConfig.rows[0] || null;
+    const currentKnowledgeUsage = String(legacyRow?.knowledge_usage_prompt || "").trim();
+    const legacyKnowledgeUsage = String(legacyRow?.faq_usage_prompt || "").trim();
+    if (!currentKnowledgeUsage && legacyKnowledgeUsage) {
+      await pool.query(
+        `UPDATE system_config
+         SET knowledge_usage_prompt = $2,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [1, legacyKnowledgeUsage]
+      );
+    }
+
+    const normalizedGatewayTools = normalizeGatewayToolDefinitions(legacyRow?.gateway_tool_definitions);
+    if (JSON.stringify(normalizedGatewayTools ?? null) !== JSON.stringify(legacyRow?.gateway_tool_definitions ?? null)) {
+      await pool.query(
+        `UPDATE system_config
+         SET gateway_tool_definitions = $2::jsonb,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [1, normalizedGatewayTools ? JSON.stringify(normalizedGatewayTools) : null]
+      );
+    }
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS audit_log (

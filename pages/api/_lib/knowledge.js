@@ -153,6 +153,9 @@ function mapGuardrailQuestionRow(row) {
     sourceUrl: normalizeText(metadata.sourceUrl) || null,
     sourceConfidence: toNumberOrNull(metadata.sourceConfidence),
     serviceTags,
+    managedBy: normalizeText(metadata.managedBy) || null,
+    routeDecision: normalizeText(metadata.routeDecision) || null,
+    sourceFeedbackEventId: metadata.sourceFeedbackEventId ? Number(metadata.sourceFeedbackEventId) : null,
     updatedAt: row.updated_at || null
   };
 }
@@ -196,6 +199,24 @@ function mapRuntimeFactRow(row) {
     riskLevel: normalizeText(row.risk_level) || "normal",
     sourceType: normalizeText(row.source_type) || null,
     reviewStatus: normalizeText(row.review_status) || "reviewed"
+  };
+}
+
+function mapKnowledgeFeedbackEventRow(row) {
+  return {
+    id: String(row.id),
+    questionText: normalizeText(row.question_text) || null,
+    draftAnswer: normalizeText(row.draft_answer) || null,
+    userFeedbackText: normalizeText(row.user_feedback_text) || null,
+    editedAnswer: normalizeText(row.edited_answer) || null,
+    routeDecision: normalizeText(row.route_decision) || null,
+    routeConfidence: toNumberOrNull(row.route_confidence),
+    routeReason: normalizeText(row.route_reason) || null,
+    targetArtifactType: normalizeText(row.target_artifact_type) || null,
+    targetArtifactId: row.target_artifact_id ? String(row.target_artifact_id) : null,
+    status: normalizeText(row.status) || "pending",
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null
   };
 }
 
@@ -452,6 +473,7 @@ export async function compileTenantKnowledge(db, tenantKey) {
     const topic = inferTopic(null, item.topic);
     const riskLevel = inferRiskLevel(topic, item.riskLevel);
     const serviceTags = Array.from(new Set([...(item.serviceTags || []), ...extractServiceTags(`${item.questionText} ${item.answer}`)]));
+    const routeDecision = normalizeText(item.routeDecision) || null;
 
     const cardId = await insertCompiledCard(db, tenantKey, {
       cardKey: `guardrail:${slugify(item.questionText) || topic}:${item.id || index + 1}`,
@@ -488,33 +510,39 @@ export async function compileTenantKnowledge(db, tenantKey) {
     runtimeFactCount += 1;
     await linkCardFact(db, cardId, factId, 0, true);
 
-    await db.query(
-      `INSERT INTO knowledge_overrides (tenant_key, status, topic, trade, service_tags, audience, trigger_text, preferred_answer, applies_when_json)
-       VALUES ($1, 'active', $2, $3, $4::text[], 'general', $5, $6, $7::jsonb)`,
-      [
-        tenantKey,
-        topic,
-        trade,
-        serviceTags,
-        item.questionText,
-        item.answer,
-        JSON.stringify({ questionText: item.questionText, riskLevel })
-      ]
-    );
+    if (routeDecision !== "guardrail") {
+      await db.query(
+        `INSERT INTO knowledge_overrides (tenant_key, status, topic, trade, service_tags, audience, trigger_text, preferred_answer, applies_when_json, source_feedback_event_id)
+         VALUES ($1, 'active', $2, $3, $4::text[], 'general', $5, $6, $7::jsonb, $8)`,
+        [
+          tenantKey,
+          topic,
+          trade,
+          serviceTags,
+          item.questionText,
+          item.answer,
+          JSON.stringify({ questionText: item.questionText, riskLevel, compiledFrom: "guardrail_question_test", routeDecision }),
+          item.sourceFeedbackEventId
+        ]
+      );
+    }
 
-    await db.query(
-      `INSERT INTO knowledge_guardrails (tenant_key, status, rule_type, topic, trade, service_tags, severity, instruction_text, applies_when_json)
-       VALUES ($1, 'active', 'approved_answer_scope', $2, $3, $4::text[], $5, $6, $7::jsonb)`,
-      [
-        tenantKey,
-        topic,
-        trade,
-        serviceTags,
-        riskLevel,
-        buildGeneratedGuardrailInstruction(item),
-        JSON.stringify({ questionText: item.questionText })
-      ]
-    );
+    if (routeDecision !== "answer_override") {
+      await db.query(
+        `INSERT INTO knowledge_guardrails (tenant_key, status, rule_type, topic, trade, service_tags, severity, instruction_text, applies_when_json, source_feedback_event_id)
+         VALUES ($1, 'active', 'approved_answer_scope', $2, $3, $4::text[], $5, $6, $7::jsonb, $8)`,
+        [
+          tenantKey,
+          topic,
+          trade,
+          serviceTags,
+          riskLevel,
+          buildGeneratedGuardrailInstruction(item),
+          JSON.stringify({ questionText: item.questionText, compiledFrom: "guardrail_question_test", routeDecision }),
+          item.sourceFeedbackEventId
+        ]
+      );
+    }
 
     if (item.id) {
       await db.query(
@@ -720,6 +748,31 @@ export async function loadTenantKnowledgeRuntime(db, tenantKey) {
       runtimeFactCount: factMap.size
     }
   };
+}
+
+export async function loadTenantKnowledgeFeedbackEvents(db, tenantKey, options = {}) {
+  const limit = Number.isFinite(Number(options.limit)) ? Math.max(1, Math.min(50, Number(options.limit))) : 12;
+  const result = await db.query(
+    `SELECT id,
+            question_text,
+            draft_answer,
+            user_feedback_text,
+            edited_answer,
+            route_decision,
+            route_confidence,
+            route_reason,
+            target_artifact_type,
+            target_artifact_id,
+            status,
+            created_at,
+            updated_at
+     FROM knowledge_feedback_events
+     WHERE tenant_key = $1
+     ORDER BY created_at DESC, id DESC
+     LIMIT $2`,
+    [tenantKey, limit]
+  );
+  return (result.rows || []).map(mapKnowledgeFeedbackEventRow);
 }
 
 export async function loadTenantKnowledge(db, tenantKey, options = {}) {

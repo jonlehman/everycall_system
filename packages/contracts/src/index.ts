@@ -30,14 +30,26 @@ export const orchestrateTurnSchema = z.object({
         timezone: z.string().min(1)
       })
       .passthrough(),
-    faq_items: z
-      .array(
-        z.object({
-          q: z.string().min(1),
-          a: z.string().min(1)
-        })
-      )
-      .default([])
+    tenant_knowledge: z.object({
+      cards: z.array(z.object({
+        title: z.string().min(1),
+        topic: z.string().optional().nullable(),
+        summary: z.string().optional().nullable()
+      })).default([]),
+      facts: z.array(z.object({
+        claim: z.string().min(1),
+        topic: z.string().optional().nullable()
+      })).default([]),
+      overrides: z.array(z.object({
+        preferred_answer: z.string().min(1),
+        topic: z.string().optional().nullable()
+      })).default([]),
+      guardrails: z.array(z.object({
+        instruction: z.string().min(1),
+        topic: z.string().optional().nullable()
+      })).default([]),
+      usage_instructions: z.array(z.string().min(1)).default([])
+    })
   })
 });
 

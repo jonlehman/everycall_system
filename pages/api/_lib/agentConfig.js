@@ -136,7 +136,7 @@ async function getSystemPromptParts(pool) {
             datetime_prompt,
             numbers_symbols_prompt,
             confirmation_prompt,
-            COALESCE(knowledge_usage_prompt, faq_usage_prompt) AS knowledge_usage_prompt
+            knowledge_usage_prompt
      FROM system_config
      WHERE id = 1`
   );

@@ -52,7 +52,8 @@ function buildDefaultToolDefinitions(fieldSchema) {
         properties: {
           query: { type: "string", description: "Caller question or topic" },
           topic: { type: "string", description: "Optional topic hint such as warranty, pricing, or service area." },
-          service_tags: { type: "array", items: { type: "string" } }
+          service_tags: { type: "array", items: { type: "string" } },
+          trade: { type: "string", description: "Optional trade hint such as plumbing, electrical, or hvac." }
         },
         required: ["query"]
       }
@@ -81,16 +82,7 @@ function normalizeToolDefinitions(toolDefinitions, fieldSchema) {
   const normalized = Array.isArray(toolDefinitions) && toolDefinitions.length
     ? toolDefinitions
         .filter((item) => item && typeof item === "object")
-        .map((item) => {
-          if (item.name !== "faq_lookup") {
-            return item;
-          }
-          return {
-            ...item,
-            name: "knowledge_lookup",
-            description: "Retrieve tenant knowledge relevant to the caller's question."
-          };
-        })
+        .filter((item) => item.name !== "faq_lookup")
     : buildDefaultToolDefinitions(fieldSchema);
 
   const withKnowledgeLookup = normalized.some((item) => item?.name === "knowledge_lookup")
@@ -176,10 +168,12 @@ export default async function handler(req, res) {
           usage_notes: card.usageNotes || null,
           facts: Array.isArray(card.facts)
             ? card.facts.map((fact) => ({
-                id: fact.id ? String(fact.id) : undefined,
-                claim: fact.claim,
-                evidence_text: fact.evidenceText || null,
-                source_url: fact.sourceUrl || null,
+              id: fact.id ? String(fact.id) : undefined,
+              topic: fact.topic || null,
+              trade: fact.trade || null,
+              claim: fact.claim,
+              evidence_text: fact.evidenceText || null,
+              source_url: fact.sourceUrl || null,
                 confidence: fact.confidence ?? null,
                 risk_level: fact.riskLevel || "normal",
                 service_tags: Array.isArray(fact.serviceTags) ? fact.serviceTags : []

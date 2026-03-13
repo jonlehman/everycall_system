@@ -1,7 +1,12 @@
 import { ensureTables, getPool } from "../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess } from "../_lib/billing.js";
-import { compileTenantKnowledge, loadTenantKnowledgeAuthoring } from "../_lib/knowledge.js";
+import {
+  compileTenantKnowledge,
+  loadTenantKnowledgeAuthoring,
+  loadTenantKnowledgeFeedbackEvents,
+  loadTenantKnowledgeRuntime
+} from "../_lib/knowledge.js";
 import {
   createBlankGuardrailQuestionTests,
   createBlankKnowledgeEntries
@@ -13,6 +18,10 @@ function getTenantKey(req) {
 
 function normalizeText(value) {
   return String(value || "").trim();
+}
+
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
 function toNumberOrNull(value) {
@@ -107,6 +116,19 @@ function normalizeGuardrailQuestionTestsInput(value) {
   return normalized;
 }
 
+async function loadKnowledgeResponse(pool, tenantKey) {
+  const [authoring, runtime, feedbackEvents] = await Promise.all([
+    loadTenantKnowledgeAuthoring(pool, tenantKey, { includeEmptyTemplates: true }),
+    loadTenantKnowledgeRuntime(pool, tenantKey),
+    loadTenantKnowledgeFeedbackEvents(pool, tenantKey, { limit: 12 })
+  ]);
+  return {
+    ...authoring,
+    runtimeCounts: runtime.counts || { runtimeCardCount: 0, runtimeFactCount: 0 },
+    feedbackEvents
+  };
+}
+
 export default async function handler(req, res) {
   const fail = (status, error, message, extra = {}) =>
     res.status(status).json({ ok: false, error, message, ...extra });
@@ -126,7 +148,7 @@ export default async function handler(req, res) {
     if (!access) return;
 
     if (req.method === "GET") {
-      const knowledge = await loadTenantKnowledgeAuthoring(pool, tenantKey, { includeEmptyTemplates: true });
+      const knowledge = await loadKnowledgeResponse(pool, tenantKey);
       return res.status(200).json({ ok: true, ...knowledge });
     }
 
@@ -140,23 +162,27 @@ export default async function handler(req, res) {
         await client.query("BEGIN");
 
         const existingEntryRes = await client.query(
-          `SELECT id, section_type
+          `SELECT id, section_type, metadata_json
            FROM knowledge_entries
            WHERE tenant_key = $1`,
           [tenantKey]
         );
-        const entryIdBySection = new Map(
+        const entryBySection = new Map(
           existingEntryRes.rows
             .filter((row) => row?.section_type)
-            .map((row) => [String(row.section_type), Number(row.id)])
+            .map((row) => [String(row.section_type), row])
         );
 
         for (const entry of knowledgeEntries) {
+          const existingRow = (entry.id
+            ? existingEntryRes.rows.find((row) => Number(row.id) === Number(entry.id))
+            : null) || entryBySection.get(entry.sectionType);
           const metadataJson = JSON.stringify({
+            ...asObject(existingRow?.metadata_json),
             sourceType: entry.sourceType,
             sourceConfidence: entry.sourceConfidence
           });
-          const existingId = entry.id ? Number(entry.id) : entryIdBySection.get(entry.sectionType);
+          const existingId = existingRow ? Number(existingRow.id) : null;
           if (existingId) {
             await client.query(
               `UPDATE knowledge_entries
@@ -198,28 +224,32 @@ export default async function handler(req, res) {
         }
 
         const existingQuestionRes = await client.query(
-          `SELECT id, question_text
+          `SELECT id, question_text, supporting_artifacts_json
            FROM guardrail_question_tests
            WHERE tenant_key = $1
              AND status = 'active'`,
           [tenantKey]
         );
-        const questionIdByText = new Map(
+        const questionByText = new Map(
           existingQuestionRes.rows
             .filter((row) => row?.question_text)
-            .map((row) => [String(row.question_text), Number(row.id)])
+            .map((row) => [String(row.question_text), row])
         );
 
         for (const item of guardrailQuestionTests) {
           const answer = item.answer;
           const reviewStatus = answer ? "approved" : "pending";
+          const existingRow = (item.id
+            ? existingQuestionRes.rows.find((row) => Number(row.id) === Number(item.id))
+            : null) || questionByText.get(item.questionText);
           const artifactsJson = JSON.stringify({
+            ...asObject(existingRow?.supporting_artifacts_json),
             sourceType: item.sourceType,
             sourceUrl: item.sourceUrl,
             sourceConfidence: item.sourceConfidence,
             serviceTags: item.serviceTags
           });
-          const existingId = item.id ? Number(item.id) : questionIdByText.get(item.questionText);
+          const existingId = existingRow ? Number(existingRow.id) : null;
           if (existingId) {
             await client.query(
               `UPDATE guardrail_question_tests
@@ -275,7 +305,7 @@ export default async function handler(req, res) {
         client.release();
       }
 
-      const knowledge = await loadTenantKnowledgeAuthoring(pool, tenantKey, { includeEmptyTemplates: true });
+      const knowledge = await loadKnowledgeResponse(pool, tenantKey);
       return res.status(200).json({ ok: true, ...knowledge });
     }
 

@@ -28,7 +28,7 @@ export default function AdminSystemPage() {
         setDateTime(data?.config?.datetime_prompt || '');
         setNumbersSymbols(data?.config?.numbers_symbols_prompt || '');
         setConfirmation(data?.config?.confirmation_prompt || '');
-        setKnowledgeUsage(data?.config?.knowledge_usage_prompt || data?.config?.faq_usage_prompt || '');
+        setKnowledgeUsage(data?.config?.knowledge_usage_prompt || '');
         setGatewayFieldSchema(data?.config?.gateway_field_schema ? JSON.stringify(data.config.gateway_field_schema, null, 2) : '');
         setGatewayToolDefinitions(data?.config?.gateway_tool_definitions ? JSON.stringify(data.config.gateway_tool_definitions, null, 2) : '');
         setGatewaySessionConfig(data?.config?.gateway_session_config ? JSON.stringify(data.config.gateway_session_config, null, 2) : '');

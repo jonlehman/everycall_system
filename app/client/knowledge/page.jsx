@@ -13,28 +13,78 @@ function SummaryCard({ label, value, tone = 'text-slate-900' }) {
   );
 }
 
+function ArtifactList({ title, items, emptyLabel, renderItem }) {
+  return (
+    <div className="rounded-xl border border-slate-200 p-3">
+      <div className="mb-2 text-sm font-semibold text-slate-900">{title}</div>
+      {items.length ? (
+        <div className="grid gap-2">
+          {items.map((item, index) => (
+            <div key={item.id || `${title}-${index}`} className="rounded-lg border border-slate-100 bg-slate-50 p-2">
+              {renderItem(item)}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-sm text-slate-500">{emptyLabel}</div>
+      )}
+    </div>
+  );
+}
+
+function FeedbackEventCard({ item }) {
+  const routeDecision = String(item.routeDecision || 'pending').replaceAll('_', ' ');
+  return (
+    <div className="rounded-xl border border-slate-200 p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div className="text-sm font-semibold text-slate-900">{item.questionText || 'Knowledge feedback'}</div>
+        <span className="badge">{routeDecision}</span>
+        <span className={`badge ${item.status === 'applied' ? 'ok' : 'warn'}`}>{item.status || 'pending'}</span>
+      </div>
+      {item.editedAnswer ? <div className="mb-2 text-sm text-slate-700">{item.editedAnswer}</div> : null}
+      {item.userFeedbackText ? <div className="text-xs text-slate-500">{item.userFeedbackText}</div> : null}
+    </div>
+  );
+}
+
 export default function KnowledgePage() {
   const [knowledgeEntries, setKnowledgeEntries] = useState([]);
   const [guardrailQuestionTests, setGuardrailQuestionTests] = useState([]);
+  const [runtimeCounts, setRuntimeCounts] = useState({ runtimeCardCount: 0, runtimeFactCount: 0 });
+  const [feedbackEvents, setFeedbackEvents] = useState([]);
   const [status, setStatus] = useState({ message: 'Loading knowledge...', tone: 'warn' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [querying, setQuerying] = useState(false);
+  const [applyingFeedback, setApplyingFeedback] = useState(false);
+  const [questionText, setQuestionText] = useState('');
+  const [previewData, setPreviewData] = useState(null);
+  const [previewAnswer, setPreviewAnswer] = useState('');
+  const [feedbackNote, setFeedbackNote] = useState('');
 
-  const loadKnowledge = async () => {
+  const loadKnowledge = async ({ silent = false } = {}) => {
     setLoading(true);
-    setStatus({ message: 'Loading knowledge...', tone: 'warn' });
+    if (!silent) {
+      setStatus({ message: 'Loading knowledge...', tone: 'warn' });
+    }
     try {
       const resp = await fetch('/api/v1/knowledge');
       const data = resp.ok ? await resp.json() : null;
       if (!data?.ok) {
         setStatus({ message: 'Could not load knowledge.', tone: 'bad' });
-        return;
+        return null;
       }
       setKnowledgeEntries(Array.isArray(data.knowledgeEntries) ? data.knowledgeEntries : []);
       setGuardrailQuestionTests(Array.isArray(data.guardrailQuestionTests) ? data.guardrailQuestionTests : []);
-      setStatus({ message: 'Knowledge loaded.', tone: 'ok' });
+      setRuntimeCounts(data.runtimeCounts || { runtimeCardCount: 0, runtimeFactCount: 0 });
+      setFeedbackEvents(Array.isArray(data.feedbackEvents) ? data.feedbackEvents : []);
+      if (!silent) {
+        setStatus({ message: 'Knowledge loaded.', tone: 'ok' });
+      }
+      return data;
     } catch {
       setStatus({ message: 'Could not load knowledge.', tone: 'bad' });
+      return null;
     } finally {
       setLoading(false);
     }
@@ -60,11 +110,103 @@ export default function KnowledgePage() {
       }
       setKnowledgeEntries(Array.isArray(data.knowledgeEntries) ? data.knowledgeEntries : []);
       setGuardrailQuestionTests(Array.isArray(data.guardrailQuestionTests) ? data.guardrailQuestionTests : []);
+      setRuntimeCounts(data.runtimeCounts || { runtimeCardCount: 0, runtimeFactCount: 0 });
+      setFeedbackEvents(Array.isArray(data.feedbackEvents) ? data.feedbackEvents : []);
       setStatus({ message: 'Knowledge saved.', tone: 'ok' });
     } catch {
       setStatus({ message: 'Save failed. Please try again.', tone: 'bad' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const runPreview = async ({ silent = false } = {}) => {
+    const trimmedQuestion = String(questionText || '').trim();
+    if (!trimmedQuestion) {
+      setStatus({ message: 'Enter a question to preview an answer.', tone: 'warn' });
+      return null;
+    }
+
+    setQuerying(true);
+    if (!silent) {
+      setStatus({ message: 'Running knowledge lookup...', tone: 'warn' });
+    }
+
+    try {
+      const resp = await fetch('/api/v1/knowledge/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionText: trimmedQuestion })
+      });
+      const data = resp.ok ? await resp.json() : null;
+      if (!data?.ok) {
+        setStatus({ message: 'Could not run the knowledge preview.', tone: 'bad' });
+        return null;
+      }
+      setPreviewData(data);
+      setPreviewAnswer(data.answerPreview?.text || '');
+      setRuntimeCounts(data.runtimeCounts || { runtimeCardCount: 0, runtimeFactCount: 0 });
+      setFeedbackEvents(Array.isArray(data.feedbackEvents) ? data.feedbackEvents : []);
+      setFeedbackNote('');
+      if (!silent) {
+        setStatus({ message: 'Preview ready.', tone: 'ok' });
+      }
+      return data;
+    } catch {
+      setStatus({ message: 'Could not run the knowledge preview.', tone: 'bad' });
+      return null;
+    } finally {
+      setQuerying(false);
+    }
+  };
+
+  const applyFeedback = async () => {
+    if (!previewData?.questionText) {
+      setStatus({ message: 'Run a preview before applying feedback.', tone: 'warn' });
+      return;
+    }
+
+    const editedAnswer = String(previewAnswer || '').trim();
+    const draftAnswer = String(previewData.answerPreview?.text || '').trim();
+    const note = String(feedbackNote || '').trim();
+    if (!editedAnswer && !note) {
+      setStatus({ message: 'Add an edited answer or a feedback note first.', tone: 'warn' });
+      return;
+    }
+
+    setApplyingFeedback(true);
+    setStatus({ message: 'Applying feedback...', tone: 'warn' });
+    try {
+      const resp = await fetch('/api/v1/knowledge/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionText: previewData.questionText,
+          draftAnswer,
+          editedAnswer,
+          userFeedbackText: note,
+          topicHints: previewData.retrieval?.queryContext?.topicHints || [],
+          serviceTags: previewData.retrieval?.queryContext?.serviceTags || []
+        })
+      });
+      const data = resp.ok ? await resp.json() : null;
+      if (!data?.ok) {
+        setStatus({ message: 'Could not apply feedback.', tone: 'bad' });
+        return;
+      }
+      setFeedbackEvents(Array.isArray(data.feedbackEvents) ? data.feedbackEvents : []);
+      setRuntimeCounts(data.runtimeCounts || { runtimeCardCount: 0, runtimeFactCount: 0 });
+      await loadKnowledge({ silent: true });
+      await runPreview({ silent: true });
+      const routeDecision = String(data.applied?.decision?.routeDecision || 'feedback').replaceAll('_', ' ');
+      const appliedMessage = data.applied?.decision?.routeDecision === 'fact_correction_proposal'
+        ? 'Feedback saved for review.'
+        : `Feedback applied as ${routeDecision}.`;
+      setStatus({ message: appliedMessage, tone: 'ok' });
+    } catch {
+      setStatus({ message: 'Could not apply feedback.', tone: 'bad' });
+    } finally {
+      setApplyingFeedback(false);
     }
   };
 
@@ -81,22 +223,148 @@ export default function KnowledgePage() {
     };
   }, [guardrailQuestionTests, knowledgeEntries]);
 
+  const retrieval = previewData?.retrieval || { cards: [], facts: [], overrides: [], guardrails: [], queryContext: {}, resultStrength: 'none' };
+
   return (
     <ClientPage
       title="Knowledge"
-      subtitle="Review business information and approve high-risk guardrail answers before enabling the assistant."
+      subtitle="Review business information, test retrieval, and approve high-risk answers before enabling the assistant."
       status={status}
       primaryAction={{ label: saving ? 'Saving...' : 'Save Knowledge', brand: true, onClick: saveKnowledge, disabled: saving }}
     >
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
         <SummaryCard label="Knowledge Sections" value={`${counts.populatedKnowledge}/${counts.totalKnowledge}`} />
-        <SummaryCard label="Answered Guardrail Questions" value={`${counts.answeredGuardrails}/${counts.totalGuardrails}`} />
+        <SummaryCard label="Answered Guardrails" value={`${counts.answeredGuardrails}/${counts.totalGuardrails}`} />
         <SummaryCard
           label="Needs Review"
           value={counts.unansweredGuardrails}
           tone={counts.unansweredGuardrails > 0 ? 'text-amber-700' : 'text-emerald-700'}
         />
+        <SummaryCard label="Runtime Cards" value={runtimeCounts.runtimeCardCount || 0} />
+        <SummaryCard label="Runtime Facts" value={runtimeCounts.runtimeFactCount || 0} />
       </div>
+
+      <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div>
+            <h2 className="m-0 text-lg font-semibold">Ask the Assistant</h2>
+            <p className="mt-1 text-sm text-slate-500">Preview the grounded answer, inspect retrieved knowledge, then route your feedback back into the knowledge system.</p>
+          </div>
+          <Button variant="outline" onClick={() => runPreview()} disabled={querying || saving || applyingFeedback}>
+            {querying ? 'Running...' : 'Run Preview'}
+          </Button>
+        </div>
+        <div className="grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="grid gap-3">
+            <div>
+              <label>Question</label>
+              <textarea
+                value={questionText}
+                onChange={(event) => setQuestionText(event.target.value)}
+                placeholder="How does your warranty work?"
+                style={{ minHeight: 88 }}
+              />
+            </div>
+            <div>
+              <label>Answer Preview</label>
+              <textarea
+                value={previewAnswer}
+                onChange={(event) => setPreviewAnswer(event.target.value)}
+                placeholder="Run a preview to generate the grounded answer."
+                style={{ minHeight: 140 }}
+              />
+              <div className="mt-1 text-xs text-slate-500">
+                Source: {previewData?.answerPreview?.source || 'none'} | Strength: {retrieval.resultStrength || 'none'}
+              </div>
+            </div>
+            <div>
+              <label>Feedback Note</label>
+              <textarea
+                value={feedbackNote}
+                onChange={(event) => setFeedbackNote(event.target.value)}
+                placeholder="Example: Mention water heaters and repipes first. Do not imply every plumbing job is covered."
+                style={{ minHeight: 110 }}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={applyFeedback} disabled={applyingFeedback || querying || !previewData?.questionText}>
+                {applyingFeedback ? 'Applying...' : 'Apply Feedback'}
+              </Button>
+              <Button variant="outline" onClick={() => loadKnowledge()} disabled={loading || saving || querying || applyingFeedback}>
+                Reload Knowledge
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            <ArtifactList
+              title="Query Context"
+              items={[
+                {
+                  id: 'context',
+                  topicHints: retrieval.queryContext?.topicHints || [],
+                  serviceTags: retrieval.queryContext?.serviceTags || [],
+                  tradeHint: retrieval.queryContext?.tradeHint || null
+                }
+              ]}
+              emptyLabel="No preview yet."
+              renderItem={(item) => (
+                <div className="grid gap-1 text-sm text-slate-700">
+                  <div>Topics: {item.topicHints.length ? item.topicHints.join(', ') : 'none detected'}</div>
+                  <div>Service tags: {item.serviceTags.length ? item.serviceTags.join(', ') : 'none detected'}</div>
+                  <div>Trade hint: {item.tradeHint || 'none'}</div>
+                </div>
+              )}
+            />
+            <ArtifactList
+              title="Top Cards"
+              items={retrieval.cards || []}
+              emptyLabel="No cards matched the current question."
+              renderItem={(item) => (
+                <div className="grid gap-1 text-sm text-slate-700">
+                  <div className="font-medium text-slate-900">{item.title}</div>
+                  <div>{item.summary || 'No summary.'}</div>
+                  {item.facts?.length ? <div className="text-xs text-slate-500">{item.facts.map((fact) => fact.claim).join(' | ')}</div> : null}
+                  {item.sourceUrl ? <a className="text-xs text-slate-500 underline" href={item.sourceUrl} target="_blank" rel="noreferrer">Source</a> : null}
+                </div>
+              )}
+            />
+            <ArtifactList
+              title="Extra Facts"
+              items={retrieval.facts || []}
+              emptyLabel="No standalone facts matched the current question."
+              renderItem={(item) => (
+                <div className="grid gap-1 text-sm text-slate-700">
+                  <div>{item.claim}</div>
+                  {item.sourceUrl ? <a className="text-xs text-slate-500 underline" href={item.sourceUrl} target="_blank" rel="noreferrer">Source</a> : null}
+                </div>
+              )}
+            />
+            <ArtifactList
+              title="Overrides"
+              items={retrieval.overrides || []}
+              emptyLabel="No answer overrides matched the current question."
+              renderItem={(item) => (
+                <div className="grid gap-1 text-sm text-slate-700">
+                  <div>{item.preferredAnswer}</div>
+                  {item.triggerText ? <div className="text-xs text-slate-500">Trigger: {item.triggerText}</div> : null}
+                </div>
+              )}
+            />
+            <ArtifactList
+              title="Guardrails"
+              items={retrieval.guardrails || []}
+              emptyLabel="No guardrails matched the current question."
+              renderItem={(item) => (
+                <div className="grid gap-1 text-sm text-slate-700">
+                  <div>{item.instruction}</div>
+                  <div className="text-xs text-slate-500">{String(item.severity || 'high').toUpperCase()}</div>
+                </div>
+              )}
+            />
+          </div>
+        </div>
+      </section>
 
       <div className="grid gap-3 xl:grid-cols-[1.05fr_0.95fr]">
         <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
@@ -105,7 +373,7 @@ export default function KnowledgePage() {
               <h2 className="m-0 text-lg font-semibold">Knowledge Entries</h2>
               <p className="mt-1 text-sm text-slate-500">These sections describe the business in human terms. Keep them specific and factual.</p>
             </div>
-            <Button variant="outline" onClick={loadKnowledge} disabled={loading || saving}>Reload</Button>
+            <Button variant="outline" onClick={() => loadKnowledge()} disabled={loading || saving || querying || applyingFeedback}>Reload</Button>
           </div>
           <div className="grid gap-3">
             {knowledgeEntries.map((entry, index) => (
@@ -175,6 +443,22 @@ export default function KnowledgePage() {
           </div>
         </section>
       </div>
+
+      <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
+        <div className="mb-3">
+          <h2 className="m-0 text-lg font-semibold">Recent Feedback</h2>
+          <p className="mt-1 text-sm text-slate-500">Every applied or pending review event stays visible here so you can track what changed and how it was routed.</p>
+        </div>
+        {feedbackEvents.length ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {feedbackEvents.map((item) => (
+              <FeedbackEventCard key={item.id} item={item} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-slate-500">No feedback has been applied yet.</div>
+        )}
+      </section>
     </ClientPage>
   );
 }
