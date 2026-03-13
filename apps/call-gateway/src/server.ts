@@ -35,8 +35,37 @@ type PromptPayload = {
   system_prompt: string;
   tenant_greeting: string;
   tenant_knowledge: {
-    entries: Array<{ id?: string; title: string; section_type?: string; content: string; tags?: string[]; source_url?: string | null }>;
-    guardrail_questions: Array<{ id?: string; topic?: string | null; question: string; answer: string; risk_level?: string; tags?: string[]; source_url?: string | null }>;
+    cards: Array<{
+      id?: string;
+      card_key?: string;
+      topic?: string | null;
+      trade?: string | null;
+      service_tags?: string[];
+      audience?: string;
+      title: string;
+      summary?: string;
+      usage_notes?: string | null;
+      facts?: Array<{
+        id?: string;
+        claim: string;
+        evidence_text?: string | null;
+        source_url?: string | null;
+        confidence?: number | null;
+        risk_level?: string;
+        service_tags?: string[];
+      }>;
+    }>;
+    facts: Array<{
+      id?: string;
+      topic?: string | null;
+      trade?: string | null;
+      service_tags?: string[];
+      claim: string;
+      evidence_text?: string | null;
+      source_url?: string | null;
+      confidence?: number | null;
+      risk_level?: string;
+    }>;
     guardrails: Array<{ id?: string; rule_type: string; topic?: string | null; severity?: string; instruction: string; service_tags?: string[] }>;
     overrides: Array<{ id?: string; topic?: string | null; trade?: string | null; trigger_text?: string | null; preferred_answer: string; service_tags?: string[] }>;
     usage_instructions: string[];
@@ -315,11 +344,12 @@ function logRealtimeTrace(session: StreamSession, payload: Record<string, unknow
 }
 
 function buildSessionInstructions(payload: PromptPayload) {
-  const entryIndex = payload.tenant_knowledge.entries
-    .map((entry) => `- ${entry.title}${entry.section_type ? ` [${entry.section_type}]` : ""}`)
+  const cardIndex = payload.tenant_knowledge.cards
+    .map((card) => `- ${card.title}${card.topic ? ` [${card.topic}]` : ""}`)
     .join("\n");
-  const guardrailIndex = payload.tenant_knowledge.guardrail_questions
-    .map((item) => `- ${item.question}${item.topic ? ` [${item.topic}]` : ""}`)
+  const factIndex = payload.tenant_knowledge.facts
+    .slice(0, 10)
+    .map((fact) => `- ${fact.claim}${fact.topic ? ` [${fact.topic}]` : ""}`)
     .join("\n");
   const usageInstructions = payload.tenant_knowledge.usage_instructions
     .map((instruction) => `- ${instruction}`)
@@ -334,8 +364,8 @@ Do not answer tenant-specific facts from memory.
 If knowledge_lookup returns no match, say you do not have that detail and offer callback follow-up.`;
 
   const knowledgeIndexSections = [
-    entryIndex ? `# AVAILABLE KNOWLEDGE SECTIONS\n${entryIndex}` : "",
-    guardrailIndex ? `# AVAILABLE GUARDRAIL QUESTIONS\n${guardrailIndex}` : "",
+    cardIndex ? `# AVAILABLE KNOWLEDGE CARDS\n${cardIndex}` : "",
+    factIndex ? `# EXAMPLE KNOWLEDGE FACTS\n${factIndex}` : "",
     activeGuardrails ? `# ACTIVE KNOWLEDGE GUARDRAILS\n${activeGuardrails}` : "",
     usageInstructions ? `# KNOWLEDGE USAGE INSTRUCTIONS\n${usageInstructions}` : ""
   ].filter(Boolean).join("\n\n");
@@ -371,24 +401,27 @@ function validatePromptPayload(input: unknown): PromptPayload {
   if (typeof turnDetection.type !== "string") throw new Error("prompt_payload_invalid_turn_detection_type");
 
   const tenantKnowledge = payload.tenant_knowledge as Record<string, unknown>;
-  const knowledgeKeys = ["entries", "guardrail_questions", "guardrails", "overrides", "usage_instructions"];
+  const knowledgeKeys = ["cards", "facts", "guardrails", "overrides", "usage_instructions"];
   for (const key of knowledgeKeys) {
     if (!Array.isArray(tenantKnowledge[key])) {
       throw new Error(`prompt_payload_invalid_tenant_knowledge_${key}`);
     }
   }
 
-  for (const entry of tenantKnowledge.entries as Array<Record<string, unknown>>) {
-    if (!entry || typeof entry !== "object") throw new Error("prompt_payload_invalid_knowledge_entry");
-    if (typeof entry.title !== "string" || typeof entry.content !== "string") {
-      throw new Error("prompt_payload_invalid_knowledge_entry_shape");
+  for (const card of tenantKnowledge.cards as Array<Record<string, unknown>>) {
+    if (!card || typeof card !== "object") throw new Error("prompt_payload_invalid_knowledge_card");
+    if (typeof card.title !== "string") {
+      throw new Error("prompt_payload_invalid_knowledge_card_shape");
+    }
+    if ("facts" in card && !Array.isArray(card.facts)) {
+      throw new Error("prompt_payload_invalid_knowledge_card_facts");
     }
   }
 
-  for (const item of tenantKnowledge.guardrail_questions as Array<Record<string, unknown>>) {
-    if (!item || typeof item !== "object") throw new Error("prompt_payload_invalid_guardrail_question");
-    if (typeof item.question !== "string" || typeof item.answer !== "string") {
-      throw new Error("prompt_payload_invalid_guardrail_question_shape");
+  for (const fact of tenantKnowledge.facts as Array<Record<string, unknown>>) {
+    if (!fact || typeof fact !== "object") throw new Error("prompt_payload_invalid_knowledge_fact");
+    if (typeof fact.claim !== "string") {
+      throw new Error("prompt_payload_invalid_knowledge_fact_shape");
     }
   }
 
@@ -663,24 +696,27 @@ function scoreLookupText(query: string, haystack: string) {
 
 function buildKnowledgeMatches(knowledge: PromptPayload["tenant_knowledge"], query: string) {
   const matches = [
-    ...(knowledge.entries || []).map((entry, index) => ({
-      id: entry.id || `knowledge_entry_${index + 1}`,
-      artifactType: "knowledge_entry",
-      title: entry.title,
-      topic: entry.section_type || null,
-      content: entry.content,
-      sourceUrl: entry.source_url || null,
-      score: scoreLookupText(query, `${entry.title} ${entry.section_type || ""} ${entry.content} ${(entry.tags || []).join(" ")}`)
+    ...(knowledge.cards || []).map((card, index) => ({
+      id: card.id || `knowledge_card_${index + 1}`,
+      artifactType: "knowledge_card",
+      title: card.title,
+      topic: card.topic || null,
+      content: card.summary || (card.facts || []).map((fact) => fact.claim).join(" "),
+      sourceUrl: (card.facts || []).find((fact) => typeof fact.source_url === "string" && fact.source_url)?.source_url || null,
+      score: scoreLookupText(
+        query,
+        `${card.title} ${card.topic || ""} ${card.trade || ""} ${card.summary || ""} ${(card.service_tags || []).join(" ")} ${(card.facts || []).map((fact) => `${fact.claim} ${fact.evidence_text || ""}`).join(" ")}`
+      )
     })),
-    ...(knowledge.guardrail_questions || []).map((item, index) => ({
-      id: item.id || `guardrail_question_${index + 1}`,
-      artifactType: "guardrail_question",
-      title: item.question,
-      topic: item.topic || null,
-      content: item.answer,
-      riskLevel: item.risk_level || "high",
-      sourceUrl: item.source_url || null,
-      score: scoreLookupText(query, `${item.question} ${item.answer} ${item.topic || ""} ${(item.tags || []).join(" ")}`)
+    ...(knowledge.facts || []).map((fact, index) => ({
+      id: fact.id || `knowledge_fact_${index + 1}`,
+      artifactType: "knowledge_fact",
+      title: fact.claim,
+      topic: fact.topic || null,
+      content: fact.claim,
+      riskLevel: fact.risk_level || "normal",
+      sourceUrl: fact.source_url || null,
+      score: scoreLookupText(query, `${fact.claim} ${fact.evidence_text || ""} ${fact.topic || ""} ${(fact.service_tags || []).join(" ")}`)
     }))
   ]
     .filter((item) => item.score > 0)
@@ -787,7 +823,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
   if (name === "knowledge_lookup") {
     const query = String((args as any).query || "");
     const matches = buildKnowledgeMatches(
-      session.promptPayload?.tenant_knowledge || { entries: [], guardrail_questions: [], guardrails: [], overrides: [], usage_instructions: [] },
+      session.promptPayload?.tenant_knowledge || { cards: [], facts: [], guardrails: [], overrides: [], usage_instructions: [] },
       query
     );
     logInfo("knowledge_lookup_tool_called", {

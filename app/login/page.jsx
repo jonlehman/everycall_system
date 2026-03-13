@@ -28,7 +28,7 @@ export default function LoginPage() {
     <div className="auth-wrap">
       <section className="hero">
         <h1>EveryCall Workspace</h1>
-        <p>Use the client workspace to run calls, FAQ, and team settings.</p>
+        <p>Use the client workspace to run calls, knowledge review, and team settings.</p>
       </section>
 
       <div className="auth-grid">

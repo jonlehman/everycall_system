@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { DataGrid } from '@mui/x-data-grid';
+import { createBlankGuardrailQuestionTests, createBlankKnowledgeEntries } from '../../../lib/knowledgeTemplates.js';
 import { Button } from '../../../components/ui/button';
 import { cn } from '../../../lib/utils';
 
@@ -17,10 +17,8 @@ export default function IndustryConfigPage() {
   const [industries, setIndustries] = useState([]);
   const [selectedKey, setSelectedKey] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [faqs, setFaqs] = useState([]);
-  const [faqQuestion, setFaqQuestion] = useState('');
-  const [faqAnswer, setFaqAnswer] = useState('');
-  const [faqCategory, setFaqCategory] = useState('');
+  const [knowledgeEntries, setKnowledgeEntries] = useState(() => createBlankKnowledgeEntries());
+  const [guardrailQuestionTests, setGuardrailQuestionTests] = useState(() => createBlankGuardrailQuestionTests());
   const [industryName, setIndustryName] = useState('');
   const [industryKey, setIndustryKey] = useState('');
   const [copyFromKey, setCopyFromKey] = useState('');
@@ -65,11 +63,14 @@ export default function IndustryConfigPage() {
       .catch(() => {});
   };
 
-  const loadFaqs = (key) => {
+  const loadKnowledge = (key) => {
     if (!key) return;
-    fetch(`/api/v1/admin/industries?mode=faqs&industryKey=${encodeURIComponent(key)}`)
+    fetch(`/api/v1/admin/industries?mode=knowledge&industryKey=${encodeURIComponent(key)}`)
       .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => setFaqs(data?.faqs || []))
+      .then((data) => {
+        setKnowledgeEntries(Array.isArray(data?.knowledgeEntries) ? data.knowledgeEntries : createBlankKnowledgeEntries());
+        setGuardrailQuestionTests(Array.isArray(data?.guardrailQuestionTests) ? data.guardrailQuestionTests : createBlankGuardrailQuestionTests());
+      })
       .catch(() => {});
   };
 
@@ -80,7 +81,7 @@ export default function IndustryConfigPage() {
   useEffect(() => {
     if (!selectedKey) return;
     loadPrompt(selectedKey);
-    loadFaqs(selectedKey);
+    loadKnowledge(selectedKey);
   }, [selectedKey]);
 
   const savePrompt = async () => {
@@ -96,6 +97,16 @@ export default function IndustryConfigPage() {
     setStatus(resp.ok ? 'Prompt saved.' : 'Save failed.');
   };
 
+  const saveKnowledge = async () => {
+    if (!selectedKey) return;
+    const resp = await fetch(`/api/v1/admin/industries?mode=knowledge&industryKey=${encodeURIComponent(selectedKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ knowledgeEntries, guardrailQuestionTests })
+    });
+    setStatus(resp.ok ? 'Knowledge defaults saved.' : 'Save failed.');
+  };
+
   const applyPromptToTenants = async () => {
     if (!selectedKey) return;
     const resp = await fetch(`/api/v1/admin/industries?mode=applyPrompt&industryKey=${encodeURIComponent(selectedKey)}`, {
@@ -106,47 +117,20 @@ export default function IndustryConfigPage() {
       return;
     }
     const data = await resp.json();
-    setStatus(`Applied to ${data.updated || 0} tenants.`);
+    setStatus(`Applied prompt to ${data.updated || 0} tenants.`);
   };
 
-  const applyFaqsToTenants = async () => {
+  const applyKnowledgeToTenants = async () => {
     if (!selectedKey) return;
-    const resp = await fetch(`/api/v1/admin/industries?mode=applyFaqs&industryKey=${encodeURIComponent(selectedKey)}`, {
+    const resp = await fetch(`/api/v1/admin/industries?mode=applyKnowledge&industryKey=${encodeURIComponent(selectedKey)}`, {
       method: 'POST'
     });
     if (!resp.ok) {
-      setStatus('Apply FAQs failed.');
+      setStatus('Apply failed.');
       return;
     }
     const data = await resp.json();
-    setStatus(`Applied FAQs to ${data.updated || 0} tenants.`);
-  };
-
-  const addFaq = async () => {
-    if (!faqQuestion.trim() || !faqAnswer.trim()) {
-      setStatus('Question and answer are required.');
-      return;
-    }
-    const resp = await fetch(`/api/v1/admin/industries?mode=faqs&industryKey=${encodeURIComponent(selectedKey)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: faqQuestion, answer: faqAnswer, category: faqCategory })
-    });
-    if (!resp.ok) {
-      setStatus('FAQ save failed.');
-      return;
-    }
-    setFaqQuestion('');
-    setFaqAnswer('');
-    setFaqCategory('');
-    loadFaqs(selectedKey);
-    setStatus('FAQ saved.');
-  };
-
-  const deleteFaq = async (id) => {
-    const resp = await fetch(`/api/v1/admin/industries?mode=faqs&id=${id}`, { method: 'DELETE' });
-    if (!resp.ok) return;
-    loadFaqs(selectedKey);
+    setStatus(`Applied knowledge to ${data.updated || 0} tenants.`);
   };
 
   const createIndustry = async () => {
@@ -186,8 +170,8 @@ export default function IndustryConfigPage() {
       return;
     }
     loadPrompt(selectedKey);
-    loadFaqs(selectedKey);
-    setStatus('Copied configuration.');
+    loadKnowledge(selectedKey);
+    setStatus('Copied prompt and knowledge defaults.');
   };
 
   const seedDefaults = async () => {
@@ -202,19 +186,16 @@ export default function IndustryConfigPage() {
       return;
     }
     const data = await resp.json();
-    if (data.skipped) {
-      setStatus('Defaults already exist for this industry.');
-    } else {
-      const faqCount = data.inserted?.faqs || 0;
-      const promptCount = data.inserted?.prompt ? 1 : 0;
-      setStatus(`Seeded ${faqCount} FAQs and ${promptCount} prompt.`);
-      loadFaqs(selectedKey);
-      loadPrompt(selectedKey);
-    }
+    const knowledgeCount = data.inserted?.knowledgeEntries || 0;
+    const guardrailCount = data.inserted?.guardrailQuestionTests || 0;
+    const promptCount = data.inserted?.prompt ? 1 : 0;
+    setStatus(`Seeded ${knowledgeCount} knowledge entries, ${guardrailCount} guardrail questions, and ${promptCount} prompt.`);
+    loadKnowledge(selectedKey);
+    loadPrompt(selectedKey);
   };
 
   const seedAllDefaults = async () => {
-    const confirmed = window.confirm('Are you sure you want to seed defaults for all industries?');
+    const confirmed = window.confirm('Are you sure you want to reseed defaults for all industries?');
     if (!confirmed) return;
     const resp = await fetch('/api/v1/admin/industries?mode=seedAll', {
       method: 'POST'
@@ -226,35 +207,10 @@ export default function IndustryConfigPage() {
     setStatus('Seeded defaults for all industries.');
     loadIndustries();
     if (selectedKey) {
-      loadFaqs(selectedKey);
       loadPrompt(selectedKey);
+      loadKnowledge(selectedKey);
     }
   };
-
-  const rows = faqs.map((faq) => ({
-    id: faq.id,
-    question: faq.question,
-    answer: faq.answer,
-    category: faq.category
-  }));
-
-  const columns = [
-    { field: 'question', headerName: 'Question', flex: 1.2, minWidth: 180 },
-    { field: 'answer', headerName: 'Answer', flex: 1.6, minWidth: 240 },
-    { field: 'category', headerName: 'Category', flex: 0.6, minWidth: 120 },
-    {
-      field: 'actions',
-      headerName: '',
-      sortable: false,
-      filterable: false,
-      align: 'right',
-      headerAlign: 'right',
-      minWidth: 120,
-      renderCell: (params) => (
-        <Button variant="outline" size="sm" onClick={() => deleteFaq(params.row.id)}>Delete</Button>
-      )
-    }
-  ];
 
   const industryOptions = useMemo(() => industries.map((item) => (
     <button
@@ -301,9 +257,10 @@ export default function IndustryConfigPage() {
             <Button variant="outline" onClick={seedAllDefaults}>Seed All Defaults</Button>
           </div>
         </div>
-        <div>
+
+        <div className="grid gap-3">
           <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Agent Prompt & Behavior</h2>
+            <h2 className="mt-0 text-lg font-semibold">Agent Prompt &amp; Behavior</h2>
             <p className="text-sm text-slate-500">This prompt is applied to every tenant in the selected industry.</p>
             <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} style={{ minHeight: 180 }} />
             <div className="mt-2 flex flex-wrap gap-2">
@@ -324,45 +281,67 @@ export default function IndustryConfigPage() {
               <span className="text-sm text-slate-500">{status}</span>
             </div>
           </div>
-          <div className="mt-3 rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mb-2 mt-0 text-lg font-semibold">Industry FAQs</h2>
-            <div style={{ height: rows.length ? 'auto' : 240 }}>
-              <DataGrid
-                rows={rows}
-                columns={columns}
-                autoHeight
-                disableRowSelectionOnClick
-                pageSizeOptions={[10, 25, 50]}
-                initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
-                localeText={{ noRowsLabel: 'No industry FAQs yet.' }}
-                sx={{
-                  border: 'none',
-                  '& .MuiDataGrid-cell': { alignItems: 'flex-start', lineHeight: '1.4', whiteSpace: 'normal' },
-                  '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
-                  '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 },
-                  '& .MuiDataGrid-row': { maxHeight: 'none' }
-                }}
-              />
-            </div>
-            <div className="my-3 h-px bg-slate-200"></div>
-            <h3 className="m-0 mb-2 text-base font-semibold">Add FAQ</h3>
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+
+          <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <label>Question</label>
-                <input value={faqQuestion} onChange={(event) => setFaqQuestion(event.target.value)} placeholder="Do you offer emergency service?" />
-                <label className="mt-2.5">Category</label>
-                <input value={faqCategory} onChange={(event) => setFaqCategory(event.target.value)} placeholder="Emergency" />
+                <h2 className="m-0 text-lg font-semibold">Industry Knowledge Defaults</h2>
+                <p className="mt-1 text-sm text-slate-500">These are the structured defaults that seed onboarding and runtime knowledge for this industry.</p>
               </div>
-              <div>
-                <label>Answer</label>
-                <textarea value={faqAnswer} onChange={(event) => setFaqAnswer(event.target.value)} style={{ minHeight: 120 }}></textarea>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={seedDefaults}>Seed Default Knowledge</Button>
+                <Button variant="outline" onClick={applyKnowledgeToTenants}>Apply to Tenants</Button>
+                <Button onClick={saveKnowledge}>Save Knowledge</Button>
               </div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button onClick={addFaq}>Save FAQ</Button>
-              <Button variant="outline" onClick={applyFaqsToTenants}>Apply FAQs to Tenants</Button>
-              <Button variant="outline" onClick={seedDefaults}>Seed Default FAQs</Button>
+
+            <div className="grid gap-3 xl:grid-cols-[1.05fr_0.95fr]">
+              <section className="rounded-xl border border-slate-200 p-3">
+                <h3 className="m-0 mb-2 text-base font-semibold">Knowledge Entries</h3>
+                <div className="grid gap-3">
+                  {knowledgeEntries.map((entry, index) => (
+                    <div key={entry.sectionType || index} className="rounded-xl border border-slate-200 p-3">
+                      <div className="mb-2 text-sm font-semibold text-slate-900">{entry.title}</div>
+                      <textarea
+                        value={entry.contentText || ''}
+                        onChange={(event) => {
+                          const next = [...knowledgeEntries];
+                          next[index] = { ...entry, contentText: event.target.value };
+                          setKnowledgeEntries(next);
+                        }}
+                        placeholder={`Add ${String(entry.title || 'knowledge').toLowerCase()} guidance.`}
+                        style={{ minHeight: 110 }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-slate-200 p-3">
+                <h3 className="m-0 mb-2 text-base font-semibold">Guardrail Questions</h3>
+                <div className="grid gap-3">
+                  {guardrailQuestionTests.map((item, index) => (
+                    <div key={item.questionText || index} className="rounded-xl border border-slate-200 p-3">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <div className="text-sm font-semibold text-slate-900">{item.questionText}</div>
+                        <span className="badge">{String(item.riskLevel || 'high').toUpperCase()}</span>
+                      </div>
+                      <textarea
+                        value={item.answer || ''}
+                        onChange={(event) => {
+                          const next = [...guardrailQuestionTests];
+                          next[index] = { ...item, answer: event.target.value };
+                          setGuardrailQuestionTests(next);
+                        }}
+                        placeholder="Add the approved answer for this guardrail question."
+                        style={{ minHeight: 120 }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
             </div>
+
             <div className="my-3 h-px bg-slate-200"></div>
             <h3 className="m-0 mb-2 text-base font-semibold">Copy From Industry</h3>
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -376,7 +355,7 @@ export default function IndustryConfigPage() {
                 </select>
               </div>
               <div className="flex items-end">
-                <Button variant="outline" onClick={copyFromIndustry}>Copy Prompt + FAQs</Button>
+                <Button variant="outline" onClick={copyFromIndustry}>Copy Prompt + Knowledge</Button>
               </div>
             </div>
           </div>

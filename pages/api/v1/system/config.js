@@ -19,6 +19,7 @@ export default async function handler(req, res) {
                 datetime_prompt,
                 numbers_symbols_prompt,
                 confirmation_prompt,
+                COALESCE(knowledge_usage_prompt, faq_usage_prompt) AS knowledge_usage_prompt,
                 faq_usage_prompt,
                 gateway_field_schema,
                 gateway_tool_definitions,
@@ -29,9 +30,7 @@ export default async function handler(req, res) {
          FROM system_config WHERE id = 1`
       );
       const config = row.rows[0] || null;
-      return res.status(200).json({
-        config: config ? { ...config, knowledge_usage_prompt: config.faq_usage_prompt || "" } : null
-      });
+      return res.status(200).json({ config });
     }
 
     if (req.method === "POST") {
@@ -41,7 +40,7 @@ export default async function handler(req, res) {
       const dateTime = String(body.dateTimePrompt || "").trim();
       const numbersSymbols = String(body.numbersSymbolsPrompt || "").trim();
       const confirmation = String(body.confirmationPrompt || "").trim();
-      const faqUsage = String(body.knowledgeUsagePrompt || body.faqUsagePrompt || "").trim();
+      const knowledgeUsage = String(body.knowledgeUsagePrompt || body.faqUsagePrompt || "").trim();
       const parseJsonField = (value) => {
         if (!value) return null;
         if (typeof value === "object") return value;
@@ -64,14 +63,15 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "missing_phrase" });
       }
       await pool.query(
-        `INSERT INTO system_config (id, global_emergency_phrase, personality_prompt, datetime_prompt, numbers_symbols_prompt, confirmation_prompt, faq_usage_prompt, gateway_field_schema, gateway_tool_definitions, gateway_session_config, telnyx_sms_number, telnyx_sms_number_id, telnyx_sms_messaging_profile_id)
-         VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `INSERT INTO system_config (id, global_emergency_phrase, personality_prompt, datetime_prompt, numbers_symbols_prompt, confirmation_prompt, knowledge_usage_prompt, faq_usage_prompt, gateway_field_schema, gateway_tool_definitions, gateway_session_config, telnyx_sms_number, telnyx_sms_number_id, telnyx_sms_messaging_profile_id)
+         VALUES (1, $1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10, $11, $12)
          ON CONFLICT (id)
          DO UPDATE SET global_emergency_phrase = EXCLUDED.global_emergency_phrase,
                        personality_prompt = EXCLUDED.personality_prompt,
                        datetime_prompt = EXCLUDED.datetime_prompt,
                        numbers_symbols_prompt = EXCLUDED.numbers_symbols_prompt,
                        confirmation_prompt = EXCLUDED.confirmation_prompt,
+                       knowledge_usage_prompt = EXCLUDED.knowledge_usage_prompt,
                        faq_usage_prompt = EXCLUDED.faq_usage_prompt,
                        gateway_field_schema = EXCLUDED.gateway_field_schema,
                        gateway_tool_definitions = EXCLUDED.gateway_tool_definitions,
@@ -86,7 +86,7 @@ export default async function handler(req, res) {
           dateTime,
           numbersSymbols,
           confirmation,
-          faqUsage,
+          knowledgeUsage,
           gatewayFieldSchema,
           gatewayToolDefinitions,
           gatewaySessionConfig,

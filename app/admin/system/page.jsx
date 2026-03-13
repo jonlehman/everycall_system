@@ -9,7 +9,7 @@ export default function AdminSystemPage() {
   const [dateTime, setDateTime] = useState('');
   const [numbersSymbols, setNumbersSymbols] = useState('');
   const [confirmation, setConfirmation] = useState('');
-  const [faqUsage, setFaqUsage] = useState('');
+  const [knowledgeUsage, setKnowledgeUsage] = useState('');
   const [gatewayFieldSchema, setGatewayFieldSchema] = useState('');
   const [gatewayToolDefinitions, setGatewayToolDefinitions] = useState('');
   const [gatewaySessionConfig, setGatewaySessionConfig] = useState('');
@@ -28,7 +28,7 @@ export default function AdminSystemPage() {
         setDateTime(data?.config?.datetime_prompt || '');
         setNumbersSymbols(data?.config?.numbers_symbols_prompt || '');
         setConfirmation(data?.config?.confirmation_prompt || '');
-        setFaqUsage(data?.config?.knowledge_usage_prompt || data?.config?.faq_usage_prompt || '');
+        setKnowledgeUsage(data?.config?.knowledge_usage_prompt || data?.config?.faq_usage_prompt || '');
         setGatewayFieldSchema(data?.config?.gateway_field_schema ? JSON.stringify(data.config.gateway_field_schema, null, 2) : '');
         setGatewayToolDefinitions(data?.config?.gateway_tool_definitions ? JSON.stringify(data.config.gateway_tool_definitions, null, 2) : '');
         setGatewaySessionConfig(data?.config?.gateway_session_config ? JSON.stringify(data.config.gateway_session_config, null, 2) : '');
@@ -55,7 +55,7 @@ export default function AdminSystemPage() {
         dateTimePrompt: dateTime.trim(),
         numbersSymbolsPrompt: numbersSymbols.trim(),
         confirmationPrompt: confirmation.trim(),
-        faqUsagePrompt: faqUsage.trim(),
+        knowledgeUsagePrompt: knowledgeUsage.trim(),
         gatewayFieldSchema: gatewayFieldSchema.trim(),
         gatewayToolDefinitions: gatewayToolDefinitions.trim(),
         gatewaySessionConfig: gatewaySessionConfig.trim(),
@@ -96,7 +96,7 @@ export default function AdminSystemPage() {
         <label className="mt-3">Confirmation</label>
         <textarea value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
         <label className="mt-3">When to Use Knowledge</label>
-        <textarea value={faqUsage} onChange={(event) => setFaqUsage(event.target.value)} />
+        <textarea value={knowledgeUsage} onChange={(event) => setKnowledgeUsage(event.target.value)} />
         <label className="mt-3">Gateway Field Schema (JSON)</label>
         <textarea value={gatewayFieldSchema} onChange={(event) => setGatewayFieldSchema(event.target.value)} />
         <label className="mt-3">Gateway Tool Definitions (JSON)</label>

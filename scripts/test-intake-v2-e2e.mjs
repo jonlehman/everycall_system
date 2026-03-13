@@ -33,18 +33,21 @@ function payload(seed) {
     emergencyServices: true,
     servicesOffered: ["Drain cleaning"],
     primaryGoals: ["reduce_missed_calls"],
-    faqDrafts: [
+    knowledgeEntries: [
       {
-        question: "Do you handle drain clogs and backups?",
-        category: "Services",
-        answer: "Yes. We clear clogs and inspect lines.",
+        sectionType: "services_and_capabilities",
+        title: "Services and Capabilities",
+        contentText: "We handle drain clogs, backups, and line inspections.",
         sourceType: "website",
         sourceUrl: "https://example.com",
         sourceConfidence: 0.88
-      },
+      }
+    ],
+    guardrailQuestionTests: [
       {
-        question: "What should I do for a burst pipe?",
-        category: "Emergency",
+        questionText: "How does your warranty work?",
+        topic: "warranty",
+        riskLevel: "critical",
         answer: ""
       }
     ]
@@ -57,7 +60,7 @@ async function run() {
   const body = payload(seed);
 
   if (dryRun) {
-    console.log("DRY RUN: enrichment preview -> onboarding -> forwarding -> assistant gated -> resolve blank FAQ -> enable assistant -> tenant page access");
+    console.log("DRY RUN: enrichment preview -> onboarding -> forwarding -> assistant gated -> resolve blank Guardrail Question -> enable assistant -> tenant page access");
     return;
   }
 
@@ -72,7 +75,8 @@ async function run() {
   });
   const previewData = await previewResp.json().catch(() => null);
   assert(previewResp.status === 200, `Expected enrichment preview 200, got ${previewResp.status}`);
-  assert(Array.isArray(previewData?.enrichment?.faqs), "Expected enrichment FAQ list");
+  assert(Array.isArray(previewData?.enrichment?.knowledgeEntries), "Expected enrichment knowledge entries");
+  assert(Array.isArray(previewData?.enrichment?.guardrailQuestionTests), "Expected enrichment guardrail question list");
 
   const onboardResp = await fetch(`${baseUrl}/api/v1/tenants/onboard`, {
     method: "POST",
@@ -109,21 +113,29 @@ async function run() {
   });
   const statusBeforeEnableData = await statusBeforeEnableResp.json().catch(() => null);
   assert(statusBeforeEnableResp.status === 200, `Expected assistant-status 200, got ${statusBeforeEnableResp.status}`);
-  assert(statusBeforeEnableData?.assistant?.ready === false, "Expected assistant not ready while blank FAQ exists");
+  assert(statusBeforeEnableData?.assistant?.ready === false, "Expected assistant not ready while blank Guardrail Question exists");
 
-  const faqResp = await fetch(`${baseUrl}/api/v1/faq`, { headers: { cookie } });
-  const faqData = await faqResp.json().catch(() => null);
-  assert(faqResp.status === 200, `Expected faq 200, got ${faqResp.status}`);
-  const blankIndustryFaq = (faqData?.faqs || []).find((faq) => faq.is_industry_default && !String(faq.answer || "").trim());
-  assert(blankIndustryFaq?.id, "Expected at least one blank industry FAQ");
+  const knowledgeResp = await fetch(`${baseUrl}/api/v1/knowledge`, { headers: { cookie } });
+  const knowledgeData = await knowledgeResp.json().catch(() => null);
+  assert(knowledgeResp.status === 200, `Expected knowledge 200, got ${knowledgeResp.status}`);
+  const blankGuardrail = (knowledgeData?.guardrailQuestionTests || []).find((item) => !String(item.answer || "").trim());
+  assert(blankGuardrail?.questionText, "Expected at least one blank Guardrail Question");
 
-  const deleteResp = await fetch(`${baseUrl}/api/v1/faq?id=${blankIndustryFaq.id}`, {
-    method: "DELETE",
-    headers: { cookie }
+  const saveKnowledgeResp = await fetch(`${baseUrl}/api/v1/knowledge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({
+      knowledgeEntries: knowledgeData?.knowledgeEntries || [],
+      guardrailQuestionTests: (knowledgeData?.guardrailQuestionTests || []).map((item) =>
+        item.questionText === blankGuardrail.questionText
+          ? { ...item, answer: "We provide a one-year workmanship warranty on qualifying repairs and installs." }
+          : item
+      )
+    })
   });
-  const deleteData = await deleteResp.json().catch(() => null);
-  assert(deleteResp.status === 200, `Expected FAQ delete 200, got ${deleteResp.status}`);
-  assert(deleteData?.ok === true, "Expected FAQ delete ok=true");
+  const saveKnowledgeData = await saveKnowledgeResp.json().catch(() => null);
+  assert(saveKnowledgeResp.status === 200, `Expected knowledge save 200, got ${saveKnowledgeResp.status}`);
+  assert(saveKnowledgeData?.ok === true, "Expected knowledge save ok=true");
 
   const enableResp = await fetch(`${baseUrl}/api/v1/assistant/status`, {
     method: "POST",

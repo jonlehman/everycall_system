@@ -72,7 +72,7 @@ Must match the web demo configuration:
 EveryCall must provide a single payload to the gateway at session start containing:
 - `system_prompt`
 - `tenant_greeting`
-- `tenant_faqs`
+- `tenant_knowledge`
 - `field_schema`
 - `tool_definitions`
 - `session_config`

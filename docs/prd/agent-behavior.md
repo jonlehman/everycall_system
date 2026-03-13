@@ -22,9 +22,9 @@ Prompts are composed from:
 4. Single‑use greeting (per call)
 
 ## Deterministic Controls
-1. **FAQ routing**
-   - Best‑match FAQ from tenant DB.
-   - If no match: “I don’t have that detail, but I can have someone call you with the specifics.”
+1. **Knowledge routing**
+   - Retrieve the best matching tenant knowledge cards, facts, overrides, and guardrails.
+   - If no strong match exists: “I don’t have that detail, but I can have someone call you with the specifics.”
 2. **Pre‑close enforcement**
    - Ask: “Do you have any other questions…”
    - Block close until answered.
@@ -33,11 +33,12 @@ Prompts are composed from:
 
 ## Data & Storage
 - `agents`: greeting, voice, prompt overrides
-- `faqs`: tenant FAQ entries
+- `knowledge_entries`, `guardrail_question_tests`: tenant authoring layer
+- `knowledge_cards`, `knowledge_facts`, `knowledge_overrides`, `knowledge_guardrails`: compiled runtime layer
 - `industry_prompts`: industry defaults
 
 ## Success Metrics
-- FAQ answer accuracy
+- Knowledge-grounded answer accuracy
 - % calls with pre‑close asked
 - Reduction in interrupted assistant turns
 

@@ -24,23 +24,25 @@ The gateway must receive a single JSON payload with the following top-level fiel
 **`tenant_knowledge`**
 - Object containing tenant-scoped runtime knowledge.
 - Must include:
-  - `entries` (array)
-  - `guardrail_questions` (array)
+  - `cards` (array)
+  - `facts` (array)
   - `guardrails` (array)
   - `overrides` (array)
   - `usage_instructions` (array of strings)
-- `entries` items include:
+- `cards` items include:
   - `id` (string, optional)
+  - `card_key` (string, optional)
   - `title` (string)
-  - `section_type` (string, optional)
-  - `content` (string)
-  - `tags` (array of strings, optional)
-- `guardrail_questions` items include:
+  - `topic` (string, optional)
+  - `summary` (string, optional)
+  - `service_tags` (array of strings, optional)
+  - `facts` (array, optional)
+- `facts` items include:
   - `id` (string, optional)
-  - `question` (string)
-  - `answer` (string)
+  - `claim` (string)
   - `topic` (string, optional)
   - `risk_level` (string, optional)
+  - `service_tags` (array of strings, optional)
 
 **`field_schema`**
 - JSON Schema defining the required data fields for the call.
@@ -68,11 +70,20 @@ The gateway must receive a single JSON payload with the following top-level fiel
   "system_prompt": "...",
   "tenant_greeting": "Hi, thanks for calling Acme Plumbing...",
   "tenant_knowledge": {
-    "entries": [
-      {"id": "entry_1", "title": "Hours and Availability", "section_type": "hours_and_availability", "content": "Mon-Fri 8-6."}
+    "cards": [
+      {
+        "id": "card_1",
+        "card_key": "entry:hours_and_availability:1",
+        "title": "Hours and Availability",
+        "topic": "availability",
+        "summary": "Mon-Fri 8-6.",
+        "facts": [
+          {"id": "fact_1", "claim": "Open Monday through Friday from 8 AM to 6 PM.", "topic": "availability"}
+        ]
+      }
     ],
-    "guardrail_questions": [
-      {"id": "guardrail_1", "question": "How does your warranty work?", "answer": "We offer a one-year workmanship warranty on qualifying installs."}
+    "facts": [
+      {"id": "fact_1", "claim": "Open Monday through Friday from 8 AM to 6 PM.", "topic": "availability"}
     ],
     "guardrails": [],
     "overrides": [],

@@ -120,30 +120,6 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS voice_type TEXT;`);
 
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS faqs (
-      id BIGSERIAL PRIMARY KEY,
-      tenant_key TEXT NOT NULL,
-      question TEXT NOT NULL,
-      answer TEXT NOT NULL,
-      category TEXT NOT NULL DEFAULT 'General',
-      deletable BOOLEAN NOT NULL DEFAULT TRUE,
-      is_default BOOLEAN NOT NULL DEFAULT FALSE,
-      is_industry_default BOOLEAN NOT NULL DEFAULT FALSE,
-      industry TEXT,
-      source_type TEXT,
-      source_url TEXT,
-      source_retrieved_at TIMESTAMPTZ,
-      source_confidence DOUBLE PRECISION,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-  await pool.query(`ALTER TABLE faqs ADD COLUMN IF NOT EXISTS source_type TEXT;`);
-  await pool.query(`ALTER TABLE faqs ADD COLUMN IF NOT EXISTS source_url TEXT;`);
-  await pool.query(`ALTER TABLE faqs ADD COLUMN IF NOT EXISTS source_retrieved_at TIMESTAMPTZ;`);
-  await pool.query(`ALTER TABLE faqs ADD COLUMN IF NOT EXISTS source_confidence DOUBLE PRECISION;`);
-
-  await pool.query(`
     CREATE TABLE IF NOT EXISTS calls (
       call_sid TEXT PRIMARY KEY,
       tenant_key TEXT NOT NULL,
@@ -354,6 +330,7 @@ export async function ensureTables(pool) {
       datetime_prompt TEXT,
       numbers_symbols_prompt TEXT,
       confirmation_prompt TEXT,
+      knowledge_usage_prompt TEXT,
       faq_usage_prompt TEXT,
       gateway_field_schema JSONB,
       gateway_tool_definitions JSONB,
@@ -369,6 +346,7 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS datetime_prompt TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS numbers_symbols_prompt TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS confirmation_prompt TEXT;`);
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS knowledge_usage_prompt TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS faq_usage_prompt TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS gateway_field_schema JSONB;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS gateway_tool_definitions JSONB;`);
@@ -516,17 +494,6 @@ export async function ensureTables(pool) {
   `);
 
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS industry_faqs (
-      id BIGSERIAL PRIMARY KEY,
-      industry_key TEXT NOT NULL REFERENCES industries(key) ON DELETE CASCADE,
-      question TEXT NOT NULL,
-      answer TEXT NOT NULL,
-      category TEXT NOT NULL DEFAULT 'General',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  await pool.query(`
     CREATE TABLE IF NOT EXISTS industry_prompts (
       industry_key TEXT PRIMARY KEY REFERENCES industries(key) ON DELETE CASCADE,
       prompt TEXT NOT NULL,
@@ -534,7 +501,42 @@ export async function ensureTables(pool) {
     );
   `);
 
-  await pool.query(`CREATE INDEX IF NOT EXISTS industry_faqs_industry_idx ON industry_faqs (industry_key);`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS industry_knowledge_entries (
+      id BIGSERIAL PRIMARY KEY,
+      industry_key TEXT NOT NULL REFERENCES industries(key) ON DELETE CASCADE,
+      section_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content_text TEXT NOT NULL,
+      source_type TEXT NOT NULL DEFAULT 'industry_seed',
+      source_url TEXT,
+      source_confidence DOUBLE PRECISION,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS industry_knowledge_entries_unique_idx ON industry_knowledge_entries (industry_key, section_type);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS industry_knowledge_entries_industry_idx ON industry_knowledge_entries (industry_key, updated_at DESC);`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS industry_guardrail_question_templates (
+      id BIGSERIAL PRIMARY KEY,
+      industry_key TEXT NOT NULL REFERENCES industries(key) ON DELETE CASCADE,
+      topic TEXT,
+      question_text TEXT NOT NULL,
+      risk_level TEXT NOT NULL DEFAULT 'high',
+      answer TEXT NOT NULL,
+      service_tags TEXT[] NOT NULL DEFAULT '{}',
+      source_type TEXT NOT NULL DEFAULT 'industry_seed',
+      source_url TEXT,
+      source_confidence DOUBLE PRECISION,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS industry_guardrail_templates_unique_idx ON industry_guardrail_question_templates (industry_key, question_text);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS industry_guardrail_templates_industry_idx ON industry_guardrail_question_templates (industry_key, updated_at DESC);`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS site_crawls (
@@ -768,7 +770,6 @@ export async function ensureTables(pool) {
 
   await pool.query(`CREATE INDEX IF NOT EXISTS calls_tenant_created_idx ON calls (tenant_key, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS dispatch_queue_tenant_status_idx ON dispatch_queue (tenant_key, status, due_at);`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS faqs_tenant_category_idx ON faqs (tenant_key, category);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS audit_log_tenant_created_idx ON audit_log (tenant_key, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS billing_events_tenant_processed_idx ON billing_events (tenant_key, processed_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS billing_lifecycle_events_tenant_created_idx ON billing_lifecycle_events (tenant_key, created_at DESC);`);

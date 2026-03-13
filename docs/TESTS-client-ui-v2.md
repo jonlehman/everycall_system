@@ -66,7 +66,7 @@ Endpoints:
 - `/api/v1/overview`
 - `/api/v1/calls`
 - `/api/v1/dashboard/calls`
-- `/api/v1/faq`
+- `/api/v1/knowledge`
 - `/api/v1/routing`
 - `/api/v1/settings`
 - `/api/v1/tenant/users`

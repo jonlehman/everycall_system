@@ -64,7 +64,7 @@ The intake process starts with a lightweight business identity screen, then uses
 - `POST /api/v1/tenants/onboard`
 - `POST /api/v1/tenants/forwarding-status`
 - `POST /api/v1/tenants/enrichment/preview` (proposed)
-- Seeds: `industry_prompts`, `industry_faqs`, `faqs`, `agents`
+- Seeds: `industry_prompts`, `industry_knowledge_entries`, `industry_guardrail_question_templates`, `knowledge_entries`, `guardrail_question_tests`, `agents`
 
 ## Success Metrics
 - Intake completion rate

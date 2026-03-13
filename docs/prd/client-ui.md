@@ -340,8 +340,8 @@ Required endpoints:
   - Supports pagination/filtering by status/urgency/date.
 - `GET /api/v1/dashboard/calls`
   - Dashboard-optimized call feed.
-- `GET/POST /api/v1/faq`
-  - Tenant FAQ read/write with validation.
+- `GET/POST /api/v1/knowledge`
+  - Tenant knowledge and guardrail review read/write with validation.
 - `GET/POST /api/v1/routing`
   - Routing rules read/write.
 - `GET/POST /api/v1/settings`

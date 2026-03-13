@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const setupPaths = ['/client/setup', '/client/knowledge', '/client/faq', '/client/team', '/client/routing', '/client/settings'];
+const setupPaths = ['/client/setup', '/client/knowledge', '/client/team', '/client/routing', '/client/settings'];
 
 function NavIcon({ kind }) {
   if (kind === 'dashboard') {

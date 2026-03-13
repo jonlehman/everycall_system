@@ -11,7 +11,7 @@
 ## Common Issues
 - Assistant interrupts caller: check barge-in cancel logic and audio queue clearing.
 - Missing pre-close question: verify deterministic enforcement.
-- Wrong FAQ answers: verify FAQ retrieval and category mapping.
+- Wrong knowledge answers: verify compiled knowledge retrieval, overrides, and guardrails.
 
 ## Rollback
 - Use Render rollback to previous deploy.

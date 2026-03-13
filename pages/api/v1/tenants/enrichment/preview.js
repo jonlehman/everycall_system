@@ -1,6 +1,6 @@
 import { ensureTables, getPool } from "../../../_lib/db.js";
-import { normalizeFaqCategory } from "../../../_lib/faqCategories.js";
-import { createBlankGuardrailQuestionTests, createBlankKnowledgeEntries } from "../../../../../lib/knowledgeTemplates.js";
+import { createBlankKnowledgeEntries } from "../../../../../lib/knowledgeTemplates.js";
+import { loadIndustryKnowledgeDefaults } from "../../../_lib/industryKnowledge.js";
 
 const FREE_EMAIL_DOMAINS = new Set([
   "gmail.com",
@@ -15,65 +15,19 @@ const FREE_EMAIL_DOMAINS = new Set([
   "live.com"
 ]);
 
-const FALLBACK_INDUSTRY_FAQS = {
-  plumbing: [
-    { question: "What should I do for a burst pipe?", category: "Emergency" },
-    { question: "Do you handle drain clogs and backups?", category: "Services" }
-  ],
-  window_installers: [
-    { question: "Do you replace broken glass or only full windows?", category: "Services" },
-    { question: "What is the typical lead time for installation?", category: "Scheduling" }
-  ],
-  electrical: [
-    { question: "What should I do if I smell burning or see sparks?", category: "Emergency" },
-    { question: "Do you upgrade electrical panels?", category: "Services" }
-  ],
-  hvac: [
-    { question: "What should I do if I have no heat or no cooling?", category: "Emergency" },
-    { question: "Do you offer maintenance plans?", category: "Maintenance" }
-  ],
-  roofing: [
-    { question: "Do you handle emergency leaks?", category: "Emergency" },
-    { question: "Do you work with insurance claims?", category: "Billing" }
-  ],
-  landscaping: [
-    { question: "Do you offer recurring maintenance?", category: "Maintenance" },
-    { question: "Can you handle irrigation issues?", category: "Services" }
-  ],
-  cleaning: [
-    { question: "Do you provide recurring cleanings?", category: "Maintenance" },
-    { question: "Do you bring your own supplies?", category: "Services" }
-  ],
-  pest_control: [
-    { question: "Do you offer one-time treatments?", category: "Services" },
-    { question: "How soon can you come out for an infestation?", category: "Scheduling" }
-  ],
-  garage_door: [
-    { question: "Do you repair broken springs?", category: "Services" },
-    { question: "Do you install new openers?", category: "Services" }
-  ],
-  general_contractor: [
-    { question: "Do you handle permits?", category: "Process" },
-    { question: "Can you provide a project timeline?", category: "Scheduling" }
-  ],
-  locksmith: [
-    { question: "Do you offer emergency lockout service?", category: "Emergency" },
-    { question: "Can you rekey locks?", category: "Services" }
-  ]
-};
-
 const STOPWORDS = new Set([
-  "what", "when", "where", "which", "with", "from", "your", "this", "that", "have", "do", "does", "only", "they", "them", "into", "about", "would", "could", "should", "offer", "offers"
+  "what", "when", "where", "which", "with", "from", "your", "this", "that", "have", "does", "offer", "offers",
+  "would", "could", "should", "about", "into", "they", "them"
 ]);
 
 const KNOWLEDGE_SECTION_KEYWORDS = {
   services_and_capabilities: ["service", "services", "repair", "replace", "install", "installation", "maintenance", "drain", "plumbing", "electrical", "hvac", "heating", "cooling", "sewer"],
-  emergency_service: ["emergency", "urgent", "24/7", "after hours", "same day"],
-  service_area: ["service area", "areas we serve", "areas served", "serving", "locations", "location", "nearby communities"],
-  hours_and_availability: ["hours", "open", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "24/7", "availability"],
+  emergency_service: ["emergency", "urgent", "24/7", "after hours", "same day", "priority"],
+  service_area: ["service area", "areas we serve", "areas served", "serving", "locations", "nearby communities"],
+  hours_and_availability: ["hours", "open", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "availability", "24/7"],
   warranties_and_guarantees: ["warranty", "guarantee", "guaranteed", "satisfaction guarantee", "forever warranty"],
-  pricing_and_fees: ["estimate", "estimates", "fee", "fees", "pricing", "price", "diagnostic", "service fee", "free estimate"],
-  financing_and_payment: ["financing", "payment", "payments", "credit", "apple pay", "cash", "card", "cards"],
+  pricing_and_fees: ["estimate", "estimates", "fee", "fees", "pricing", "price", "diagnostic", "service fee"],
+  financing_and_payment: ["financing", "payment", "payments", "credit", "cash", "card", "cards"],
   policies_and_process: ["schedule", "scheduling", "appointment", "callback", "arrive", "arrival", "next step", "process", "book online"]
 };
 
@@ -87,15 +41,24 @@ const GUARDRAIL_TOPIC_KEYWORDS = {
   pricing: ["fee", "fees", "diagnostic", "estimate", "estimates", "pricing", "price"]
 };
 
+function normalizeText(value) {
+  return String(value || "").trim();
+}
+
+function toNumberOrNull(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function normalizeWebsite(website) {
-  const raw = String(website || "").trim();
+  const raw = normalizeText(website);
   if (!raw) return "";
   if (/^https?:\/\//i.test(raw)) return raw;
   return `https://${raw}`;
 }
 
 function domainFromEmail(email) {
-  const raw = String(email || "").trim().toLowerCase();
+  const raw = normalizeText(email).toLowerCase();
   const at = raw.lastIndexOf("@");
   if (at < 0) return "";
   return raw.slice(at + 1);
@@ -117,17 +80,6 @@ function websiteFromEmail(email) {
   return `https://${domain}`;
 }
 
-function textFromHtml(html) {
-  return decodeHtmlEntities(
-    String(html || "")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-  );
-}
-
 function decodeHtmlEntities(text) {
   return String(text || "")
     .replace(/&#039;/g, "'")
@@ -138,12 +90,22 @@ function decodeHtmlEntities(text) {
     .replace(/&nbsp;/g, " ");
 }
 
+function textFromHtml(html) {
+  return decodeHtmlEntities(
+    String(html || "")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const resp = await fetch(url, { ...options, signal: controller.signal });
-    return resp;
+    return await fetch(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(timeout);
   }
@@ -156,7 +118,7 @@ async function fetchWebsiteText(url) {
       redirect: "follow",
       headers: { "user-agent": "EveryCall Enrichment Preview" }
     });
-    if (!resp.ok) return { ok: false, text: "" };
+    if (!resp.ok) return { ok: false, html: "", text: "" };
     const html = await resp.text();
     return { ok: true, html, text: textFromHtml(html).slice(0, 24000) };
   } catch {
@@ -173,13 +135,13 @@ function extractRelevantInternalLinks(baseUrl, html) {
   const urls = [];
 
   for (const match of matches) {
-    const href = String(match[1] || "").trim();
+    const href = normalizeText(match[1]);
     if (!href) continue;
     try {
       const resolved = new URL(href, base);
       if (resolved.hostname !== base.hostname) continue;
       const path = resolved.pathname.toLowerCase();
-      if (!/(contact|about|service|area|location|plumbing|hvac)/.test(path)) continue;
+      if (!/(contact|about|service|area|location|pricing|warranty|membership|plan|plumbing|hvac|electrical)/.test(path)) continue;
       const normalized = `${resolved.origin}${resolved.pathname}`.replace(/\/$/, "") || resolved.origin;
       if (seen.has(normalized)) continue;
       seen.add(normalized);
@@ -187,7 +149,7 @@ function extractRelevantInternalLinks(baseUrl, html) {
     } catch {
       continue;
     }
-    if (urls.length >= 6) break;
+    if (urls.length >= 8) break;
   }
 
   return urls;
@@ -228,33 +190,8 @@ function splitSentences(text) {
     .slice(0, 700);
 }
 
-function normalizeQuestion(question) {
-  return String(question || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
-
-function dedupeFaqTemplates(items) {
-  const seen = new Set();
-  const deduped = [];
-  for (const item of items || []) {
-    const question = String(item?.question || "").trim();
-    if (!question) continue;
-    const key = normalizeQuestion(question);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push({
-      question,
-      category: normalizeFaqCategory(item),
-      answer: String(item?.answer || "").trim()
-    });
-  }
-  return deduped;
-}
-
-function questionKeywords(question) {
-  return String(question || "")
+function keywordsFromText(text) {
+  return String(text || "")
     .toLowerCase()
     .replace(/[^a-z0-9\s]+/g, " ")
     .split(/\s+/)
@@ -265,10 +202,7 @@ function looksLikeNavOrBoilerplate(sentence) {
   const text = String(sentence || "").toLowerCase();
   if (!text.trim()) return true;
   if (text.includes("privacy policy") || text.includes("terms of service") || text.includes("copyright")) return true;
-  if (text.includes("near you") || text.includes("areas areas")) return true;
-  if ((text.match(/\b(seattle|downtown|capitol hill|queen anne|belltown|greenwood|wallingford)\b/g) || []).length >= 4) return true;
-  const commaCount = (text.match(/,/g) || []).length;
-  if (commaCount >= 8) return true;
+  if ((text.match(/,/g) || []).length >= 8) return true;
   return false;
 }
 
@@ -279,7 +213,7 @@ function cleanEvidenceText(sentence) {
     .slice(0, 320);
 }
 
-function receptionistStyleAnswer(answer) {
+function receptionistStyleText(answer) {
   const text = cleanEvidenceText(answer)
     .replace(/\bwe specialize in\b/gi, "We handle")
     .replace(/\bwe proudly offer\b/gi, "We offer")
@@ -289,80 +223,57 @@ function receptionistStyleAnswer(answer) {
 
   if (!text) return "";
 
-  const normalized = text
+  return text
     .replace(/\bcontact us today\b/gi, "give us a call")
     .replace(/\blearn more\b/gi, "we can share more details")
     .replace(/\bfor more information\b/gi, "for details")
     .replace(/\bstate-of-the-art\b/gi, "")
     .replace(/\btop-quality\b/gi, "quality")
     .replace(/\bhigh-quality\b/gi, "quality")
-    .replace(/\btrust the licensed plumbers at .*? to\b/gi, "We can")
-    .replace(/\byou can always count on .*? to\b/gi, "We can")
-    .replace(/\bour local and reliable plumbers and technicians are just a call away for\b/gi, "We handle")
-    .replace(/\bwe offer premium and affordable\b/gi, "We offer")
-    .replace(/\bwe take pride in\b/gi, "We")
-    .replace(/\bchoosing .*? is choosing peace of mind\.?/gi, "")
     .replace(/\s+/g, " ")
     .trim();
-
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
-function conversationalizeFaqAnswer(question, answer) {
-  const q = String(question || "").trim().toLowerCase();
-  let text = cleanEvidenceText(answer);
-  if (!text) return "";
-
-  text = text
-    .replace(/\bcall us right away\b/gi, "we can help you from here")
-    .replace(/\bcall us immediately\b/gi, "we can help you from here")
-    .replace(/\bcall us back\b/gi, "we can help you from here")
-    .replace(/\bgive us a call\b/gi, "we can help with that")
-    .replace(/\bcontact us today\b/gi, "we can help with that")
-    .replace(/\bcontact us\b/gi, "we can help with that")
-    .replace(/\bthen call\b/gi, "then we can help")
-    .replace(/\.\s*we can help you from here$/i, ". We can help you from here.")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (/^what should i do\b/.test(q)) {
-    return text;
+function uniqueValues(values) {
+  const seen = new Set();
+  const output = [];
+  for (const value of values || []) {
+    const text = normalizeText(value);
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(text);
   }
-
-  if (/^(do|can|are|is|will)\b/.test(q)) {
-    if (/^yes\b/i.test(text)) {
-      text = text.replace(/^yes[,.]?\s*/i, "Yes, we sure do. ");
-    } else if (/^no\b/i.test(text)) {
-      text = text.replace(/^no[,.]?\s*/i, "No, we don't. ");
-    }
-
-    if (
-      /(fix|repair|replace|install|handle|offer|service|rekey|clean|treat|upgrade)/.test(q) &&
-      !/[?]$/.test(text)
-    ) {
-      text = `${text.replace(/[.]\s*$/,"")}. Is that something you'd like help with?`;
-    }
-  }
-
-  return text;
+  return output;
 }
 
-function finalizeFaqAnswer(faq, evidenceAnswer) {
-  const templateAnswer = String(faq?.answer || "").trim();
-  if (templateAnswer) {
-    return conversationalizeFaqAnswer(faq?.question, templateAnswer);
+function findSentenceMatchesByKeywords(keywords, sources, limit = 3) {
+  const keys = uniqueValues(keywords).map((keyword) => keyword.toLowerCase());
+  if (!keys.length) return [];
+  const matches = [];
+  for (const source of sources || []) {
+    for (const sentence of source.sentences || []) {
+      if (looksLikeNavOrBoilerplate(sentence)) continue;
+      const lower = String(sentence || "").toLowerCase();
+      const matchCount = keys.filter((key) => lower.includes(key)).length;
+      if (!matchCount) continue;
+      matches.push({
+        sentence: cleanEvidenceText(sentence),
+        sourceType: source.sourceType || "website",
+        sourceUrl: source.sourceUrl || null,
+        score: matchCount
+      });
+    }
   }
+  return matches
+    .sort((a, b) => b.score - a.score || b.sentence.length - a.sentence.length)
+    .filter((match, index, items) => items.findIndex((item) => item.sentence === match.sentence) === index)
+    .slice(0, limit);
+}
 
-  const question = String(faq?.question || "").trim().toLowerCase();
-  const styled = conversationalizeFaqAnswer(question, receptionistStyleAnswer(evidenceAnswer));
-  if (!styled) return "";
-
-  if (/^(do|can|are|is|will)\b/.test(question)) {
-    if (/^(yes|we can|we do|absolutely)\b/i.test(styled)) return styled;
-    return `Yes, ${styled.charAt(0).toLowerCase()}${styled.slice(1)}`;
-  }
-
-  return styled;
+function joinSentences(matches, limit = 2) {
+  return uniqueValues((matches || []).map((match) => match.sentence)).slice(0, limit).join(" ");
 }
 
 function extractAddressCandidates(text) {
@@ -394,7 +305,7 @@ function titleCaseWords(value) {
 }
 
 function guessBusinessName({ googleBusinessProfile, website, ownerEmail }) {
-  const gbpName = String(googleBusinessProfile?.name || "").trim();
+  const gbpName = normalizeText(googleBusinessProfile?.name);
   if (gbpName) return gbpName;
   const domain = domainFromWebsite(website) || domainFromEmail(ownerEmail);
   if (!domain) return "";
@@ -402,7 +313,7 @@ function guessBusinessName({ googleBusinessProfile, website, ownerEmail }) {
 }
 
 function parseUsAddress(address) {
-  const raw = String(address || "").trim().replace(/,\s*USA$/i, "");
+  const raw = normalizeText(address).replace(/,\s*USA$/i, "");
   if (!raw) {
     return { address1: "", city: "", state: "", zip: "" };
   }
@@ -443,7 +354,7 @@ function inferEmergencyServices(text) {
 }
 
 function findWebsitePageForText(pages, value) {
-  const needle = String(value || "").trim().toLowerCase();
+  const needle = normalizeText(value).toLowerCase();
   if (!needle) return null;
   for (const page of pages || []) {
     if (String(page?.text || "").toLowerCase().includes(needle)) {
@@ -471,10 +382,10 @@ function buildProfileProvenance({
   emergencyServices,
   websiteResult
 }) {
-  const gbpName = String(googleBusinessProfile?.name || "").trim();
-  const gbpPhone = String(googleBusinessProfile?.phone || "").trim();
-  const gbpAddress = String(googleBusinessProfile?.serviceArea || "").trim();
-  const gbpHours = String(googleBusinessProfile?.hours || "").trim();
+  const gbpName = normalizeText(googleBusinessProfile?.name);
+  const gbpPhone = normalizeText(googleBusinessProfile?.phone);
+  const gbpAddress = normalizeText(googleBusinessProfile?.serviceArea);
+  const gbpHours = normalizeText(googleBusinessProfile?.hours);
   return {
     website: {
       value: normalizedWebsite || "",
@@ -516,7 +427,7 @@ function buildProfileProvenance({
     },
     emergencyServices: {
       value: emergencyServices,
-      source: emergencyServices === null ? null : "inferred_from_website_and_faqs",
+      source: emergencyServices === null ? null : "inferred_from_website_and_extracted_answers",
       sourceUrl: websiteResult.ok ? normalizedWebsite || null : null
     },
     fetchedSources: {
@@ -529,126 +440,150 @@ function buildProfileProvenance({
   };
 }
 
-function findEvidenceHeuristic(question, sources) {
-  const keys = questionKeywords(question);
+function findHeuristicMatch(queryText, sources, keywordHints = []) {
+  const keys = uniqueValues([
+    ...keywordsFromText(queryText),
+    ...keywordHints
+  ]);
   if (!keys.length) return null;
+
   let best = null;
-  for (const source of sources) {
-    for (const sentence of source.sentences) {
+  for (const source of sources || []) {
+    for (const sentence of source.sentences || []) {
       if (looksLikeNavOrBoilerplate(sentence)) continue;
       const lower = sentence.toLowerCase();
-      const matches = keys.filter((key) => lower.includes(key)).length;
+      const matches = keys.filter((key) => lower.includes(key.toLowerCase())).length;
+      if (!matches) continue;
       const matchRatio = matches / Math.max(keys.length, 1);
       const score = Number((matchRatio * Math.min(sentence.length / 120, 1)).toFixed(2));
-      if (matches >= Math.min(2, keys.length)) {
-        const candidate = {
-          answer: receptionistStyleAnswer(sentence),
-          sourceType: source.sourceType,
-          sourceUrl: source.sourceUrl,
-          evidenceSnippet: cleanEvidenceText(sentence).slice(0, 200),
-          sourceConfidence: score
-        };
-        if (!best || candidate.sourceConfidence > best.sourceConfidence) {
-          best = candidate;
-        }
+      const candidate = {
+        answer: receptionistStyleText(sentence),
+        sourceType: source.sourceType,
+        sourceUrl: source.sourceUrl,
+        evidenceSnippet: cleanEvidenceText(sentence),
+        sourceConfidence: score
+      };
+      if (!best || candidate.sourceConfidence > best.sourceConfidence) {
+        best = candidate;
       }
     }
   }
   return best;
 }
 
-function uniqueValues(values) {
-  const seen = new Set();
-  const output = [];
-  for (const value of values || []) {
-    const text = String(value || "").trim();
-    if (!text) continue;
-    const key = text.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    output.push(text);
-  }
-  return output;
-}
-
-function findSentenceMatchesByKeywords(keywords, sources, limit = 3) {
-  const keys = uniqueValues(keywords).map((keyword) => keyword.toLowerCase());
-  if (!keys.length) return [];
-  const matches = [];
-  for (const source of sources || []) {
-    for (const sentence of source.sentences || []) {
-      if (looksLikeNavOrBoilerplate(sentence)) continue;
-      const lower = String(sentence || "").toLowerCase();
-      const matchCount = keys.filter((key) => lower.includes(key)).length;
-      if (!matchCount) continue;
-      matches.push({
-        sentence: cleanEvidenceText(sentence),
-        sourceType: source.sourceType || "website",
-        sourceUrl: source.sourceUrl || null,
-        score: matchCount
-      });
-    }
-  }
-  return matches
-    .sort((a, b) => b.score - a.score || b.sentence.length - a.sentence.length)
-    .filter((match, index, items) => items.findIndex((item) => item.sentence === match.sentence) === index)
-    .slice(0, limit);
-}
-
-function joinSentences(matches, limit = 2) {
-  return uniqueValues((matches || []).map((match) => match.sentence)).slice(0, limit).join(" ");
-}
-
-function entryFromTemplate(template, contentText, match) {
+function entrySourceFromFallback(fallbackEntry) {
   return {
-    sectionType: template.sectionType,
-    title: template.title,
-    contentText: String(contentText || "").trim(),
-    sourceType: match?.sourceType || null,
-    sourceUrl: match?.sourceUrl || null,
-    sourceConfidence: Number.isFinite(Number(match?.score)) ? Number((Math.min(Number(match.score) / 3, 1)).toFixed(2)) : null
+    sourceType: normalizeText(fallbackEntry?.sourceType) || null,
+    sourceUrl: normalizeText(fallbackEntry?.sourceUrl) || null,
+    sourceConfidence: toNumberOrNull(fallbackEntry?.sourceConfidence)
   };
 }
 
-function buildKnowledgeEntries({ profile, sources }) {
+function buildKnowledgeEntries({ profile, sources, industryDefaults }) {
+  const defaultsBySection = new Map((industryDefaults || []).map((entry) => [entry.sectionType, entry]));
+  const templates = createBlankKnowledgeEntries();
   const addressSummary = [profile.address1, profile.city, profile.state, profile.zip].filter(Boolean).join(", ");
-  const defaults = createBlankKnowledgeEntries();
-  return defaults.map((template) => {
-    const matches = findSentenceMatchesByKeywords(KNOWLEDGE_SECTION_KEYWORDS[template.sectionType] || [], sources, template.sectionType === "services_and_capabilities" ? 3 : 2);
+
+  return templates.map((template) => {
+    const defaultEntry = defaultsBySection.get(template.sectionType) || template;
+    const matches = findSentenceMatchesByKeywords(
+      KNOWLEDGE_SECTION_KEYWORDS[template.sectionType] || [],
+      sources,
+      template.sectionType === "services_and_capabilities" ? 3 : 2
+    );
     const matchedText = joinSentences(matches, template.sectionType === "services_and_capabilities" ? 3 : 2);
-    let fallback = "";
-    if (template.sectionType === "service_area") {
-      fallback = [profile.serviceArea, addressSummary].filter(Boolean).join(" ").trim();
-    } else if (template.sectionType === "hours_and_availability") {
-      fallback = profile.businessHours || "";
+
+    let fallbackText = "";
+    let fallbackSource = entrySourceFromFallback(defaultEntry);
+    if (template.sectionType === "service_area" && (profile.serviceArea || addressSummary)) {
+      fallbackText = [profile.serviceArea, addressSummary].filter(Boolean).join(" ").trim();
+      fallbackSource = { sourceType: "derived_profile", sourceUrl: null, sourceConfidence: 1 };
+    } else if (template.sectionType === "hours_and_availability" && profile.businessHours) {
+      fallbackText = profile.businessHours;
+      fallbackSource = { sourceType: "derived_profile", sourceUrl: null, sourceConfidence: 1 };
     } else if (template.sectionType === "emergency_service" && profile.emergencyServices === true) {
-      fallback = "Emergency or after-hours service appears to be offered. Verify exact availability before promising dispatch timing.";
+      fallbackText = "Emergency or after-hours service appears to be offered. Verify exact availability before promising dispatch timing.";
+      fallbackSource = { sourceType: "derived_profile", sourceUrl: null, sourceConfidence: 0.8 };
+    } else {
+      fallbackText = normalizeText(defaultEntry.contentText);
     }
-    return entryFromTemplate(template, matchedText || fallback, matches[0] || null);
+
+    return {
+      sectionType: template.sectionType,
+      title: defaultEntry.title || template.title,
+      contentText: matchedText || fallbackText,
+      sourceType: matches[0]?.sourceType || fallbackSource.sourceType,
+      sourceUrl: matches[0]?.sourceUrl || fallbackSource.sourceUrl,
+      sourceConfidence: matches[0]
+        ? Number((Math.min(Number(matches[0].score) / 3, 1)).toFixed(2))
+        : fallbackSource.sourceConfidence
+    };
   });
 }
 
-function buildGuardrailQuestionTests({ profile, sources, knowledgeEntries }) {
+function buildGuardrailQuestionTests({ profile, sources, defaults, knowledgeEntries, aiByQuestion }) {
   const sectionByType = new Map((knowledgeEntries || []).map((entry) => [entry.sectionType, entry]));
-  return createBlankGuardrailQuestionTests().map((template) => {
-    const matches = findSentenceMatchesByKeywords(GUARDRAIL_TOPIC_KEYWORDS[template.topic] || [], sources, 2);
-    let answer = receptionistStyleAnswer(joinSentences(matches, 2));
-    if (!answer && template.topic === "emergency_service" && profile.emergencyServices === true) {
-      answer = "Emergency or after-hours service appears to be offered, but exact dispatch timing should be confirmed before making a promise.";
+
+  return (defaults || []).map((template) => {
+    const aiMatch = aiByQuestion.get(normalizeText(template.questionText));
+    if (aiMatch) {
+      return {
+        ...template,
+        answer: normalizeText(aiMatch.answer),
+        sourceType: normalizeText(aiMatch.sourceType) || null,
+        sourceUrl: normalizeText(aiMatch.sourceUrl) || null,
+        sourceConfidence: toNumberOrNull(aiMatch.sourceConfidence)
+      };
     }
-    if (!answer && template.topic === "service_area") {
-      answer = sectionByType.get("service_area")?.contentText || "";
+
+    const heuristic = findHeuristicMatch(template.questionText, sources, GUARDRAIL_TOPIC_KEYWORDS[template.topic] || []);
+    if (heuristic) {
+      return {
+        ...template,
+        answer: normalizeText(heuristic.answer),
+        sourceType: normalizeText(heuristic.sourceType) || null,
+        sourceUrl: normalizeText(heuristic.sourceUrl) || null,
+        sourceConfidence: toNumberOrNull(heuristic.sourceConfidence)
+      };
     }
-    if (!answer && template.topic === "availability") {
-      answer = sectionByType.get("hours_and_availability")?.contentText || "";
+
+    if (template.topic === "emergency_service" && profile.emergencyServices === true) {
+      return {
+        ...template,
+        answer: "Emergency or after-hours service appears to be offered, but exact dispatch timing should be confirmed before making a promise.",
+        sourceType: "derived_profile",
+        sourceUrl: null,
+        sourceConfidence: 0.8
+      };
     }
-    return {
-      ...template,
-      answer: String(answer || "").trim(),
-      sourceType: matches[0]?.sourceType || null,
-      sourceUrl: matches[0]?.sourceUrl || null,
-      sourceConfidence: Number.isFinite(Number(matches[0]?.score)) ? Number((Math.min(Number(matches[0].score) / 3, 1)).toFixed(2)) : null
-    };
+
+    if (template.topic === "service_area") {
+      const section = sectionByType.get("service_area");
+      if (normalizeText(section?.contentText)) {
+        return {
+          ...template,
+          answer: normalizeText(section.contentText),
+          sourceType: section.sourceType || null,
+          sourceUrl: section.sourceUrl || null,
+          sourceConfidence: toNumberOrNull(section.sourceConfidence)
+        };
+      }
+    }
+
+    if (template.topic === "availability") {
+      const section = sectionByType.get("hours_and_availability");
+      if (normalizeText(section?.contentText)) {
+        return {
+          ...template,
+          answer: normalizeText(section.contentText),
+          sourceType: section.sourceType || null,
+          sourceUrl: section.sourceUrl || null,
+          sourceConfidence: toNumberOrNull(section.sourceConfidence)
+        };
+      }
+    }
+
+    return template;
   });
 }
 
@@ -661,7 +596,7 @@ function safeJsonParse(value) {
 }
 
 function extractJsonObject(text) {
-  const raw = String(text || "").trim();
+  const raw = normalizeText(text);
   const parsedRaw = safeJsonParse(raw);
   if (parsedRaw) return parsedRaw;
   const start = raw.indexOf("{");
@@ -672,33 +607,33 @@ function extractJsonObject(text) {
   return null;
 }
 
-async function extractWithAi(faqs, sources) {
+async function extractGuardrailAnswersWithAi(questionTemplates, sources) {
   const apiKey = process.env.OPENAI_API_KEY || "";
-  if (!apiKey || !faqs.length || !sources.length) return null;
-
-  const sourcePayload = sources.map((source) => ({
-    sourceType: source.sourceType,
-    sourceUrl: source.sourceUrl,
-    sentences: source.sentences.slice(0, 60)
-  }));
+  if (!apiKey || !questionTemplates.length || !sources.length) return null;
 
   const prompt = {
-    faqs: faqs.map((f) => ({ question: f.question, category: f.category, answer: f.answer || "" })),
-    sources: sourcePayload
+    guardrailQuestions: questionTemplates.map((item) => ({
+      questionText: item.questionText,
+      topic: item.topic,
+      answer: item.answer || ""
+    })),
+    sources: sources.map((source) => ({
+      sourceType: source.sourceType,
+      sourceUrl: source.sourceUrl,
+      sentences: source.sentences.slice(0, 80)
+    }))
   };
 
   const instruction = [
-    "You extract business FAQ answers from source text.",
+    "You extract approved business answers for high-risk guardrail questions from source text.",
     "Rules:",
     "1) Answer only when explicit evidence appears in a source sentence.",
     "2) If no explicit evidence exists, return answer as empty string.",
     "3) Return confidence from 0 to 1.",
-    "4) Keep answer concise and faithful to evidence.",
-    "5) Write the answer the way a friendly receptionist would say it on a call, not like website marketing copy.",
-    "6) Do not use hype, slogans, exclamation points, or promotional language.",
-    "7) Prefer plain spoken phrasing like 'Yes, we can help with that' or 'We can schedule that' when supported by evidence.",
+    "4) Keep the answer concise, faithful to evidence, and suitable for a receptionist.",
+    "5) Do not add promises, pricing, or policy details that are not explicit in the source text.",
     "Output strict JSON with shape:",
-    '{"items":[{"question":"...","answer":"...","sourceType":"website|google_business_profile|null","sourceUrl":"...|null","evidenceSnippet":"...|null","sourceConfidence":0.0}]}'
+    '{"items":[{"questionText":"...","answer":"...","sourceType":"website|google_business_profile|null","sourceUrl":"...|null","evidenceSnippet":"...|null","sourceConfidence":0.0}]}'
   ].join("\n");
 
   try {
@@ -740,7 +675,7 @@ async function fetchGoogleBusinessProfile({ website, businessName, serviceArea }
   const domain = domainFromWebsite(website);
   const queryCandidates = Array.from(new Set([
     [businessName, serviceArea].filter(Boolean).join(" ").trim(),
-    String(businessName || "").trim(),
+    normalizeText(businessName),
     domain
   ].filter(Boolean)));
 
@@ -815,25 +750,14 @@ export default async function handler(req, res) {
     await ensureTables(pool);
 
     const body = typeof req.body === "object" && req.body ? req.body : {};
-    const industry = String(body.industry || "").trim();
+    const industry = normalizeText(body.industry);
     if (!industry) return fail(res, 400, "missing_industry", "Industry is required.");
 
-    const ownerEmail = String(body.ownerEmail || "").trim().toLowerCase();
-    const explicitWebsite = String(body.website || "").trim();
+    const ownerEmail = normalizeText(body.ownerEmail).toLowerCase();
+    const explicitWebsite = normalizeText(body.website);
     const derivedWebsite = explicitWebsite ? "" : websiteFromEmail(ownerEmail);
     const normalizedWebsite = normalizeWebsite(explicitWebsite || derivedWebsite);
-
-    const industryFaqRows = await pool.query(
-      `SELECT question, answer, category
-       FROM industry_faqs
-       WHERE industry_key = $1
-       ORDER BY id ASC`,
-      [industry]
-    );
-    const defaultFaqsRaw = industryFaqRows.rowCount
-      ? industryFaqRows.rows
-      : (FALLBACK_INDUSTRY_FAQS[industry] || []);
-    const defaultFaqs = dedupeFaqTemplates(defaultFaqsRaw);
+    const industryDefaults = await loadIndustryKnowledgeDefaults(pool, industry);
 
     const websiteSources = normalizedWebsite ? await fetchRelevantWebsiteSources(normalizedWebsite) : { pages: [], combinedText: "" };
     const websiteResult = {
@@ -847,8 +771,8 @@ export default async function handler(req, res) {
     if (!googleBusinessProfile) {
       googleBusinessProfile = await fetchGoogleBusinessProfile({
         website: normalizedWebsite,
-        businessName: String(body.businessName || "").trim(),
-        serviceArea: String(body.serviceArea || "").trim()
+        businessName: normalizeText(body.businessName),
+        serviceArea: normalizeText(body.serviceArea)
       });
     }
 
@@ -870,74 +794,22 @@ export default async function handler(req, res) {
         sentences: splitSentences(page.text)
       });
     }
-    if (gbpText.trim()) {
+    if (normalizeText(gbpText)) {
       sources.push({
         sourceType: "google_business_profile",
-        sourceUrl: String(googleBusinessProfile?.url || googleBusinessProfile?.website || "").trim() || null,
+        sourceUrl: normalizeText(googleBusinessProfile?.url || googleBusinessProfile?.website) || null,
         sentences: splitSentences(gbpText)
       });
     }
 
-    const aiItems = await extractWithAi(defaultFaqs, sources);
+    const aiItems = await extractGuardrailAnswersWithAi(industryDefaults.guardrailQuestionTests, sources);
     const aiByQuestion = new Map(
       Array.isArray(aiItems)
         ? aiItems
-            .filter((item) => item && typeof item.question === "string")
-            .map((item) => [String(item.question).trim(), item])
+            .filter((item) => normalizeText(item?.questionText))
+            .map((item) => [normalizeText(item.questionText), item])
         : []
     );
-
-    const retrievedAt = new Date().toISOString();
-    const faqs = defaultFaqs.map((faq) => {
-      const aiMatch = aiByQuestion.get(faq.question);
-      if (aiMatch) {
-        const confidence = Number.isFinite(Number(aiMatch.sourceConfidence)) ? Number(aiMatch.sourceConfidence) : 0;
-        const answer = String(aiMatch.answer || "").trim();
-        if (answer && confidence >= 0.6 && String(aiMatch.evidenceSnippet || "").trim()) {
-          const cleanedEvidence = cleanEvidenceText(aiMatch.evidenceSnippet || aiMatch.answer || "");
-          if (looksLikeNavOrBoilerplate(cleanedEvidence)) {
-            return {
-              question: faq.question,
-              category: normalizeFaqCategory(faq),
-              answer: "",
-              defaultAnswer: String(faq.answer || "").trim(),
-              isIndustryDefault: true,
-              sourceType: null,
-              sourceUrl: null,
-              sourceRetrievedAt: null,
-              evidenceSnippet: null,
-              sourceConfidence: null
-            };
-          }
-          return {
-            question: faq.question,
-            category: normalizeFaqCategory(faq),
-            answer: finalizeFaqAnswer(faq, answer),
-            defaultAnswer: String(faq.answer || "").trim(),
-            isIndustryDefault: true,
-            sourceType: String(aiMatch.sourceType || "").trim() || null,
-            sourceUrl: String(aiMatch.sourceUrl || "").trim() || null,
-            sourceRetrievedAt: retrievedAt,
-            evidenceSnippet: cleanedEvidence || null,
-            sourceConfidence: confidence
-          };
-        }
-      }
-
-      const heuristic = findEvidenceHeuristic(faq.question, sources);
-      return {
-        question: faq.question,
-        category: normalizeFaqCategory(faq),
-        answer: heuristic ? finalizeFaqAnswer(faq, heuristic.answer) : "",
-        defaultAnswer: String(faq.answer || "").trim(),
-        isIndustryDefault: true,
-        sourceType: heuristic?.sourceType || null,
-        sourceUrl: heuristic?.sourceUrl || null,
-        sourceRetrievedAt: heuristic ? retrievedAt : null,
-        evidenceSnippet: heuristic?.evidenceSnippet || null,
-        sourceConfidence: heuristic?.sourceConfidence || null
-      };
-    });
 
     const businessName = guessBusinessName({ googleBusinessProfile, website: normalizedWebsite, ownerEmail });
     const addressText = [websiteResult.text, googleBusinessProfile?.serviceArea].filter(Boolean).join(" ");
@@ -956,27 +828,53 @@ export default async function handler(req, res) {
       addressSourceType = "google_business_profile.formatted_address";
       addressSourceUrl = googleBusinessProfile?.url || googleBusinessProfile?.website || null;
     }
+
     const parsedAddress = parseUsAddress(selectedAddressRaw);
-    const serviceText = [
-      googleBusinessProfile?.description,
-      googleBusinessProfile?.services,
-      websiteResult.text.slice(0, 10000)
-    ].filter(Boolean).join(". ");
-    const emergencyServices = inferEmergencyServices([serviceText, ...faqs.map((faq) => faq.answer)].join(". "));
     const extractedWebsitePhone = extractPhone(websiteResult.text);
     const extractedHours = extractBusinessHours(websiteResult.text);
+
     const profile = {
       businessName,
-      phone: String(googleBusinessProfile?.phone || "").trim() || extractedWebsitePhone,
+      phone: normalizeText(googleBusinessProfile?.phone) || extractedWebsitePhone,
       address1: parsedAddress.address1,
       city: parsedAddress.city,
       state: parsedAddress.state,
       zip: parsedAddress.zip,
-      serviceArea: String(googleBusinessProfile?.serviceArea || "").trim(),
-      businessHours: String(googleBusinessProfile?.hours || "").trim() || extractedHours,
-      emergencyServices,
-      serviceText
+      serviceArea: normalizeText(googleBusinessProfile?.serviceArea),
+      businessHours: normalizeText(googleBusinessProfile?.hours) || extractedHours,
+      emergencyServices: null,
+      serviceText: [
+        normalizeText(googleBusinessProfile?.description),
+        normalizeText(googleBusinessProfile?.services),
+        websiteResult.text.slice(0, 10000)
+      ].filter(Boolean).join(". ")
     };
+
+    const preliminaryKnowledgeEntries = buildKnowledgeEntries({
+      profile,
+      sources,
+      industryDefaults: industryDefaults.knowledgeEntries
+    });
+
+    const guardrailQuestionTests = buildGuardrailQuestionTests({
+      profile,
+      sources,
+      defaults: industryDefaults.guardrailQuestionTests,
+      knowledgeEntries: preliminaryKnowledgeEntries,
+      aiByQuestion
+    });
+
+    const emergencyServices = inferEmergencyServices(
+      [profile.serviceText, ...preliminaryKnowledgeEntries.map((entry) => entry.contentText), ...guardrailQuestionTests.map((item) => item.answer)].join(". ")
+    );
+    profile.emergencyServices = emergencyServices;
+
+    const knowledgeEntries = buildKnowledgeEntries({
+      profile,
+      sources,
+      industryDefaults: industryDefaults.knowledgeEntries
+    });
+
     const provenance = buildProfileProvenance({
       explicitWebsite,
       derivedWebsite,
@@ -995,8 +893,6 @@ export default async function handler(req, res) {
       emergencyServices,
       websiteResult
     });
-    const knowledgeEntries = buildKnowledgeEntries({ profile, sources });
-    const guardrailQuestionTests = buildGuardrailQuestionTests({ profile, sources, knowledgeEntries });
 
     return res.status(200).json({
       ok: true,
@@ -1009,9 +905,7 @@ export default async function handler(req, res) {
         profile,
         provenance,
         knowledgeEntries,
-        guardrailQuestionTests,
-        defaultFaqCount: defaultFaqs.length,
-        faqs
+        guardrailQuestionTests
       }
     });
   } catch (err) {

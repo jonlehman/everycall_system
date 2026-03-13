@@ -11,6 +11,47 @@ export const DEFAULT_KNOWLEDGE_USAGE_INSTRUCTIONS = [
   "If the returned knowledge is weak or missing, say you do not have that detail and offer callback follow-up."
 ];
 
+const SECTION_TOPIC_MAP = {
+  services_and_capabilities: "services",
+  emergency_service: "emergency_service",
+  service_area: "service_area",
+  hours_and_availability: "availability",
+  warranties_and_guarantees: "warranty",
+  pricing_and_fees: "pricing",
+  financing_and_payment: "financing",
+  policies_and_process: "policies"
+};
+
+const TOPIC_RISK_MAP = {
+  warranty: "critical",
+  guarantees: "critical",
+  pricing: "critical",
+  financing: "high",
+  emergency_service: "high",
+  service_area: "high",
+  availability: "high",
+  policies: "normal",
+  services: "normal",
+  general: "normal"
+};
+
+const SERVICE_TAG_PATTERNS = [
+  ["water_heater", /\bwater heater|tankless\b/i],
+  ["drain_cleaning", /\bdrain|clog|hydro jet\b/i],
+  ["sewer", /\bsewer|septic\b/i],
+  ["leak_detection", /\bleak\b/i],
+  ["fixture_installation", /\bfixture|faucet|toilet|sink\b/i],
+  ["emergency_service", /\bemergency|after[- ]hours|urgent\b/i],
+  ["electrical_panel", /\bpanel|breaker|rewire\b/i],
+  ["generator", /\bgenerator\b/i],
+  ["hvac", /\bfurnace|heat pump|air conditioner|ac repair|mini split|hvac\b/i],
+  ["garage_door", /\bgarage door|opener|spring\b/i],
+  ["insurance", /\binsurance|claim\b/i],
+  ["financing", /\bfinancing|payment plan\b/i],
+  ["warranty", /\bwarranty|guarantee|satisfaction\b/i],
+  ["service_area", /\bservice area|serve|coverage\b/i]
+];
+
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -22,6 +63,59 @@ function toNumberOrNull(value) {
 
 function normalizeText(value) {
   return String(value || "").trim();
+}
+
+function slugify(input) {
+  return String(input || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+}
+
+function truncateText(value, limit = 280) {
+  const text = normalizeText(value);
+  if (!text) return "";
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function inferTopic(sectionType, fallbackTopic = null) {
+  return normalizeText(fallbackTopic) || SECTION_TOPIC_MAP[sectionType] || normalizeText(sectionType) || "general";
+}
+
+function inferRiskLevel(topic, explicitRisk = null) {
+  return normalizeText(explicitRisk) || TOPIC_RISK_MAP[inferTopic(null, topic)] || "normal";
+}
+
+function extractServiceTags(text) {
+  const haystack = normalizeText(text);
+  if (!haystack) return [];
+  return SERVICE_TAG_PATTERNS
+    .filter(([, pattern]) => pattern.test(haystack))
+    .map(([tag]) => tag);
+}
+
+function splitIntoClaims(text) {
+  const raw = normalizeText(text);
+  if (!raw) return [];
+
+  const candidates = raw
+    .split(/\n+/)
+    .flatMap((line) => line.split(/(?<=[.!?])\s+/))
+    .map((line) => line.replace(/^[\s\-*•]+|[\s\-*•]+$/g, "").trim())
+    .filter((line) => line.length >= 8);
+
+  const unique = [];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const key = candidate.toLowerCase().replace(/\s+/g, " ");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(candidate);
+    if (unique.length >= 10) break;
+  }
+
+  return unique.length ? unique : [raw];
 }
 
 function mapKnowledgeEntryRow(row) {
@@ -43,6 +137,9 @@ function mapKnowledgeEntryRow(row) {
 function mapGuardrailQuestionRow(row) {
   const metadata = asObject(row.supporting_artifacts_json);
   const answer = normalizeText(row.approved_answer) || normalizeText(row.draft_answer);
+  const serviceTags = Array.isArray(metadata.serviceTags)
+    ? metadata.serviceTags.map((item) => normalizeText(item)).filter(Boolean)
+    : [];
   return {
     id: String(row.id),
     topic: normalizeText(row.topic) || null,
@@ -55,6 +152,7 @@ function mapGuardrailQuestionRow(row) {
     sourceType: normalizeText(metadata.sourceType) || null,
     sourceUrl: normalizeText(metadata.sourceUrl) || null,
     sourceConfidence: toNumberOrNull(metadata.sourceConfidence),
+    serviceTags,
     updatedAt: row.updated_at || null
   };
 }
@@ -82,6 +180,22 @@ function mapKnowledgeGuardrailRow(row) {
     severity: normalizeText(row.severity) || "high",
     instructionText: normalizeText(row.instruction_text),
     updatedAt: row.updated_at || null
+  };
+}
+
+function mapRuntimeFactRow(row) {
+  return {
+    id: String(row.id),
+    topic: normalizeText(row.topic) || null,
+    trade: normalizeText(row.trade) || null,
+    serviceTags: Array.isArray(row.service_tags) ? row.service_tags.filter(Boolean) : [],
+    claim: normalizeText(row.claim),
+    evidenceText: normalizeText(row.evidence_text) || null,
+    sourceUrl: normalizeText(row.source_url) || null,
+    confidence: toNumberOrNull(row.confidence),
+    riskLevel: normalizeText(row.risk_level) || "normal",
+    sourceType: normalizeText(row.source_type) || null,
+    reviewStatus: normalizeText(row.review_status) || "reviewed"
   };
 }
 
@@ -158,6 +272,7 @@ function mergeGuardrailQuestions(rows, includeEmptyTemplates) {
         sourceType: null,
         sourceUrl: null,
         sourceConfidence: null,
+        serviceTags: [],
         updatedAt: null
       };
     }),
@@ -165,26 +280,268 @@ function mergeGuardrailQuestions(rows, includeEmptyTemplates) {
   ];
 }
 
-export async function loadTenantKnowledge(pool, tenantKey, options = {}) {
-  const includeEmptyTemplates = options.includeEmptyTemplates !== false;
-
-  const [entryRes, questionRes, overrideRes, guardrailRes] = await Promise.all([
-    pool.query(
+async function loadKnowledgeAuthoringRows(db, tenantKey) {
+  const [entryRes, questionRes] = await Promise.all([
+    db.query(
       `SELECT id, entry_type, section_type, title, content_text, source_url, compilation_status, metadata_json, updated_at
        FROM knowledge_entries
        WHERE tenant_key = $1
        ORDER BY updated_at DESC, id DESC`,
       [tenantKey]
     ),
-    pool.query(
+    db.query(
       `SELECT id, topic, question_text, risk_level, draft_answer, approved_answer, review_status, supporting_artifacts_json, updated_at
        FROM guardrail_question_tests
        WHERE tenant_key = $1
          AND status = 'active'
        ORDER BY updated_at DESC, id DESC`,
       [tenantKey]
-    ),
-    pool.query(
+    )
+  ]);
+  return {
+    entryRows: entryRes.rows || [],
+    questionRows: questionRes.rows || []
+  };
+}
+
+function buildGeneratedGuardrailInstruction(item) {
+  const question = normalizeText(item.questionText) || "this high-risk question";
+  return `When asked "${question}", stay within the approved answer and do not add unstated promises or coverage details.`;
+}
+
+async function insertCompiledCard(db, tenantKey, values) {
+  const result = await db.query(
+    `INSERT INTO knowledge_cards (tenant_key, card_key, status, topic, trade, service_tags, audience, title, summary, usage_notes, metadata_json)
+     VALUES ($1, $2, 'active', $3, $4, $5::text[], $6, $7, $8, $9, $10::jsonb)
+     RETURNING id`,
+    [
+      tenantKey,
+      values.cardKey,
+      values.topic,
+      values.trade,
+      values.serviceTags,
+      values.audience || "general",
+      values.title,
+      values.summary,
+      values.usageNotes,
+      JSON.stringify(values.metadata || {})
+    ]
+  );
+  return Number(result.rows[0]?.id);
+}
+
+async function insertCompiledFact(db, tenantKey, values) {
+  const result = await db.query(
+    `INSERT INTO knowledge_facts (tenant_key, knowledge_entry_id, status, review_status, source_type, topic, trade, service_tags, claim, evidence_text, source_url, confidence, risk_level, explicit, metadata_json)
+     VALUES ($1, $2, 'active', $3, $4, $5, $6, $7::text[], $8, $9, $10, $11, $12, true, $13::jsonb)
+     RETURNING id`,
+    [
+      tenantKey,
+      values.knowledgeEntryId,
+      values.reviewStatus || "reviewed",
+      values.sourceType,
+      values.topic,
+      values.trade,
+      values.serviceTags,
+      values.claim,
+      values.evidenceText,
+      values.sourceUrl,
+      values.confidence,
+      values.riskLevel,
+      JSON.stringify(values.metadata || {})
+    ]
+  );
+  return Number(result.rows[0]?.id);
+}
+
+async function linkCardFact(db, cardId, factId, factRank, required = false) {
+  await db.query(
+    `INSERT INTO knowledge_card_facts (card_id, fact_id, fact_rank, required)
+     VALUES ($1, $2, $3, $4)`,
+    [cardId, factId, factRank, required]
+  );
+}
+
+export async function compileTenantKnowledge(db, tenantKey) {
+  const tenantRes = await db.query(
+    `SELECT industry
+     FROM tenants
+     WHERE tenant_key = $1
+     LIMIT 1`,
+    [tenantKey]
+  );
+  const trade = normalizeText(tenantRes.rows[0]?.industry) || null;
+  const { entryRows, questionRows } = await loadKnowledgeAuthoringRows(db, tenantKey);
+  const knowledgeEntries = mergeKnowledgeEntries(entryRows, false).filter((entry) => normalizeText(entry.contentText));
+  const guardrailQuestionTests = mergeGuardrailQuestions(questionRows, false).filter((item) => normalizeText(item.answer));
+
+  await db.query(
+    `DELETE FROM knowledge_card_facts
+     WHERE card_id IN (SELECT id FROM knowledge_cards WHERE tenant_key = $1)`,
+    [tenantKey]
+  );
+  await Promise.all([
+    db.query(`DELETE FROM knowledge_cards WHERE tenant_key = $1`, [tenantKey]),
+    db.query(`DELETE FROM knowledge_facts WHERE tenant_key = $1`, [tenantKey]),
+    db.query(`DELETE FROM knowledge_overrides WHERE tenant_key = $1`, [tenantKey]),
+    db.query(`DELETE FROM knowledge_guardrails WHERE tenant_key = $1`, [tenantKey])
+  ]);
+
+  let runtimeCardCount = 0;
+  let runtimeFactCount = 0;
+
+  for (let index = 0; index < knowledgeEntries.length; index += 1) {
+    const entry = knowledgeEntries[index];
+    const topic = inferTopic(entry.sectionType);
+    const riskLevel = inferRiskLevel(topic);
+    const serviceTags = extractServiceTags(`${entry.title} ${entry.contentText}`);
+    const cardId = await insertCompiledCard(db, tenantKey, {
+      cardKey: `entry:${entry.sectionType}:${entry.id || index + 1}`,
+      topic,
+      trade,
+      serviceTags,
+      title: entry.title || entry.sectionType,
+      summary: truncateText(entry.contentText),
+      usageNotes: "Use when the caller is asking about tenant-specific business details in this section.",
+      metadata: {
+        compiledFrom: "knowledge_entry",
+        knowledgeEntryId: entry.id
+      }
+    });
+    runtimeCardCount += 1;
+
+    const claims = splitIntoClaims(entry.contentText);
+    for (let claimIndex = 0; claimIndex < claims.length; claimIndex += 1) {
+      const claim = claims[claimIndex];
+      const factId = await insertCompiledFact(db, tenantKey, {
+        knowledgeEntryId: entry.id ? Number(entry.id) : null,
+        reviewStatus: "reviewed",
+        sourceType: entry.sourceType || "manual_business_provided",
+        topic,
+        trade,
+        serviceTags,
+        claim,
+        evidenceText: entry.contentText,
+        sourceUrl: entry.sourceUrl,
+        confidence: entry.sourceConfidence ?? (entry.sourceType ? 0.9 : 1),
+        riskLevel,
+        metadata: {
+          compiledFrom: "knowledge_entry",
+          sectionType: entry.sectionType
+        }
+      });
+      runtimeFactCount += 1;
+      await linkCardFact(db, cardId, factId, claimIndex, claimIndex === 0);
+    }
+
+    if (entry.id) {
+      await db.query(
+        `UPDATE knowledge_entries
+         SET compilation_status = 'compiled',
+             last_compiled_at = NOW(),
+             updated_at = NOW()
+         WHERE tenant_key = $1
+           AND id = $2`,
+        [tenantKey, Number(entry.id)]
+      );
+    }
+  }
+
+  for (let index = 0; index < guardrailQuestionTests.length; index += 1) {
+    const item = guardrailQuestionTests[index];
+    const topic = inferTopic(null, item.topic);
+    const riskLevel = inferRiskLevel(topic, item.riskLevel);
+    const serviceTags = Array.from(new Set([...(item.serviceTags || []), ...extractServiceTags(`${item.questionText} ${item.answer}`)]));
+
+    const cardId = await insertCompiledCard(db, tenantKey, {
+      cardKey: `guardrail:${slugify(item.questionText) || topic}:${item.id || index + 1}`,
+      topic,
+      trade,
+      serviceTags,
+      title: item.questionText,
+      summary: truncateText(item.answer),
+      usageNotes: "Use when the caller asks this high-risk question or a close variant of it.",
+      metadata: {
+        compiledFrom: "guardrail_question_test",
+        guardrailQuestionId: item.id
+      }
+    });
+    runtimeCardCount += 1;
+
+    const factId = await insertCompiledFact(db, tenantKey, {
+      knowledgeEntryId: null,
+      reviewStatus: "reviewed",
+      sourceType: item.sourceType || "approved_guardrail_answer",
+      topic,
+      trade,
+      serviceTags,
+      claim: item.answer,
+      evidenceText: item.answer,
+      sourceUrl: item.sourceUrl,
+      confidence: item.sourceConfidence ?? 1,
+      riskLevel,
+      metadata: {
+        compiledFrom: "guardrail_question_test",
+        questionText: item.questionText
+      }
+    });
+    runtimeFactCount += 1;
+    await linkCardFact(db, cardId, factId, 0, true);
+
+    await db.query(
+      `INSERT INTO knowledge_overrides (tenant_key, status, topic, trade, service_tags, audience, trigger_text, preferred_answer, applies_when_json)
+       VALUES ($1, 'active', $2, $3, $4::text[], 'general', $5, $6, $7::jsonb)`,
+      [
+        tenantKey,
+        topic,
+        trade,
+        serviceTags,
+        item.questionText,
+        item.answer,
+        JSON.stringify({ questionText: item.questionText, riskLevel })
+      ]
+    );
+
+    await db.query(
+      `INSERT INTO knowledge_guardrails (tenant_key, status, rule_type, topic, trade, service_tags, severity, instruction_text, applies_when_json)
+       VALUES ($1, 'active', 'approved_answer_scope', $2, $3, $4::text[], $5, $6, $7::jsonb)`,
+      [
+        tenantKey,
+        topic,
+        trade,
+        serviceTags,
+        riskLevel,
+        buildGeneratedGuardrailInstruction(item),
+        JSON.stringify({ questionText: item.questionText })
+      ]
+    );
+
+    if (item.id) {
+      await db.query(
+        `UPDATE guardrail_question_tests
+         SET last_run_at = NOW(),
+             last_run_confidence = $3,
+             updated_at = NOW()
+         WHERE tenant_key = $1
+           AND id = $2`,
+        [tenantKey, Number(item.id), item.sourceConfidence ?? 1]
+      );
+    }
+  }
+
+  return {
+    compiledEntryCount: knowledgeEntries.length,
+    compiledGuardrailCount: guardrailQuestionTests.length,
+    runtimeCardCount,
+    runtimeFactCount
+  };
+}
+
+export async function loadTenantKnowledgeAuthoring(db, tenantKey, options = {}) {
+  const includeEmptyTemplates = options.includeEmptyTemplates !== false;
+  const { entryRows, questionRows } = await loadKnowledgeAuthoringRows(db, tenantKey);
+  const [overrideRes, guardrailRes] = await Promise.all([
+    db.query(
       `SELECT id, topic, trade, service_tags, audience, trigger_text, preferred_answer, updated_at
        FROM knowledge_overrides
        WHERE tenant_key = $1
@@ -192,7 +549,7 @@ export async function loadTenantKnowledge(pool, tenantKey, options = {}) {
        ORDER BY updated_at DESC, id DESC`,
       [tenantKey]
     ),
-    pool.query(
+    db.query(
       `SELECT id, rule_type, topic, trade, service_tags, severity, instruction_text, updated_at
        FROM knowledge_guardrails
        WHERE tenant_key = $1
@@ -202,8 +559,8 @@ export async function loadTenantKnowledge(pool, tenantKey, options = {}) {
     )
   ]);
 
-  const knowledgeEntries = mergeKnowledgeEntries(entryRes.rows || [], includeEmptyTemplates);
-  const guardrailQuestionTests = mergeGuardrailQuestions(questionRes.rows || [], includeEmptyTemplates);
+  const knowledgeEntries = mergeKnowledgeEntries(entryRows, includeEmptyTemplates);
+  const guardrailQuestionTests = mergeGuardrailQuestions(questionRows, includeEmptyTemplates);
   const overrides = (overrideRes.rows || []).map(mapKnowledgeOverrideRow);
   const guardrails = (guardrailRes.rows || []).map(mapKnowledgeGuardrailRow);
 
@@ -226,3 +583,145 @@ export async function loadTenantKnowledge(pool, tenantKey, options = {}) {
   };
 }
 
+export async function loadTenantKnowledgeRuntime(db, tenantKey) {
+  async function queryRuntime() {
+    const [cardFactRes, overrideRes, guardrailRes, standaloneFactsRes] = await Promise.all([
+      db.query(
+        `SELECT
+           c.id AS card_id,
+           c.card_key,
+           c.topic AS card_topic,
+           c.trade AS card_trade,
+           c.service_tags AS card_service_tags,
+           c.audience,
+           c.title,
+           c.summary,
+           c.usage_notes,
+           c.updated_at AS card_updated_at,
+           f.id AS fact_id,
+           f.topic,
+           f.trade,
+           f.service_tags,
+           f.claim,
+           f.evidence_text,
+           f.source_url,
+           f.confidence,
+           f.risk_level,
+           f.source_type,
+           f.review_status,
+           kcf.fact_rank,
+           kcf.required
+         FROM knowledge_cards c
+         LEFT JOIN knowledge_card_facts kcf
+           ON kcf.card_id = c.id
+         LEFT JOIN knowledge_facts f
+           ON f.id = kcf.fact_id
+         WHERE c.tenant_key = $1
+           AND c.status = 'active'
+         ORDER BY c.updated_at DESC, c.id DESC, kcf.fact_rank ASC, f.id ASC`,
+        [tenantKey]
+      ),
+      db.query(
+        `SELECT id, topic, trade, service_tags, audience, trigger_text, preferred_answer, updated_at
+         FROM knowledge_overrides
+         WHERE tenant_key = $1
+           AND status = 'active'
+         ORDER BY updated_at DESC, id DESC`,
+        [tenantKey]
+      ),
+      db.query(
+        `SELECT id, rule_type, topic, trade, service_tags, severity, instruction_text, updated_at
+         FROM knowledge_guardrails
+         WHERE tenant_key = $1
+           AND status = 'active'
+         ORDER BY updated_at DESC, id DESC`,
+        [tenantKey]
+      ),
+      db.query(
+        `SELECT id, topic, trade, service_tags, claim, evidence_text, source_url, confidence, risk_level, source_type, review_status
+         FROM knowledge_facts
+         WHERE tenant_key = $1
+           AND status = 'active'
+         ORDER BY updated_at DESC, id DESC`,
+        [tenantKey]
+      )
+    ]);
+    return { cardFactRes, overrideRes, guardrailRes, standaloneFactsRes };
+  }
+
+  let { cardFactRes, overrideRes, guardrailRes, standaloneFactsRes } = await queryRuntime();
+  if ((cardFactRes.rows || []).length === 0 && (standaloneFactsRes.rows || []).length === 0) {
+    const authoring = await loadTenantKnowledgeAuthoring(db, tenantKey, { includeEmptyTemplates: false });
+    if ((authoring.counts?.knowledgeEntryCount || 0) > 0 || (authoring.counts?.answeredGuardrailCount || 0) > 0) {
+      await compileTenantKnowledge(db, tenantKey);
+      ({ cardFactRes, overrideRes, guardrailRes, standaloneFactsRes } = await queryRuntime());
+    }
+  }
+
+  const cardMap = new Map();
+  for (const row of cardFactRes.rows || []) {
+    const cardId = String(row.card_id);
+    if (!cardMap.has(cardId)) {
+      cardMap.set(cardId, {
+        id: cardId,
+        cardKey: normalizeText(row.card_key),
+        topic: normalizeText(row.card_topic) || null,
+        trade: normalizeText(row.card_trade) || null,
+        serviceTags: Array.isArray(row.card_service_tags) ? row.card_service_tags.filter(Boolean) : [],
+        audience: normalizeText(row.audience) || "general",
+        title: normalizeText(row.title),
+        summary: normalizeText(row.summary),
+        usageNotes: normalizeText(row.usage_notes) || null,
+        facts: []
+      });
+    }
+    if (row.fact_id) {
+      const card = cardMap.get(cardId);
+      card.facts.push({
+        ...mapRuntimeFactRow(row),
+        required: Boolean(row.required),
+        factRank: Number(row.fact_rank || 0)
+      });
+    }
+  }
+
+  const cards = Array.from(cardMap.values());
+  const factMap = new Map();
+  for (const row of standaloneFactsRes.rows || []) {
+    const fact = mapRuntimeFactRow(row);
+    factMap.set(fact.id, fact);
+  }
+  for (const card of cards) {
+    for (const fact of card.facts) {
+      factMap.set(fact.id, {
+        id: fact.id,
+        topic: fact.topic,
+        trade: fact.trade,
+        serviceTags: fact.serviceTags,
+        claim: fact.claim,
+        evidenceText: fact.evidenceText,
+        sourceUrl: fact.sourceUrl,
+        confidence: fact.confidence,
+        riskLevel: fact.riskLevel,
+        sourceType: fact.sourceType,
+        reviewStatus: fact.reviewStatus
+      });
+    }
+  }
+
+  return {
+    cards,
+    facts: Array.from(factMap.values()),
+    overrides: (overrideRes.rows || []).map(mapKnowledgeOverrideRow),
+    guardrails: (guardrailRes.rows || []).map(mapKnowledgeGuardrailRow),
+    usageInstructions: [...DEFAULT_KNOWLEDGE_USAGE_INSTRUCTIONS],
+    counts: {
+      runtimeCardCount: cards.length,
+      runtimeFactCount: factMap.size
+    }
+  };
+}
+
+export async function loadTenantKnowledge(db, tenantKey, options = {}) {
+  return loadTenantKnowledgeAuthoring(db, tenantKey, options);
+}

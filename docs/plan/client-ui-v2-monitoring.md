@@ -14,7 +14,7 @@ Validate Client UI v2 stability and usability after production rollout.
 - Client-facing APIs:
   - `/api/v1/overview`
   - `/api/v1/calls`
-  - `/api/v1/faq`
+  - `/api/v1/knowledge`
   - `/api/v1/routing`
   - `/api/v1/settings`
   - `/api/v1/tenant/users`
@@ -30,7 +30,7 @@ Validate Client UI v2 stability and usability after production rollout.
 
 3. Workflow health
 - Verify setup checklist page loads and links function.
-- Verify overview/calls/faq/routing/settings/team load and save paths.
+- Verify overview/calls/knowledge/routing/settings/team load and save paths.
 
 4. Auth/session
 - Confirm session expiry and re-auth path still works.

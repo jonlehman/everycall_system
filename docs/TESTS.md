@@ -1,18 +1,18 @@
 # Manual Call Test Scripts
 
-Use these after any change to prompts, FAQ routing, or barge-in handling.
+Use these after any change to prompts, knowledge lookup, or barge-in handling.
 
-## Script 1: Emergency + FAQ + Pre-Close
+## Script 1: Emergency + Knowledge + Pre-Close
 - "My water heater is leaking. Do you do emergencies?"
 - "How soon can someone come out?"
 - Name, phone, address, timing.
 - Verify pre-close question is asked before closing.
 
-## Script 2: Technical Question + FAQ + Resume
+## Script 2: Technical Question + Knowledge + Resume
 - "Should I pour Drano?"
 - "Do you take Apple Pay?"
 - Provide name/phone/address/time.
-- Verify technical deferral and FAQ answer.
+- Verify technical deferral and grounded knowledge answer.
 
 ## Script 3: Off-Industry Request
 - "I need house cleaning."

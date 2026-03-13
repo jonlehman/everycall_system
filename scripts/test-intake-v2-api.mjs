@@ -67,7 +67,7 @@ async function run() {
       }
     },
     {
-      name: "enrichment preview: returns default FAQs and explicit-evidence behavior",
+      name: "enrichment preview: returns knowledge entries and guardrail questions",
       run: async () => {
         const res = await postJson("/api/v1/tenants/enrichment/preview", {
           ownerEmail: `owner.${seed}@example.com`,
@@ -76,8 +76,8 @@ async function run() {
         });
         assert(res.status === 200, `Expected 200, got ${res.status}`);
         assert(res.data?.ok === true, "Expected ok=true");
-        assert(Array.isArray(res.data?.enrichment?.faqs), "Expected enrichment faqs array");
-        assert((res.data?.enrichment?.defaultFaqCount || 0) >= 1, "Expected default FAQ count >= 1");
+        assert(Array.isArray(res.data?.enrichment?.knowledgeEntries), "Expected enrichment knowledgeEntries array");
+        assert(Array.isArray(res.data?.enrichment?.guardrailQuestionTests), "Expected enrichment guardrailQuestionTests array");
       }
     },
     {

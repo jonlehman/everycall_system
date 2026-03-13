@@ -146,7 +146,7 @@ Required endpoints:
 - `GET /api/v1/overview`
 - `GET /api/v1/calls`
 - `GET /api/v1/dashboard/calls`
-- `GET/POST /api/v1/faq`
+- `GET/POST /api/v1/knowledge`
 - `GET/POST /api/v1/routing`
 - `GET/POST /api/v1/settings`
 - `GET/POST /api/v1/tenant/users`

@@ -1,175 +1,13 @@
 import bcrypt from "bcryptjs";
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { normalizeFaqCategory } from "../../_lib/faqCategories.js";
+import { loadIndustryKnowledgeDefaults } from "../../_lib/industryKnowledge.js";
+import { compileTenantKnowledge } from "../../_lib/knowledge.js";
 import { findAvailableVoiceNumber, orderVoiceNumber } from "../../_lib/telnyx.js";
 import { normalizePhoneNumber } from "../../_lib/phone.js";
 import { createSession, getSession, setSessionCookie } from "../../_lib/auth.js";
 import { cleanupTenantByKey } from "../../_lib/tenantCleanup.js";
 import crypto from "crypto";
 import { createBlankGuardrailQuestionTests, createBlankKnowledgeEntries } from "../../../../lib/knowledgeTemplates.js";
-
-const BASE_FAQS = [
-  {
-    question: "What areas do you serve?",
-    answer: "We serve the local metro area and nearby suburbs. If you give me the address, I can confirm coverage.",
-    category: "Service Area"
-  },
-  {
-    question: "What are your hours and availability?",
-    answer: "We are available on weekdays, and emergency availability depends on the situation. Tell me what you need, and I can help from there.",
-    category: "Availability"
-  },
-  {
-    question: "Where are you located?",
-    answer: "We are locally based. Tell me where you are, and I can help with the next step.",
-    category: "Location"
-  },
-  {
-    question: "Do you offer free estimates?",
-    answer: "Yes. I can get a few details and help set up the next step for an estimate.",
-    category: "Pricing"
-  },
-  {
-    question: "What payment methods do you accept?",
-    answer: "We accept common payment methods, and I can confirm the options when we book your service.",
-    category: "Billing"
-  }
-];
-
-const INDUSTRY_FAQS = {
-  plumbing: [
-    {
-      question: "What should I do for a burst pipe?",
-      answer: "If you can do it safely, shut off the main water valve. Then tell me what's going on, and I can help from there.",
-      category: "Emergency"
-    },
-    {
-      question: "Do you handle drain clogs and backups?",
-      answer: "Yes, we do. We clear clogs, inspect lines, and recommend next steps. Tell me a little about what you need, and I can help from there.",
-      category: "Services"
-    }
-  ],
-  window_installers: [
-    {
-      question: "Do you replace broken glass or only full windows?",
-      answer: "It depends on the window and frame condition. Tell me a little about what's going on, and I can help from there.",
-      category: "Services"
-    },
-    {
-      question: "What is the typical lead time for installation?",
-      answer: "Lead time depends on the product and scope. Once I know a little more, I can help with the next step.",
-      category: "Scheduling"
-    }
-  ],
-  electrical: [
-    {
-      question: "What should I do if I smell burning or see sparks?",
-      answer: "If it's safe, shut off power at the breaker. If there's smoke or fire, call 911 first.",
-      category: "Emergency"
-    },
-    {
-      question: "Do you upgrade electrical panels?",
-      answer: "Yes, we do. We inspect your panel and recommend upgrade options. Tell me a little about what you need, and I can help from there.",
-      category: "Services"
-    }
-  ],
-  hvac: [
-    {
-      question: "What should I do if I have no heat or no cooling?",
-      answer: "Check the thermostat and filter first. If it's still not working, I can help from there.",
-      category: "Emergency"
-    },
-    {
-      question: "Do you offer maintenance plans?",
-      answer: "Yes, we do. We provide seasonal tune-ups and priority scheduling. If you want, tell me a little more about what's going on and I can help from there.",
-      category: "Maintenance"
-    }
-  ],
-  roofing: [
-    {
-      question: "Do you handle emergency leaks?",
-      answer: "Yes, we do. If you're dealing with an active leak, tell me what's going on and I'll help with the next step.",
-      category: "Emergency"
-    },
-    {
-      question: "Do you work with insurance claims?",
-      answer: "Yes. If insurance is involved, I can help with documentation and talk through the next step.",
-      category: "Billing"
-    }
-  ],
-  landscaping: [
-    {
-      question: "Do you offer recurring maintenance?",
-      answer: "Yes, we do. We offer recurring maintenance plans. If you want, tell me a little more about what you need and I can help from there.",
-      category: "Maintenance"
-    },
-    {
-      question: "Can you handle irrigation issues?",
-      answer: "Yes, we can. We diagnose and repair irrigation systems. Tell me a little about what you need, and I can help from there.",
-      category: "Services"
-    }
-  ],
-  cleaning: [
-    {
-      question: "Do you provide recurring cleanings?",
-      answer: "Yes, we do. We offer weekly, bi-weekly, and monthly service plans. If you want, tell me a little more about what you need and I can help from there.",
-      category: "Maintenance"
-    },
-    {
-      question: "Do you bring your own supplies?",
-      answer: "Yes, we do. We bring supplies, and if you have a preference, tell me and I can help from there.",
-      category: "Services"
-    }
-  ],
-  pest_control: [
-    {
-      question: "Do you offer one-time treatments?",
-      answer: "Yes, we do. We offer one-time and recurring plans depending on the issue. Tell me a little about what you need, and I can help from there.",
-      category: "Services"
-    },
-    {
-      question: "How soon can you come out for an infestation?",
-      answer: "I'll look for the earliest opening and do my best to move urgent situations up. Tell me what's going on, and I can help with the next step.",
-      category: "Scheduling"
-    }
-  ],
-  garage_door: [
-    {
-      question: "Do you repair broken springs?",
-      answer: "Yes, we do. We replace springs and tune up doors. Tell me a little about what you need, and I can help from there.",
-      category: "Services"
-    },
-    {
-      question: "Do you install new openers?",
-      answer: "Yes, we do. We install and configure new openers and smart controls. Tell me a little about what you need, and I can help from there.",
-      category: "Services"
-    }
-  ],
-  general_contractor: [
-    {
-      question: "Do you handle permits?",
-      answer: "Yes, we do. We coordinate permits and inspections as part of the project. Tell me a little about what you need, and I can help from there.",
-      category: "Process"
-    },
-    {
-      question: "Can you provide a project timeline?",
-      answer: "Yes, we can. We provide a timeline after scope review. Tell me what you're dealing with, and I can help from there.",
-      category: "Scheduling"
-    }
-  ],
-  locksmith: [
-    {
-      question: "Do you offer emergency lockout service?",
-      answer: "Yes, we do. If you're locked out now, tell me what's going on and I'll help with the next step.",
-      category: "Emergency"
-    },
-    {
-      question: "Can you rekey locks?",
-      answer: "Yes, we can. We rekey residential and commercial locks. Tell me a little about what you need, and I can help from there.",
-      category: "Services"
-    }
-  ]
-};
 
 function slugify(input) {
   return String(input || "")
@@ -196,28 +34,6 @@ function normalizeStringArray(value) {
     return [value.trim()];
   }
   return [];
-}
-
-function normalizeFaqDrafts(value) {
-  const seen = new Set();
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => ({
-      question: String(item?.question || "").trim(),
-      answer: String(item?.answer || "").trim(),
-      category: normalizeFaqCategory(item),
-      sourceType: String(item?.sourceType || "").trim() || null,
-      sourceUrl: String(item?.sourceUrl || "").trim() || null,
-      sourceRetrievedAt: String(item?.sourceRetrievedAt || "").trim() || null,
-      sourceConfidence: Number.isFinite(Number(item?.sourceConfidence)) ? Number(item.sourceConfidence) : null
-    }))
-    .filter((item) => item.question)
-    .filter((item) => {
-      const key = item.question.toLowerCase().replace(/\s+/g, " ").trim();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
 }
 
 function normalizeKnowledgeEntries(value) {
@@ -293,8 +109,6 @@ function parsePayload(body) {
     emergencyServices,
     servicesOffered,
     primaryGoals: primaryGoals.length ? primaryGoals : ["Capture missed-call leads"],
-    faqDraftsProvided: Array.isArray(body.faqDrafts),
-    faqDrafts: normalizeFaqDrafts(body.faqDrafts),
     knowledgeEntriesProvided: Array.isArray(body.knowledgeEntries),
     knowledgeEntries: normalizeKnowledgeEntries(body.knowledgeEntries),
     guardrailQuestionTestsProvided: Array.isArray(body.guardrailQuestionTests),
@@ -404,64 +218,76 @@ function truncateText(value, limit = 400) {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
-function buildFallbackKnowledgeEntries(payload) {
-  const summary = [
+function joinKnowledgeText(primary, secondary) {
+  const a = String(primary || "").trim();
+  const b = String(secondary || "").trim();
+  if (!a) return b;
+  if (!b) return a;
+  return `${a} ${b}`;
+}
+
+function buildKnowledgeEntriesFromDefaults(payload, defaults = []) {
+  const bySection = new Map((defaults || []).map((entry) => [String(entry.sectionType || ""), entry]));
+  const serviceSummary = [
     payload.businessName ? `${payload.businessName} is a ${payload.industry} business.` : "",
-    payload.servicesOffered.length ? `Services include ${payload.servicesOffered.join(", ")}.` : "",
-    payload.serviceArea ? `Service area: ${payload.serviceArea}.` : "",
-    payload.businessHours ? `Hours: ${payload.businessHours}.` : "",
-    payload.emergencyServices ? "Emergency service may be offered." : ""
+    payload.servicesOffered.length ? `Services include ${payload.servicesOffered.join(", ")}.` : ""
   ].filter(Boolean).join(" ");
 
-  return createBlankKnowledgeEntries().map((entry) => {
-    if (entry.sectionType === "services_and_capabilities" && summary) {
+  return createBlankKnowledgeEntries().map((template) => {
+    const base = bySection.get(template.sectionType) || template;
+    if (template.sectionType === "services_and_capabilities" && serviceSummary) {
       return {
-        ...entry,
-        contentText: summary,
+        ...base,
+        contentText: joinKnowledgeText(serviceSummary, base.contentText),
         sourceType: "intake_form"
       };
     }
-    if (entry.sectionType === "service_area" && payload.serviceArea) {
+    if (template.sectionType === "service_area" && payload.serviceArea) {
       return {
-        ...entry,
+        ...base,
         contentText: payload.serviceArea,
         sourceType: "intake_form"
       };
     }
-    if (entry.sectionType === "hours_and_availability" && payload.businessHours) {
+    if (template.sectionType === "hours_and_availability" && payload.businessHours) {
       return {
-        ...entry,
+        ...base,
         contentText: payload.businessHours,
         sourceType: "intake_form"
       };
     }
-    if (entry.sectionType === "emergency_service" && payload.emergencyServices) {
+    if (template.sectionType === "emergency_service" && payload.emergencyServices) {
       return {
-        ...entry,
-        contentText: "Emergency or after-hours service may be offered. Exact availability should be confirmed before promising dispatch timing.",
+        ...base,
+        contentText: joinKnowledgeText(
+          "Emergency or after-hours service may be offered. Exact availability should be confirmed before promising dispatch timing.",
+          base.contentText
+        ),
         sourceType: "intake_form"
       };
     }
-    return entry;
+    return base;
   });
 }
 
-function buildFallbackGuardrailQuestionTests(payload) {
-  return createBlankGuardrailQuestionTests().map((item) => {
-    if (item.topic === "service_area" && payload.serviceArea) {
-      return { ...item, answer: payload.serviceArea, sourceType: "intake_form" };
+function buildGuardrailQuestionTestsFromDefaults(payload, defaults = []) {
+  const byQuestion = new Map((defaults || []).map((item) => [String(item.questionText || ""), item]));
+  return createBlankGuardrailQuestionTests().map((template) => {
+    const base = byQuestion.get(template.questionText) || template;
+    if (template.topic === "service_area" && payload.serviceArea) {
+      return { ...base, answer: payload.serviceArea, sourceType: "intake_form" };
     }
-    if (item.topic === "availability" && payload.businessHours) {
-      return { ...item, answer: payload.businessHours, sourceType: "intake_form" };
+    if (template.topic === "availability" && payload.businessHours) {
+      return { ...base, answer: payload.businessHours, sourceType: "intake_form" };
     }
-    if (item.topic === "emergency_service" && payload.emergencyServices) {
+    if (template.topic === "emergency_service" && payload.emergencyServices) {
       return {
-        ...item,
+        ...base,
         answer: "Emergency or after-hours service may be offered, but exact dispatch timing should be confirmed before making a promise.",
         sourceType: "intake_form"
       };
     }
-    return item;
+    return base;
   });
 }
 
@@ -690,9 +516,13 @@ export default async function handler(req, res) {
         [tenantKey, agentName, payload.businessName, prompt, prompt, greetingText, voiceType]
       );
 
+      const industryDefaults = (!payload.knowledgeEntriesProvided || !payload.guardrailQuestionTestsProvided)
+        ? await loadIndustryKnowledgeDefaults(client, industry)
+        : { knowledgeEntries: [], guardrailQuestionTests: [] };
+
       const knowledgeEntries = payload.knowledgeEntriesProvided
         ? payload.knowledgeEntries
-        : buildFallbackKnowledgeEntries(payload);
+        : buildKnowledgeEntriesFromDefaults(payload, industryDefaults.knowledgeEntries);
       for (const entry of knowledgeEntries) {
         await client.query(
           `INSERT INTO knowledge_entries (tenant_key, entry_type, section_type, title, content_text, source_url, compilation_status, metadata_json, created_by_type)
@@ -713,7 +543,7 @@ export default async function handler(req, res) {
 
       const guardrailQuestionTests = payload.guardrailQuestionTestsProvided
         ? payload.guardrailQuestionTests
-        : buildFallbackGuardrailQuestionTests(payload);
+        : buildGuardrailQuestionTestsFromDefaults(payload, industryDefaults.guardrailQuestionTests);
       for (const item of guardrailQuestionTests) {
         const answer = String(item.answer || "").trim();
         await client.query(
@@ -736,51 +566,7 @@ export default async function handler(req, res) {
         );
       }
 
-      for (const faq of BASE_FAQS) {
-        await client.query(
-          `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_default)
-           VALUES ($1, $2, $3, $4, false, true)`,
-          [tenantKey, faq.question, faq.answer, normalizeFaqCategory(faq)]
-        );
-      }
-
-      let industryFaqs = [];
-      if (payload.faqDraftsProvided) {
-        industryFaqs = payload.faqDrafts;
-      } else {
-        const industryFaqRows = await client.query(
-          `SELECT question, answer, category FROM industry_faqs WHERE industry_key = $1 ORDER BY id ASC`,
-          [industry]
-        );
-        if (industryFaqRows.rowCount) {
-          const seen = new Set();
-          industryFaqs = industryFaqRows.rows.filter((faq) => {
-            const key = String(faq.question || "").toLowerCase().replace(/\s+/g, " ").trim();
-            if (!key || seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
-        } else {
-          industryFaqs = INDUSTRY_FAQS[industry] || [];
-        }
-      }
-      for (const faq of industryFaqs) {
-        await client.query(
-          `INSERT INTO faqs (tenant_key, question, answer, category, deletable, is_industry_default, industry, source_type, source_url, source_retrieved_at, source_confidence)
-           VALUES ($1, $2, $3, $4, true, true, $5, $6, $7, $8, $9)`,
-          [
-            tenantKey,
-            faq.question,
-            String(faq.answer || ""),
-            normalizeFaqCategory(faq),
-            industry,
-            faq.sourceType || null,
-            faq.sourceUrl || null,
-            faq.sourceRetrievedAt || null,
-            faq.sourceConfidence
-          ]
-        );
-      }
+      await compileTenantKnowledge(client, tenantKey);
 
       await client.query(
         `INSERT INTO provisioning_jobs (tenant_key, stage, status, status_detail, provider, updated_at)

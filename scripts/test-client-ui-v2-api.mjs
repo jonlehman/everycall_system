@@ -47,7 +47,7 @@ async function request(path, opts = {}) {
 async function run() {
   console.log(`[client-ui-v2-api] baseUrl=${baseUrl} dryRun=${dryRun}`);
   if (dryRun) {
-    console.log("DRY RUN: onboard -> overview/calls -> faq save -> routing save -> settings save -> team invite/status");
+    console.log("DRY RUN: onboard -> overview/calls -> knowledge save -> routing save -> settings save -> team invite/status");
     return;
   }
 
@@ -80,20 +80,44 @@ async function run() {
     const calls = await authed("/api/v1/calls");
     assert(calls.status === 200 && Array.isArray(calls.data?.calls), "calls contract failed");
 
-    const faqCreate = await authed("/api/v1/faq", {
+    const knowledgeBefore = await authed("/api/v1/knowledge");
+    assert(knowledgeBefore.status === 200 && knowledgeBefore.data?.ok === true, "knowledge load failed");
+    const knowledgeEntries = Array.isArray(knowledgeBefore.data?.knowledgeEntries) ? knowledgeBefore.data.knowledgeEntries : [];
+    const guardrailQuestionTests = Array.isArray(knowledgeBefore.data?.guardrailQuestionTests) ? knowledgeBefore.data.guardrailQuestionTests : [];
+    assert(knowledgeEntries.length > 0, "knowledge entries empty");
+    assert(guardrailQuestionTests.length > 0, "guardrail questions empty");
+
+    const updatedKnowledgeEntries = knowledgeEntries.map((entry) =>
+      entry.sectionType === "services_and_capabilities"
+        ? { ...entry, contentText: "We handle weekday service requests, drain cleaning, and water heater issues." }
+        : entry
+    );
+    const updatedGuardrailQuestions = guardrailQuestionTests.map((item) =>
+      item.topic === "availability"
+        ? { ...item, answer: "We are available Monday through Friday from 8 AM to 6 PM." }
+        : item
+    );
+
+    const knowledgeSave = await authed("/api/v1/knowledge", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        question: "Do you service weekends?",
-        answer: "Yes, we have weekend availability.",
-        category: "Scheduling"
+        knowledgeEntries: updatedKnowledgeEntries,
+        guardrailQuestionTests: updatedGuardrailQuestions
       })
     });
-    assert(faqCreate.status === 200 && faqCreate.data?.ok === true, "faq create failed");
+    assert(knowledgeSave.status === 200 && knowledgeSave.data?.ok === true, "knowledge save failed");
 
-    const faqList = await authed("/api/v1/faq");
-    assert(faqList.status === 200 && faqList.data?.ok === true, "faq list failed");
-    assert(Array.isArray(faqList.data?.faqs) && faqList.data.faqs.length > 0, "faq list empty");
+    const knowledgeAfter = await authed("/api/v1/knowledge");
+    assert(knowledgeAfter.status === 200 && knowledgeAfter.data?.ok === true, "knowledge reload failed");
+    assert(
+      (knowledgeAfter.data?.knowledgeEntries || []).some((entry) => String(entry.contentText || "").includes("drain cleaning")),
+      "knowledge entry update missing"
+    );
+    assert(
+      (knowledgeAfter.data?.guardrailQuestionTests || []).some((item) => item.topic === "availability" && String(item.answer || "").includes("Monday through Friday")),
+      "guardrail answer update missing"
+    );
 
     const routingSave = await authed("/api/v1/routing", {
       method: "POST",

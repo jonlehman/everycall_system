@@ -1,6 +1,6 @@
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { composePromptForTenant } from "../../_lib/agentConfig.js";
-import { loadTenantKnowledge } from "../../_lib/knowledge.js";
+import { loadTenantKnowledgeRuntime } from "../../_lib/knowledge.js";
 import { getSetupReadiness } from "../../_lib/setupReadiness.js";
 
 const DEFAULT_SESSION_CONFIG = {
@@ -148,7 +148,7 @@ export default async function handler(req, res) {
     );
     const tenantGreeting = agentRow.rows[0]?.greeting_text || "";
 
-    const knowledge = await loadTenantKnowledge(pool, tenantKey, { includeEmptyTemplates: true });
+    const knowledge = await loadTenantKnowledgeRuntime(pool, tenantKey);
 
     const systemConfigRow = await pool.query(
       `SELECT gateway_field_schema, gateway_tool_definitions, gateway_session_config
@@ -164,27 +164,39 @@ export default async function handler(req, res) {
       system_prompt: prompt,
       tenant_greeting: tenantGreeting,
       tenant_knowledge: {
-        entries: knowledge.knowledgeEntries
-          .filter((entry) => String(entry.contentText || "").trim())
-          .map((entry) => ({
-            id: entry.id ? String(entry.id) : undefined,
-            title: entry.title,
-            section_type: entry.sectionType,
-            content: entry.contentText,
-            tags: [entry.sectionType].filter(Boolean),
-            source_url: entry.sourceUrl || null
-          })),
-        guardrail_questions: knowledge.guardrailQuestionTests
-          .filter((item) => String(item.answer || "").trim())
-          .map((item) => ({
-            id: item.id ? String(item.id) : undefined,
-            topic: item.topic || null,
-            question: item.questionText,
-            answer: item.answer,
-            risk_level: item.riskLevel || "high",
-            tags: [item.topic].filter(Boolean),
-            source_url: item.sourceUrl || null
-          })),
+        cards: knowledge.cards.map((card) => ({
+          id: card.id ? String(card.id) : undefined,
+          card_key: card.cardKey,
+          topic: card.topic || null,
+          trade: card.trade || null,
+          service_tags: Array.isArray(card.serviceTags) ? card.serviceTags : [],
+          audience: card.audience || "general",
+          title: card.title,
+          summary: card.summary || "",
+          usage_notes: card.usageNotes || null,
+          facts: Array.isArray(card.facts)
+            ? card.facts.map((fact) => ({
+                id: fact.id ? String(fact.id) : undefined,
+                claim: fact.claim,
+                evidence_text: fact.evidenceText || null,
+                source_url: fact.sourceUrl || null,
+                confidence: fact.confidence ?? null,
+                risk_level: fact.riskLevel || "normal",
+                service_tags: Array.isArray(fact.serviceTags) ? fact.serviceTags : []
+              }))
+            : []
+        })),
+        facts: knowledge.facts.map((fact) => ({
+          id: fact.id ? String(fact.id) : undefined,
+          topic: fact.topic || null,
+          trade: fact.trade || null,
+          service_tags: Array.isArray(fact.serviceTags) ? fact.serviceTags : [],
+          claim: fact.claim,
+          evidence_text: fact.evidenceText || null,
+          source_url: fact.sourceUrl || null,
+          confidence: fact.confidence ?? null,
+          risk_level: fact.riskLevel || "normal"
+        })),
         overrides: knowledge.overrides
           .filter((item) => String(item.preferredAnswer || "").trim())
           .map((item) => ({

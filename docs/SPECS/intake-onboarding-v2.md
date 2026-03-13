@@ -7,12 +7,12 @@
 - Rollout Note: API + E2E intake v2 tests passed in production at commit `4966b73`; monitoring window remains active.
 
 ## Scope
-Defines the v2 onboarding contract for `/api/v1/tenants/onboard`, including fast-start identity capture, AI FAQ enrichment, validation, transactional behavior, session creation, and forwarding-setup guidance.
+Defines the v2 onboarding contract for `/api/v1/tenants/onboard`, including fast-start identity capture, AI knowledge enrichment, validation, transactional behavior, session creation, and forwarding-setup guidance.
 
 ## Goals
 - Complete onboarding in one deterministic flow with no partial tenant state.
 - Create tenant owner user + active session on success.
-- Seed tenant defaults (routing, agent, FAQs, industry prompt baseline).
+- Seed tenant defaults (routing, agent, knowledge entries, guardrail questions, industry prompt baseline).
 - Expose and persist call-forwarding setup status so tenant activation is explicit.
 
 ## Non-Goals
@@ -25,10 +25,10 @@ Defines the v2 onboarding contract for `/api/v1/tenants/onboard`, including fast
 - Collect owner name, owner email, website, and industry.
 - Attempt website auto-fill from owner email domain (best effort).
 2. AI Enrichment (Draft)
-- Load default industry FAQs first.
-- For each default FAQ, generate an answer only when explicit supporting evidence is found in official website content or Google Business Profile data.
-- Leave FAQ answer blank when explicit evidence is not found.
-- Mark generated values as draft for tenant review.
+- Load default industry knowledge sections and guardrail questions first.
+- Populate knowledge entries and guardrail answers only when explicit supporting evidence is found in official website content or Google Business Profile data.
+- Fall back to industry defaults when site evidence is weak or missing.
+- Mark all generated values for tenant review before submit.
 3. Step 1 (Business + Ops Review)
 - Collect and confirm remaining onboarding fields.
 - Validate required fields and password policy before final submit.
@@ -121,7 +121,8 @@ Defines the v2 onboarding contract for `/api/v1/tenants/onboard`, including fast
   - `tenant_settings`
   - `agents`
   - `agent_versions`
-  - `faqs`
+  - `knowledge_entries`
+  - `guardrail_question_tests`
   - `provisioning_jobs`
   - `audit_log`
 - On failure: full rollback.
@@ -178,5 +179,5 @@ Defines the v2 onboarding contract for `/api/v1/tenants/onboard`, including fast
 4. Tenant key collision handled deterministically.
 5. UI shows EveryCall number + forwarding instruction on success.
 6. Forwarding acknowledgment is persisted and queryable.
-7. Industry default FAQs are loaded before enrichment and preserved unless tenant edits/deletes.
-8. AI leaves default FAQ answers blank when explicit evidence is not found.
+7. Industry default knowledge and guardrail questions are loaded before enrichment and preserved unless tenant edits them.
+8. AI grounds reviewed answers in explicit evidence and falls back to industry defaults when evidence is weak.

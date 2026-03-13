@@ -1,7 +1,7 @@
 import { ensureTables, getPool } from "../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess } from "../_lib/billing.js";
-import { loadTenantKnowledge } from "../_lib/knowledge.js";
+import { compileTenantKnowledge, loadTenantKnowledgeAuthoring } from "../_lib/knowledge.js";
 import {
   createBlankGuardrailQuestionTests,
   createBlankKnowledgeEntries
@@ -126,7 +126,7 @@ export default async function handler(req, res) {
     if (!access) return;
 
     if (req.method === "GET") {
-      const knowledge = await loadTenantKnowledge(pool, tenantKey, { includeEmptyTemplates: true });
+      const knowledge = await loadTenantKnowledgeAuthoring(pool, tenantKey, { includeEmptyTemplates: true });
       return res.status(200).json({ ok: true, ...knowledge });
     }
 
@@ -266,6 +266,7 @@ export default async function handler(req, res) {
           );
         }
 
+        await compileTenantKnowledge(client, tenantKey);
         await client.query("COMMIT");
       } catch (err) {
         await client.query("ROLLBACK");
@@ -274,7 +275,7 @@ export default async function handler(req, res) {
         client.release();
       }
 
-      const knowledge = await loadTenantKnowledge(pool, tenantKey, { includeEmptyTemplates: true });
+      const knowledge = await loadTenantKnowledgeAuthoring(pool, tenantKey, { includeEmptyTemplates: true });
       return res.status(200).json({ ok: true, ...knowledge });
     }
 

@@ -25,7 +25,7 @@ Defines the full lifecycle of an inbound call: routing, AI handling, data persis
 - `calls`: call metadata and status
 - `call_details`: transcript, state JSON
 - `call_events`: per‑turn messages
-- `faqs`: tenant knowledge base
+- `knowledge_cards` / `knowledge_facts`: tenant knowledge base
 
 ## Tenant Notifications
 Currently surfaced in UI dashboards. (SMS/email notifications are supported via alert endpoints.)

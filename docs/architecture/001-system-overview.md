@@ -9,13 +9,13 @@ Build a white-labeled, multi-tenant voice platform for service businesses using:
 - `call-gateway`: receives Telnyx webhooks, validates signatures, resolves tenant by called number.
 - `api-gateway`: tenant/admin APIs, auth/RBAC, portal backend surface.
 - `worker`: async side effects (retries, notifications, post-call tasks).
-- `db`: system-of-record for tenants, contacts, calls, leads, faq knowledge.
+- `db`: system-of-record for tenants, contacts, calls, leads, and compiled tenant knowledge.
 
 ## High-Level Call Flow
 1. Telnyx sends inbound webhook to `call-gateway`.
 2. `call-gateway` verifies signature and resolves tenant.
 3. `call-gateway` creates/updates call session and emits `call.inbound.received`.
-4. `call-gateway` receives EveryCall prompt payload (system prompt, tenant greeting, FAQs, field schema, tool definitions, session config).
+4. `call-gateway` receives EveryCall prompt payload (system prompt, tenant greeting, tenant knowledge, field schema, tool definitions, session config).
 5. OpenAI Realtime generates responses inside `call-gateway` using the provided instructions.
 6. `call-gateway` plays audio to caller, handles tool calls, and persists timeline events.
 7. `worker` performs post-call tasks as needed.
@@ -40,7 +40,7 @@ Build a white-labeled, multi-tenant voice platform for service businesses using:
 
 ## Initial Scope (v1)
 - Inbound calls
-- FAQ-backed conversational handling via tool calls
+- Knowledge-backed conversational handling via tool calls
 - Lead capture via structured tool payloads
 - Human transfer fallback
-- Tenant portal basics (onboarding, faq editor, routing settings)
+- Tenant portal basics (onboarding, knowledge review, routing settings)
