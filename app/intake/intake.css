@@ -43,7 +43,7 @@
 .intake-stack { display: grid; gap: 10px; }
 .intake-grid > .intake-stack,
 .intake-location-row > .intake-stack,
-.intake-faq-content > .intake-stack {
+.intake-review-content > .intake-stack {
   gap: 5px;
 }
 .intake-stack label { font-size: 11px; text-transform: uppercase; color: #64748b; letter-spacing: .12em; }
@@ -164,7 +164,7 @@
   align-items: flex-start;
   gap: 12px;
 }
-.intake-faq-heading {
+.intake-review-heading {
   font-size: 20px;
   line-height: 1.2;
   font-weight: 700;
@@ -217,11 +217,11 @@
   padding: 14px;
   background: #eef2f7;
 }
-.intake-faq-list {
+.intake-review-list {
   display: grid;
   gap: 14px;
 }
-.intake-faq-group {
+.intake-review-group {
   display: grid;
   gap: 8px;
   padding: 14px 16px;
@@ -229,7 +229,7 @@
   border-radius: 14px;
   background: #e9eff6;
 }
-.intake-faq-group-title {
+.intake-review-group-title {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -237,11 +237,11 @@
   color: #334155;
   margin-bottom: 2px;
 }
-.intake-faq-item {
+.intake-review-item {
   border-radius: 12px;
   background: #fff;
 }
-.intake-faq-trigger {
+.intake-review-trigger {
   width: 100%;
   display: flex;
   align-items: center;
@@ -253,21 +253,21 @@
   text-align: left;
   cursor: pointer;
 }
-.intake-faq-question {
+.intake-review-question {
   font-size: 15px;
   font-weight: 600;
   color: #0f172a;
 }
-.intake-faq-chevron {
+.intake-review-chevron {
   flex: 0 0 auto;
   font-size: 24px;
   line-height: 1;
   color: #64748b;
 }
-.intake-faq-content {
+.intake-review-content {
   padding: 0 16px 16px;
 }
-.intake-faq-actions {
+.intake-review-actions {
   justify-content: flex-start;
 }
 .intake-save-btn {
@@ -279,7 +279,7 @@
   background: #15803d;
   border-color: #166534;
 }
-.intake-faq-count {
+.intake-review-count {
   flex: 0 0 auto;
   padding: 6px 10px;
   border-radius: 999px;
@@ -288,7 +288,7 @@
   font-size: 12px;
   font-weight: 600;
 }
-.intake-faq-footer {
+.intake-review-footer {
   margin-top: 4px;
 }
 .intake-goal-list {

@@ -9,7 +9,7 @@ The admin UI is the internal platform console for managing tenants, industries, 
 
 ## Goals
 - Create and manage tenants efficiently.
-- Maintain industry defaults for prompts and FAQs.
+- Maintain industry defaults for prompts and knowledge seeds.
 - Monitor platform health and incidents.
 
 ## Non‑Goals
@@ -24,10 +24,10 @@ The admin UI is the internal platform console for managing tenants, industries, 
    - Create/edit tenant profile.
    - View status and number assignments.
 3. **Industries**
-   - Seed and update industry prompts/FAQs.
-   - Apply prompt/FAQ updates to all tenants in an industry.
+   - Seed and update industry prompts/knowledge defaults.
+   - Apply prompt/knowledge updates to all tenants in an industry.
 4. **System Config**
-   - Global prompts (personality, confirmation rules, FAQ usage).
+   - Global prompts (personality, confirmation rules, knowledge usage).
 5. **Audit / Jobs**
    - Audit logs, provisioning jobs.
 
@@ -41,7 +41,7 @@ The admin UI is the internal platform console for managing tenants, industries, 
 ## Success Metrics
 - Time to onboard a new tenant
 - Platform incident response time
-- Prompt/FAQ updates propagate reliably
+- Prompt/knowledge updates propagate reliably
 
 ## Risks
 - Seeded defaults overwriting tenant customizations unintentionally

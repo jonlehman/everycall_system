@@ -14,12 +14,12 @@ Run this after major changes or before release. Mark each item pass/fail.
 - Overview loads
 - Global assistant enabled/disabled toggle is visible at top-right across client screens
 - Calls page loads and list displays
-- FAQ Manager loads and can edit/save
+- Knowledge screen loads and can edit/save
 - Team Users: invite, update status, delete
 - SMS opt‑in flow (set phone, request opt‑in)
 - Client UI v2 page scaffold present (title, status banner, primary action)
 - Client UI v2 states validated (loading, empty, error, permission-denied where applicable)
-- Setup checklist (`/client/setup`) loads and deep links to FAQ/Team/Routing/Settings
+- Setup checklist (`/client/setup`) loads and deep links to Knowledge/Team/Routing/Settings
 - Overview triage actions work (urgent calls, callbacks, inbox)
 - Calls Inbox filter/detail workflow works end-to-end
 - Routing and Settings show explicit save state (`Saving`, `Saved`, error)
@@ -29,8 +29,8 @@ Run this after major changes or before release. Mark each item pass/fail.
 - Intake page submit creates tenant + user
 - Intake submit creates authenticated owner session and lands in client workspace
 - Tenant receives industry defaults (prompt + FAQs)
-- Industry default FAQ questions load before AI enrichment answers are applied
-- AI leaves industry FAQ answers blank when no explicit website/Google Business Profile evidence exists
+- Industry default guardrail questions load before AI enrichment answers are applied
+- AI leaves guardrail answers blank when no explicit website/Google Business Profile evidence exists
 - Telnyx voice number auto‑provisioning succeeds
 - Post-intake activation screen shows EveryCall number and forwarding instruction
 - Forwarding acknowledgment/configured status persists on tenant

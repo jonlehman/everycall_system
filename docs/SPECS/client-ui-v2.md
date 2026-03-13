@@ -33,7 +33,7 @@ Defines implementation requirements for the tenant-facing Client UI, including r
 | Capability | Owner | Manager | Staff |
 |---|---|---|---|
 | View overview/calls | Yes | Yes | Yes |
-| Edit FAQ | Yes | Yes | No |
+| Edit Knowledge | Yes | Yes | No |
 | Edit routing | Yes | Yes | No |
 | Edit settings | Yes | Yes | No |
 | Manage team roles | Yes | Limited | No |
@@ -62,7 +62,7 @@ Setup readiness gate (toggle unlock conditions):
 - Forwarding setup is `acknowledged` or `configured`.
 - Required Settings section has a successful save.
 - Required Routing section has a successful save.
-- No unresolved blank industry-default FAQs remain (blank item must be answered or deleted).
+- No unresolved blank guardrail answers remain.
 
 ### 2) Calls Inbox
 Purpose:
@@ -80,17 +80,19 @@ Required actions:
 - Edit status/urgency/summary/notes directly in-page.
 - Save call detail edits without leaving the screen.
 
-### 3) FAQ Manager
+### 3) Knowledge
 Purpose:
-- Keep caller answers deterministic and current.
+- Keep tenant knowledge and high-risk answers deterministic and current.
 
 Required modules:
-- Searchable FAQ list.
-- Create/edit form with category.
+- Knowledge entry editor.
+- Guardrail Questions review.
+- Ask-the-assistant preview and feedback routing.
 
 Required actions:
-- Create, edit, delete (role-gated).
-- Save with immediate list refresh.
+- Edit and save knowledge entries.
+- Approve or adjust guardrail answers.
+- Review, approve, or reject pending fact corrections.
 
 ### 4) Routing
 Purpose:
@@ -159,7 +161,7 @@ Contract requirements:
 ## Performance Requirements (MVP)
 - Overview first meaningful render <= 2.0s on broadband.
 - Route transitions <= 500ms perceived delay where cached.
-- Save action response <= 1.5s median for FAQ/routing/settings.
+- Save action response <= 1.5s median for knowledge/routing/settings.
 
 ## Security Requirements
 - Auth-required access to all client routes and APIs.

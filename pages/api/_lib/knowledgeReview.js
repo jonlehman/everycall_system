@@ -63,6 +63,10 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
 function tokenizeQuery(value) {
   return String(value || "")
     .toLowerCase()
@@ -703,6 +707,168 @@ async function insertFeedbackKnowledgeEntry(db, tenantKey, eventId, values) {
     ]
   );
   return Number(inserted.rows[0]?.id);
+}
+
+async function loadFeedbackEventForReview(db, tenantKey, eventId) {
+  const result = await db.query(
+    `SELECT id,
+            question_text,
+            draft_answer,
+            user_feedback_text,
+            edited_answer,
+            route_decision,
+            route_confidence,
+            route_reason,
+            target_artifact_type,
+            target_artifact_id,
+            status,
+            metadata_json
+     FROM knowledge_feedback_events
+     WHERE tenant_key = $1
+       AND id = $2
+     LIMIT 1`,
+    [tenantKey, eventId]
+  );
+  return result.rows[0] || null;
+}
+
+function deriveReviewContextFromEvent(row) {
+  const metadata = asObject(row?.metadata_json);
+  const retrieval = asObject(metadata.retrieval);
+  const queryContext = asObject(retrieval.queryContext);
+  return {
+    topic: normalizeText((Array.isArray(queryContext.topicHints) ? queryContext.topicHints[0] : null)) || "general",
+    serviceTags: uniqueValues(
+      Array.isArray(queryContext.serviceTags)
+        ? queryContext.serviceTags.map((item) => normalizeText(item)).filter(Boolean)
+        : []
+    )
+  };
+}
+
+export async function reviewKnowledgeFeedbackEvent(db, tenantKey, payload) {
+  const eventId = Number(payload?.eventId || 0);
+  if (!Number.isFinite(eventId) || eventId <= 0) {
+    throw new Error("invalid_feedback_event_id");
+  }
+
+  const action = normalizeText(payload?.action).toLowerCase();
+  if (!["approve", "reject"].includes(action)) {
+    throw new Error("invalid_review_action");
+  }
+
+  const row = await loadFeedbackEventForReview(db, tenantKey, eventId);
+  if (!row) {
+    throw new Error("feedback_event_not_found");
+  }
+  if (normalizeText(row.route_decision) !== "fact_correction_proposal") {
+    throw new Error("feedback_event_not_reviewable");
+  }
+  if (normalizeText(row.status) !== "pending_review") {
+    throw new Error("feedback_event_already_reviewed");
+  }
+
+  const resolutionText = normalizeText(payload?.resolutionText);
+
+  if (action === "reject") {
+    await db.query(
+      `UPDATE knowledge_feedback_events
+       SET status = 'rejected',
+           updated_at = NOW(),
+           metadata_json = jsonb_set(
+             COALESCE(metadata_json, '{}'::jsonb),
+             '{reviewResolution}',
+             $3::jsonb,
+             true
+           )
+       WHERE tenant_key = $1
+         AND id = $2`,
+      [
+        tenantKey,
+        eventId,
+        JSON.stringify({
+          action: "reject",
+          resolutionText: resolutionText || null,
+          reviewedAt: new Date().toISOString()
+        })
+      ]
+    );
+
+    return {
+      eventId,
+      action: "reject",
+      status: "rejected"
+    };
+  }
+
+  const reviewContext = deriveReviewContextFromEvent(row);
+  const finalText = resolutionText || normalizeText(row.edited_answer);
+
+  if (!finalText) {
+    throw new Error("missing_review_resolution_text");
+  }
+
+  const sectionType = TOPIC_TO_SECTION[reviewContext.topic] || "policies_and_process";
+  const knowledgeEntryId = await insertFeedbackKnowledgeEntry(db, tenantKey, eventId, {
+    sectionType,
+    title: `Correction approved: ${truncateText(row.question_text, 80) || "Knowledge correction"}`,
+    contentText: finalText,
+    routeConfidence: Number(row.route_confidence) || 1
+  });
+
+  let guardrailQuestionId = null;
+  if (normalizeText(row.question_text) && (resolutionText || normalizeText(row.edited_answer))) {
+    guardrailQuestionId = await upsertFeedbackGuardrailQuestion(db, tenantKey, eventId, {
+      questionText: row.question_text,
+      topic: reviewContext.topic,
+      riskLevel: inferRiskLevel(reviewContext.topic),
+      serviceTags: uniqueValues([...reviewContext.serviceTags, ...extractServiceTags(`${row.question_text} ${finalText}`)]),
+      answer: finalText,
+      routeDecision: null,
+      routeConfidence: Number(row.route_confidence) || 1
+    });
+  }
+
+  await compileTenantKnowledge(db, tenantKey);
+
+  await db.query(
+    `UPDATE knowledge_feedback_events
+     SET status = 'approved',
+         edited_answer = $3,
+         target_artifact_type = $4,
+         target_artifact_id = $5,
+         updated_at = NOW(),
+         metadata_json = jsonb_set(
+           COALESCE(metadata_json, '{}'::jsonb),
+           '{reviewResolution}',
+           $6::jsonb,
+           true
+         )
+     WHERE tenant_key = $1
+       AND id = $2`,
+    [
+      tenantKey,
+      eventId,
+      finalText,
+      guardrailQuestionId ? "guardrail_question_test" : "knowledge_entry",
+      guardrailQuestionId || knowledgeEntryId,
+      JSON.stringify({
+        action: "approve",
+        resolutionText: finalText,
+        knowledgeEntryId,
+        guardrailQuestionId,
+        reviewedAt: new Date().toISOString()
+      })
+    ]
+  );
+
+  return {
+    eventId,
+    action: "approve",
+    status: "approved",
+    knowledgeEntryId,
+    guardrailQuestionId
+  };
 }
 
 export async function applyKnowledgeFeedback(db, tenantKey, payload) {

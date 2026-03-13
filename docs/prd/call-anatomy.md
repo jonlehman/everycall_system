@@ -8,12 +8,12 @@ Defines the full lifecycle of an inbound call: routing, AI handling, data persis
    - Telnyx receives inbound call.
    - `call-gateway` resolves tenant by called number.
 2. **Session Setup**
-   - EveryCall system prompt, tenant greeting, tenant FAQs, field schema, tool definitions, and session settings are received by `call-gateway`.
+   - EveryCall system prompt, tenant greeting, tenant knowledge, field schema, tool definitions, and session settings are received by `call-gateway`.
    - Realtime session established with OpenAI using the provided settings.
 3. **Conversation**
    - Caller speaks and transcription is captured.
    - Agent responds via Realtime audio.
-   - FAQ lookup and data capture happen via tool calls defined by EveryCall.
+   - Knowledge lookup and data capture happen via tool calls defined by EveryCall.
 4. **Data Persistence**
    - `calls` and `call_details` updated.
    - `call_events` and combined transcript stored.
@@ -39,4 +39,4 @@ Currently surfaced in UI dashboards. (SMS/email notifications are supported via 
 ## Risks
 - Incorrect tenant routing
 - Incomplete transcripts due to Realtime errors
-- Model skipping tool calls or hallucinating FAQ responses
+- Model skipping tool calls or hallucinating tenant knowledge responses

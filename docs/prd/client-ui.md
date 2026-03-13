@@ -5,12 +5,12 @@ The Client UI is the tenant-facing operations workspace for managing call handli
 
 ## 2. Primary Users
 - Owner: full tenant control, team and configuration authority.
-- Manager: operational control of calls, routing, FAQs, and team activation/deactivation.
+- Manager: operational control of calls, routing, knowledge, and team activation/deactivation.
 - Staff/Dispatcher: handle day-to-day calls and follow-up workflows.
 
 ## 3. Goals
 - Provide a high-signal daily operating view with actionable call queues.
-- Make core configuration (FAQ, routing, greeting/settings) editable without engineering help.
+- Make core configuration (knowledge, routing, greeting/settings) editable without engineering help.
 - Ensure call details and transcripts are easy to review and act on.
 - Preserve tenant safety: role-based access, clear destructive-action controls, deterministic behavior.
 - Gate assistant activation until setup readiness is complete and explicit.
@@ -65,7 +65,7 @@ This is the intended day-to-day workflow in the Client UI. Navigation, defaults,
 3. Show global assistant toggle in `Disabled` state with unmet-checklist reasons.
 4. Guide user to "minimum viable setup":
 - `Settings` (confirm business profile + timezone/greeting)
-- `FAQ` (review industry defaults, fill blanks, or delete unwanted items)
+- `Knowledge` (review business details and high-risk guardrail answers)
 - `Routing` (confirm emergency/after-hours behavior)
 5. Return user to `Overview` with confirmation that setup baseline is complete.
 6. Enable toggle interaction only after all required setup items are complete.
@@ -74,7 +74,7 @@ Completion condition:
 - Forwarding setup status is `acknowledged` or `configured`.
 - Required Settings save completed.
 - Required Routing save completed.
-- No unresolved blank required FAQs remain (each blank was answered or item deleted).
+- No unresolved blank required guardrail answers remain.
 
 ### 5.2 Daily Operations Workflow
 1. Start on `Overview` to triage:
@@ -87,7 +87,7 @@ Completion condition:
 3. Execute follow-up:
 - Resolve callback/dispatch directly in the Calls Inbox dispatch panel.
 4. If repeated caller questions are observed:
-- Update `FAQ` immediately.
+- Update `Knowledge` immediately.
 5. If repeated escalation patterns are observed:
 - Update `Routing`.
 
@@ -95,7 +95,7 @@ Completion condition:
 - Action queue reduced and urgent callbacks addressed for the current shift.
 
 ### 5.3 Configuration Workflow (Owner/Manager)
-1. Open `FAQ` to maintain answer quality.
+1. Open `Knowledge` to maintain answer quality.
 2. Open `Routing` to adjust call-handling policy.
 3. Open `Settings` for tenant profile or notification changes.
 4. Open `Team` to invite/deactivate users and adjust role access.
@@ -117,7 +117,7 @@ Completion condition:
 | Capability | Owner | Manager | Staff |
 |---|---|---|---|
 | View overview/calls | Yes | Yes | Yes |
-| Edit FAQ | Yes | Yes | No |
+| Edit Knowledge | Yes | Yes | No |
 | Edit routing rules | Yes | Yes | No |
 | Edit tenant settings | Yes | Yes | No |
 | Manage team users/roles | Yes | Limited (status only) | No |
@@ -168,18 +168,19 @@ Simplicity rules:
 - Details remain readable on long transcripts.
 - No separate modal for call edits or notes.
 
-### 7.3 FAQ Manager
+### 7.3 Knowledge
 Purpose:
-- Maintain answer quality and reduce repeated caller confusion.
+- Maintain business knowledge quality and reduce repeated caller confusion.
 
 Core layout:
-- Searchable FAQ table/list.
-- Inline edit/create form with category.
+- Knowledge authoring sections.
+- Guardrail Questions review.
+- Ask-the-assistant test panel with retrieved artifacts and feedback routing.
 
 Primary actions:
-- Create FAQ.
-- Edit existing FAQ.
-- Delete tenant-created FAQ (with confirm).
+- Edit knowledge entries.
+- Approve or revise guardrail answers.
+- Review and apply feedback from answer tests.
 
 Simplicity rules:
 - Clear save/cancel controls.
@@ -278,7 +279,7 @@ Purpose:
 - Maintain deterministic answer quality.
 
 Must provide:
-- FAQ list, create/edit/delete controls (based on role).
+- Knowledge editor and feedback review controls (based on role).
 - Category support and save confirmation.
 
 Acceptance criteria:
@@ -365,11 +366,11 @@ Contract requirements:
 Track:
 - page_view by screen and role.
 - API error rates by endpoint and error code.
-- Save success/failure for FAQ, routing, settings, team actions.
+- Save success/failure for knowledge, routing, settings, team actions.
 - Time to first successful configuration after onboarding.
 
 ## 14. Success Metrics and Targets
-- Time to first configuration (FAQ + routing + greeting/settings):
+- Time to first configuration (knowledge + routing + greeting/settings):
   - Target: median <= 15 minutes from first login.
 - Call follow-up completion rate:
   - Target: +20% relative improvement over current baseline.
@@ -381,8 +382,8 @@ Track:
 ## 15. Risks and Mitigations
 - Risk: Over-complex settings cause misconfiguration.
   - Mitigation: progressive disclosure, inline validation, safer defaults.
-- Risk: Non-deterministic FAQ behavior reduces trust.
-  - Mitigation: explicit FAQ editor workflow + save confirmations + API enforcement.
+- Risk: Knowledge retrieval or guardrail answers drift from tenant intent.
+  - Mitigation: explicit knowledge review workflow + save confirmations + API enforcement.
 - Risk: Role confusion leads to accidental privilege exposure.
   - Mitigation: role matrix, server-side permission checks, test coverage.
 - Risk: Session expiry disrupts workflows.
@@ -393,7 +394,7 @@ Track:
 - API integration coverage for each write surface.
 - End-to-end coverage for:
   - Login -> Overview load.
-  - FAQ edit/save flow.
+  - Knowledge edit/save flow.
   - Routing update flow.
   - Team invite/status update flow.
 - Regression checklist execution before release.

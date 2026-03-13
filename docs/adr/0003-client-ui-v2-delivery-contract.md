@@ -11,7 +11,7 @@ The client workspace has grown feature-rich, but workflow clarity and consistenc
 ## Decision
 Adopt Client UI v2 with:
 1. Mandatory UX rules (single primary CTA, progressive disclosure, explicit save feedback).
-2. Screen-level contracts for Overview, Calls Inbox, FAQ, Routing, Settings, Team.
+2. Screen-level contracts for Overview, Calls Inbox, Knowledge, Routing, Settings, Team.
 3. Role matrix as an implementation guardrail.
 4. Shared test matrix as a release gate.
 
@@ -30,7 +30,7 @@ No schema migration is required for this ADR by default; focus is UI/API contrac
 ## Rollout Plan
 1. Approve spec and plan.
 2. Implement shared UI patterns first.
-3. Refactor screens in phased order: Overview -> Calls -> FAQ/Routing -> Settings/Team.
+3. Refactor screens in phased order: Overview -> Calls -> Knowledge/Routing -> Settings/Team.
 4. Run client-ui-v2 test matrix in staging.
 5. Deploy with 7-day monitoring window.
 

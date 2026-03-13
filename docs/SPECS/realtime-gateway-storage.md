@@ -13,7 +13,7 @@ The gateway stores:
 ## Forwarded to EveryCall
 The gateway forwards:
 - Data capture tool payloads
-- FAQ lookup results (optional, for audit)
+- Knowledge lookup results (optional, for audit)
 - Error events and validation failures
 
 ## Ownership

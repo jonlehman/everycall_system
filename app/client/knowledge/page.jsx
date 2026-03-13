@@ -47,6 +47,37 @@ function FeedbackEventCard({ item }) {
   );
 }
 
+function PendingCorrectionCard({ item, value, onChange, onApprove, onReject, busy }) {
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div className="text-sm font-semibold text-slate-900">{item.questionText || 'Pending fact correction'}</div>
+        <span className="badge warn">Needs Review</span>
+        <span className="badge">{String(item.routeDecision || 'fact_correction_proposal').replaceAll('_', ' ')}</span>
+      </div>
+      {item.draftAnswer ? (
+        <div className="mb-2 rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-700">
+          <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">Current Draft Answer</div>
+          <div>{item.draftAnswer}</div>
+        </div>
+      ) : null}
+      {item.userFeedbackText ? <div className="mb-2 text-sm text-slate-600">{item.userFeedbackText}</div> : null}
+      {item.routeReason ? <div className="mb-2 text-xs text-slate-500">Router note: {item.routeReason}</div> : null}
+      <label>Approved correction</label>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Confirm or edit the correction that should be applied."
+        style={{ minHeight: 110 }}
+      />
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button onClick={onApprove} disabled={busy}>{busy ? 'Saving...' : 'Approve Correction'}</Button>
+        <Button variant="outline" onClick={onReject} disabled={busy}>Reject</Button>
+      </div>
+    </div>
+  );
+}
+
 export default function KnowledgePage() {
   const [knowledgeEntries, setKnowledgeEntries] = useState([]);
   const [guardrailQuestionTests, setGuardrailQuestionTests] = useState([]);
@@ -57,6 +88,8 @@ export default function KnowledgePage() {
   const [saving, setSaving] = useState(false);
   const [querying, setQuerying] = useState(false);
   const [applyingFeedback, setApplyingFeedback] = useState(false);
+  const [reviewDrafts, setReviewDrafts] = useState({});
+  const [reviewingEventId, setReviewingEventId] = useState(null);
   const [questionText, setQuestionText] = useState('');
   const [previewData, setPreviewData] = useState(null);
   const [previewAnswer, setPreviewAnswer] = useState('');
@@ -93,6 +126,19 @@ export default function KnowledgePage() {
   useEffect(() => {
     loadKnowledge();
   }, []);
+
+  useEffect(() => {
+    setReviewDrafts((current) => {
+      const next = {};
+      feedbackEvents.forEach((item) => {
+        if (item.status !== 'pending_review' || item.routeDecision !== 'fact_correction_proposal') {
+          return;
+        }
+        next[item.id] = current[item.id] ?? item.editedAnswer ?? '';
+      });
+      return next;
+    });
+  }, [feedbackEvents]);
 
   const saveKnowledge = async () => {
     setSaving(true);
@@ -210,6 +256,38 @@ export default function KnowledgePage() {
     }
   };
 
+  const reviewPendingCorrection = async (eventId, action) => {
+    setReviewingEventId(eventId);
+    setStatus({ message: action === 'approve' ? 'Applying correction...' : 'Rejecting correction...', tone: 'warn' });
+    try {
+      const resp = await fetch('/api/v1/knowledge/review-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId,
+          action,
+          resolutionText: action === 'approve' ? String(reviewDrafts[eventId] || '').trim() : ''
+        })
+      });
+      const data = resp.ok ? await resp.json() : null;
+      if (!data?.ok) {
+        setStatus({ message: 'Could not review the correction.', tone: 'bad' });
+        return;
+      }
+      setFeedbackEvents(Array.isArray(data.feedbackEvents) ? data.feedbackEvents : []);
+      setRuntimeCounts(data.runtimeCounts || { runtimeCardCount: 0, runtimeFactCount: 0 });
+      await loadKnowledge({ silent: true });
+      if (previewData?.questionText) {
+        await runPreview({ silent: true });
+      }
+      setStatus({ message: action === 'approve' ? 'Correction approved.' : 'Correction rejected.', tone: 'ok' });
+    } catch {
+      setStatus({ message: 'Could not review the correction.', tone: 'bad' });
+    } finally {
+      setReviewingEventId(null);
+    }
+  };
+
   const counts = useMemo(() => {
     const populatedKnowledge = knowledgeEntries.filter((entry) => String(entry.contentText || '').trim()).length;
     const answeredGuardrails = guardrailQuestionTests.filter((item) => String(item.answer || '').trim()).length;
@@ -223,6 +301,14 @@ export default function KnowledgePage() {
     };
   }, [guardrailQuestionTests, knowledgeEntries]);
 
+  const pendingCorrections = useMemo(
+    () => feedbackEvents.filter((item) => item.status === 'pending_review' && item.routeDecision === 'fact_correction_proposal'),
+    [feedbackEvents]
+  );
+  const resolvedFeedbackEvents = useMemo(
+    () => feedbackEvents.filter((item) => !(item.status === 'pending_review' && item.routeDecision === 'fact_correction_proposal')),
+    [feedbackEvents]
+  );
   const retrieval = previewData?.retrieval || { cards: [], facts: [], overrides: [], guardrails: [], queryContext: {}, resultStrength: 'none' };
 
   return (
@@ -446,17 +532,41 @@ export default function KnowledgePage() {
 
       <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <div className="mb-3">
-          <h2 className="m-0 text-lg font-semibold">Recent Feedback</h2>
-          <p className="mt-1 text-sm text-slate-500">Every applied or pending review event stays visible here so you can track what changed and how it was routed.</p>
+          <h2 className="m-0 text-lg font-semibold">Pending Fact Corrections</h2>
+          <p className="mt-1 text-sm text-slate-500">These flagged corrections need a human approve/reject decision before they affect tenant knowledge.</p>
         </div>
-        {feedbackEvents.length ? (
+        {pendingCorrections.length ? (
+          <div className="grid gap-3">
+            {pendingCorrections.map((item) => (
+              <PendingCorrectionCard
+                key={item.id}
+                item={item}
+                value={reviewDrafts[item.id] || ''}
+                onChange={(value) => setReviewDrafts((current) => ({ ...current, [item.id]: value }))}
+                onApprove={() => reviewPendingCorrection(item.id, 'approve')}
+                onReject={() => reviewPendingCorrection(item.id, 'reject')}
+                busy={reviewingEventId === item.id}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-slate-500">No pending fact corrections.</div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
+        <div className="mb-3">
+          <h2 className="m-0 text-lg font-semibold">Recent Feedback</h2>
+          <p className="mt-1 text-sm text-slate-500">Applied, approved, and rejected review events stay visible here so you can track what changed and how it was routed.</p>
+        </div>
+        {resolvedFeedbackEvents.length ? (
           <div className="grid gap-3 md:grid-cols-2">
-            {feedbackEvents.map((item) => (
+            {resolvedFeedbackEvents.map((item) => (
               <FeedbackEventCard key={item.id} item={item} />
             ))}
           </div>
         ) : (
-          <div className="text-sm text-slate-500">No feedback has been applied yet.</div>
+          <div className="text-sm text-slate-500">No reviewed feedback yet.</div>
         )}
       </section>
     </ClientPage>

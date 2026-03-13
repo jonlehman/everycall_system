@@ -6,7 +6,7 @@ Defines the receptionist’s tone, rules, and deterministic controls to ensure a
 ## Goals
 - Warm, empathetic, non‑announcer voice.
 - Avoid technical advice; collect info only.
-- Answer caller questions using tenant FAQs.
+- Answer caller questions using tenant knowledge.
 - Always ask pre‑close question before ending the call.
 - Support barge‑in interruptions cleanly.
 
@@ -16,7 +16,7 @@ Defines the receptionist’s tone, rules, and deterministic controls to ensure a
 
 ## Prompt Composition
 Prompts are composed from:
-1. System prompts (global personality, confirmation rules, FAQ usage)
+1. System prompts (global personality, confirmation rules, knowledge usage)
 2. Industry prompt defaults
 3. Tenant overrides
 4. Single‑use greeting (per call)

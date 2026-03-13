@@ -33,7 +33,7 @@ For each screen verify:
 ### First Login Workflow (Owner)
 1. Login as owner.
 2. Land on Overview.
-3. Complete setup checklist links (Settings -> FAQ -> Routing).
+3. Complete setup checklist links (Settings -> Knowledge -> Routing).
 4. Return to Overview and confirm completion indicators.
 
 ### Daily Operations Workflow (Staff/Manager)
@@ -43,14 +43,14 @@ For each screen verify:
 4. Edit call status/urgency/summary and save internal notes inline.
 
 ### Configuration Workflow (Owner/Manager)
-1. Edit and save FAQ.
+1. Edit and save Knowledge.
 2. Edit and save routing.
 3. Edit and save settings.
 4. Manage team user status.
 
 ## 3. Role Permission Tests
 Validate role matrix behavior:
-- Staff cannot edit FAQ/routing/settings/team roles.
+- Staff cannot edit knowledge/routing/settings/team roles.
 - Manager limitations enforced as specified.
 - Owner has full tenant-level controls.
 - Unauthorized writes return safe errors and no mutation.

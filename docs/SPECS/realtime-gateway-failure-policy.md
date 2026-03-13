@@ -19,8 +19,8 @@ Define behavior when realtime sessions or tool calls fail.
    - Forward raw payload and errors to EveryCall.
    - Continue call without gateway injecting instructions.
 
-4. **FAQ lookup returns no matches**
-   - Return empty `matches` array.
+4. **Knowledge lookup returns no strong matches**
+   - Return empty cards/facts/overrides and only default guardrails.
    - Do not invent an answer.
 
 5. **EveryCall prompt payload missing/invalid**

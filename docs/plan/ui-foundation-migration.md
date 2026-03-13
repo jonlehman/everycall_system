@@ -32,7 +32,7 @@ Exit criteria:
 Targets:
 - `/client/overview`
 - `/client/setup`
-- `/client/faq`
+- `/client/knowledge`
 - `/client/routing`
 - `/client/settings`
 - `/client/team`

@@ -20,7 +20,7 @@
 - Owner: Frontend
 - Deliverables:
   - Overview and Calls Inbox aligned to new workflow and CTA rules.
-  - FAQ and Routing screens aligned to save-state and validation standards.
+  - Knowledge and Routing screens aligned to save-state and validation standards.
   - Settings and Team role-gated actions aligned with matrix.
 - Exit Criteria:
   - Each screen meets spec contract and UX state requirements.

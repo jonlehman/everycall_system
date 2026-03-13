@@ -26,9 +26,15 @@ Given call context and user turn, produce exactly one next action for the call e
       "name": "Acme Plumbing",
       "timezone": "America/Chicago"
     },
-    "faq_items": [
-      {"q": "Do you offer emergency service?", "a": "Yes, 24/7 emergency dispatch is available."}
-    ]
+    "tenant_knowledge": {
+      "cards": [
+        {"title": "Emergency Service", "topic": "emergency_service", "summary": "24/7 emergency dispatch is available."}
+      ],
+      "facts": [],
+      "overrides": [],
+      "guardrails": [],
+      "usage_instructions": ["Use only grounded tenant knowledge."]
+    }
   }
 }
 ```

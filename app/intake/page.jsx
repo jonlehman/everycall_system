@@ -1023,17 +1023,17 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 <section className="intake-panel">
                   <div className="intake-panel-header">
                     <div>
-                      <div className="intake-faq-heading">Knowledge</div>
+                      <div className="intake-review-heading">Knowledge</div>
                       <div className="intake-muted">Review and refine the business knowledge your assistant should pull from.</div>
                     </div>
                   </div>
-                  <div className="intake-faq-list">
+                  <div className="intake-review-list">
                     {knowledgeEntries.length === 0 ? (
                       <div className="intake-inline-note">No knowledge drafts were found. Add the details you want your assistant to know.</div>
                     ) : (
                       knowledgeEntries.map((entry, index) => (
-                        <div key={`${entry.sectionType}-${index}`} className="intake-faq-group">
-                          <div className="intake-faq-group-title">{entry.title}</div>
+                        <div key={`${entry.sectionType}-${index}`} className="intake-review-group">
+                          <div className="intake-review-group-title">{entry.title}</div>
                           <div className="intake-stack">
                             <label>{entry.title}</label>
                             <textarea
@@ -1056,27 +1056,27 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 <section className="intake-panel">
                   <div className="intake-panel-header">
                     <div>
-                      <div className="intake-faq-heading">Guardrail Questions</div>
+                      <div className="intake-review-heading">Guardrail Questions</div>
                       <div className="intake-muted">Review high-risk questions and adjust the draft answers before launch.</div>
                     </div>
                   </div>
-                  <div className="intake-faq-list">
+                  <div className="intake-review-list">
                     {guardrailQuestionTests.length === 0 ? (
                       <div className="intake-inline-note">No guardrail questions are available yet.</div>
                     ) : (
                       guardrailQuestionTests.map((item, index) => (
-                        <div key={`${item.questionText}-${index}`} className="intake-faq-item">
+                        <div key={`${item.questionText}-${index}`} className="intake-review-item">
                           <button
-                            className="intake-faq-trigger"
+                            className="intake-review-trigger"
                             type="button"
                             aria-expanded={openGuardrailIndex === index}
                             onClick={() => setOpenGuardrailIndex((current) => (current === index ? -1 : index))}
                           >
-                            <span className="intake-faq-question">{item.questionText}</span>
-                            <span className="intake-faq-chevron" aria-hidden="true">{openGuardrailIndex === index ? '−' : '+'}</span>
+                            <span className="intake-review-question">{item.questionText}</span>
+                            <span className="intake-review-chevron" aria-hidden="true">{openGuardrailIndex === index ? '−' : '+'}</span>
                           </button>
                           {openGuardrailIndex === index && (
-                            <div className="intake-faq-content">
+                            <div className="intake-review-content">
                               <div className="intake-stack">
                                 <label>Draft Answer</label>
                                 <textarea
@@ -1096,7 +1096,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                       ))
                     )}
                   </div>
-                  <div className="intake-muted intake-faq-footer">Guardrail Questions are the review surface for risky topics like warranty, fees, guarantees, and emergency promises.</div>
+                  <div className="intake-muted intake-review-footer">Guardrail Questions are the review surface for risky topics like warranty, fees, guarantees, and emergency promises.</div>
                 </section>
 
                 <div className="intake-actions">

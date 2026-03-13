@@ -1,14 +1,14 @@
 # PRD: EveryCall Realtime Gateway (V1, Clean-Slate)
 
 ## Purpose
-A thin realtime gateway that executes a call flow defined by the EveryCall system, augmented only by tenant greeting + FAQs. The gateway handles call control (initiate, hang up), initial realtime AI call, realtime AI calls to its exposed tools, data persistence, and logging. It should enable the realtime AI to behave like OpenAI's realtime demo: natural, responsive, and tool-driven when needed.
+A thin realtime gateway that executes a call flow defined by the EveryCall system, augmented only by tenant greeting + knowledge retrieval. The gateway handles call control (initiate, hang up), initial realtime AI call, realtime AI calls to its exposed tools, data persistence, and logging. It should enable the realtime AI to behave like OpenAI's realtime demo: natural, responsive, and tool-driven when needed.
 
 ## Core Principle
 - All conversational logic lives in the EveryCall system.
 - Gateway is runtime + data only.
   - Session setup
   - Call control
-  - FAQ lookup when requested
+  - Knowledge lookup when requested
   - Data capture tool handling
   - Data persistence and logging
 
@@ -25,29 +25,29 @@ Must match the web demo configuration:
 - Transcription model: `gpt-4o-mini-transcribe`
 - Noise reduction: `far_field`
 - Max output tokens: `4096`
-- Tools: enabled (FAQ lookup + Data capture)
+- Tools: enabled (Knowledge lookup + Data capture)
 
 ## Prompt & Instruction Model
 **EveryCall System Prompt (authoritative)**
 - Defines call flow, tone, safety, and escalation.
-- Defines when to call tools (FAQ lookup, data capture).
+- Defines when to call tools (knowledge lookup, data capture).
 
 **Tenant Prompt**
 - Greeting, company name, local rules.
-- FAQ content.
+- Knowledge usage rules and local answer constraints.
 
 **Gateway behavior**
 - On call start, gateway sends a single `session.update` containing:
   - EveryCall system prompt
-  - Tenant greeting + FAQs
+  - Tenant greeting + knowledge payload
   - Session settings above
 - No gateway logic for conversation flow.
 
 ## Tools (Required)
 **Gateway rule:** The gateway must never send any instructions that did not originate from EveryCall. It only forwards EveryCall's prompt content and tool definitions, and relays tool call results.
 
-**Tool 1: FAQ Lookup**
-- Purpose: Answer tenant-specific questions using FAQ content.
+**Tool 1: Knowledge Lookup**
+- Purpose: Answer tenant-specific questions using tenant knowledge, guardrails, and approved overrides.
 - Trigger: Caller asks about company-specific details (hours, pricing rules, service area, services offered, etc).
 - Instruction source: EveryCall system prompt.
 
@@ -115,7 +115,7 @@ The gateway must treat this payload as the sole source of truth for instructions
 1. Session configuration exactly matches demo settings.
 2. Gateway never encodes conversation logic.
 3. Gateway never sends instructions not provided by EveryCall.
-4. FAQ lookup tool used for tenant-specific questions.
+4. Knowledge lookup tool used for tenant-specific questions.
 5. Data capture tool available and callable by the realtime AI.
 6. Gateway forwards tool payloads and schema to EveryCall.
 7. Logs show full instruction history per call.
