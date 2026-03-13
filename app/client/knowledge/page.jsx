@@ -78,8 +78,29 @@ function PendingCorrectionCard({ item, value, onChange, onApprove, onReject, bus
   );
 }
 
+function getTopicDepth(topicPath) {
+  const segments = String(topicPath || '')
+    .split('>')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  return Math.max(segments.length - 1, 0);
+}
+
+function getCoverageTone(status) {
+  if (status === 'ready') return 'ok';
+  if (status === 'partial') return 'warn';
+  return '';
+}
+
+function getRiskTone(riskLevel) {
+  if (riskLevel === 'critical' || riskLevel === 'high') return 'warn';
+  return 'ok';
+}
+
 export default function KnowledgePage() {
   const [knowledgeEntries, setKnowledgeEntries] = useState([]);
+  const [siteTopics, setSiteTopics] = useState([]);
+  const [coverageChecklist, setCoverageChecklist] = useState([]);
   const [guardrailQuestionTests, setGuardrailQuestionTests] = useState([]);
   const [runtimeCounts, setRuntimeCounts] = useState({ runtimeCardCount: 0, runtimeFactCount: 0 });
   const [feedbackEvents, setFeedbackEvents] = useState([]);
@@ -108,6 +129,8 @@ export default function KnowledgePage() {
         return null;
       }
       setKnowledgeEntries(Array.isArray(data.knowledgeEntries) ? data.knowledgeEntries : []);
+      setSiteTopics(Array.isArray(data.siteTopics) ? data.siteTopics : []);
+      setCoverageChecklist(Array.isArray(data.coverageChecklist) ? data.coverageChecklist : []);
       setGuardrailQuestionTests(Array.isArray(data.guardrailQuestionTests) ? data.guardrailQuestionTests : []);
       setRuntimeCounts(data.runtimeCounts || { runtimeCardCount: 0, runtimeFactCount: 0 });
       setFeedbackEvents(Array.isArray(data.feedbackEvents) ? data.feedbackEvents : []);
@@ -147,7 +170,7 @@ export default function KnowledgePage() {
       const resp = await fetch('/api/v1/knowledge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ knowledgeEntries, guardrailQuestionTests })
+        body: JSON.stringify({ knowledgeEntries, siteTopics, guardrailQuestionTests })
       });
       const data = resp.ok ? await resp.json() : null;
       if (!data?.ok) {
@@ -155,6 +178,8 @@ export default function KnowledgePage() {
         return;
       }
       setKnowledgeEntries(Array.isArray(data.knowledgeEntries) ? data.knowledgeEntries : []);
+      setSiteTopics(Array.isArray(data.siteTopics) ? data.siteTopics : []);
+      setCoverageChecklist(Array.isArray(data.coverageChecklist) ? data.coverageChecklist : []);
       setGuardrailQuestionTests(Array.isArray(data.guardrailQuestionTests) ? data.guardrailQuestionTests : []);
       setRuntimeCounts(data.runtimeCounts || { runtimeCardCount: 0, runtimeFactCount: 0 });
       setFeedbackEvents(Array.isArray(data.feedbackEvents) ? data.feedbackEvents : []);
@@ -290,16 +315,28 @@ export default function KnowledgePage() {
 
   const counts = useMemo(() => {
     const populatedKnowledge = knowledgeEntries.filter((entry) => String(entry.contentText || '').trim()).length;
+    const populatedSiteTopics = siteTopics.filter((topic) => String(topic.summaryObjective || '').trim()).length;
+    const readyCoverageChecks = coverageChecklist.filter((item) => item.status === 'ready').length;
+    const partialCoverageChecks = coverageChecklist.filter((item) => item.status === 'partial').length;
+    const missingCoverageChecks = coverageChecklist.filter((item) => item.status === 'missing').length;
     const answeredGuardrails = guardrailQuestionTests.filter((item) => String(item.answer || '').trim()).length;
     const unansweredGuardrails = guardrailQuestionTests.length - answeredGuardrails;
     return {
       populatedKnowledge,
       totalKnowledge: knowledgeEntries.length,
+      populatedSiteTopics,
+      totalSiteTopics: siteTopics.length,
+      readyCoverageChecks,
+      totalCoverageChecks: coverageChecklist.length,
+      partialCoverageChecks,
+      missingCoverageChecks,
       answeredGuardrails,
       totalGuardrails: guardrailQuestionTests.length,
       unansweredGuardrails
     };
-  }, [guardrailQuestionTests, knowledgeEntries]);
+  }, [coverageChecklist, guardrailQuestionTests, knowledgeEntries, siteTopics]);
+
+  const showSupplementalKnowledgeEntries = siteTopics.length === 0;
 
   const pendingCorrections = useMemo(
     () => feedbackEvents.filter((item) => item.status === 'pending_review' && item.routeDecision === 'fact_correction_proposal'),
@@ -318,8 +355,14 @@ export default function KnowledgePage() {
       status={status}
       primaryAction={{ label: saving ? 'Saving...' : 'Save Knowledge', brand: true, onClick: saveKnowledge, disabled: saving }}
     >
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
-        <SummaryCard label="Knowledge Sections" value={`${counts.populatedKnowledge}/${counts.totalKnowledge}`} />
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-6">
+        <SummaryCard label="Site Topics" value={`${counts.populatedSiteTopics}/${counts.totalSiteTopics}`} />
+        <SummaryCard label="Checklist Ready" value={`${counts.readyCoverageChecks}/${counts.totalCoverageChecks}`} />
+        <SummaryCard
+          label="Checklist Gaps"
+          value={counts.partialCoverageChecks + counts.missingCoverageChecks}
+          tone={(counts.partialCoverageChecks + counts.missingCoverageChecks) > 0 ? 'text-amber-700' : 'text-emerald-700'}
+        />
         <SummaryCard label="Answered Guardrails" value={`${counts.answeredGuardrails}/${counts.totalGuardrails}`} />
         <SummaryCard
           label="Needs Review"
@@ -328,6 +371,81 @@ export default function KnowledgePage() {
         />
         <SummaryCard label="Runtime Cards" value={runtimeCounts.runtimeCardCount || 0} />
         <SummaryCard label="Runtime Facts" value={runtimeCounts.runtimeFactCount || 0} />
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
+        <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <div className="mb-3">
+            <h2 className="m-0 text-lg font-semibold">Discovered Site Topics</h2>
+            <p className="mt-1 text-sm text-slate-500">The site defines the knowledge structure. Review the objective summaries here; runtime cards and facts compile from these topics.</p>
+          </div>
+          {siteTopics.length ? (
+            <div className="grid gap-3">
+              {siteTopics.map((topic, index) => {
+                const depth = getTopicDepth(topic.topicPath);
+                return (
+                  <div
+                    key={topic.id || topic.topicPath || index}
+                    className="rounded-xl border border-slate-200 p-3"
+                    style={{ marginLeft: `${Math.min(depth, 4) * 16}px` }}
+                  >
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-semibold text-slate-900">{topic.displayTitle || topic.topicPath}</div>
+                      <span className="badge">{topic.topicType || 'topic'}</span>
+                      <span className={`badge ${getRiskTone(topic.riskLevel)}`}>
+                        {String(topic.riskLevel || 'normal').toUpperCase()}
+                      </span>
+                      {topic.sourceUrl ? (
+                        <a className="text-xs text-slate-500 underline" href={topic.sourceUrl} target="_blank" rel="noreferrer">
+                          Source
+                        </a>
+                      ) : null}
+                    </div>
+                    <div className="mb-2 text-xs text-slate-500">{topic.topicPath}</div>
+                    <textarea
+                      value={topic.summaryObjective || ''}
+                      onChange={(event) => {
+                        const next = [...siteTopics];
+                        next[index] = { ...topic, summaryObjective: event.target.value };
+                        setSiteTopics(next);
+                      }}
+                      placeholder="No objective summary compiled yet."
+                      style={{ minHeight: topic.topicType === 'group' ? 84 : 120 }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-sm text-slate-500">No site topics have been compiled yet.</div>
+          )}
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <div className="mb-3">
+            <h2 className="m-0 text-lg font-semibold">Coverage Checklist</h2>
+            <p className="mt-1 text-sm text-slate-500">This checklist is a review overlay only. It helps you confirm broad customer-risk areas without constraining the stored topic tree.</p>
+          </div>
+          {coverageChecklist.length ? (
+            <div className="grid gap-3">
+              {coverageChecklist.map((item) => (
+                <div key={item.id || item.checkKey} className="rounded-xl border border-slate-200 p-3">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-semibold text-slate-900">{item.title}</div>
+                    <span className={`badge ${getCoverageTone(item.status)}`}>{String(item.status || 'missing').toUpperCase()}</span>
+                    <span className="badge">{Number(item.coverageConfidence || 0).toFixed(2)}</span>
+                  </div>
+                  {item.notes ? <div className="mb-2 text-sm text-slate-700">{item.notes}</div> : null}
+                  <div className="text-xs text-slate-500">
+                    Matched topics: {item.matchedTopicPaths?.length ? item.matchedTopicPaths.join(' | ') : 'none yet'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-slate-500">No coverage checklist has been generated yet.</div>
+          )}
+        </section>
       </div>
 
       <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
@@ -460,36 +578,44 @@ export default function KnowledgePage() {
         <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
-              <h2 className="m-0 text-lg font-semibold">Knowledge Entries</h2>
-              <p className="mt-1 text-sm text-slate-500">These sections describe the business in human terms. Keep them specific and factual.</p>
+              <h2 className="m-0 text-lg font-semibold">Supplemental Notes</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {showSupplementalKnowledgeEntries
+                  ? 'Use these notes when you need to author knowledge directly instead of relying on site-derived topics.'
+                  : 'Site topics are the primary runtime source right now, so the old fixed-section notes are hidden to avoid pulling the system back into predefined buckets.'}
+              </p>
             </div>
             <Button variant="outline" onClick={() => loadKnowledge()} disabled={loading || saving || querying || applyingFeedback}>Reload</Button>
           </div>
-          <div className="grid gap-3">
-            {knowledgeEntries.map((entry, index) => (
-              <div key={entry.id || entry.sectionType || index} className="rounded-xl border border-slate-200 p-3">
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <div className="text-sm font-semibold text-slate-900">{entry.title}</div>
-                  {entry.sourceType ? <span className="badge ok">{entry.sourceType}</span> : null}
-                  {entry.sourceUrl ? (
-                    <a className="text-xs text-slate-500 underline" href={entry.sourceUrl} target="_blank" rel="noreferrer">
-                      Source
-                    </a>
-                  ) : null}
+          {showSupplementalKnowledgeEntries ? (
+            <div className="grid gap-3">
+              {knowledgeEntries.map((entry, index) => (
+                <div key={entry.id || entry.sectionType || index} className="rounded-xl border border-slate-200 p-3">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-semibold text-slate-900">{entry.title}</div>
+                    {entry.sourceType ? <span className="badge ok">{entry.sourceType}</span> : null}
+                    {entry.sourceUrl ? (
+                      <a className="text-xs text-slate-500 underline" href={entry.sourceUrl} target="_blank" rel="noreferrer">
+                        Source
+                      </a>
+                    ) : null}
+                  </div>
+                  <textarea
+                    value={entry.contentText || ''}
+                    onChange={(event) => {
+                      const next = [...knowledgeEntries];
+                      next[index] = { ...entry, contentText: event.target.value };
+                      setKnowledgeEntries(next);
+                    }}
+                    placeholder={`Add ${String(entry.title || 'knowledge').toLowerCase()} details here.`}
+                    style={{ minHeight: 120 }}
+                  />
                 </div>
-                <textarea
-                  value={entry.contentText || ''}
-                  onChange={(event) => {
-                    const next = [...knowledgeEntries];
-                    next[index] = { ...entry, contentText: event.target.value };
-                    setKnowledgeEntries(next);
-                  }}
-                  placeholder={`Add ${String(entry.title || 'knowledge').toLowerCase()} details here.`}
-                  style={{ minHeight: 120 }}
-                />
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-slate-500">This tenant has site-derived topics, so review and edit those summaries above instead of maintaining fixed-section notes.</div>
+          )}
         </section>
 
         <section className="rounded-xl border border-border bg-card p-3 shadow-sm">

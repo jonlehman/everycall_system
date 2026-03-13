@@ -116,6 +116,29 @@ function normalizeGuardrailQuestionTestsInput(value) {
   return normalized;
 }
 
+function normalizeSiteTopicsInput(value) {
+  const items = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  const normalized = [];
+
+  for (const raw of items) {
+    const id = raw?.id ? String(raw.id) : null;
+    const topicPath = normalizeText(raw?.topicPath || raw?.topic_path);
+    const dedupeKey = id || topicPath.toLowerCase();
+    if (!dedupeKey || seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    normalized.push({
+      id,
+      topicPath,
+      displayTitle: normalizeText(raw?.displayTitle || raw?.display_title) || topicPath,
+      summaryObjective: normalizeText(raw?.summaryObjective || raw?.summary_objective),
+      riskLevel: normalizeText(raw?.riskLevel || raw?.risk_level) || null
+    });
+  }
+
+  return normalized;
+}
+
 async function loadKnowledgeResponse(pool, tenantKey) {
   const [authoring, runtime, feedbackEvents] = await Promise.all([
     loadTenantKnowledgeAuthoring(pool, tenantKey, { includeEmptyTemplates: true }),
@@ -154,51 +177,74 @@ export default async function handler(req, res) {
 
     if (req.method === "POST") {
       const body = typeof req.body === "object" && req.body ? req.body : {};
-      const knowledgeEntries = normalizeKnowledgeEntriesInput(body.knowledgeEntries);
-      const guardrailQuestionTests = normalizeGuardrailQuestionTestsInput(body.guardrailQuestionTests);
+      const hasKnowledgeEntriesInput = Array.isArray(body.knowledgeEntries);
+      const hasSiteTopicsInput = Array.isArray(body.siteTopics);
+      const hasGuardrailQuestionTestsInput = Array.isArray(body.guardrailQuestionTests);
+      const knowledgeEntries = hasKnowledgeEntriesInput ? normalizeKnowledgeEntriesInput(body.knowledgeEntries) : [];
+      const siteTopics = hasSiteTopicsInput ? normalizeSiteTopicsInput(body.siteTopics) : [];
+      const guardrailQuestionTests = hasGuardrailQuestionTestsInput
+        ? normalizeGuardrailQuestionTestsInput(body.guardrailQuestionTests)
+        : [];
 
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
 
-        const existingEntryRes = await client.query(
-          `SELECT id, section_type, metadata_json
-           FROM knowledge_entries
-           WHERE tenant_key = $1`,
-          [tenantKey]
-        );
-        const entryBySection = new Map(
-          existingEntryRes.rows
-            .filter((row) => row?.section_type)
-            .map((row) => [String(row.section_type), row])
-        );
+        if (hasKnowledgeEntriesInput) {
+          const existingEntryRes = await client.query(
+            `SELECT id, entry_type, section_type, metadata_json
+             FROM knowledge_entries
+             WHERE tenant_key = $1`,
+            [tenantKey]
+          );
+          const entryBySection = new Map(
+            existingEntryRes.rows
+              .filter((row) => row?.section_type)
+              .map((row) => [String(row.section_type), row])
+          );
 
-        for (const entry of knowledgeEntries) {
-          const existingRow = (entry.id
-            ? existingEntryRes.rows.find((row) => Number(row.id) === Number(entry.id))
-            : null) || entryBySection.get(entry.sectionType);
-          const metadataJson = JSON.stringify({
-            ...asObject(existingRow?.metadata_json),
-            sourceType: entry.sourceType,
-            sourceConfidence: entry.sourceConfidence
-          });
-          const existingId = existingRow ? Number(existingRow.id) : null;
-          if (existingId) {
+          for (const entry of knowledgeEntries) {
+            const existingRow = (entry.id
+              ? existingEntryRes.rows.find((row) => Number(row.id) === Number(entry.id))
+              : null) || entryBySection.get(entry.sectionType);
+            const metadataJson = JSON.stringify({
+              ...asObject(existingRow?.metadata_json),
+              sourceType: entry.sourceType,
+              sourceConfidence: entry.sourceConfidence
+            });
+            const existingId = existingRow ? Number(existingRow.id) : null;
+            if (existingId) {
+              await client.query(
+                `UPDATE knowledge_entries
+                 SET entry_type = $3,
+                     section_type = $4,
+                     title = $5,
+                     content_text = $6,
+                     source_url = $7,
+                     compilation_status = 'compiled',
+                     metadata_json = $8::jsonb,
+                     created_by_type = 'tenant',
+                     updated_at = NOW()
+                 WHERE tenant_key = $1 AND id = $2`,
+                [
+                  tenantKey,
+                  existingId,
+                  normalizeText(existingRow.entry_type) || "manual_note",
+                  entry.sectionType,
+                  entry.title,
+                  entry.contentText,
+                  entry.sourceUrl,
+                  metadataJson
+                ]
+              );
+              continue;
+            }
+
             await client.query(
-              `UPDATE knowledge_entries
-               SET entry_type = 'manual_note',
-                   section_type = $3,
-                   title = $4,
-                   content_text = $5,
-                   source_url = $6,
-                   compilation_status = 'compiled',
-                   metadata_json = $7::jsonb,
-                   created_by_type = 'tenant',
-                   updated_at = NOW()
-               WHERE tenant_key = $1 AND id = $2`,
+              `INSERT INTO knowledge_entries (tenant_key, entry_type, section_type, title, content_text, source_url, compilation_status, metadata_json, created_by_type)
+               VALUES ($1, 'manual_note', $2, $3, $4, $5, 'compiled', $6::jsonb, 'tenant')`,
               [
                 tenantKey,
-                existingId,
                 entry.sectionType,
                 entry.title,
                 entry.contentText,
@@ -206,66 +252,109 @@ export default async function handler(req, res) {
                 metadataJson
               ]
             );
-            continue;
           }
-
-          await client.query(
-            `INSERT INTO knowledge_entries (tenant_key, entry_type, section_type, title, content_text, source_url, compilation_status, metadata_json, created_by_type)
-             VALUES ($1, 'manual_note', $2, $3, $4, $5, 'compiled', $6::jsonb, 'tenant')`,
-            [
-              tenantKey,
-              entry.sectionType,
-              entry.title,
-              entry.contentText,
-              entry.sourceUrl,
-              metadataJson
-            ]
-          );
         }
 
-        const existingQuestionRes = await client.query(
-          `SELECT id, question_text, supporting_artifacts_json
-           FROM guardrail_question_tests
-           WHERE tenant_key = $1
-             AND status = 'active'`,
-          [tenantKey]
-        );
-        const questionByText = new Map(
-          existingQuestionRes.rows
-            .filter((row) => row?.question_text)
-            .map((row) => [String(row.question_text), row])
-        );
+        if (hasSiteTopicsInput) {
+          const existingTopicRes = await client.query(
+            `SELECT id, topic_path, risk_level
+             FROM site_topics
+             WHERE tenant_key = $1`,
+            [tenantKey]
+          );
+          const topicByPath = new Map(
+            existingTopicRes.rows
+              .filter((row) => row?.topic_path)
+              .map((row) => [String(row.topic_path), row])
+          );
 
-        for (const item of guardrailQuestionTests) {
-          const answer = item.answer;
-          const reviewStatus = answer ? "approved" : "pending";
-          const existingRow = (item.id
-            ? existingQuestionRes.rows.find((row) => Number(row.id) === Number(item.id))
-            : null) || questionByText.get(item.questionText);
-          const artifactsJson = JSON.stringify({
-            ...asObject(existingRow?.supporting_artifacts_json),
-            sourceType: item.sourceType,
-            sourceUrl: item.sourceUrl,
-            sourceConfidence: item.sourceConfidence,
-            serviceTags: item.serviceTags
-          });
-          const existingId = existingRow ? Number(existingRow.id) : null;
-          if (existingId) {
+          for (const topic of siteTopics) {
+            const existingRow = (topic.id
+              ? existingTopicRes.rows.find((row) => Number(row.id) === Number(topic.id))
+              : null) || topicByPath.get(topic.topicPath);
+            if (!existingRow) continue;
+
             await client.query(
-              `UPDATE guardrail_question_tests
-               SET topic = $3,
-                   question_text = $4,
+              `UPDATE site_topics
+               SET display_title = $3,
+                   summary_objective = $4,
                    risk_level = $5,
-                   service_tags = $6::text[],
-                   draft_answer = $7,
-                   approved_answer = $8,
-                   review_status = $9,
-                   supporting_artifacts_json = $10::jsonb,
                    updated_at = NOW()
-               WHERE tenant_key = $1 AND id = $2`,
+               WHERE tenant_key = $1
+                 AND id = $2`,
               [
                 tenantKey,
-                existingId,
+                Number(existingRow.id),
+                topic.displayTitle,
+                topic.summaryObjective,
+                topic.riskLevel || normalizeText(existingRow.risk_level) || "normal"
+              ]
+            );
+          }
+        }
+
+        if (hasGuardrailQuestionTestsInput) {
+          const existingQuestionRes = await client.query(
+            `SELECT id, question_text, supporting_artifacts_json
+             FROM guardrail_question_tests
+             WHERE tenant_key = $1
+               AND status = 'active'`,
+            [tenantKey]
+          );
+          const questionByText = new Map(
+            existingQuestionRes.rows
+              .filter((row) => row?.question_text)
+              .map((row) => [String(row.question_text), row])
+          );
+
+          for (const item of guardrailQuestionTests) {
+            const answer = item.answer;
+            const reviewStatus = answer ? "approved" : "pending";
+            const existingRow = (item.id
+              ? existingQuestionRes.rows.find((row) => Number(row.id) === Number(item.id))
+              : null) || questionByText.get(item.questionText);
+            const artifactsJson = JSON.stringify({
+              ...asObject(existingRow?.supporting_artifacts_json),
+              sourceType: item.sourceType,
+              sourceUrl: item.sourceUrl,
+              sourceConfidence: item.sourceConfidence,
+              serviceTags: item.serviceTags
+            });
+            const existingId = existingRow ? Number(existingRow.id) : null;
+            if (existingId) {
+              await client.query(
+                `UPDATE guardrail_question_tests
+                 SET topic = $3,
+                     question_text = $4,
+                     risk_level = $5,
+                     service_tags = $6::text[],
+                     draft_answer = $7,
+                     approved_answer = $8,
+                     review_status = $9,
+                     supporting_artifacts_json = $10::jsonb,
+                     updated_at = NOW()
+                 WHERE tenant_key = $1 AND id = $2`,
+                [
+                  tenantKey,
+                  existingId,
+                  item.topic,
+                  item.questionText,
+                  item.riskLevel,
+                  item.serviceTags,
+                  answer || null,
+                  answer || null,
+                  reviewStatus,
+                  artifactsJson
+                ]
+              );
+              continue;
+            }
+
+            await client.query(
+              `INSERT INTO guardrail_question_tests (tenant_key, topic, question_text, risk_level, service_tags, draft_answer, approved_answer, review_status, supporting_artifacts_json)
+               VALUES ($1, $2, $3, $4, $5::text[], $6, $7, $8, $9::jsonb)`,
+              [
+                tenantKey,
                 item.topic,
                 item.questionText,
                 item.riskLevel,
@@ -276,24 +365,7 @@ export default async function handler(req, res) {
                 artifactsJson
               ]
             );
-            continue;
           }
-
-          await client.query(
-            `INSERT INTO guardrail_question_tests (tenant_key, topic, question_text, risk_level, service_tags, draft_answer, approved_answer, review_status, supporting_artifacts_json)
-             VALUES ($1, $2, $3, $4, $5::text[], $6, $7, $8, $9::jsonb)`,
-            [
-              tenantKey,
-              item.topic,
-              item.questionText,
-              item.riskLevel,
-              item.serviceTags,
-              answer || null,
-              answer || null,
-              reviewStatus,
-              artifactsJson
-            ]
-          );
         }
 
         await compileTenantKnowledge(client, tenantKey);

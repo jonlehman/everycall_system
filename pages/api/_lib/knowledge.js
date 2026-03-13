@@ -70,6 +70,16 @@ const SERVICE_TAG_PATTERNS = [
   ["service_area", /\bservice area|serve|coverage\b/i]
 ];
 
+const COVERAGE_CHECKLIST_TEMPLATES = [
+  { checkKey: "warranty", title: "Warranty", keywords: ["warranty", "coverage", "covered", "guarantee"], guardrailTopics: ["warranty", "guarantees"] },
+  { checkKey: "service_area", title: "Service area", keywords: ["service area", "serve", "locations", "coverage area"], guardrailTopics: ["service_area"] },
+  { checkKey: "emergency_service", title: "Emergency service", keywords: ["emergency", "urgent", "24/7", "after hours"], guardrailTopics: ["emergency_service"] },
+  { checkKey: "availability", title: "Hours and availability", keywords: ["hours", "availability", "open", "weekend", "schedule"], guardrailTopics: ["availability"] },
+  { checkKey: "pricing", title: "Pricing and fees", keywords: ["pricing", "price", "fees", "diagnostic", "estimate"], guardrailTopics: ["pricing"] },
+  { checkKey: "financing", title: "Financing and payment", keywords: ["financing", "payment plan", "credit", "monthly"], guardrailTopics: ["financing"] },
+  { checkKey: "guarantees", title: "Guarantees and promises", keywords: ["guarantee", "satisfaction", "make it right"], guardrailTopics: ["guarantees"] }
+];
+
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -227,6 +237,18 @@ function splitIntoClaims(text) {
   return unique.length ? unique : [raw];
 }
 
+function isUsableGuardrailAnswer(answer, topic) {
+  const cleaned = normalizeText(answer);
+  if (!cleaned) return false;
+  const wordCount = cleaned.split(/\s+/).length;
+  if (wordCount < 4 && !["availability", "service_area"].includes(String(topic || ""))) return false;
+  const topicKeywords = TOPIC_TRIGGER_TERMS[topic] || [];
+  if (topicKeywords.length && !topicKeywords.some((keyword) => cleaned.toLowerCase().includes(String(keyword).toLowerCase())) && wordCount < 10) {
+    return false;
+  }
+  return true;
+}
+
 function mapKnowledgeEntryRow(row) {
   const metadata = asObject(row.metadata_json);
   return {
@@ -350,6 +372,39 @@ function mapKnowledgeFeedbackEventRow(row) {
   };
 }
 
+function mapSiteTopicRow(row) {
+  const metadata = asObject(row.metadata_json);
+  return {
+    id: String(row.id),
+    topicKey: normalizeText(row.topic_key) || null,
+    parentTopicKey: normalizeText(row.parent_topic_key) || null,
+    topicPath: normalizeText(row.topic_path),
+    parentTopicPath: normalizeText(row.parent_topic_path) || null,
+    displayTitle: normalizeText(row.display_title) || normalizeText(row.topic_path),
+    topicType: normalizeText(row.topic_type) || "page",
+    summaryObjective: normalizeText(row.summary_objective),
+    sourceUrl: normalizeText(row.source_url) || null,
+    sourceConfidence: toNumberOrNull(row.source_confidence),
+    riskLevel: normalizeText(row.risk_level) || "normal",
+    metadata,
+    updatedAt: row.updated_at || null
+  };
+}
+
+function mapCoverageCheckRow(row) {
+  return {
+    id: String(row.id),
+    checkKey: normalizeText(row.check_key),
+    title: normalizeText(row.title),
+    status: normalizeText(row.status) || "missing",
+    coverageConfidence: toNumberOrNull(row.coverage_confidence),
+    matchedTopicPaths: Array.isArray(row.matched_topic_paths_json) ? row.matched_topic_paths_json.map((item) => normalizeText(item)).filter(Boolean) : [],
+    notes: normalizeText(row.notes) || null,
+    metadata: asObject(row.metadata_json),
+    updatedAt: row.updated_at || null
+  };
+}
+
 function mergeKnowledgeEntries(rows, includeEmptyTemplates) {
   const templates = createBlankKnowledgeEntries();
   const templateBySection = new Map(templates.map((item) => [item.sectionType, item]));
@@ -432,7 +487,7 @@ function mergeGuardrailQuestions(rows, includeEmptyTemplates) {
 }
 
 async function loadKnowledgeAuthoringRows(db, tenantKey) {
-  const [entryRes, questionRes] = await Promise.all([
+  const [entryRes, questionRes, topicRes, coverageRes] = await Promise.all([
     db.query(
       `SELECT id, entry_type, section_type, title, content_text, source_url, compilation_status, metadata_json, updated_at
        FROM knowledge_entries
@@ -447,11 +502,27 @@ async function loadKnowledgeAuthoringRows(db, tenantKey) {
          AND status = 'active'
        ORDER BY updated_at DESC, id DESC`,
       [tenantKey]
+    ),
+    db.query(
+      `SELECT id, topic_key, parent_topic_key, topic_path, parent_topic_path, display_title, topic_type, summary_objective, source_url, source_confidence, risk_level, metadata_json, updated_at
+       FROM site_topics
+       WHERE tenant_key = $1
+       ORDER BY topic_path ASC, updated_at DESC, id DESC`,
+      [tenantKey]
+    ),
+    db.query(
+      `SELECT id, check_key, title, status, coverage_confidence, matched_topic_paths_json, notes, metadata_json, updated_at
+       FROM knowledge_coverage_checks
+       WHERE tenant_key = $1
+       ORDER BY title ASC, updated_at DESC, id DESC`,
+      [tenantKey]
     )
   ]);
   return {
     entryRows: entryRes.rows || [],
-    questionRows: questionRes.rows || []
+    questionRows: questionRes.rows || [],
+    topicRows: topicRes.rows || [],
+    coverageRows: coverageRes.rows || []
   };
 }
 
@@ -513,6 +584,101 @@ async function linkCardFact(db, cardId, factId, factRank, required = false) {
   );
 }
 
+function inferTopicFromFreeformText(text) {
+  const haystack = normalizeText(text).toLowerCase();
+  if (!haystack) return "general";
+  for (const [topic, terms] of Object.entries(TOPIC_TRIGGER_TERMS)) {
+    if (topic === "general") continue;
+    if (terms.some((term) => haystack.includes(String(term).toLowerCase()))) {
+      return topic;
+    }
+  }
+  return "general";
+}
+
+function selectSiteTopicCompileRows(siteTopics) {
+  const sorted = [...(siteTopics || [])].sort((left, right) =>
+    right.topicPath.split(">").length - left.topicPath.split(">").length
+    || left.topicPath.localeCompare(right.topicPath)
+  );
+  const seenParent = new Set();
+  const selected = [];
+
+  for (const topic of sorted) {
+    if (!normalizeText(topic.summaryObjective)) continue;
+    const parentPath = normalizeText(topic.parentTopicPath);
+    if (parentPath) {
+      seenParent.add(parentPath);
+    }
+    selected.push(topic);
+  }
+
+  return selected.filter((topic) => {
+    const isContainer = seenParent.has(topic.topicPath);
+    return !isContainer || topic.topicType !== "group";
+  });
+}
+
+function buildDerivedCoverageChecklist({ siteTopics, guardrailQuestionTests }) {
+  return COVERAGE_CHECKLIST_TEMPLATES.map((template) => {
+    const matchingTopics = (siteTopics || []).filter((topic) => {
+      const haystack = `${topic.topicPath} ${topic.displayTitle} ${topic.summaryObjective}`.toLowerCase();
+      return template.keywords.some((keyword) => haystack.includes(String(keyword).toLowerCase()));
+    });
+    const matchingGuardrails = (guardrailQuestionTests || []).filter((item) => template.guardrailTopics.includes(item.topic));
+    const strongGuardrail = matchingGuardrails.some((item) => isUsableGuardrailAnswer(item.answer, item.topic) && Number(item.sourceConfidence || 0) >= 0.55);
+    const mediumGuardrail = matchingGuardrails.some((item) => isUsableGuardrailAnswer(item.answer, item.topic));
+    const topicConfidence = matchingTopics.length
+      ? Math.max(...matchingTopics.map((topic) => Number(topic.sourceConfidence || 0.5)))
+      : 0;
+
+    let status = "missing";
+    if ((matchingTopics.length >= 1 && topicConfidence >= 0.72) && strongGuardrail) {
+      status = "ready";
+    } else if (matchingTopics.length || mediumGuardrail) {
+      status = "partial";
+    }
+
+    return {
+      checkKey: template.checkKey,
+      title: template.title,
+      status,
+      coverageConfidence: Number(Math.max(topicConfidence, strongGuardrail ? 0.85 : mediumGuardrail ? 0.55 : 0).toFixed(2)),
+      matchedTopicPaths: matchingTopics.map((topic) => topic.topicPath).slice(0, 8),
+      notes: status === "ready"
+        ? "Grounded site topics and guardrail coverage were found."
+        : status === "partial"
+          ? "Some relevant site knowledge exists, but review is still needed."
+          : "No reliable grounded coverage was found yet.",
+      metadata: {
+        topicCount: matchingTopics.length,
+        guardrailCount: matchingGuardrails.length
+      }
+    };
+  });
+}
+
+async function replaceCoverageChecklist(db, tenantKey, siteTopics, guardrailQuestionTests) {
+  const coverageChecklist = buildDerivedCoverageChecklist({ siteTopics, guardrailQuestionTests });
+  await db.query(`DELETE FROM knowledge_coverage_checks WHERE tenant_key = $1`, [tenantKey]);
+  for (const item of coverageChecklist) {
+    await db.query(
+      `INSERT INTO knowledge_coverage_checks (tenant_key, check_key, title, status, coverage_confidence, matched_topic_paths_json, notes, metadata_json)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb)`,
+      [
+        tenantKey,
+        item.checkKey,
+        item.title,
+        item.status,
+        item.coverageConfidence,
+        JSON.stringify(item.matchedTopicPaths || []),
+        item.notes,
+        JSON.stringify(item.metadata || {})
+      ]
+    );
+  }
+}
+
 export async function compileTenantKnowledge(db, tenantKey) {
   const tenantRes = await db.query(
     `SELECT industry
@@ -522,8 +688,12 @@ export async function compileTenantKnowledge(db, tenantKey) {
     [tenantKey]
   );
   const trade = normalizeText(tenantRes.rows[0]?.industry) || null;
-  const { entryRows, questionRows } = await loadKnowledgeAuthoringRows(db, tenantKey);
-  const knowledgeEntries = mergeKnowledgeEntries(entryRows, false).filter((entry) => normalizeText(entry.contentText));
+  const { entryRows, questionRows, topicRows } = await loadKnowledgeAuthoringRows(db, tenantKey);
+  const siteTopics = (topicRows || []).map(mapSiteTopicRow);
+  const hasSiteTopics = siteTopics.length > 0;
+  const knowledgeEntries = mergeKnowledgeEntries(entryRows, false)
+    .filter((entry) => normalizeText(entry.contentText))
+    .filter((entry) => !hasSiteTopics || entry.entryType !== "intake_review");
   const guardrailQuestionTests = mergeGuardrailQuestions(questionRows, false).filter((item) => normalizeText(item.answer));
 
   await db.query(
@@ -540,6 +710,58 @@ export async function compileTenantKnowledge(db, tenantKey) {
 
   let runtimeCardCount = 0;
   let runtimeFactCount = 0;
+  let compiledTopicCount = 0;
+
+  const compiledSiteTopics = selectSiteTopicCompileRows(siteTopics);
+  for (let index = 0; index < compiledSiteTopics.length; index += 1) {
+    const item = compiledSiteTopics[index];
+    const topicText = `${item.topicPath} ${item.displayTitle} ${item.summaryObjective}`;
+    const topic = inferTopicFromFreeformText(topicText);
+    const riskLevel = inferRiskLevel(topic, item.riskLevel);
+    const serviceTags = extractServiceTags(topicText);
+    const cardId = await insertCompiledCard(db, tenantKey, {
+      cardKey: `site_topic:${item.topicKey || slugify(item.topicPath) || index + 1}`,
+      topic,
+      trade,
+      serviceTags,
+      title: item.displayTitle || item.topicPath,
+      summary: truncateText(item.summaryObjective),
+      usageNotes: "Use when the caller asks about this site-derived topic. Prefer this grounded summary over marketing phrasing.",
+      metadata: {
+        compiledFrom: "site_topic",
+        siteTopicId: item.id,
+        topicPath: item.topicPath,
+        topicType: item.topicType
+      }
+    });
+    runtimeCardCount += 1;
+    compiledTopicCount += 1;
+
+    const claims = splitIntoClaims(item.summaryObjective);
+    for (let claimIndex = 0; claimIndex < claims.length; claimIndex += 1) {
+      const claim = claims[claimIndex];
+      const factId = await insertCompiledFact(db, tenantKey, {
+        knowledgeEntryId: null,
+        reviewStatus: "reviewed",
+        sourceType: "site_topic_compiled",
+        topic,
+        trade,
+        serviceTags,
+        claim,
+        evidenceText: item.summaryObjective,
+        sourceUrl: item.sourceUrl,
+        confidence: item.sourceConfidence ?? 0.8,
+        riskLevel,
+        metadata: {
+          compiledFrom: "site_topic",
+          siteTopicId: item.id,
+          topicPath: item.topicPath
+        }
+      });
+      runtimeFactCount += 1;
+      await linkCardFact(db, cardId, factId, claimIndex, claimIndex === 0);
+    }
+  }
 
   for (let index = 0; index < knowledgeEntries.length; index += 1) {
     const entry = knowledgeEntries[index];
@@ -709,7 +931,10 @@ export async function compileTenantKnowledge(db, tenantKey) {
     }
   }
 
+  await replaceCoverageChecklist(db, tenantKey, siteTopics, guardrailQuestionTests);
+
   return {
+    compiledTopicCount,
     compiledEntryCount: knowledgeEntries.length,
     compiledGuardrailCount: guardrailQuestionTests.length,
     runtimeCardCount,
@@ -719,7 +944,7 @@ export async function compileTenantKnowledge(db, tenantKey) {
 
 export async function loadTenantKnowledgeAuthoring(db, tenantKey, options = {}) {
   const includeEmptyTemplates = options.includeEmptyTemplates !== false;
-  const { entryRows, questionRows } = await loadKnowledgeAuthoringRows(db, tenantKey);
+  const { entryRows, questionRows, topicRows, coverageRows } = await loadKnowledgeAuthoringRows(db, tenantKey);
   const [overrideRes, guardrailRes] = await Promise.all([
     db.query(
       `SELECT id, topic, trade, service_tags, audience, trigger_text, preferred_answer, updated_at, applies_when_json
@@ -741,6 +966,8 @@ export async function loadTenantKnowledgeAuthoring(db, tenantKey, options = {}) 
 
   const knowledgeEntries = mergeKnowledgeEntries(entryRows, includeEmptyTemplates);
   const guardrailQuestionTests = mergeGuardrailQuestions(questionRows, includeEmptyTemplates);
+  const siteTopics = (topicRows || []).map(mapSiteTopicRow);
+  const coverageChecklist = (coverageRows || []).map(mapCoverageCheckRow);
   const overrides = (overrideRes.rows || []).map(mapKnowledgeOverrideRow);
   const guardrails = (guardrailRes.rows || []).map(mapKnowledgeGuardrailRow);
 
@@ -751,10 +978,14 @@ export async function loadTenantKnowledgeAuthoring(db, tenantKey, options = {}) 
   return {
     knowledgeEntries,
     guardrailQuestionTests,
+    siteTopics,
+    coverageChecklist,
     overrides,
     guardrails,
     usageInstructions: [...DEFAULT_KNOWLEDGE_USAGE_INSTRUCTIONS],
     counts: {
+      siteTopicCount: siteTopics.length,
+      coverageCheckCount: coverageChecklist.length,
       knowledgeEntryCount,
       guardrailQuestionCount: guardrailQuestionTests.length,
       answeredGuardrailCount,
@@ -832,7 +1063,11 @@ export async function loadTenantKnowledgeRuntime(db, tenantKey) {
   let { cardFactRes, overrideRes, guardrailRes, standaloneFactsRes } = await queryRuntime();
   if ((cardFactRes.rows || []).length === 0 && (standaloneFactsRes.rows || []).length === 0) {
     const authoring = await loadTenantKnowledgeAuthoring(db, tenantKey, { includeEmptyTemplates: false });
-    if ((authoring.counts?.knowledgeEntryCount || 0) > 0 || (authoring.counts?.answeredGuardrailCount || 0) > 0) {
+    if (
+      (authoring.counts?.siteTopicCount || 0) > 0
+      || (authoring.counts?.knowledgeEntryCount || 0) > 0
+      || (authoring.counts?.answeredGuardrailCount || 0) > 0
+    ) {
       await compileTenantKnowledge(db, tenantKey);
       ({ cardFactRes, overrideRes, guardrailRes, standaloneFactsRes } = await queryRuntime());
     }
