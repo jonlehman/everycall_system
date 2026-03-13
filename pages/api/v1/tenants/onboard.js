@@ -6,6 +6,7 @@ import { normalizePhoneNumber } from "../../_lib/phone.js";
 import { createSession, getSession, setSessionCookie } from "../../_lib/auth.js";
 import { cleanupTenantByKey } from "../../_lib/tenantCleanup.js";
 import crypto from "crypto";
+import { createBlankGuardrailQuestionTests, createBlankKnowledgeEntries } from "../../../../lib/knowledgeTemplates.js";
 
 const BASE_FAQS = [
   {
@@ -219,6 +220,49 @@ function normalizeFaqDrafts(value) {
     });
 }
 
+function normalizeKnowledgeEntries(value) {
+  const seen = new Set();
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      sectionType: String(item?.sectionType || "").trim() || "general",
+      title: String(item?.title || "").trim() || "General",
+      contentText: String(item?.contentText || item?.content || "").trim(),
+      sourceType: String(item?.sourceType || "").trim() || null,
+      sourceUrl: String(item?.sourceUrl || "").trim() || null,
+      sourceConfidence: Number.isFinite(Number(item?.sourceConfidence)) ? Number(item.sourceConfidence) : null
+    }))
+    .filter((item) => item.sectionType)
+    .filter((item) => {
+      const key = `${item.sectionType}::${item.title}`.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function normalizeGuardrailQuestionTests(value) {
+  const seen = new Set();
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      questionText: String(item?.questionText || item?.question || "").trim(),
+      topic: String(item?.topic || "").trim() || null,
+      riskLevel: String(item?.riskLevel || "").trim() || "high",
+      answer: String(item?.answer || item?.approvedAnswer || item?.draftAnswer || "").trim(),
+      sourceType: String(item?.sourceType || "").trim() || null,
+      sourceUrl: String(item?.sourceUrl || "").trim() || null,
+      sourceConfidence: Number.isFinite(Number(item?.sourceConfidence)) ? Number(item.sourceConfidence) : null
+    }))
+    .filter((item) => item.questionText)
+    .filter((item) => {
+      const key = item.questionText.toLowerCase().replace(/\s+/g, " ").trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function parsePayload(body) {
   const ownerEmail = String(body.ownerEmail || "").trim().toLowerCase();
   const primaryGoals = normalizeStringArray(body.primaryGoals ?? body.primaryGoal);
@@ -251,6 +295,10 @@ function parsePayload(body) {
     primaryGoals: primaryGoals.length ? primaryGoals : ["Capture missed-call leads"],
     faqDraftsProvided: Array.isArray(body.faqDrafts),
     faqDrafts: normalizeFaqDrafts(body.faqDrafts),
+    knowledgeEntriesProvided: Array.isArray(body.knowledgeEntries),
+    knowledgeEntries: normalizeKnowledgeEntries(body.knowledgeEntries),
+    guardrailQuestionTestsProvided: Array.isArray(body.guardrailQuestionTests),
+    guardrailQuestionTests: normalizeGuardrailQuestionTests(body.guardrailQuestionTests),
     status: String(body.status || "active"),
     dataRegion: String(body.dataRegion || "US"),
     plan: String(body.plan || "Trial"),
@@ -354,6 +402,67 @@ function truncateText(value, limit = 400) {
   const text = String(value || "").trim();
   if (!text) return null;
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function buildFallbackKnowledgeEntries(payload) {
+  const summary = [
+    payload.businessName ? `${payload.businessName} is a ${payload.industry} business.` : "",
+    payload.servicesOffered.length ? `Services include ${payload.servicesOffered.join(", ")}.` : "",
+    payload.serviceArea ? `Service area: ${payload.serviceArea}.` : "",
+    payload.businessHours ? `Hours: ${payload.businessHours}.` : "",
+    payload.emergencyServices ? "Emergency service may be offered." : ""
+  ].filter(Boolean).join(" ");
+
+  return createBlankKnowledgeEntries().map((entry) => {
+    if (entry.sectionType === "services_and_capabilities" && summary) {
+      return {
+        ...entry,
+        contentText: summary,
+        sourceType: "intake_form"
+      };
+    }
+    if (entry.sectionType === "service_area" && payload.serviceArea) {
+      return {
+        ...entry,
+        contentText: payload.serviceArea,
+        sourceType: "intake_form"
+      };
+    }
+    if (entry.sectionType === "hours_and_availability" && payload.businessHours) {
+      return {
+        ...entry,
+        contentText: payload.businessHours,
+        sourceType: "intake_form"
+      };
+    }
+    if (entry.sectionType === "emergency_service" && payload.emergencyServices) {
+      return {
+        ...entry,
+        contentText: "Emergency or after-hours service may be offered. Exact availability should be confirmed before promising dispatch timing.",
+        sourceType: "intake_form"
+      };
+    }
+    return entry;
+  });
+}
+
+function buildFallbackGuardrailQuestionTests(payload) {
+  return createBlankGuardrailQuestionTests().map((item) => {
+    if (item.topic === "service_area" && payload.serviceArea) {
+      return { ...item, answer: payload.serviceArea, sourceType: "intake_form" };
+    }
+    if (item.topic === "availability" && payload.businessHours) {
+      return { ...item, answer: payload.businessHours, sourceType: "intake_form" };
+    }
+    if (item.topic === "emergency_service" && payload.emergencyServices) {
+      return {
+        ...item,
+        answer: "Emergency or after-hours service may be offered, but exact dispatch timing should be confirmed before making a promise.",
+        sourceType: "intake_form"
+      };
+    }
+    return item;
+  });
 }
 
 function parseProvisioningError(err) {
@@ -580,6 +689,52 @@ export default async function handler(req, res) {
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [tenantKey, agentName, payload.businessName, prompt, prompt, greetingText, voiceType]
       );
+
+      const knowledgeEntries = payload.knowledgeEntriesProvided
+        ? payload.knowledgeEntries
+        : buildFallbackKnowledgeEntries(payload);
+      for (const entry of knowledgeEntries) {
+        await client.query(
+          `INSERT INTO knowledge_entries (tenant_key, entry_type, section_type, title, content_text, source_url, compilation_status, metadata_json, created_by_type)
+           VALUES ($1, 'intake_review', $2, $3, $4, $5, 'compiled', $6::jsonb, 'tenant')`,
+          [
+            tenantKey,
+            entry.sectionType,
+            entry.title,
+            entry.contentText || "",
+            entry.sourceUrl || null,
+            JSON.stringify({
+              sourceType: entry.sourceType || null,
+              sourceConfidence: entry.sourceConfidence ?? null
+            })
+          ]
+        );
+      }
+
+      const guardrailQuestionTests = payload.guardrailQuestionTestsProvided
+        ? payload.guardrailQuestionTests
+        : buildFallbackGuardrailQuestionTests(payload);
+      for (const item of guardrailQuestionTests) {
+        const answer = String(item.answer || "").trim();
+        await client.query(
+          `INSERT INTO guardrail_question_tests (tenant_key, topic, question_text, risk_level, draft_answer, approved_answer, review_status, supporting_artifacts_json)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+          [
+            tenantKey,
+            item.topic || null,
+            item.questionText,
+            item.riskLevel || "high",
+            answer || null,
+            answer || null,
+            answer ? "approved" : "pending",
+            JSON.stringify({
+              sourceType: item.sourceType || null,
+              sourceUrl: item.sourceUrl || null,
+              sourceConfidence: item.sourceConfidence ?? null
+            })
+          ]
+        );
+      }
 
       for (const faq of BASE_FAQS) {
         await client.query(

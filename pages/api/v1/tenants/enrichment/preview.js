@@ -1,5 +1,6 @@
 import { ensureTables, getPool } from "../../../_lib/db.js";
 import { normalizeFaqCategory } from "../../../_lib/faqCategories.js";
+import { createBlankGuardrailQuestionTests, createBlankKnowledgeEntries } from "../../../../../lib/knowledgeTemplates.js";
 
 const FREE_EMAIL_DOMAINS = new Set([
   "gmail.com",
@@ -64,6 +65,27 @@ const FALLBACK_INDUSTRY_FAQS = {
 const STOPWORDS = new Set([
   "what", "when", "where", "which", "with", "from", "your", "this", "that", "have", "do", "does", "only", "they", "them", "into", "about", "would", "could", "should", "offer", "offers"
 ]);
+
+const KNOWLEDGE_SECTION_KEYWORDS = {
+  services_and_capabilities: ["service", "services", "repair", "replace", "install", "installation", "maintenance", "drain", "plumbing", "electrical", "hvac", "heating", "cooling", "sewer"],
+  emergency_service: ["emergency", "urgent", "24/7", "after hours", "same day"],
+  service_area: ["service area", "areas we serve", "areas served", "serving", "locations", "location", "nearby communities"],
+  hours_and_availability: ["hours", "open", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "24/7", "availability"],
+  warranties_and_guarantees: ["warranty", "guarantee", "guaranteed", "satisfaction guarantee", "forever warranty"],
+  pricing_and_fees: ["estimate", "estimates", "fee", "fees", "pricing", "price", "diagnostic", "service fee", "free estimate"],
+  financing_and_payment: ["financing", "payment", "payments", "credit", "apple pay", "cash", "card", "cards"],
+  policies_and_process: ["schedule", "scheduling", "appointment", "callback", "arrive", "arrival", "next step", "process", "book online"]
+};
+
+const GUARDRAIL_TOPIC_KEYWORDS = {
+  warranty: ["warranty", "coverage", "covered", "forever warranty", "lifetime"],
+  guarantees: ["guarantee", "guaranteed", "satisfaction guarantee", "make it right"],
+  emergency_service: ["emergency", "24/7", "urgent", "after hours"],
+  service_area: ["service area", "areas we serve", "serving", "locations"],
+  availability: ["hours", "availability", "open", "24/7", "same day", "monday", "friday"],
+  financing: ["financing", "payment", "payments", "credit"],
+  pricing: ["fee", "fees", "diagnostic", "estimate", "estimates", "pricing", "price"]
+};
 
 function normalizeWebsite(website) {
   const raw = String(website || "").trim();
@@ -535,6 +557,101 @@ function findEvidenceHeuristic(question, sources) {
   return best;
 }
 
+function uniqueValues(values) {
+  const seen = new Set();
+  const output = [];
+  for (const value of values || []) {
+    const text = String(value || "").trim();
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(text);
+  }
+  return output;
+}
+
+function findSentenceMatchesByKeywords(keywords, sources, limit = 3) {
+  const keys = uniqueValues(keywords).map((keyword) => keyword.toLowerCase());
+  if (!keys.length) return [];
+  const matches = [];
+  for (const source of sources || []) {
+    for (const sentence of source.sentences || []) {
+      if (looksLikeNavOrBoilerplate(sentence)) continue;
+      const lower = String(sentence || "").toLowerCase();
+      const matchCount = keys.filter((key) => lower.includes(key)).length;
+      if (!matchCount) continue;
+      matches.push({
+        sentence: cleanEvidenceText(sentence),
+        sourceType: source.sourceType || "website",
+        sourceUrl: source.sourceUrl || null,
+        score: matchCount
+      });
+    }
+  }
+  return matches
+    .sort((a, b) => b.score - a.score || b.sentence.length - a.sentence.length)
+    .filter((match, index, items) => items.findIndex((item) => item.sentence === match.sentence) === index)
+    .slice(0, limit);
+}
+
+function joinSentences(matches, limit = 2) {
+  return uniqueValues((matches || []).map((match) => match.sentence)).slice(0, limit).join(" ");
+}
+
+function entryFromTemplate(template, contentText, match) {
+  return {
+    sectionType: template.sectionType,
+    title: template.title,
+    contentText: String(contentText || "").trim(),
+    sourceType: match?.sourceType || null,
+    sourceUrl: match?.sourceUrl || null,
+    sourceConfidence: Number.isFinite(Number(match?.score)) ? Number((Math.min(Number(match.score) / 3, 1)).toFixed(2)) : null
+  };
+}
+
+function buildKnowledgeEntries({ profile, sources }) {
+  const addressSummary = [profile.address1, profile.city, profile.state, profile.zip].filter(Boolean).join(", ");
+  const defaults = createBlankKnowledgeEntries();
+  return defaults.map((template) => {
+    const matches = findSentenceMatchesByKeywords(KNOWLEDGE_SECTION_KEYWORDS[template.sectionType] || [], sources, template.sectionType === "services_and_capabilities" ? 3 : 2);
+    const matchedText = joinSentences(matches, template.sectionType === "services_and_capabilities" ? 3 : 2);
+    let fallback = "";
+    if (template.sectionType === "service_area") {
+      fallback = [profile.serviceArea, addressSummary].filter(Boolean).join(" ").trim();
+    } else if (template.sectionType === "hours_and_availability") {
+      fallback = profile.businessHours || "";
+    } else if (template.sectionType === "emergency_service" && profile.emergencyServices === true) {
+      fallback = "Emergency or after-hours service appears to be offered. Verify exact availability before promising dispatch timing.";
+    }
+    return entryFromTemplate(template, matchedText || fallback, matches[0] || null);
+  });
+}
+
+function buildGuardrailQuestionTests({ profile, sources, knowledgeEntries }) {
+  const sectionByType = new Map((knowledgeEntries || []).map((entry) => [entry.sectionType, entry]));
+  return createBlankGuardrailQuestionTests().map((template) => {
+    const matches = findSentenceMatchesByKeywords(GUARDRAIL_TOPIC_KEYWORDS[template.topic] || [], sources, 2);
+    let answer = receptionistStyleAnswer(joinSentences(matches, 2));
+    if (!answer && template.topic === "emergency_service" && profile.emergencyServices === true) {
+      answer = "Emergency or after-hours service appears to be offered, but exact dispatch timing should be confirmed before making a promise.";
+    }
+    if (!answer && template.topic === "service_area") {
+      answer = sectionByType.get("service_area")?.contentText || "";
+    }
+    if (!answer && template.topic === "availability") {
+      answer = sectionByType.get("hours_and_availability")?.contentText || "";
+    }
+    return {
+      ...template,
+      answer: String(answer || "").trim(),
+      sourceType: matches[0]?.sourceType || null,
+      sourceUrl: matches[0]?.sourceUrl || null,
+      sourceConfidence: Number.isFinite(Number(matches[0]?.score)) ? Number((Math.min(Number(matches[0].score) / 3, 1)).toFixed(2)) : null
+    };
+  });
+}
+
 function safeJsonParse(value) {
   try {
     return JSON.parse(value);
@@ -878,6 +995,8 @@ export default async function handler(req, res) {
       emergencyServices,
       websiteResult
     });
+    const knowledgeEntries = buildKnowledgeEntries({ profile, sources });
+    const guardrailQuestionTests = buildGuardrailQuestionTests({ profile, sources, knowledgeEntries });
 
     return res.status(200).json({
       ok: true,
@@ -889,6 +1008,8 @@ export default async function handler(req, res) {
         googleBusinessProfile,
         profile,
         provenance,
+        knowledgeEntries,
+        guardrailQuestionTests,
         defaultFaqCount: defaultFaqs.length,
         faqs
       }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { createBlankGuardrailQuestionTests, createBlankKnowledgeEntries } from '../../lib/knowledgeTemplates.js';
 import './intake.css';
 
 const FREE_EMAIL_DOMAINS = new Set([
@@ -52,22 +53,12 @@ const US_STATE_OPTIONS = [
   'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
 ];
 
-const FAQ_CATEGORY_ORDER = [
-  'Emergency',
-  'Technical Questions',
-  'Services Offered',
-  'Scheduling & Availability',
-  'Pricing & Payment',
-  'Service Area & Eligibility',
-  'Policies & Process',
-  'Warranties & Follow-Up'
-];
-
 function parseServiceMatches(industry, enrichment) {
   const options = SERVICES_BY_INDUSTRY[industry] || [];
   const text = [
     enrichment?.profile?.serviceText,
-    ...(Array.isArray(enrichment?.faqs) ? enrichment.faqs.map((faq) => `${faq.question} ${faq.answer || ''}`) : [])
+    ...(Array.isArray(enrichment?.knowledgeEntries) ? enrichment.knowledgeEntries.map((entry) => `${entry.title || ''} ${entry.contentText || ''}`) : []),
+    ...(Array.isArray(enrichment?.guardrailQuestionTests) ? enrichment.guardrailQuestionTests.map((item) => `${item.questionText || ''} ${item.answer || ''}`) : [])
   ].join(' ').toLowerCase();
 
   return options.filter((service) => {
@@ -104,17 +95,6 @@ function websiteFromEmail(email) {
   const domain = raw.slice(at + 1);
   if (!domain || FREE_EMAIL_DOMAINS.has(domain)) return '';
   return `https://${domain}`;
-}
-
-function normalizeDefaultAnswerMap(faqs) {
-  const map = new Map();
-  for (const faq of faqs || []) {
-    const question = String(faq?.question || '').trim();
-    const answer = String(faq?.defaultAnswer || '').trim();
-    if (!question || !answer || map.has(question)) continue;
-    map.set(question, answer);
-  }
-  return map;
 }
 
 function createInitialForm(qaMode = false) {
@@ -159,60 +139,33 @@ export function IntakePageClient({ qaMode = false } = {}) {
 
   const [serviceSearch, setServiceSearch] = useState('');
   const [selectedServices, setSelectedServices] = useState([]);
-  const [faqDrafts, setFaqDrafts] = useState([]);
-  const [openFaqIndex, setOpenFaqIndex] = useState(0);
-  const [defaultFaqAnswers, setDefaultFaqAnswers] = useState(new Map());
+  const [knowledgeEntries, setKnowledgeEntries] = useState(() => createBlankKnowledgeEntries());
+  const [guardrailQuestionTests, setGuardrailQuestionTests] = useState(() => createBlankGuardrailQuestionTests());
+  const [openGuardrailIndex, setOpenGuardrailIndex] = useState(0);
 
   useEffect(() => {
     setSelectedServices([]);
     setServiceSearch('');
-    setFaqDrafts([]);
-    setDefaultFaqAnswers(new Map());
-    setOpenFaqIndex(0);
+    setKnowledgeEntries(createBlankKnowledgeEntries());
+    setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
+    setOpenGuardrailIndex(0);
   }, [form.industry]);
 
   useEffect(() => {
-    if (faqDrafts.length === 0) {
-      setOpenFaqIndex(0);
+    if (guardrailQuestionTests.length === 0) {
+      setOpenGuardrailIndex(0);
       return;
     }
-    if (openFaqIndex >= faqDrafts.length) {
-      setOpenFaqIndex(Math.max(0, faqDrafts.length - 1));
+    if (openGuardrailIndex >= guardrailQuestionTests.length) {
+      setOpenGuardrailIndex(Math.max(0, guardrailQuestionTests.length - 1));
     }
-  }, [faqDrafts, openFaqIndex]);
+  }, [guardrailQuestionTests, openGuardrailIndex]);
 
   const filteredServices = useMemo(() => {
     const list = SERVICES_BY_INDUSTRY[form.industry] || [];
     if (!serviceSearch.trim()) return list;
     return list.filter((item) => item.toLowerCase().includes(serviceSearch.trim().toLowerCase()));
   }, [form.industry, serviceSearch]);
-
-  const groupedFaqDrafts = useMemo(() => {
-    const groups = new Map();
-    faqDrafts.forEach((faq, index) => {
-      const category = String(faq?.category || 'Policies & Process').trim() || 'Policies & Process';
-      if (!groups.has(category)) {
-        groups.set(category, []);
-      }
-      groups.get(category).push({ faq, index });
-    });
-
-    return FAQ_CATEGORY_ORDER
-      .filter((category) => groups.has(category))
-      .map((category) => ({
-        category,
-        items: groups.get(category)
-      }));
-  }, [faqDrafts]);
-
-  const blankFaqsWithDefaultsCount = useMemo(() => (
-    faqDrafts.reduce((count, faq) => {
-      const question = String(faq?.question || '').trim();
-      const hasDefault = Boolean(defaultFaqAnswers.get(question));
-      const isBlank = !String(faq?.answer || '').trim();
-      return count + (hasDefault && isBlank ? 1 : 0);
-    }, 0)
-  ), [defaultFaqAnswers, faqDrafts]);
 
   const qaReport = useMemo(() => {
     if (!isQaMode) return null;
@@ -327,27 +280,33 @@ export function IntakePageClient({ qaMode = false } = {}) {
         suggestedSource: null
       }
     ];
-    const faqRows = (faqDrafts || []).map((faq) => ({
-      question: faq.question,
-      currentAnswer: String(faq.answer || '').trim(),
-      currentSource: String(faq.answer || '').trim()
-        ? (String(faq.answer || '').trim() === String(faq.defaultAnswer || '').trim() ? 'industry_default_applied' : 'website_or_manual')
-        : 'blank',
-      defaultAnswer: String(faq.defaultAnswer || '').trim(),
-      sourceType: faq.sourceType || null,
-      sourceUrl: faq.sourceUrl || null,
-      sourceConfidence: Number.isFinite(Number(faq.sourceConfidence)) ? Number(faq.sourceConfidence) : null
+    const knowledgeEntryRows = (knowledgeEntries || []).map((entry) => ({
+      title: entry.title,
+      currentValue: String(entry.contentText || '').trim(),
+      currentSource: String(entry.contentText || '').trim() ? (entry.sourceType || 'manual_or_reviewed') : 'blank',
+      sourceUrl: entry.sourceUrl || null,
+      sourceConfidence: Number.isFinite(Number(entry.sourceConfidence)) ? Number(entry.sourceConfidence) : null
+    }));
+    const guardrailRows = (guardrailQuestionTests || []).map((item) => ({
+      question: item.questionText,
+      currentAnswer: String(item.answer || '').trim(),
+      currentSource: String(item.answer || '').trim() ? (item.sourceType || 'manual_or_reviewed') : 'blank',
+      sourceUrl: item.sourceUrl || null,
+      sourceConfidence: Number.isFinite(Number(item.sourceConfidence)) ? Number(item.sourceConfidence) : null
     }));
     return {
       fieldRows,
-      faqRows,
+      knowledgeEntryRows,
+      guardrailRows,
       raw: {
         currentForm: form,
         initialQaDefaults: initialForm,
-        enrichment: enrichmentReport
+        enrichment: enrichmentReport,
+        knowledgeEntries,
+        guardrailQuestionTests
       }
     };
-  }, [enrichmentReport, faqDrafts, form, initialForm, isQaMode]);
+  }, [enrichmentReport, form, guardrailQuestionTests, initialForm, isQaMode, knowledgeEntries]);
 
   const setStatusMessage = (message, tone = 'normal') => setStatus({ message, tone });
 
@@ -397,36 +356,12 @@ export function IntakePageClient({ qaMode = false } = {}) {
     setSelectedServices((prev) => prev.filter((item) => item !== service));
   };
 
-  const updateFaqAnswer = (index, answer) => {
-    setFaqDrafts((prev) => prev.map((item, idx) => (idx === index ? { ...item, answer } : item)));
+  const updateKnowledgeEntry = (index, contentText) => {
+    setKnowledgeEntries((prev) => prev.map((item, idx) => (idx === index ? { ...item, contentText } : item)));
   };
 
-  const removeFaq = (index) => {
-    setFaqDrafts((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
-  const addDefaultFaqAnswer = (index) => {
-    const question = String(faqDrafts[index]?.question || '').trim();
-    const defaultAnswer = defaultFaqAnswers.get(question);
-    if (!defaultAnswer) return;
-    updateFaqAnswer(index, defaultAnswer);
-    setStatusMessage('Default answer added. You can edit it before creating your workspace.', 'ok');
-  };
-
-  const fillBlankFaqAnswers = () => {
-    if (blankFaqsWithDefaultsCount === 0) return;
-    setFaqDrafts((prev) => prev.map((faq) => {
-      if (String(faq?.answer || '').trim()) return faq;
-      const question = String(faq?.question || '').trim();
-      const defaultAnswer = defaultFaqAnswers.get(question);
-      if (!defaultAnswer) return faq;
-      return { ...faq, answer: defaultAnswer };
-    }));
-    setStatusMessage(`Filled ${blankFaqsWithDefaultsCount} blank FAQ entr${blankFaqsWithDefaultsCount === 1 ? 'y' : 'ies'} with industry defaults.`, 'ok');
-  };
-
-  const saveFaqDraft = () => {
-    setStatusMessage('FAQ saved locally. It will be included when you create your workspace.', 'ok');
+  const updateGuardrailQuestionAnswer = (index, answer) => {
+    setGuardrailQuestionTests((prev) => prev.map((item, idx) => (idx === index ? { ...item, answer } : item)));
   };
 
   const handleContinueFromFastStart = async () => {
@@ -444,15 +379,15 @@ export function IntakePageClient({ qaMode = false } = {}) {
       if (!form.website.trim()) {
         const confirmed = window.confirm("You didn't add a website. Continue without analyzing your site?");
         if (!confirmed) return;
-        setFaqDrafts([]);
-        setDefaultFaqAnswers(new Map());
-        setStatusMessage('No website provided. Continue with manual setup.', 'warn');
+        setKnowledgeEntries(createBlankKnowledgeEntries());
+        setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
+        setStatusMessage('No website provided. Continue with manual knowledge setup.', 'warn');
         setStep(2);
         return;
       }
 
     setEnrichmentBusy(true);
-    setStatusMessage('Analyzing website and loading industry FAQ drafts...', 'warn');
+    setStatusMessage('Analyzing website and building knowledge drafts...', 'warn');
 
     try {
       const resp = await fetch('/api/v1/tenants/enrichment/preview', {
@@ -467,16 +402,21 @@ export function IntakePageClient({ qaMode = false } = {}) {
 
       const data = await resp.json().catch(() => null);
       if (!resp.ok) {
-        setFaqDrafts([]);
-        setDefaultFaqAnswers(new Map());
+        setKnowledgeEntries(createBlankKnowledgeEntries());
+        setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
         if (isQaMode) setEnrichmentReport(null);
         setStatusMessage(data?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
       } else {
         const enrichment = data?.enrichment || {};
-        const previewFaqs = Array.isArray(enrichment?.faqs) ? enrichment.faqs : [];
+        const previewKnowledgeEntries = Array.isArray(enrichment?.knowledgeEntries) && enrichment.knowledgeEntries.length
+          ? enrichment.knowledgeEntries
+          : createBlankKnowledgeEntries();
+        const previewGuardrailQuestions = Array.isArray(enrichment?.guardrailQuestionTests) && enrichment.guardrailQuestionTests.length
+          ? enrichment.guardrailQuestionTests
+          : createBlankGuardrailQuestionTests();
         const matchedServices = parseServiceMatches(form.industry, enrichment);
-        setFaqDrafts(previewFaqs);
-        setDefaultFaqAnswers(normalizeDefaultAnswerMap(previewFaqs));
+        setKnowledgeEntries(previewKnowledgeEntries);
+        setGuardrailQuestionTests(previewGuardrailQuestions);
         if (isQaMode) setEnrichmentReport(enrichment);
         setSelectedServices((prev) => {
           const next = new Set(prev);
@@ -488,13 +428,13 @@ export function IntakePageClient({ qaMode = false } = {}) {
           return mergeEnrichmentProfileIntoForm(next, enrichment, { includeBusinessName: !isQaMode });
         });
         setStatusMessage(
-          `Loaded ${previewFaqs.length} FAQ drafts and matched services from your site.`,
+          `Loaded ${previewKnowledgeEntries.length} knowledge drafts and ${previewGuardrailQuestions.length} guardrail question previews from your site.`,
           'ok'
         );
       }
     } catch (err) {
-      setFaqDrafts([]);
-      setDefaultFaqAnswers(new Map());
+      setKnowledgeEntries(createBlankKnowledgeEntries());
+      setGuardrailQuestionTests(createBlankGuardrailQuestionTests());
       if (isQaMode) setEnrichmentReport(null);
       setStatusMessage(err?.message || 'Could not load enrichment preview. Continue with manual setup.', 'bad');
     } finally {
@@ -545,14 +485,22 @@ export function IntakePageClient({ qaMode = false } = {}) {
       emergencyServices: form.emergencyServices === 'true',
       servicesOffered: selectedServices,
       primaryGoals: ['Capture missed-call leads'],
-      faqDrafts: faqDrafts.map((faq) => ({
-        question: faq.question,
-        answer: String(faq.answer || '').trim(),
-        category: faq.category,
-        sourceType: faq.sourceType || null,
-        sourceUrl: faq.sourceUrl || null,
-        sourceRetrievedAt: faq.sourceRetrievedAt || null,
-        sourceConfidence: Number.isFinite(Number(faq.sourceConfidence)) ? Number(faq.sourceConfidence) : null
+      knowledgeEntries: knowledgeEntries.map((entry) => ({
+        sectionType: entry.sectionType,
+        title: entry.title,
+        contentText: String(entry.contentText || '').trim(),
+        sourceType: entry.sourceType || null,
+        sourceUrl: entry.sourceUrl || null,
+        sourceConfidence: Number.isFinite(Number(entry.sourceConfidence)) ? Number(entry.sourceConfidence) : null
+      })),
+      guardrailQuestionTests: guardrailQuestionTests.map((item) => ({
+        questionText: item.questionText,
+        topic: item.topic,
+        riskLevel: item.riskLevel,
+        answer: String(item.answer || '').trim(),
+        sourceType: item.sourceType || null,
+        sourceUrl: item.sourceUrl || null,
+        sourceConfidence: Number.isFinite(Number(item.sourceConfidence)) ? Number(item.sourceConfidence) : null
       })),
       qaMode: isQaMode
     };
@@ -848,7 +796,34 @@ export function IntakePageClient({ qaMode = false } = {}) {
                         </tbody>
                       </table>
                     </div>
-                    <div className="intake-section-title" style={{ marginTop: 16 }}>FAQ Sources</div>
+                    <div className="intake-section-title" style={{ marginTop: 16 }}>Knowledge Entry Sources</div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
+                            <th style={{ padding: '8px 6px' }}>Entry</th>
+                            <th style={{ padding: '8px 6px' }}>Current Source</th>
+                            <th style={{ padding: '8px 6px' }}>Detected Source</th>
+                            <th style={{ padding: '8px 6px' }}>Confidence</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {qaReport.knowledgeEntryRows.map((row) => (
+                            <tr key={row.title} style={{ borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' }}>
+                              <td style={{ padding: '8px 6px', fontWeight: 600 }}>{row.title}</td>
+                              <td style={{ padding: '8px 6px' }}>{row.currentSource}</td>
+                              <td style={{ padding: '8px 6px' }}>
+                                {row.sourceUrl
+                                  ? [row.currentSource || null, row.sourceUrl || null].filter(Boolean).join(' | ')
+                                  : '—'}
+                              </td>
+                              <td style={{ padding: '8px 6px' }}>{row.sourceConfidence ?? '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="intake-section-title" style={{ marginTop: 16 }}>Guardrail Question Sources</div>
                     <div style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                         <thead>
@@ -860,13 +835,13 @@ export function IntakePageClient({ qaMode = false } = {}) {
                           </tr>
                         </thead>
                         <tbody>
-                          {qaReport.faqRows.map((row) => (
+                          {qaReport.guardrailRows.map((row) => (
                             <tr key={row.question} style={{ borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' }}>
                               <td style={{ padding: '8px 6px', fontWeight: 600 }}>{row.question}</td>
                               <td style={{ padding: '8px 6px' }}>{row.currentSource}</td>
                               <td style={{ padding: '8px 6px' }}>
-                                {row.sourceType || row.sourceUrl
-                                  ? [row.sourceType || null, row.sourceUrl || null].filter(Boolean).join(' | ')
+                                {row.sourceUrl
+                                  ? [row.currentSource || null, row.sourceUrl || null].filter(Boolean).join(' | ')
                                   : '—'}
                               </td>
                               <td style={{ padding: '8px 6px' }}>{row.sourceConfidence ?? '—'}</td>
@@ -1048,66 +1023,80 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 <section className="intake-panel">
                   <div className="intake-panel-header">
                     <div>
-                      <div className="intake-faq-heading">FAQs</div>
-                      <div className="intake-muted">How do you want your assistant to respond to customer questions?</div>
-                      <div className="intake-muted">Note that wording of the question and answer doesn&apos;t have to be exact for it to be used.</div>
+                      <div className="intake-faq-heading">Knowledge</div>
+                      <div className="intake-muted">Review and refine the business knowledge your assistant should pull from.</div>
                     </div>
-                    <button
-                      className="btn"
-                      type="button"
-                      onClick={fillBlankFaqAnswers}
-                      disabled={blankFaqsWithDefaultsCount === 0}
-                    >
-                      Fill blanks with industry defaults
-                    </button>
                   </div>
                   <div className="intake-faq-list">
-                  {faqDrafts.length === 0 ? (
-                    <div className="intake-inline-note">No draft answers were found. You can add FAQs after setup in the FAQ Manager.</div>
-                  ) : groupedFaqDrafts.map((group) => (
-                    <div key={group.category} className="intake-faq-group">
-                      <div className="intake-faq-group-title">{group.category}</div>
-                      {group.items.map(({ faq, index }) => (
-                        <div key={`${faq.question}-${index}`} className="intake-faq-item">
+                    {knowledgeEntries.length === 0 ? (
+                      <div className="intake-inline-note">No knowledge drafts were found. Add the details you want your assistant to know.</div>
+                    ) : (
+                      knowledgeEntries.map((entry, index) => (
+                        <div key={`${entry.sectionType}-${index}`} className="intake-faq-group">
+                          <div className="intake-faq-group-title">{entry.title}</div>
+                          <div className="intake-stack">
+                            <label>{entry.title}</label>
+                            <textarea
+                              placeholder={`Add ${entry.title.toLowerCase()} details`}
+                              value={entry.contentText || ''}
+                              onChange={(event) => updateKnowledgeEntry(index, event.target.value)}
+                            />
+                            <div className="intake-muted">
+                              {entry.sourceUrl
+                                ? `Source: ${entry.sourceType || 'website'} | ${entry.sourceUrl}`
+                                : 'No source detected. Add or refine this manually.'}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+
+                <section className="intake-panel">
+                  <div className="intake-panel-header">
+                    <div>
+                      <div className="intake-faq-heading">Guardrail Questions</div>
+                      <div className="intake-muted">Review high-risk questions and adjust the draft answers before launch.</div>
+                    </div>
+                  </div>
+                  <div className="intake-faq-list">
+                    {guardrailQuestionTests.length === 0 ? (
+                      <div className="intake-inline-note">No guardrail questions are available yet.</div>
+                    ) : (
+                      guardrailQuestionTests.map((item, index) => (
+                        <div key={`${item.questionText}-${index}`} className="intake-faq-item">
                           <button
                             className="intake-faq-trigger"
                             type="button"
-                            aria-expanded={openFaqIndex === index}
-                            onClick={() => setOpenFaqIndex((current) => (current === index ? -1 : index))}
+                            aria-expanded={openGuardrailIndex === index}
+                            onClick={() => setOpenGuardrailIndex((current) => (current === index ? -1 : index))}
                           >
-                            <span className="intake-faq-question">{faq.question}</span>
-                            <span className="intake-faq-chevron" aria-hidden="true">{openFaqIndex === index ? '−' : '+'}</span>
+                            <span className="intake-faq-question">{item.questionText}</span>
+                            <span className="intake-faq-chevron" aria-hidden="true">{openGuardrailIndex === index ? '−' : '+'}</span>
                           </button>
-                          {openFaqIndex === index && (
+                          {openGuardrailIndex === index && (
                             <div className="intake-faq-content">
                               <div className="intake-stack">
-                                <label>Answer</label>
+                                <label>Draft Answer</label>
                                 <textarea
-                                  placeholder="Add the answer you want your assistant to give."
-                                  value={faq.answer || ''}
-                                  onChange={(event) => updateFaqAnswer(index, event.target.value)}
+                                  placeholder="Add the answer your assistant should use for this guardrail question."
+                                  value={item.answer || ''}
+                                  onChange={(event) => updateGuardrailQuestionAnswer(index, event.target.value)}
                                 />
-                                <div className="intake-actions intake-faq-actions">
-                                  <button
-                                    className="btn"
-                                    type="button"
-                                    onClick={() => addDefaultFaqAnswer(index)}
-                                    disabled={!defaultFaqAnswers.get(String(faq.question || '').trim())}
-                                  >
-                                    Add Default
-                                  </button>
-                                  <button className="btn" type="button" onClick={() => removeFaq(index)}>Remove</button>
-                                  <button className="btn intake-save-btn" type="button" onClick={saveFaqDraft}>Save</button>
+                                <div className="intake-muted">
+                                  {item.sourceUrl
+                                    ? `Source: ${item.sourceType || 'website'} | ${item.sourceUrl}`
+                                    : 'No source detected. Add or refine this manually.'}
                                 </div>
                               </div>
                             </div>
                           )}
                         </div>
-                      ))}
-                    </div>
-                  ))}
+                      ))
+                    )}
                   </div>
-                  <div className="intake-muted intake-faq-footer">Need custom FAQ&apos;s? Add those in your workspace once we create it for you.</div>
+                  <div className="intake-muted intake-faq-footer">Guardrail Questions are the review surface for risky topics like warranty, fees, guarantees, and emergency promises.</div>
                 </section>
 
                 <div className="intake-actions">
