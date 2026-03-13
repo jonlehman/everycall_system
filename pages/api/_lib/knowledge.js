@@ -35,6 +35,24 @@ const TOPIC_RISK_MAP = {
   general: "normal"
 };
 
+const STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "for", "to", "of", "in", "on", "at", "with", "about", "your", "you", "we", "our",
+  "is", "are", "do", "does", "did", "can", "could", "would", "should", "what", "when", "where", "how", "why"
+]);
+
+const TOPIC_TRIGGER_TERMS = {
+  warranty: ["warranty", "coverage", "covered", "guarantee", "forever warranty", "satisfaction"],
+  guarantees: ["guarantee", "guaranteed", "satisfaction guarantee", "make it right"],
+  emergency_service: ["emergency", "urgent", "24/7", "after hours", "same day"],
+  service_area: ["service area", "coverage area", "serve", "service territory"],
+  availability: ["hours", "availability", "open", "weekend", "schedule"],
+  financing: ["financing", "payment plan", "monthly payment", "credit"],
+  pricing: ["fees", "pricing", "estimate", "diagnostic", "cost"],
+  services: ["repair", "replace", "install", "service", "fix"],
+  policies: ["policy", "process", "insurance", "claim", "cancel", "reschedule"],
+  general: []
+};
+
 const SERVICE_TAG_PATTERNS = [
   ["water_heater", /\bwater heater|tankless\b/i],
   ["drain_cleaning", /\bdrain|clog|hydro jet\b/i],
@@ -65,6 +83,20 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function uniqueValues(values) {
+  const seen = new Set();
+  const output = [];
+  for (const value of values || []) {
+    const text = normalizeText(value);
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(text);
+  }
+  return output;
+}
+
 function slugify(input) {
   return String(input || "")
     .toLowerCase()
@@ -77,6 +109,16 @@ function truncateText(value, limit = 280) {
   const text = normalizeText(value);
   if (!text) return "";
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function tokenizeTerms(value) {
+  return uniqueValues(
+    String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]+/g, " ")
+      .split(/\s+/)
+      .filter((token) => token.length >= 3 && !STOPWORDS.has(token))
+  );
 }
 
 function inferTopic(sectionType, fallbackTopic = null) {
@@ -93,6 +135,73 @@ function extractServiceTags(text) {
   return SERVICE_TAG_PATTERNS
     .filter(([, pattern]) => pattern.test(haystack))
     .map(([tag]) => tag);
+}
+
+function buildAppliesWhenMetadata({
+  kind,
+  topic,
+  trade,
+  serviceTags,
+  triggerText,
+  instructionText,
+  questionText,
+  severity,
+  routeDecision,
+  compiledFrom,
+  alwaysInclude = false,
+  conversationStages = ["answering_question"]
+}) {
+  const normalizedTopic = inferTopic(null, topic);
+  const normalizedTrade = normalizeText(trade) || null;
+  const normalizedServiceTags = uniqueValues(serviceTags);
+  const patternText = normalizeText(questionText) || normalizeText(triggerText);
+  const triggerTerms = uniqueValues([
+    ...tokenizeTerms(patternText),
+    ...tokenizeTerms(instructionText),
+    ...(TOPIC_TRIGGER_TERMS[normalizedTopic] || []),
+    ...normalizedServiceTags.map((item) => item.replace(/_/g, " "))
+  ]).slice(0, 18);
+
+  return {
+    version: 1,
+    kind: normalizeText(kind) || null,
+    alwaysInclude: Boolean(alwaysInclude),
+    topics: normalizedTopic && normalizedTopic !== "general" ? [normalizedTopic] : [],
+    trade: normalizedTrade,
+    serviceTags: normalizedServiceTags,
+    questionPatterns: patternText ? [patternText] : [],
+    triggerTerms,
+    conversationStages: uniqueValues(conversationStages),
+    severity: normalizeText(severity) || null,
+    routeDecision: normalizeText(routeDecision) || null,
+    compiledFrom: normalizeText(compiledFrom) || null
+  };
+}
+
+function buildFallbackAppliesWhen({
+  kind,
+  topic,
+  trade,
+  serviceTags,
+  triggerText,
+  instructionText,
+  severity
+}) {
+  const normalizedTopic = normalizeText(topic);
+  const normalizedTrade = normalizeText(trade);
+  const normalizedServiceTags = uniqueValues(serviceTags);
+  const normalizedTrigger = normalizeText(triggerText);
+  const hasScopedRules = Boolean(normalizedTopic || normalizedTrade || normalizedServiceTags.length || normalizedTrigger);
+  return buildAppliesWhenMetadata({
+    kind,
+    topic: normalizedTopic,
+    trade: normalizedTrade,
+    serviceTags: normalizedServiceTags,
+    triggerText: normalizedTrigger,
+    instructionText,
+    severity,
+    alwaysInclude: kind === "guardrail" && !hasScopedRules
+  });
 }
 
 function splitIntoClaims(text) {
@@ -161,6 +270,7 @@ function mapGuardrailQuestionRow(row) {
 }
 
 function mapKnowledgeOverrideRow(row) {
+  const appliesWhen = asObject(row.applies_when_json);
   return {
     id: String(row.id),
     topic: normalizeText(row.topic) || null,
@@ -169,11 +279,21 @@ function mapKnowledgeOverrideRow(row) {
     audience: normalizeText(row.audience) || "general",
     triggerText: normalizeText(row.trigger_text) || null,
     preferredAnswer: normalizeText(row.preferred_answer),
+    appliesWhen: Object.keys(appliesWhen).length
+      ? appliesWhen
+      : buildFallbackAppliesWhen({
+          kind: "override",
+          topic: row.topic,
+          trade: row.trade,
+          serviceTags: row.service_tags,
+          triggerText: row.trigger_text
+        }),
     updatedAt: row.updated_at || null
   };
 }
 
 function mapKnowledgeGuardrailRow(row) {
+  const appliesWhen = asObject(row.applies_when_json);
   return {
     id: String(row.id),
     ruleType: normalizeText(row.rule_type) || "general",
@@ -182,6 +302,16 @@ function mapKnowledgeGuardrailRow(row) {
     serviceTags: Array.isArray(row.service_tags) ? row.service_tags.filter(Boolean) : [],
     severity: normalizeText(row.severity) || "high",
     instructionText: normalizeText(row.instruction_text),
+    appliesWhen: Object.keys(appliesWhen).length
+      ? appliesWhen
+      : buildFallbackAppliesWhen({
+          kind: "guardrail",
+          topic: row.topic,
+          trade: row.trade,
+          serviceTags: row.service_tags,
+          instructionText: row.instruction_text,
+          severity: row.severity
+        }),
     updatedAt: row.updated_at || null
   };
 }
@@ -511,6 +641,17 @@ export async function compileTenantKnowledge(db, tenantKey) {
     await linkCardFact(db, cardId, factId, 0, true);
 
     if (routeDecision !== "guardrail") {
+      const appliesWhen = buildAppliesWhenMetadata({
+        kind: "override",
+        topic,
+        trade,
+        serviceTags,
+        triggerText: item.questionText,
+        questionText: item.questionText,
+        severity: riskLevel,
+        routeDecision,
+        compiledFrom: "guardrail_question_test"
+      });
       await db.query(
         `INSERT INTO knowledge_overrides (tenant_key, status, topic, trade, service_tags, audience, trigger_text, preferred_answer, applies_when_json, source_feedback_event_id)
          VALUES ($1, 'active', $2, $3, $4::text[], 'general', $5, $6, $7::jsonb, $8)`,
@@ -521,13 +662,24 @@ export async function compileTenantKnowledge(db, tenantKey) {
           serviceTags,
           item.questionText,
           item.answer,
-          JSON.stringify({ questionText: item.questionText, riskLevel, compiledFrom: "guardrail_question_test", routeDecision }),
+          JSON.stringify(appliesWhen),
           item.sourceFeedbackEventId
         ]
       );
     }
 
     if (routeDecision !== "answer_override") {
+      const appliesWhen = buildAppliesWhenMetadata({
+        kind: "guardrail",
+        topic,
+        trade,
+        serviceTags,
+        questionText: item.questionText,
+        instructionText: buildGeneratedGuardrailInstruction(item),
+        severity: riskLevel,
+        routeDecision,
+        compiledFrom: "guardrail_question_test"
+      });
       await db.query(
         `INSERT INTO knowledge_guardrails (tenant_key, status, rule_type, topic, trade, service_tags, severity, instruction_text, applies_when_json, source_feedback_event_id)
          VALUES ($1, 'active', 'approved_answer_scope', $2, $3, $4::text[], $5, $6, $7::jsonb, $8)`,
@@ -538,7 +690,7 @@ export async function compileTenantKnowledge(db, tenantKey) {
           serviceTags,
           riskLevel,
           buildGeneratedGuardrailInstruction(item),
-          JSON.stringify({ questionText: item.questionText, compiledFrom: "guardrail_question_test", routeDecision }),
+          JSON.stringify(appliesWhen),
           item.sourceFeedbackEventId
         ]
       );
@@ -570,7 +722,7 @@ export async function loadTenantKnowledgeAuthoring(db, tenantKey, options = {}) 
   const { entryRows, questionRows } = await loadKnowledgeAuthoringRows(db, tenantKey);
   const [overrideRes, guardrailRes] = await Promise.all([
     db.query(
-      `SELECT id, topic, trade, service_tags, audience, trigger_text, preferred_answer, updated_at
+      `SELECT id, topic, trade, service_tags, audience, trigger_text, preferred_answer, updated_at, applies_when_json
        FROM knowledge_overrides
        WHERE tenant_key = $1
          AND status = 'active'
@@ -578,7 +730,7 @@ export async function loadTenantKnowledgeAuthoring(db, tenantKey, options = {}) 
       [tenantKey]
     ),
     db.query(
-      `SELECT id, rule_type, topic, trade, service_tags, severity, instruction_text, updated_at
+      `SELECT id, rule_type, topic, trade, service_tags, severity, instruction_text, updated_at, applies_when_json
        FROM knowledge_guardrails
        WHERE tenant_key = $1
          AND status = 'active'
@@ -650,7 +802,7 @@ export async function loadTenantKnowledgeRuntime(db, tenantKey) {
         [tenantKey]
       ),
       db.query(
-        `SELECT id, topic, trade, service_tags, audience, trigger_text, preferred_answer, updated_at
+        `SELECT id, topic, trade, service_tags, audience, trigger_text, preferred_answer, updated_at, applies_when_json
          FROM knowledge_overrides
          WHERE tenant_key = $1
            AND status = 'active'
@@ -658,7 +810,7 @@ export async function loadTenantKnowledgeRuntime(db, tenantKey) {
         [tenantKey]
       ),
       db.query(
-        `SELECT id, rule_type, topic, trade, service_tags, severity, instruction_text, updated_at
+        `SELECT id, rule_type, topic, trade, service_tags, severity, instruction_text, updated_at, applies_when_json
          FROM knowledge_guardrails
          WHERE tenant_key = $1
            AND status = 'active'

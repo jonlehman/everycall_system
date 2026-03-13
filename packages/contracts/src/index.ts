@@ -42,11 +42,13 @@ export const orchestrateTurnSchema = z.object({
       })).default([]),
       overrides: z.array(z.object({
         preferred_answer: z.string().min(1),
-        topic: z.string().optional().nullable()
+        topic: z.string().optional().nullable(),
+        applies_when: z.record(z.any()).optional().nullable()
       })).default([]),
       guardrails: z.array(z.object({
         instruction: z.string().min(1),
-        topic: z.string().optional().nullable()
+        topic: z.string().optional().nullable(),
+        applies_when: z.record(z.any()).optional().nullable()
       })).default([]),
       usage_instructions: z.array(z.string().min(1)).default([])
     })

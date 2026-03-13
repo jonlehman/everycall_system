@@ -51,7 +51,8 @@ export default async function handler(req, res) {
       topic: normalizeText(body.topic) || null,
       topicHints: asStringArray(body.topicHints),
       serviceTags: asStringArray(body.serviceTags || body.service_tags),
-      tradeHint: normalizeText(body.tradeHint || body.trade) || null
+      tradeHint: normalizeText(body.tradeHint || body.trade) || null,
+      conversationStage: normalizeText(body.conversationStage || body.conversation_stage) || null
     });
     const answerPreview = await generateKnowledgeAnswerPreview(questionText, retrieval);
     const feedbackEvents = await loadTenantKnowledgeFeedbackEvents(pool, tenantKey, { limit: 8 });

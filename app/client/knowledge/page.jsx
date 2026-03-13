@@ -390,7 +390,8 @@ export default function KnowledgePage() {
                   id: 'context',
                   topicHints: retrieval.queryContext?.topicHints || [],
                   serviceTags: retrieval.queryContext?.serviceTags || [],
-                  tradeHint: retrieval.queryContext?.tradeHint || null
+                  tradeHint: retrieval.queryContext?.tradeHint || null,
+                  conversationStage: retrieval.queryContext?.conversationStage || null
                 }
               ]}
               emptyLabel="No preview yet."
@@ -399,6 +400,7 @@ export default function KnowledgePage() {
                   <div>Topics: {item.topicHints.length ? item.topicHints.join(', ') : 'none detected'}</div>
                   <div>Service tags: {item.serviceTags.length ? item.serviceTags.join(', ') : 'none detected'}</div>
                   <div>Trade hint: {item.tradeHint || 'none'}</div>
+                  <div>Conversation stage: {item.conversationStage || 'answering_question'}</div>
                 </div>
               )}
             />
@@ -434,6 +436,7 @@ export default function KnowledgePage() {
                 <div className="grid gap-1 text-sm text-slate-700">
                   <div>{item.preferredAnswer}</div>
                   {item.triggerText ? <div className="text-xs text-slate-500">Trigger: {item.triggerText}</div> : null}
+                  {item.matchedBy?.length ? <div className="text-xs text-slate-500">Matched by: {item.matchedBy.join(', ')}</div> : null}
                 </div>
               )}
             />
@@ -445,6 +448,7 @@ export default function KnowledgePage() {
                 <div className="grid gap-1 text-sm text-slate-700">
                   <div>{item.instruction}</div>
                   <div className="text-xs text-slate-500">{String(item.severity || 'high').toUpperCase()}</div>
+                  {item.matchedBy?.length ? <div className="text-xs text-slate-500">Matched by: {item.matchedBy.join(', ')}</div> : null}
                 </div>
               )}
             />

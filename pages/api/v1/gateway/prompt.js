@@ -53,7 +53,8 @@ function buildDefaultToolDefinitions(fieldSchema) {
           query: { type: "string", description: "Caller question or topic" },
           topic: { type: "string", description: "Optional topic hint such as warranty, pricing, or service area." },
           service_tags: { type: "array", items: { type: "string" } },
-          trade: { type: "string", description: "Optional trade hint such as plumbing, electrical, or hvac." }
+          trade: { type: "string", description: "Optional trade hint such as plumbing, electrical, or hvac." },
+          conversation_stage: { type: "string", description: "Optional call stage such as answering_question or scheduling." }
         },
         required: ["query"]
       }
@@ -79,15 +80,18 @@ function buildDefaultToolDefinitions(fieldSchema) {
 }
 
 function normalizeToolDefinitions(toolDefinitions, fieldSchema) {
+  const defaultDefinitions = buildDefaultToolDefinitions(fieldSchema);
+  const defaultKnowledgeLookup = defaultDefinitions[0];
   const normalized = Array.isArray(toolDefinitions) && toolDefinitions.length
     ? toolDefinitions
         .filter((item) => item && typeof item === "object")
         .filter((item) => item.name !== "faq_lookup")
-    : buildDefaultToolDefinitions(fieldSchema);
+        .map((item) => (item.name === "knowledge_lookup" ? defaultKnowledgeLookup : item))
+    : defaultDefinitions;
 
   const withKnowledgeLookup = normalized.some((item) => item?.name === "knowledge_lookup")
     ? normalized
-    : [buildDefaultToolDefinitions(fieldSchema)[0], ...normalized];
+    : [defaultKnowledgeLookup, ...normalized];
 
   const seen = new Set();
   return withKnowledgeLookup.filter((item) => {
@@ -174,10 +178,10 @@ export default async function handler(req, res) {
               claim: fact.claim,
               evidence_text: fact.evidenceText || null,
               source_url: fact.sourceUrl || null,
-                confidence: fact.confidence ?? null,
-                risk_level: fact.riskLevel || "normal",
-                service_tags: Array.isArray(fact.serviceTags) ? fact.serviceTags : []
-              }))
+              confidence: fact.confidence ?? null,
+              risk_level: fact.riskLevel || "normal",
+              service_tags: Array.isArray(fact.serviceTags) ? fact.serviceTags : []
+            }))
             : []
         })),
         facts: knowledge.facts.map((fact) => ({
@@ -199,7 +203,8 @@ export default async function handler(req, res) {
             trade: item.trade,
             service_tags: Array.isArray(item.serviceTags) ? item.serviceTags : [],
             trigger_text: item.triggerText,
-            preferred_answer: item.preferredAnswer
+            preferred_answer: item.preferredAnswer,
+            applies_when: item.appliesWhen || null
           })),
         guardrails: knowledge.guardrails
           .filter((item) => String(item.instructionText || "").trim())
@@ -210,7 +215,8 @@ export default async function handler(req, res) {
             trade: item.trade,
             service_tags: Array.isArray(item.serviceTags) ? item.serviceTags : [],
             severity: item.severity || "high",
-            instruction: item.instructionText
+            instruction: item.instructionText,
+            applies_when: item.appliesWhen || null
           })),
         usage_instructions: Array.isArray(knowledge.usageInstructions) ? knowledge.usageInstructions : []
       },

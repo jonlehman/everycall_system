@@ -117,7 +117,7 @@ function inferTopics(query, explicitTopic) {
   return topics.size ? Array.from(topics) : ["general"];
 }
 
-function buildQueryContext({ query, topic, topicHints, serviceTags, tradeHint }) {
+function buildQueryContext({ query, topic, topicHints, serviceTags, tradeHint, conversationStage }) {
   const normalizedQuery = normalizeText(query);
   const tokens = tokenizeQuery(normalizedQuery);
   const inferredTopics = uniqueValues([
@@ -134,7 +134,8 @@ function buildQueryContext({ query, topic, topicHints, serviceTags, tradeHint })
     tokens,
     topicHints: inferredTopics,
     serviceTags: inferredServiceTags,
-    tradeHint: normalizeText(tradeHint) || null
+    tradeHint: normalizeText(tradeHint) || null,
+    conversationStage: normalizeText(conversationStage) || "answering_question"
   };
 }
 
@@ -174,6 +175,157 @@ function readSourceUrl(item) {
 
 function readRiskLevel(item) {
   return normalizeText(item?.risk_level || item?.riskLevel) || "normal";
+}
+
+function readAppliesWhen(item) {
+  return asObject(item?.applies_when || item?.appliesWhen);
+}
+
+function normalizePattern(value) {
+  return normalizeText(value).toLowerCase().replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeAppliesWhen(item, kind) {
+  const raw = readAppliesWhen(item);
+  const topic = normalizeText(item?.topic);
+  const trade = normalizeText(item?.trade) || normalizeText(raw.trade) || null;
+  const serviceTags = uniqueValues([
+    ...readServiceTags(item),
+    ...(Array.isArray(raw.serviceTags) ? raw.serviceTags : [])
+  ]);
+  const questionPatterns = uniqueValues([
+    ...(Array.isArray(raw.questionPatterns) ? raw.questionPatterns : []),
+    normalizeText(raw.questionText),
+    kind === "override" ? readTriggerText(item) : ""
+  ]);
+  const triggerTerms = uniqueValues([
+    ...(Array.isArray(raw.triggerTerms) ? raw.triggerTerms : []),
+    ...tokenizeQuery(`${questionPatterns.join(" ")} ${kind === "guardrail" ? readInstructionText(item) : readPreferredAnswer(item)}`)
+  ]);
+  const topics = uniqueValues([
+    ...(Array.isArray(raw.topics) ? raw.topics : []),
+    topic
+  ]).filter((value) => value.toLowerCase() !== "general");
+  const conversationStages = uniqueValues(Array.isArray(raw.conversationStages) ? raw.conversationStages : []);
+  const hasScopedRules = Boolean(topics.length || trade || serviceTags.length || questionPatterns.length || triggerTerms.length);
+
+  return {
+    kind,
+    alwaysInclude: Boolean(raw.alwaysInclude) || (kind === "guardrail" && !hasScopedRules),
+    topics,
+    trade,
+    serviceTags,
+    questionPatterns,
+    triggerTerms,
+    conversationStages
+  };
+}
+
+function countCaseInsensitiveOverlap(leftValues, rightValues) {
+  const rightSet = new Set((rightValues || []).map((value) => normalizeText(value).toLowerCase()).filter(Boolean));
+  return uniqueValues(leftValues).filter((value) => rightSet.has(normalizeText(value).toLowerCase()));
+}
+
+function matchQuestionPatterns(context, questionPatterns) {
+  const normalizedQuery = normalizePattern(context.query);
+  if (!normalizedQuery) return [];
+  return uniqueValues(questionPatterns).filter((pattern) => {
+    const normalizedPattern = normalizePattern(pattern);
+    return normalizedPattern && (normalizedQuery.includes(normalizedPattern) || normalizedPattern.includes(normalizedQuery));
+  });
+}
+
+function matchTriggerTerms(context, triggerTerms) {
+  const normalizedQuery = normalizePattern(context.query);
+  const queryTokens = new Set(context.tokens.map((token) => token.toLowerCase()));
+  return uniqueValues(triggerTerms).filter((term) => {
+    const normalizedTerm = normalizePattern(term);
+    if (!normalizedTerm) return false;
+    return normalizedQuery.includes(normalizedTerm) || queryTokens.has(normalizedTerm);
+  });
+}
+
+function matchApplicability(context, item, kind) {
+  const appliesWhen = normalizeAppliesWhen(item, kind);
+  const matchedBy = [];
+
+  if (
+    appliesWhen.conversationStages.length
+    && context.conversationStage
+    && !appliesWhen.conversationStages.map((value) => value.toLowerCase()).includes(context.conversationStage.toLowerCase())
+  ) {
+    return { include: false, score: -1, matchedBy, appliesWhen };
+  }
+
+  if (appliesWhen.alwaysInclude) {
+    matchedBy.push("always_include");
+  }
+
+  if (
+    appliesWhen.trade
+    && context.tradeHint
+    && normalizeText(appliesWhen.trade).toLowerCase() !== normalizeText(context.tradeHint).toLowerCase()
+  ) {
+    return { include: false, score: -1, matchedBy, appliesWhen };
+  }
+
+  const topicMatches = countCaseInsensitiveOverlap(context.topicHints, appliesWhen.topics);
+  if (topicMatches.length) {
+    matchedBy.push(...topicMatches.map((value) => `topic:${value}`));
+  }
+
+  const serviceTagMatches = countCaseInsensitiveOverlap(context.serviceTags, appliesWhen.serviceTags);
+  if (serviceTagMatches.length) {
+    matchedBy.push(...serviceTagMatches.map((value) => `service_tag:${value}`));
+  }
+
+  const questionPatternMatches = matchQuestionPatterns(context, appliesWhen.questionPatterns);
+  if (questionPatternMatches.length) {
+    matchedBy.push(...questionPatternMatches.map((value) => `question_pattern:${truncateText(value, 60)}`));
+  }
+
+  const triggerMatches = matchTriggerTerms(context, appliesWhen.triggerTerms);
+  if (triggerMatches.length) {
+    matchedBy.push(...triggerMatches.slice(0, 3).map((value) => `trigger:${value}`));
+  }
+
+  if (appliesWhen.trade && context.tradeHint) {
+    matchedBy.push(`trade:${appliesWhen.trade}`);
+  }
+
+  if (appliesWhen.conversationStages.length && context.conversationStage) {
+    matchedBy.push(`stage:${context.conversationStage}`);
+  }
+
+  const isGeneric = !appliesWhen.topics.length
+    && !appliesWhen.trade
+    && !appliesWhen.serviceTags.length
+    && !appliesWhen.questionPatterns.length
+    && !appliesWhen.triggerTerms.length;
+
+  const include = appliesWhen.alwaysInclude
+    || Boolean(questionPatternMatches.length || triggerMatches.length || serviceTagMatches.length || topicMatches.length)
+    || (kind === "guardrail" && (Boolean(appliesWhen.trade && context.tradeHint) || isGeneric));
+
+  if (!include) {
+    return { include: false, score: 0, matchedBy, appliesWhen };
+  }
+
+  let score = 0;
+  if (appliesWhen.alwaysInclude) score += 100;
+  score += questionPatternMatches.length * 18;
+  score += Math.min(9, triggerMatches.length * 3);
+  score += topicMatches.length * 12;
+  score += Math.min(12, serviceTagMatches.length * 6);
+  if (appliesWhen.trade && context.tradeHint) score += 4;
+  if (appliesWhen.conversationStages.length && context.conversationStage) score += 2;
+  if (kind === "guardrail") {
+    const riskLevel = readRiskLevel(item);
+    if (riskLevel === "critical") score += 6;
+    else if (riskLevel === "high") score += 3;
+  }
+
+  return { include: true, score, matchedBy: uniqueValues(matchedBy), appliesWhen };
 }
 
 function scoreText(context, text) {
@@ -234,16 +386,6 @@ function scoreFact(context, fact) {
     + (Number(fact.confidence) || 0);
 }
 
-function scoreOverride(context, item) {
-  return scoreText(context, `${readTriggerText(item)} ${readPreferredAnswer(item)}`)
-    + scoreTopicAndTags(context, item.topic, readServiceTags(item), item.trade);
-}
-
-function scoreGuardrail(context, item) {
-  return scoreText(context, `${readRuleType(item)} ${readInstructionText(item)}`)
-    + scoreTopicAndTags(context, item.topic, readServiceTags(item), item.trade);
-}
-
 export function buildKnowledgeRetrieval(knowledge, request) {
   const context = buildQueryContext(request || {});
 
@@ -297,37 +439,28 @@ export function buildKnowledgeRetrieval(knowledge, request) {
     .slice(0, 5);
 
   const overrides = (knowledge.overrides || [])
-    .map((item, index) => ({
-      id: item.id || `override_${index + 1}`,
-      topic: item.topic || null,
-      trade: item.trade || null,
-      triggerText: readTriggerText(item) || null,
-      preferredAnswer: readPreferredAnswer(item),
-      serviceTags: readServiceTags(item),
-      score: Number(scoreOverride(context, item).toFixed(2))
-    }))
+    .map((item, index) => {
+      const applicability = matchApplicability(context, item, "override");
+      return {
+        id: item.id || `override_${index + 1}`,
+        topic: item.topic || null,
+        trade: item.trade || null,
+        triggerText: readTriggerText(item) || null,
+        preferredAnswer: readPreferredAnswer(item),
+        serviceTags: readServiceTags(item),
+        appliesWhen: applicability.appliesWhen,
+        matchedBy: applicability.matchedBy,
+        score: Number(applicability.score.toFixed(2))
+      };
+    })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 3);
 
   const guardrails = (knowledge.guardrails || [])
-    .map((item, index) => ({
-      id: item.id || `guardrail_${index + 1}`,
-      ruleType: readRuleType(item) || "general",
-      topic: item.topic || null,
-      trade: item.trade || null,
-      severity: item.severity || "high",
-      instruction: readInstructionText(item),
-      serviceTags: readServiceTags(item),
-      score: Number(scoreGuardrail(context, item).toFixed(2))
-    }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
-
-  const guardrailResults = guardrails.length
-    ? guardrails
-    : (knowledge.guardrails || []).slice(0, 3).map((item, index) => ({
+    .map((item, index) => {
+      const applicability = matchApplicability(context, item, "guardrail");
+      return {
         id: item.id || `guardrail_${index + 1}`,
         ruleType: readRuleType(item) || "general",
         topic: item.topic || null,
@@ -335,14 +468,19 @@ export function buildKnowledgeRetrieval(knowledge, request) {
         severity: item.severity || "high",
         instruction: readInstructionText(item),
         serviceTags: readServiceTags(item),
-        score: 0
-      }));
+        appliesWhen: applicability.appliesWhen,
+        matchedBy: applicability.matchedBy,
+        score: Number(applicability.score.toFixed(2))
+      };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
 
   const topScore = Math.max(
     cards[0]?.score || 0,
     facts[0]?.score || 0,
-    overrides[0]?.score || 0,
-    guardrails[0]?.score || 0
+    overrides[0]?.score || 0
   );
 
   return {
@@ -351,7 +489,7 @@ export function buildKnowledgeRetrieval(knowledge, request) {
     cards,
     facts,
     overrides,
-    guardrails: guardrailResults,
+    guardrails,
     usageInstructions: Array.isArray(knowledge.usage_instructions)
       ? knowledge.usage_instructions
       : (Array.isArray(knowledge.usageInstructions) ? knowledge.usageInstructions : [])

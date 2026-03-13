@@ -31,6 +31,16 @@ const ajv = new Ajv({ allErrors: true, strict: false });
 
 const streamIdToCall = new Map<string, string>();
 
+type ApplicabilityRule = {
+  alwaysInclude?: boolean;
+  topics?: string[];
+  trade?: string | null;
+  serviceTags?: string[];
+  questionPatterns?: string[];
+  triggerTerms?: string[];
+  conversationStages?: string[];
+};
+
 type PromptPayload = {
   system_prompt: string;
   tenant_greeting: string;
@@ -68,8 +78,8 @@ type PromptPayload = {
       confidence?: number | null;
       risk_level?: string;
     }>;
-    guardrails: Array<{ id?: string; rule_type: string; topic?: string | null; trade?: string | null; severity?: string; instruction: string; service_tags?: string[] }>;
-    overrides: Array<{ id?: string; topic?: string | null; trade?: string | null; trigger_text?: string | null; preferred_answer: string; service_tags?: string[] }>;
+    guardrails: Array<{ id?: string; rule_type: string; topic?: string | null; trade?: string | null; severity?: string; instruction: string; service_tags?: string[]; applies_when?: ApplicabilityRule | null }>;
+    overrides: Array<{ id?: string; topic?: string | null; trade?: string | null; trigger_text?: string | null; preferred_answer: string; service_tags?: string[]; applies_when?: ApplicabilityRule | null }>;
     usage_instructions: string[];
   };
   field_schema: Record<string, unknown>;
@@ -432,12 +442,18 @@ function validatePromptPayload(input: unknown): PromptPayload {
     if (typeof rule.rule_type !== "string" || typeof rule.instruction !== "string") {
       throw new Error("prompt_payload_invalid_guardrail_shape");
     }
+    if ("applies_when" in rule && rule.applies_when != null && typeof rule.applies_when !== "object") {
+      throw new Error("prompt_payload_invalid_guardrail_applies_when");
+    }
   }
 
   for (const override of tenantKnowledge.overrides as Array<Record<string, unknown>>) {
     if (!override || typeof override !== "object") throw new Error("prompt_payload_invalid_override");
     if (typeof override.preferred_answer !== "string") {
       throw new Error("prompt_payload_invalid_override_shape");
+    }
+    if ("applies_when" in override && override.applies_when != null && typeof override.applies_when !== "object") {
+      throw new Error("prompt_payload_invalid_override_applies_when");
     }
   }
 
@@ -741,14 +757,88 @@ function inferLookupTopics(query: string, explicitTopic?: string | null) {
   return topics.size ? Array.from(topics) : ["general"];
 }
 
-function buildLookupContext(query: string, topic?: string | null, serviceTags?: string[], tradeHint?: string | null) {
+function normalizeLookupPattern(value: string) {
+  return normalizeLookupText(value).toLowerCase().replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function readLookupAppliesWhen(item: { applies_when?: ApplicabilityRule | null }) {
+  return item?.applies_when && typeof item.applies_when === "object" ? item.applies_when : {};
+}
+
+function normalizeLookupAppliesWhen(
+  item: PromptPayload["tenant_knowledge"]["guardrails"][number] | PromptPayload["tenant_knowledge"]["overrides"][number],
+  kind: "guardrail" | "override"
+) {
+  const raw = readLookupAppliesWhen(item);
+  const trade = normalizeLookupText((raw as ApplicabilityRule).trade || item.trade) || null;
+  const serviceTags = uniqueLookupValues([
+    ...(item.service_tags || []),
+    ...((raw as ApplicabilityRule).serviceTags || [])
+  ]);
+  const questionPatterns = uniqueLookupValues([
+    ...((raw as ApplicabilityRule).questionPatterns || []),
+    kind === "override" ? normalizeLookupText((item as PromptPayload["tenant_knowledge"]["overrides"][number]).trigger_text) : ""
+  ]);
+  const triggerTerms = uniqueLookupValues([
+    ...((raw as ApplicabilityRule).triggerTerms || []),
+    ...tokenizeLookupText(`${questionPatterns.join(" ")} ${kind === "guardrail" ? (item as PromptPayload["tenant_knowledge"]["guardrails"][number]).instruction : (item as PromptPayload["tenant_knowledge"]["overrides"][number]).preferred_answer}`)
+  ]);
+  const topics = uniqueLookupValues([
+    ...((raw as ApplicabilityRule).topics || []),
+    normalizeLookupText(item.topic)
+  ]).filter((value) => value.toLowerCase() !== "general");
+  const conversationStages = uniqueLookupValues((raw as ApplicabilityRule).conversationStages || []);
+  const hasScopedRules = Boolean(topics.length || trade || serviceTags.length || questionPatterns.length || triggerTerms.length);
+  return {
+    alwaysInclude: Boolean((raw as ApplicabilityRule).alwaysInclude) || (kind === "guardrail" && !hasScopedRules),
+    topics,
+    trade,
+    serviceTags,
+    questionPatterns,
+    triggerTerms,
+    conversationStages
+  };
+}
+
+function matchLookupQuestionPatterns(context: ReturnType<typeof buildLookupContext>, questionPatterns: string[]) {
+  const normalizedQuery = normalizeLookupPattern(context.query);
+  if (!normalizedQuery) return [];
+  return uniqueLookupValues(questionPatterns).filter((pattern) => {
+    const normalizedPattern = normalizeLookupPattern(pattern);
+    return normalizedPattern && (normalizedQuery.includes(normalizedPattern) || normalizedPattern.includes(normalizedQuery));
+  });
+}
+
+function matchLookupTriggerTerms(context: ReturnType<typeof buildLookupContext>, triggerTerms: string[]) {
+  const normalizedQuery = normalizeLookupPattern(context.query);
+  const queryTokens = new Set(context.tokens.map((token) => token.toLowerCase()));
+  return uniqueLookupValues(triggerTerms).filter((term) => {
+    const normalizedTerm = normalizeLookupPattern(term);
+    if (!normalizedTerm) return false;
+    return normalizedQuery.includes(normalizedTerm) || queryTokens.has(normalizedTerm);
+  });
+}
+
+function countLookupOverlap(leftValues: string[], rightValues: string[]) {
+  const rightSet = new Set((rightValues || []).map((value) => normalizeLookupText(value).toLowerCase()).filter(Boolean));
+  return uniqueLookupValues(leftValues).filter((value) => rightSet.has(normalizeLookupText(value).toLowerCase()));
+}
+
+function buildLookupContext(
+  query: string,
+  topic?: string | null,
+  serviceTags?: string[],
+  tradeHint?: string | null,
+  conversationStage?: string | null
+) {
   const normalizedQuery = normalizeLookupText(query);
   return {
     query: normalizedQuery,
     tokens: tokenizeLookupText(normalizedQuery),
     topicHints: uniqueLookupValues(inferLookupTopics(normalizedQuery, topic)),
     serviceTags: uniqueLookupValues([...(serviceTags || []), ...extractLookupServiceTags(normalizedQuery)]),
-    tradeHint: normalizeLookupText(tradeHint) || null
+    tradeHint: normalizeLookupText(tradeHint) || null,
+    conversationStage: normalizeLookupText(conversationStage) || "answering_question"
   };
 }
 
@@ -786,6 +876,82 @@ function scoreLookupTopicAndTags(
   return score;
 }
 
+function matchLookupApplicability(
+  context: ReturnType<typeof buildLookupContext>,
+  item: PromptPayload["tenant_knowledge"]["guardrails"][number] | PromptPayload["tenant_knowledge"]["overrides"][number],
+  kind: "guardrail" | "override"
+) {
+  const appliesWhen = normalizeLookupAppliesWhen(item, kind);
+  const matchedBy: string[] = [];
+
+  if (
+    appliesWhen.conversationStages.length
+    && context.conversationStage
+    && !appliesWhen.conversationStages.map((value) => value.toLowerCase()).includes(context.conversationStage.toLowerCase())
+  ) {
+    return { include: false, score: -1, matchedBy, appliesWhen };
+  }
+
+  if (appliesWhen.alwaysInclude) {
+    matchedBy.push("always_include");
+  }
+
+  if (
+    appliesWhen.trade
+    && context.tradeHint
+    && normalizeLookupText(appliesWhen.trade).toLowerCase() !== normalizeLookupText(context.tradeHint).toLowerCase()
+  ) {
+    return { include: false, score: -1, matchedBy, appliesWhen };
+  }
+
+  const topicMatches = countLookupOverlap(context.topicHints, appliesWhen.topics);
+  if (topicMatches.length) matchedBy.push(...topicMatches.map((value) => `topic:${value}`));
+
+  const serviceTagMatches = countLookupOverlap(context.serviceTags, appliesWhen.serviceTags);
+  if (serviceTagMatches.length) matchedBy.push(...serviceTagMatches.map((value) => `service_tag:${value}`));
+
+  const questionPatternMatches = matchLookupQuestionPatterns(context, appliesWhen.questionPatterns);
+  if (questionPatternMatches.length) {
+    matchedBy.push(...questionPatternMatches.map((value) => `question_pattern:${value.slice(0, 60)}`));
+  }
+
+  const triggerMatches = matchLookupTriggerTerms(context, appliesWhen.triggerTerms);
+  if (triggerMatches.length) matchedBy.push(...triggerMatches.slice(0, 3).map((value) => `trigger:${value}`));
+
+  if (appliesWhen.trade && context.tradeHint) matchedBy.push(`trade:${appliesWhen.trade}`);
+  if (appliesWhen.conversationStages.length && context.conversationStage) matchedBy.push(`stage:${context.conversationStage}`);
+
+  const isGeneric = !appliesWhen.topics.length
+    && !appliesWhen.trade
+    && !appliesWhen.serviceTags.length
+    && !appliesWhen.questionPatterns.length
+    && !appliesWhen.triggerTerms.length;
+
+  const include = appliesWhen.alwaysInclude
+    || Boolean(questionPatternMatches.length || triggerMatches.length || serviceTagMatches.length || topicMatches.length)
+    || (kind === "guardrail" && (Boolean(appliesWhen.trade && context.tradeHint) || isGeneric));
+
+  if (!include) {
+    return { include: false, score: 0, matchedBy, appliesWhen };
+  }
+
+  let score = 0;
+  if (appliesWhen.alwaysInclude) score += 100;
+  score += questionPatternMatches.length * 18;
+  score += Math.min(9, triggerMatches.length * 3);
+  score += topicMatches.length * 12;
+  score += Math.min(12, serviceTagMatches.length * 6);
+  if (appliesWhen.trade && context.tradeHint) score += 4;
+  if (appliesWhen.conversationStages.length && context.conversationStage) score += 2;
+  if (kind === "guardrail") {
+    const riskLevel = normalizeLookupText((item as PromptPayload["tenant_knowledge"]["guardrails"][number]).severity || "high").toLowerCase();
+    if (riskLevel === "critical") score += 6;
+    else if (riskLevel === "high") score += 3;
+  }
+
+  return { include: true, score, matchedBy: uniqueLookupValues(matchedBy), appliesWhen };
+}
+
 function scoreKnowledgeCard(context: ReturnType<typeof buildLookupContext>, card: PromptPayload["tenant_knowledge"]["cards"][number]) {
   const facts = Array.isArray(card.facts) ? card.facts : [];
   const factScores = facts.map((fact) => {
@@ -815,21 +981,17 @@ function scoreKnowledgeFact(context: ReturnType<typeof buildLookupContext>, fact
     + (Number(fact.confidence) || 0);
 }
 
-function scoreKnowledgeOverride(context: ReturnType<typeof buildLookupContext>, item: PromptPayload["tenant_knowledge"]["overrides"][number]) {
-  return scoreLookupText(context, `${item.trigger_text || ""} ${item.preferred_answer || ""}`)
-    + scoreLookupTopicAndTags(context, item.topic, item.service_tags || [], item.trade);
-}
-
-function scoreKnowledgeGuardrail(context: ReturnType<typeof buildLookupContext>, item: PromptPayload["tenant_knowledge"]["guardrails"][number]) {
-  return scoreLookupText(context, `${item.rule_type || ""} ${item.instruction || ""}`)
-    + scoreLookupTopicAndTags(context, item.topic, item.service_tags || [], item.trade);
-}
-
 function buildKnowledgeMatches(
   knowledge: PromptPayload["tenant_knowledge"],
-  request: { query: string; topic?: string | null; serviceTags?: string[]; tradeHint?: string | null }
+  request: {
+    query: string;
+    topic?: string | null;
+    serviceTags?: string[];
+    tradeHint?: string | null;
+    conversationStage?: string | null;
+  }
 ) {
-  const context = buildLookupContext(request.query, request.topic, request.serviceTags, request.tradeHint);
+  const context = buildLookupContext(request.query, request.topic, request.serviceTags, request.tradeHint, request.conversationStage);
   const cards = (knowledge.cards || [])
     .map((card, index) => {
       const scoring = scoreKnowledgeCard(context, card);
@@ -880,37 +1042,28 @@ function buildKnowledgeMatches(
     .slice(0, 5);
 
   const overrides = (knowledge.overrides || [])
-    .map((item, index) => ({
-      id: item.id || `knowledge_override_${index + 1}`,
-      topic: item.topic || null,
-      trade: item.trade || null,
-      service_tags: item.service_tags || [],
-      trigger_text: item.trigger_text || null,
-      preferred_answer: item.preferred_answer,
-      score: Number(scoreKnowledgeOverride(context, item).toFixed(2))
-    }))
+    .map((item, index) => {
+      const applicability = matchLookupApplicability(context, item, "override");
+      return {
+        id: item.id || `knowledge_override_${index + 1}`,
+        topic: item.topic || null,
+        trade: item.trade || null,
+        service_tags: item.service_tags || [],
+        trigger_text: item.trigger_text || null,
+        preferred_answer: item.preferred_answer,
+        applies_when: applicability.appliesWhen,
+        matched_by: applicability.matchedBy,
+        score: Number(applicability.score.toFixed(2))
+      };
+    })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 3);
 
-  const scoredGuardrails = (knowledge.guardrails || [])
-    .map((item, index) => ({
-      id: item.id || `knowledge_guardrail_${index + 1}`,
-      rule_type: item.rule_type,
-      topic: item.topic || null,
-      trade: item.trade || null,
-      severity: item.severity || "high",
-      instruction: item.instruction,
-      service_tags: item.service_tags || [],
-      score: Number(scoreKnowledgeGuardrail(context, item).toFixed(2))
-    }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
-
-  const guardrails = scoredGuardrails.length
-    ? scoredGuardrails
-    : (knowledge.guardrails || []).slice(0, 3).map((item, index) => ({
+  const guardrails = (knowledge.guardrails || [])
+    .map((item, index) => {
+      const applicability = matchLookupApplicability(context, item, "guardrail");
+      return {
         id: item.id || `knowledge_guardrail_${index + 1}`,
         rule_type: item.rule_type,
         topic: item.topic || null,
@@ -918,14 +1071,19 @@ function buildKnowledgeMatches(
         severity: item.severity || "high",
         instruction: item.instruction,
         service_tags: item.service_tags || [],
-        score: 0
-      }));
+        applies_when: applicability.appliesWhen,
+        matched_by: applicability.matchedBy,
+        score: Number(applicability.score.toFixed(2))
+      };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
 
   const topScore = Math.max(
     cards[0]?.score || 0,
     facts[0]?.score || 0,
-    overrides[0]?.score || 0,
-    scoredGuardrails[0]?.score || 0
+    overrides[0]?.score || 0
   );
 
   return {
@@ -933,7 +1091,8 @@ function buildKnowledgeMatches(
       query: context.query,
       topic_hints: context.topicHints,
       service_tags: context.serviceTags,
-      trade_hint: context.tradeHint
+      trade_hint: context.tradeHint,
+      conversation_stage: context.conversationStage
     },
     result_strength: topScore >= 20 ? "strong" : topScore >= 9 ? "medium" : topScore > 0 ? "weak" : "none",
     cards,
@@ -1011,9 +1170,10 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       ? (args as any).service_tags.map((item: unknown) => normalizeLookupText(item)).filter(Boolean)
       : [];
     const tradeHint = normalizeLookupText((args as any).trade) || null;
+    const conversationStage = normalizeLookupText((args as any).conversation_stage) || null;
     const retrieval = buildKnowledgeMatches(
       session.promptPayload?.tenant_knowledge || { cards: [], facts: [], guardrails: [], overrides: [], usage_instructions: [] },
-      { query, topic, serviceTags, tradeHint }
+      { query, topic, serviceTags, tradeHint, conversationStage }
     );
     logInfo("knowledge_lookup_tool_called", {
       callSid: session.callSid,
@@ -1027,7 +1187,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       session.callSid,
       session.tenantKey,
       name,
-      { query, topic, service_tags: serviceTags, trade: tradeHint, retrieval },
+      { query, topic, service_tags: serviceTags, trade: tradeHint, conversation_stage: conversationStage, retrieval },
       { status: "accepted", errors: [] }
     );
     sendOpenAiEvent(session.openAiWs, {
