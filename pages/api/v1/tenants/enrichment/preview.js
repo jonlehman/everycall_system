@@ -41,6 +41,8 @@ const GUARDRAIL_TOPIC_KEYWORDS = {
   pricing: ["fee", "fees", "diagnostic", "estimate", "estimates", "pricing", "price"]
 };
 
+const MAX_WEBSITE_PAGES = 20;
+
 function normalizeText(value) {
   return String(value || "").trim();
 }
@@ -90,15 +92,98 @@ function decodeHtmlEntities(text) {
     .replace(/&nbsp;/g, " ");
 }
 
-function textFromHtml(html) {
-  return decodeHtmlEntities(
-    String(html || "")
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+function normalizeLineKey(value) {
+  return decodeHtmlEntities(String(value || ""))
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanLineText(value) {
+  return decodeHtmlEntities(String(value || ""))
+    .replace(/\s+/g, " ")
+    .replace(/\s*([|>])+?\s*/g, " ")
+    .trim();
+}
+
+function extractTagTextList(html, tagName) {
+  return Array.from(String(html || "").matchAll(new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, "gi")))
+    .map((match) => cleanLineText(match[1].replace(/<[^>]+>/g, " ")))
+    .filter(Boolean);
+}
+
+function looksLikeNavOrBoilerplate(sentence) {
+  const text = cleanLineText(sentence).toLowerCase();
+  if (!text.trim()) return true;
+  if (text.includes("privacy policy") || text.includes("terms of service") || text.includes("copyright")) return true;
+  if (text.includes("skip to content")) return true;
+  if ((text.match(/,/g) || []).length >= 8) return true;
+  if (/\b(book online|call us today|choose location|all services|service areas|careers|press releases|blog|faqs|our community|nominate your hero)\b/.test(text)) return true;
+  if (text.split(/\s+/).length <= 3 && !/\d/.test(text)) return true;
+  if (/(plumbing|electrical|hvac)/.test(text) && (text.match(/\b(plumbing|electrical|hvac)\b/g) || []).length >= 3) return true;
+  return false;
+}
+
+function extractStructuredPageContent(html) {
+  const source = String(html || "");
+  const title = cleanLineText(source.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "");
+  const body = source.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] || source;
+  const primary = body.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1]
+    || body.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1]
+    || body;
+  const withoutNoise = primary
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+    .replace(/<header[\s\S]*?<\/header>/gi, " ")
+    .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+    .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
+    .replace(/<aside[\s\S]*?<\/aside>/gi, " ")
+    .replace(/<form[\s\S]*?<\/form>/gi, " ");
+  const headings = uniqueValues([
+    ...extractTagTextList(withoutNoise, "h1"),
+    ...extractTagTextList(withoutNoise, "h2"),
+    ...extractTagTextList(withoutNoise, "h3")
+  ]).slice(0, 10);
+  const rawLines = decodeHtmlEntities(
+    withoutNoise
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(main|article|section|div|p|ul|ol|li|table|tr|td|h1|h2|h3|h4|h5|h6)>/gi, "\n")
+      .replace(/<(main|article|section|div|p|ul|ol|li|table|tr|td|h1|h2|h3|h4|h5|h6)\b[^>]*>/gi, "\n")
       .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-  );
+  )
+    .split(/\n+/)
+    .map(cleanLineText)
+    .filter((line) =>
+      line.length >= 24
+      || /\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/.test(line)
+      || /\b[A-Z]{2}\s+\d{5}\b/.test(line)
+      || /\b24\/7\b/i.test(line)
+      || (line.length >= 8 && /\b(open|hours|financing|warranty)\b/i.test(line))
+    );
+
+  const lines = [];
+  const seen = new Set();
+  for (const line of rawLines) {
+    const key = normalizeLineKey(line);
+    if (!key || seen.has(key) || looksLikeNavOrBoilerplate(line)) continue;
+    seen.add(key);
+    lines.push(line);
+    if (lines.length >= 160) break;
+  }
+
+  return {
+    title,
+    headings,
+    lines,
+    text: lines.join(" ").slice(0, 24000)
+  };
+}
+
+function textFromHtml(html) {
+  return extractStructuredPageContent(html).text;
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
@@ -118,68 +203,20 @@ async function fetchWebsiteText(url) {
       redirect: "follow",
       headers: { "user-agent": "EveryCall Enrichment Preview" }
     });
-    if (!resp.ok) return { ok: false, html: "", text: "" };
+    if (!resp.ok) return { ok: false, html: "", text: "", title: "", headings: [], lines: [] };
     const html = await resp.text();
-    return { ok: true, html, text: textFromHtml(html).slice(0, 24000) };
+    const structured = extractStructuredPageContent(html);
+    return {
+      ok: true,
+      html,
+      text: structured.text,
+      title: structured.title,
+      headings: structured.headings,
+      lines: structured.lines
+    };
   } catch {
-    return { ok: false, html: "", text: "" };
+    return { ok: false, html: "", text: "", title: "", headings: [], lines: [] };
   }
-}
-
-function extractRelevantInternalLinks(baseUrl, html) {
-  const source = String(html || "");
-  if (!source) return [];
-  const base = new URL(baseUrl);
-  const matches = Array.from(source.matchAll(/href=["']([^"'#]+)["']/gi));
-  const seen = new Set();
-  const urls = [];
-
-  for (const match of matches) {
-    const href = normalizeText(match[1]);
-    if (!href) continue;
-    try {
-      const resolved = new URL(href, base);
-      if (resolved.hostname !== base.hostname) continue;
-      const path = resolved.pathname.toLowerCase();
-      if (!/(contact|about|service|area|location|pricing|warranty|membership|plan|plumbing|hvac|electrical)/.test(path)) continue;
-      const normalized = `${resolved.origin}${resolved.pathname}`.replace(/\/$/, "") || resolved.origin;
-      if (seen.has(normalized)) continue;
-      seen.add(normalized);
-      urls.push(normalized);
-    } catch {
-      continue;
-    }
-    if (urls.length >= 8) break;
-  }
-
-  return urls;
-}
-
-async function fetchRelevantWebsiteSources(baseUrl) {
-  const primary = await fetchWebsiteText(baseUrl);
-  if (!primary.ok) return { pages: [], combinedText: "" };
-
-  const pages = [{
-    sourceType: "website",
-    sourceUrl: baseUrl,
-    text: primary.text
-  }];
-
-  const links = extractRelevantInternalLinks(baseUrl, primary.html);
-  for (const link of links) {
-    const page = await fetchWebsiteText(link);
-    if (!page.ok || !page.text) continue;
-    pages.push({
-      sourceType: "website",
-      sourceUrl: link,
-      text: page.text
-    });
-  }
-
-  return {
-    pages,
-    combinedText: pages.map((page) => page.text).filter(Boolean).join(" ").slice(0, 80000)
-  };
 }
 
 function splitSentences(text) {
@@ -196,14 +233,6 @@ function keywordsFromText(text) {
     .replace(/[^a-z0-9\s]+/g, " ")
     .split(/\s+/)
     .filter((token) => token.length >= 4 && !STOPWORDS.has(token));
-}
-
-function looksLikeNavOrBoilerplate(sentence) {
-  const text = String(sentence || "").toLowerCase();
-  if (!text.trim()) return true;
-  if (text.includes("privacy policy") || text.includes("terms of service") || text.includes("copyright")) return true;
-  if ((text.match(/,/g) || []).length >= 8) return true;
-  return false;
 }
 
 function cleanEvidenceText(sentence) {
@@ -248,11 +277,191 @@ function uniqueValues(values) {
   return output;
 }
 
+function scoreRelevantInternalUrl(url, anchorText = "") {
+  const path = `${url.pathname} ${anchorText}`.toLowerCase();
+  if (!path) return -1;
+  if (/\.(jpg|jpeg|png|webp|svg|gif|pdf|xml)$/i.test(url.pathname)) return -1;
+  if (/\/(privacy|terms|careers|press|blog|feed|author)\b/.test(path)) return -2;
+
+  let score = 0;
+  for (const keywords of Object.values(KNOWLEDGE_SECTION_KEYWORDS)) {
+    score += keywords.filter((keyword) => path.includes(String(keyword).toLowerCase())).length * 2;
+  }
+  if (/(contact|about|service|area|location|pricing|warranty|guarantee|membership|plan|financing|payment|plumbing|hvac|electrical|home-care)/.test(path)) {
+    score += 4;
+  }
+  return score;
+}
+
+function extractRelevantInternalLinks(baseUrl, html) {
+  const source = String(html || "");
+  if (!source) return [];
+  const base = new URL(baseUrl);
+  const matches = Array.from(source.matchAll(/<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi));
+  const scored = [];
+  const seen = new Set();
+
+  for (const match of matches) {
+    const href = normalizeText(match[1]);
+    if (!href) continue;
+    try {
+      const resolved = new URL(href, base);
+      if (resolved.hostname !== base.hostname) continue;
+      const normalized = `${resolved.origin}${resolved.pathname}`.replace(/\/$/, "") || resolved.origin;
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      const anchorText = cleanLineText(match[2].replace(/<[^>]+>/g, " "));
+      const score = scoreRelevantInternalUrl(resolved, anchorText);
+      if (score <= 0) continue;
+      scored.push({ url: normalized, score });
+    } catch {
+      continue;
+    }
+  }
+
+  return scored
+    .sort((a, b) => b.score - a.score || a.url.length - b.url.length)
+    .slice(0, MAX_WEBSITE_PAGES * 2)
+    .map((item) => item.url);
+}
+
+async function fetchSitemapUrls(baseUrl, maxUrls = 80) {
+  try {
+    const origin = new URL(baseUrl).origin;
+    const queue = [`${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`];
+    const seenSitemaps = new Set();
+    const collected = [];
+    const seenUrls = new Set();
+
+    while (queue.length && seenSitemaps.size < 6 && collected.length < maxUrls) {
+      const sitemapUrl = queue.shift();
+      if (!sitemapUrl || seenSitemaps.has(sitemapUrl)) continue;
+      seenSitemaps.add(sitemapUrl);
+      const resp = await fetchWithTimeout(sitemapUrl, {
+        method: "GET",
+        redirect: "follow",
+        headers: { "user-agent": "EveryCall Enrichment Preview" }
+      }, 7000);
+      if (!resp.ok) continue;
+      const xml = await resp.text();
+      const locs = Array.from(xml.matchAll(/<loc>([\s\S]*?)<\/loc>/gi))
+        .map((match) => decodeHtmlEntities(match[1]).trim())
+        .filter(Boolean);
+
+      for (const loc of locs) {
+        try {
+          const resolved = new URL(loc);
+          if (resolved.origin !== origin) continue;
+          const normalized = `${resolved.origin}${resolved.pathname}`.replace(/\/$/, "") || resolved.origin;
+          if (/\.xml$/i.test(resolved.pathname)) {
+            if (!seenSitemaps.has(normalized)) queue.push(normalized);
+            continue;
+          }
+          if (seenUrls.has(normalized)) continue;
+          seenUrls.add(normalized);
+          if (scoreRelevantInternalUrl(resolved) <= 0) continue;
+          collected.push(normalized);
+          if (collected.length >= maxUrls) break;
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    return collected;
+  } catch {
+    return [];
+  }
+}
+
+function finalizeWebsitePages(rawPages) {
+  const pageCountByLine = new Map();
+  for (const page of rawPages || []) {
+    const lineKeys = new Set((page.lines || []).map((line) => normalizeLineKey(line)).filter(Boolean));
+    for (const key of lineKeys) {
+      pageCountByLine.set(key, (pageCountByLine.get(key) || 0) + 1);
+    }
+  }
+
+  const repeatThreshold = Math.max(3, Math.ceil((rawPages || []).length * 0.35));
+  return (rawPages || [])
+    .map((page) => {
+      const filteredLines = (page.lines || []).filter((line) => {
+        const key = normalizeLineKey(line);
+        if (!key) return false;
+        const repeated = (pageCountByLine.get(key) || 0) >= repeatThreshold;
+        if (repeated && (line.length < 220 || looksLikeNavOrBoilerplate(line))) return false;
+        return !looksLikeNavOrBoilerplate(line);
+      });
+      return {
+        ...page,
+        headings: uniqueValues(page.headings || []).slice(0, 8),
+        lines: filteredLines.slice(0, 120),
+        text: filteredLines.join(" ").slice(0, 24000)
+      };
+    })
+    .filter((page) => page.text);
+}
+
+async function fetchRelevantWebsiteSources(baseUrl) {
+  const primary = await fetchWebsiteText(baseUrl);
+  if (!primary.ok) return { pages: [], combinedText: "" };
+
+  const primaryUrl = `${new URL(baseUrl).origin}${new URL(baseUrl).pathname}`.replace(/\/$/, "") || new URL(baseUrl).origin;
+  const sitemapUrls = await fetchSitemapUrls(baseUrl);
+  const candidateUrls = uniqueValues([
+    ...extractRelevantInternalLinks(baseUrl, primary.html),
+    ...sitemapUrls
+  ])
+    .filter((url) => url !== primaryUrl)
+    .sort((left, right) => {
+      try {
+        const leftScore = scoreRelevantInternalUrl(new URL(left));
+        const rightScore = scoreRelevantInternalUrl(new URL(right));
+        return rightScore - leftScore || left.length - right.length;
+      } catch {
+        return 0;
+      }
+    })
+    .slice(0, MAX_WEBSITE_PAGES - 1);
+
+  const fetchedPages = await Promise.all(candidateUrls.map((url) => fetchWebsiteText(url)));
+  const rawPages = [{
+    sourceType: "website",
+    sourceUrl: primaryUrl,
+    title: primary.title,
+    headings: primary.headings,
+    lines: primary.lines,
+    text: primary.text
+  }];
+
+  for (let index = 0; index < fetchedPages.length; index += 1) {
+    const page = fetchedPages[index];
+    if (!page.ok || !page.text) continue;
+    rawPages.push({
+      sourceType: "website",
+      sourceUrl: candidateUrls[index],
+      title: page.title,
+      headings: page.headings,
+      lines: page.lines,
+      text: page.text
+    });
+  }
+
+  const pages = finalizeWebsitePages(rawPages);
+  return {
+    pages,
+    combinedText: pages.map((page) => page.text).filter(Boolean).join(" ").slice(0, 120000)
+  };
+}
+
 function findSentenceMatchesByKeywords(keywords, sources, limit = 3) {
   const keys = uniqueValues(keywords).map((keyword) => keyword.toLowerCase());
   if (!keys.length) return [];
   const matches = [];
   for (const source of sources || []) {
+    const sourceContext = `${source.title || ""} ${(source.headings || []).join(" ")} ${source.sourceUrl || ""}`.toLowerCase();
+    const sourceBonus = keys.filter((key) => sourceContext.includes(key)).length;
     for (const sentence of source.sentences || []) {
       if (looksLikeNavOrBoilerplate(sentence)) continue;
       const lower = String(sentence || "").toLowerCase();
@@ -262,7 +471,7 @@ function findSentenceMatchesByKeywords(keywords, sources, limit = 3) {
         sentence: cleanEvidenceText(sentence),
         sourceType: source.sourceType || "website",
         sourceUrl: source.sourceUrl || null,
-        score: matchCount
+        score: matchCount + sourceBonus
       });
     }
   }
@@ -449,13 +658,15 @@ function findHeuristicMatch(queryText, sources, keywordHints = []) {
 
   let best = null;
   for (const source of sources || []) {
+    const sourceContext = `${source.title || ""} ${(source.headings || []).join(" ")} ${source.sourceUrl || ""}`.toLowerCase();
+    const sourceBonus = keys.filter((key) => sourceContext.includes(key.toLowerCase())).length;
     for (const sentence of source.sentences || []) {
       if (looksLikeNavOrBoilerplate(sentence)) continue;
       const lower = sentence.toLowerCase();
       const matches = keys.filter((key) => lower.includes(key.toLowerCase())).length;
       if (!matches) continue;
       const matchRatio = matches / Math.max(keys.length, 1);
-      const score = Number((matchRatio * Math.min(sentence.length / 120, 1)).toFixed(2));
+      const score = Number(((matchRatio * Math.min(sentence.length / 120, 1)) + Math.min(sourceBonus * 0.08, 0.24)).toFixed(2));
       const candidate = {
         answer: receptionistStyleText(sentence),
         sourceType: source.sourceType,
@@ -479,12 +690,111 @@ function entrySourceFromFallback(fallbackEntry) {
   };
 }
 
-function buildKnowledgeEntries({ profile, sources, industryDefaults }) {
+function looksLowQualityKnowledgeText(text) {
+  const cleaned = cleanEvidenceText(text);
+  if (!cleaned) return true;
+  if (cleaned.split(/\s+/).length < 6) return true;
+  if (looksLikeNavOrBoilerplate(cleaned)) return true;
+  if ((cleaned.match(/\b(skip|content|reviews|careers|blog|faqs|nominate)\b/gi) || []).length >= 2) return true;
+  return false;
+}
+
+function inferKnowledgeSectionTypeForPage(page) {
+  const haystack = `${page.title || ""} ${(page.headings || []).join(" ")} ${page.sourceUrl || ""} ${(page.text || "").slice(0, 2400)}`.toLowerCase();
+  let bestSectionType = null;
+  let bestScore = 0;
+  for (const [sectionType, keywords] of Object.entries(KNOWLEDGE_SECTION_KEYWORDS)) {
+    const score = keywords.filter((keyword) => haystack.includes(String(keyword).toLowerCase())).length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestSectionType = sectionType;
+    }
+  }
+  return bestScore >= 2 ? { sectionType: bestSectionType, score: bestScore } : { sectionType: null, score: 0 };
+}
+
+function cleanPageEntryTitle(page, fallbackTitle) {
+  const heading = normalizeText(page.headings?.[0]);
+  const title = normalizeText(page.title).split("|")[0].trim();
+  const candidate = heading || title || fallbackTitle;
+  return candidate.replace(/\s{2,}/g, " ").trim();
+}
+
+function buildPageSnippet(page, sectionType) {
+  const keywords = KNOWLEDGE_SECTION_KEYWORDS[sectionType] || [];
+  const lineScores = (page.lines || [])
+    .map((line) => {
+      const lower = line.toLowerCase();
+      const keywordMatches = keywords.filter((keyword) => lower.includes(String(keyword).toLowerCase())).length;
+      const headingBonus = (page.headings || []).some((heading) => lower.includes(String(heading).toLowerCase())) ? 1 : 0;
+      const lengthBonus = line.length >= 90 ? 1 : 0;
+      return {
+        line: cleanEvidenceText(line),
+        score: keywordMatches * 2 + headingBonus + lengthBonus
+      };
+    })
+    .filter((item) => item.score > 0 && !looksLowQualityKnowledgeText(item.line))
+    .sort((a, b) => b.score - a.score || b.line.length - a.line.length);
+
+  return uniqueValues(lineScores.map((item) => item.line)).slice(0, 3).join(" ");
+}
+
+function buildAdditionalPageKnowledgeEntries(pages, existingEntries = []) {
+  const seen = new Set(
+    (existingEntries || [])
+      .map((entry) => `${normalizeText(entry.sectionType)}::${normalizeLineKey(entry.title)}::${normalizeLineKey(entry.contentText).slice(0, 120)}`)
+      .filter(Boolean)
+  );
+
+  const candidates = (pages || [])
+    .map((page) => ({
+      page,
+      ...inferKnowledgeSectionTypeForPage(page)
+    }))
+    .filter((item) => item.sectionType)
+    .sort((a, b) => b.score - a.score || String(a.page.sourceUrl || "").length - String(b.page.sourceUrl || "").length);
+
+  const extras = [];
+  for (const item of candidates) {
+    const contentText = buildPageSnippet(item.page, item.sectionType);
+    const title = cleanPageEntryTitle(item.page, titleCaseWords(item.sectionType.replace(/_/g, " ")));
+    if (!contentText || looksLowQualityKnowledgeText(contentText)) continue;
+    const key = `${item.sectionType}::${normalizeLineKey(title)}::${normalizeLineKey(contentText).slice(0, 120)}`;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    extras.push({
+      sectionType: item.sectionType,
+      title,
+      contentText,
+      sourceType: item.page.sourceType || "website",
+      sourceUrl: item.page.sourceUrl || null,
+      sourceConfidence: Number(Math.min(0.55 + item.score * 0.08, 0.95).toFixed(2))
+    });
+    if (extras.length >= 12) break;
+  }
+
+  return extras;
+}
+
+function isUsableGuardrailAnswer(answer, topic) {
+  const cleaned = cleanEvidenceText(answer);
+  if (!cleaned) return false;
+  if (looksLikeNavOrBoilerplate(cleaned)) return false;
+  const wordCount = cleaned.split(/\s+/).length;
+  if (wordCount < 4 && !["availability", "service_area"].includes(String(topic || ""))) return false;
+  const topicKeywords = GUARDRAIL_TOPIC_KEYWORDS[topic] || [];
+  if (topicKeywords.length && !topicKeywords.some((keyword) => cleaned.toLowerCase().includes(String(keyword).toLowerCase())) && wordCount < 10) {
+    return false;
+  }
+  return true;
+}
+
+function buildKnowledgeEntries({ profile, sources, industryDefaults, websitePages }) {
   const defaultsBySection = new Map((industryDefaults || []).map((entry) => [entry.sectionType, entry]));
   const templates = createBlankKnowledgeEntries();
   const addressSummary = [profile.address1, profile.city, profile.state, profile.zip].filter(Boolean).join(", ");
 
-  return templates.map((template) => {
+  const baseEntries = templates.map((template) => {
     const defaultEntry = defaultsBySection.get(template.sectionType) || template;
     const matches = findSentenceMatchesByKeywords(
       KNOWLEDGE_SECTION_KEYWORDS[template.sectionType] || [],
@@ -492,6 +802,7 @@ function buildKnowledgeEntries({ profile, sources, industryDefaults }) {
       template.sectionType === "services_and_capabilities" ? 3 : 2
     );
     const matchedText = joinSentences(matches, template.sectionType === "services_and_capabilities" ? 3 : 2);
+    const preferredMatchedText = looksLowQualityKnowledgeText(matchedText) ? "" : matchedText;
 
     let fallbackText = "";
     let fallbackSource = entrySourceFromFallback(defaultEntry);
@@ -511,22 +822,33 @@ function buildKnowledgeEntries({ profile, sources, industryDefaults }) {
     return {
       sectionType: template.sectionType,
       title: defaultEntry.title || template.title,
-      contentText: matchedText || fallbackText,
-      sourceType: matches[0]?.sourceType || fallbackSource.sourceType,
-      sourceUrl: matches[0]?.sourceUrl || fallbackSource.sourceUrl,
-      sourceConfidence: matches[0]
+      contentText: preferredMatchedText || fallbackText,
+      sourceType: preferredMatchedText ? (matches[0]?.sourceType || fallbackSource.sourceType) : fallbackSource.sourceType,
+      sourceUrl: preferredMatchedText ? (matches[0]?.sourceUrl || fallbackSource.sourceUrl) : fallbackSource.sourceUrl,
+      sourceConfidence: preferredMatchedText
         ? Number((Math.min(Number(matches[0].score) / 3, 1)).toFixed(2))
         : fallbackSource.sourceConfidence
     };
   });
+
+  const extraEntries = buildAdditionalPageKnowledgeEntries(websitePages, baseEntries);
+  return [...baseEntries, ...extraEntries];
 }
 
 function buildGuardrailQuestionTests({ profile, sources, defaults, knowledgeEntries, aiByQuestion }) {
   const sectionByType = new Map((knowledgeEntries || []).map((entry) => [entry.sectionType, entry]));
+  const sectionTypeByTopic = {
+    warranty: "warranties_and_guarantees",
+    guarantees: "warranties_and_guarantees",
+    service_area: "service_area",
+    availability: "hours_and_availability",
+    financing: "financing_and_payment",
+    pricing: "pricing_and_fees"
+  };
 
   return (defaults || []).map((template) => {
     const aiMatch = aiByQuestion.get(normalizeText(template.questionText));
-    if (aiMatch) {
+    if (aiMatch && isUsableGuardrailAnswer(aiMatch.answer, template.topic)) {
       return {
         ...template,
         answer: normalizeText(aiMatch.answer),
@@ -537,13 +859,24 @@ function buildGuardrailQuestionTests({ profile, sources, defaults, knowledgeEntr
     }
 
     const heuristic = findHeuristicMatch(template.questionText, sources, GUARDRAIL_TOPIC_KEYWORDS[template.topic] || []);
-    if (heuristic) {
+    if (heuristic && isUsableGuardrailAnswer(heuristic.answer, template.topic)) {
       return {
         ...template,
         answer: normalizeText(heuristic.answer),
         sourceType: normalizeText(heuristic.sourceType) || null,
         sourceUrl: normalizeText(heuristic.sourceUrl) || null,
         sourceConfidence: toNumberOrNull(heuristic.sourceConfidence)
+      };
+    }
+
+    const section = sectionByType.get(sectionTypeByTopic[template.topic]);
+    if (normalizeText(section?.contentText) && !looksLowQualityKnowledgeText(section.contentText)) {
+      return {
+        ...template,
+        answer: normalizeText(section.contentText),
+        sourceType: section.sourceType || null,
+        sourceUrl: section.sourceUrl || null,
+        sourceConfidence: toNumberOrNull(section.sourceConfidence)
       };
     }
 
@@ -620,7 +953,8 @@ async function extractGuardrailAnswersWithAi(questionTemplates, sources) {
     sources: sources.map((source) => ({
       sourceType: source.sourceType,
       sourceUrl: source.sourceUrl,
-      sentences: source.sentences.slice(0, 80)
+      title: source.title || "",
+      sentences: source.sentences.slice(0, 18)
     }))
   };
 
@@ -791,13 +1125,17 @@ export default async function handler(req, res) {
       sources.push({
         sourceType: page.sourceType,
         sourceUrl: page.sourceUrl,
-        sentences: splitSentences(page.text)
+        title: page.title || "",
+        headings: Array.isArray(page.headings) ? page.headings : [],
+        sentences: Array.isArray(page.lines) && page.lines.length ? page.lines.slice(0, 80) : splitSentences(page.text)
       });
     }
     if (normalizeText(gbpText)) {
       sources.push({
         sourceType: "google_business_profile",
         sourceUrl: normalizeText(googleBusinessProfile?.url || googleBusinessProfile?.website) || null,
+        title: normalizeText(googleBusinessProfile?.name) || "Google Business Profile",
+        headings: [],
         sentences: splitSentences(gbpText)
       });
     }
@@ -853,7 +1191,8 @@ export default async function handler(req, res) {
     const preliminaryKnowledgeEntries = buildKnowledgeEntries({
       profile,
       sources,
-      industryDefaults: industryDefaults.knowledgeEntries
+      industryDefaults: industryDefaults.knowledgeEntries,
+      websitePages: websiteSources.pages
     });
 
     const guardrailQuestionTests = buildGuardrailQuestionTests({
@@ -872,7 +1211,8 @@ export default async function handler(req, res) {
     const knowledgeEntries = buildKnowledgeEntries({
       profile,
       sources,
-      industryDefaults: industryDefaults.knowledgeEntries
+      industryDefaults: industryDefaults.knowledgeEntries,
+      websitePages: websiteSources.pages
     });
 
     const provenance = buildProfileProvenance({
