@@ -882,7 +882,197 @@ function buildTopicLinesForHeading(page, heading) {
   return uniqueValues(scored.map((item) => item.line)).slice(0, 2);
 }
 
-function buildSiteTopics({ websitePages, businessName }) {
+function normalizeTopicPath(topicPath) {
+  if (Array.isArray(topicPath)) {
+    return uniqueValues(topicPath.map((segment) => normalizeText(segment))).join(" > ");
+  }
+
+  return String(topicPath || "")
+    .split(">")
+    .map((segment) => normalizeText(segment))
+    .filter(Boolean)
+    .join(" > ");
+}
+
+function normalizeTopicType(value) {
+  const raw = normalizeText(value).toLowerCase();
+  if (!raw) return "page";
+  if (["group", "category", "container", "parent"].includes(raw)) return "group";
+  if (["section", "subtopic", "child"].includes(raw)) return "section";
+  return "page";
+}
+
+function normalizeTopicRiskLevel(value, fallbackText = "") {
+  const raw = normalizeText(value).toLowerCase();
+  if (["critical", "high", "normal"].includes(raw)) return raw;
+  return inferTopicRiskLevelFromText(fallbackText);
+}
+
+function buildAiTopicPromptPages(websitePages) {
+  return (websitePages || []).map((page) => ({
+    sourceUrl: page.sourceUrl || null,
+    title: page.title || "",
+    headings: Array.isArray(page.headings) ? page.headings.slice(0, 8) : [],
+    excerptLines: Array.isArray(page.lines) ? page.lines.slice(0, 12) : []
+  }));
+}
+
+function normalizeAiSiteTopics(rawItems, websitePages, businessName) {
+  const topicMap = new Map();
+  const pageUrlSet = new Set((websitePages || []).map((page) => normalizeText(page.sourceUrl)).filter(Boolean));
+
+  function ensureTopicNode({
+    topicPath,
+    displayTitle,
+    topicType,
+    summaryObjective = "",
+    sourceUrl = null,
+    sourceConfidence = null,
+    riskLevel = "normal",
+    metadata = {}
+  }) {
+    const normalizedPath = normalizeTopicPath(topicPath);
+    if (!normalizedPath) return;
+    const segments = normalizedPath.split(" > ").map((segment) => normalizeText(segment)).filter(Boolean);
+    if (!segments.length) return;
+
+    for (let index = 0; index < segments.length - 1; index += 1) {
+      const ancestorPath = segments.slice(0, index + 1).join(" > ");
+      if (!topicMap.has(ancestorPath)) {
+        topicMap.set(ancestorPath, {
+          topicKey: slugify(ancestorPath),
+          parentTopicKey: index > 0 ? slugify(segments.slice(0, index).join(" > ")) : null,
+          topicPath: ancestorPath,
+          parentTopicPath: index > 0 ? segments.slice(0, index).join(" > ") : null,
+          displayTitle: segments[index],
+          topicType: "group",
+          sourceUrl: null,
+          sourceUrls: [],
+          summaryObjective: "",
+          sourceConfidence: 0.6,
+          riskLevel: normalizeTopicRiskLevel(null, ancestorPath),
+          metadata: { aiGenerated: true, derivedAncestor: true }
+        });
+      }
+    }
+
+    const parentTopicPath = segments.length > 1 ? segments.slice(0, -1).join(" > ") : null;
+    const normalizedDisplayTitle = normalizeText(displayTitle) || segments[segments.length - 1] || businessName || "Topic";
+    const normalizedSummary = normalizeObjectiveText(summaryObjective);
+    const normalizedSourceUrl = pageUrlSet.has(normalizeText(sourceUrl)) ? normalizeText(sourceUrl) : null;
+    const normalizedConfidence = Number.isFinite(Number(sourceConfidence))
+      ? Math.max(0, Math.min(1, Number(sourceConfidence)))
+      : (normalizedSummary ? 0.78 : 0.62);
+    const normalizedRisk = normalizeTopicRiskLevel(riskLevel, `${normalizedPath} ${normalizedSummary}`);
+    const existing = topicMap.get(normalizedPath);
+    const mergedSourceUrls = uniqueValues([...(existing?.sourceUrls || []), normalizedSourceUrl].filter(Boolean));
+
+    topicMap.set(normalizedPath, {
+      topicKey: slugify(normalizedPath),
+      parentTopicKey: parentTopicPath ? slugify(parentTopicPath) : null,
+      topicPath: normalizedPath,
+      parentTopicPath,
+      displayTitle: existing?.displayTitle || normalizedDisplayTitle,
+      topicType: existing?.topicType === "group" && normalizeTopicType(topicType) !== "group"
+        ? normalizeTopicType(topicType)
+        : (existing?.topicType || normalizeTopicType(topicType)),
+      sourceUrl: existing?.sourceUrl || normalizedSourceUrl || null,
+      sourceUrls: mergedSourceUrls,
+      summaryObjective: existing?.summaryObjective || normalizedSummary || "",
+      sourceConfidence: existing?.sourceConfidence ?? normalizedConfidence,
+      riskLevel: existing?.riskLevel === "critical" || normalizedRisk === "critical"
+        ? "critical"
+        : existing?.riskLevel === "high" || normalizedRisk === "high"
+          ? "high"
+          : "normal",
+      metadata: { ...(existing?.metadata || {}), ...metadata, aiGenerated: true }
+    });
+  }
+
+  for (const raw of Array.isArray(rawItems) ? rawItems : []) {
+    const normalizedPath = normalizeTopicPath(raw?.topicPath || raw?.path || raw?.pathSegments);
+    if (!normalizedPath) continue;
+    ensureTopicNode({
+      topicPath: normalizedPath,
+      displayTitle: raw?.displayTitle || raw?.title,
+      topicType: raw?.topicType,
+      summaryObjective: raw?.summaryObjective || raw?.summary || raw?.description,
+      sourceUrl: raw?.sourceUrl,
+      sourceConfidence: raw?.sourceConfidence,
+      riskLevel: raw?.riskLevel,
+      metadata: {
+        aiGenerated: true,
+        extractionMethod: "openai_site_topics"
+      }
+    });
+  }
+
+  return Array.from(topicMap.values()).sort((left, right) =>
+    left.topicPath.split(">").length - right.topicPath.split(">").length
+    || left.topicPath.localeCompare(right.topicPath)
+  );
+}
+
+async function extractSiteTopicsWithAi({ websitePages, businessName }) {
+  const apiKey = process.env.OPENAI_API_KEY || "";
+  const pages = buildAiTopicPromptPages(websitePages);
+  if (!apiKey || !pages.length) return null;
+
+  const prompt = {
+    businessName: normalizeText(businessName) || null,
+    pages
+  };
+
+  const instruction = [
+    "You analyze cleaned same-site business website pages and produce a topic tree for a voice-agent knowledge system.",
+    "The website defines the topics. Do not force the site into a fixed template.",
+    "Include all meaningful explicit topics from the site, including services, warranties, guarantees, financing, memberships, service areas, hours, policies, legal or niche operational topics when present.",
+    "Use objective summaries, not marketing language.",
+    "Each summary must be grounded only in the provided page excerpts.",
+    "Do not invent details, prices, guarantees, or policies that are not explicit.",
+    "Use hierarchical topicPath strings like \"Services > Plumbing > Water Heaters\".",
+    "Include parent/group topics when they help organize the tree, but leaf topics should carry the real summary whenever possible.",
+    "Prefer one clear topic per distinct customer-facing concept instead of many near-duplicates.",
+    "Set riskLevel to critical, high, or normal based on business risk if the agent answers incorrectly.",
+    "Use sourceUrl from the page that best supports the topic.",
+    "Return strict JSON with shape:",
+    '{"items":[{"topicPath":"...","displayTitle":"...","topicType":"group|page|section","summaryObjective":"...","sourceUrl":"https://...","sourceConfidence":0.0,"riskLevel":"critical|high|normal"}]}'
+  ].join("\n");
+
+  try {
+    const resp = await fetchWithTimeout("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_ENRICH_MODEL || "gpt-4.1-mini",
+        input: [
+          { role: "system", content: instruction },
+          { role: "user", content: JSON.stringify(prompt) }
+        ]
+      })
+    }, 20000);
+
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    const outputText =
+      json.output_text ||
+      json.output
+        ?.flatMap((item) => item.content || [])
+        .find((item) => item.type === "output_text" && typeof item.text === "string")
+        ?.text || "";
+    const parsed = extractJsonObject(outputText);
+    if (!parsed || !Array.isArray(parsed.items)) return null;
+    const normalized = normalizeAiSiteTopics(parsed.items, websitePages, businessName);
+    return normalized.length ? normalized : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildSiteTopicsHeuristically({ websitePages, businessName }) {
   const topicMap = new Map();
 
   function ensureTopicNode({
@@ -990,6 +1180,14 @@ function buildSiteTopics({ websitePages, businessName }) {
     left.topicPath.split(">").length - right.topicPath.split(">").length
     || left.topicPath.localeCompare(right.topicPath)
   );
+}
+
+async function buildSiteTopics({ websitePages, businessName }) {
+  const aiTopics = await extractSiteTopicsWithAi({ websitePages, businessName });
+  if (Array.isArray(aiTopics) && aiTopics.length) {
+    return aiTopics;
+  }
+  return buildSiteTopicsHeuristically({ websitePages, businessName });
 }
 
 function buildCoverageChecklist({ siteTopics, guardrailQuestionTests }) {
@@ -1469,7 +1667,7 @@ export default async function handler(req, res) {
       industryDefaults: industryDefaults.knowledgeEntries,
       websitePages: websiteSources.pages
     });
-    const siteTopics = buildSiteTopics({
+    const siteTopics = await buildSiteTopics({
       websitePages: websiteSources.pages,
       businessName
     });
