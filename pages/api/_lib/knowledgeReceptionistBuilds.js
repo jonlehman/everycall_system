@@ -5,8 +5,8 @@ import { extractTextFromDocumentBuffer } from "./knowledgeReceptionistFiles.js";
 import { loadTenantDomainAssignments, resolveTenantDomainAssignments, syncCanonicalKnowledgePacks } from "./knowledgeReceptionistPacks.js";
 
 const BUILD_RATE_LIMIT_HOURS = 24;
-const MAX_WEBSITE_PAGES = 12;
-const MAX_WEBSITE_FILES = 6;
+const MAX_WEBSITE_PAGES = 250;
+const MAX_WEBSITE_FILES = 25;
 const CRAWL_BATCH_SIZE = 4;
 const FETCH_TIMEOUT_MS = 8000;
 const CACHE_TTL_MS = 5 * 60 * 1000;
