@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "pnpm --filter @everycall/contracts build && next build",
     "start": "next start",
     "db:migrate": "node scripts/migrate.mjs",
     "validate:knowledge-receptionist-cutover": "node scripts/validate-knowledge-receptionist-cutover.mjs",
