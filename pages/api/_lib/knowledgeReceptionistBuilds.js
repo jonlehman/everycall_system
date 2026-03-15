@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { performance } from "node:perf_hooks";
-import { buildSparseEmbedding, rankKnowledgeCards, selectBundleCards as selectSharedBundleCards } from "../../../packages/contracts/dist/index.js";
+import { buildSparseEmbedding, rankKnowledgeCards, selectBundleCards as selectSharedBundleCards } from "@everycall/contracts";
 import { extractTextFromDocumentBuffer } from "./knowledgeReceptionistFiles.js";
 import { loadTenantDomainAssignments, resolveTenantDomainAssignments, syncCanonicalKnowledgePacks } from "./knowledgeReceptionistPacks.js";
 

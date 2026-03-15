@@ -3,7 +3,7 @@ import {
   deriveRuntimeMode as deriveSharedRuntimeMode,
   selectMatchedGuardrails as selectSharedMatchedGuardrails,
   selectMatchedOverrides as selectSharedMatchedOverrides
-} from "../../../packages/contracts/dist/index.js";
+} from "@everycall/contracts";
 import { getKnowledgeBuild, loadActiveKnowledgeBuildAssets, retrieveBuildRuntimeBundle } from "./knowledgeReceptionistBuilds.js";
 import { loadApprovedConfigurationArtifacts } from "./knowledgeReceptionistConfig.js";
 
