@@ -1,26 +1,5 @@
-import { ensureTables, getPool } from "../../_lib/db.js";
-import { composePromptForTenant } from "../../_lib/agentConfig.js";
-import { loadTenantKnowledgeRuntime } from "../../_lib/knowledge.js";
-import { getSetupReadiness } from "../../_lib/setupReadiness.js";
-
-const DEFAULT_SESSION_CONFIG = {
-  model: "gpt-realtime-1.5",
-  voice: "marin",
-  max_output_tokens: 4096,
-  turn_detection: {
-    type: "server_vad",
-    threshold: 0.75,
-    prefix_padding_ms: 300,
-    silence_duration_ms: 500,
-    idle_timeout_ms: null,
-    create_response: true,
-    interrupt_response: true
-  },
-  transcription_model: "gpt-4o-mini-transcribe",
-  noise_reduction: "far_field",
-  input_audio_format: "g711_ulaw",
-  output_audio_format: "g711_ulaw"
-};
+import { getPool } from "../../_lib/db.js";
+import { assembleKnowledgeGatewayPrompt, buildFieldSchemaFromOutcomeSchema } from "../../_lib/knowledgeReceptionistPrompt.js";
 
 const DEFAULT_FIELD_SCHEMA = {
   type: "object",
@@ -41,7 +20,7 @@ const DEFAULT_FIELD_SCHEMA = {
   required: ["first_name", "callback_number", "service_request"]
 };
 
-function buildDefaultToolDefinitions(fieldSchema) {
+function buildToolDefinitions(fieldSchema) {
   return [
     {
       type: "function",
@@ -79,153 +58,77 @@ function buildDefaultToolDefinitions(fieldSchema) {
   ];
 }
 
-function normalizeToolDefinitions(toolDefinitions, fieldSchema) {
-  const defaultDefinitions = buildDefaultToolDefinitions(fieldSchema);
-  const defaultKnowledgeLookup = defaultDefinitions[0];
-  const normalized = Array.isArray(toolDefinitions) && toolDefinitions.length
-    ? toolDefinitions
-        .filter((item) => item && typeof item === "object")
-        .filter((item) => item.name !== "faq_lookup")
-        .map((item) => (item.name === "knowledge_lookup" ? defaultKnowledgeLookup : item))
-    : defaultDefinitions;
-
-  const withKnowledgeLookup = normalized.some((item) => item?.name === "knowledge_lookup")
-    ? normalized
-    : [defaultKnowledgeLookup, ...normalized];
-
-  const seen = new Set();
-  return withKnowledgeLookup.filter((item) => {
-    const name = String(item?.name || "");
-    if (!name || seen.has(name)) return false;
-    seen.add(name);
-    return true;
-  });
+function fail(res, status, error, extra = {}) {
+  return res.status(status).json({ error, ...extra });
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "method_not_allowed" });
+    return fail(res, 405, "method_not_allowed");
   }
 
   const token = String(req.headers["x-everycall-internal"] || "");
   if (!process.env.CALL_SUMMARY_TOKEN || token !== process.env.CALL_SUMMARY_TOKEN) {
-    return res.status(401).json({ error: "unauthorized" });
+    return fail(res, 401, "unauthorized");
   }
 
   try {
     const pool = getPool();
     if (!pool) {
-      return res.status(500).json({ error: "database_unavailable" });
+      return fail(res, 500, "database_unavailable");
     }
-    await ensureTables(pool);
 
     const body = typeof req.body === "object" && req.body ? req.body : {};
     const tenantKey = String(body.tenantKey || "").trim();
     const callSid = String(body.callSid || "").trim();
     if (!tenantKey || !callSid) {
-      return res.status(400).json({ error: "missing_tenant_or_call" });
+      return fail(res, 400, "missing_tenant_or_call");
     }
 
-    const readiness = await getSetupReadiness(pool, tenantKey);
-    if (!readiness.enabled) {
-      return res.status(403).json({
-        error: "assistant_disabled",
-        message: "Assistant is disabled until setup is complete and enabled.",
-        reasons: readiness.reasons,
-        checks: readiness.checks
-      });
-    }
+    const gatewayPrompt = await assembleKnowledgeGatewayPrompt(pool, tenantKey, {
+      callSid,
+      runtimeEntryMode: "customer_call"
+    });
 
-    const prompt = await composePromptForTenant(tenantKey);
-    const agentRow = await pool.query(
-      `SELECT greeting_text FROM agents WHERE tenant_key = $1 LIMIT 1`,
-      [tenantKey]
+    const runtimeProfile = gatewayPrompt.approvedConfiguration.runtime_profile;
+    const fieldSchema = buildFieldSchemaFromOutcomeSchema(
+      gatewayPrompt.approvedConfiguration.call_outcome_schema,
+      DEFAULT_FIELD_SCHEMA
     );
-    const tenantGreeting = agentRow.rows[0]?.greeting_text || "";
-
-    const knowledge = await loadTenantKnowledgeRuntime(pool, tenantKey);
-
-    const systemConfigRow = await pool.query(
-      `SELECT gateway_field_schema, gateway_tool_definitions, gateway_session_config
-       FROM system_config WHERE id = 1`
-    );
-    const systemConfig = systemConfigRow.rows[0] || {};
-
-    const fieldSchema = systemConfig.gateway_field_schema || DEFAULT_FIELD_SCHEMA;
-    const toolDefinitions = normalizeToolDefinitions(systemConfig.gateway_tool_definitions, fieldSchema);
-    const sessionConfig = systemConfig.gateway_session_config || DEFAULT_SESSION_CONFIG;
 
     return res.status(200).json({
-      system_prompt: prompt,
-      tenant_greeting: tenantGreeting,
-      tenant_knowledge: {
-        cards: knowledge.cards.map((card) => ({
-          id: card.id ? String(card.id) : undefined,
-          card_key: card.cardKey,
-          topic: card.topic || null,
-          trade: card.trade || null,
-          service_tags: Array.isArray(card.serviceTags) ? card.serviceTags : [],
-          audience: card.audience || "general",
-          title: card.title,
-          summary: card.summary || "",
-          usage_notes: card.usageNotes || null,
-          facts: Array.isArray(card.facts)
-            ? card.facts.map((fact) => ({
-              id: fact.id ? String(fact.id) : undefined,
-              topic: fact.topic || null,
-              trade: fact.trade || null,
-              claim: fact.claim,
-              evidence_text: fact.evidenceText || null,
-              source_url: fact.sourceUrl || null,
-              confidence: fact.confidence ?? null,
-              risk_level: fact.riskLevel || "normal",
-              service_tags: Array.isArray(fact.serviceTags) ? fact.serviceTags : []
-            }))
-            : []
-        })),
-        facts: knowledge.facts.map((fact) => ({
-          id: fact.id ? String(fact.id) : undefined,
-          topic: fact.topic || null,
-          trade: fact.trade || null,
-          service_tags: Array.isArray(fact.serviceTags) ? fact.serviceTags : [],
-          claim: fact.claim,
-          evidence_text: fact.evidenceText || null,
-          source_url: fact.sourceUrl || null,
-          confidence: fact.confidence ?? null,
-          risk_level: fact.riskLevel || "normal"
-        })),
-        overrides: knowledge.overrides
-          .filter((item) => String(item.preferredAnswer || "").trim())
-          .map((item) => ({
-            id: item.id ? String(item.id) : undefined,
-            topic: item.topic,
-            trade: item.trade,
-            service_tags: Array.isArray(item.serviceTags) ? item.serviceTags : [],
-            trigger_text: item.triggerText,
-            preferred_answer: item.preferredAnswer,
-            applies_when: item.appliesWhen || null
-          })),
-        guardrails: knowledge.guardrails
-          .filter((item) => String(item.instructionText || "").trim())
-          .map((item) => ({
-            id: item.id ? String(item.id) : undefined,
-            rule_type: item.ruleType,
-            topic: item.topic,
-            trade: item.trade,
-            service_tags: Array.isArray(item.serviceTags) ? item.serviceTags : [],
-            severity: item.severity || "high",
-            instruction: item.instructionText,
-            applies_when: item.appliesWhen || null
-          })),
-        usage_instructions: Array.isArray(knowledge.usageInstructions) ? knowledge.usageInstructions : []
+      system_prompt: gatewayPrompt.systemPrompt,
+      tenant_greeting: runtimeProfile.greeting_text,
+      knowledge_runtime: {
+        active_build_id: gatewayPrompt.build.build_id,
+        active_domain_id: gatewayPrompt.promptPayload.active_domain.domain_id,
+        active_subdomain_id: gatewayPrompt.promptPayload.active_domain.subdomain_id,
+        runtime_entry_mode: gatewayPrompt.promptPayload.runtime_entry_mode,
+        initial_call_state: gatewayPrompt.initialCallState,
+        prompt_payload: gatewayPrompt.promptPayload,
+        approved_configuration: gatewayPrompt.approvedConfiguration,
+        token_counts: gatewayPrompt.tokenCounts
       },
       field_schema: fieldSchema,
-      tool_definitions: toolDefinitions,
-      session_config: sessionConfig,
-      metadata: { tenantKey, callSid }
+      tool_definitions: buildToolDefinitions(fieldSchema),
+      session_config: runtimeProfile.session_config,
+      metadata: {
+        tenantKey,
+        callSid
+      }
     });
   } catch (err) {
-    return res.status(500).json({ error: "prompt_payload_error", message: err?.message || "unknown" });
+    const message = String(err?.message || "unknown");
+    if (message === "knowledge_receptionist_migrations_not_applied") {
+      return fail(res, 503, "migrations_required");
+    }
+    if (message === "no_active_build") {
+      return fail(res, 409, "no_active_build");
+    }
+    if (message === "build_not_found") {
+      return fail(res, 404, "build_not_found");
+    }
+    return fail(res, 500, "prompt_fetch_error", { message });
   }
 }

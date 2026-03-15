@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EveryCall Call State",
+  "description": "Gateway-authoritative call state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "call_id",
+    "tenant_id",
+    "active_domain_id",
+    "current_stage_id",
+    "completed_stage_ids",
+    "skipped_stage_ids",
+    "last_turn_intent",
+    "captured_fields",
+    "uncertainty_mode",
+    "last_updated_at"
+  ],
+  "properties": {
+    "call_id": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "type": "string"
+    },
+    "active_domain_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "active_subdomain_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "current_stage_id": {
+      "type": "string"
+    },
+    "completed_stage_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "skipped_stage_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "active_location_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "active_person_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "active_offering_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "last_turn_intent": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "last_runtime_bundle_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pending_clarifier": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "captured_fields": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "outcome_in_progress": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "uncertainty_mode": {
+      "type": "string",
+      "enum": [
+        "normal",
+        "low_confidence",
+        "handoff",
+        "emergency"
+      ]
+    },
+    "last_updated_at": {
+      "type": "string"
+    }
+  }
+}

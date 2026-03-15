@@ -1,0 +1,24 @@
+{
+  "knowledge_guardrail_id": "gr_001",
+  "tenant_id": "tenant_123",
+  "guardrail_type": "pricing_without_authority",
+  "trigger_patterns": [
+    "how much",
+    "what does it cost",
+    "price"
+  ],
+  "trigger_intents": [
+    "pricing_question"
+  ],
+  "risk_level": "normal",
+  "mode": "handoff",
+  "approved_response_pattern": "I don't have an exact price to quote here, but I can help get your request to the team for an estimate.",
+  "required_next_step": "capture_estimate_request",
+  "applies_to_domains": [
+    "service_business"
+  ],
+  "applies_to_subdomains": [
+    "service_business.hvac"
+  ],
+  "enabled": true
+}

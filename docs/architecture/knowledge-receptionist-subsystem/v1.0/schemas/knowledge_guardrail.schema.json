@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EveryCall Knowledge Guardrail",
+  "description": "Bounded-answer rule for dangerous questions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "knowledge_guardrail_id",
+    "tenant_id",
+    "guardrail_type",
+    "trigger_patterns",
+    "trigger_intents",
+    "risk_level",
+    "mode",
+    "approved_response_pattern",
+    "required_next_step",
+    "applies_to_domains",
+    "applies_to_subdomains",
+    "enabled"
+  ],
+  "properties": {
+    "knowledge_guardrail_id": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "type": "string"
+    },
+    "guardrail_type": {
+      "type": "string"
+    },
+    "trigger_patterns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "trigger_intents": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": [
+        "low",
+        "normal",
+        "elevated",
+        "high",
+        "critical"
+      ]
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "answer",
+        "partial_answer",
+        "clarify",
+        "handoff",
+        "emergency_redirect"
+      ]
+    },
+    "approved_response_pattern": {
+      "type": "string"
+    },
+    "required_next_step": {
+      "type": "string"
+    },
+    "applies_to_domains": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "applies_to_subdomains": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  }
+}

@@ -11,7 +11,6 @@ const items = [
   { label: 'Test Intake', href: '/intake/test', group: 'Platform' },
   { label: 'Phone Numbers', href: '/admin/phone-numbers', group: 'Platform' },
   { label: 'AI Usage', href: '/admin/usage', group: 'Platform' },
-  { label: 'Industry Config', href: '/admin/industries', group: 'Controls' },
   { label: 'Admin Users', href: '/admin/users', group: 'Controls' },
   { label: 'System Config', href: '/admin/system', group: 'Controls' },
   { label: 'Audit Log', href: '/admin/audit', group: 'Controls' }
@@ -27,7 +26,7 @@ export default function AdminSidebar() {
       {groups.map((group) => (
         <div className="nav-group" key={group}>
           <div className="nav-label">{group}</div>
-          {items.filter((i) => i.group === group).map((item) => (
+          {items.filter((item) => item.group === group).map((item) => (
             <Link
               key={item.href}
               className={`nav-btn${pathname.startsWith(item.href) ? ' active' : ''}`}

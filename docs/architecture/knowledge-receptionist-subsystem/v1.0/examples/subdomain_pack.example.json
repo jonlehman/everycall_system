@@ -1,0 +1,43 @@
+{
+  "subdomain_id": "service_business.hvac",
+  "parent_domain_id": "service_business",
+  "name": "HVAC",
+  "version": "1.0.0",
+  "status": "new",
+  "description": "Specialty delta for HVAC businesses.",
+  "additional_intents": [
+    "cooling_issue",
+    "heating_issue",
+    "maintenance_question"
+  ],
+  "additional_entities": [
+    "equipment_type",
+    "system_mode"
+  ],
+  "page_type_weight_deltas": {
+    "service_detail": 0.1
+  },
+  "content_class_bias_deltas": {
+    "policy_boundary": 0.1
+  },
+  "ranking_rule_deltas": [
+    "prefer maintenance-plan pages for tune-up questions"
+  ],
+  "boundary_rule_deltas": [
+    "do not infer repair vs replacement without evidence"
+  ],
+  "clarification_rule_deltas": [
+    "clarify heat vs cooling when needed"
+  ],
+  "stage_guidance_deltas": {
+    "discover_need": "listen for no-cool/no-heat urgency signals"
+  },
+  "prompt_fragment_deltas": [
+    "Use HVAC/plain-English terms like AC, furnace, heat pump when caller language suggests them."
+  ],
+  "required_eval_suites": [
+    "hvac_specialty"
+  ],
+  "created_at": "2026-03-14T00:00:00Z",
+  "updated_at": "2026-03-14T00:00:00Z"
+}

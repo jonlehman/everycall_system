@@ -1,0 +1,63 @@
+{
+  "setup_interview_intent_id": "setup_intent_001",
+  "tenant_id": "tenant_123",
+  "version": "1.0",
+  "status": "active",
+  "primary_goal": "Interview the owner/operator to collect business truth and onboarding preferences before go-live.",
+  "required_capture_categories": [
+    "business_identity",
+    "contact_basics",
+    "offerings",
+    "locations_service_areas_hours",
+    "policies_boundaries",
+    "dangerous_questions",
+    "call_behavior"
+  ],
+  "confirmation_policy": "Critical operational facts must be confirmed explicitly before completion.",
+  "completion_criteria": [
+    "required stages completed",
+    "critical operational facts confirmed",
+    "interview summary reviewed with participant"
+  ],
+  "pause_resume_policy": "Interview may pause and resume, but cannot mark complete until confirmation stages finish.",
+  "review_and_confirm_policy": "Before completion, read back the critical operational facts in compact form and ask for corrections.",
+  "interview_stage_playbook": [
+    {
+      "stage_id": "intro_and_consent",
+      "name": "Intro and Consent",
+      "purpose": "Explain the setup interview and confirm willingness to proceed.",
+      "required_inputs": [
+        "business_name"
+      ],
+      "recommended_actions": [
+        "Explain purpose",
+        "Ask to begin setup interview"
+      ],
+      "exit_conditions": [
+        "participant agrees to continue"
+      ],
+      "success_criteria": [
+        "interview purpose acknowledged"
+      ],
+      "mandatory_or_optional": "mandatory"
+    },
+    {
+      "stage_id": "review_and_confirm",
+      "name": "Review and Confirm",
+      "purpose": "Confirm the critical captured facts before completion.",
+      "required_inputs": [
+        "captured summary"
+      ],
+      "recommended_actions": [
+        "Read back hours, locations, transfer behavior, main offerings, and dangerous questions"
+      ],
+      "exit_conditions": [
+        "participant confirms or corrects summary"
+      ],
+      "success_criteria": [
+        "critical operational facts explicitly confirmed"
+      ],
+      "mandatory_or_optional": "mandatory"
+    }
+  ]
+}

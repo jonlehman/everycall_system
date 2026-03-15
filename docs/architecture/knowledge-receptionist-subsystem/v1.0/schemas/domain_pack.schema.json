@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EveryCall Domain Pack",
+  "description": "Canonical shared behavior record for a domain.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "domain_id",
+    "name",
+    "version",
+    "status",
+    "description",
+    "intent_catalog",
+    "entity_catalog",
+    "page_type_weights",
+    "content_class_biases",
+    "ranking_rules",
+    "boundary_rules",
+    "clarification_rules",
+    "default_stage_guidance",
+    "default_prompt_fragments",
+    "required_eval_suites",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "domain_id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "new",
+        "established"
+      ]
+    },
+    "description": {
+      "type": "string"
+    },
+    "naics_codes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "intent_catalog": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "entity_catalog": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "page_type_weights": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "content_class_biases": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "ranking_rules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "boundary_rules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "clarification_rules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "default_stage_guidance": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "default_prompt_fragments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_eval_suites": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    }
+  }
+}

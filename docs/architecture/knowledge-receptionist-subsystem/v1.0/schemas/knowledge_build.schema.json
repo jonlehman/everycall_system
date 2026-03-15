@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EveryCall Knowledge Build",
+  "description": "Versioned manifest for a compiled tenant build.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "build_id",
+    "tenant_id",
+    "status",
+    "version",
+    "domain_assignments",
+    "source_snapshot_id",
+    "source_channels",
+    "artifact_counts",
+    "quality_summary",
+    "warnings",
+    "published_at"
+  ],
+  "properties": {
+    "build_id": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "running",
+        "failed",
+        "compiled_unpublished",
+        "qa_blocked",
+        "ready_to_publish",
+        "published",
+        "superseded",
+        "rolled_back"
+      ]
+    },
+    "version": {
+      "type": "string"
+    },
+    "domain_assignments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "source_snapshot_id": {
+      "type": "string"
+    },
+    "artifact_counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "quality_summary": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "published_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "supersedes_build_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_channels": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "website_page",
+          "website_file",
+          "owner_interview",
+          "uploaded_document"
+        ]
+      },
+      "minItems": 1
+    }
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EveryCall Knowledge Override",
+  "description": "Human-authored operational or guidance override.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "knowledge_override_id",
+    "tenant_id",
+    "override_type",
+    "scope",
+    "priority",
+    "status",
+    "title",
+    "body",
+    "applies_to_intents",
+    "applies_to_domains",
+    "applies_to_subdomains",
+    "effective_from"
+  ],
+  "properties": {
+    "knowledge_override_id": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "type": "string"
+    },
+    "override_type": {
+      "type": "string",
+      "enum": [
+        "hard_fact",
+        "temporary_notice",
+        "soft_guidance",
+        "approved_answer"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "active",
+        "inactive",
+        "expired"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    },
+    "applies_to_intents": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "applies_to_domains": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "applies_to_subdomains": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "effective_from": {
+      "type": "string"
+    },
+    "effective_until": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

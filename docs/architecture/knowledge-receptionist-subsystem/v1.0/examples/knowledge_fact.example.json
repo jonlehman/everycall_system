@@ -1,0 +1,26 @@
+{
+  "knowledge_fact_id": "fact_123",
+  "tenant_id": "tenant_123",
+  "build_id": "build_2026_03_14_01",
+  "domain_id": "service_business",
+  "subdomain_id": "service_business.hvac",
+  "fact_type": "offering",
+  "object_type": "offering",
+  "subject": "AC Repair",
+  "predicate": "is_offered",
+  "object": true,
+  "normalized_value": true,
+  "confidence": 0.97,
+  "source_ref_ids": [
+    "src_77"
+  ],
+  "scope": {
+    "location_ids": [
+      "global"
+    ],
+    "audience": [
+      "residential"
+    ]
+  },
+  "content_class": "operational_core"
+}

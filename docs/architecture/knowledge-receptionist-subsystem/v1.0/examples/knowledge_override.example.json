@@ -1,0 +1,26 @@
+{
+  "knowledge_override_id": "ovr_001",
+  "tenant_id": "tenant_123",
+  "override_type": "hard_fact",
+  "scope": {
+    "location_ids": [
+      "loc_main"
+    ]
+  },
+  "priority": 1,
+  "status": "active",
+  "title": "Holiday hours override",
+  "body": "Main office is closed on Monday for the holiday.",
+  "applies_to_intents": [
+    "hours_question"
+  ],
+  "applies_to_domains": [
+    "service_business"
+  ],
+  "applies_to_subdomains": [
+    "service_business.hvac",
+    "service_business.plumbing"
+  ],
+  "effective_from": "2026-03-14T00:00:00Z",
+  "effective_until": "2026-03-15T23:59:59Z"
+}

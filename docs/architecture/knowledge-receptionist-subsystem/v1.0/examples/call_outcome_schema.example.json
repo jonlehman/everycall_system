@@ -1,0 +1,43 @@
+{
+  "call_outcome_schema_id": "outcome_001",
+  "tenant_id": "tenant_123",
+  "domain_scope": [
+    "service_business"
+  ],
+  "subdomain_scope": [
+    "service_business.hvac",
+    "service_business.plumbing"
+  ],
+  "outcome_types": [
+    "estimate_request",
+    "callback_request",
+    "message_taken",
+    "transfer"
+  ],
+  "required_fields_by_outcome": {
+    "estimate_request": [
+      "caller_name",
+      "caller_phone",
+      "issue_summary"
+    ],
+    "callback_request": [
+      "caller_name",
+      "caller_phone",
+      "preferred_time"
+    ]
+  },
+  "optional_fields_by_outcome": {
+    "estimate_request": [
+      "service_address",
+      "urgency"
+    ],
+    "callback_request": [
+      "issue_summary"
+    ]
+  },
+  "summary_template": "Outcome: {outcome_type}\\nCaller: {caller_name}\\nPhone: {caller_phone}\\nIssue: {issue_summary}",
+  "validation_rules": [
+    "estimate_request requires caller_name and caller_phone",
+    "callback_request requires preferred_time when provided by caller"
+  ]
+}

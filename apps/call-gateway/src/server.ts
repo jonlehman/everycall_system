@@ -3,11 +3,42 @@ import http from "node:http";
 import path from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
 import { readCallGatewayEnv } from "@everycall/config";
+import type {
+  CallState,
+  GatewayPromptPayload
+} from "@everycall/contracts";
 import { logError, logInfo } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
 import pg from "pg";
 import fs from "node:fs";
 import * as AjvModule from "ajv";
+import {
+  applyCapturedFieldsToCallState,
+  buildGatewaySessionInstructions,
+  clearKnowledgeBuildAssetCache,
+  fetchKnowledgeRuntimeTurn,
+  formatKnowledgeRuntimeToolOutput,
+  initializeKnowledgeCallState,
+  mergeRuntimeTurnState,
+  prewarmKnowledgeBuildAssets,
+  persistKnowledgeCallState,
+  validateGatewayPromptPayload
+} from "./knowledgeRuntime.js";
+import {
+  prewarmActiveKnowledgeBuildAssets,
+  recoverStreamSessionBootstrap
+} from "./runtimeLifecycle.js";
+import {
+  applyAssistantInterruption,
+  buildAssistantInterruptionPlan,
+  hasPendingAssistantAudio,
+  noteAssistantAudioChunkQueued,
+  noteAssistantAudioFrameSent,
+  noteAssistantOutputItem,
+  noteAssistantPlaybackDrained,
+  noteAssistantResponseCompleted,
+  noteAssistantResponseCreated
+} from "./voiceRuntimeControl.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -30,80 +61,6 @@ const Ajv = (AjvModule as unknown as { default?: new (opts?: Record<string, unkn
 const ajv = new Ajv({ allErrors: true, strict: false });
 
 const streamIdToCall = new Map<string, string>();
-
-type ApplicabilityRule = {
-  alwaysInclude?: boolean;
-  topics?: string[];
-  trade?: string | null;
-  serviceTags?: string[];
-  questionPatterns?: string[];
-  triggerTerms?: string[];
-  conversationStages?: string[];
-};
-
-type PromptPayload = {
-  system_prompt: string;
-  tenant_greeting: string;
-  tenant_knowledge: {
-    cards: Array<{
-      id?: string;
-      card_key?: string;
-      topic?: string | null;
-      trade?: string | null;
-      service_tags?: string[];
-      audience?: string;
-      title: string;
-      summary?: string;
-      usage_notes?: string | null;
-      facts?: Array<{
-        id?: string;
-        topic?: string | null;
-        trade?: string | null;
-        claim: string;
-        evidence_text?: string | null;
-        source_url?: string | null;
-        confidence?: number | null;
-        risk_level?: string;
-        service_tags?: string[];
-      }>;
-    }>;
-    facts: Array<{
-      id?: string;
-      topic?: string | null;
-      trade?: string | null;
-      service_tags?: string[];
-      claim: string;
-      evidence_text?: string | null;
-      source_url?: string | null;
-      confidence?: number | null;
-      risk_level?: string;
-    }>;
-    guardrails: Array<{ id?: string; rule_type: string; topic?: string | null; trade?: string | null; severity?: string; instruction: string; service_tags?: string[]; applies_when?: ApplicabilityRule | null }>;
-    overrides: Array<{ id?: string; topic?: string | null; trade?: string | null; trigger_text?: string | null; preferred_answer: string; service_tags?: string[]; applies_when?: ApplicabilityRule | null }>;
-    usage_instructions: string[];
-  };
-  field_schema: Record<string, unknown>;
-  tool_definitions: Array<Record<string, unknown>>;
-  session_config: {
-    model: string;
-    voice: string;
-    max_output_tokens?: number;
-    turn_detection: {
-      type: string;
-      threshold: number;
-      prefix_padding_ms: number;
-      silence_duration_ms: number;
-      idle_timeout_ms: number | null;
-      create_response?: boolean;
-      interrupt_response?: boolean;
-    };
-    transcription_model?: string;
-    noise_reduction?: string;
-    input_audio_format?: string;
-    output_audio_format?: string;
-  };
-  metadata?: Record<string, unknown>;
-};
 
 type PendingToolCall = {
   name: string;
@@ -139,13 +96,20 @@ type StreamSession = {
   openAiReady?: boolean;
   openAiSessionUpdated?: boolean;
   reconnectAttempted?: boolean;
-  promptPayload?: PromptPayload;
+  promptPayload?: GatewayPromptPayload;
+  knowledgeCallState?: CallState | null;
   greetingSent?: boolean;
   outputQueue?: Buffer[];
   outputBuffer?: Buffer;
   outputTimer?: NodeJS.Timeout | null;
   hangupTimer?: NodeJS.Timeout | null;
   outputPrimed?: boolean;
+  currentResponseId?: string | null;
+  currentAssistantItemId?: string | null;
+  assistantAudioActive?: boolean;
+  assistantAudioMsSent?: number;
+  lastInterruptionAtMs?: number | null;
+  lastInterruptionReason?: string | null;
   rtpSeq?: number;
   rtpTimestamp?: number;
   rtpSsrc?: number;
@@ -158,6 +122,62 @@ type StreamSession = {
 };
 
 const streamSessions = new Map<string, StreamSession>();
+
+function createStreamSession(
+  callControlId: string,
+  callSid: string,
+  tenantKey: string,
+  promptPayload: GatewayPromptPayload,
+  knowledgeCallState: CallState,
+  realtimeLogPath?: string
+): StreamSession {
+  return {
+    callControlId,
+    callSid,
+    tenantKey,
+    callActive: true,
+    isShuttingDown: false,
+    reconnectAttempted: false,
+    openAiSessionUpdated: false,
+    greetingSent: false,
+    aiInputRateMicrosUsd: realtimeInputRateMicrosUsd,
+    aiOutputRateMicrosUsd: realtimeOutputRateMicrosUsd,
+    usageTotals: emptyUsageTotals(),
+    promptPayload,
+    knowledgeCallState,
+    outputQueue: [],
+    outputBuffer: Buffer.alloc(0),
+    outputPrimed: false,
+    currentResponseId: null,
+    currentAssistantItemId: null,
+    assistantAudioActive: false,
+    assistantAudioMsSent: 0,
+    lastInterruptionAtMs: null,
+    lastInterruptionReason: null,
+    ...(realtimeLogPath ? { realtimeLogPath } : {})
+  };
+}
+
+function logPrewarmOutcome(callSid: string, tenantKey: string, source: string, result: { status: "ready" | "failed"; fetchMs: number; cacheHit: boolean; message?: string; buildId?: string }) {
+  if (result.status === "ready") {
+    logInfo("knowledge_build_assets_prewarmed", {
+      callSid,
+      tenantKey,
+      source,
+      buildId: result.buildId || undefined,
+      cacheHit: result.cacheHit,
+      fetchMs: result.fetchMs
+    });
+    return;
+  }
+  logError("knowledge_build_assets_prewarm_failed", {
+    callSid,
+    tenantKey,
+    source,
+    buildId: result.buildId || undefined,
+    message: result.message || "unknown"
+  });
+}
 
 function parseUsdRatePerMillion(value: string | undefined, fallback: number) {
   const parsed = Number(value || "");
@@ -355,109 +375,12 @@ function logRealtimeTrace(session: StreamSession, payload: Record<string, unknow
   });
 }
 
-function buildSessionInstructions(payload: PromptPayload) {
-  const cardIndex = payload.tenant_knowledge.cards
-    .map((card) => `- ${card.title}${card.topic ? ` [${card.topic}]` : ""}`)
-    .join("\n");
-  const factIndex = payload.tenant_knowledge.facts
-    .slice(0, 10)
-    .map((fact) => `- ${fact.claim}${fact.topic ? ` [${fact.topic}]` : ""}`)
-    .join("\n");
-  const usageInstructions = payload.tenant_knowledge.usage_instructions
-    .map((instruction) => `- ${instruction}`)
-    .join("\n");
-  const activeGuardrails = payload.tenant_knowledge.guardrails
-    .map((rule) => `- ${rule.rule_type}${rule.topic ? ` [${rule.topic}]` : ""}: ${rule.instruction}`)
-    .join("\n");
-
-  const knowledgeUsagePolicy = `# KNOWLEDGE TOOL POLICY
-For any tenant-specific factual question (hours, service area, location, pricing/payment, services, warranty, scheduling), call tool "knowledge_lookup" before answering.
-Do not answer tenant-specific facts from memory.
-If knowledge_lookup returns no match, say you do not have that detail and offer callback follow-up.`;
-
-  const knowledgeIndexSections = [
-    cardIndex ? `# AVAILABLE KNOWLEDGE CARDS\n${cardIndex}` : "",
-    factIndex ? `# EXAMPLE KNOWLEDGE FACTS\n${factIndex}` : "",
-    activeGuardrails ? `# ACTIVE KNOWLEDGE GUARDRAILS\n${activeGuardrails}` : "",
-    usageInstructions ? `# KNOWLEDGE USAGE INSTRUCTIONS\n${usageInstructions}` : ""
-  ].filter(Boolean).join("\n\n");
-
-  return [payload.system_prompt, knowledgeUsagePolicy, payload.tenant_greeting, knowledgeIndexSections].filter(Boolean).join("\n\n");
+function buildSessionInstructions(payload: GatewayPromptPayload) {
+  return buildGatewaySessionInstructions(payload);
 }
 
-function validatePromptPayload(input: unknown): PromptPayload {
-  if (!input || typeof input !== "object") throw new Error("prompt_payload_not_object");
-  const payload = input as Record<string, unknown>;
-  const requiredKeys = ["system_prompt", "tenant_greeting", "tenant_knowledge", "field_schema", "tool_definitions", "session_config"];
-  for (const key of requiredKeys) {
-    if (!(key in payload)) throw new Error(`prompt_payload_missing_${key}`);
-  }
-  if (typeof payload.system_prompt !== "string" || !payload.system_prompt.trim()) {
-    throw new Error("prompt_payload_invalid_system_prompt");
-  }
-  if (typeof payload.tenant_greeting !== "string") throw new Error("prompt_payload_invalid_tenant_greeting");
-  if (!Array.isArray(payload.tool_definitions)) throw new Error("prompt_payload_invalid_tool_definitions");
-  if (!payload.field_schema || typeof payload.field_schema !== "object") throw new Error("prompt_payload_invalid_field_schema");
-  if (!payload.session_config || typeof payload.session_config !== "object") throw new Error("prompt_payload_invalid_session_config");
-  if (!payload.tenant_knowledge || typeof payload.tenant_knowledge !== "object") {
-    throw new Error("prompt_payload_invalid_tenant_knowledge");
-  }
-
-  const sessionConfig = payload.session_config as Record<string, unknown>;
-  if (typeof sessionConfig.model !== "string" || !sessionConfig.model.trim()) throw new Error("prompt_payload_invalid_session_model");
-  if (typeof sessionConfig.voice !== "string" || !sessionConfig.voice.trim()) throw new Error("prompt_payload_invalid_session_voice");
-  if (!sessionConfig.turn_detection || typeof sessionConfig.turn_detection !== "object") {
-    throw new Error("prompt_payload_invalid_turn_detection");
-  }
-  const turnDetection = sessionConfig.turn_detection as Record<string, unknown>;
-  if (typeof turnDetection.type !== "string") throw new Error("prompt_payload_invalid_turn_detection_type");
-
-  const tenantKnowledge = payload.tenant_knowledge as Record<string, unknown>;
-  const knowledgeKeys = ["cards", "facts", "guardrails", "overrides", "usage_instructions"];
-  for (const key of knowledgeKeys) {
-    if (!Array.isArray(tenantKnowledge[key])) {
-      throw new Error(`prompt_payload_invalid_tenant_knowledge_${key}`);
-    }
-  }
-
-  for (const card of tenantKnowledge.cards as Array<Record<string, unknown>>) {
-    if (!card || typeof card !== "object") throw new Error("prompt_payload_invalid_knowledge_card");
-    if (typeof card.title !== "string") {
-      throw new Error("prompt_payload_invalid_knowledge_card_shape");
-    }
-    if ("facts" in card && !Array.isArray(card.facts)) {
-      throw new Error("prompt_payload_invalid_knowledge_card_facts");
-    }
-  }
-
-  for (const fact of tenantKnowledge.facts as Array<Record<string, unknown>>) {
-    if (!fact || typeof fact !== "object") throw new Error("prompt_payload_invalid_knowledge_fact");
-    if (typeof fact.claim !== "string") {
-      throw new Error("prompt_payload_invalid_knowledge_fact_shape");
-    }
-  }
-
-  for (const rule of tenantKnowledge.guardrails as Array<Record<string, unknown>>) {
-    if (!rule || typeof rule !== "object") throw new Error("prompt_payload_invalid_guardrail");
-    if (typeof rule.rule_type !== "string" || typeof rule.instruction !== "string") {
-      throw new Error("prompt_payload_invalid_guardrail_shape");
-    }
-    if ("applies_when" in rule && rule.applies_when != null && typeof rule.applies_when !== "object") {
-      throw new Error("prompt_payload_invalid_guardrail_applies_when");
-    }
-  }
-
-  for (const override of tenantKnowledge.overrides as Array<Record<string, unknown>>) {
-    if (!override || typeof override !== "object") throw new Error("prompt_payload_invalid_override");
-    if (typeof override.preferred_answer !== "string") {
-      throw new Error("prompt_payload_invalid_override_shape");
-    }
-    if ("applies_when" in override && override.applies_when != null && typeof override.applies_when !== "object") {
-      throw new Error("prompt_payload_invalid_override_applies_when");
-    }
-  }
-
-  return payload as unknown as PromptPayload;
+function validatePromptPayload(input: unknown): GatewayPromptPayload {
+  return validateGatewayPromptPayload(input);
 }
 
 async function notifyGatewayError(
@@ -553,6 +476,7 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
   if (!session.outputQueue) {
     session.outputQueue = [];
   }
+  noteAssistantAudioChunkQueued(session);
   let offset = 0;
   while (buffer.length - offset >= frameSize) {
     const frame = buffer.subarray(offset, offset + frameSize);
@@ -575,12 +499,50 @@ function startOutputPump(session: StreamSession) {
         clearInterval(session.outputTimer);
         session.outputTimer = null;
       }
+      if (session.outputBuffer && session.outputBuffer.length > 0 && !session.currentResponseId) {
+        session.outputBuffer = Buffer.alloc(0);
+      }
+      if (!(session.outputBuffer && session.outputBuffer.length > 0) && !session.currentResponseId) {
+        noteAssistantPlaybackDrained(session);
+      }
       return;
     }
     const payload = session.outputQueue.shift();
     if (!payload) return;
+    noteAssistantAudioFrameSent(session);
     sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, payload.toString("base64"));
   }, 20);
+}
+
+async function interruptAssistantForCallerSpeech(session: StreamSession | undefined, reason: string) {
+  if (!session || !hasPendingAssistantAudio(session)) return false;
+  const plan = buildAssistantInterruptionPlan(session, reason);
+  if (!plan.shouldInterrupt) return false;
+
+  for (const event of plan.events) {
+    sendOpenAiEvent(session.openAiWs, event);
+  }
+  applyAssistantInterruption(session, plan);
+  if (session.knowledgeCallState) {
+    await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
+      source: "barge_in",
+      reason,
+      truncated_audio_ms: plan.truncatedAudioMs,
+      queued_frames_dropped: plan.queuedFramesDropped,
+      buffered_bytes_dropped: plan.bufferedBytesDropped
+    });
+  }
+  logInfo("assistant_response_canceled", {
+    callSid: session.callSid,
+    callControlId: session.callControlId,
+    reason,
+    responseId: plan.responseId || undefined,
+    assistantItemId: plan.assistantItemId || undefined,
+    truncatedAudioMs: plan.truncatedAudioMs,
+    queuedFramesDropped: plan.queuedFramesDropped,
+    bufferedBytesDropped: plan.bufferedBytesDropped
+  });
+  return true;
 }
 
 async function telnyxCallAction(callControlId: string, action: string, payload: Record<string, unknown> = {}) {
@@ -621,6 +583,12 @@ async function endCallSession(session: StreamSession | undefined, reason: string
   session.isShuttingDown = true;
   session.callActive = false;
   await persistCallUsage(session);
+  if (session.knowledgeCallState) {
+    await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
+      source: "call_end",
+      end_reason: reason
+    });
+  }
 
   logInfo("gateway_call_session_end", {
     callSid: session.callSid,
@@ -665,7 +633,7 @@ async function flushFinalAudioAndEnd(session: StreamSession | undefined, reason:
   await endCallSession(session, reason, shouldHangup);
 }
 
-async function fetchPromptPayload(tenantKey: string, callSid: string, to: string, from: string): Promise<PromptPayload> {
+async function fetchPromptPayload(tenantKey: string, callSid: string, to: string, from: string): Promise<GatewayPromptPayload> {
   if (!appBaseUrl || !callSummaryToken) {
     throw new Error("missing_app_base_or_token");
   }
@@ -685,422 +653,78 @@ async function fetchPromptPayload(tenantKey: string, callSid: string, to: string
   return validatePromptPayload(body);
 }
 
-const LOOKUP_STOPWORDS = new Set([
-  "the", "a", "an", "and", "or", "for", "to", "of", "in", "on", "at", "with", "about", "your", "you", "we", "our",
-  "is", "are", "do", "does", "did", "can", "could", "would", "should", "what", "when", "where", "how", "why"
-]);
-
-const LOOKUP_TOPIC_KEYWORDS: Record<string, string[]> = {
-  warranty: ["warranty", "coverage", "covered", "forever warranty", "lifetime", "guarantee"],
-  guarantees: ["guarantee", "guaranteed", "satisfaction guarantee", "make it right"],
-  emergency_service: ["emergency", "urgent", "24/7", "after hours", "after-hours", "same day", "same-day"],
-  service_area: ["service area", "areas you serve", "areas you cover", "coverage area", "service territory", "serve"],
-  availability: ["hours", "availability", "open", "weekend", "after hours", "same day", "schedule"],
-  financing: ["financing", "payment plan", "payment plans", "monthly payment", "credit"],
-  pricing: ["fee", "fees", "price", "pricing", "estimate", "diagnostic", "cost"],
-  services: ["repair", "replace", "install", "service", "services", "fix", "handle"],
-  policies: ["policy", "process", "cancel", "reschedule", "insurance", "claim"]
-};
-
-const LOOKUP_SERVICE_TAG_PATTERNS: Array<[string, RegExp]> = [
-  ["water_heater", /\bwater heater|tankless\b/i],
-  ["drain_cleaning", /\bdrain|clog|hydro jet\b/i],
-  ["sewer", /\bsewer|septic\b/i],
-  ["leak_detection", /\bleak\b/i],
-  ["fixture_installation", /\bfixture|faucet|toilet|sink\b/i],
-  ["emergency_service", /\bemergency|after[- ]hours|urgent\b/i],
-  ["electrical_panel", /\bpanel|breaker|rewire\b/i],
-  ["generator", /\bgenerator\b/i],
-  ["hvac", /\bfurnace|heat pump|air conditioner|ac repair|mini split|hvac\b/i],
-  ["garage_door", /\bgarage door|opener|spring\b/i],
-  ["insurance", /\binsurance|claim\b/i],
-  ["financing", /\bfinancing|payment plan|credit\b/i],
-  ["warranty", /\bwarranty|guarantee|satisfaction\b/i],
-  ["service_area", /\bservice area|serve|coverage\b/i]
-];
-
-function normalizeLookupText(value: unknown) {
-  return String(value || "").trim();
+async function safePrewarmBuildAssets(callSid: string, tenantKey: string, buildId: string, source: string) {
+  try {
+    const prewarmed = await prewarmKnowledgeBuildAssets(pool, tenantKey, buildId);
+    logPrewarmOutcome(callSid, tenantKey, source, { status: "ready", buildId, ...prewarmed });
+    return { status: "ready" as const, buildId, ...prewarmed };
+  } catch (err) {
+    const failed = {
+      status: "failed" as const,
+      buildId,
+      cacheHit: false,
+      fetchMs: 0,
+      message: err instanceof Error ? err.message : "unknown"
+    };
+    logPrewarmOutcome(callSid, tenantKey, source, failed);
+    return failed;
+  }
 }
 
-function uniqueLookupValues(values: string[]) {
-  return Array.from(new Set(values.map((value) => normalizeLookupText(value)).filter(Boolean)));
-}
-
-function tokenizeLookupText(text: string) {
-  return uniqueLookupValues(
-    String(text || "")
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]+/g, " ")
-      .split(/\s+/)
-      .filter((token) => token.length >= 2 && !LOOKUP_STOPWORDS.has(token))
+async function recoverSessionForCallControlId(callControlId: string, source: string) {
+  const recovered = await recoverStreamSessionBootstrap(
+    pool,
+    callControlId,
+    fetchPromptPayload,
+    prewarmKnowledgeBuildAssets,
+    initializeKnowledgeCallState,
+    source
   );
-}
-
-function extractLookupServiceTags(text: string) {
-  const haystack = normalizeLookupText(text);
-  if (!haystack) return [];
-  return LOOKUP_SERVICE_TAG_PATTERNS.filter(([, pattern]) => pattern.test(haystack)).map(([tag]) => tag);
-}
-
-function inferLookupTopics(query: string, explicitTopic?: string | null) {
-  const topics = new Set<string>();
-  if (normalizeLookupText(explicitTopic)) {
-    topics.add(normalizeLookupText(explicitTopic));
+  if (!recovered) {
+    return undefined;
   }
-  const lower = normalizeLookupText(query).toLowerCase();
-  for (const [topic, keywords] of Object.entries(LOOKUP_TOPIC_KEYWORDS)) {
-    if (keywords.some((keyword) => lower.includes(keyword.toLowerCase()))) {
-      topics.add(topic);
-    }
-  }
-  return topics.size ? Array.from(topics) : ["general"];
-}
 
-function normalizeLookupPattern(value: string) {
-  return normalizeLookupText(value).toLowerCase().replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function readLookupAppliesWhen(item: { applies_when?: ApplicabilityRule | null }) {
-  return item?.applies_when && typeof item.applies_when === "object" ? item.applies_when : {};
-}
-
-function normalizeLookupAppliesWhen(
-  item: PromptPayload["tenant_knowledge"]["guardrails"][number] | PromptPayload["tenant_knowledge"]["overrides"][number],
-  kind: "guardrail" | "override"
-) {
-  const raw = readLookupAppliesWhen(item);
-  const trade = normalizeLookupText((raw as ApplicabilityRule).trade || item.trade) || null;
-  const serviceTags = uniqueLookupValues([
-    ...(item.service_tags || []),
-    ...((raw as ApplicabilityRule).serviceTags || [])
-  ]);
-  const questionPatterns = uniqueLookupValues([
-    ...((raw as ApplicabilityRule).questionPatterns || []),
-    kind === "override" ? normalizeLookupText((item as PromptPayload["tenant_knowledge"]["overrides"][number]).trigger_text) : ""
-  ]);
-  const triggerTerms = uniqueLookupValues([
-    ...((raw as ApplicabilityRule).triggerTerms || []),
-    ...tokenizeLookupText(`${questionPatterns.join(" ")} ${kind === "guardrail" ? (item as PromptPayload["tenant_knowledge"]["guardrails"][number]).instruction : (item as PromptPayload["tenant_knowledge"]["overrides"][number]).preferred_answer}`)
-  ]);
-  const topics = uniqueLookupValues([
-    ...((raw as ApplicabilityRule).topics || []),
-    normalizeLookupText(item.topic)
-  ]).filter((value) => value.toLowerCase() !== "general");
-  const conversationStages = uniqueLookupValues((raw as ApplicabilityRule).conversationStages || []);
-  const hasScopedRules = Boolean(topics.length || trade || serviceTags.length || questionPatterns.length || triggerTerms.length);
-  return {
-    alwaysInclude: Boolean((raw as ApplicabilityRule).alwaysInclude) || (kind === "guardrail" && !hasScopedRules),
-    topics,
-    trade,
-    serviceTags,
-    questionPatterns,
-    triggerTerms,
-    conversationStages
-  };
-}
-
-function matchLookupQuestionPatterns(context: ReturnType<typeof buildLookupContext>, questionPatterns: string[]) {
-  const normalizedQuery = normalizeLookupPattern(context.query);
-  if (!normalizedQuery) return [];
-  return uniqueLookupValues(questionPatterns).filter((pattern) => {
-    const normalizedPattern = normalizeLookupPattern(pattern);
-    return normalizedPattern && (normalizedQuery.includes(normalizedPattern) || normalizedPattern.includes(normalizedQuery));
+  logPrewarmOutcome(recovered.callSid, recovered.tenantKey, source, {
+    buildId: recovered.promptPayload.knowledge_runtime.active_build_id,
+    ...recovered.prewarm
   });
-}
-
-function matchLookupTriggerTerms(context: ReturnType<typeof buildLookupContext>, triggerTerms: string[]) {
-  const normalizedQuery = normalizeLookupPattern(context.query);
-  const queryTokens = new Set(context.tokens.map((token) => token.toLowerCase()));
-  return uniqueLookupValues(triggerTerms).filter((term) => {
-    const normalizedTerm = normalizeLookupPattern(term);
-    if (!normalizedTerm) return false;
-    return normalizedQuery.includes(normalizedTerm) || queryTokens.has(normalizedTerm);
+  const realtimeLogPath = realtimeDebug || realtimeTrace ? initRealtimeLog(recovered.callSid) : undefined;
+  await persistKnowledgeCallState(pool, recovered.tenantKey, recovered.callSid, recovered.knowledgeCallState, {
+    source
   });
-}
-
-function countLookupOverlap(leftValues: string[], rightValues: string[]) {
-  const rightSet = new Set((rightValues || []).map((value) => normalizeLookupText(value).toLowerCase()).filter(Boolean));
-  return uniqueLookupValues(leftValues).filter((value) => rightSet.has(normalizeLookupText(value).toLowerCase()));
-}
-
-function buildLookupContext(
-  query: string,
-  topic?: string | null,
-  serviceTags?: string[],
-  tradeHint?: string | null,
-  conversationStage?: string | null
-) {
-  const normalizedQuery = normalizeLookupText(query);
-  return {
-    query: normalizedQuery,
-    tokens: tokenizeLookupText(normalizedQuery),
-    topicHints: uniqueLookupValues(inferLookupTopics(normalizedQuery, topic)),
-    serviceTags: uniqueLookupValues([...(serviceTags || []), ...extractLookupServiceTags(normalizedQuery)]),
-    tradeHint: normalizeLookupText(tradeHint) || null,
-    conversationStage: normalizeLookupText(conversationStage) || "answering_question"
-  };
-}
-
-function scoreLookupText(context: ReturnType<typeof buildLookupContext>, haystack: string) {
-  const normalizedHaystack = normalizeLookupText(haystack).toLowerCase();
-  if (!context.query || !normalizedHaystack) return 0;
-  let score = normalizedHaystack.includes(context.query.toLowerCase()) ? 12 : 0;
-  for (const token of context.tokens) {
-    if (normalizedHaystack.includes(token)) {
-      score += token.length >= 5 ? 2 : 1;
-    }
-  }
-  return score;
-}
-
-function scoreLookupTopicAndTags(
-  context: ReturnType<typeof buildLookupContext>,
-  topic: string | null | undefined,
-  serviceTags: string[] | undefined,
-  trade: string | null | undefined
-) {
-  let score = 0;
-  const normalizedTopic = normalizeLookupText(topic).toLowerCase();
-  if (normalizedTopic && context.topicHints.map((item) => item.toLowerCase()).includes(normalizedTopic)) {
-    score += 8;
-  }
-  for (const tag of serviceTags || []) {
-    if (context.serviceTags.map((item) => item.toLowerCase()).includes(String(tag).toLowerCase())) {
-      score += 5;
-    }
-  }
-  if (context.tradeHint && normalizeLookupText(trade).toLowerCase() === normalizeLookupText(context.tradeHint).toLowerCase()) {
-    score += 3;
-  }
-  return score;
-}
-
-function matchLookupApplicability(
-  context: ReturnType<typeof buildLookupContext>,
-  item: PromptPayload["tenant_knowledge"]["guardrails"][number] | PromptPayload["tenant_knowledge"]["overrides"][number],
-  kind: "guardrail" | "override"
-) {
-  const appliesWhen = normalizeLookupAppliesWhen(item, kind);
-  const matchedBy: string[] = [];
-
-  if (
-    appliesWhen.conversationStages.length
-    && context.conversationStage
-    && !appliesWhen.conversationStages.map((value) => value.toLowerCase()).includes(context.conversationStage.toLowerCase())
-  ) {
-    return { include: false, score: -1, matchedBy, appliesWhen };
-  }
-
-  if (appliesWhen.alwaysInclude) {
-    matchedBy.push("always_include");
-  }
-
-  if (
-    appliesWhen.trade
-    && context.tradeHint
-    && normalizeLookupText(appliesWhen.trade).toLowerCase() !== normalizeLookupText(context.tradeHint).toLowerCase()
-  ) {
-    return { include: false, score: -1, matchedBy, appliesWhen };
-  }
-
-  const topicMatches = countLookupOverlap(context.topicHints, appliesWhen.topics);
-  if (topicMatches.length) matchedBy.push(...topicMatches.map((value) => `topic:${value}`));
-
-  const serviceTagMatches = countLookupOverlap(context.serviceTags, appliesWhen.serviceTags);
-  if (serviceTagMatches.length) matchedBy.push(...serviceTagMatches.map((value) => `service_tag:${value}`));
-
-  const questionPatternMatches = matchLookupQuestionPatterns(context, appliesWhen.questionPatterns);
-  if (questionPatternMatches.length) {
-    matchedBy.push(...questionPatternMatches.map((value) => `question_pattern:${value.slice(0, 60)}`));
-  }
-
-  const triggerMatches = matchLookupTriggerTerms(context, appliesWhen.triggerTerms);
-  if (triggerMatches.length) matchedBy.push(...triggerMatches.slice(0, 3).map((value) => `trigger:${value}`));
-
-  if (appliesWhen.trade && context.tradeHint) matchedBy.push(`trade:${appliesWhen.trade}`);
-  if (appliesWhen.conversationStages.length && context.conversationStage) matchedBy.push(`stage:${context.conversationStage}`);
-
-  const isGeneric = !appliesWhen.topics.length
-    && !appliesWhen.trade
-    && !appliesWhen.serviceTags.length
-    && !appliesWhen.questionPatterns.length
-    && !appliesWhen.triggerTerms.length;
-
-  const include = appliesWhen.alwaysInclude
-    || Boolean(questionPatternMatches.length || triggerMatches.length || serviceTagMatches.length || topicMatches.length)
-    || (kind === "guardrail" && (Boolean(appliesWhen.trade && context.tradeHint) || isGeneric));
-
-  if (!include) {
-    return { include: false, score: 0, matchedBy, appliesWhen };
-  }
-
-  let score = 0;
-  if (appliesWhen.alwaysInclude) score += 100;
-  score += questionPatternMatches.length * 18;
-  score += Math.min(9, triggerMatches.length * 3);
-  score += topicMatches.length * 12;
-  score += Math.min(12, serviceTagMatches.length * 6);
-  if (appliesWhen.trade && context.tradeHint) score += 4;
-  if (appliesWhen.conversationStages.length && context.conversationStage) score += 2;
-  if (kind === "guardrail") {
-    const riskLevel = normalizeLookupText((item as PromptPayload["tenant_knowledge"]["guardrails"][number]).severity || "high").toLowerCase();
-    if (riskLevel === "critical") score += 6;
-    else if (riskLevel === "high") score += 3;
-  }
-
-  return { include: true, score, matchedBy: uniqueLookupValues(matchedBy), appliesWhen };
-}
-
-function scoreKnowledgeCard(context: ReturnType<typeof buildLookupContext>, card: PromptPayload["tenant_knowledge"]["cards"][number]) {
-  const facts = Array.isArray(card.facts) ? card.facts : [];
-  const factScores = facts.map((fact) => {
-    const score = scoreLookupText(context, `${fact.claim} ${fact.evidence_text || ""}`)
-      + scoreLookupTopicAndTags(context, fact.topic, fact.service_tags || [], card.trade);
-    return { fact, score: score + (Number(fact.confidence) || 0) };
-  });
-  const cardScore = scoreLookupText(
-    context,
-    `${card.title} ${card.topic || ""} ${card.trade || ""} ${card.summary || ""} ${card.usage_notes || ""}`
-  ) + scoreLookupTopicAndTags(context, card.topic, card.service_tags || [], card.trade);
-
-  const topFacts = factScores
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
-
-  return {
-    score: cardScore + topFacts.reduce((sum, item) => sum + item.score, 0),
-    topFacts
-  };
-}
-
-function scoreKnowledgeFact(context: ReturnType<typeof buildLookupContext>, fact: PromptPayload["tenant_knowledge"]["facts"][number]) {
-  return scoreLookupText(context, `${fact.claim} ${fact.evidence_text || ""}`)
-    + scoreLookupTopicAndTags(context, fact.topic, fact.service_tags || [], fact.trade)
-    + (Number(fact.confidence) || 0);
-}
-
-function buildKnowledgeMatches(
-  knowledge: PromptPayload["tenant_knowledge"],
-  request: {
-    query: string;
-    topic?: string | null;
-    serviceTags?: string[];
-    tradeHint?: string | null;
-    conversationStage?: string | null;
-  }
-) {
-  const context = buildLookupContext(request.query, request.topic, request.serviceTags, request.tradeHint, request.conversationStage);
-  const cards = (knowledge.cards || [])
-    .map((card, index) => {
-      const scoring = scoreKnowledgeCard(context, card);
-      return {
-        id: card.id || `knowledge_card_${index + 1}`,
-        card_key: card.card_key || null,
-        topic: card.topic || null,
-        trade: card.trade || null,
-        title: card.title,
-        summary: card.summary || "",
-        usage_notes: card.usage_notes || null,
-        service_tags: card.service_tags || [],
-        source_url: scoring.topFacts.find((item) => item.fact.source_url)?.fact.source_url || null,
-        facts: scoring.topFacts.map((item) => ({
-          id: item.fact.id || null,
-          claim: item.fact.claim,
-          evidence_text: item.fact.evidence_text || null,
-          source_url: item.fact.source_url || null,
-          confidence: item.fact.confidence ?? null,
-          risk_level: item.fact.risk_level || "normal",
-          service_tags: item.fact.service_tags || [],
-          score: Number(item.score.toFixed(2))
-        })),
-        score: Number(scoring.score.toFixed(2))
-      };
-    })
-    .filter((card) => card.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 4);
-
-  const cardFactIds = new Set(cards.flatMap((card) => card.facts.map((fact) => fact.id).filter(Boolean)));
-
-  const facts = (knowledge.facts || [])
-    .map((fact, index) => ({
-      id: fact.id || `knowledge_fact_${index + 1}`,
-      topic: fact.topic || null,
-      trade: fact.trade || null,
-      service_tags: fact.service_tags || [],
-      claim: fact.claim,
-      evidence_text: fact.evidence_text || null,
-      source_url: fact.source_url || null,
-      confidence: fact.confidence ?? null,
-      risk_level: fact.risk_level || "normal",
-      score: Number(scoreKnowledgeFact(context, fact).toFixed(2))
-    }))
-    .filter((fact) => fact.score > 0 && !cardFactIds.has(fact.id))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
-
-  const overrides = (knowledge.overrides || [])
-    .map((item, index) => {
-      const applicability = matchLookupApplicability(context, item, "override");
-      return {
-        id: item.id || `knowledge_override_${index + 1}`,
-        topic: item.topic || null,
-        trade: item.trade || null,
-        service_tags: item.service_tags || [],
-        trigger_text: item.trigger_text || null,
-        preferred_answer: item.preferred_answer,
-        applies_when: applicability.appliesWhen,
-        matched_by: applicability.matchedBy,
-        score: Number(applicability.score.toFixed(2))
-      };
-    })
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
-
-  const guardrails = (knowledge.guardrails || [])
-    .map((item, index) => {
-      const applicability = matchLookupApplicability(context, item, "guardrail");
-      return {
-        id: item.id || `knowledge_guardrail_${index + 1}`,
-        rule_type: item.rule_type,
-        topic: item.topic || null,
-        trade: item.trade || null,
-        severity: item.severity || "high",
-        instruction: item.instruction,
-        service_tags: item.service_tags || [],
-        applies_when: applicability.appliesWhen,
-        matched_by: applicability.matchedBy,
-        score: Number(applicability.score.toFixed(2))
-      };
-    })
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
-
-  const topScore = Math.max(
-    cards[0]?.score || 0,
-    facts[0]?.score || 0,
-    overrides[0]?.score || 0
+  const session = createStreamSession(
+    callControlId,
+    recovered.callSid,
+    recovered.tenantKey,
+    recovered.promptPayload,
+    recovered.knowledgeCallState,
+    realtimeLogPath
   );
+  streamSessions.set(callControlId, session);
+  return session;
+}
 
-  return {
-    query_context: {
-      query: context.query,
-      topic_hints: context.topicHints,
-      service_tags: context.serviceTags,
-      trade_hint: context.tradeHint,
-      conversation_stage: context.conversationStage
-    },
-    result_strength: topScore >= 20 ? "strong" : topScore >= 9 ? "medium" : topScore > 0 ? "weak" : "none",
-    cards,
-    facts,
-    overrides,
-    guardrails,
-    usage_instructions: Array.isArray(knowledge.usage_instructions) ? knowledge.usage_instructions : []
-  };
+async function preloadActiveBuildAssetsOnStartup() {
+  if (!pool) return;
+  const started = Date.now();
+  logInfo("knowledge_build_assets_startup_preload_started", {});
+  try {
+    clearKnowledgeBuildAssetCache();
+    const summary = await prewarmActiveKnowledgeBuildAssets(pool, prewarmKnowledgeBuildAssets);
+    logInfo("knowledge_build_assets_startup_preload_completed", {
+      attempted: summary.attempted,
+      succeeded: summary.succeeded,
+      failed: summary.failed,
+      totalFetchMs: summary.totalFetchMs,
+      maxFetchMs: summary.maxFetchMs,
+      wallClockMs: Date.now() - started
+    });
+  } catch (err) {
+    logError("knowledge_build_assets_startup_preload_failed", {
+      wallClockMs: Date.now() - started,
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
 }
 
 function validateAgainstSchema(schema: Record<string, unknown>, payload: Record<string, unknown>) {
@@ -1165,29 +789,64 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
 
   if (name === "knowledge_lookup") {
     const query = String((args as any).query || "");
-    const topic = normalizeLookupText((args as any).topic) || null;
+    const topic = String((args as any).topic || "").trim() || null;
     const serviceTags = Array.isArray((args as any).service_tags)
-      ? (args as any).service_tags.map((item: unknown) => normalizeLookupText(item)).filter(Boolean)
+      ? (args as any).service_tags.map((item: unknown) => String(item || "").trim()).filter(Boolean)
       : [];
-    const tradeHint = normalizeLookupText((args as any).trade) || null;
-    const conversationStage = normalizeLookupText((args as any).conversation_stage) || null;
-    const retrieval = buildKnowledgeMatches(
-      session.promptPayload?.tenant_knowledge || { cards: [], facts: [], guardrails: [], overrides: [], usage_instructions: [] },
-      { query, topic, serviceTags, tradeHint, conversationStage }
+    const tradeHint = String((args as any).trade || "").trim() || null;
+    const conversationStage = String((args as any).conversation_stage || "").trim() || null;
+    if (!session.promptPayload) {
+      throw new Error("missing_prompt_payload");
+    }
+
+    const runtimeResult = await fetchKnowledgeRuntimeTurn(pool, session.promptPayload, {
+      tenantKey: session.tenantKey,
+      callId: session.callSid,
+      query,
+      topic,
+      serviceTags,
+      tradeHint,
+      conversationStage,
+      buildId: session.promptPayload.knowledge_runtime.active_build_id,
+      callState: session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state
+    });
+    const nextState = mergeRuntimeTurnState(
+      session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state,
+      runtimeResult
     );
+    session.knowledgeCallState = nextState;
+    await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, nextState, {
+      runtime_mode: runtimeResult.runtime_bundle.runtime_mode,
+      source: "knowledge_lookup"
+    });
+
+    const toolOutput = formatKnowledgeRuntimeToolOutput(runtimeResult);
     logInfo("knowledge_lookup_tool_called", {
       callSid: session.callSid,
       query,
-      cardCount: retrieval.cards.length,
-      factCount: retrieval.facts.length,
-      overrideCount: retrieval.overrides.length,
-      guardrailCount: retrieval.guardrails.length
+      cardCount: runtimeResult.runtime_bundle.selected_cards.length,
+      factCount: runtimeResult.runtime_bundle.selected_answer_facts.length,
+      overrideCount: runtimeResult.matched_overrides.length,
+      guardrailCount: runtimeResult.matched_guardrails.length,
+      assetCacheHit: runtimeResult.retrieval_telemetry.asset_cache_hit ?? undefined,
+      assetFetchMs: runtimeResult.retrieval_telemetry.asset_fetch_ms ?? undefined
     });
     await forwardToolResult(
       session.callSid,
       session.tenantKey,
       name,
-      { query, topic, service_tags: serviceTags, trade: tradeHint, conversation_stage: conversationStage, retrieval },
+      {
+        query,
+        topic,
+        service_tags: serviceTags,
+        trade: tradeHint,
+        conversation_stage: conversationStage,
+        runtime_bundle: runtimeResult.runtime_bundle,
+        matched_overrides: runtimeResult.matched_overrides,
+        matched_guardrails: runtimeResult.matched_guardrails,
+        call_state: runtimeResult.call_state,
+        retrieval_telemetry: runtimeResult.retrieval_telemetry
+      },
       { status: "accepted", errors: [] }
     );
     sendOpenAiEvent(session.openAiWs, {
@@ -1195,7 +854,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       item: {
         type: "function_call_output",
         call_id: callId,
-        output: JSON.stringify(retrieval)
+        output: JSON.stringify(toolOutput)
       }
     });
     logInfo("openai_realtime_tool_response_requested", {
@@ -1210,6 +869,16 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
   if (name === "data_capture") {
     const schema = session.promptPayload?.field_schema || {};
     const validation = validateAgainstSchema(schema, args);
+    if (validation.status === "accepted" && session.promptPayload) {
+      const nextState = applyCapturedFieldsToCallState(
+        session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state,
+        args
+      );
+      session.knowledgeCallState = nextState;
+      await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, nextState, {
+        source: "data_capture"
+      });
+    }
     await forwardToolResult(session.callSid, session.tenantKey, name, args, validation);
     sendOpenAiEvent(session.openAiWs, {
       type: "conversation.item.create",
@@ -1394,6 +1063,7 @@ function connectOpenAiRealtime(session: StreamSession) {
     }
 
     if (type === "response.created") {
+      noteAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
       logInfo("openai_realtime_response_created", {
         callSid: session.callSid,
         responseId: payloadMsg?.response?.id || payloadMsg?.response_id
@@ -1402,6 +1072,7 @@ function connectOpenAiRealtime(session: StreamSession) {
     }
 
     if (type === "response.done") {
+      noteAssistantResponseCompleted(session);
       const statusDetails = payloadMsg?.response?.status_details || payloadMsg?.status_details;
       const usage = collectUsage(payloadMsg);
       const totals = session.usageTotals || emptyUsageTotals();
@@ -1431,9 +1102,25 @@ function connectOpenAiRealtime(session: StreamSession) {
       return;
     }
 
+    if (type === "response.output_item.added") {
+      const item = payloadMsg.item || payloadMsg.output_item || {};
+      const itemType = String(item?.type || "");
+      if (itemType === "message" || itemType === "assistant_message") {
+        noteAssistantOutputItem(session, item?.id || payloadMsg.item_id || null);
+      }
+      return;
+    }
+
+    if (type === "response.output_audio.done" || type === "response.audio.done") {
+      noteAssistantResponseCompleted(session);
+      return;
+    }
+
     if (type === "response.output_audio.delta" || type === "response.audio.delta" || type === "output_audio.delta") {
       const audioBase64 = payloadMsg.delta || payloadMsg.audio?.delta || payloadMsg.audio?.data || payloadMsg.data || "";
       if (audioBase64) {
+        noteAssistantResponseCreated(session, payloadMsg?.response_id || payloadMsg?.response?.id || null);
+        noteAssistantOutputItem(session, payloadMsg?.item_id || payloadMsg?.item?.id || payloadMsg?.output_item?.id || null);
         enqueueOutputPcm(session, Buffer.from(audioBase64, "base64"));
       }
       return;
@@ -1460,6 +1147,11 @@ function connectOpenAiRealtime(session: StreamSession) {
           [session.callSid, session.tenantKey, "caller", String(transcript)]
         );
       }
+      return;
+    }
+
+    if (type === "input_audio_buffer.speech_started") {
+      await interruptAssistantForCallerSpeech(session, "caller_speech_detected_realtime");
       return;
     }
 
@@ -1620,7 +1312,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
       [callSid, tenantKey, from, to]
     );
 
-    let promptPayload: PromptPayload;
+    let promptPayload: GatewayPromptPayload;
     try {
       promptPayload = await fetchPromptPayload(tenantKey, callSid, to, from);
     } catch (err) {
@@ -1647,24 +1339,13 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
       return res.status(200).send("ok");
     }
 
+    await safePrewarmBuildAssets(callSid, tenantKey, promptPayload.knowledge_runtime.active_build_id, "call_initiated");
     const realtimeLogPath = realtimeDebug || realtimeTrace ? initRealtimeLog(callSid) : undefined;
-    streamSessions.set(callControlId, {
-      callControlId,
-      callSid,
-      tenantKey,
-      callActive: true,
-      isShuttingDown: false,
-      reconnectAttempted: false,
-      openAiSessionUpdated: false,
-      greetingSent: false,
-      aiInputRateMicrosUsd: realtimeInputRateMicrosUsd,
-      aiOutputRateMicrosUsd: realtimeOutputRateMicrosUsd,
-      usageTotals: emptyUsageTotals(),
-      promptPayload,
-      outputQueue: [],
-      outputBuffer: Buffer.alloc(0),
-      ...(realtimeLogPath ? { realtimeLogPath } : {})
+    const knowledgeCallState = initializeKnowledgeCallState(promptPayload);
+    await persistKnowledgeCallState(pool, tenantKey, callSid, knowledgeCallState, {
+      source: "call_initiated"
     });
+    streamSessions.set(callControlId, createStreamSession(callControlId, callSid, tenantKey, promptPayload, knowledgeCallState, realtimeLogPath));
 
     try {
       await telnyxCallAction(callControlId, "answer", {});
@@ -1684,60 +1365,21 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
 
     let session = streamSessions.get(callControlId);
     if (!session) {
-      // Recover session on call.answered in case memory state was lost between webhook events.
-      const to = normalizePhone(String(eventPayload.to || ""));
-      const from = normalizePhone(String(eventPayload.from || ""));
       const callSid = callControlId;
-      logInfo("call_answered_session_recovery_attempt", { callSid, callControlId, to, from });
-
-      let tenantKey = "";
-      const callRow = await pool.query(
-        `SELECT tenant_key FROM calls WHERE call_sid = $1 LIMIT 1`,
-        [callSid]
-      );
-      if (callRow.rowCount) {
-        tenantKey = String(callRow.rows[0].tenant_key || "");
-      } else if (to) {
-        const tenantRow = await pool.query(
-          `SELECT tenant_key FROM tenants WHERE telnyx_voice_number = $1 LIMIT 1`,
-          [to]
-        );
-        tenantKey = String(tenantRow.rows[0]?.tenant_key || "");
-      }
-
-      if (tenantKey) {
-        try {
-          const promptPayload = await fetchPromptPayload(tenantKey, callSid, to, from);
-          const realtimeLogPath = realtimeDebug || realtimeTrace ? initRealtimeLog(callSid) : undefined;
-          session = {
-            callControlId,
-            callSid,
-            tenantKey,
-            callActive: true,
-            isShuttingDown: false,
-            reconnectAttempted: false,
-            openAiSessionUpdated: false,
-            greetingSent: false,
-            aiInputRateMicrosUsd: realtimeInputRateMicrosUsd,
-            aiOutputRateMicrosUsd: realtimeOutputRateMicrosUsd,
-            usageTotals: emptyUsageTotals(),
-            promptPayload,
-            outputQueue: [],
-            outputBuffer: Buffer.alloc(0),
-            ...(realtimeLogPath ? { realtimeLogPath } : {})
-          };
-          streamSessions.set(callControlId, session);
-          logInfo("call_answered_session_recovered", { callSid, callControlId, tenantKey });
-        } catch (err) {
-          logError("call_answered_session_recovery_failed", {
-            callSid,
-            callControlId,
-            tenantKey,
-            message: err instanceof Error ? err.message : "unknown"
-          });
+      logInfo("call_answered_session_recovery_attempt", { callSid, callControlId });
+      try {
+        session = await recoverSessionForCallControlId(callControlId, "call_answered_recovery");
+        if (session) {
+          logInfo("call_answered_session_recovered", { callSid, callControlId, tenantKey: session.tenantKey });
+        } else {
+          logError("call_answered_session_missing_tenant", { callSid, callControlId });
         }
-      } else {
-        logError("call_answered_session_missing_tenant", { callSid, callControlId, to });
+      } catch (err) {
+        logError("call_answered_session_recovery_failed", {
+          callSid,
+          callControlId,
+          message: err instanceof Error ? err.message : "unknown"
+        });
       }
     }
 
@@ -1839,7 +1481,27 @@ wss.on("connection", (ws) => {
       const streamId = payload.stream_id;
       const callControlId = payload.start?.call_control_id || payload.call_control_id;
       if (!streamId || !callControlId) return;
-      const session = streamSessions.get(callControlId);
+      let session = streamSessions.get(callControlId);
+      if (!session) {
+        logInfo("stream_start_session_recovery_attempt", { callControlId, streamId });
+        try {
+          session = await recoverSessionForCallControlId(callControlId, "stream_start_recovery");
+          if (session) {
+            logInfo("stream_start_session_recovered", {
+              callSid: session.callSid,
+              callControlId,
+              tenantKey: session.tenantKey,
+              streamId
+            });
+          }
+        } catch (err) {
+          logError("stream_start_session_recovery_failed", {
+            callControlId,
+            streamId,
+            message: err instanceof Error ? err.message : "unknown"
+          });
+        }
+      }
       if (!session) return;
       session.telnyxWs = ws;
       session.telnyxStreamId = streamId;
@@ -1866,6 +1528,7 @@ wss.on("connection", (ws) => {
       if (!callControlId) return;
       const session = streamSessions.get(callControlId);
       if (!session?.openAiWs) return;
+      await interruptAssistantForCallerSpeech(session, "caller_speech_detected_media");
       const pcm = decodeInboundAudioPayload(encoded);
       sendOpenAiEvent(session.openAiWs, {
         type: "input_audio_buffer.append",
@@ -1897,4 +1560,5 @@ server.listen(port, () => {
     bidirectionalPayloadMode: resolveBidirectionalPayloadMode(),
     rtpPayloadType
   });
+  void preloadActiveBuildAssetsOnStartup();
 });

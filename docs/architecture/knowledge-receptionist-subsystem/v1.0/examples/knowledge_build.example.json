@@ -1,0 +1,30 @@
+{
+  "build_id": "build_2026_03_14_02",
+  "tenant_id": "tenant_123",
+  "status": "published",
+  "version": "2026.03.14.02",
+  "domain_assignments": [
+    "service_business.hvac",
+    "service_business.plumbing"
+  ],
+  "source_snapshot_id": "source_snapshot_2026_03_14_02",
+  "artifact_counts": {
+    "source_refs": 312,
+    "knowledge_facts": 882,
+    "knowledge_cards": 164
+  },
+  "quality_summary": {
+    "high_conflicts": 0,
+    "low_confidence_cards": 6
+  },
+  "warnings": [
+    "6 cards are below 0.70 quality score but were kept for review."
+  ],
+  "published_at": "2026-03-14T03:00:00Z",
+  "supersedes_build_id": "build_2026_03_10_01",
+  "source_channels": [
+    "website_page",
+    "uploaded_document",
+    "owner_interview"
+  ]
+}

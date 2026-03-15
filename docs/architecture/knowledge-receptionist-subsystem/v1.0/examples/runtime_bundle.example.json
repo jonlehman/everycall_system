@@ -1,0 +1,38 @@
+{
+  "runtime_bundle_id": "bundle_012",
+  "call_id": "call_001",
+  "turn_id": "turn_012",
+  "tenant_id": "tenant_123",
+  "active_domain_id": "service_business",
+  "active_subdomain_id": "service_business.hvac",
+  "detected_turn_intent": "service_capability",
+  "selected_card_ids": [
+    "card_123",
+    "card_811"
+  ],
+  "selected_cards": [
+    {
+      "knowledge_card_id": "card_123",
+      "canonical_name": "AC Repair",
+      "speakable_summary": "We offer AC repair for residential customers in the covered service area."
+    },
+    {
+      "knowledge_card_id": "card_811",
+      "canonical_name": "Service Area: Bellevue",
+      "speakable_summary": "Bellevue is within the covered service area."
+    }
+  ],
+  "state_delta": {
+    "active_offering_id": "ac_repair",
+    "active_location_id": "city_bellevue"
+  },
+  "missing_slots": [],
+  "mode": "answer",
+  "response_rules": [
+    "Answer only from the bundle.",
+    "Do not invent pricing.",
+    "Prefer Bellevue-specific facts."
+  ],
+  "confidence": 0.91,
+  "created_at": "2026-03-14T03:20:00Z"
+}

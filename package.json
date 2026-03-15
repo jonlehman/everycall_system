@@ -10,12 +10,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "db:migrate": "node scripts/migrate.mjs",
+    "validate:knowledge-receptionist-cutover": "node scripts/validate-knowledge-receptionist-cutover.mjs",
+    "validate:voice-runtime-hardening": "node scripts/validate-voice-runtime-hardening.mjs",
     "typecheck": "pnpm -r typecheck",
     "dev:call-gateway": "PORT=3101 pnpm --filter @everycall/call-gateway dev",
     "smoke": "node scripts/smoke.mjs",
-    "test:intake:v2:api": "node scripts/test-intake-v2-api.mjs",
-    "test:intake:v2:e2e": "node scripts/test-intake-v2-e2e.mjs",
-    "test:client-ui:v2:api": "node scripts/test-client-ui-v2-api.mjs",
     "test:client-ui:v2:e2e": "node scripts/test-client-ui-v2-e2e.mjs"
   },
   "dependencies": {

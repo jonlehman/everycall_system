@@ -1,0 +1,63 @@
+{
+  "knowledge_card_id": "card_123",
+  "tenant_id": "tenant_123",
+  "build_id": "build_2026_03_14_01",
+  "domain_id": "service_business",
+  "subdomain_id": "service_business.hvac",
+  "card_type": "offering",
+  "object_type": "offering",
+  "canonical_name": "AC Repair",
+  "topic_path": [
+    "services",
+    "hvac",
+    "air_conditioning",
+    "repair"
+  ],
+  "intent_tags": [
+    "service_capability",
+    "repair_request"
+  ],
+  "entity_tags": [
+    "ac",
+    "air conditioner",
+    "cooling"
+  ],
+  "aliases": [
+    "ac repair",
+    "air conditioner repair",
+    "cooling repair"
+  ],
+  "caller_phrases": [
+    "my air conditioner is broken",
+    "do you fix ac units",
+    "can someone repair my ac"
+  ],
+  "scope": {
+    "location_ids": [
+      "global"
+    ],
+    "audience": [
+      "residential"
+    ]
+  },
+  "speakable_summary": "We offer AC repair for residential customers in the covered service area.",
+  "answer_facts": [
+    "The business offers AC repair.",
+    "Service is available in the covered service area."
+  ],
+  "related_card_ids": [
+    "card_124",
+    "card_811"
+  ],
+  "source_ref_ids": [
+    "src_77"
+  ],
+  "content_class": "operational_core",
+  "allowed_uses": [
+    "answer",
+    "clarify",
+    "handoff_context"
+  ],
+  "risk_level": "normal",
+  "quality_score": 0.93
+}

@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EveryCall Subdomain Pack",
+  "description": "Canonical delta record for a subdomain.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "subdomain_id",
+    "parent_domain_id",
+    "name",
+    "version",
+    "status",
+    "description",
+    "additional_intents",
+    "additional_entities",
+    "page_type_weight_deltas",
+    "content_class_bias_deltas",
+    "ranking_rule_deltas",
+    "boundary_rule_deltas",
+    "clarification_rule_deltas",
+    "stage_guidance_deltas",
+    "prompt_fragment_deltas",
+    "required_eval_suites",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "subdomain_id": {
+      "type": "string"
+    },
+    "parent_domain_id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "new",
+        "established"
+      ]
+    },
+    "description": {
+      "type": "string"
+    },
+    "additional_intents": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "additional_entities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "page_type_weight_deltas": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "content_class_bias_deltas": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "ranking_rule_deltas": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "boundary_rule_deltas": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "clarification_rule_deltas": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stage_guidance_deltas": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "prompt_fragment_deltas": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_eval_suites": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    }
+  }
+}

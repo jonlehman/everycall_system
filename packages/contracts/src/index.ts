@@ -1,4 +1,6 @@
 import { z } from "zod";
+export * from "./knowledgeReceptionist.js";
+export * from "./knowledgeRuntimeSelection.js";
 
 export const inboundWebhookSchema = z.object({
   CallSid: z.string().min(1),
@@ -30,27 +32,13 @@ export const orchestrateTurnSchema = z.object({
         timezone: z.string().min(1)
       })
       .passthrough(),
-    tenant_knowledge: z.object({
-      cards: z.array(z.object({
-        title: z.string().min(1),
-        topic: z.string().optional().nullable(),
-        summary: z.string().optional().nullable()
-      })).default([]),
-      facts: z.array(z.object({
-        claim: z.string().min(1),
-        topic: z.string().optional().nullable()
-      })).default([]),
-      overrides: z.array(z.object({
-        preferred_answer: z.string().min(1),
-        topic: z.string().optional().nullable(),
-        applies_when: z.record(z.any()).optional().nullable()
-      })).default([]),
-      guardrails: z.array(z.object({
-        instruction: z.string().min(1),
-        topic: z.string().optional().nullable(),
-        applies_when: z.record(z.any()).optional().nullable()
-      })).default([]),
-      usage_instructions: z.array(z.string().min(1)).default([])
+    knowledge_runtime: z.object({
+      active_build_id: z.string().min(1),
+      active_domain_id: z.string().min(1),
+      active_subdomain_id: z.string().optional().nullable(),
+      runtime_entry_mode: z.enum(["customer_call", "setup_interview"]),
+      current_stage: z.string().min(1),
+      response_restrictions: z.array(z.string().min(1)).default([])
     })
   })
 });

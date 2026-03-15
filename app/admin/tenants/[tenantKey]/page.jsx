@@ -1,563 +1,181 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { DataGrid } from '@mui/x-data-grid';
 import { Button } from '../../../../components/ui/button';
+
+function fetchJson(url, options) {
+  return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
+}
 
 export default function TenantManagePage() {
   const params = useParams();
   const router = useRouter();
-  const tenantKey = params.tenantKey;
-  const voiceOptions = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'];
+  const tenantKey = String(params.tenantKey || '');
   const [tenant, setTenant] = useState(null);
-  const [prompt, setPrompt] = useState('');
-  const [greetingText, setGreetingText] = useState('');
-  const [voiceType, setVoiceType] = useState('alloy');
-  const [status, setStatus] = useState('Idle');
   const [users, setUsers] = useState([]);
-  const [composedPrompt, setComposedPrompt] = useState('');
-  const [editing, setEditing] = useState({ status: '', plan: '', data_region: '', primary_number: '', industry: '' });
-  const [industries, setIndustries] = useState([]);
-  const [knowledgeEntries, setKnowledgeEntries] = useState([]);
-  const [guardrailQuestionTests, setGuardrailQuestionTests] = useState([]);
-  const [provisioningJobs, setProvisioningJobs] = useState([]);
+  const [builds, setBuilds] = useState([]);
+  const [activeBuild, setActiveBuild] = useState(null);
+  const [readiness, setReadiness] = useState(null);
+  const [status, setStatus] = useState('Loading tenant...');
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [provisionBusy, setProvisionBusy] = useState(false);
   const [deprovisionBusy, setDeprovisionBusy] = useState(false);
 
-  const loadTenant = async (canUpdate = () => true) => {
-    const data = await fetch(`/api/v1/tenants?tenantKey=${encodeURIComponent(tenantKey)}`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .catch(() => null);
-    if (!canUpdate()) return;
-    setTenant(data?.tenant || null);
-    if (data?.tenant) {
-      setEditing({
-        status: data.tenant.status || 'active',
-        plan: data.tenant.plan || 'Growth',
-        data_region: data.tenant.data_region || 'US',
-        primary_number: data.tenant.primary_number || '',
-        industry: data.tenant.industry || ''
-      });
+  const loadTenant = async () => {
+    setStatus('Loading tenant...');
+    try {
+      const [tenantData, usersData, buildData, readinessData] = await Promise.all([
+        fetchJson(`/api/v1/tenants?tenantKey=${encodeURIComponent(tenantKey)}`),
+        fetchJson(`/api/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`),
+        fetchJson(`/api/v1/knowledge/builds?tenantKey=${encodeURIComponent(tenantKey)}`),
+        fetchJson(`/api/v1/knowledge/readiness?tenantKey=${encodeURIComponent(tenantKey)}`)
+      ]);
+      setTenant(tenantData?.tenant || null);
+      setUsers(Array.isArray(usersData?.users) ? usersData.users : []);
+      setBuilds(Array.isArray(buildData?.builds) ? buildData.builds : []);
+      setActiveBuild(buildData?.activeBuild || null);
+      setReadiness(readinessData?.readiness || null);
+      setStatus('Tenant loaded.');
+    } catch {
+      setStatus('Failed to load tenant.');
     }
-  };
-
-  const loadProvisioningJobs = async (canUpdate = () => true) => {
-    const data = await fetch(`/api/v1/admin/jobs?tenantKey=${encodeURIComponent(tenantKey)}`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .catch(() => null);
-    if (!canUpdate()) return;
-    setProvisioningJobs(data?.jobs || []);
-  };
-
-  const refreshVoiceNumberState = async () => {
-    await Promise.all([
-      loadTenant(),
-      loadProvisioningJobs()
-    ]);
   };
 
   useEffect(() => {
-    let mounted = true;
-    const canUpdate = () => mounted;
-    loadTenant(canUpdate);
-
-    fetch(`/api/v1/config/agent?tenantKey=${encodeURIComponent(tenantKey)}`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => {
-        if (!mounted) return;
-        setPrompt(data?.tenantPromptOverride || data?.systemPrompt || '');
-        setGreetingText(data?.greetingText || '');
-        setVoiceType(data?.voiceType || 'alloy');
-      })
-      .catch(() => {});
-
-    fetch(`/api/v1/config/agent?mode=preview&tenantKey=${encodeURIComponent(tenantKey)}`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => { if (mounted) setComposedPrompt(data?.composedPrompt || ''); })
-      .catch(() => {});
-
-    fetch(`/api/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => { if (mounted) setUsers(data?.users || []); })
-      .catch(() => {});
-
-    fetch('/api/v1/admin/industries')
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => { if (mounted) setIndustries(data?.industries || []); })
-      .catch(() => {});
-
-    fetch(`/api/v1/knowledge?tenantKey=${encodeURIComponent(tenantKey)}`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => {
-        if (!mounted) return;
-        setKnowledgeEntries(data?.knowledgeEntries || []);
-        setGuardrailQuestionTests(data?.guardrailQuestionTests || []);
-      })
-      .catch(() => {});
-
-    loadProvisioningJobs(canUpdate);
-
-    return () => { mounted = false; };
+    if (tenantKey) loadTenant();
   }, [tenantKey]);
 
-  const savePrompt = async () => {
-    setStatus('Saving...');
-    const resp = await fetch('/api/v1/config/agent', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantKey, systemPrompt: prompt, greetingText, voiceType })
-    });
-    if (!resp.ok) {
-      setStatus('Save failed.');
-      return;
-    }
-    setStatus('Saved.');
-    fetch(`/api/v1/config/agent?mode=preview&tenantKey=${encodeURIComponent(tenantKey)}`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => setComposedPrompt(data?.composedPrompt || ''))
-      .catch(() => {});
-  };
-
-  const saveTenantDetails = async () => {
-    setStatus('Saving tenant...');
-    const resp = await fetch('/api/v1/tenants', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tenantKey,
-        name: tenant?.name || tenantKey,
-        status: editing.status,
-        plan: editing.plan,
-        dataRegion: editing.data_region,
-        primaryNumber: editing.primary_number
-        ,industry: editing.industry || null
-      })
-    });
-    setStatus(resp.ok ? 'Tenant saved.' : 'Save failed.');
-  };
-
-  const toggleTenantStatus = async () => {
-    const nextStatus = (editing.status === 'active') ? 'paused' : 'active';
-    setEditing({ ...editing, status: nextStatus });
-    setStatus('Updating status...');
-    const resp = await fetch('/api/v1/tenants', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tenantKey,
-        name: tenant?.name || tenantKey,
-        status: nextStatus,
-        plan: editing.plan,
-        dataRegion: editing.data_region,
-        primaryNumber: editing.primary_number,
-        industry: editing.industry || null
-      })
-    });
-    setStatus(resp.ok ? `Tenant ${nextStatus}.` : 'Update failed.');
-  };
-
-  const importIndustryPrompt = async () => {
-    if (!editing.industry) {
-      setStatus('Set an industry first.');
-      return;
-    }
-    setStatus('Importing prompt...');
-    const resp = await fetch(`/api/v1/admin/industries?mode=importPrompt&industryKey=${encodeURIComponent(editing.industry)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantKey })
-    });
-    if (!resp.ok) {
-      setStatus('Import prompt failed.');
-      return;
-    }
-    setStatus('Prompt imported.');
-    fetch(`/api/v1/config/agent?tenantKey=${encodeURIComponent(tenantKey)}`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => setPrompt(data?.tenantPromptOverride || data?.systemPrompt || ''))
-      .catch(() => {});
-    fetch(`/api/v1/config/agent?mode=preview&tenantKey=${encodeURIComponent(tenantKey)}`)
-      .then((resp) => resp.ok ? resp.json() : null)
-      .then((data) => setComposedPrompt(data?.composedPrompt || ''))
-      .catch(() => {});
-  };
-
   const deleteTenant = async () => {
-    const label = tenant?.name || tenantKey;
-    const confirmed = window.confirm(`Delete tenant "${label}" and all associated data? This cannot be undone.`);
+    const confirmed = window.confirm(`Delete tenant "${tenant?.name || tenantKey}" and all associated data?`);
     if (!confirmed) return;
-
     setDeleteBusy(true);
     setStatus('Deleting tenant...');
     try {
-      const resp = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/delete`, {
+      const data = await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      const data = await resp.json().catch(() => null);
-      if (!resp.ok || !data?.ok) {
+      if (!data?.ok) {
         setStatus(data?.message || data?.error || 'Delete failed.');
-        setDeleteBusy(false);
         return;
       }
-      setStatus('Tenant deleted. Redirecting...');
-      setTimeout(() => {
-        router.push('/admin/tenants');
-      }, 500);
-    } catch (err) {
-      setStatus(err?.message || 'Delete failed.');
+      setStatus('Tenant deleted.');
+      router.push('/admin/tenants');
+    } catch {
+      setStatus('Delete failed.');
+    } finally {
       setDeleteBusy(false);
     }
   };
 
   const provisionVoiceNumber = async () => {
-    if (tenant?.telnyx_voice_number) {
-      setStatus('This tenant already has a voice number.');
-      return;
-    }
-
     setProvisionBusy(true);
     setStatus('Provisioning voice number...');
     try {
-      const resp = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/phone-number/provision`, {
+      const data = await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/phone-number/provision`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      const data = await resp.json().catch(() => null);
-      if (!resp.ok || !data?.ok) {
-        setStatus(data?.message || data?.error || 'Provisioning failed.');
-        return;
-      }
-      await refreshVoiceNumberState();
-      setStatus(`Provisioned ${data.phoneNumber}.`);
-    } catch (err) {
-      setStatus(err?.message || 'Provisioning failed.');
+      setStatus(data?.ok ? `Provisioned ${data.phoneNumber}.` : (data?.message || data?.error || 'Provisioning failed.'));
+      await loadTenant();
+    } catch {
+      setStatus('Provisioning failed.');
     } finally {
       setProvisionBusy(false);
     }
   };
 
   const deprovisionVoiceNumber = async () => {
-    const phoneNumber = tenant?.telnyx_voice_number;
-    if (!phoneNumber) {
-      setStatus('This tenant does not have a voice number to deprovision.');
-      return;
-    }
-
-    const confirmed = window.confirm(`Delete the associated phone number ${phoneNumber}? This will deprovision it from Telnyx.`);
+    if (!tenant?.telnyx_voice_number) return;
+    const confirmed = window.confirm(`Delete voice number ${tenant.telnyx_voice_number}?`);
     if (!confirmed) return;
-
     setDeprovisionBusy(true);
     setStatus('Deprovisioning voice number...');
     try {
-      const resp = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/phone-number/deprovision`, {
+      const data = await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/phone-number/deprovision`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      const data = await resp.json().catch(() => null);
-      if (!resp.ok || !data?.ok) {
-        setStatus(data?.message || data?.error || 'Deprovisioning failed.');
-        return;
-      }
-      await refreshVoiceNumberState();
-      setStatus(`Deprovisioned ${data.phoneNumber}.`);
-    } catch (err) {
-      setStatus(err?.message || 'Deprovisioning failed.');
+      setStatus(data?.ok ? 'Voice number deprovisioned.' : (data?.message || data?.error || 'Deprovision failed.'));
+      await loadTenant();
+    } catch {
+      setStatus('Deprovision failed.');
     } finally {
       setDeprovisionBusy(false);
     }
   };
 
-  const rows = users.map((u, idx) => ({
-    id: u.id || idx,
-    name: u.name,
-    email: u.email,
-    phone: u.phone_number || '',
-    role: u.role,
-    status: u.status,
-    smsOptIn: u.sms_opt_in_status || 'not_requested'
-  }));
-
-  const columns = [
-    { field: 'name', headerName: 'Name', flex: 1, minWidth: 140 },
-    { field: 'email', headerName: 'Email', flex: 1.2, minWidth: 200 },
-    { field: 'phone', headerName: 'Phone', flex: 0.8, minWidth: 140 },
-    { field: 'role', headerName: 'Role', flex: 0.6, minWidth: 120 },
-    {
-      field: 'smsOptIn',
-      headerName: 'SMS Opt-In',
-      flex: 0.6,
-      minWidth: 140,
-      renderCell: (params) => (
-        <span className={`badge ${params.value === 'opted_in' ? 'ok' : params.value === 'pending' ? 'warn' : 'bad'}`}>
-          {params.value}
-        </span>
-      )
-    },
-    {
-      field: 'status',
-      headerName: 'Status',
-      flex: 0.6,
-      minWidth: 120,
-      renderCell: (params) => (
-        <span className={`badge ${params.value === 'active' ? 'ok' : 'warn'}`}>{params.value}</span>
-      )
-    }
-  ];
-
   return (
     <section className="grid gap-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-wide text-slate-500">Manage Tenant</div>
           <h1 className="m-0 text-2xl font-semibold tracking-tight">{tenant?.name || tenantKey}</h1>
+          <div className="text-sm text-slate-500">{tenantKey}</div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="destructive" onClick={deleteTenant} disabled={deleteBusy}>
-            {deleteBusy ? 'Deleting...' : 'Delete Tenant'}
+        <div className="flex flex-wrap gap-2">
+          <Link className="btn" href="/admin/tenants">Back</Link>
+          <Button variant="outline" onClick={loadTenant}>Reload</Button>
+          <Button variant="outline" onClick={provisionVoiceNumber} disabled={provisionBusy}>
+            {provisionBusy ? 'Provisioning...' : 'Provision Voice Number'}
           </Button>
-          <Button variant="outline" onClick={toggleTenantStatus}>
-            {editing.status === 'active' ? 'Pause Tenant' : 'Resume Tenant'}
+          <Button variant="outline" onClick={deprovisionVoiceNumber} disabled={deprovisionBusy || !tenant?.telnyx_voice_number}>
+            {deprovisionBusy ? 'Deprovisioning...' : 'Deprovision Voice Number'}
           </Button>
-          <Button onClick={saveTenantDetails}>Save Tenant</Button>
+          <Button onClick={deleteTenant} disabled={deleteBusy}>{deleteBusy ? 'Deleting...' : 'Delete Tenant'}</Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <label>Tenant Details</label>
-          <div className="kv">
-            <div>Status</div>
-            <div>
-              <select value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value })}>
-                <option value="active">Active</option>
-                <option value="paused">Paused</option>
-              </select>
-            </div>
-            <div>Data Region</div>
-            <div>
-              <select value={editing.data_region} onChange={(e) => setEditing({ ...editing, data_region: e.target.value })}>
-                <option value="US">US</option>
-                <option value="EU">EU</option>
-              </select>
-            </div>
-            <div>Primary Number</div>
-            <div>
-              <input value={editing.primary_number} onChange={(e) => setEditing({ ...editing, primary_number: e.target.value })} />
-            </div>
-            <div>Plan</div>
-            <div>
-              <select value={editing.plan} onChange={(e) => setEditing({ ...editing, plan: e.target.value })}>
-                <option value="Trial">Trial</option>
-                <option value="Growth">Growth</option>
-                <option value="Enterprise">Enterprise</option>
-              </select>
-            </div>
-            <div>Industry</div>
-            <div>
-              <select value={editing.industry || ''} onChange={(e) => setEditing({ ...editing, industry: e.target.value })}>
-                <option value="">Unassigned</option>
-                {industries.map((item) => (
-                  <option key={item.key} value={item.key}>{item.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>Voice Status</div>
-            <div>{tenant?.telnyx_voice_status || 'unknown'}</div>
-            <div>Voice Number</div>
-            <div>{tenant?.telnyx_voice_number || 'Not assigned'}</div>
-            <div>Voice Order ID</div>
-            <div>{tenant?.telnyx_voice_order_id || 'None'}</div>
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm text-sm text-slate-600">{status}</div>
+
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_1fr]">
+        <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Tenant Snapshot</h2>
+          <div className="grid grid-cols-[180px_1fr] gap-2 text-sm">
+            <div>Status</div><div>{tenant?.status || '-'}</div>
+            <div>Plan</div><div>{tenant?.plan || '-'}</div>
+            <div>Region</div><div>{tenant?.data_region || '-'}</div>
+            <div>Primary Number</div><div>{tenant?.primary_number || '-'}</div>
+            <div>Voice Number</div><div>{tenant?.telnyx_voice_number || '-'}</div>
+            <div>Industry</div><div>{tenant?.industry || '-'}</div>
+            <div>Users</div><div>{users.length}</div>
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button onClick={provisionVoiceNumber} disabled={provisionBusy || deprovisionBusy || Boolean(tenant?.telnyx_voice_number)}>
-              {provisionBusy ? 'Provisioning...' : 'Provision Number'}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={deprovisionVoiceNumber}
-              disabled={deprovisionBusy || provisionBusy || !tenant?.telnyx_voice_number}
-            >
-              {deprovisionBusy ? 'Deprovisioning...' : 'Deprovision Number'}
-            </Button>
-            <span className="text-sm text-slate-500">One voice number per tenant.</span>
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <Button onClick={saveTenantDetails}>Save Tenant Details</Button>
-            <span className="text-sm text-slate-500">{status}</span>
-          </div>
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Readiness</h2>
+          <div className={`badge ${(readiness?.blockers || []).length ? 'warn' : 'ok'}`}>{readiness?.status || 'not_started'}</div>
+          <div className="mt-2 text-sm text-slate-600">Active build: {activeBuild?.active_build_id || 'none'}</div>
+          {(readiness?.blockers || []).length ? (
+            <ul className="mt-3 list-disc pl-5 text-sm text-slate-600">
+              {(readiness?.blockers || []).map((blocker) => <li key={blocker}>{blocker}</li>)}
+            </ul>
+          ) : (
+            <div className="mt-3 text-sm text-emerald-700">This tenant is ready on the new subsystem.</div>
+          )}
+        </section>
+      </div>
+
+      <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
+        <h2 className="mt-0 text-lg font-semibold">Knowledge Builds</h2>
+        <div className="grid gap-2">
+          {builds.length ? builds.map((build) => (
+            <div key={build.build_id} className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="font-semibold text-slate-900">{build.version || build.build_id}</div>
+                  <div className="text-xs text-slate-500">{build.build_id}</div>
+                </div>
+                <span className={`badge ${build.status === 'published' ? 'ok' : 'warn'}`}>{build.status}</span>
+              </div>
+              <div className="mt-2">Cards: {build.artifact_counts_json?.cards || 0} · Facts: {build.artifact_counts_json?.facts || 0}</div>
+            </div>
+          )) : (
+            <div className="text-sm text-slate-500">No builds yet.</div>
+          )}
         </div>
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm xl:row-span-2 flex flex-col">
-          <label>Agent Prompt &amp; Behavior</label>
-          <p className="text-sm text-slate-500">This is the tenant override prompt. Final prompt is composed at runtime.</p>
-          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} className="flex-1" style={{ minHeight: 520 }}></textarea>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button onClick={savePrompt}>Save Prompt</Button>
-            <Button variant="outline" onClick={importIndustryPrompt}>Import Industry Prompt</Button>
-            <span className="text-sm text-slate-500">{status}</span>
-          </div>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <label>Agent Greeting</label>
-          <textarea
-            value={greetingText}
-            onChange={(e) => setGreetingText(e.target.value)}
-            placeholder="Hi, thanks for calling..."
-            style={{ minHeight: 110 }}
-          />
-          <label style={{ marginTop: 10 }}>Voice Type</label>
-          <select value={voiceType} onChange={(e) => setVoiceType(e.target.value)}>
-            {voiceOptions.map((voice) => (
-              <option key={voice} value={voice}>{voice}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-        <label>Final Prompt Preview</label>
-        <textarea value={composedPrompt} readOnly style={{ minHeight: 660 }}></textarea>
-      </div>
-
-      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-        <label>Client Users</label>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          autoHeight
-          disableRowSelectionOnClick
-          pageSizeOptions={[10, 25, 50]}
-          initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
-          localeText={{ noRowsLabel: 'No users yet.' }}
-          sx={{
-            border: 'none',
-            '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
-            '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
-            '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
-          }}
-        />
-      </div>
-
-      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-        <label>Provisioning Log</label>
-        <DataGrid
-          rows={provisioningJobs.map((job, idx) => ({
-            id: job.id ?? `${job.stage || 'stage'}-${job.updated_at || idx}`,
-            stage: job.stage,
-            status: job.status,
-            detail: job.status_detail || '',
-            provider: job.provider || '',
-            providerReference: job.provider_reference || '',
-            errorCode: job.error_code || '',
-            errorMessage: job.error_message || '',
-            attempted: job.attempted_at ? new Date(job.attempted_at).toLocaleString() : '',
-            completed: job.completed_at ? new Date(job.completed_at).toLocaleString() : '',
-            updated: job.updated_at ? new Date(job.updated_at).toLocaleString() : ''
-          }))}
-          columns={[
-            { field: 'stage', headerName: 'Stage', flex: 0.7, minWidth: 140 },
-            {
-              field: 'status',
-              headerName: 'Status',
-              flex: 0.5,
-              minWidth: 120,
-              renderCell: (params) => (
-                <span className={`badge ${params.value === 'done' ? 'ok' : params.value === 'failed' ? 'bad' : 'warn'}`}>{params.value}</span>
-              )
-            },
-            { field: 'detail', headerName: 'Detail', flex: 1.4, minWidth: 220 },
-            { field: 'errorCode', headerName: 'Error Code', flex: 0.9, minWidth: 160 },
-            { field: 'errorMessage', headerName: 'Error Message', flex: 1.6, minWidth: 260 },
-            { field: 'provider', headerName: 'Provider', flex: 0.6, minWidth: 110 },
-            { field: 'providerReference', headerName: 'Provider Ref', flex: 0.9, minWidth: 160 },
-            { field: 'attempted', headerName: 'Attempted', flex: 0.9, minWidth: 180 },
-            { field: 'completed', headerName: 'Completed', flex: 0.9, minWidth: 180 },
-            { field: 'updated', headerName: 'Updated', flex: 0.9, minWidth: 180 }
-          ]}
-          autoHeight
-          disableRowSelectionOnClick
-          pageSizeOptions={[10, 25, 50]}
-          initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
-          localeText={{ noRowsLabel: 'No provisioning log yet.' }}
-          sx={{
-            border: 'none',
-            '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
-            '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
-            '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
-          }}
-        />
-      </div>
-
-      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-        <label>Current Knowledge</label>
-        <DataGrid
-          rows={knowledgeEntries.map((entry, index) => ({
-            id: entry.id || `knowledge-${index}`,
-            title: entry.title,
-            sectionType: entry.sectionType,
-            contentText: entry.contentText,
-            sourceType: entry.sourceType || '',
-            sourceUrl: entry.sourceUrl || ''
-          }))}
-          columns={[
-            { field: 'title', headerName: 'Section', flex: 0.8, minWidth: 180 },
-            { field: 'sectionType', headerName: 'Type', flex: 0.6, minWidth: 160 },
-            { field: 'contentText', headerName: 'Content', flex: 1.8, minWidth: 320 },
-            { field: 'sourceType', headerName: 'Source', flex: 0.6, minWidth: 140 }
-          ]}
-          autoHeight
-          disableRowSelectionOnClick
-          pageSizeOptions={[10, 25, 50]}
-          initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
-          localeText={{ noRowsLabel: 'No knowledge yet.' }}
-          sx={{
-            border: 'none',
-            '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
-            '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
-            '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
-          }}
-        />
-      </div>
-
-      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-        <label>Guardrail Questions</label>
-        <DataGrid
-          rows={guardrailQuestionTests.map((item, index) => ({
-            id: item.id || `guardrail-${index}`,
-            questionText: item.questionText,
-            answer: item.answer,
-            riskLevel: item.riskLevel,
-            reviewStatus: item.reviewStatus
-          }))}
-          columns={[
-            { field: 'questionText', headerName: 'Question', flex: 1.1, minWidth: 240 },
-            { field: 'answer', headerName: 'Approved Answer', flex: 1.8, minWidth: 340 },
-            { field: 'riskLevel', headerName: 'Risk', flex: 0.5, minWidth: 110 },
-            {
-              field: 'reviewStatus',
-              headerName: 'Status',
-              flex: 0.6,
-              minWidth: 130,
-              renderCell: (params) => (
-                <span className={`badge ${params.value === 'approved' ? 'ok' : 'warn'}`}>{params.value || 'pending'}</span>
-              )
-            }
-          ]}
-          autoHeight
-          disableRowSelectionOnClick
-          pageSizeOptions={[10, 25, 50]}
-          initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
-          localeText={{ noRowsLabel: 'No guardrail questions yet.' }}
-          sx={{
-            border: 'none',
-            '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
-            '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
-            '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
-          }}
-        />
-      </div>
+      </section>
     </section>
   );
 }

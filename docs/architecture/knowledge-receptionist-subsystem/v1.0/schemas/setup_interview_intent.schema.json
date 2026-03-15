@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EveryCall Business Setup Interview Intent",
+  "description": "Tenant-specific onboarding interview playbook for owner/operator setup calls.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "setup_interview_intent_id",
+    "tenant_id",
+    "version",
+    "status",
+    "primary_goal",
+    "required_capture_categories",
+    "confirmation_policy",
+    "completion_criteria",
+    "interview_stage_playbook",
+    "pause_resume_policy",
+    "review_and_confirm_policy"
+  ],
+  "properties": {
+    "setup_interview_intent_id": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "active",
+        "archived"
+      ]
+    },
+    "primary_goal": {
+      "type": "string"
+    },
+    "required_capture_categories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confirmation_policy": {
+      "type": "string"
+    },
+    "completion_criteria": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "pause_resume_policy": {
+      "type": "string"
+    },
+    "review_and_confirm_policy": {
+      "type": "string"
+    },
+    "interview_stage_playbook": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "stage_id",
+          "name",
+          "purpose",
+          "required_inputs",
+          "recommended_actions",
+          "exit_conditions",
+          "success_criteria",
+          "mandatory_or_optional"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "stage_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "required_inputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recommended_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exit_conditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "success_criteria": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mandatory_or_optional": {
+            "type": "string",
+            "enum": [
+              "mandatory",
+              "optional"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

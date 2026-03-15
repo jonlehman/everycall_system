@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EveryCall Call Outcome Schema",
+  "description": "Structured outcome model for calls.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "call_outcome_schema_id",
+    "tenant_id",
+    "domain_scope",
+    "subdomain_scope",
+    "outcome_types",
+    "required_fields_by_outcome",
+    "optional_fields_by_outcome",
+    "summary_template",
+    "validation_rules"
+  ],
+  "properties": {
+    "call_outcome_schema_id": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "type": "string"
+    },
+    "domain_scope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "subdomain_scope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "outcome_types": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_fields_by_outcome": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "optional_fields_by_outcome": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "summary_template": {
+      "type": "string"
+    },
+    "validation_rules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

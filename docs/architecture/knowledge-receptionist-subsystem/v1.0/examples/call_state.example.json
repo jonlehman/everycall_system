@@ -1,0 +1,27 @@
+{
+  "call_id": "call_001",
+  "tenant_id": "tenant_123",
+  "active_domain_id": "service_business",
+  "active_subdomain_id": "service_business.hvac",
+  "current_stage_id": "advance_next_step",
+  "completed_stage_ids": [
+    "opening",
+    "discover_need",
+    "answer_or_route",
+    "reassure_briefly"
+  ],
+  "skipped_stage_ids": [],
+  "active_location_id": "city_bellevue",
+  "active_person_id": null,
+  "active_offering_id": "ac_repair",
+  "last_turn_intent": "service_capability",
+  "last_runtime_bundle_id": "bundle_012",
+  "pending_clarifier": null,
+  "captured_fields": {
+    "caller_name": "Jane",
+    "issue_summary": "AC not cooling"
+  },
+  "outcome_in_progress": "estimate_request",
+  "uncertainty_mode": "normal",
+  "last_updated_at": "2026-03-14T03:20:01Z"
+}

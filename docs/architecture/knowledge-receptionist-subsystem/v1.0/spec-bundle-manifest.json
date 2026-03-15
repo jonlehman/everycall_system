@@ -1,0 +1,32 @@
+{
+  "name": "EveryCall Knowledge & Realtime Receptionist Subsystem Spec Bundle",
+  "version": "1.0",
+  "status": "frozen-handoff-baseline",
+  "files": [
+    "00-spec-index.md",
+    "01-product-purpose-and-scope.md",
+    "02-core-concepts-and-glossary.md",
+    "03-domain-subdomain-model.md",
+    "04-business-call-intent-and-stage-playbooks.md",
+    "05-knowledge-artifacts-and-schemas.md",
+    "06-ingestion-and-compilation-pipeline.md",
+    "07-source-precedence-conflicts-and-content-classification.md",
+    "08-runtime-retrieval-gateway-and-realtime-contract.md",
+    "09-prompting-and-instruction-generation.md",
+    "10-overrides-guardrails-and-business-configuration.md",
+    "11-go-live-rebuild-versioning-and-admin-workflows.md",
+    "12-testing-evals-and-acceptance.md",
+    "13-current-codebase-integration-notes.md",
+    "14-requirements-traceability-matrix.md",
+    "15-decision-ledger.md",
+    "16-open-questions-and-deferred-items.md",
+    "17-end-to-end-walkthroughs.md",
+    "18-spec-completeness-checklist.md"
+  ],
+  "counts": {
+    "documents": 19,
+    "requirements": 158,
+    "schema_files": 13,
+    "example_files": 13
+  }
+}

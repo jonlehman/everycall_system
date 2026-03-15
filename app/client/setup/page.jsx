@@ -1,189 +1,146 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { buttonVariants } from '../../../components/ui/button';
-import { cn } from '../../../lib/utils';
+import { Button } from '../../../components/ui/button';
 import ClientPage from '../_components/ClientPage';
 
-function TaskCard({ title, description, href, done, cta }) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="m-0 text-lg font-semibold">{title}</h2>
-        <span className={`badge ${done ? 'ok' : 'warn'}`}>{done ? 'Done' : 'Needs Review'}</span>
-      </div>
-      <p className="mt-0 text-sm text-slate-500">{description}</p>
-      <Link className={cn(buttonVariants({ variant: 'default' }))} href={href}>{cta}</Link>
-    </div>
-  );
+const CHECKLIST_FIELDS = [
+  ['hours_confirmed', 'Business hours confirmed'],
+  ['address_confirmed', 'Address confirmed'],
+  ['phone_confirmed', 'Phone number confirmed'],
+  ['after_hours_configured', 'After-hours strategy configured'],
+  ['service_area_confirmed', 'Service area confirmed'],
+  ['dangerous_question_reviewed', 'Dangerous question guardrails reviewed'],
+  ['hard_overrides_reviewed', 'Hard overrides reviewed'],
+  ['temporary_notices_checked', 'Temporary notices checked'],
+  ['approved_answer_snippets_reviewed', 'Approved answer snippets reviewed'],
+  ['sample_calls_passed', 'Sample calls passed'],
+  ['handoff_path_tested', 'Handoff path tested'],
+  ['outcome_capture_tested', 'Outcome capture tested'],
+  ['pack_eval_suites_passed', 'Pack eval suites passed']
+];
+
+function fetchJson(url, options) {
+  return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
 }
 
 export default function SetupOverviewPage() {
   const [loading, setLoading] = useState(true);
-  const [savingForwarding, setSavingForwarding] = useState(false);
-  const [status, setStatus] = useState({ message: 'Loading setup checklist...', tone: 'warn' });
-  const [summary, setSummary] = useState({
-    knowledgeEntryCount: 0,
-    teamCount: 0,
-    routingReady: false,
-    settingsReady: false,
-    forwardingReady: false,
-    unresolvedBlankGuardrailCount: 0,
-    assistantReady: false
-  });
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState({ message: 'Loading readiness checklist...', tone: 'warn' });
+  const [readiness, setReadiness] = useState(null);
+  const [checklist, setChecklist] = useState({});
 
-  const loadChecklist = async () => {
+  const loadReadiness = async () => {
     setLoading(true);
-    setStatus({ message: 'Loading setup checklist...', tone: 'warn' });
+    setStatus({ message: 'Loading readiness checklist...', tone: 'warn' });
     try {
-      const [knowledgeResp, teamResp, routingResp, settingsResp, assistantResp] = await Promise.all([
-        fetch('/api/v1/knowledge'),
-        fetch('/api/v1/tenant/users'),
-        fetch('/api/v1/routing'),
-        fetch('/api/v1/settings'),
-        fetch('/api/v1/assistant/status')
-      ]);
-
-      const [knowledgeData, teamData, routingData, settingsData, assistantData] = await Promise.all([
-        knowledgeResp.ok ? knowledgeResp.json() : null,
-        teamResp.ok ? teamResp.json() : null,
-        routingResp.ok ? routingResp.json() : null,
-        settingsResp.ok ? settingsResp.json() : null,
-        assistantResp.ok ? assistantResp.json() : null
-      ]);
-
-      const knowledgeEntryCount = Array.isArray(knowledgeData?.knowledgeEntries)
-        ? knowledgeData.knowledgeEntries.filter((entry) => Boolean(String(entry?.contentText || '').trim())).length
-        : 0;
-      const teamCount = Array.isArray(teamData?.users) ? teamData.users.length : 0;
-      const routingReady = Boolean(
-        routingData?.routing?.primary_queue &&
-        routingData?.routing?.emergency_behavior &&
-        routingData?.routing?.after_hours_behavior &&
-        String(routingData?.routing?.business_hours || '').trim()
-      );
-      const settingsReady = Boolean(
-        String(settingsData?.settings?.timezone || '').trim() &&
-        String(settingsData?.tenant?.name || '').trim()
-      );
-
-      setSummary({
-        knowledgeEntryCount,
-        teamCount,
-        routingReady,
-        settingsReady,
-        forwardingReady: Boolean(assistantData?.assistant?.checks?.forwardingReady),
-        unresolvedBlankGuardrailCount: Number(assistantData?.assistant?.unresolvedBlankGuardrailCount || 0),
-        assistantReady: Boolean(assistantData?.assistant?.ready)
-      });
-      setStatus({ message: 'Checklist loaded. Review any items marked "Needs Review".', tone: 'ok' });
+      const data = await fetchJson('/api/v1/knowledge/readiness');
+      if (!data?.ok) {
+        setStatus({ message: data?.message || 'Could not load readiness.', tone: 'bad' });
+        return;
+      }
+      setReadiness(data.readiness || null);
+      setChecklist(data.readiness?.checklist || {});
+      setStatus({ message: 'Readiness checklist loaded.', tone: 'ok' });
     } catch {
-      setStatus({ message: 'Could not load setup checklist. Retry from this page.', tone: 'bad' });
+      setStatus({ message: 'Could not load readiness.', tone: 'bad' });
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadChecklist();
+    loadReadiness();
   }, []);
 
-  const updateForwardingStatus = async (nextStatus) => {
-    setSavingForwarding(true);
-    setStatus({ message: 'Saving forwarding status...', tone: 'warn' });
+  const saveChecklist = async (requestedGoLive = undefined) => {
+    setSaving(true);
+    setStatus({ message: 'Saving readiness checklist...', tone: 'warn' });
     try {
-      const resp = await fetch('/api/v1/tenants/forwarding-status', {
+      const payload = {
+        checklist,
+        ...(requestedGoLive === undefined ? {} : { requestedGoLive })
+      };
+      const data = await fetchJson('/api/v1/knowledge/readiness', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: nextStatus })
+        body: JSON.stringify(payload)
       });
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => null);
-        setStatus({ message: data?.message || 'Could not save forwarding status.', tone: 'bad' });
+      if (!data?.ok) {
+        setStatus({ message: data?.message || 'Could not save readiness.', tone: 'bad' });
         return;
       }
-      await loadChecklist();
-      setStatus({ message: 'Forwarding status updated.', tone: 'ok' });
+      setReadiness(data.readiness || null);
+      setChecklist(data.readiness?.checklist || {});
+      setStatus({ message: 'Readiness saved.', tone: 'ok' });
     } catch {
-      setStatus({ message: 'Could not save forwarding status.', tone: 'bad' });
+      setStatus({ message: 'Could not save readiness.', tone: 'bad' });
     } finally {
-      setSavingForwarding(false);
+      setSaving(false);
     }
   };
 
-  const completedCount = useMemo(() => {
-    let done = 0;
-    if (summary.knowledgeEntryCount > 0) done += 1;
-    if (summary.teamCount > 0) done += 1;
-    if (summary.routingReady) done += 1;
-    if (summary.settingsReady) done += 1;
-    if (summary.forwardingReady) done += 1;
-    if (summary.unresolvedBlankGuardrailCount === 0) done += 1;
-    return done;
-  }, [summary]);
+  const completionCount = useMemo(
+    () => CHECKLIST_FIELDS.filter(([key]) => Boolean(checklist?.[key])).length,
+    [checklist]
+  );
+
+  const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : [];
 
   return (
     <ClientPage
       title="Setup Checklist"
-      subtitle="Use this page to complete core setup in the right order."
+      subtitle="Track the spec-native go-live inputs for the knowledge receptionist subsystem."
       status={status}
-      primaryAction={{ label: 'Reload Checklist', brand: true, onClick: loadChecklist, disabled: loading }}
+      primaryAction={{ label: loading ? 'Loading...' : 'Reload', brand: true, onClick: loadReadiness, disabled: loading }}
     >
       <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500">Setup Progress</div>
-            <div className="text-2xl font-bold">{completedCount}/6 complete</div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">Readiness Status</div>
+            <div className="text-2xl font-bold text-slate-900">{readiness?.status || 'not_started'}</div>
           </div>
-          <div className="text-sm text-slate-500">Complete forwarding, knowledge review, team, routing, and settings to unlock assistant enablement.</div>
+          <div className="text-sm text-slate-600">{completionCount}/{CHECKLIST_FIELDS.length} checklist items complete</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <TaskCard
-          title="Knowledge"
-          description={`Current knowledge sections: ${summary.knowledgeEntryCount}. Resolve ${summary.unresolvedBlankGuardrailCount} unanswered Guardrail Questions.`}
-          href="/client/knowledge"
-          done={summary.knowledgeEntryCount > 0 && summary.unresolvedBlankGuardrailCount === 0}
-          cta="Open Knowledge"
-        />
-        <TaskCard
-          title="Team Users"
-          description={`Current team users: ${summary.teamCount}. Invite teammates and configure access.`}
-          href="/client/team"
-          done={summary.teamCount > 0}
-          cta="Open Team Users"
-        />
-        <TaskCard
-          title="Call Routing"
-          description="Confirm emergency and after-hours behavior so callers always get a clear next step."
-          href="/client/routing"
-          done={summary.routingReady}
-          cta="Open Routing"
-        />
-        <TaskCard
-          title="Account Settings"
-          description="Review tenant profile and operational defaults like timezone and notes."
-          href="/client/settings"
-          done={summary.settingsReady}
-          cta="Open Settings"
-        />
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.1fr_0.9fr]">
+        <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Go-Live Inputs</h2>
+          <div className="grid gap-2">
+            {CHECKLIST_FIELDS.map(([key, label]) => (
+              <label key={key} className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={Boolean(checklist?.[key])}
+                  onChange={(event) => setChecklist((current) => ({ ...current, [key]: event.target.checked }))}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button onClick={() => saveChecklist()} disabled={saving}>{saving ? 'Saving...' : 'Save Checklist'}</Button>
+            <Button variant="outline" onClick={() => saveChecklist(true)} disabled={saving}>Request Go Live</Button>
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <h2 className="mt-0 text-lg font-semibold">Current Blockers</h2>
+          {blockers.length ? (
+            <ul className="list-disc pl-5 text-sm text-slate-600">
+              {blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+            </ul>
+          ) : (
+            <div className="text-sm text-emerald-700">No blockers. This tenant is ready for go live.</div>
+          )}
+          <div className="mt-4 text-xs uppercase tracking-wide text-slate-500">Review Mode</div>
+          <div className="mt-1 text-sm text-slate-700">{readiness?.review_mode || 'immediate_save'}</div>
+          <div className="mt-4 text-xs uppercase tracking-wide text-slate-500">Requested Go Live</div>
+          <div className="mt-1 text-sm text-slate-700">{readiness?.requested_go_live ? 'Yes' : 'No'}</div>
+        </section>
       </div>
-      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-        <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">Forwarding Activation</div>
-        <div className="mb-2 text-sm text-slate-600">Set forwarding status before enabling assistant call handling.</div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`badge ${summary.forwardingReady ? 'ok' : 'warn'}`}>{summary.forwardingReady ? 'Ready' : 'Needs Review'}</span>
-          <button className="btn" type="button" onClick={() => updateForwardingStatus('acknowledged')} disabled={savingForwarding}>I Will Configure Later</button>
-          <button className="btn brand" type="button" onClick={() => updateForwardingStatus('configured')} disabled={savingForwarding}>I Configured Forwarding</button>
-        </div>
-      </div>
-      {!summary.assistantReady ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          Assistant remains disabled until all setup items are complete.
-        </div>
-      ) : null}
     </ClientPage>
   );
 }

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EveryCall Source Ref",
+  "description": "Captured source evidence reference from any approved source channel.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_ref_id",
+    "tenant_id",
+    "build_id",
+    "source_channel",
+    "source_kind",
+    "source_authority",
+    "source_locator",
+    "page_type",
+    "title",
+    "heading_path",
+    "text_span",
+    "segment_index",
+    "content_hash",
+    "source_session_id",
+    "captured_at"
+  ],
+  "properties": {
+    "source_ref_id": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "type": "string"
+    },
+    "build_id": {
+      "type": "string"
+    },
+    "source_channel": {
+      "type": "string",
+      "enum": [
+        "website_page",
+        "website_file",
+        "owner_interview",
+        "uploaded_document"
+      ]
+    },
+    "source_kind": {
+      "type": "string",
+      "enum": [
+        "html",
+        "pdf",
+        "doc",
+        "text",
+        "transcript",
+        "note"
+      ]
+    },
+    "source_authority": {
+      "type": "string",
+      "enum": [
+        "public_website",
+        "business_uploaded",
+        "interview_confirmed"
+      ]
+    },
+    "source_locator": {
+      "type": "string"
+    },
+    "url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "page_type": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "heading_path": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "text_span": {
+      "type": "string"
+    },
+    "segment_index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "content_hash": {
+      "type": "string"
+    },
+    "source_session_id": {
+      "type": "string"
+    },
+    "captured_at": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "source_ref_id": "src_77",
+  "tenant_id": "tenant_123",
+  "build_id": "build_2026_03_14_02",
+  "source_channel": "owner_interview",
+  "source_kind": "transcript",
+  "source_authority": "interview_confirmed",
+  "source_locator": "interview_session:setup_2026_03_14_01#turn_18",
+  "url": null,
+  "page_type": "owner_interview_transcript",
+  "title": "Owner Setup Interview",
+  "heading_path": [
+    "Policies and Processes",
+    "After-hours handling"
+  ],
+  "text_span": "After hours we still answer calls, but emergencies should be routed to the on-call tech and non-urgent requests should become callbacks for the next morning.",
+  "segment_index": 18,
+  "content_hash": "sha256-def456",
+  "source_session_id": "setup_2026_03_14_01",
+  "captured_at": "2026-03-14T04:20:00Z"
+}

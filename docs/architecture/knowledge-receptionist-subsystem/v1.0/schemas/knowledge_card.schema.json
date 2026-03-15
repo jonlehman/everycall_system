@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EveryCall Knowledge Card",
+  "description": "Primary answerable conversational unit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "knowledge_card_id",
+    "tenant_id",
+    "build_id",
+    "domain_id",
+    "card_type",
+    "object_type",
+    "canonical_name",
+    "topic_path",
+    "intent_tags",
+    "entity_tags",
+    "aliases",
+    "caller_phrases",
+    "scope",
+    "speakable_summary",
+    "answer_facts",
+    "related_card_ids",
+    "source_ref_ids",
+    "content_class",
+    "allowed_uses",
+    "risk_level",
+    "quality_score"
+  ],
+  "properties": {
+    "knowledge_card_id": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "type": "string"
+    },
+    "build_id": {
+      "type": "string"
+    },
+    "domain_id": {
+      "type": "string"
+    },
+    "subdomain_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "card_type": {
+      "type": "string"
+    },
+    "object_type": {
+      "type": "string"
+    },
+    "canonical_name": {
+      "type": "string"
+    },
+    "topic_path": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "intent_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "entity_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "caller_phrases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "speakable_summary": {
+      "type": "string"
+    },
+    "answer_facts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "related_card_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "source_ref_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "content_class": {
+      "type": "string",
+      "enum": [
+        "operational_core",
+        "policy_boundary",
+        "descriptive",
+        "marketing",
+        "educational"
+      ]
+    },
+    "allowed_uses": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": [
+        "low",
+        "normal",
+        "elevated",
+        "high"
+      ]
+    },
+    "quality_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}

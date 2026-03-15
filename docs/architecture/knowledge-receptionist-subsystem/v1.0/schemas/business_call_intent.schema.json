@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EveryCall Business Call Intent",
+  "description": "Tenant-level call mission and stage playbook.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "business_call_intent_id",
+    "tenant_id",
+    "version",
+    "status",
+    "primary_goal",
+    "secondary_goals",
+    "preferred_outcomes",
+    "disallowed_outcomes",
+    "tone_rules",
+    "sales_style",
+    "disclosure_strategy",
+    "handoff_strategy",
+    "after_hours_strategy",
+    "conversation_stage_playbook"
+  ],
+  "properties": {
+    "business_call_intent_id": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "active",
+        "archived"
+      ]
+    },
+    "primary_goal": {
+      "type": "string"
+    },
+    "secondary_goals": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "preferred_outcomes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "disallowed_outcomes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tone_rules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sales_style": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "proactive_next_step",
+        "hard_sell"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string"
+        },
+        "proactive_next_step": {
+          "type": "boolean"
+        },
+        "hard_sell": {
+          "type": "boolean"
+        }
+      }
+    },
+    "disclosure_strategy": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "handoff_strategy": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "after_hours_strategy": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "conversation_stage_playbook": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stage_id",
+          "name",
+          "purpose",
+          "required_inputs",
+          "recommended_actions",
+          "disallowed_actions",
+          "exit_conditions",
+          "success_criteria",
+          "mandatory_or_optional",
+          "max_questions",
+          "next_possible_stages"
+        ],
+        "properties": {
+          "stage_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "when_to_enter": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required_inputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recommended_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "disallowed_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exit_conditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "success_criteria": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mandatory_or_optional": {
+            "type": "string",
+            "enum": [
+              "mandatory",
+              "optional",
+              "conditional"
+            ]
+          },
+          "max_questions": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "next_possible_stages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}
