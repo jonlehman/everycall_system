@@ -27,6 +27,12 @@ const RETRIEVAL_WARM_HARD_MS = 250;
 
 const buildAssetCache = new Map();
 
+function envFlagEnabled(name, defaultValue = false) {
+  const raw = String(process.env[name] ?? "").trim().toLowerCase();
+  if (!raw) return defaultValue;
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
 async function withTransaction(db, work) {
   const canBorrowClient = typeof db?.connect === "function" && typeof db?.release !== "function";
   const client = canBorrowClient ? await db.connect() : db;
@@ -791,6 +797,12 @@ async function nextBuildVersion(db, tenantKey) {
 }
 
 async function assertBuildRateLimit(db, tenantKey) {
+  // Dev/test deployments can bypass the once-per-24-hour build gate by setting
+  // KNOWLEDGE_RECEPTIONIST_DISABLE_BUILD_RATE_LIMIT=true in the environment.
+  if (envFlagEnabled("KNOWLEDGE_RECEPTIONIST_DISABLE_BUILD_RATE_LIMIT")) {
+    return;
+  }
+
   const res = await db.query(
     `SELECT created_at
      FROM knowledge_builds
