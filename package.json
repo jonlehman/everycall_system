@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "pnpm --filter @everycall/contracts build && next build",
+    "build": "pnpm exec tsc -p packages/contracts/tsconfig.json && next build",
     "start": "next start",
     "db:migrate": "node scripts/migrate.mjs",
     "validate:knowledge-receptionist-cutover": "node scripts/validate-knowledge-receptionist-cutover.mjs",
@@ -37,8 +37,10 @@
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
+    "@types/node": "^22.10.2",
     "autoprefixer": "^10.4.27",
     "postcss": "^8.5.8",
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3"
   }
 }

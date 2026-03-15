@@ -57,6 +57,9 @@ importers:
         specifier: ^3.5.0
         version: 3.5.0
     devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.11
       autoprefixer:
         specifier: ^10.4.27
         version: 10.4.27(postcss@8.5.8)
@@ -66,6 +69,9 @@ importers:
       tailwindcss:
         specifier: ^3.4.17
         version: 3.4.17
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
 
   apps/call-gateway:
     dependencies:
