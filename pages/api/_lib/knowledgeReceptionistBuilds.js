@@ -47,7 +47,13 @@ async function withTransaction(db, work) {
 }
 
 function normalizeText(value) {
-  return String(value || "").trim();
+  return sanitizeText(value).trim();
+}
+
+function sanitizeText(value) {
+  return String(value || "")
+    .replace(/\u0000/g, " ")
+    .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ");
 }
 
 function slugify(input) {
@@ -102,7 +108,7 @@ function decodeHtmlEntities(text) {
 }
 
 function cleanLineText(value) {
-  return decodeHtmlEntities(String(value || ""))
+  return decodeHtmlEntities(sanitizeText(value))
     .replace(/\s+/g, " ")
     .replace(/\s*([|>])+?\s*/g, " ")
     .trim();
