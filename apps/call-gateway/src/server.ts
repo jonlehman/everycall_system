@@ -1528,7 +1528,6 @@ wss.on("connection", (ws) => {
       if (!callControlId) return;
       const session = streamSessions.get(callControlId);
       if (!session?.openAiWs) return;
-      await interruptAssistantForCallerSpeech(session, "caller_speech_detected_media");
       const pcm = decodeInboundAudioPayload(encoded);
       sendOpenAiEvent(session.openAiWs, {
         type: "input_audio_buffer.append",
