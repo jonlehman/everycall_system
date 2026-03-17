@@ -480,6 +480,17 @@ function createAudioTextResponseEvent(response: Record<string, unknown> = {}) {
   };
 }
 
+function createFunctionCallOutputEvent(callId: string, output: unknown) {
+  return {
+    type: "conversation.item.create",
+    item: {
+      type: "function_call_output",
+      call_id: callId,
+      output: JSON.stringify(output)
+    }
+  };
+}
+
 function requestAssistantResponse(
   session: StreamSession,
   reason: string,
@@ -856,6 +867,22 @@ function noteToolResponseRequested(session: StreamSession, tool: string, callId:
   };
 }
 
+function logRealtimeToolPayloads(params: {
+  callSid: string;
+  tool: string;
+  callId: string;
+  toolResultEvent: Record<string, unknown>;
+  responseEvent?: Record<string, unknown>;
+}) {
+  logInfo("openai_realtime_tool_response_requested", {
+    callSid: params.callSid,
+    tool: params.tool,
+    callId: params.callId,
+    toolResultPayload: JSON.stringify(params.toolResultEvent),
+    responseCreatePayload: params.responseEvent ? JSON.stringify(params.responseEvent) : undefined
+  });
+}
+
 async function executeToolCall(session: StreamSession, name: string, callId: string, argsText: string) {
   let args: Record<string, unknown> = {};
   try {
@@ -957,18 +984,15 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       },
       { status: "accepted", errors: [] }
     );
-    sendOpenAiEvent(session.openAiWs, {
-      type: "conversation.item.create",
-      item: {
-        type: "function_call_output",
-        call_id: callId,
-        output: JSON.stringify(toolOutput)
-      }
-    });
-    logInfo("openai_realtime_tool_response_requested", {
+    const toolResultEvent = createFunctionCallOutputEvent(callId, toolOutput);
+    const responseEvent = createAudioTextResponseEvent({});
+    sendOpenAiEvent(session.openAiWs, toolResultEvent);
+    logRealtimeToolPayloads({
       callSid: session.callSid,
       tool: name,
-      callId
+      callId,
+      toolResultEvent,
+      responseEvent
     });
     noteToolResponseRequested(session, name, callId);
     requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
@@ -989,18 +1013,15 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       });
     }
     await forwardToolResult(session.callSid, session.tenantKey, name, args, validation);
-    sendOpenAiEvent(session.openAiWs, {
-      type: "conversation.item.create",
-      item: {
-        type: "function_call_output",
-        call_id: callId,
-        output: JSON.stringify(validation)
-      }
-    });
-    logInfo("openai_realtime_tool_response_requested", {
+    const toolResultEvent = createFunctionCallOutputEvent(callId, validation);
+    const responseEvent = createAudioTextResponseEvent({});
+    sendOpenAiEvent(session.openAiWs, toolResultEvent);
+    logRealtimeToolPayloads({
       callSid: session.callSid,
       tool: name,
-      callId
+      callId,
+      toolResultEvent,
+      responseEvent
     });
     noteToolResponseRequested(session, name, callId);
     requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
@@ -1016,13 +1037,13 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       reason
     });
     await forwardToolResult(session.callSid, session.tenantKey, name, { reason }, { status: "accepted", errors: [] });
-    sendOpenAiEvent(session.openAiWs, {
-      type: "conversation.item.create",
-      item: {
-        type: "function_call_output",
-        call_id: callId,
-        output: JSON.stringify({ status: "accepted", reason })
-      }
+    const toolResultEvent = createFunctionCallOutputEvent(callId, { status: "accepted", reason });
+    sendOpenAiEvent(session.openAiWs, toolResultEvent);
+    logRealtimeToolPayloads({
+      callSid: session.callSid,
+      tool: name,
+      callId,
+      toolResultEvent
     });
 
     const queuedFrames = session.outputQueue?.length || 0;
@@ -1037,18 +1058,15 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
   }
 
   await forwardToolResult(session.callSid, session.tenantKey, name, args, { status: "accepted", errors: [] });
-  sendOpenAiEvent(session.openAiWs, {
-    type: "conversation.item.create",
-    item: {
-      type: "function_call_output",
-      call_id: callId,
-      output: JSON.stringify({ status: "accepted" })
-    }
-  });
-  logInfo("openai_realtime_tool_response_requested", {
+  const toolResultEvent = createFunctionCallOutputEvent(callId, { status: "accepted" });
+  const responseEvent = createAudioTextResponseEvent({});
+  sendOpenAiEvent(session.openAiWs, toolResultEvent);
+  logRealtimeToolPayloads({
     callSid: session.callSid,
     tool: name,
-    callId
+    callId,
+    toolResultEvent,
+    responseEvent
   });
   noteToolResponseRequested(session, name, callId);
   requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
