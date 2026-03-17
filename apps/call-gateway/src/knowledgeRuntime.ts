@@ -506,8 +506,12 @@ export async function fetchKnowledgeRuntimeTurn(
   const buildId = normalizeText(body.buildId) || promptPayload.knowledge_runtime.active_build_id;
   const loaded = await loadBuildAssets(pool, body.tenantKey, buildId, { useCache: true });
   const conversationSummaryStarted = performance.now();
-  const recentConversationSummary = await loadRecentConversationSummary(pool, body.callId);
-  const recentConversationSummaryMs = Number((performance.now() - conversationSummaryStarted).toFixed(3));
+  const recentConversationSummary = FORCE_SKIP_PLANNER
+    ? ""
+    : await loadRecentConversationSummary(pool, body.callId);
+  const recentConversationSummaryMs = FORCE_SKIP_PLANNER
+    ? 0
+    : Number((performance.now() - conversationSummaryStarted).toFixed(3));
 
   const started = performance.now();
   const runtimeResult = await executePlannerPgvectorRuntime(pool, {
