@@ -68,7 +68,7 @@ function LayerCard({ title, description, onReset, children }) {
           {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
         </div>
         {onReset ? (
-          <Button variant="outline" size="sm" onClick={onReset}>Reset Layer</Button>
+          <Button variant="outline" size="sm" onClick={onReset}>Reset to Saved</Button>
         ) : null}
       </div>
       <div className="mt-4 grid gap-3">{children}</div>
@@ -118,6 +118,7 @@ export default function AdminPromptConfigPage() {
   const [previewing, setPreviewing] = useState(false);
   const [status, setStatus] = useState('');
   const [defaults, setDefaults] = useState(null);
+  const [savedConfig, setSavedConfig] = useState(null);
   const [config, setConfig] = useState(null);
   const [tenants, setTenants] = useState([]);
   const [selectedTenant, setSelectedTenant] = useState('');
@@ -131,6 +132,7 @@ export default function AdminPromptConfigPage() {
     try {
       const data = await fetchJson('/api/v1/admin/system/prompts');
       setDefaults(data.defaults);
+      setSavedConfig(data.config);
       setConfig(data.config);
       setTenants(Array.isArray(data.tenants) ? data.tenants : []);
       setSelectedTenant((current) => current || data.tenants?.[0]?.tenant_key || '');
@@ -178,7 +180,7 @@ export default function AdminPromptConfigPage() {
   };
 
   const resetLayer = (path) => {
-    setConfig((current) => setByPath(current, path, cloneValue(path.reduce((cursor, key) => cursor?.[key], defaults))));
+    setConfig((current) => setByPath(current, path, cloneValue(path.reduce((cursor, key) => cursor?.[key], savedConfig))));
   };
 
   const saveConfig = async () => {
@@ -190,6 +192,7 @@ export default function AdminPromptConfigPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ config })
       });
+      setSavedConfig(data.config);
       setConfig(data.config);
       setDefaults(data.defaults);
       setStatus('Prompt configuration saved.');
@@ -207,6 +210,7 @@ export default function AdminPromptConfigPage() {
     setStatus('Resetting prompt configuration...');
     try {
       const data = await fetchJson('/api/v1/admin/system/prompts', { method: 'DELETE' });
+      setSavedConfig(data.config);
       setConfig(data.config);
       setDefaults(data.defaults);
       setStatus('Prompt configuration reset to defaults.');
@@ -218,7 +222,7 @@ export default function AdminPromptConfigPage() {
     }
   };
 
-  if (loading || !config || !defaults) {
+  if (loading || !config || !defaults || !savedConfig) {
     return (
       <section className="grid gap-3">
         <h1 className="m-0 text-2xl font-semibold tracking-tight">Prompt Config</h1>
@@ -237,6 +241,9 @@ export default function AdminPromptConfigPage() {
           <p className="mt-1 text-sm text-slate-500">
             Configure global runtime prompt layers and inspect the composed live gateway prompt for a selected tenant.
           </p>
+          <p className="mt-2 text-xs text-slate-500">
+            `Reset to Saved` restores only that layer to the last version saved in the database. `Reset All` restores the full global prompt config to built-in defaults.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={loadPage} disabled={loading || saving}>Reload</Button>
@@ -247,7 +254,7 @@ export default function AdminPromptConfigPage() {
 
       <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
         <div className="grid gap-3 md:grid-cols-4">
-          <Field label="Tenant Preview">
+          <Field label="Tenant Preview" hint="Chooses which tenant-specific runtime-profile values are merged into the rendered prompt preview on the right.">
             <select
               className="rounded-md border border-slate-300 px-3 py-2 text-sm"
               value={selectedTenant}
@@ -260,7 +267,7 @@ export default function AdminPromptConfigPage() {
               ))}
             </select>
           </Field>
-          <Field label="Runtime Entry Mode">
+          <Field label="Runtime Entry Mode" hint="Changes the runtime stage/context and conditional response-rule additions the same way the live runtime does.">
             <select
               className="rounded-md border border-slate-300 px-3 py-2 text-sm"
               value={runtimeEntryMode}
@@ -296,7 +303,7 @@ export default function AdminPromptConfigPage() {
             description="Global startup instructions before the tenant persona block is appended."
             onReset={() => resetLayer(['baseSystemPrompt'])}
           >
-            <Field label="Instruction Lines" hint="One line per instruction. Rendered in order.">
+            <Field label="Instruction Lines" hint="This is the main global startup instruction block. Each line becomes part of the live `system_prompt` before tenant persona text is appended.">
               <TextArea
                 value={joinLines(config.baseSystemPrompt.instructionLines)}
                 onChange={(event) => updateConfig(['baseSystemPrompt', 'instructionLines'], splitLines(event.target.value))}
@@ -310,104 +317,104 @@ export default function AdminPromptConfigPage() {
             description="Editable wrapper + line templates. Tenant runtime-profile values stay tenant-scoped and render into preview."
             onReset={() => resetLayer(['tenantPersona'])}
           >
-            <Field label="Header Label">
+            <Field label="Header Label" hint="This label separates the base system prompt from the rendered tenant persona section in the final startup prompt.">
               <TextInput
                 value={config.tenantPersona.headerLabel}
                 onChange={(event) => updateConfig(['tenantPersona', 'headerLabel'], event.target.value)}
               />
             </Field>
-            <Field label="Business Role Template">
+            <Field label="Business Role Template" hint="Controls how the approved business-call-intent summary is phrased inside the tenant persona block.">
               <TextInput
                 value={config.tenantPersona.lineTemplates.businessRole}
                 onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'businessRole'], event.target.value)}
               />
             </Field>
-            <Field label="Greeting Style Template">
+            <Field label="Greeting Style Template" hint="Controls how the tenant’s runtime-profile greeting style is described to the runtime, not the spoken greeting itself.">
               <TextInput
                 value={config.tenantPersona.lineTemplates.greetingStyle}
                 onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'greetingStyle'], event.target.value)}
               />
             </Field>
-            <Field label="Tone Template">
+            <Field label="Tone Template" hint="Wraps the resolved tone or default tone rules inside the tenant persona block.">
               <TextInput
                 value={config.tenantPersona.lineTemplates.tone}
                 onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'tone'], event.target.value)}
               />
             </Field>
-            <Field label="AI Disclosure Template">
+            <Field label="AI Disclosure Template" hint="Wraps the tenant’s AI disclosure wording so the runtime knows how disclosure should be phrased.">
               <TextInput
                 value={config.tenantPersona.lineTemplates.aiDisclosure}
                 onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'aiDisclosure'], event.target.value)}
               />
             </Field>
-            <Field label="Uncertainty Template">
+            <Field label="Uncertainty Template" hint="Wraps the tenant’s preferred uncertainty phrase used when the assistant needs to soften or verify an answer.">
               <TextInput
                 value={config.tenantPersona.lineTemplates.uncertainty}
                 onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'uncertainty'], event.target.value)}
               />
             </Field>
-            <Field label="Pricing Fallback Template">
+            <Field label="Pricing Fallback Template" hint="Wraps the tenant’s fallback wording for pricing or quote questions when exact pricing should not be invented.">
               <TextInput
                 value={config.tenantPersona.lineTemplates.pricingFallback}
                 onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'pricingFallback'], event.target.value)}
               />
             </Field>
-            <Field label="Closing Template">
+            <Field label="Closing Template" hint="Wraps the tenant’s preferred closing wording for callback, handoff, or end-of-call moments.">
               <TextInput
                 value={config.tenantPersona.lineTemplates.closing}
                 onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'closing'], event.target.value)}
               />
             </Field>
-            <Field label="Response Style Template">
+            <Field label="Response Style Template" hint="Controls how the resolved response-style label is stated inside the tenant persona block.">
               <TextInput
                 value={config.tenantPersona.lineTemplates.responseStyle}
                 onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'responseStyle'], event.target.value)}
               />
             </Field>
             <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Default Greeting Style">
+              <Field label="Default Greeting Style" hint="Used only if the tenant runtime profile does not define greeting style wording.">
                 <TextInput
                   value={config.tenantPersona.defaults.greetingStyle}
                   onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'greetingStyle'], event.target.value)}
                 />
               </Field>
-              <Field label="Default Tone">
+              <Field label="Default Tone" hint="Fallback tone text when the selected tenant has no specific tone rules.">
                 <TextInput
                   value={config.tenantPersona.defaults.tone}
                   onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'tone'], event.target.value)}
                 />
               </Field>
-              <Field label="Default AI Disclosure">
+              <Field label="Default AI Disclosure" hint="Fallback disclosure wording when the tenant runtime profile does not provide one.">
                 <TextInput
                   value={config.tenantPersona.defaults.aiDisclosure}
                   onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'aiDisclosure'], event.target.value)}
                 />
               </Field>
-              <Field label="Default Uncertainty Phrase">
+              <Field label="Default Uncertainty Phrase" hint="Fallback uncertainty wording when the tenant runtime profile does not provide one.">
                 <TextInput
                   value={config.tenantPersona.defaults.uncertainty}
                   onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'uncertainty'], event.target.value)}
                 />
               </Field>
-              <Field label="Default Pricing Fallback">
+              <Field label="Default Pricing Fallback" hint="Fallback pricing-safe wording when the tenant runtime profile does not provide one.">
                 <TextInput
                   value={config.tenantPersona.defaults.pricingFallback}
                   onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'pricingFallback'], event.target.value)}
                 />
               </Field>
-              <Field label="Default Closing Phrase">
+              <Field label="Default Closing Phrase" hint="Fallback closing wording when the tenant runtime profile does not provide one.">
                 <TextInput
                   value={config.tenantPersona.defaults.closing}
                   onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'closing'], event.target.value)}
                 />
               </Field>
-              <Field label="Concise Response Style Label">
+              <Field label="Concise Response Style Label" hint="Used when the tenant runtime profile prefers concise responses. This label is rendered into the tenant persona block.">
                 <TextInput
                   value={config.tenantPersona.defaults.conciseResponseStyle}
                   onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'conciseResponseStyle'], event.target.value)}
                 />
               </Field>
-              <Field label="Complete Response Style Label">
+              <Field label="Complete Response Style Label" hint="Used when the tenant runtime profile explicitly disables concise responses.">
                 <TextInput
                   value={config.tenantPersona.defaults.completeResponseStyle}
                   onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'completeResponseStyle'], event.target.value)}
@@ -421,25 +428,25 @@ export default function AdminPromptConfigPage() {
             description="Structured prompt layer. Keep the templates focused on rendering the existing tool-policy fields."
             onReset={() => resetLayer(['knowledgeToolPolicy'])}
           >
-            <Field label="Header Label">
+            <Field label="Header Label" hint="This section header appears above the rendered tool-policy lines in the final gateway session instructions.">
               <TextInput
                 value={config.knowledgeToolPolicy.headerLabel}
                 onChange={(event) => updateConfig(['knowledgeToolPolicy', 'headerLabel'], event.target.value)}
               />
             </Field>
-            <Field label="Require Knowledge Lookup Template">
+            <Field label="Require Knowledge Lookup Template" hint="Renders the tenant tool-policy flag that tells the runtime whether tenant facts must go through `knowledge_lookup`.">
               <TextInput
                 value={config.knowledgeToolPolicy.requireKnowledgeLookupTemplate}
                 onChange={(event) => updateConfig(['knowledgeToolPolicy', 'requireKnowledgeLookupTemplate'], event.target.value)}
               />
             </Field>
-            <Field label="Max Clarifying Questions Template">
+            <Field label="Max Clarifying Questions Template" hint="Renders the structured `max_clarifying_questions` value from the tenant runtime profile into prompt text.">
               <TextInput
                 value={config.knowledgeToolPolicy.maxClarifyingQuestionsTemplate}
                 onChange={(event) => updateConfig(['knowledgeToolPolicy', 'maxClarifyingQuestionsTemplate'], event.target.value)}
               />
             </Field>
-            <Field label="End Call After Spoken Close Template">
+            <Field label="End Call After Spoken Close Template" hint="Renders the policy that end-call can only happen after a spoken close.">
               <TextInput
                 value={config.knowledgeToolPolicy.endCallAfterSpokenCloseTemplate}
                 onChange={(event) => updateConfig(['knowledgeToolPolicy', 'endCallAfterSpokenCloseTemplate'], event.target.value)}
@@ -452,13 +459,13 @@ export default function AdminPromptConfigPage() {
             description="Used by the gateway when it explicitly requests the greeting turn right after session startup."
             onReset={() => resetLayer(['greetingInstruction'])}
           >
-            <Field label="Greeting Instruction Template">
+            <Field label="Greeting Instruction Template" hint="This is not the tenant greeting itself. It is the wrapper instruction the gateway sends when it asks Realtime to speak the first greeting turn.">
               <TextInput
                 value={config.greetingInstruction.template}
                 onChange={(event) => updateConfig(['greetingInstruction', 'template'], event.target.value)}
               />
             </Field>
-            <Field label="Fallback Greeting">
+            <Field label="Fallback Greeting" hint="Used only when the selected tenant has no greeting text in its runtime profile.">
               <TextInput
                 value={config.greetingInstruction.fallbackGreeting}
                 onChange={(event) => updateConfig(['greetingInstruction', 'fallbackGreeting'], event.target.value)}
@@ -471,19 +478,19 @@ export default function AdminPromptConfigPage() {
             description="Rendered into the final gateway session instructions from the current stage and active assignment."
             onReset={() => resetLayer(['runtimeContext'])}
           >
-            <Field label="Header Label">
+            <Field label="Header Label" hint="This section header appears above the live runtime context block in the final gateway session instructions.">
               <TextInput
                 value={config.runtimeContext.headerLabel}
                 onChange={(event) => updateConfig(['runtimeContext', 'headerLabel'], event.target.value)}
               />
             </Field>
-            <Field label="Stage Template">
+            <Field label="Stage Template" hint="Renders the current runtime stage, such as `opening`, into the startup session instructions.">
               <TextInput
                 value={config.runtimeContext.stageTemplate}
                 onChange={(event) => updateConfig(['runtimeContext', 'stageTemplate'], event.target.value)}
               />
             </Field>
-            <Field label="Assignment Template">
+            <Field label="Assignment Template" hint="Renders the current active domain/subdomain assignment into the startup session instructions.">
               <TextInput
                 value={config.runtimeContext.assignmentTemplate}
                 onChange={(event) => updateConfig(['runtimeContext', 'assignmentTemplate'], event.target.value)}
@@ -496,32 +503,32 @@ export default function AdminPromptConfigPage() {
             description="Baseline rules plus the conditional additions the gateway appends based on runtime mode, concise setting, overrides, and guardrails."
             onReset={() => resetLayer(['responseRestrictions'])}
           >
-            <Field label="Baseline Rules" hint="One rule per line.">
+            <Field label="Baseline Rules" hint="These are the baseline response rules sent back in `response_rules` after `knowledge_lookup`. They shape how Realtime speaks from the answer packet. One rule per line.">
               <TextArea
                 value={joinLines(config.responseRestrictions.baselineRules)}
                 onChange={(event) => updateConfig(['responseRestrictions', 'baselineRules'], splitLines(event.target.value))}
                 className="min-h-[220px]"
               />
             </Field>
-            <Field label="Setup Interview Rule">
+            <Field label="Setup Interview Rule" hint="Added only when runtime entry mode is `setup_interview`.">
               <TextInput
                 value={config.responseRestrictions.setupInterviewRule}
                 onChange={(event) => updateConfig(['responseRestrictions', 'setupInterviewRule'], event.target.value)}
               />
             </Field>
-            <Field label="Concise Response Rule">
+            <Field label="Concise Response Rule" hint="Added when the tenant runtime profile prefers concise responses.">
               <TextInput
                 value={config.responseRestrictions.conciseResponseRule}
                 onChange={(event) => updateConfig(['responseRestrictions', 'conciseResponseRule'], event.target.value)}
               />
             </Field>
-            <Field label="Override Priority Rule">
+            <Field label="Override Priority Rule" hint="Added when a matching hard-fact or temporary-notice override is active for the turn.">
               <TextInput
                 value={config.responseRestrictions.overridePriorityRule}
                 onChange={(event) => updateConfig(['responseRestrictions', 'overridePriorityRule'], event.target.value)}
               />
             </Field>
-            <Field label="Dangerous Guardrail Rule">
+            <Field label="Dangerous Guardrail Rule" hint="Added when the current query matches a dangerous-question guardrail.">
               <TextInput
                 value={config.responseRestrictions.dangerousQuestionRule}
                 onChange={(event) => updateConfig(['responseRestrictions', 'dangerousQuestionRule'], event.target.value)}
