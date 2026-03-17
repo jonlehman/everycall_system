@@ -1,6 +1,9 @@
 import { performance } from "node:perf_hooks";
 import {
+  buildGatewaySessionInstructionsFromPromptConfig,
+  buildGreetingInstructionFromPromptConfig,
   buildPlannerOpenAiRequestBody,
+  buildResponseRestrictionsFromPromptConfig,
   buildRuntimeEmbeddingsRequestBody,
   executePlannerPgvectorRuntime,
   FORCE_SKIP_PLANNER,
@@ -33,6 +36,7 @@ export type GatewayPromptPayload = {
     initial_call_state: CallState;
     tenant_persona: string;
     business_call_intent_summary: string;
+    prompt_layers?: Record<string, unknown>;
     approved_configuration: {
       runtime_profile: {
         greeting_text: string;
@@ -197,35 +201,16 @@ function buildResponseRestrictions(
   runtimeEntryMode: string,
   matchedGuardrails: Array<Record<string, unknown>>,
   matchedOverrides: Array<Record<string, unknown>>,
-  configuration: GatewayPromptPayload["knowledge_runtime"]["approved_configuration"]
+  configuration: GatewayPromptPayload["knowledge_runtime"]["approved_configuration"],
+  promptLayers: Record<string, unknown> | undefined
 ) {
-  const rules = [
-    "Answer directly and briefly.",
-    "Use only source-backed business information from the answer packet for tenant-specific claims.",
-    "Do not invent pricing, availability, guarantees, or policy details.",
-    "Ask at most one short clarifying question if needed.",
-    "Do not stop abruptly after a direct answer unless the caller is clearly done or is interrupting.",
-    "After answering, make one gentle forward-motion move that fits the moment.",
-    "Prefer the lightest useful move: tie back to what the caller said, ask one soft discovery question, or offer one optional helpful detail.",
-    "Do not jump straight to scheduling, callback, or a hard sales close unless the caller shows clear intent or the answer is incomplete.",
-    "Treat next_step_options as optional support, not mandatory spoken output.",
-    "When retrieved material overlaps or contains noise, prefer the most directly relevant and concrete capability or policy statements.",
-    "Ignore privacy-policy, contact-form, and admin text unless the caller is explicitly asking about those topics.",
-    "If the remaining material still conflicts, avoid making a hard unsupported claim and offer a callback or follow-up."
-  ];
-  if (runtimeEntryMode === "setup_interview") {
-    rules.push("Treat confirmed summary blocks as authoritative and raw transcript text as evidence only.");
-  }
-  if (configuration.runtime_profile.runtime_defaults?.concise_responses !== false) {
-    rules.push("Keep each response to one or two short sentences.");
-  }
-  if (matchedOverrides.some((item) => ["hard_fact", "temporary_notice"].includes(normalizeText(item.override_type)))) {
-    rules.push("Approved overrides outrank retrieved build content for this turn.");
-  }
-  if (matchedGuardrails.length) {
-    rules.push("If a dangerous-question guardrail matches, follow the approved bounded response pattern.");
-  }
-  return uniqueValues(rules);
+  return buildResponseRestrictionsFromPromptConfig({
+    promptConfig: promptLayers || null,
+    runtimeEntryMode,
+    conciseResponses: configuration.runtime_profile.runtime_defaults?.concise_responses,
+    matchedOverrides,
+    matchedGuardrails
+  });
 }
 
 function buildCompatibilityBundle(
@@ -356,18 +341,22 @@ export function isKnowledgeReceptionistPromptPayload(payload: GatewayPromptPaylo
 }
 
 export function buildGatewaySessionInstructions(payload: GatewayPromptPayload) {
-  const toolPolicy = payload.knowledge_runtime.approved_configuration.runtime_profile.tool_policy || {};
-  const policyLines = [
-    `- Require knowledge lookup for tenant facts: ${toolPolicy.require_knowledge_lookup_for_tenant_facts ? "yes" : "no"}`,
-    `- Max clarifying questions: ${normalizeText(toolPolicy.max_clarifying_questions) || "1"}`,
-    `- End call only after spoken close: ${toolPolicy.allow_end_call_only_after_spoken_close === false ? "no" : "yes"}`
-  ];
-  return [
-    payload.system_prompt,
-    `Knowledge Tool Policy:\n${policyLines.join("\n")}`,
-    payload.tenant_greeting ? `Greeting:\n${payload.tenant_greeting}` : "",
-    `Current runtime context:\n- Stage: ${payload.knowledge_runtime.initial_call_state.current_stage}\n- Active assignment: ${normalizeText(payload.knowledge_runtime.active_domain_id)}${normalizeText(payload.knowledge_runtime.active_subdomain_id) ? ` / ${normalizeText(payload.knowledge_runtime.active_subdomain_id)}` : ""}`
-  ].filter(Boolean).join("\n\n");
+  return buildGatewaySessionInstructionsFromPromptConfig({
+    promptConfig: payload.knowledge_runtime.prompt_layers || null,
+    systemPrompt: payload.system_prompt,
+    tenantGreeting: payload.tenant_greeting,
+    toolPolicy: payload.knowledge_runtime.approved_configuration.runtime_profile.tool_policy || {},
+    currentStage: payload.knowledge_runtime.initial_call_state.current_stage,
+    activeDomainId: payload.knowledge_runtime.active_domain_id,
+    activeSubdomainId: payload.knowledge_runtime.active_subdomain_id
+  });
+}
+
+export function buildGatewayGreetingInstruction(payload: GatewayPromptPayload) {
+  return buildGreetingInstructionFromPromptConfig(
+    payload.knowledge_runtime.prompt_layers || null,
+    payload.tenant_greeting
+  );
 }
 
 export function initializeKnowledgeCallState(payload: GatewayPromptPayload): CallState {
@@ -569,7 +558,8 @@ export async function fetchKnowledgeRuntimeTurn(
     body.callState.runtime_entry_mode,
     matchedGuardrails,
     matchedOverrides,
-    configuration
+    configuration,
+    promptPayload.knowledge_runtime.prompt_layers
   );
   const finalAnswerPacket = {
     ...runtimeResult.answerPacket,

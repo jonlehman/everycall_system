@@ -11,6 +11,7 @@ import fs from "node:fs";
 import * as AjvModule from "ajv";
 import {
   applyCapturedFieldsToCallState,
+  buildGatewayGreetingInstruction,
   buildGatewaySessionInstructions,
   clearKnowledgeBuildAssetCache,
   fetchKnowledgeRuntimeTurn,
@@ -1287,7 +1288,7 @@ function connectOpenAiRealtime(session: StreamSession) {
           session,
           "greeting",
           {
-            instructions: `Call just connected. Greet the caller now using this greeting: ${payload.tenant_greeting || "Hi, thanks for calling. How can I help you?"}`
+            instructions: buildGatewayGreetingInstruction(payload)
           },
           "greeting"
         );

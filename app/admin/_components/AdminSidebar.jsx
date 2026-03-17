@@ -13,6 +13,7 @@ const items = [
   { label: 'AI Usage', href: '/admin/usage', group: 'Platform' },
   { label: 'Admin Users', href: '/admin/users', group: 'Controls' },
   { label: 'System Config', href: '/admin/system', group: 'Controls' },
+  { label: 'Prompt Config', href: '/admin/system/prompts', group: 'Controls' },
   { label: 'Audit Log', href: '/admin/audit', group: 'Controls' }
 ];
 
@@ -29,7 +30,7 @@ export default function AdminSidebar() {
           {items.filter((item) => item.group === group).map((item) => (
             <Link
               key={item.href}
-              className={`nav-btn${pathname.startsWith(item.href) ? ' active' : ''}`}
+              className={`nav-btn${pathname === item.href || pathname.startsWith(`${item.href}/`) ? ' active' : ''}`}
               href={item.href}
               style={{ display: 'block' }}
             >

@@ -294,6 +294,7 @@ export async function ensureTables(pool) {
       telnyx_sms_number TEXT,
       telnyx_sms_number_id TEXT,
       telnyx_sms_messaging_profile_id TEXT,
+      prompt_layers_json JSONB,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -301,6 +302,7 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_number TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_number_id TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_messaging_profile_id TEXT;`);
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS prompt_layers_json JSONB;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS audit_log (

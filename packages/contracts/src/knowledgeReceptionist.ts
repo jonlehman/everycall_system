@@ -508,6 +508,7 @@ export const knowledgeGatewayRuntimeContextSchema = z.object({
   active_subdomain_id: nullableStringSchema,
   runtime_entry_mode: runtimeEntryModeSchema,
   initial_call_state: callStateSchema,
+  prompt_layers: jsonRecordSchema.optional(),
   prompt_payload: knowledgePromptPayloadSchema,
   approved_configuration: knowledgeGatewayConfigurationSchema,
   token_counts: z.object({

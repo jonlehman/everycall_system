@@ -1,5 +1,8 @@
 import crypto from "node:crypto";
 import {
+  buildGatewaySystemPromptFromPromptConfig,
+  buildResponseRestrictionsFromPromptConfig,
+  buildTenantPersonaFromPromptConfig,
   executePlannerPgvectorRuntime,
   FORCED_RUNTIME_CONFIDENCE_SCORE,
   FORCED_SUPPORT_MODE_ACTIVE,
@@ -9,6 +12,7 @@ import {
 } from "@everycall/contracts";
 import { getKnowledgeBuild, loadActiveKnowledgeBuildAssets } from "./knowledgeReceptionistBuilds.js";
 import { loadApprovedConfigurationArtifacts } from "./knowledgeReceptionistConfig.js";
+import { loadSystemPromptConfig } from "./systemPromptConfig.js";
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -206,47 +210,18 @@ function createInitialCallState({
   };
 }
 
-function buildTenantPersona(runtimeProfile, intentSummary) {
-  const wordingDefaults = runtimeProfile?.wording_defaults || {};
-  const runtimeDefaults = runtimeProfile?.runtime_defaults || {};
-  const toneRules = uniqueValues(intentSummary?.tone_rules || []);
-  return [
-    `Business role: ${intentSummary.summary}`,
-    `Greeting style: ${normalizeText(runtimeProfile?.greeting_text) || "Warm, concise, and helpful."}`,
-    `Tone: ${toneRules.length ? toneRules.join(" | ") : "Be clear, short, and helpful on every turn."}`,
-    `AI disclosure wording: ${normalizeText(wordingDefaults.ai_disclosure) || "I'm the business's automated assistant."}`,
-    `Uncertainty wording: ${normalizeText(wordingDefaults.uncertainty_phrase) || "I want to make sure I get that right."}`,
-    `Pricing fallback wording: ${normalizeText(wordingDefaults.pricing_fallback) || "I can help with the next step, but final pricing is confirmed by the team."}`,
-    `Closing wording: ${normalizeText(wordingDefaults.closing_phrase) || "I'll make sure the team has that."}`,
-    `Response style: ${runtimeDefaults.concise_responses === false ? "helpful and complete" : "one or two short sentences"}`
-  ].join("\n");
+function buildTenantPersona(runtimeProfile, intentSummary, promptConfig = null) {
+  return buildTenantPersonaFromPromptConfig(promptConfig, runtimeProfile, intentSummary);
 }
 
-function buildResponseRestrictions(runtimeEntryMode, matchedGuardrails = [], matchedOverrides = []) {
-  const rules = [
-    "Answer directly and briefly.",
-    "Use only source-backed business information from the answer packet for tenant-specific claims.",
-    "Do not invent pricing, availability, guarantees, or policy details.",
-    "Ask at most one short clarifying question if needed.",
-    "Do not stop abruptly after a direct answer unless the caller is clearly done or is interrupting.",
-    "After answering, make one gentle forward-motion move that fits the moment.",
-    "Prefer the lightest useful move: tie back to what the caller said, ask one soft discovery question, or offer one optional helpful detail.",
-    "Do not jump straight to scheduling, callback, or a hard sales close unless the caller shows clear intent or the answer is incomplete.",
-    "Treat next_step_options as optional support, not mandatory spoken output.",
-    "When retrieved material overlaps or contains noise, prefer the most directly relevant and concrete capability or policy statements.",
-    "Ignore privacy-policy, contact-form, and admin text unless the caller is explicitly asking about those topics.",
-    "If the remaining material still conflicts, avoid making a hard unsupported claim and offer a callback or follow-up."
-  ];
-  if (runtimeEntryMode === "setup_interview") {
-    rules.push("Treat confirmed summary blocks as authoritative and raw transcript text as evidence only.");
-  }
-  if (matchedOverrides.some((item) => ["hard_fact", "temporary_notice"].includes(normalizeText(item.override_type)))) {
-    rules.push("Approved overrides outrank retrieved build content for this turn.");
-  }
-  if (matchedGuardrails.length) {
-    rules.push("If a dangerous-question guardrail matches, follow the approved bounded response pattern.");
-  }
-  return uniqueValues(rules);
+function buildResponseRestrictions(runtimeEntryMode, matchedGuardrails = [], matchedOverrides = [], configuration = {}) {
+  return buildResponseRestrictionsFromPromptConfig({
+    promptConfig: configuration.prompt_layers || null,
+    runtimeEntryMode,
+    conciseResponses: configuration.runtime_profile?.runtime_defaults?.concise_responses,
+    matchedGuardrails,
+    matchedOverrides
+  });
 }
 
 function deriveRuntimeMode(answerPacket, matchedGuardrails = []) {
@@ -344,24 +319,8 @@ function renderAnswerPacketInstructions(answerPacket, responseRestrictions) {
   };
 }
 
-function renderGatewaySystemPrompt({ tenantPersona }) {
-  return [
-    "You are the live phone receptionist and soft-sales assistant for the business.",
-    "Answer direct caller questions first, then move to the next supported step.",
-    "For tenant-specific facts, call knowledge_lookup and speak only from the returned answer_packet.",
-    "If answer_packet.unsupported_requested_items is non-empty, say you do not have confirmed details and offer the next supported step.",
-    "After answering, keep the conversation moving with one gentle, natural follow-up unless the caller is clearly done.",
-    "For broad or exploratory questions, prefer one soft discovery question over a hard close.",
-    "For specific factual questions, answer first and then use the lightest natural follow-up instead of pushing a concrete next step.",
-    "Use next_step_options only when they genuinely fit the caller's stage or when the answer is incomplete.",
-    "When retrieved material overlaps or contains noise, prefer the most directly relevant and concrete capability or policy statements.",
-    "Ignore privacy-policy, contact-form, and admin text unless the caller is explicitly asking about those topics.",
-    "If the remaining material still conflicts, avoid making a hard unsupported claim and offer a callback or follow-up.",
-    "Keep each response to one or two short sentences unless the caller clearly needs a concise clarification.",
-    "",
-    "Tenant persona and wording:",
-    tenantPersona
-  ].join("\n");
+function renderGatewaySystemPrompt({ tenantPersona, promptConfig }) {
+  return buildGatewaySystemPromptFromPromptConfig(promptConfig, tenantPersona);
 }
 
 function buildPromptPreview(answerPacket, responseRestrictions) {
@@ -432,7 +391,12 @@ export function buildFieldSchemaFromOutcomeSchema(callOutcomeSchema, fallbackFie
 export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) {
   const runtimeEntryMode = normalizeText(input.runtimeEntryMode || input.runtime_entry_mode) || "customer_call";
   const callId = normalizeText(input.callId || input.call_id || input.callSid || input.call_sid) || createId("call");
-  const { build, configuration, intentSummary } = await loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input);
+  const [promptLayers, gatewayContext] = await Promise.all([
+    loadSystemPromptConfig(db),
+    loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input)
+  ]);
+  const { build, configuration, intentSummary } = gatewayContext;
+  configuration.prompt_layers = promptLayers;
   const initialCallState = createInitialCallState({
     tenantKey,
     callId,
@@ -441,13 +405,14 @@ export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) 
     intentSummary,
     currentStage: intentSummary.stage_ids[0]
   });
-  const tenantPersona = buildTenantPersona(configuration.runtime_profile, intentSummary);
-  const systemPrompt = renderGatewaySystemPrompt({ tenantPersona });
+  const tenantPersona = buildTenantPersonaFromPromptConfig(promptLayers, configuration.runtime_profile, intentSummary);
+  const systemPrompt = renderGatewaySystemPrompt({ tenantPersona, promptConfig: promptLayers });
 
   return {
     build,
     systemPrompt,
     tenantPersona,
+    promptLayers,
     businessCallIntentSummary: intentSummary.summary,
     approvedConfiguration: configuration,
     initialCallState,
@@ -470,10 +435,15 @@ export async function assembleKnowledgeRuntimeTurn(db, tenantKey, input = {}) {
   }
 
   const callId = normalizeText(input.callId || input.call_id || input.callSid || input.call_sid) || createId("call");
-  const { build, configuration, intentSummary } = await loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input);
+  const [promptLayers, runtimeContext] = await Promise.all([
+    loadSystemPromptConfig(db),
+    loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input)
+  ]);
+  const { build, configuration, intentSummary } = runtimeContext;
+  configuration.prompt_layers = promptLayers;
   const callState = asObject(input.callState || input.call_state);
   const currentStage = normalizeText(callState.current_stage) || intentSummary.stage_ids[0] || "answer_or_route";
-  const tenantPersona = buildTenantPersona(configuration.runtime_profile, intentSummary);
+  const tenantPersona = buildTenantPersonaFromPromptConfig(promptLayers, configuration.runtime_profile, intentSummary);
 
   const runtimeResult = await executePlannerPgvectorRuntime(db, {
     tenantKey,
@@ -498,7 +468,7 @@ export async function assembleKnowledgeRuntimeTurn(db, tenantKey, input = {}) {
   const matchedOverrides = selectSharedMatchedOverrides(configuration.overrides || [], query, compatibilityBundle);
   const matchedGuardrails = selectSharedMatchedGuardrails(configuration.guardrails || [], query, compatibilityBundle, callState);
   const runtimeMode = deriveRuntimeMode(runtimeResult.answerPacket, matchedGuardrails);
-  const responseRestrictions = buildResponseRestrictions(runtimeEntryMode, matchedGuardrails, matchedOverrides);
+  const responseRestrictions = buildResponseRestrictions(runtimeEntryMode, matchedGuardrails, matchedOverrides, configuration);
   const instructionSections = renderAnswerPacketInstructions(
     { ...runtimeResult.answerPacket, runtime_mode: runtimeMode },
     responseRestrictions
