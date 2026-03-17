@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import './intake.css';
 
 const INDUSTRIES = [
@@ -47,6 +47,15 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const [status, setStatus] = useState({ message: '', tone: 'normal' });
   const [busy, setBusy] = useState(false);
   const [activation, setActivation] = useState(null);
+  const nextHref = '/client/knowledge';
+
+  useEffect(() => {
+    if (!activation?.ok) return undefined;
+    const timer = window.setTimeout(() => {
+      window.location.assign(nextHref);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [activation]);
 
   const setFormValue = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
@@ -118,7 +127,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
         return;
       }
       setActivation(data);
-      setStatus({ message: 'Tenant created on the knowledge receptionist subsystem.', tone: 'ok' });
+      setStatus({ message: 'Tenant created. Redirecting to the Knowledge Workspace...', tone: 'ok' });
     } catch {
       setStatus({ message: 'Could not create tenant.', tone: 'bad' });
     } finally {
@@ -225,6 +234,10 @@ export function IntakePageClient({ qaMode = false } = {}) {
             <p><strong>Business Call Intent:</strong> {activation.businessCallIntent?.business_call_intent_id || 'created'}</p>
             <p><strong>Runtime profile:</strong> {activation.runtimeProfile?.greeting_text || 'created'}</p>
             <p><strong>Outcome schema:</strong> {activation.callOutcomeSchema?.call_outcome_schema_id || 'created'}</p>
+            <p><strong>Next step:</strong> Create and publish the first knowledge build.</p>
+            <div className="intake-actions">
+              <a className="btn primary" href={nextHref}>Continue to Knowledge Workspace</a>
+            </div>
           </section>
         ) : null}
       </div>

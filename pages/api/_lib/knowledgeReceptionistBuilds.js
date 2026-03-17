@@ -3152,7 +3152,7 @@ async function updateBuildAfterValidation(db, buildId, counts, validationSummary
 
 export async function listKnowledgeReceptionistBuilds(db, tenantKey) {
   await assertSliceTablesReady(db);
-  const [buildsRes, pointerRes, assignments] = await Promise.all([
+  const [buildsRes, pointerRes, assignments, intakeRes] = await Promise.all([
     db.query(
       `SELECT build_id, status, version, domain_assignments_json, source_channels_json, artifact_counts_json,
               quality_summary_json, warnings_json, validation_summary_json, published_at, supersedes_build_id,
@@ -3169,13 +3169,22 @@ export async function listKnowledgeReceptionistBuilds(db, tenantKey) {
        LIMIT 1`,
       [tenantKey]
     ),
-    loadTenantDomainAssignments(db, tenantKey)
+    loadTenantDomainAssignments(db, tenantKey),
+    db.query(
+      `SELECT website
+       FROM onboarding_intake
+       WHERE tenant_key = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [tenantKey]
+    )
   ]);
 
   return {
     activeBuild: pointerRes.rows[0] || null,
     assignments,
-    builds: buildsRes.rows || []
+    builds: buildsRes.rows || [],
+    intakeWebsiteUrl: normalizeWebsiteUrl(intakeRes.rows[0]?.website || "")
   };
 }
 

@@ -126,7 +126,7 @@ export default function KnowledgePage() {
       setCallOutcomeSchema(outcomeData?.activeSchema || outcomeData?.schemas?.[0] || null);
       setUploadedDocuments(Array.isArray(documentData?.documents) ? documentData.documents : []);
       setBuildForm((current) => ({
-        websiteUrl: current.websiteUrl || builds[0]?.metadata_json?.website_url || ''
+        websiteUrl: current.websiteUrl || buildData?.intakeWebsiteUrl || builds[0]?.metadata_json?.website_url || ''
       }));
       setStatus({ message: 'Knowledge workspace loaded.', tone: 'ok' });
     } catch {
@@ -396,6 +396,11 @@ export default function KnowledgePage() {
               onChange={(event) => setBuildForm({ websiteUrl: event.target.value })}
               placeholder="https://example.com"
             />
+            {!latestBuild && buildForm.websiteUrl ? (
+              <div className="mt-2 text-sm text-slate-600">
+                Pre-filled from intake. You can change it before creating the first build.
+              </div>
+            ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
               <Button onClick={createBuild} disabled={buildBusy}>{buildBusy ? 'Building...' : 'Create Build'}</Button>
             </div>
