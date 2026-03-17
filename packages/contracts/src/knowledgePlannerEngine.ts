@@ -14,7 +14,7 @@ import {
   buildOpenAiEmbeddingsRequestBody,
   buildOpenAiJsonResponseRequestBody,
   callOpenAiJsonModel,
-  embedOpenAiTexts
+  embedOpenAiTextsDetailed
 } from "./openAiStructured.js";
 
 type QueryResultRow = Record<string, any>;
@@ -67,6 +67,10 @@ export type PlannerRuntimeExecutionResult = {
     planner_input_tokens: number;
     planner_output_tokens: number;
     packet_tokens: number;
+  };
+  debug: {
+    planner_response_payload: unknown;
+    embedding_response_payloads: unknown[];
   };
 };
 
@@ -400,7 +404,10 @@ async function runPlanner(input: PlannerRuntimeExecutionInput) {
   if (!normalized.coverage_items.length) {
     normalized.coverage_items = [input.queryText];
   }
-  return normalized;
+  return {
+    planner: normalized,
+    rawResponse: plannerResponse.rawResponse
+  };
 }
 
 function buildCoverageValueSql(items: Array<{ coverageItemText: string; embedding: number[] }>, startIndex: number) {
@@ -598,7 +605,8 @@ async function retrieveFactSupportBatch(db: Queryable, input: {
 export async function executePlannerPgvectorRuntime(db: Queryable, input: PlannerRuntimeExecutionInput): Promise<PlannerRuntimeExecutionResult> {
   const totalStarted = performance.now();
   const plannerStarted = performance.now();
-  const planner = await runPlanner(input);
+  const plannerResult = await runPlanner(input);
+  const planner = plannerResult.planner;
   const plannerMs = Number((performance.now() - plannerStarted).toFixed(3));
   const coverageItems = uniqueValues([
     input.queryText,
@@ -606,10 +614,11 @@ export async function executePlannerPgvectorRuntime(db: Queryable, input: Planne
   ]).slice(0, 6);
   const embeddingModel = input.embeddingModel || process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
   const embeddingStarted = performance.now();
-  const embedded = await embedOpenAiTexts({
+  const embeddedResult = await embedOpenAiTextsDetailed({
     model: embeddingModel,
     texts: coverageItems
   });
+  const embedded = embeddedResult.items;
   const embeddingMs = Number((performance.now() - embeddingStarted).toFixed(3));
 
   const coverageItemsWithEmbeddings = coverageItems
@@ -707,6 +716,10 @@ export async function executePlannerPgvectorRuntime(db: Queryable, input: Planne
       planner_input_tokens: estimateTokenCount(buildPlannerUserPrompt(input)),
       planner_output_tokens: estimateTokenCount(planner),
       packet_tokens: answerPacket.token_counts.packet_tokens
+    },
+    debug: {
+      planner_response_payload: plannerResult.rawResponse,
+      embedding_response_payloads: embeddedResult.rawResponses
     }
   };
 }

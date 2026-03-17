@@ -120,6 +120,7 @@ export async function callOpenAiJsonModel<T>(input: {
   usage: Record<string, unknown>;
   responseId: string | null;
   model: string;
+  rawResponse: unknown;
 }> {
   const apiKey = normalizeText(input.apiKey || process.env.OPENAI_API_KEY);
   if (!apiKey) {
@@ -165,7 +166,8 @@ export async function callOpenAiJsonModel<T>(input: {
         parsed: input.schema.parse(parsed),
         usage: extractUsage(json),
         responseId: normalizeText(json?.id) || null,
-        model: normalizeText(json?.model) || input.model
+        model: normalizeText(json?.model) || input.model,
+        rawResponse: json
       };
     } catch (err) {
       lastError = err;
@@ -178,7 +180,12 @@ export async function callOpenAiJsonModel<T>(input: {
   throw lastError instanceof Error ? lastError : new Error("openai_json_model_failed:unknown");
 }
 
-export async function embedOpenAiTexts(input: {
+export type OpenAiEmbeddingResult = {
+  index: number;
+  embedding: number[];
+};
+
+export async function embedOpenAiTextsDetailed(input: {
   apiKey?: string;
   model?: string;
   texts: string[];
@@ -189,7 +196,10 @@ export async function embedOpenAiTexts(input: {
   }
   const texts = input.texts.map((text) => normalizeText(text)).filter(Boolean);
   if (!texts.length) {
-    return [];
+    return {
+      items: [] as OpenAiEmbeddingResult[],
+      rawResponses: [] as unknown[]
+    };
   }
 
   const model = input.model || process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
@@ -225,18 +235,33 @@ export async function embedOpenAiTexts(input: {
 
       const json = await response.json();
       const rows = Array.isArray(json?.data) ? json.data : [];
-      return rows
-        .sort((left: any, right: any) => Number(left?.index || 0) - Number(right?.index || 0))
-        .map((item: any, batchIndex: number) => ({
-          index: batch.startIndex + batchIndex,
-          embedding: Array.isArray(item?.embedding) ? item.embedding.map((value: any) => Number(value || 0)) : []
-        }));
+      return {
+        rawResponse: json,
+        items: rows
+          .sort((left: any, right: any) => Number(left?.index || 0) - Number(right?.index || 0))
+          .map((item: any, batchIndex: number) => ({
+            index: batch.startIndex + batchIndex,
+            embedding: Array.isArray(item?.embedding) ? item.embedding.map((value: any) => Number(value || 0)) : []
+          }))
+      };
     }
   );
 
-  return embeddedBatches
-    .flat()
-    .sort((left, right) => left.index - right.index);
+  return {
+    items: embeddedBatches
+      .flatMap((batch) => batch.items)
+      .sort((left, right) => left.index - right.index),
+    rawResponses: embeddedBatches.map((batch) => batch.rawResponse)
+  };
+}
+
+export async function embedOpenAiTexts(input: {
+  apiKey?: string;
+  model?: string;
+  texts: string[];
+}) {
+  const detailed = await embedOpenAiTextsDetailed(input);
+  return detailed.items;
 }
 
 export function buildOpenAiJsonResponseRequestBody(input: {

@@ -916,8 +916,14 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       plannerRequestPayload: runtimeResult.retrieval_telemetry.planner_request_payload
         ? JSON.stringify(runtimeResult.retrieval_telemetry.planner_request_payload)
         : undefined,
+      plannerResponsePayload: runtimeResult.retrieval_telemetry.planner_response_payload
+        ? JSON.stringify(runtimeResult.retrieval_telemetry.planner_response_payload)
+        : undefined,
       embeddingRequestPayload: runtimeResult.retrieval_telemetry.embedding_request_payload
         ? JSON.stringify(runtimeResult.retrieval_telemetry.embedding_request_payload)
+        : undefined,
+      embeddingResponsePayloads: Array.isArray(runtimeResult.retrieval_telemetry.embedding_response_payloads)
+        ? JSON.stringify(runtimeResult.retrieval_telemetry.embedding_response_payloads)
         : undefined
     });
     await forwardToolResult(

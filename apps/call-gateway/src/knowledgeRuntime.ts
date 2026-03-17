@@ -645,7 +645,9 @@ export async function fetchKnowledgeRuntimeTurn(
       coverage_gap_persist_ms: coverageGapPersistMs,
       planner_coverage_items: runtimeResult.planner.coverage_items,
       planner_request_payload: plannerRequestPayload,
+      planner_response_payload: runtimeResult.debug?.planner_response_payload,
       embedding_request_payload: embeddingRequestPayload,
+      embedding_response_payloads: runtimeResult.debug?.embedding_response_payloads || [],
       coverage: finalAnswerPacket.coverage
     },
     token_counts: {
