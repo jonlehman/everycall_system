@@ -464,9 +464,7 @@ export function formatKnowledgeRuntimeToolOutput(result: GatewayRuntimeTurnRespo
       approved_response_pattern: item.approved_response_pattern,
       required_next_step: item.required_next_step,
       risk_level: item.risk_level
-    })),
-    instruction_sections: result.instruction_sections,
-    retrieval_telemetry: result.retrieval_telemetry
+    }))
   };
 }
 
