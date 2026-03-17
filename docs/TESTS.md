@@ -1,7 +1,9 @@
 # Manual Call Test Scripts
 
 ## Script Safety
-- `scripts/validate-knowledge-receptionist-cutover.mjs` and `scripts/validate-voice-runtime-hardening.mjs` now fail closed unless `EVERYCALL_ALLOW_SCHEMA_RESET=DROP_PUBLIC_SCHEMA` is set.
+- `scripts/validate-knowledge-receptionist-cutover.mjs` and `scripts/validate-voice-runtime-hardening.mjs` now fail closed unless both of these are set:
+  - `EVERYCALL_ALLOW_SCHEMA_RESET=DROP_PUBLIC_SCHEMA`
+  - and either `EVERYCALL_ALLOW_SCHEMA_RESET_TARGETS=<host/db>` or `EVERYCALL_ALLOW_SCHEMA_RESET_TARGET_FINGERPRINTS=<fingerprint>` matching the current `DATABASE_URL`
 - `scripts/rebuild-creative-dynamic-harts.mjs` now fails closed unless `EVERYCALL_ALLOW_TENANT_BUILD_MUTATION=creative_dynamic` is set, and also requires `EVERYCALL_ALLOW_TENANT_ARTIFACT_DELETE=creative_dynamic` when cleanup is enabled.
 - `scripts/validate-tool-dedupe-and-warranty.mjs` and `scripts/validate-source-summary-fallback.mjs` now fail closed unless `EVERYCALL_ALLOW_TENANT_BUILD_MUTATION=creative_dynamic` is set.
 - `scripts/cleanup-qa-tenants.mjs` now fails closed unless `EVERYCALL_ALLOW_QA_TENANT_DELETE=DELETE_QA_TENANTS` is set.

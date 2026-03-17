@@ -1,19 +1,41 @@
 import { URL } from "node:url";
+import crypto from "node:crypto";
 
 function normalizeText(value) {
   return String(value || "").trim();
 }
 
 function summarizeDatabaseTarget(databaseUrl = "") {
+  return getDatabaseTargetIdentity(databaseUrl).target;
+}
+
+function getDatabaseTargetIdentity(databaseUrl = "") {
   const raw = normalizeText(databaseUrl);
-  if (!raw) return "unknown_database_target";
+  if (!raw) {
+    return {
+      target: "unknown_database_target",
+      normalizedTarget: "unknown_database_target",
+      fingerprint: "unknown_target_fingerprint"
+    };
+  }
   try {
     const parsed = new URL(raw);
     const host = normalizeText(parsed.hostname) || "unknown-host";
     const dbName = normalizeText(parsed.pathname).replace(/^\/+/, "") || "unknown-db";
-    return `${host}/${dbName}`;
+    const defaultPort = parsed.protocol === "postgresql:" || parsed.protocol === "postgres:" ? "5432" : "";
+    const port = normalizeText(parsed.port) || defaultPort;
+    const target = `${host}/${dbName}`;
+    const normalizedTarget = `${parsed.protocol}//${host}${port ? `:${port}` : ""}/${dbName}`;
+    const fingerprint = crypto.createHash("sha256").update(normalizedTarget).digest("hex").slice(0, 16);
+    return { target, normalizedTarget, fingerprint };
   } catch {
-    return raw.replace(/:[^:@/]+@/, ":***@");
+    const normalizedTarget = raw.replace(/:[^:@/]+@/, ":***@");
+    const fingerprint = crypto.createHash("sha256").update(normalizedTarget).digest("hex").slice(0, 16);
+    return {
+      target: normalizedTarget,
+      normalizedTarget,
+      fingerprint
+    };
   }
 }
 
@@ -25,10 +47,12 @@ function parseAllowedValues(raw) {
 }
 
 function failGuard({ scriptName, action, envName, expectedValue, databaseUrl, extra = [] }) {
+  const targetIdentity = getDatabaseTargetIdentity(databaseUrl);
   const lines = [
     `[safety] ${scriptName} blocked.`,
     `Action: ${action}`,
-    `Database target: ${summarizeDatabaseTarget(databaseUrl)}`,
+    `Database target: ${targetIdentity.target}`,
+    `Database target fingerprint: ${targetIdentity.fingerprint}`,
     `Required approval: ${envName}=${expectedValue}`
   ];
   for (const line of extra) {
@@ -108,6 +132,31 @@ export function requireSchemaResetApproval(scriptName, databaseUrl = process.env
       "This validator destroys all current data in the target database before rebuilding fixtures."
     ]
   });
+  requireSchemaResetTargetApproval(scriptName, databaseUrl);
+}
+
+export function requireSchemaResetTargetApproval(scriptName, databaseUrl = process.env.DATABASE_URL || "") {
+  const targetIdentity = getDatabaseTargetIdentity(databaseUrl);
+  const allowedTargets = parseAllowedValues(process.env.EVERYCALL_ALLOW_SCHEMA_RESET_TARGETS);
+  const allowedFingerprints = parseAllowedValues(process.env.EVERYCALL_ALLOW_SCHEMA_RESET_TARGET_FINGERPRINTS).map((item) => item.toLowerCase());
+  const targetMatched = allowedTargets.includes(targetIdentity.target);
+  const fingerprintMatched = allowedFingerprints.includes(targetIdentity.fingerprint.toLowerCase());
+  if (targetMatched || fingerprintMatched) return;
+
+  throw new Error([
+    `[safety] ${scriptName} blocked.`,
+    "Action: drop and recreate the public schema",
+    `Database target: ${targetIdentity.target}`,
+    `Database target fingerprint: ${targetIdentity.fingerprint}`,
+    "Required target approval: set either",
+    `- EVERYCALL_ALLOW_SCHEMA_RESET_TARGETS=${targetIdentity.target}`,
+    `- EVERYCALL_ALLOW_SCHEMA_RESET_TARGET_FINGERPRINTS=${targetIdentity.fingerprint}`,
+    "The schema-reset token alone is not sufficient."
+  ].join("\n"));
+}
+
+export function describeDatabaseTarget(databaseUrl = process.env.DATABASE_URL || "") {
+  return getDatabaseTargetIdentity(databaseUrl);
 }
 
 export function requireTenantBuildMutationApproval(scriptName, tenantKey, databaseUrl = process.env.DATABASE_URL || "") {
