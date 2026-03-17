@@ -1,5 +1,7 @@
 import { performance } from "node:perf_hooks";
 import {
+  buildPlannerOpenAiRequestBody,
+  buildRuntimeEmbeddingsRequestBody,
   executePlannerPgvectorRuntime,
   FORCED_RUNTIME_CONFIDENCE_SCORE,
   FORCED_SUPPORT_MODE_ACTIVE,
@@ -532,6 +534,21 @@ export async function fetchKnowledgeRuntimeTurn(
   const matchedOverrides = selectSharedMatchedOverrides(configuration.overrides, query, compatibilityBundle);
   const matchedGuardrails = selectSharedMatchedGuardrails(configuration.guardrails, query, compatibilityBundle, body.callState);
   const runtimeMode = deriveRuntimeMode(runtimeResult.answerPacket, matchedGuardrails);
+  const plannerRequestPayload = buildPlannerOpenAiRequestBody({
+    tenantKey: body.tenantKey,
+    buildId,
+    queryText: query,
+    recentConversationSummary,
+    tenantPersona: promptPayload.knowledge_runtime.tenant_persona,
+    businessCallIntentSummary: promptPayload.knowledge_runtime.business_call_intent_summary,
+    currentStage: normalizeText(body.callState.current_stage) || "answer_or_route",
+    ...(loaded.assets.planner_model ? { plannerModel: loaded.assets.planner_model } : {})
+  });
+  const embeddingRequestPayload = buildRuntimeEmbeddingsRequestBody({
+    queryText: query,
+    coverageItems: (runtimeResult.planner.coverage_items || []).map((item: any) => normalizeText(item)),
+    ...(loaded.assets.embedding_model ? { embeddingModel: loaded.assets.embedding_model } : {})
+  });
   const nextCallState: CallState = {
     ...body.callState,
     current_stage: runtimeMode === "clarify"
@@ -627,6 +644,8 @@ export async function fetchKnowledgeRuntimeTurn(
       runtime_bundle_persist_ms: runtimeBundlePersistMs,
       coverage_gap_persist_ms: coverageGapPersistMs,
       planner_coverage_items: runtimeResult.planner.coverage_items,
+      planner_request_payload: plannerRequestPayload,
+      embedding_request_payload: embeddingRequestPayload,
       coverage: finalAnswerPacket.coverage
     },
     token_counts: {

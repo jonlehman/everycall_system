@@ -132,37 +132,24 @@ export async function callOpenAiJsonModel<T>(input: {
       ? input.system
       : `${input.system}\nReturn syntactically valid JSON only. Double-check commas, brackets, and quotes before responding.`;
     try {
+      const requestBody = buildOpenAiJsonResponseRequestBody({
+        model: input.model,
+        system,
+        user: input.user,
+        ...(input.temperature === undefined ? {} : { temperature: input.temperature }),
+        ...(input.maxOutputTokens === undefined ? {} : { maxOutputTokens: input.maxOutputTokens }),
+        ...(input.jsonSchemaName === undefined ? {} : { jsonSchemaName: input.jsonSchemaName }),
+        ...(input.jsonSchema === undefined ? {} : { jsonSchema: input.jsonSchema }),
+        ...(input.promptCacheKey === undefined ? {} : { promptCacheKey: input.promptCacheKey }),
+        ...(input.promptCacheRetention === undefined ? {} : { promptCacheRetention: input.promptCacheRetention })
+      });
       const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          model: input.model,
-          temperature: input.temperature ?? 0,
-          max_output_tokens: input.maxOutputTokens ?? 1400,
-          ...(normalizeText(input.promptCacheKey) ? { prompt_cache_key: normalizeText(input.promptCacheKey) } : {}),
-          ...(normalizeText(input.promptCacheRetention || OPENAI_BUILD_PROMPT_CACHE_RETENTION)
-            ? { prompt_cache_retention: normalizeText(input.promptCacheRetention || OPENAI_BUILD_PROMPT_CACHE_RETENTION) }
-            : {}),
-          ...(input.jsonSchema
-            ? {
-                text: {
-                  format: {
-                    type: "json_schema",
-                    name: normalizeText(input.jsonSchemaName) || "structured_output",
-                    schema: input.jsonSchema,
-                    strict: true
-                  }
-                }
-              }
-            : {}),
-          input: [
-            { role: "system", content: system },
-            { role: "user", content: input.user }
-          ]
-        })
+        body: JSON.stringify(requestBody)
       }, OPENAI_JSON_TIMEOUT_MS);
 
       if (!response.ok) {
@@ -218,16 +205,17 @@ export async function embedOpenAiTexts(input: {
     batches,
     OPENAI_EMBED_BATCH_CONCURRENCY,
     async (batch) => {
+      const requestBody = buildOpenAiEmbeddingsRequestBody({
+        model,
+        texts: batch.texts
+      });
       const response = await fetchWithTimeout("https://api.openai.com/v1/embeddings", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          model,
-          input: batch.texts
-        })
+        body: JSON.stringify(requestBody)
       }, OPENAI_EMBED_TIMEOUT_MS);
 
       if (!response.ok) {
@@ -249,4 +237,52 @@ export async function embedOpenAiTexts(input: {
   return embeddedBatches
     .flat()
     .sort((left, right) => left.index - right.index);
+}
+
+export function buildOpenAiJsonResponseRequestBody(input: {
+  model: string;
+  system: string;
+  user: string;
+  temperature?: number;
+  maxOutputTokens?: number;
+  jsonSchemaName?: string;
+  jsonSchema?: JsonSchema;
+  promptCacheKey?: string;
+  promptCacheRetention?: string;
+}) {
+  return {
+    model: input.model,
+    temperature: input.temperature ?? 0,
+    max_output_tokens: input.maxOutputTokens ?? 1400,
+    ...(normalizeText(input.promptCacheKey) ? { prompt_cache_key: normalizeText(input.promptCacheKey) } : {}),
+    ...(normalizeText(input.promptCacheRetention || OPENAI_BUILD_PROMPT_CACHE_RETENTION)
+      ? { prompt_cache_retention: normalizeText(input.promptCacheRetention || OPENAI_BUILD_PROMPT_CACHE_RETENTION) }
+      : {}),
+    ...(input.jsonSchema
+      ? {
+          text: {
+            format: {
+              type: "json_schema",
+              name: normalizeText(input.jsonSchemaName) || "structured_output",
+              schema: input.jsonSchema,
+              strict: true
+            }
+          }
+        }
+      : {}),
+    input: [
+      { role: "system", content: input.system },
+      { role: "user", content: input.user }
+    ]
+  };
+}
+
+export function buildOpenAiEmbeddingsRequestBody(input: {
+  model?: string;
+  texts: string[];
+}) {
+  return {
+    model: input.model || process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small",
+    input: input.texts.map((text) => normalizeText(text)).filter(Boolean)
+  };
 }

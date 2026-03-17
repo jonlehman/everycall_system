@@ -10,7 +10,12 @@ import {
   type RetrievedCardSupport,
   type RetrievedFactSupport
 } from "./knowledgePlannerRuntime.js";
-import { callOpenAiJsonModel, embedOpenAiTexts } from "./openAiStructured.js";
+import {
+  buildOpenAiEmbeddingsRequestBody,
+  buildOpenAiJsonResponseRequestBody,
+  callOpenAiJsonModel,
+  embedOpenAiTexts
+} from "./openAiStructured.js";
 
 type QueryResultRow = Record<string, any>;
 type QueryResult = { rowCount?: number | null; rows?: QueryResultRow[] | null };
@@ -323,7 +328,7 @@ function vectorLiteral(embedding: number[]) {
   return `[${embedding.map((value) => Number(value || 0)).join(",")}]`;
 }
 
-function buildPlannerSystemPrompt() {
+export function buildPlannerSystemPrompt() {
   return [
     "You are a fast coverage planner for a live voice receptionist.",
     "Return JSON only.",
@@ -340,7 +345,7 @@ function buildPlannerSystemPrompt() {
   ].join("\n");
 }
 
-function buildPlannerUserPrompt(input: PlannerRuntimeExecutionInput) {
+export function buildPlannerUserPrompt(input: PlannerRuntimeExecutionInput) {
   return JSON.stringify({
     caller_question: input.queryText,
     recent_conversation_summary: input.recentConversationSummary || "",
@@ -353,6 +358,32 @@ function buildPlannerUserPrompt(input: PlannerRuntimeExecutionInput) {
       no_answer_prose: true,
       no_exact_company_claims: true
     }
+  });
+}
+
+export function buildPlannerOpenAiRequestBody(input: PlannerRuntimeExecutionInput) {
+  const model = input.plannerModel || process.env.OPENAI_PLANNER_MODEL || "gpt-4.1-mini";
+  return buildOpenAiJsonResponseRequestBody({
+    model,
+    system: buildPlannerSystemPrompt(),
+    user: buildPlannerUserPrompt(input),
+    temperature: 0,
+    maxOutputTokens: 220
+  });
+}
+
+export function buildRuntimeEmbeddingsRequestBody(input: {
+  queryText: string;
+  coverageItems: string[];
+  embeddingModel?: string;
+}) {
+  const coverageItems = uniqueValues([
+    input.queryText,
+    ...(input.coverageItems || []).map((item) => normalizeText(item)).filter(Boolean)
+  ]).slice(0, 6);
+  return buildOpenAiEmbeddingsRequestBody({
+    model: input.embeddingModel || process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small",
+    texts: coverageItems
   });
 }
 

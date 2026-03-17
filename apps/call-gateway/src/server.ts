@@ -912,6 +912,12 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
         : undefined,
       totalGatewayTurnMs: typeof runtimeResult.retrieval_telemetry.total_gateway_turn_ms === "number"
         ? runtimeResult.retrieval_telemetry.total_gateway_turn_ms
+        : undefined,
+      plannerRequestPayload: runtimeResult.retrieval_telemetry.planner_request_payload
+        ? JSON.stringify(runtimeResult.retrieval_telemetry.planner_request_payload)
+        : undefined,
+      embeddingRequestPayload: runtimeResult.retrieval_telemetry.embedding_request_payload
+        ? JSON.stringify(runtimeResult.retrieval_telemetry.embedding_request_payload)
         : undefined
     });
     await forwardToolResult(
