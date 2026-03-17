@@ -81,6 +81,12 @@ type EndCallArgs = {
   reason?: string;
 };
 
+type PendingToolSpeechWait = {
+  tool: string;
+  callId: string;
+  requestedAtMs: number;
+};
+
 type UsageTotals = {
   inputTokens: number;
   outputTokens: number;
@@ -132,6 +138,7 @@ type StreamSession = {
   queuedAssistantResponses?: Array<{ reason: string; response: Record<string, unknown>; dedupeKey?: string | null }>;
   executingToolCallKeys?: Set<string>;
   completedToolCallKeys?: Set<string>;
+  pendingToolSpeechWait?: PendingToolSpeechWait | null;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -171,6 +178,7 @@ function createStreamSession(
     queuedAssistantResponses: [],
     executingToolCallKeys: new Set<string>(),
     completedToolCallKeys: new Set<string>(),
+    pendingToolSpeechWait: null,
     ...(realtimeLogPath ? { realtimeLogPath } : {})
   };
 }
@@ -840,6 +848,14 @@ async function forwardToolResult(
   }
 }
 
+function noteToolResponseRequested(session: StreamSession, tool: string, callId: string) {
+  session.pendingToolSpeechWait = {
+    tool,
+    callId,
+    requestedAtMs: performance.now()
+  };
+}
+
 async function executeToolCall(session: StreamSession, name: string, callId: string, argsText: string) {
   let args: Record<string, unknown> = {};
   try {
@@ -954,6 +970,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       tool: name,
       callId
     });
+    noteToolResponseRequested(session, name, callId);
     requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
     return;
   }
@@ -985,6 +1002,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       tool: name,
       callId
     });
+    noteToolResponseRequested(session, name, callId);
     requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
     return;
   }
@@ -1032,6 +1050,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     tool: name,
     callId
   });
+  noteToolResponseRequested(session, name, callId);
   requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
 }
 
@@ -1244,6 +1263,17 @@ function connectOpenAiRealtime(session: StreamSession) {
     if (type === "response.output_audio.delta" || type === "response.audio.delta" || type === "output_audio.delta") {
       const audioBase64 = payloadMsg.delta || payloadMsg.audio?.delta || payloadMsg.audio?.data || payloadMsg.data || "";
       if (audioBase64) {
+        if (session.pendingToolSpeechWait) {
+          const waitMs = Number((performance.now() - session.pendingToolSpeechWait.requestedAtMs).toFixed(3));
+          logInfo("openai_realtime_tool_response_first_audio", {
+            callSid: session.callSid,
+            tool: session.pendingToolSpeechWait.tool,
+            callId: session.pendingToolSpeechWait.callId,
+            responseId: payloadMsg?.response_id || payloadMsg?.response?.id || null,
+            waitMs
+          });
+          session.pendingToolSpeechWait = null;
+        }
         noteAssistantResponseCreated(session, payloadMsg?.response_id || payloadMsg?.response?.id || null);
         noteAssistantOutputItem(session, payloadMsg?.item_id || payloadMsg?.item?.id || payloadMsg?.output_item?.id || null);
         enqueueOutputPcm(session, Buffer.from(audioBase64, "base64"));
