@@ -1,6 +1,9 @@
 import { performance } from "node:perf_hooks";
 import {
   executePlannerPgvectorRuntime,
+  FORCED_RUNTIME_CONFIDENCE_SCORE,
+  FORCED_SUPPORT_MODE_ACTIVE,
+  getRuntimeBundleConfidenceScore,
   persistCoverageGapEvents,
   selectMatchedGuardrails as selectSharedMatchedGuardrails,
   selectMatchedOverrides as selectSharedMatchedOverrides,
@@ -197,7 +200,10 @@ function buildResponseRestrictions(
     "Answer directly and briefly.",
     "Use only source-backed business information from the answer packet for tenant-specific claims.",
     "Do not invent pricing, availability, guarantees, or policy details.",
-    "Ask at most one short clarifying question if needed."
+    "Ask at most one short clarifying question if needed.",
+    "When retrieved material overlaps or contains noise, prefer the most directly relevant and concrete capability or policy statements.",
+    "Ignore privacy-policy, contact-form, and admin text unless the caller is explicitly asking about those topics.",
+    "If the remaining material still conflicts, avoid making a hard unsupported claim and offer a callback or follow-up."
   ];
   if (runtimeEntryMode === "setup_interview") {
     rules.push("Treat confirmed summary blocks as authoritative and raw transcript text as evidence only.");
@@ -270,7 +276,9 @@ function buildCompatibilityBundle(
     missing_critical_slots: [],
     state_delta: {},
     response_rules: [],
-    confidence_score: answerPacket.coverage?.some((item: any) => item.support_strength === "strong") ? 0.82 : 0.45
+    confidence_score: getRuntimeBundleConfidenceScore(answerPacket.coverage || []),
+    forced_support_mode: FORCED_SUPPORT_MODE_ACTIVE,
+    forced_confidence_score: FORCED_SUPPORT_MODE_ACTIVE ? FORCED_RUNTIME_CONFIDENCE_SCORE : undefined
   };
 }
 

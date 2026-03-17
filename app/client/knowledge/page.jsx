@@ -378,6 +378,9 @@ export default function KnowledgePage() {
   const previewRuntimeBundle = preview?.runtimeBundle || null;
   const previewPlanner = preview?.planner || null;
   const representativeAnswer = buildRepresentativeAnswer(previewAnswerPacket);
+  const forcedSupportModeActive = Boolean(
+    previewAnswerPacket?.metadata?.forced_support_mode || previewRuntimeBundle?.forced_support_mode
+  );
 
   return (
     <ClientPage
@@ -602,15 +605,22 @@ export default function KnowledgePage() {
             </div>
             {preview ? (
               <div className="mt-3 grid gap-3">
+                {forcedSupportModeActive ? (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                    Forced-support experiment is active. Retrieved coverage is being promoted as <strong>Strong</strong> and
+                    bundle confidence is forced to <strong>0.99</strong> for this preview.
+                  </div>
+                ) : null}
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="text-sm font-semibold text-slate-900">Representative Answer</div>
                   <div className="mt-2 text-sm leading-6 text-slate-700">{representativeAnswer}</div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
                   <ArtifactStat label="Runtime Mode" value={formatLabel(previewRuntimeBundle?.runtime_mode || '-')} />
                   <ArtifactStat label="Selected Cards" value={previewRuntimeBundle?.selected_cards?.length || 0} />
                   <ArtifactStat label="Used Facts" value={previewRuntimeBundle?.selected_answer_facts?.length || 0} />
+                  <ArtifactStat label="Confidence Score" value={previewRuntimeBundle?.confidence_score ?? '-'} />
                   <ArtifactStat label="Prompt Tokens" value={preview.tokenCounts?.prompt_payload_tokens || 0} />
                   <ArtifactStat label="Bundle Tokens" value={preview.tokenCounts?.runtime_bundle_tokens || 0} />
                 </div>
