@@ -885,6 +885,33 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
         : undefined,
       assetFetchMs: typeof runtimeResult.retrieval_telemetry.asset_fetch_ms === "number"
         ? runtimeResult.retrieval_telemetry.asset_fetch_ms
+        : undefined,
+      recentConversationSummaryMs: typeof runtimeResult.retrieval_telemetry.recent_conversation_summary_ms === "number"
+        ? runtimeResult.retrieval_telemetry.recent_conversation_summary_ms
+        : undefined,
+      plannerMs: typeof runtimeResult.retrieval_telemetry.planner_ms === "number"
+        ? runtimeResult.retrieval_telemetry.planner_ms
+        : undefined,
+      embeddingMs: typeof runtimeResult.retrieval_telemetry.embedding_ms === "number"
+        ? runtimeResult.retrieval_telemetry.embedding_ms
+        : undefined,
+      retrievalMs: typeof runtimeResult.retrieval_telemetry.retrieval_ms === "number"
+        ? runtimeResult.retrieval_telemetry.retrieval_ms
+        : undefined,
+      packetMs: typeof runtimeResult.retrieval_telemetry.packet_ms === "number"
+        ? runtimeResult.retrieval_telemetry.packet_ms
+        : undefined,
+      runtimeCoreMs: typeof runtimeResult.retrieval_telemetry.runtime_core_ms === "number"
+        ? runtimeResult.retrieval_telemetry.runtime_core_ms
+        : undefined,
+      runtimeBundlePersistMs: typeof runtimeResult.retrieval_telemetry.runtime_bundle_persist_ms === "number"
+        ? runtimeResult.retrieval_telemetry.runtime_bundle_persist_ms
+        : undefined,
+      coverageGapPersistMs: typeof runtimeResult.retrieval_telemetry.coverage_gap_persist_ms === "number"
+        ? runtimeResult.retrieval_telemetry.coverage_gap_persist_ms
+        : undefined,
+      totalGatewayTurnMs: typeof runtimeResult.retrieval_telemetry.total_gateway_turn_ms === "number"
+        ? runtimeResult.retrieval_telemetry.total_gateway_turn_ms
         : undefined
     });
     await forwardToolResult(

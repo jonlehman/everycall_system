@@ -501,9 +501,12 @@ export async function fetchKnowledgeRuntimeTurn(
     throw new Error("query_required");
   }
 
+  const totalStarted = performance.now();
   const buildId = normalizeText(body.buildId) || promptPayload.knowledge_runtime.active_build_id;
   const loaded = await loadBuildAssets(pool, body.tenantKey, buildId, { useCache: true });
+  const conversationSummaryStarted = performance.now();
   const recentConversationSummary = await loadRecentConversationSummary(pool, body.callId);
+  const recentConversationSummaryMs = Number((performance.now() - conversationSummaryStarted).toFixed(3));
 
   const started = performance.now();
   const runtimeResult = await executePlannerPgvectorRuntime(pool, {
@@ -557,6 +560,7 @@ export async function fetchKnowledgeRuntimeTurn(
     nextCallState
   );
 
+  const runtimeBundlePersistStarted = performance.now();
   await pool.query(
     `INSERT INTO runtime_bundles (
        runtime_bundle_id, call_id, turn_id, tenant_key, build_id, runtime_entry_mode, runtime_mode,
@@ -579,7 +583,9 @@ export async function fetchKnowledgeRuntimeTurn(
       JSON.stringify(finalAnswerPacket)
     ]
   );
+  const runtimeBundlePersistMs = Number((performance.now() - runtimeBundlePersistStarted).toFixed(3));
 
+  const coverageGapPersistStarted = performance.now();
   await persistCoverageGapEvents(pool, {
     tenantKey: body.tenantKey,
     buildId,
@@ -591,6 +597,8 @@ export async function fetchKnowledgeRuntimeTurn(
       runtime_mode: runtimeMode
     }
   });
+  const coverageGapPersistMs = Number((performance.now() - coverageGapPersistStarted).toFixed(3));
+  const totalDurationMs = Number((performance.now() - totalStarted).toFixed(3));
 
   return {
     answer_packet: finalAnswerPacket,
@@ -606,9 +614,18 @@ export async function fetchKnowledgeRuntimeTurn(
     retrieval_telemetry: {
       query,
       duration_ms: durationMs,
+      total_gateway_turn_ms: totalDurationMs,
       asset_cache_hit: loaded.cacheHit,
       asset_fetch_ms: loaded.fetchMs,
       asset_load_strategy: loaded.cacheHit ? "warm_cache" : "cold_fallback",
+      recent_conversation_summary_ms: recentConversationSummaryMs,
+      planner_ms: runtimeResult.timings?.planner_ms,
+      embedding_ms: runtimeResult.timings?.embedding_ms,
+      retrieval_ms: runtimeResult.timings?.retrieval_ms,
+      packet_ms: runtimeResult.timings?.packet_ms,
+      runtime_core_ms: runtimeResult.timings?.total_ms,
+      runtime_bundle_persist_ms: runtimeBundlePersistMs,
+      coverage_gap_persist_ms: coverageGapPersistMs,
       planner_coverage_items: runtimeResult.planner.coverage_items,
       coverage: finalAnswerPacket.coverage
     },
