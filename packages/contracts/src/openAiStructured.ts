@@ -22,6 +22,10 @@ function shouldOmitResponsesTemperature(model: string) {
   return normalizeText(model).toLowerCase().startsWith("gpt-5");
 }
 
+function shouldUseResponsesReasoningNone(model: string) {
+  return normalizeText(model).toLowerCase().startsWith("gpt-5");
+}
+
 function extractUsage(json: any) {
   if (json?.usage && typeof json.usage === "object" && !Array.isArray(json.usage)) {
     return {
@@ -287,6 +291,9 @@ export function buildOpenAiJsonResponseRequestBody(input: {
       ? {}
       : { temperature }),
     max_output_tokens: input.maxOutputTokens ?? 1400,
+    ...(shouldUseResponsesReasoningNone(model)
+      ? { reasoning: { effort: "none" } }
+      : {}),
     ...(normalizeText(input.promptCacheKey) ? { prompt_cache_key: normalizeText(input.promptCacheKey) } : {}),
     ...(normalizeText(input.promptCacheRetention || OPENAI_BUILD_PROMPT_CACHE_RETENTION)
       ? { prompt_cache_retention: normalizeText(input.promptCacheRetention || OPENAI_BUILD_PROMPT_CACHE_RETENTION) }

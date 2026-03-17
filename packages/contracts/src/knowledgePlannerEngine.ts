@@ -392,22 +392,37 @@ export function buildRuntimeEmbeddingsRequestBody(input: {
 }
 
 async function runPlanner(input: PlannerRuntimeExecutionInput) {
-  const plannerResponse = await callOpenAiJsonModel({
-    model: input.plannerModel || process.env.OPENAI_PLANNER_MODEL || "gpt-4.1-mini",
-    system: buildPlannerSystemPrompt(),
-    user: buildPlannerUserPrompt(input),
-    schema: plannerTurnResponseSchema,
-    temperature: 0,
-    maxOutputTokens: 220
-  });
-  const normalized = normalizePlannerResponse(plannerResponse);
-  if (!normalized.coverage_items.length) {
-    normalized.coverage_items = [input.queryText];
+  const plannerModel = input.plannerModel || process.env.OPENAI_PLANNER_MODEL || "gpt-4.1-mini";
+  try {
+    const plannerResponse = await callOpenAiJsonModel({
+      model: plannerModel,
+      system: buildPlannerSystemPrompt(),
+      user: buildPlannerUserPrompt(input),
+      schema: plannerTurnResponseSchema,
+      temperature: 0,
+      maxOutputTokens: 220
+    });
+    const normalized = normalizePlannerResponse(plannerResponse);
+    if (!normalized.coverage_items.length) {
+      normalized.coverage_items = [input.queryText];
+    }
+    return {
+      planner: normalized,
+      rawResponse: plannerResponse.rawResponse
+    };
+  } catch (error) {
+    return {
+      planner: {
+        coverage_items: [input.queryText],
+        next_step_suggestions: []
+      },
+      rawResponse: {
+        fallback: true,
+        planner_model: plannerModel,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    };
   }
-  return {
-    planner: normalized,
-    rawResponse: plannerResponse.rawResponse
-  };
 }
 
 function buildCoverageValueSql(items: Array<{ coverageItemText: string; embedding: number[] }>, startIndex: number) {
