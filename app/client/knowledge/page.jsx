@@ -49,6 +49,7 @@ function buildRepresentativeAnswer(answerPacket) {
   const limits = Array.isArray(packet.limits_or_exclusions) ? packet.limits_or_exclusions.filter(Boolean) : [];
   const nextSteps = Array.isArray(packet.next_step_options) ? packet.next_step_options.filter(Boolean) : [];
   const unsupported = Array.isArray(packet.unsupported_requested_items) ? packet.unsupported_requested_items.filter(Boolean) : [];
+  const shouldLeadWithNextStep = !direct.length || unsupported.length > 0 || String(packet.runtime_mode || '').trim() !== 'answer';
 
   const parts = [];
   if (direct.length) {
@@ -63,7 +64,7 @@ function buildRepresentativeAnswer(answerPacket) {
   if (unsupported.length) {
     parts.push(`Confirmed details are not available for: ${unsupported.slice(0, 2).join('; ')}.`);
   }
-  if (nextSteps.length) {
+  if (nextSteps.length && shouldLeadWithNextStep) {
     parts.push(`Likely next step: ${ensureSentence(nextSteps[0])}`);
   }
   return parts.join(' ').trim() || 'No representative answer is available for this preview yet.';

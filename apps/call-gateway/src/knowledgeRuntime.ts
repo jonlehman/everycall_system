@@ -201,6 +201,11 @@ function buildResponseRestrictions(
     "Use only source-backed business information from the answer packet for tenant-specific claims.",
     "Do not invent pricing, availability, guarantees, or policy details.",
     "Ask at most one short clarifying question if needed.",
+    "Do not stop abruptly after a direct answer unless the caller is clearly done or is interrupting.",
+    "After answering, make one gentle forward-motion move that fits the moment.",
+    "Prefer the lightest useful move: tie back to what the caller said, ask one soft discovery question, or offer one optional helpful detail.",
+    "Do not jump straight to scheduling, callback, or a hard sales close unless the caller shows clear intent or the answer is incomplete.",
+    "Treat next_step_options as optional support, not mandatory spoken output.",
     "When retrieved material overlaps or contains noise, prefer the most directly relevant and concrete capability or policy statements.",
     "Ignore privacy-policy, contact-form, and admin text unless the caller is explicitly asking about those topics.",
     "If the remaining material still conflicts, avoid making a hard unsupported claim and offer a callback or follow-up."
