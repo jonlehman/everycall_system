@@ -26,6 +26,55 @@ function shouldUseResponsesReasoningNone(model: string) {
   return normalizeText(model).toLowerCase().startsWith("gpt-5");
 }
 
+function truncateForError(value: unknown, maxLength = 400) {
+  const text = normalizeText(typeof value === "string" ? value : JSON.stringify(value));
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function extractResponseRefusal(json: any) {
+  const refusal = Array.isArray(json?.output)
+    ? json.output
+        .flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+        .find((item: any) => item?.type === "refusal" && typeof item?.refusal === "string")
+        ?.refusal
+    : "";
+  return normalizeText(refusal);
+}
+
+function summarizeOutputTypes(json: any) {
+  if (!Array.isArray(json?.output)) return [];
+  return json.output
+    .flatMap((item: any) => {
+      const itemTypes = [normalizeText(item?.type)];
+      const contentTypes = Array.isArray(item?.content)
+        ? item.content.map((content: any) => normalizeText(content?.type))
+        : [];
+      return [...itemTypes, ...contentTypes];
+    })
+    .filter(Boolean);
+}
+
+function buildStructuredOutputError(json: any) {
+  const refusal = extractResponseRefusal(json);
+  if (refusal) {
+    return new Error(`openai_json_model_refusal:${truncateForError(refusal)}`);
+  }
+  const status = normalizeText(json?.status);
+  const incompleteDetails = json?.incomplete_details;
+  if (status === "incomplete") {
+    return new Error(`openai_json_model_incomplete:${truncateForError(incompleteDetails || "unknown")}`);
+  }
+  const outputTypes = summarizeOutputTypes(json);
+  return new Error(
+    `openai_json_model_empty_output:status=${status || "unknown"}:output_types=${truncateForError(outputTypes)}:response=${truncateForError({
+      status: json?.status,
+      incomplete_details: json?.incomplete_details,
+      error: json?.error,
+      output: json?.output
+    })}`
+  );
+}
+
 function extractUsage(json: any) {
   if (json?.usage && typeof json.usage === "object" && !Array.isArray(json.usage)) {
     return {
@@ -78,7 +127,11 @@ function resolveResponseText(json: any) {
       .find((item: any) => item?.type === "output_text" && typeof item?.text === "string")
       ?.text
     : "";
-  return normalizeText(responseText);
+  const normalized = normalizeText(responseText);
+  if (normalized) {
+    return normalized;
+  }
+  throw buildStructuredOutputError(json);
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
