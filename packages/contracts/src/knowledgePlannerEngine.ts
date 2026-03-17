@@ -75,6 +75,8 @@ export type PlannerRuntimeExecutionResult = {
   };
 };
 
+export const FORCE_SKIP_PLANNER = true;
+
 function normalizeText(value: unknown) {
   return String(value || "").trim();
 }
@@ -440,6 +442,16 @@ async function runPlanner(input: PlannerRuntimeExecutionInput) {
   }
 }
 
+function buildPlannerBypassResult(input: PlannerRuntimeExecutionInput) {
+  return {
+    planner: {
+      coverage_items: [input.queryText],
+      next_step_suggestions: []
+    } satisfies PlannerTurnResponse,
+    rawResponse: null
+  };
+}
+
 function buildCoverageValueSql(items: Array<{ coverageItemText: string; embedding: number[] }>, startIndex: number) {
   const values: unknown[] = [];
   const tuples = items.map((item) => {
@@ -635,9 +647,11 @@ async function retrieveFactSupportBatch(db: Queryable, input: {
 export async function executePlannerPgvectorRuntime(db: Queryable, input: PlannerRuntimeExecutionInput): Promise<PlannerRuntimeExecutionResult> {
   const totalStarted = performance.now();
   const plannerStarted = performance.now();
-  const plannerResult = await runPlanner(input);
+  const plannerResult = FORCE_SKIP_PLANNER
+    ? buildPlannerBypassResult(input)
+    : await runPlanner(input);
   const planner = plannerResult.planner;
-  const plannerMs = Number((performance.now() - plannerStarted).toFixed(3));
+  const plannerMs = FORCE_SKIP_PLANNER ? 0 : Number((performance.now() - plannerStarted).toFixed(3));
   const coverageItems = uniqueValues([
     input.queryText,
     ...planner.coverage_items.map((item) => normalizeText(item)).filter(Boolean)
@@ -706,7 +720,7 @@ export async function executePlannerPgvectorRuntime(db: Queryable, input: Planne
     cardsByCoverageItem: new Map(Object.entries(cardResultsByCoverageItem)),
     factsByCoverageItem: new Map(Object.entries(factResultsByCoverageItem)),
     metadata: {
-      planner_model: input.plannerModel || process.env.OPENAI_PLANNER_MODEL || "gpt-4.1-mini",
+      planner_model: FORCE_SKIP_PLANNER ? "disabled" : (input.plannerModel || process.env.OPENAI_PLANNER_MODEL || "gpt-4.1-mini"),
       embedding_model: embeddingModel
     },
     ...(input.packetSoftBudgetTokens === undefined ? {} : { softBudgetTokens: input.packetSoftBudgetTokens }),
@@ -747,8 +761,8 @@ export async function executePlannerPgvectorRuntime(db: Queryable, input: Planne
       total_ms: Number((performance.now() - totalStarted).toFixed(3))
     },
     tokenCounts: {
-      planner_input_tokens: estimateTokenCount(buildPlannerUserPrompt(input)),
-      planner_output_tokens: estimateTokenCount(planner),
+      planner_input_tokens: FORCE_SKIP_PLANNER ? 0 : estimateTokenCount(buildPlannerUserPrompt(input)),
+      planner_output_tokens: FORCE_SKIP_PLANNER ? 0 : estimateTokenCount(planner),
       packet_tokens: answerPacket.token_counts.packet_tokens
     },
     debug: {

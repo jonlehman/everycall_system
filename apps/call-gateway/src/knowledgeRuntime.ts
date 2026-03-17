@@ -3,6 +3,7 @@ import {
   buildPlannerOpenAiRequestBody,
   buildRuntimeEmbeddingsRequestBody,
   executePlannerPgvectorRuntime,
+  FORCE_SKIP_PLANNER,
   FORCED_RUNTIME_CONFIDENCE_SCORE,
   FORCED_SUPPORT_MODE_ACTIVE,
   getRuntimeBundleConfidenceScore,
@@ -532,16 +533,18 @@ export async function fetchKnowledgeRuntimeTurn(
   const matchedOverrides = selectSharedMatchedOverrides(configuration.overrides, query, compatibilityBundle);
   const matchedGuardrails = selectSharedMatchedGuardrails(configuration.guardrails, query, compatibilityBundle, body.callState);
   const runtimeMode = deriveRuntimeMode(runtimeResult.answerPacket, matchedGuardrails);
-  const plannerRequestPayload = buildPlannerOpenAiRequestBody({
-    tenantKey: body.tenantKey,
-    buildId,
-    queryText: query,
-    recentConversationSummary,
-    tenantPersona: promptPayload.knowledge_runtime.tenant_persona,
-    businessCallIntentSummary: promptPayload.knowledge_runtime.business_call_intent_summary,
-    currentStage: normalizeText(body.callState.current_stage) || "answer_or_route",
-    ...(loaded.assets.planner_model ? { plannerModel: loaded.assets.planner_model } : {})
-  });
+  const plannerRequestPayload = FORCE_SKIP_PLANNER
+    ? null
+    : buildPlannerOpenAiRequestBody({
+        tenantKey: body.tenantKey,
+        buildId,
+        queryText: query,
+        recentConversationSummary,
+        tenantPersona: promptPayload.knowledge_runtime.tenant_persona,
+        businessCallIntentSummary: promptPayload.knowledge_runtime.business_call_intent_summary,
+        currentStage: normalizeText(body.callState.current_stage) || "answer_or_route",
+        ...(loaded.assets.planner_model ? { plannerModel: loaded.assets.planner_model } : {})
+      });
   const embeddingRequestPayload = runtimeResult.debug?.embedding_request_payload || buildRuntimeEmbeddingsRequestBody({
     queryText: query,
     coverageItems: (runtimeResult.planner.coverage_items || []).map((item: any) => normalizeText(item)),
