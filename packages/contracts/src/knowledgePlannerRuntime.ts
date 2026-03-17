@@ -18,14 +18,13 @@ export const plannerCoverageItemSchema = z.union([
 
 export const plannerTurnRequestSchema = z.object({
   caller_question: z.string().min(1),
-  recent_conversation_summary: z.string().default(""),
-  tenant_persona: z.string().min(1),
-  business_call_intent_summary: z.string().min(1),
+  recent_context_hint: z.string().default(""),
+  business_scope_hint: z.string().default(""),
   current_stage: z.string().min(1)
 });
 
 export const plannerTurnResponseSchema = z.object({
-  coverage_items: z.array(plannerCoverageItemSchema).max(6).default([]),
+  coverage_items: z.array(plannerCoverageItemSchema).max(3).default([]),
   next_step_suggestions: z.array(z.string().min(1)).max(2).default([])
 });
 
@@ -249,11 +248,10 @@ export function normalizePlannerResponse(raw: unknown): PlannerTurnResponse {
   }
   const coverageItems = uniqueValues(
     parsed.data.coverage_items.map((item) => (typeof item === "string" ? item : item.text))
-  ).slice(0, 4);
-  const nextStepSuggestions = uniqueValues(parsed.data.next_step_suggestions).slice(0, 2);
+  ).slice(0, 3);
   return {
     coverage_items: coverageItems,
-    next_step_suggestions: nextStepSuggestions
+    next_step_suggestions: []
   };
 }
 

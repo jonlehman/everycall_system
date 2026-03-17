@@ -70,6 +70,7 @@ export type PlannerRuntimeExecutionResult = {
   };
   debug: {
     planner_response_payload: unknown;
+    embedding_request_payload: unknown;
     embedding_response_payloads: unknown[];
   };
 };
@@ -334,34 +335,48 @@ function vectorLiteral(embedding: number[]) {
 
 export function buildPlannerSystemPrompt() {
   return [
-    "You are a fast coverage planner for a live voice receptionist.",
+    "You are a fast retrieval planner for a live voice receptionist.",
     "Return JSON only.",
-    "Do not write answer prose.",
+    "Do not answer the caller.",
     "Do not make company-specific claims.",
-    "Do not invent promises, policy details, pricing, or availability.",
-    "Extract at most 6 freeform coverage items the gateway should retrieve support for.",
-    "Extract at most 2 next-step suggestions.",
-    "Prefer 2 to 4 coverage items unless the caller asks a genuinely compound question.",
+    "Do not invent pricing, availability, guarantees, or policy details.",
+    "Return only coverage_items.",
+    "Extract at most 3 short retrieval phrases.",
+    "Use compact noun phrases or short concept phrases only.",
     "Only include facets clearly implied by the caller question or recent context.",
-    "Do not speculate or expand into generic adjacent topics.",
-    "Coverage items should be concepts, applicability questions, limits, process details, or follow-up facets.",
-    "Prefer compact phrases such as 'what the Forever Warranty covers' or 'limits or applicability of financing'."
+    "Do not speculate or expand into adjacent topics.",
+    "If one phrase is enough, return one."
   ].join("\n");
+}
+
+function buildPlannerRecentContextHint(summary: string) {
+  const recentTurns = normalizeText(summary)
+    .split("|")
+    .map((item) => normalizeText(item))
+    .filter(Boolean)
+    .slice(-2)
+    .join(" | ");
+  return recentTurns.slice(0, 240);
+}
+
+function buildPlannerBusinessScopeHint(input: PlannerRuntimeExecutionInput) {
+  const intentSummary = normalizeText(input.businessCallIntentSummary);
+  if (intentSummary) {
+    return intentSummary.slice(0, 120);
+  }
+  const businessRoleLine = normalizeText(input.tenantPersona)
+    .split("\n")
+    .map((line) => normalizeText(line))
+    .find((line) => line.toLowerCase().startsWith("business role:"));
+  return normalizeText(businessRoleLine?.replace(/^business role:\s*/i, "")).slice(0, 120);
 }
 
 export function buildPlannerUserPrompt(input: PlannerRuntimeExecutionInput) {
   return JSON.stringify({
     caller_question: input.queryText,
-    recent_conversation_summary: input.recentConversationSummary || "",
-    tenant_persona: input.tenantPersona,
-    business_call_intent_summary: input.businessCallIntentSummary,
-    current_stage: input.currentStage,
-    output_contract: {
-      coverage_items_max: 6,
-      next_step_suggestions_max: 2,
-      no_answer_prose: true,
-      no_exact_company_claims: true
-    }
+    recent_context_hint: buildPlannerRecentContextHint(input.recentConversationSummary || ""),
+    business_scope_hint: buildPlannerBusinessScopeHint(input),
+    current_stage: input.currentStage
   });
 }
 
@@ -372,7 +387,7 @@ export function buildPlannerOpenAiRequestBody(input: PlannerRuntimeExecutionInpu
     system: buildPlannerSystemPrompt(),
     user: buildPlannerUserPrompt(input),
     temperature: 0,
-    maxOutputTokens: 220
+    maxOutputTokens: 120
   });
 }
 
@@ -384,7 +399,7 @@ export function buildRuntimeEmbeddingsRequestBody(input: {
   const coverageItems = uniqueValues([
     input.queryText,
     ...(input.coverageItems || []).map((item) => normalizeText(item)).filter(Boolean)
-  ]).slice(0, 6);
+  ]).slice(0, 4);
   return buildOpenAiEmbeddingsRequestBody({
     model: input.embeddingModel || process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small",
     texts: coverageItems
@@ -400,7 +415,7 @@ async function runPlanner(input: PlannerRuntimeExecutionInput) {
       user: buildPlannerUserPrompt(input),
       schema: plannerTurnResponseSchema,
       temperature: 0,
-      maxOutputTokens: 220
+      maxOutputTokens: 120
     });
     const normalized = normalizePlannerResponse(plannerResponse);
     if (!normalized.coverage_items.length) {
@@ -626,8 +641,12 @@ export async function executePlannerPgvectorRuntime(db: Queryable, input: Planne
   const coverageItems = uniqueValues([
     input.queryText,
     ...planner.coverage_items.map((item) => normalizeText(item)).filter(Boolean)
-  ]).slice(0, 6);
+  ]).slice(0, 4);
   const embeddingModel = input.embeddingModel || process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
+  const embeddingRequestPayload = buildOpenAiEmbeddingsRequestBody({
+    model: embeddingModel,
+    texts: coverageItems
+  });
   const embeddingStarted = performance.now();
   const embeddedResult = await embedOpenAiTextsDetailed({
     model: embeddingModel,
@@ -734,6 +753,7 @@ export async function executePlannerPgvectorRuntime(db: Queryable, input: Planne
     },
     debug: {
       planner_response_payload: plannerResult.rawResponse,
+      embedding_request_payload: embeddingRequestPayload,
       embedding_response_payloads: embeddedResult.rawResponses
     }
   };

@@ -542,7 +542,7 @@ export async function fetchKnowledgeRuntimeTurn(
     currentStage: normalizeText(body.callState.current_stage) || "answer_or_route",
     ...(loaded.assets.planner_model ? { plannerModel: loaded.assets.planner_model } : {})
   });
-  const embeddingRequestPayload = buildRuntimeEmbeddingsRequestBody({
+  const embeddingRequestPayload = runtimeResult.debug?.embedding_request_payload || buildRuntimeEmbeddingsRequestBody({
     queryText: query,
     coverageItems: (runtimeResult.planner.coverage_items || []).map((item: any) => normalizeText(item)),
     ...(loaded.assets.embedding_model ? { embeddingModel: loaded.assets.embedding_model } : {})
@@ -642,6 +642,9 @@ export async function fetchKnowledgeRuntimeTurn(
       runtime_bundle_persist_ms: runtimeBundlePersistMs,
       coverage_gap_persist_ms: coverageGapPersistMs,
       planner_coverage_items: runtimeResult.planner.coverage_items,
+      embedded_coverage_items: Array.isArray((embeddingRequestPayload as any)?.input)
+        ? (embeddingRequestPayload as any).input
+        : [],
       planner_request_payload: plannerRequestPayload,
       planner_response_payload: runtimeResult.debug?.planner_response_payload,
       embedding_request_payload: embeddingRequestPayload,
