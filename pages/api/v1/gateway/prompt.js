@@ -25,15 +25,11 @@ function buildToolDefinitions(fieldSchema) {
     {
       type: "function",
       name: "knowledge_lookup",
-      description: "Retrieve tenant knowledge relevant to the caller's question.",
+      description: "Ask the gateway for a deterministic answer packet based on approved tenant knowledge.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Caller question or topic" },
-          topic: { type: "string", description: "Optional topic hint such as warranty, pricing, or service area." },
-          service_tags: { type: "array", items: { type: "string" } },
-          trade: { type: "string", description: "Optional trade hint such as plumbing, electrical, or hvac." },
-          conversation_stage: { type: "string", description: "Optional call stage such as answering_question or scheduling." }
+          query: { type: "string", description: "The caller's current question or follow-up." }
         },
         required: ["query"]
       }
@@ -91,7 +87,13 @@ export default async function handler(req, res) {
       runtimeEntryMode: "customer_call"
     });
 
-    const runtimeProfile = gatewayPrompt.approvedConfiguration.runtime_profile;
+    const runtimeProfile = gatewayPrompt.approvedConfiguration.runtime_profile || {
+      greeting_text: "",
+      session_config: {},
+      tool_policy: {},
+      wording_defaults: {},
+      runtime_defaults: {}
+    };
     const fieldSchema = buildFieldSchemaFromOutcomeSchema(
       gatewayPrompt.approvedConfiguration.call_outcome_schema,
       DEFAULT_FIELD_SCHEMA
@@ -99,20 +101,21 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       system_prompt: gatewayPrompt.systemPrompt,
-      tenant_greeting: runtimeProfile.greeting_text,
+      tenant_greeting: runtimeProfile?.greeting_text || "",
       knowledge_runtime: {
         active_build_id: gatewayPrompt.build.build_id,
-        active_domain_id: gatewayPrompt.promptPayload.active_domain.domain_id,
-        active_subdomain_id: gatewayPrompt.promptPayload.active_domain.subdomain_id,
-        runtime_entry_mode: gatewayPrompt.promptPayload.runtime_entry_mode,
+        active_domain_id: gatewayPrompt.initialCallState.active_domain_id,
+        active_subdomain_id: gatewayPrompt.initialCallState.active_subdomain_id,
+        runtime_entry_mode: gatewayPrompt.initialCallState.runtime_entry_mode,
         initial_call_state: gatewayPrompt.initialCallState,
-        prompt_payload: gatewayPrompt.promptPayload,
+        tenant_persona: gatewayPrompt.tenantPersona,
+        business_call_intent_summary: gatewayPrompt.businessCallIntentSummary,
         approved_configuration: gatewayPrompt.approvedConfiguration,
         token_counts: gatewayPrompt.tokenCounts
       },
       field_schema: fieldSchema,
       tool_definitions: buildToolDefinitions(fieldSchema),
-      session_config: runtimeProfile.session_config,
+      session_config: runtimeProfile.session_config || {},
       metadata: {
         tenantKey,
         callSid

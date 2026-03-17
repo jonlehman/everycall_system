@@ -768,7 +768,7 @@ async function main() {
     const gatewayNormalTurn = normalizeGatewayTurn(gatewayNormalTurnRaw);
     assertNoFalsePolicyMatches(gatewayNormalTurn, "gateway normal service");
     assertRuntimeMode(gatewayNormalTurn, "answer", "gateway normal service");
-    assertPrimaryCardIncludes(gatewayNormalTurn, ["services", "north sound plumbing"], "gateway normal service");
+    assertPrimaryCardIncludes(gatewayNormalTurn, ["water heater", "services", "north sound plumbing"], "gateway normal service");
     assertTurnIncludes(gatewayNormalTurn, ["water heater", "replacement", "tankless"], "gateway normal service");
     assertSelectedCardsExclude(gatewayNormalTurn, ["after-hours"], "gateway normal service");
     assertTurnExcludes(gatewayNormalTurn, ["after-hours", "dangerous question"], "gateway normal service");
@@ -782,7 +782,7 @@ async function main() {
     const gatewayServiceAreaTurn = normalizeGatewayTurn(gatewayServiceAreaRaw);
     assertNoFalsePolicyMatches(gatewayServiceAreaTurn, "gateway service area");
     assertRuntimeMode(gatewayServiceAreaTurn, "answer", "gateway service area");
-    assertPrimaryCardIncludes(gatewayServiceAreaTurn, ["service area", "coverage"], "gateway service area");
+    assertPrimaryCardIncludes(gatewayServiceAreaTurn, ["service area", "coverage", "geographic coverage", "cities served"], "gateway service area");
     assertTurnIncludes(gatewayServiceAreaTurn, ["bellevue", "service area", "serve"], "gateway service area");
     assertSelectedCardsExclude(gatewayServiceAreaTurn, ["after-hours"], "gateway service area");
     assertTurnExcludes(gatewayServiceAreaTurn, ["after-hours"], "gateway service area");
@@ -804,7 +804,7 @@ async function main() {
     const gatewayFollowTankless = normalizeGatewayTurn(gatewayFollowTanklessRaw);
     assertNoFalsePolicyMatches(gatewayFollowTankless, "gateway follow-up tankless");
     assertRuntimeMode(gatewayFollowTankless, "answer", "gateway follow-up tankless");
-    assertPrimaryCardIncludes(gatewayFollowTankless, ["services", "north sound plumbing"], "gateway follow-up tankless");
+    assertPrimaryCardIncludes(gatewayFollowTankless, ["tankless", "water heater", "services", "north sound plumbing"], "gateway follow-up tankless");
     assertTurnIncludes(gatewayFollowTankless, ["tankless", "water heater"], "gateway follow-up tankless");
 
     gatewayFollowState = gatewayRuntime.mergeRuntimeTurnState(gatewayFollowState, gatewayFollowTanklessRaw);
@@ -816,7 +816,7 @@ async function main() {
     }));
     assertNoFalsePolicyMatches(gatewayFollowBellevue, "gateway follow-up bellevue");
     assertRuntimeMode(gatewayFollowBellevue, "answer", "gateway follow-up bellevue");
-    assertPrimaryCardIncludes(gatewayFollowBellevue, ["service area", "coverage"], "gateway follow-up bellevue");
+    assertPrimaryCardIncludes(gatewayFollowBellevue, ["service area", "coverage", "geographic coverage", "cities served"], "gateway follow-up bellevue");
     assertTurnIncludes(gatewayFollowBellevue, ["bellevue", "service area", "serve"], "gateway follow-up bellevue");
     assertSelectedCardsExclude(gatewayFollowBellevue, ["after-hours"], "gateway follow-up bellevue");
     assertTurnExcludes(gatewayFollowBellevue, ["after-hours"], "gateway follow-up bellevue");
@@ -828,7 +828,7 @@ async function main() {
     }));
     assertNoFalsePolicyMatches(appNormalTurn, "app normal service");
     assertRuntimeMode(appNormalTurn, "answer", "app normal service");
-    assertPrimaryCardIncludes(appNormalTurn, ["services", "north sound plumbing"], "app normal service");
+    assertPrimaryCardIncludes(appNormalTurn, ["water heater", "services", "north sound plumbing"], "app normal service");
     assertTurnIncludes(appNormalTurn, ["water heater", "replacement", "tankless"], "app normal service");
     assertSelectedCardsExclude(appNormalTurn, ["after-hours"], "app normal service");
     assertTurnExcludes(appNormalTurn, ["after-hours"], "app normal service");
@@ -840,7 +840,7 @@ async function main() {
     }));
     assertNoFalsePolicyMatches(appServiceAreaTurn, "app service area");
     assertRuntimeMode(appServiceAreaTurn, "answer", "app service area");
-    assertPrimaryCardIncludes(appServiceAreaTurn, ["service area", "coverage"], "app service area");
+    assertPrimaryCardIncludes(appServiceAreaTurn, ["service area", "coverage", "geographic coverage", "cities served"], "app service area");
     assertTurnIncludes(appServiceAreaTurn, ["bellevue", "service area", "serve"], "app service area");
     assertSelectedCardsExclude(appServiceAreaTurn, ["after-hours"], "app service area");
     assertTurnExcludes(appServiceAreaTurn, ["after-hours"], "app service area");
@@ -858,7 +858,7 @@ async function main() {
     }));
     assertNoFalsePolicyMatches(appFollowTankless, "app follow-up tankless");
     assertRuntimeMode(appFollowTankless, "answer", "app follow-up tankless");
-    assertPrimaryCardIncludes(appFollowTankless, ["services", "north sound plumbing"], "app follow-up tankless");
+    assertPrimaryCardIncludes(appFollowTankless, ["tankless", "water heater", "services", "north sound plumbing"], "app follow-up tankless");
     assertTurnIncludes(appFollowTankless, ["tankless", "water heater"], "app follow-up tankless");
 
     const appFollowBellevue = normalizeAppTurn(await assembleKnowledgeRuntimeTurn(pool, tenantKey, {
@@ -869,7 +869,7 @@ async function main() {
     }));
     assertNoFalsePolicyMatches(appFollowBellevue, "app follow-up bellevue");
     assertRuntimeMode(appFollowBellevue, "answer", "app follow-up bellevue");
-    assertPrimaryCardIncludes(appFollowBellevue, ["service area", "coverage"], "app follow-up bellevue");
+    assertPrimaryCardIncludes(appFollowBellevue, ["service area", "coverage", "geographic coverage", "cities served"], "app follow-up bellevue");
     assertTurnIncludes(appFollowBellevue, ["bellevue", "service area", "serve"], "app follow-up bellevue");
     assertSelectedCardsExclude(appFollowBellevue, ["after-hours"], "app follow-up bellevue");
     assertTurnExcludes(appFollowBellevue, ["after-hours"], "app follow-up bellevue");

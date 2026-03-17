@@ -3,10 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
 import { readCallGatewayEnv } from "@everycall/config";
-import type {
-  CallState,
-  GatewayPromptPayload
-} from "@everycall/contracts";
+import type { CallState } from "@everycall/contracts";
 import { logError, logInfo } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
 import pg from "pg";
@@ -18,6 +15,7 @@ import {
   clearKnowledgeBuildAssetCache,
   fetchKnowledgeRuntimeTurn,
   formatKnowledgeRuntimeToolOutput,
+  type GatewayPromptPayload,
   initializeKnowledgeCallState,
   mergeRuntimeTurnState,
   prewarmKnowledgeBuildAssets,
@@ -39,6 +37,17 @@ import {
   noteAssistantResponseCompleted,
   noteAssistantResponseCreated
 } from "./voiceRuntimeControl.js";
+import {
+  beginToolExecution,
+  completeToolExecution,
+  dequeueAssistantResponseRequest,
+  enqueueAssistantResponseRequest,
+  failToolExecution,
+  hasActiveAssistantResponse,
+  markAssistantResponseCreated,
+  markAssistantResponseFinished,
+  normalizeToolExecutionKey
+} from "./toolResponseControl.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -119,6 +128,10 @@ type StreamSession = {
   usageTotals?: UsageTotals;
   pendingToolCall?: PendingToolCall | null;
   realtimeLogPath?: string;
+  responseCreatePending?: boolean;
+  queuedAssistantResponses?: Array<{ reason: string; response: Record<string, unknown>; dedupeKey?: string | null }>;
+  executingToolCallKeys?: Set<string>;
+  completedToolCallKeys?: Set<string>;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -154,6 +167,10 @@ function createStreamSession(
     assistantAudioMsSent: 0,
     lastInterruptionAtMs: null,
     lastInterruptionReason: null,
+    responseCreatePending: false,
+    queuedAssistantResponses: [],
+    executingToolCallKeys: new Set<string>(),
+    completedToolCallKeys: new Set<string>(),
     ...(realtimeLogPath ? { realtimeLogPath } : {})
   };
 }
@@ -453,6 +470,50 @@ function createAudioTextResponseEvent(response: Record<string, unknown> = {}) {
       ...response
     }
   };
+}
+
+function requestAssistantResponse(
+  session: StreamSession,
+  reason: string,
+  response: Record<string, unknown> = {},
+  dedupeKey?: string | null
+) {
+  const result = enqueueAssistantResponseRequest(session, { reason, response, dedupeKey });
+  if (result.action === "duplicate_queued") {
+    logInfo("openai_realtime_response_request_deduped", {
+      callSid: session.callSid,
+      reason,
+      dedupeKey: dedupeKey || undefined,
+      queueDepth: result.queueDepth
+    });
+    return;
+  }
+
+  if (result.action === "queued") {
+    logInfo("openai_realtime_response_queued", {
+      callSid: session.callSid,
+      reason,
+      dedupeKey: dedupeKey || undefined,
+      queueDepth: result.queueDepth,
+      activeResponseId: session.currentResponseId || undefined
+    });
+    return;
+  }
+
+  sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent(result.request.response));
+}
+
+function flushQueuedAssistantResponses(session: StreamSession) {
+  if (hasActiveAssistantResponse(session)) return;
+  const next = dequeueAssistantResponseRequest(session);
+  if (!next) return;
+  logInfo("openai_realtime_response_flushed", {
+    callSid: session.callSid,
+    reason: next.reason,
+    dedupeKey: next.dedupeKey || undefined,
+    remainingQueueDepth: session.queuedAssistantResponses?.length || 0
+  });
+  sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent(next.response));
 }
 
 function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined, payloadBase64: string) {
@@ -789,12 +850,6 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
 
   if (name === "knowledge_lookup") {
     const query = String((args as any).query || "");
-    const topic = String((args as any).topic || "").trim() || null;
-    const serviceTags = Array.isArray((args as any).service_tags)
-      ? (args as any).service_tags.map((item: unknown) => String(item || "").trim()).filter(Boolean)
-      : [];
-    const tradeHint = String((args as any).trade || "").trim() || null;
-    const conversationStage = String((args as any).conversation_stage || "").trim() || null;
     if (!session.promptPayload) {
       throw new Error("missing_prompt_payload");
     }
@@ -803,10 +858,6 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       tenantKey: session.tenantKey,
       callId: session.callSid,
       query,
-      topic,
-      serviceTags,
-      tradeHint,
-      conversationStage,
       buildId: session.promptPayload.knowledge_runtime.active_build_id,
       callState: session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state
     });
@@ -824,12 +875,17 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     logInfo("knowledge_lookup_tool_called", {
       callSid: session.callSid,
       query,
-      cardCount: runtimeResult.runtime_bundle.selected_cards.length,
-      factCount: runtimeResult.runtime_bundle.selected_answer_facts.length,
+      coverageItemCount: Array.isArray(runtimeResult.answer_packet.coverage) ? runtimeResult.answer_packet.coverage.length : 0,
+      cardCount: Array.isArray(runtimeResult.answer_packet.used_card_ids) ? runtimeResult.answer_packet.used_card_ids.length : 0,
+      factCount: Array.isArray(runtimeResult.answer_packet.used_fact_ids) ? runtimeResult.answer_packet.used_fact_ids.length : 0,
       overrideCount: runtimeResult.matched_overrides.length,
       guardrailCount: runtimeResult.matched_guardrails.length,
-      assetCacheHit: runtimeResult.retrieval_telemetry.asset_cache_hit ?? undefined,
-      assetFetchMs: runtimeResult.retrieval_telemetry.asset_fetch_ms ?? undefined
+      assetCacheHit: typeof runtimeResult.retrieval_telemetry.asset_cache_hit === "boolean"
+        ? runtimeResult.retrieval_telemetry.asset_cache_hit
+        : undefined,
+      assetFetchMs: typeof runtimeResult.retrieval_telemetry.asset_fetch_ms === "number"
+        ? runtimeResult.retrieval_telemetry.asset_fetch_ms
+        : undefined
     });
     await forwardToolResult(
       session.callSid,
@@ -837,10 +893,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       name,
       {
         query,
-        topic,
-        service_tags: serviceTags,
-        trade: tradeHint,
-        conversation_stage: conversationStage,
+        answer_packet: runtimeResult.answer_packet,
         runtime_bundle: runtimeResult.runtime_bundle,
         matched_overrides: runtimeResult.matched_overrides,
         matched_guardrails: runtimeResult.matched_guardrails,
@@ -862,7 +915,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       tool: name,
       callId
     });
-    sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent());
+    requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
     return;
   }
 
@@ -893,7 +946,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       tool: name,
       callId
     });
-    sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent());
+    requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
     return;
   }
 
@@ -940,7 +993,35 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     tool: name,
     callId
   });
-  sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent());
+  requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+}
+
+async function handleToolCallEvent(
+  session: StreamSession,
+  name: string,
+  callId: string,
+  argsText: string,
+  sourceType: string
+) {
+  const attempt = beginToolExecution(session, name, callId);
+  if (!attempt.shouldExecute) {
+    logInfo("openai_realtime_tool_event_deduped", {
+      callSid: session.callSid,
+      tool: name,
+      callId,
+      sourceType,
+      reason: attempt.reason
+    });
+    return;
+  }
+
+  try {
+    await executeToolCall(session, name, callId, argsText);
+    completeToolExecution(session, attempt.key);
+  } catch (err) {
+    failToolExecution(session, attempt.key);
+    throw err;
+  }
 }
 
 function connectOpenAiRealtime(session: StreamSession) {
@@ -1040,11 +1121,13 @@ function connectOpenAiRealtime(session: StreamSession) {
           callSid: session.callSid,
           callControlId: session.callControlId
         });
-        sendOpenAiEvent(
-          session.openAiWs,
-          createAudioTextResponseEvent({
+        requestAssistantResponse(
+          session,
+          "greeting",
+          {
             instructions: `Call just connected. Greet the caller now using this greeting: ${payload.tenant_greeting || "Hi, thanks for calling. How can I help you?"}`
-          })
+          },
+          "greeting"
         );
       }
       return;
@@ -1063,6 +1146,7 @@ function connectOpenAiRealtime(session: StreamSession) {
     }
 
     if (type === "response.created") {
+      markAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
       noteAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
       logInfo("openai_realtime_response_created", {
         callSid: session.callSid,
@@ -1072,6 +1156,7 @@ function connectOpenAiRealtime(session: StreamSession) {
     }
 
     if (type === "response.done") {
+      markAssistantResponseFinished(session);
       noteAssistantResponseCompleted(session);
       const statusDetails = payloadMsg?.response?.status_details || payloadMsg?.status_details;
       const usage = collectUsage(payloadMsg);
@@ -1099,6 +1184,7 @@ function connectOpenAiRealtime(session: StreamSession) {
         outputTokens: usage.outputTokens,
         estimatedCostMicrosUsd: estimateUsageCostMicrosUsd(usage.inputTokens, usage.outputTokens)
       });
+      flushQueuedAssistantResponses(session);
       return;
     }
 
@@ -1173,7 +1259,7 @@ function connectOpenAiRealtime(session: StreamSession) {
       const argsText = payloadMsg.arguments || session.pendingToolCall?.argumentsText || "";
       if (!name || !callId) return;
       session.pendingToolCall = null;
-      await executeToolCall(session, String(name), String(callId), String(argsText || ""));
+      await handleToolCallEvent(session, String(name), String(callId), String(argsText || ""), "response.function_call_arguments.done");
       return;
     }
 
@@ -1186,7 +1272,7 @@ function connectOpenAiRealtime(session: StreamSession) {
         const callId = String(item?.call_id || item?.id || "");
         const argsText = String(item?.arguments || "");
         if (!name || !callId) return;
-        await executeToolCall(session, name, callId, argsText);
+        await handleToolCallEvent(session, name, callId, argsText, "response.output_item.done");
       }
     }
   });

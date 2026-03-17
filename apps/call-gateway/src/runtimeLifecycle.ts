@@ -1,4 +1,5 @@
-import type { CallState, GatewayPromptPayload } from "@everycall/contracts";
+import type { CallState } from "@everycall/contracts";
+import type { GatewayPromptPayload } from "./knowledgeRuntime.js";
 
 type Queryable = {
   query: (text: string, values?: unknown[]) => Promise<{ rowCount?: number; rows?: any[] }>;
