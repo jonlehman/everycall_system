@@ -18,6 +18,10 @@ const OPENAI_BUILD_PROMPT_CACHE_RETENTION = normalizeText(process.env.OPENAI_BUI
 
 type JsonSchema = Record<string, unknown>;
 
+function shouldOmitResponsesTemperature(model: string) {
+  return normalizeText(model).toLowerCase().startsWith("gpt-5");
+}
+
 function extractUsage(json: any) {
   if (json?.usage && typeof json.usage === "object" && !Array.isArray(json.usage)) {
     return {
@@ -275,9 +279,13 @@ export function buildOpenAiJsonResponseRequestBody(input: {
   promptCacheKey?: string;
   promptCacheRetention?: string;
 }) {
+  const model = normalizeText(input.model);
+  const temperature = input.temperature ?? 0;
   return {
-    model: input.model,
-    temperature: input.temperature ?? 0,
+    model,
+    ...(shouldOmitResponsesTemperature(model)
+      ? {}
+      : { temperature }),
     max_output_tokens: input.maxOutputTokens ?? 1400,
     ...(normalizeText(input.promptCacheKey) ? { prompt_cache_key: normalizeText(input.promptCacheKey) } : {}),
     ...(normalizeText(input.promptCacheRetention || OPENAI_BUILD_PROMPT_CACHE_RETENTION)
