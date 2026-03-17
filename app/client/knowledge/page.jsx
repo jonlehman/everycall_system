@@ -1,19 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { Autocomplete, Chip, TextField } from '@mui/material';
 import { Button } from '../../../components/ui/button';
+import { DEFAULT_PREFERRED_OUTCOME_OPTIONS, formatOutcomeLabel } from '../../../lib/knowledge-outcomes';
 import ClientPage from '../_components/ClientPage';
 
 function splitLines(value) {
   return String(value || '')
     .split('\n')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function splitCsv(value) {
-  return String(value || '')
-    .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
 }
@@ -31,6 +26,65 @@ function ArtifactStat({ label, value }) {
   );
 }
 
+function formatLabel(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return text
+    .split(/[_\s]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function ensureSentence(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
+function buildRepresentativeAnswer(answerPacket) {
+  const packet = answerPacket || {};
+  const direct = Array.isArray(packet.direct_answer_points) ? packet.direct_answer_points.filter(Boolean) : [];
+  const qualifiers = Array.isArray(packet.qualifiers) ? packet.qualifiers.filter(Boolean) : [];
+  const limits = Array.isArray(packet.limits_or_exclusions) ? packet.limits_or_exclusions.filter(Boolean) : [];
+  const nextSteps = Array.isArray(packet.next_step_options) ? packet.next_step_options.filter(Boolean) : [];
+  const unsupported = Array.isArray(packet.unsupported_requested_items) ? packet.unsupported_requested_items.filter(Boolean) : [];
+
+  const parts = [];
+  if (direct.length) {
+    parts.push(direct.slice(0, 2).map(ensureSentence).join(' '));
+  }
+  if (qualifiers.length) {
+    parts.push(`Key qualifiers: ${qualifiers.slice(0, 2).join('; ')}.`);
+  }
+  if (limits.length) {
+    parts.push(`Limits or exclusions: ${limits.slice(0, 2).join('; ')}.`);
+  }
+  if (unsupported.length) {
+    parts.push(`Confirmed details are not available for: ${unsupported.slice(0, 2).join('; ')}.`);
+  }
+  if (nextSteps.length) {
+    parts.push(`Likely next step: ${ensureSentence(nextSteps[0])}`);
+  }
+  return parts.join(' ').trim() || 'No representative answer is available for this preview yet.';
+}
+
+function PreviewList({ title, items, emptyText = 'None.', formatter = (item) => item }) {
+  const values = Array.isArray(items) ? items.filter(Boolean) : [];
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="text-sm font-semibold text-slate-900">{title}</div>
+      {values.length ? (
+        <ul className="mt-2 list-disc pl-5 text-sm text-slate-700">
+          {values.map((item, index) => <li key={`${title}-${index}`}>{formatter(item)}</li>)}
+        </ul>
+      ) : (
+        <div className="mt-2 text-sm text-slate-500">{emptyText}</div>
+      )}
+    </div>
+  );
+}
+
 export default function KnowledgePage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState({ message: 'Loading knowledge workspace...', tone: 'warn' });
@@ -44,7 +98,7 @@ export default function KnowledgePage() {
   const [intentForm, setIntentForm] = useState({
     businessCallIntentId: '',
     primaryGoal: '',
-    preferredOutcomes: 'callback_request, message_taken, transfer',
+    preferredOutcomes: DEFAULT_PREFERRED_OUTCOME_OPTIONS.map((item) => item.value),
     toneRules: 'Be clear, short, and helpful on every turn.\nAnswer direct questions before continuing the script.\nAsk one question at a time.'
   });
   const [runtimeForm, setRuntimeForm] = useState({
@@ -101,8 +155,8 @@ export default function KnowledgePage() {
         businessCallIntentId: activeIntent?.business_call_intent_id || '',
         primaryGoal: activeIntent?.primary_goal || '',
         preferredOutcomes: Array.isArray(activeIntent?.preferred_outcomes_json)
-          ? activeIntent.preferred_outcomes_json.join(', ')
-          : 'callback_request, message_taken, transfer',
+          ? activeIntent.preferred_outcomes_json
+          : DEFAULT_PREFERRED_OUTCOME_OPTIONS.map((item) => item.value),
         toneRules: Array.isArray(activeIntent?.tone_rules_json)
           ? activeIntent.tone_rules_json.join('\n')
           : 'Be clear, short, and helpful on every turn.\nAnswer direct questions before continuing the script.\nAsk one question at a time.'
@@ -152,7 +206,7 @@ export default function KnowledgePage() {
             businessCallIntentId: intentForm.businessCallIntentId || undefined,
             status: 'approved_live',
             primaryGoal: intentForm.primaryGoal,
-            preferredOutcomes: splitCsv(intentForm.preferredOutcomes),
+            preferredOutcomes: Array.isArray(intentForm.preferredOutcomes) ? intentForm.preferredOutcomes : [],
             toneRules: splitLines(intentForm.toneRules)
           }
         })
@@ -300,6 +354,30 @@ export default function KnowledgePage() {
     blockers: Array.isArray(readiness?.blockers) ? readiness.blockers : [],
     status: readiness?.status || 'not_started'
   }), [readiness]);
+  const preferredOutcomeOptions = useMemo(() => {
+    const seen = new Set();
+    const merged = [];
+    const sourceValues = [
+      ...(Array.isArray(callOutcomeSchema?.outcome_types_json) ? callOutcomeSchema.outcome_types_json : []),
+      ...(Array.isArray(intentForm.preferredOutcomes) ? intentForm.preferredOutcomes : []),
+      ...DEFAULT_PREFERRED_OUTCOME_OPTIONS.map((item) => item.value)
+    ];
+    for (const value of sourceValues) {
+      const normalized = String(value || '').trim();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      merged.push({ value: normalized, label: formatOutcomeLabel(normalized) });
+    }
+    return merged;
+  }, [callOutcomeSchema, intentForm.preferredOutcomes]);
+  const selectedPreferredOutcomeOptions = useMemo(
+    () => preferredOutcomeOptions.filter((option) => (intentForm.preferredOutcomes || []).includes(option.value)),
+    [preferredOutcomeOptions, intentForm.preferredOutcomes]
+  );
+  const previewAnswerPacket = preview?.answerPacket || null;
+  const previewRuntimeBundle = preview?.runtimeBundle || null;
+  const previewPlanner = preview?.planner || null;
+  const representativeAnswer = buildRepresentativeAnswer(previewAnswerPacket);
 
   return (
     <ClientPage
@@ -325,9 +403,38 @@ export default function KnowledgePage() {
               onChange={(event) => setIntentForm((current) => ({ ...current, primaryGoal: event.target.value }))}
             />
             <label className="mt-2.5">Preferred Outcomes</label>
-            <input
-              value={intentForm.preferredOutcomes}
-              onChange={(event) => setIntentForm((current) => ({ ...current, preferredOutcomes: event.target.value }))}
+            <Autocomplete
+              multiple
+              disableCloseOnSelect
+              options={preferredOutcomeOptions}
+              value={selectedPreferredOutcomeOptions}
+              getOptionLabel={(option) => option.label}
+              isOptionEqualToValue={(option, value) => option.value === value.value}
+              onChange={(_, nextOptions) => setIntentForm((current) => ({
+                ...current,
+                preferredOutcomes: nextOptions.map((option) => option.value)
+              }))}
+              renderTags={(tagValue, getTagProps) => tagValue.map((option, index) => (
+                <Chip
+                  {...getTagProps({ index })}
+                  key={option.value}
+                  label={option.label}
+                  size="small"
+                />
+              ))}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Select one or more preferred outcomes"
+                  size="small"
+                />
+              )}
+              sx={{
+                mt: 1,
+                '& .MuiOutlinedInput-root': {
+                  backgroundColor: '#fff'
+                }
+              }}
             />
             <label className="mt-2.5">Tone Rules</label>
             <textarea
@@ -485,18 +592,140 @@ export default function KnowledgePage() {
 
           <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
             <h2 className="mt-0 text-lg font-semibold">Runtime Preview</h2>
-            <label>Representative Query</label>
+            <div className="text-sm text-slate-600">
+              Ask a caller-style question to see the representative answer packet the phone AI would likely speak from.
+            </div>
+            <label className="mt-2.5">Representative Query</label>
             <input value={previewQuery} onChange={(event) => setPreviewQuery(event.target.value)} placeholder="Do you handle after-hours emergencies?" />
             <div className="mt-3">
               <Button onClick={runRuntimePreview} disabled={previewBusy || !previewQuery.trim()}>{previewBusy ? 'Running...' : 'Run Preview'}</Button>
             </div>
             {preview ? (
-              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                <div className="font-semibold text-slate-900">Preview Result</div>
-                <div>Selected cards: {preview.runtimeBundle?.selected_cards?.length || 0}</div>
-                <div>Runtime mode: {preview.runtimeBundle?.runtime_mode || '-'}</div>
-                <div>Prompt tokens: {preview.tokenCounts?.prompt_payload_tokens || 0}</div>
-                <div>Bundle tokens: {preview.tokenCounts?.runtime_bundle_tokens || 0}</div>
+              <div className="mt-3 grid gap-3">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-sm font-semibold text-slate-900">Representative Answer</div>
+                  <div className="mt-2 text-sm leading-6 text-slate-700">{representativeAnswer}</div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  <ArtifactStat label="Runtime Mode" value={formatLabel(previewRuntimeBundle?.runtime_mode || '-')} />
+                  <ArtifactStat label="Selected Cards" value={previewRuntimeBundle?.selected_cards?.length || 0} />
+                  <ArtifactStat label="Used Facts" value={previewRuntimeBundle?.selected_answer_facts?.length || 0} />
+                  <ArtifactStat label="Prompt Tokens" value={preview.tokenCounts?.prompt_payload_tokens || 0} />
+                  <ArtifactStat label="Bundle Tokens" value={preview.tokenCounts?.runtime_bundle_tokens || 0} />
+                </div>
+
+                <div className="grid gap-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-sm font-semibold text-slate-900">Coverage Support</div>
+                    {Array.isArray(previewAnswerPacket?.coverage) && previewAnswerPacket.coverage.length ? (
+                      <div className="mt-2 grid gap-2">
+                        {previewAnswerPacket.coverage.map((item) => (
+                          <div key={item.requested_coverage_item_text} className="rounded-md border border-slate-200 bg-white p-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="font-medium text-slate-900">{item.requested_coverage_item_text}</div>
+                              <span className={`badge ${item.support_strength === 'strong' ? 'ok' : item.support_strength === 'partial' ? 'warn' : 'bad'}`}>
+                                {formatLabel(item.support_strength)}
+                              </span>
+                            </div>
+                            <div className="mt-2 text-xs text-slate-500">
+                              Cards: {(item.used_card_ids || []).length} · Facts: {(item.used_fact_ids || []).length}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-sm text-slate-500">No coverage items were returned.</div>
+                    )}
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-sm font-semibold text-slate-900">Selected Cards</div>
+                    {Array.isArray(previewRuntimeBundle?.selected_cards) && previewRuntimeBundle.selected_cards.length ? (
+                      <div className="mt-2 grid gap-2">
+                        {previewRuntimeBundle.selected_cards.map((card) => (
+                          <div key={card.knowledge_card_id} className="rounded-md border border-slate-200 bg-white p-3">
+                            <div className="font-medium text-slate-900">{card.canonical_name}</div>
+                            <div className="mt-1 text-sm text-slate-700">{card.speakable_summary}</div>
+                            {Array.isArray(card.selected_facts) && card.selected_facts.length ? (
+                              <ul className="mt-2 list-disc pl-5 text-sm text-slate-600">
+                                {card.selected_facts.map((fact) => (
+                                  <li key={fact.fact_id}>{fact.claim}</li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-sm text-slate-500">No cards selected.</div>
+                    )}
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <PreviewList
+                      title="Direct Answer Points"
+                      items={previewAnswerPacket?.direct_answer_points}
+                      emptyText="No direct answer points were assembled."
+                    />
+                    <PreviewList
+                      title="Qualifiers"
+                      items={previewAnswerPacket?.qualifiers}
+                    />
+                    <PreviewList
+                      title="Limits or Exclusions"
+                      items={previewAnswerPacket?.limits_or_exclusions}
+                    />
+                    <PreviewList
+                      title="Next Step Options"
+                      items={previewAnswerPacket?.next_step_options}
+                    />
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-sm font-semibold text-slate-900">Used Facts</div>
+                    {Array.isArray(previewRuntimeBundle?.selected_answer_facts) && previewRuntimeBundle.selected_answer_facts.length ? (
+                      <ul className="mt-2 list-disc pl-5 text-sm text-slate-700">
+                        {previewRuntimeBundle.selected_answer_facts.map((fact) => (
+                          <li key={fact.fact_id}>
+                            {fact.claim}
+                            {fact.fact_role ? <span className="text-slate-500"> ({formatLabel(fact.fact_role)})</span> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="mt-2 text-sm text-slate-500">No facts selected.</div>
+                    )}
+                  </div>
+                </div>
+
+                <details className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-900">Advanced Details</summary>
+                  <div className="mt-3 grid gap-3">
+                    <PreviewList
+                      title="Planner Coverage Items"
+                      items={previewPlanner?.coverage_items}
+                      emptyText="No planner coverage items returned."
+                    />
+                    <PreviewList
+                      title="Planner Next-Step Suggestions"
+                      items={previewPlanner?.next_step_suggestions}
+                      emptyText="No planner next-step suggestions returned."
+                    />
+                    <div className="rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="text-sm font-semibold text-slate-900">Structured Answer Packet</div>
+                      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs leading-5 text-slate-700">
+                        {JSON.stringify(previewAnswerPacket, null, 2)}
+                      </pre>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="text-sm font-semibold text-slate-900">Runtime Bundle</div>
+                      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs leading-5 text-slate-700">
+                        {JSON.stringify(previewRuntimeBundle, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </details>
               </div>
             ) : null}
           </section>
