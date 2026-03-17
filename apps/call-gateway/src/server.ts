@@ -85,6 +85,7 @@ type PendingToolSpeechWait = {
   tool: string;
   callId: string;
   requestedAtMs: number;
+  responseCreatedAtMs?: number | null;
   responseId?: string | null;
   firstAudioLogged?: boolean;
 };
@@ -886,6 +887,7 @@ function noteToolResponseRequested(session: StreamSession, tool: string, callId:
     tool,
     callId,
     requestedAtMs: performance.now(),
+    responseCreatedAtMs: null,
     responseId: null,
     firstAudioLogged: false
   };
@@ -1307,7 +1309,16 @@ function connectOpenAiRealtime(session: StreamSession) {
 
     if (type === "response.created") {
       if (session.pendingToolSpeechWait && !session.pendingToolSpeechWait.responseId) {
+        session.pendingToolSpeechWait.responseCreatedAtMs = performance.now();
         session.pendingToolSpeechWait.responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
+        const waitMs = Number((session.pendingToolSpeechWait.responseCreatedAtMs - session.pendingToolSpeechWait.requestedAtMs).toFixed(3));
+        logInfo("openai_realtime_tool_response_created", {
+          callSid: session.callSid,
+          tool: session.pendingToolSpeechWait.tool,
+          callId: session.pendingToolSpeechWait.callId,
+          responseId: session.pendingToolSpeechWait.responseId || undefined,
+          waitMs
+        });
         logRealtimeDetailEntry(session, {
           ts: new Date().toISOString(),
           kind: "tool_response_created",
@@ -1315,6 +1326,7 @@ function connectOpenAiRealtime(session: StreamSession) {
           tool: session.pendingToolSpeechWait.tool,
           callId: session.pendingToolSpeechWait.callId,
           responseId: session.pendingToolSpeechWait.responseId,
+          waitMs,
           payload: payloadMsg
         });
       }
@@ -1394,12 +1406,16 @@ function connectOpenAiRealtime(session: StreamSession) {
       if (audioBase64) {
         if (session.pendingToolSpeechWait && !session.pendingToolSpeechWait.firstAudioLogged) {
           const waitMs = Number((performance.now() - session.pendingToolSpeechWait.requestedAtMs).toFixed(3));
+          const responseCreatedToFirstAudioMs = session.pendingToolSpeechWait.responseCreatedAtMs
+            ? Number((performance.now() - session.pendingToolSpeechWait.responseCreatedAtMs).toFixed(3))
+            : undefined;
           logInfo("openai_realtime_tool_response_first_audio", {
             callSid: session.callSid,
             tool: session.pendingToolSpeechWait.tool,
             callId: session.pendingToolSpeechWait.callId,
             responseId: payloadMsg?.response_id || payloadMsg?.response?.id || null,
-            waitMs
+            waitMs,
+            responseCreatedToFirstAudioMs
           });
           logRealtimeDetailEntry(session, {
             ts: new Date().toISOString(),
@@ -1408,7 +1424,8 @@ function connectOpenAiRealtime(session: StreamSession) {
             tool: session.pendingToolSpeechWait.tool,
             callId: session.pendingToolSpeechWait.callId,
             responseId: payloadMsg?.response_id || payloadMsg?.response?.id || null,
-            waitMs
+            waitMs,
+            responseCreatedToFirstAudioMs
           });
           session.pendingToolSpeechWait.firstAudioLogged = true;
         }
