@@ -256,6 +256,32 @@ async function writeAuditLog(db, tenantKey, actor, action, details) {
   );
 }
 
+function diffObjectPaths(previous, next, prefix = "") {
+  const left = previous && typeof previous === "object" && !Array.isArray(previous) ? previous : {};
+  const right = next && typeof next === "object" && !Array.isArray(next) ? next : {};
+  const keys = Array.from(new Set([...Object.keys(left), ...Object.keys(right)])).sort();
+  const changed = [];
+  for (const key of keys) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    const before = left[key];
+    const after = right[key];
+    const bothObjects = before && typeof before === "object" && !Array.isArray(before)
+      && after && typeof after === "object" && !Array.isArray(after);
+    if (bothObjects) {
+      changed.push(...diffObjectPaths(before, after, path));
+      continue;
+    }
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      changed.push(path);
+    }
+  }
+  return changed;
+}
+
+function auditActionName(actor, defaultAction, adminAction) {
+  return normalizeText(actor?.role) === "admin" ? adminAction : defaultAction;
+}
+
 async function nextIntentVersion(db, tableName, tenantKey, idColumn) {
   const res = await db.query(
     `SELECT COUNT(*)::int AS count
@@ -948,6 +974,16 @@ function defaultGreetingText(tenantKey) {
   return `Thanks for calling ${fallbackName}. How can I help?`;
 }
 
+function rawRuntimeProfilePayloadFromRow(row) {
+  return {
+    greeting_text: row?.greeting_text,
+    session_config: row?.session_config_json,
+    tool_policy: row?.tool_policy_json,
+    wording_defaults: row?.wording_defaults_json,
+    runtime_defaults: row?.runtime_defaults_json
+  };
+}
+
 function normalizeRuntimeProfilePayload(tenantKey, payload = {}) {
   const source = asObject(payload);
   return {
@@ -980,6 +1016,120 @@ function mapRuntimeProfileRow(tenantKey, row) {
   };
 }
 
+function buildRuntimeProfileFieldState({ defaultValue, effectiveValue, overrideValue, hasOverride }) {
+  return {
+    default_value: defaultValue,
+    override_value: hasOverride ? overrideValue : null,
+    effective_value: effectiveValue,
+    source: hasOverride ? "tenant_override" : "inherited_default"
+  };
+}
+
+function comparableRuntimeProfile(profile, tenantKey) {
+  const normalized = normalizeRuntimeProfilePayload(tenantKey, {
+    greeting_text: profile?.greeting_text,
+    session_config: profile?.session_config,
+    tool_policy: profile?.tool_policy,
+    wording_defaults: profile?.wording_defaults,
+    runtime_defaults: profile?.runtime_defaults
+  });
+  return {
+    tenant_key: tenantKey,
+    greeting_text: normalized.greetingText,
+    session_config: normalized.sessionConfig,
+    tool_policy: normalized.toolPolicy,
+    wording_defaults: normalized.wordingDefaults,
+    runtime_defaults: normalized.runtimeDefaults
+  };
+}
+
+function pruneInheritedValue(value, defaultValue) {
+  const valueIsObject = value && typeof value === "object" && !Array.isArray(value);
+  const defaultIsObject = defaultValue && typeof defaultValue === "object" && !Array.isArray(defaultValue);
+  if (valueIsObject || defaultIsObject) {
+    const source = valueIsObject ? value : {};
+    const defaults = defaultIsObject ? defaultValue : {};
+    const keys = Array.from(new Set([...Object.keys(source), ...Object.keys(defaults)]));
+    const output = {};
+    for (const key of keys) {
+      const pruned = pruneInheritedValue(source[key], defaults[key]);
+      if (pruned !== undefined) {
+        output[key] = pruned;
+      }
+    }
+    return Object.keys(output).length ? output : undefined;
+  }
+  return JSON.stringify(value) === JSON.stringify(defaultValue) ? undefined : value;
+}
+
+function buildRuntimeProfileFieldSources(tenantKey, row) {
+  const raw = rawRuntimeProfilePayloadFromRow(row);
+  const defaults = normalizeRuntimeProfilePayload(tenantKey, {});
+  const effective = normalizeRuntimeProfilePayload(tenantKey, raw);
+  const rawToolPolicy = asObject(raw.tool_policy);
+  const rawWordingDefaults = asObject(raw.wording_defaults);
+  const rawRuntimeDefaults = asObject(raw.runtime_defaults);
+
+  return {
+    greetingText: buildRuntimeProfileFieldState({
+      defaultValue: defaults.greetingText,
+      effectiveValue: effective.greetingText,
+      overrideValue: normalizeText(raw.greeting_text),
+      hasOverride: raw.greeting_text !== undefined && raw.greeting_text !== null && normalizeText(raw.greeting_text).length > 0
+    }),
+    aiDisclosure: buildRuntimeProfileFieldState({
+      defaultValue: defaults.wordingDefaults.ai_disclosure,
+      effectiveValue: effective.wordingDefaults.ai_disclosure,
+      overrideValue: normalizeText(rawWordingDefaults.ai_disclosure),
+      hasOverride: Object.prototype.hasOwnProperty.call(rawWordingDefaults, "ai_disclosure")
+    }),
+    uncertaintyPhrase: buildRuntimeProfileFieldState({
+      defaultValue: defaults.wordingDefaults.uncertainty_phrase,
+      effectiveValue: effective.wordingDefaults.uncertainty_phrase,
+      overrideValue: normalizeText(rawWordingDefaults.uncertainty_phrase),
+      hasOverride: Object.prototype.hasOwnProperty.call(rawWordingDefaults, "uncertainty_phrase")
+    }),
+    pricingFallback: buildRuntimeProfileFieldState({
+      defaultValue: defaults.wordingDefaults.pricing_fallback,
+      effectiveValue: effective.wordingDefaults.pricing_fallback,
+      overrideValue: normalizeText(rawWordingDefaults.pricing_fallback),
+      hasOverride: Object.prototype.hasOwnProperty.call(rawWordingDefaults, "pricing_fallback")
+    }),
+    closingPhrase: buildRuntimeProfileFieldState({
+      defaultValue: defaults.wordingDefaults.closing_phrase,
+      effectiveValue: effective.wordingDefaults.closing_phrase,
+      overrideValue: normalizeText(rawWordingDefaults.closing_phrase),
+      hasOverride: Object.prototype.hasOwnProperty.call(rawWordingDefaults, "closing_phrase")
+    }),
+    requireKnowledgeLookup: buildRuntimeProfileFieldState({
+      defaultValue: defaults.toolPolicy.require_knowledge_lookup_for_tenant_facts,
+      effectiveValue: effective.toolPolicy.require_knowledge_lookup_for_tenant_facts,
+      overrideValue: rawToolPolicy.require_knowledge_lookup_for_tenant_facts,
+      hasOverride: Object.prototype.hasOwnProperty.call(rawToolPolicy, "require_knowledge_lookup_for_tenant_facts")
+    }),
+    maxClarifyingQuestions: buildRuntimeProfileFieldState({
+      defaultValue: defaults.toolPolicy.max_clarifying_questions,
+      effectiveValue: effective.toolPolicy.max_clarifying_questions,
+      overrideValue: Object.prototype.hasOwnProperty.call(rawToolPolicy, "max_clarifying_questions")
+        ? Number(rawToolPolicy.max_clarifying_questions)
+        : null,
+      hasOverride: Object.prototype.hasOwnProperty.call(rawToolPolicy, "max_clarifying_questions")
+    }),
+    allowEndCallOnlyAfterSpokenClose: buildRuntimeProfileFieldState({
+      defaultValue: defaults.toolPolicy.allow_end_call_only_after_spoken_close,
+      effectiveValue: effective.toolPolicy.allow_end_call_only_after_spoken_close,
+      overrideValue: rawToolPolicy.allow_end_call_only_after_spoken_close,
+      hasOverride: Object.prototype.hasOwnProperty.call(rawToolPolicy, "allow_end_call_only_after_spoken_close")
+    }),
+    conciseResponses: buildRuntimeProfileFieldState({
+      defaultValue: defaults.runtimeDefaults.concise_responses,
+      effectiveValue: effective.runtimeDefaults.concise_responses,
+      overrideValue: rawRuntimeDefaults.concise_responses,
+      hasOverride: Object.prototype.hasOwnProperty.call(rawRuntimeDefaults, "concise_responses")
+    })
+  };
+}
+
 export async function loadKnowledgeRuntimeProfile(db, tenantKey) {
   await assertConfigTablesReady(db);
   const res = await db.query(
@@ -993,10 +1143,38 @@ export async function loadKnowledgeRuntimeProfile(db, tenantKey) {
   return mapRuntimeProfileRow(tenantKey, res.rows[0] || null);
 }
 
+export async function loadKnowledgeRuntimeProfileEditorState(db, tenantKey) {
+  await assertConfigTablesReady(db);
+  const res = await db.query(
+    `SELECT tenant_key, greeting_text, session_config_json, tool_policy_json, wording_defaults_json,
+            runtime_defaults_json, updated_by_id, updated_at, created_at
+     FROM knowledge_runtime_profiles
+     WHERE tenant_key = $1
+     LIMIT 1`,
+    [tenantKey]
+  );
+  const row = res.rows[0] || null;
+  const profile = mapRuntimeProfileRow(tenantKey, row);
+  const fieldSources = buildRuntimeProfileFieldSources(tenantKey, row);
+  const hasOverrides = Object.values(fieldSources).some((item) => item?.source === "tenant_override");
+  return {
+    profile,
+    field_sources: fieldSources,
+    has_overrides: hasOverrides
+  };
+}
+
 export async function saveKnowledgeRuntimeProfile(db, tenantKey, payload = {}, actor = null) {
   await assertConfigTablesReady(db);
   return withTransaction(db, async (client) => {
+    const previous = await loadKnowledgeRuntimeProfile(client, tenantKey);
     const normalized = normalizeRuntimeProfilePayload(tenantKey, payload);
+    const defaults = normalizeRuntimeProfilePayload(tenantKey, {});
+    const greetingOverride = normalized.greetingText === defaults.greetingText ? null : normalized.greetingText;
+    const sessionConfigOverrides = pruneInheritedValue(normalized.sessionConfig, defaults.sessionConfig) || null;
+    const toolPolicyOverrides = pruneInheritedValue(normalized.toolPolicy, defaults.toolPolicy) || null;
+    const wordingDefaultOverrides = pruneInheritedValue(normalized.wordingDefaults, defaults.wordingDefaults) || null;
+    const runtimeDefaultOverrides = pruneInheritedValue(normalized.runtimeDefaults, defaults.runtimeDefaults) || null;
     await client.query(
       `INSERT INTO knowledge_runtime_profiles (
          tenant_key, greeting_text, session_config_json, tool_policy_json, wording_defaults_json,
@@ -1013,18 +1191,54 @@ export async function saveKnowledgeRuntimeProfile(db, tenantKey, payload = {}, a
                      updated_at = NOW()`,
       [
         tenantKey,
-        normalized.greetingText,
-        JSON.stringify(normalized.sessionConfig),
-        JSON.stringify(normalized.toolPolicy),
-        JSON.stringify(normalized.wordingDefaults),
-        JSON.stringify(normalized.runtimeDefaults),
+        greetingOverride,
+        JSON.stringify(sessionConfigOverrides),
+        JSON.stringify(toolPolicyOverrides),
+        JSON.stringify(wordingDefaultOverrides),
+        JSON.stringify(runtimeDefaultOverrides),
         actorId(actor)
       ]
     );
-    await writeAuditLog(client, tenantKey, actor, "knowledge_receptionist.runtime_profile.saved", {
+    const changedFields = diffObjectPaths(comparableRuntimeProfile(previous, tenantKey), {
+      tenant_key: tenantKey,
+      greeting_text: normalized.greetingText,
+      session_config: normalized.sessionConfig,
+      tool_policy: normalized.toolPolicy,
+      wording_defaults: normalized.wordingDefaults,
+      runtime_defaults: normalized.runtimeDefaults
+    });
+    await writeAuditLog(client, tenantKey, actor, auditActionName(
+      actor,
+      "knowledge_receptionist.runtime_profile.saved",
+      "admin.tenant_runtime_profile.saved"
+    ), {
+      target_tenant: tenantKey,
+      changed_fields: changedFields,
       greeting_text: normalized.greetingText
     });
     return loadKnowledgeRuntimeProfile(client, tenantKey);
+  });
+}
+
+export async function resetKnowledgeRuntimeProfileToDefaults(db, tenantKey, actor = null) {
+  await assertConfigTablesReady(db);
+  return withTransaction(db, async (client) => {
+    const previous = await loadKnowledgeRuntimeProfile(client, tenantKey);
+    await client.query(
+      `DELETE FROM knowledge_runtime_profiles
+       WHERE tenant_key = $1`,
+      [tenantKey]
+    );
+    const next = await loadKnowledgeRuntimeProfile(client, tenantKey);
+    await writeAuditLog(client, tenantKey, actor, auditActionName(
+      actor,
+      "knowledge_receptionist.runtime_profile.reset_to_defaults",
+      "admin.tenant_runtime_profile.reset_to_defaults"
+    ), {
+      target_tenant: tenantKey,
+      changed_fields: diffObjectPaths(comparableRuntimeProfile(previous, tenantKey), comparableRuntimeProfile(next, tenantKey))
+    });
+    return loadKnowledgeRuntimeProfileEditorState(client, tenantKey);
   });
 }
 

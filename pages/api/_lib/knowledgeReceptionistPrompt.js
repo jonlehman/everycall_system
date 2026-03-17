@@ -350,10 +350,14 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
     runtimeEntryMode
   );
 
+  const runtimeProfileOverride = input.runtimeProfileOverride || input.runtime_profile_override || null;
+
   return {
     build,
     configuration: {
-      runtime_profile: normalizeRuntimeProfile(runtimeProfile, tenantKey),
+      runtime_profile: runtimeProfileOverride
+        ? normalizeRuntimeProfile(runtimeProfileOverride, tenantKey)
+        : normalizeRuntimeProfile(runtimeProfile, tenantKey),
       overrides: (overrides || []).map((item) => normalizeOverrideForContract(item, tenantKey)).filter(Boolean),
       guardrails: (guardrails || []).map((item) => normalizeGuardrailForContract(item, tenantKey)).filter(Boolean),
       call_outcome_schema: normalizeCallOutcomeSchema(callOutcomeSchema) || undefined,
@@ -391,8 +395,9 @@ export function buildFieldSchemaFromOutcomeSchema(callOutcomeSchema, fallbackFie
 export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) {
   const runtimeEntryMode = normalizeText(input.runtimeEntryMode || input.runtime_entry_mode) || "customer_call";
   const callId = normalizeText(input.callId || input.call_id || input.callSid || input.call_sid) || createId("call");
+  const promptConfigOverride = input.promptConfigOverride || input.prompt_config_override || null;
   const [promptLayers, gatewayContext] = await Promise.all([
-    loadSystemPromptConfig(db),
+    Promise.resolve(promptConfigOverride || loadSystemPromptConfig(db)),
     loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input)
   ]);
   const { build, configuration, intentSummary } = gatewayContext;
@@ -435,8 +440,9 @@ export async function assembleKnowledgeRuntimeTurn(db, tenantKey, input = {}) {
   }
 
   const callId = normalizeText(input.callId || input.call_id || input.callSid || input.call_sid) || createId("call");
+  const promptConfigOverride = input.promptConfigOverride || input.prompt_config_override || null;
   const [promptLayers, runtimeContext] = await Promise.all([
-    loadSystemPromptConfig(db),
+    Promise.resolve(promptConfigOverride || loadSystemPromptConfig(db)),
     loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input)
   ]);
   const { build, configuration, intentSummary } = runtimeContext;

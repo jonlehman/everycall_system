@@ -21,6 +21,28 @@ async function writeAuditLog(db, actor, action, details) {
   );
 }
 
+function diffObjectPaths(previous, next, prefix = "") {
+  const left = previous && typeof previous === "object" && !Array.isArray(previous) ? previous : {};
+  const right = next && typeof next === "object" && !Array.isArray(next) ? next : {};
+  const keys = Array.from(new Set([...Object.keys(left), ...Object.keys(right)])).sort();
+  const changed = [];
+  for (const key of keys) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    const before = left[key];
+    const after = right[key];
+    const bothObjects = before && typeof before === "object" && !Array.isArray(before)
+      && after && typeof after === "object" && !Array.isArray(after);
+    if (bothObjects) {
+      changed.push(...diffObjectPaths(before, after, path));
+      continue;
+    }
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      changed.push(path);
+    }
+  }
+  return changed;
+}
+
 export function getPromptConfigDefaults() {
   return getDefaultRuntimePromptConfig();
 }
@@ -36,6 +58,7 @@ export async function loadSystemPromptConfig(db) {
 }
 
 export async function saveSystemPromptConfig(db, promptConfig, actor = null) {
+  const previous = await loadSystemPromptConfig(db);
   const normalized = normalizeRuntimePromptConfig(promptConfig);
   await db.query(
     `INSERT INTO system_config (
@@ -54,12 +77,15 @@ export async function saveSystemPromptConfig(db, promptConfig, actor = null) {
     [DEFAULT_EMERGENCY_PHRASE, JSON.stringify(normalized)]
   );
   await writeAuditLog(db, actor, "admin.system_prompt_layers.saved", {
-    prompt_layer_keys: Object.keys(normalized || {})
+    prompt_layer_keys: Object.keys(normalized || {}),
+    changed_fields: diffObjectPaths(previous, normalized)
   });
   return normalized;
 }
 
 export async function resetSystemPromptConfig(db, actor = null) {
+  const previous = await loadSystemPromptConfig(db);
+  const defaults = getDefaultRuntimePromptConfig();
   await db.query(
     `INSERT INTO system_config (
        id,
@@ -76,6 +102,8 @@ export async function resetSystemPromptConfig(db, actor = null) {
                    updated_at = NOW()`,
     [DEFAULT_EMERGENCY_PHRASE]
   );
-  await writeAuditLog(db, actor, "admin.system_prompt_layers.reset", {});
-  return getDefaultRuntimePromptConfig();
+  await writeAuditLog(db, actor, "admin.system_prompt_layers.reset", {
+    changed_fields: diffObjectPaths(previous, defaults)
+  });
+  return defaults;
 }

@@ -41,6 +41,16 @@ function splitLines(value) {
     .filter(Boolean);
 }
 
+function formatDisplayValue(value) {
+  if (value === undefined || value === null || value === '') return 'None';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  return String(value);
+}
+
+function fieldHasDraftChange(savedEffectiveValue, draftValue) {
+  return JSON.stringify(savedEffectiveValue ?? null) !== JSON.stringify(draftValue ?? null);
+}
+
 function Field({ label, hint, children }) {
   return (
     <label className="grid gap-1 text-sm">
@@ -59,7 +69,7 @@ function TextArea(props) {
   return <textarea {...props} className={`min-h-[96px] rounded-md border border-slate-300 px-3 py-2 text-sm ${props.className || ''}`.trim()} />;
 }
 
-function LayerCard({ title, description, onReset, children }) {
+function LayerCard({ title, description, onReset, children, resetLabel = 'Reset to Saved' }) {
   return (
     <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -68,7 +78,7 @@ function LayerCard({ title, description, onReset, children }) {
           {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
         </div>
         {onReset ? (
-          <Button variant="outline" size="sm" onClick={onReset}>Reset to Saved</Button>
+          <Button variant="outline" size="sm" onClick={onReset}>{resetLabel}</Button>
         ) : null}
       </div>
       <div className="mt-4 grid gap-3">{children}</div>
@@ -139,9 +149,104 @@ function FormGroup({ title, description, children }) {
   );
 }
 
+function SourceBadge({ source }) {
+  const isOverride = source === 'tenant_override';
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+      isOverride ? 'bg-amber-100 text-amber-900' : 'bg-slate-200 text-slate-700'
+    }`}>
+      {isOverride ? 'Tenant override' : 'Inherited default'}
+    </span>
+  );
+}
+
+function DraftBadge() {
+  return (
+    <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+      Draft changed
+    </span>
+  );
+}
+
+function TenantFieldState({ fieldState, draftValue }) {
+  const hasDraftChange = fieldHasDraftChange(fieldState?.effective_value, draftValue);
+  return (
+    <div className="grid gap-1 rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium text-slate-700">Saved source</span>
+        <SourceBadge source={fieldState?.source} />
+        {hasDraftChange ? <DraftBadge /> : null}
+      </div>
+      <div className="whitespace-pre-wrap">
+        <span className="font-medium text-slate-700">Saved override:</span> {formatDisplayValue(fieldState?.override_value)}
+      </div>
+      <div className="whitespace-pre-wrap">
+        <span className="font-medium text-slate-700">Default:</span> {formatDisplayValue(fieldState?.default_value)}
+      </div>
+      <div className="whitespace-pre-wrap">
+        <span className="font-medium text-slate-700">Effective now:</span> {formatDisplayValue(draftValue)}
+      </div>
+    </div>
+  );
+}
+
+function PreviewVariantPanel({ label, children }) {
+  return (
+    <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function PreviewModeContent({ mode, draft, live, render }) {
+  if (mode === 'compare') {
+    return (
+      <div className="grid gap-3 lg:grid-cols-2">
+        <PreviewVariantPanel label="Draft Effective">
+          {render(draft)}
+        </PreviewVariantPanel>
+        <PreviewVariantPanel label="Live Effective">
+          {render(live)}
+        </PreviewVariantPanel>
+      </div>
+    );
+  }
+  return render(mode === 'live' ? live : draft);
+}
+
+function renderTenantValueList(values) {
+  return (
+    <dl className="grid gap-2 text-sm text-slate-700">
+      <div><dt className="font-semibold text-slate-900">Greeting</dt><dd>{values?.greetingText || 'None set.'}</dd></div>
+      <div><dt className="font-semibold text-slate-900">AI disclosure</dt><dd>{values?.aiDisclosure || 'None set.'}</dd></div>
+      <div><dt className="font-semibold text-slate-900">Uncertainty phrase</dt><dd>{values?.uncertaintyPhrase || 'None set.'}</dd></div>
+      <div><dt className="font-semibold text-slate-900">Pricing fallback</dt><dd>{values?.pricingFallback || 'None set.'}</dd></div>
+      <div><dt className="font-semibold text-slate-900">Closing phrase</dt><dd>{values?.closingPhrase || 'None set.'}</dd></div>
+      <div><dt className="font-semibold text-slate-900">Require knowledge lookup</dt><dd>{values ? (values.requireKnowledgeLookup ? 'Yes' : 'No') : 'None set.'}</dd></div>
+      <div><dt className="font-semibold text-slate-900">Max clarifying questions</dt><dd>{values?.maxClarifyingQuestions ?? 'None set.'}</dd></div>
+      <div><dt className="font-semibold text-slate-900">End call only after spoken close</dt><dd>{values ? (values.allowEndCallOnlyAfterSpokenClose ? 'Yes' : 'No') : 'None set.'}</dd></div>
+      <div><dt className="font-semibold text-slate-900">Concise responses</dt><dd>{values ? (values.conciseResponses ? 'Yes' : 'No') : 'None set.'}</dd></div>
+    </dl>
+  );
+}
+
+function toTenantProfileOverride(profile) {
+  if (!profile) return null;
+  return {
+    greeting_text: profile.greeting_text || '',
+    session_config: profile.session_config || {},
+    tool_policy: profile.tool_policy || {},
+    wording_defaults: profile.wording_defaults || {},
+    runtime_defaults: profile.runtime_defaults || {}
+  };
+}
+
 export default function AdminPromptConfigPage() {
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [loadingTenant, setLoadingTenant] = useState(false);
+  const [savingGlobal, setSavingGlobal] = useState(false);
+  const [savingTenant, setSavingTenant] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [status, setStatus] = useState('');
   const [defaults, setDefaults] = useState(null);
@@ -149,29 +254,23 @@ export default function AdminPromptConfigPage() {
   const [config, setConfig] = useState(null);
   const [tenants, setTenants] = useState([]);
   const [selectedTenant, setSelectedTenant] = useState('');
+  const [savedTenantProfile, setSavedTenantProfile] = useState(null);
+  const [tenantProfile, setTenantProfile] = useState(null);
+  const [tenantFieldSources, setTenantFieldSources] = useState(null);
   const [runtimeEntryMode, setRuntimeEntryMode] = useState('customer_call');
   const [previewQuery, setPreviewQuery] = useState('');
+  const [previewMode, setPreviewMode] = useState('draft');
   const [preview, setPreview] = useState(null);
 
-  const loadPage = async () => {
-    setLoading(true);
-    setStatus('Loading prompt configuration...');
-    try {
-      const data = await fetchJson('/api/v1/admin/system/prompts');
-      setDefaults(data.defaults);
-      setSavedConfig(data.config);
-      setConfig(data.config);
-      setTenants(Array.isArray(data.tenants) ? data.tenants : []);
-      setSelectedTenant((current) => current || data.tenants?.[0]?.tenant_key || '');
-      setStatus('Prompt configuration loaded.');
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Failed to load prompt configuration.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const selectedTenantRecord = tenants.find((tenant) => tenant.tenant_key === selectedTenant) || null;
 
-  const loadPreview = async (tenantKey = selectedTenant, entryMode = runtimeEntryMode, query = previewQuery) => {
+  const loadPreview = async (
+    tenantKey = selectedTenant,
+    entryMode = runtimeEntryMode,
+    query = previewQuery,
+    draftConfig = config,
+    draftTenantProfile = tenantProfile
+  ) => {
     if (!tenantKey) return;
     setPreviewing(true);
     try {
@@ -181,7 +280,9 @@ export default function AdminPromptConfigPage() {
         body: JSON.stringify({
           tenantKey,
           runtimeEntryMode: entryMode,
-          previewQuery: query
+          previewQuery: query,
+          config: draftConfig,
+          runtimeProfile: toTenantProfileOverride(draftTenantProfile)
         })
       });
       setPreview(data);
@@ -192,18 +293,69 @@ export default function AdminPromptConfigPage() {
     }
   };
 
+  const loadTenantProfile = async (tenantKey = selectedTenant, { silent = false } = {}) => {
+    if (!tenantKey) return;
+    setLoadingTenant(true);
+    if (!silent) {
+      setStatus('Loading tenant runtime profile...');
+    }
+    try {
+      const data = await fetchJson(`/api/v1/admin/system/prompts/tenant-runtime-profile?tenantKey=${encodeURIComponent(tenantKey)}`);
+      setSavedTenantProfile(data.profile);
+      setTenantProfile(data.profile);
+      setTenantFieldSources(data.field_sources || {});
+      if (!silent) {
+        setStatus('Tenant runtime profile loaded.');
+      }
+      await loadPreview(tenantKey, runtimeEntryMode, previewQuery, config, data.profile);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Failed to load tenant runtime profile.');
+    } finally {
+      setLoadingTenant(false);
+    }
+  };
+
+  const loadPage = async () => {
+    setLoading(true);
+    setStatus('Loading prompt configuration...');
+    try {
+      const data = await fetchJson('/api/v1/admin/system/prompts');
+      const nextTenant = data.tenants?.[0]?.tenant_key || '';
+      setDefaults(data.defaults);
+      setSavedConfig(data.config);
+      setConfig(data.config);
+      setTenants(Array.isArray(data.tenants) ? data.tenants : []);
+      setSelectedTenant((current) => current || nextTenant);
+      setStatus('Prompt configuration loaded.');
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Failed to load prompt configuration.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadPage();
   }, []);
 
   useEffect(() => {
     if (!loading && selectedTenant) {
-      loadPreview(selectedTenant, runtimeEntryMode, previewQuery);
+      void loadTenantProfile(selectedTenant, { silent: true });
     }
-  }, [loading, selectedTenant, runtimeEntryMode]);
+  }, [loading, selectedTenant]);
+
+  useEffect(() => {
+    if (!loading && selectedTenant && tenantProfile) {
+      void loadPreview(selectedTenant, runtimeEntryMode, previewQuery, config, tenantProfile);
+    }
+  }, [runtimeEntryMode]);
 
   const updateConfig = (path, value) => {
     setConfig((current) => setByPath(current, path, value));
+  };
+
+  const updateTenantProfile = (path, value) => {
+    setTenantProfile((current) => setByPath(current, path, value));
   };
 
   const resetLayer = (path) => {
@@ -211,8 +363,8 @@ export default function AdminPromptConfigPage() {
   };
 
   const saveConfig = async () => {
-    setSaving(true);
-    setStatus('Saving prompt configuration...');
+    setSavingGlobal(true);
+    setStatus('Saving global prompt configuration...');
     try {
       const data = await fetchJson('/api/v1/admin/system/prompts', {
         method: 'POST',
@@ -222,32 +374,91 @@ export default function AdminPromptConfigPage() {
       setSavedConfig(data.config);
       setConfig(data.config);
       setDefaults(data.defaults);
-      setStatus('Prompt configuration saved.');
-      await loadPreview();
+      setStatus('Global prompt configuration saved.');
+      await loadPreview(selectedTenant, runtimeEntryMode, previewQuery, data.config, tenantProfile);
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Failed to save prompt configuration.');
+      setStatus(err instanceof Error ? err.message : 'Failed to save global prompt configuration.');
     } finally {
-      setSaving(false);
+      setSavingGlobal(false);
     }
   };
 
   const resetAll = async () => {
     if (!window.confirm('Reset all global prompt layers back to defaults?')) return;
-    setSaving(true);
-    setStatus('Resetting prompt configuration...');
+    setSavingGlobal(true);
+    setStatus('Resetting global prompt configuration...');
     try {
       const data = await fetchJson('/api/v1/admin/system/prompts', { method: 'DELETE' });
       setSavedConfig(data.config);
       setConfig(data.config);
       setDefaults(data.defaults);
-      setStatus('Prompt configuration reset to defaults.');
-      await loadPreview();
+      setStatus('Global prompt configuration reset to defaults.');
+      await loadPreview(selectedTenant, runtimeEntryMode, previewQuery, data.config, tenantProfile);
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Failed to reset prompt configuration.');
+      setStatus(err instanceof Error ? err.message : 'Failed to reset global prompt configuration.');
     } finally {
-      setSaving(false);
+      setSavingGlobal(false);
     }
   };
+
+  const saveTenantProfile = async () => {
+    if (!selectedTenant || !tenantProfile) return;
+    setSavingTenant(true);
+    setStatus(`Saving tenant runtime profile for ${selectedTenant}...`);
+    try {
+      const data = await fetchJson('/api/v1/admin/system/prompts/tenant-runtime-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantKey: selectedTenant,
+          profile: toTenantProfileOverride(tenantProfile)
+        })
+      });
+      setSavedTenantProfile(data.profile);
+      setTenantProfile(data.profile);
+      setTenantFieldSources(data.field_sources || {});
+      setStatus('Tenant runtime profile saved.');
+      await loadPreview(selectedTenant, runtimeEntryMode, previewQuery, config, data.profile);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Failed to save tenant runtime profile.');
+    } finally {
+      setSavingTenant(false);
+    }
+  };
+
+  const resetTenantToSaved = async () => {
+    if (!savedTenantProfile) return;
+    const nextProfile = cloneValue(savedTenantProfile);
+    setTenantProfile(nextProfile);
+    setStatus('Tenant runtime profile draft reset to the last saved version.');
+    await loadPreview(selectedTenant, runtimeEntryMode, previewQuery, config, nextProfile);
+  };
+
+  const resetTenantToDefaults = async () => {
+    if (!selectedTenant) return;
+    if (!window.confirm(`Clear tenant runtime-profile overrides for ${selectedTenant} and return to inherited defaults?`)) return;
+    setSavingTenant(true);
+    setStatus(`Resetting tenant runtime profile for ${selectedTenant}...`);
+    try {
+      const data = await fetchJson('/api/v1/admin/system/prompts/tenant-runtime-profile', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantKey: selectedTenant })
+      });
+      setSavedTenantProfile(data.profile);
+      setTenantProfile(data.profile);
+      setTenantFieldSources(data.field_sources || {});
+      setStatus('Tenant runtime profile reset to inherited defaults.');
+      await loadPreview(selectedTenant, runtimeEntryMode, previewQuery, config, data.profile);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Failed to reset tenant runtime profile.');
+    } finally {
+      setSavingTenant(false);
+    }
+  };
+
+  const previewDraft = preview?.draft || null;
+  const previewLive = preview?.live || null;
 
   if (loading || !config || !defaults || !savedConfig) {
     return (
@@ -266,25 +477,40 @@ export default function AdminPromptConfigPage() {
         <div>
           <h1 className="m-0 text-2xl font-semibold tracking-tight">Prompt Config</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Configure global runtime prompt layers and inspect the composed live gateway prompt for a selected tenant.
+            Configure global runtime prompt layers, edit prompt-adjacent tenant runtime settings, and inspect the composed gateway prompt for the selected tenant.
           </p>
           <p className="mt-2 text-xs text-slate-500">
-            `Reset to Saved` restores only that layer to the last version saved in the database. `Reset All` restores the full global prompt config to built-in defaults.
-          </p>
-          <p className="mt-2 text-xs text-slate-500">
-            The sections below now follow runtime order, so each editable layer sits beside the rendered output or runtime-derived block it affects.
+            `Reset to Saved` restores only that draft layer to the last saved version. `Reset All` restores the full global prompt config to built-in defaults. `Reset Tenant To Defaults` clears tenant overrides in `knowledge_runtime_profiles`.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={loadPage} disabled={loading || saving}>Reload</Button>
-          <Button variant="outline" onClick={resetAll} disabled={saving}>Reset All</Button>
-          <Button onClick={saveConfig} disabled={saving}>{saving ? 'Saving...' : 'Save Prompt Config'}</Button>
+          <Button variant="outline" onClick={loadPage} disabled={loading || savingGlobal || savingTenant}>Reload Page</Button>
+          <Button variant="outline" onClick={resetAll} disabled={savingGlobal}>Reset All Global Layers</Button>
+          <Button onClick={saveConfig} disabled={savingGlobal}>{savingGlobal ? 'Saving...' : 'Save Global Prompt Config'}</Button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm lg:grid-cols-2">
+        <div>
+          <div className="text-sm font-semibold text-slate-900">Global Prompt Layers</div>
+          <p className="mt-1 text-sm text-slate-600">
+            These edits affect every tenant because they change the shared prompt templates and wrappers used across the live runtime.
+          </p>
+        </div>
+        <div>
+          <div className="text-sm font-semibold text-slate-900">Selected Tenant Runtime Profile</div>
+          <p className="mt-1 text-sm text-slate-600">
+            These edits affect only <span className="font-medium text-slate-900">{selectedTenantRecord?.name || 'the selected tenant'}</span> and write back to <code>knowledge_runtime_profiles</code>.
+          </p>
+          <div className="mt-2 text-xs text-slate-500">
+            Tenant key: <code>{selectedTenant || 'none selected'}</code>
+          </div>
         </div>
       </div>
 
       <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-        <div className="grid gap-3 md:grid-cols-4">
-          <Field label="Tenant Preview" hint="Chooses which tenant-specific runtime-profile values are merged into the rendered prompt preview on the right.">
+        <div className="grid gap-3 md:grid-cols-5">
+          <Field label="Tenant Preview" hint="Selects which tenant runtime profile is loaded into the tenant editor and merged into preview composition.">
             <select
               className="rounded-md border border-slate-300 px-3 py-2 text-sm"
               value={selectedTenant}
@@ -297,7 +523,7 @@ export default function AdminPromptConfigPage() {
               ))}
             </select>
           </Field>
-          <Field label="Runtime Entry Mode" hint="Changes the runtime stage/context and conditional response-rule additions the same way the live runtime does.">
+          <Field label="Runtime Entry Mode" hint="Changes stage/context and post-tool rule activation the same way the live runtime does.">
             <select
               className="rounded-md border border-slate-300 px-3 py-2 text-sm"
               value={runtimeEntryMode}
@@ -305,6 +531,17 @@ export default function AdminPromptConfigPage() {
             >
               <option value="customer_call">customer_call</option>
               <option value="setup_interview">setup_interview</option>
+            </select>
+          </Field>
+          <Field label="Preview View" hint="Draft uses unsaved edits. Live uses the last saved global config and tenant profile. Compare shows both.">
+            <select
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              value={previewMode}
+              onChange={(event) => setPreviewMode(event.target.value)}
+            >
+              <option value="draft">draft effective</option>
+              <option value="live">live effective</option>
+              <option value="compare">compare draft vs live</option>
             </select>
           </Field>
           <Field
@@ -318,13 +555,200 @@ export default function AdminPromptConfigPage() {
             />
           </Field>
           <div className="flex items-end">
-            <Button variant="outline" onClick={() => loadPreview()} disabled={previewing || !selectedTenant}>
+            <Button
+              variant="outline"
+              onClick={() => loadPreview(selectedTenant, runtimeEntryMode, previewQuery, config, tenantProfile)}
+              disabled={previewing || !selectedTenant}
+            >
               {previewing ? 'Refreshing...' : 'Refresh Preview'}
             </Button>
           </div>
         </div>
         <div className="mt-3 text-sm text-slate-500">{status}</div>
       </div>
+
+      <section className="grid gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Selected Tenant Runtime Profile</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Edit only the prompt-adjacent tenant fields that already live in the current runtime-profile source of truth. This page intentionally excludes unrelated routing controls and non-prompt runtime settings.
+            </p>
+            <div className="mt-2 text-xs text-slate-500">
+              Tenant: <span className="font-medium text-slate-700">{selectedTenantRecord?.name || 'Loading tenant...'}</span> <code>({selectedTenant || 'none'})</code>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => loadTenantProfile(selectedTenant)} disabled={!selectedTenant || loadingTenant || savingTenant}>
+              {loadingTenant ? 'Loading...' : 'Reload Tenant'}
+            </Button>
+            <Button variant="outline" onClick={resetTenantToSaved} disabled={!savedTenantProfile || savingTenant}>Reset Tenant To Saved</Button>
+            <Button variant="outline" onClick={resetTenantToDefaults} disabled={!selectedTenant || savingTenant}>Reset Tenant To Defaults</Button>
+            <Button onClick={saveTenantProfile} disabled={!tenantProfile || savingTenant}>{savingTenant ? 'Saving...' : 'Save Tenant Runtime Profile'}</Button>
+          </div>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+          <div className="grid gap-4">
+            <LayerCard
+              title="Tenant Prompt-Adjacent Fields"
+              description="These fields come from the selected tenant's runtime profile. The input shows the current draft effective value, while the status block underneath shows saved inheritance vs override state."
+            >
+              <FormGroup
+                title="Greeting And Wording Defaults"
+                description="These tenant-scoped values feed the greeting turn, tenant persona wording, and fallback phrasing used throughout the live call."
+              >
+                <Field label="Greeting" hint="Used as the tenant greeting text and also rendered into the tenant persona and greeting instruction preview.">
+                  <TextArea
+                    value={tenantProfile?.greeting_text || ''}
+                    onChange={(event) => updateTenantProfile(['greeting_text'], event.target.value)}
+                    className="min-h-[96px]"
+                  />
+                  <TenantFieldState fieldState={tenantFieldSources?.greetingText} draftValue={tenantProfile?.greeting_text} />
+                </Field>
+                <Field label="AI Disclosure" hint="Tenant-scoped wording used when the assistant identifies itself as automated.">
+                  <TextInput
+                    value={tenantProfile?.wording_defaults?.ai_disclosure || ''}
+                    onChange={(event) => updateTenantProfile(['wording_defaults', 'ai_disclosure'], event.target.value)}
+                  />
+                  <TenantFieldState fieldState={tenantFieldSources?.aiDisclosure} draftValue={tenantProfile?.wording_defaults?.ai_disclosure} />
+                </Field>
+                <Field label="Uncertainty Phrase" hint="Used when the assistant needs to soften or verify an answer.">
+                  <TextInput
+                    value={tenantProfile?.wording_defaults?.uncertainty_phrase || ''}
+                    onChange={(event) => updateTenantProfile(['wording_defaults', 'uncertainty_phrase'], event.target.value)}
+                  />
+                  <TenantFieldState fieldState={tenantFieldSources?.uncertaintyPhrase} draftValue={tenantProfile?.wording_defaults?.uncertainty_phrase} />
+                </Field>
+                <Field label="Pricing Fallback" hint="Tenant-safe wording for pricing or quote questions when exact numbers should not be invented.">
+                  <TextInput
+                    value={tenantProfile?.wording_defaults?.pricing_fallback || ''}
+                    onChange={(event) => updateTenantProfile(['wording_defaults', 'pricing_fallback'], event.target.value)}
+                  />
+                  <TenantFieldState fieldState={tenantFieldSources?.pricingFallback} draftValue={tenantProfile?.wording_defaults?.pricing_fallback} />
+                </Field>
+                <Field label="Closing Phrase" hint="Tenant-preferred close used near callback, handoff, or end-of-call moments.">
+                  <TextInput
+                    value={tenantProfile?.wording_defaults?.closing_phrase || ''}
+                    onChange={(event) => updateTenantProfile(['wording_defaults', 'closing_phrase'], event.target.value)}
+                  />
+                  <TenantFieldState fieldState={tenantFieldSources?.closingPhrase} draftValue={tenantProfile?.wording_defaults?.closing_phrase} />
+                </Field>
+              </FormGroup>
+
+              <FormGroup
+                title="Knowledge Tool Policy Values"
+                description="These tenant-scoped settings flow into the rendered knowledge-tool policy block and shape how aggressively the assistant clarifies before using the tool."
+              >
+                <Field label="Require Knowledge Lookup" hint="If enabled, tenant-specific facts should be grounded through `knowledge_lookup` rather than improvised.">
+                  <select
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    value={tenantProfile?.tool_policy?.require_knowledge_lookup_for_tenant_facts ? 'true' : 'false'}
+                    onChange={(event) => updateTenantProfile(['tool_policy', 'require_knowledge_lookup_for_tenant_facts'], event.target.value === 'true')}
+                  >
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                  <TenantFieldState fieldState={tenantFieldSources?.requireKnowledgeLookup} draftValue={tenantProfile?.tool_policy?.require_knowledge_lookup_for_tenant_facts} />
+                </Field>
+                <Field label="Max Clarifying Questions" hint="The current live prompt uses this to describe how many clarifying questions are allowed before a tool call.">
+                  <TextInput
+                    type="number"
+                    min="0"
+                    value={tenantProfile?.tool_policy?.max_clarifying_questions ?? 0}
+                    onChange={(event) => updateTenantProfile(['tool_policy', 'max_clarifying_questions'], Number(event.target.value || 0))}
+                  />
+                  <TenantFieldState fieldState={tenantFieldSources?.maxClarifyingQuestions} draftValue={tenantProfile?.tool_policy?.max_clarifying_questions} />
+                </Field>
+                <Field label="End Call Only After Spoken Close" hint="Prompt-level reminder that the assistant should only call `end_call` after it has already spoken the final closing sentence aloud.">
+                  <select
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    value={tenantProfile?.tool_policy?.allow_end_call_only_after_spoken_close ? 'true' : 'false'}
+                    onChange={(event) => updateTenantProfile(['tool_policy', 'allow_end_call_only_after_spoken_close'], event.target.value === 'true')}
+                  >
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                  <TenantFieldState fieldState={tenantFieldSources?.allowEndCallOnlyAfterSpokenClose} draftValue={tenantProfile?.tool_policy?.allow_end_call_only_after_spoken_close} />
+                </Field>
+              </FormGroup>
+
+              <FormGroup
+                title="Response Defaults"
+                description="These tenant-level defaults affect how the response-rule layer and tenant persona describe the runtime behavior."
+              >
+                <Field label="Concise Responses" hint="Feeds the response-style label in the tenant persona and activates the concise response rule after `knowledge_lookup`.">
+                  <select
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    value={tenantProfile?.runtime_defaults?.concise_responses ? 'true' : 'false'}
+                    onChange={(event) => updateTenantProfile(['runtime_defaults', 'concise_responses'], event.target.value === 'true')}
+                  >
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                  <TenantFieldState fieldState={tenantFieldSources?.conciseResponses} draftValue={tenantProfile?.runtime_defaults?.concise_responses} />
+                </Field>
+              </FormGroup>
+            </LayerCard>
+          </div>
+
+          <div className="grid gap-4">
+            <PreviewBlock
+              title="Tenant Effective Values"
+              description="These are the tenant-scoped values after inheritance is resolved. Draft uses unsaved edits from the form; live uses the last saved tenant profile."
+            >
+              <PreviewModeContent
+                mode={previewMode}
+                draft={previewDraft?.tenantRuntimeProfileValues}
+                live={previewLive?.tenantRuntimeProfileValues}
+                render={(values) => renderTenantValueList(values)}
+              />
+            </PreviewBlock>
+
+            <PreviewBlock
+              title="Tenant Inheritance Summary"
+              description="Saved inheritance state for each editable tenant field. This shows whether the selected tenant currently overrides the shared baseline or inherits it."
+            >
+              <div className="grid gap-2 text-sm text-slate-700">
+                {[
+                  ['Greeting', tenantFieldSources?.greetingText],
+                  ['AI disclosure', tenantFieldSources?.aiDisclosure],
+                  ['Uncertainty phrase', tenantFieldSources?.uncertaintyPhrase],
+                  ['Pricing fallback', tenantFieldSources?.pricingFallback],
+                  ['Closing phrase', tenantFieldSources?.closingPhrase],
+                  ['Require knowledge lookup', tenantFieldSources?.requireKnowledgeLookup],
+                  ['Max clarifying questions', tenantFieldSources?.maxClarifyingQuestions],
+                  ['End call only after spoken close', tenantFieldSources?.allowEndCallOnlyAfterSpokenClose],
+                  ['Concise responses', tenantFieldSources?.conciseResponses]
+                ].map(([label, fieldState]) => (
+                  <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-medium text-slate-900">{label}</div>
+                      <SourceBadge source={fieldState?.source} />
+                    </div>
+                    <div className="mt-2 whitespace-pre-wrap text-xs text-slate-600">
+                      Default: {formatDisplayValue(fieldState?.default_value)}
+                    </div>
+                    <div className="whitespace-pre-wrap text-xs text-slate-600">
+                      Saved override: {formatDisplayValue(fieldState?.override_value)}
+                    </div>
+                    <div className="whitespace-pre-wrap text-xs text-slate-600">
+                      Saved effective: {formatDisplayValue(fieldState?.effective_value)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </PreviewBlock>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+        <div className="text-sm font-semibold text-slate-900">Global Prompt Layers</div>
+        <p className="text-sm text-slate-600">
+          The sections below edit shared prompt templates and wrappers. They affect all tenants because the live runtime composes every session from these global layers plus the selected tenant runtime profile above.
+        </p>
+      </section>
 
       <PromptSection
         title="1. Base Session Prompt"
@@ -346,14 +770,19 @@ export default function AdminPromptConfigPage() {
         )}
         preview={(
           <PreviewBlock title="Base System Prompt" description="Editable global base layer before the tenant persona block.">
-            <CodeBlock value={preview?.rendered?.baseSystemPrompt} />
+            <PreviewModeContent
+              mode={previewMode}
+              draft={previewDraft?.rendered?.baseSystemPrompt}
+              live={previewLive?.rendered?.baseSystemPrompt}
+              render={(value) => <CodeBlock value={value} />}
+            />
           </PreviewBlock>
         )}
       />
 
       <PromptSection
         title="2. Tenant Persona"
-        description="Global wrapper templates live on the left; tenant-scoped runtime wording stays separate and is resolved into the rendered block on the right."
+        description="Global wrapper templates live on the left. The rendered persona block on the right uses the selected tenant runtime profile and the current prompt draft."
         editor={(
           <LayerCard
             title="Tenant Persona Layer"
@@ -477,24 +906,14 @@ export default function AdminPromptConfigPage() {
           </LayerCard>
         )}
         preview={(
-          <>
-            <PreviewBlock
-              title="Tenant Runtime Profile Values"
-              description="Tenant-scoped wording stays separate from the global prompt config and is resolved into the rendered persona block below."
-            >
-              <dl className="grid gap-2 text-sm text-slate-700">
-                <div><dt className="font-semibold text-slate-900">Greeting</dt><dd>{preview?.tenantRuntimeProfileValues?.greetingText || 'None set.'}</dd></div>
-                <div><dt className="font-semibold text-slate-900">AI disclosure</dt><dd>{preview?.tenantRuntimeProfileValues?.aiDisclosure || 'None set.'}</dd></div>
-                <div><dt className="font-semibold text-slate-900">Uncertainty phrase</dt><dd>{preview?.tenantRuntimeProfileValues?.uncertaintyPhrase || 'None set.'}</dd></div>
-                <div><dt className="font-semibold text-slate-900">Pricing fallback</dt><dd>{preview?.tenantRuntimeProfileValues?.pricingFallback || 'None set.'}</dd></div>
-                <div><dt className="font-semibold text-slate-900">Closing phrase</dt><dd>{preview?.tenantRuntimeProfileValues?.closingPhrase || 'None set.'}</dd></div>
-                <div><dt className="font-semibold text-slate-900">Concise responses</dt><dd>{preview?.tenantRuntimeProfileValues?.conciseResponses ? 'true' : 'false'}</dd></div>
-              </dl>
-            </PreviewBlock>
-            <PreviewBlock title="Tenant Persona Block" description="Rendered from the selected tenant’s runtime profile values and the editable global wrapper/templates.">
-              <CodeBlock value={`${preview?.rendered?.tenantPersonaHeader || ''}\n${preview?.rendered?.tenantPersona || ''}`.trim()} />
-            </PreviewBlock>
-          </>
+          <PreviewBlock title="Tenant Persona Block" description="Rendered from the selected tenant’s runtime profile values and the editable global wrapper/templates.">
+            <PreviewModeContent
+              mode={previewMode}
+              draft={`${previewDraft?.rendered?.tenantPersonaHeader || ''}\n${previewDraft?.rendered?.tenantPersona || ''}`.trim()}
+              live={`${previewLive?.rendered?.tenantPersonaHeader || ''}\n${previewLive?.rendered?.tenantPersona || ''}`.trim()}
+              render={(value) => <CodeBlock value={value} />}
+            />
+          </PreviewBlock>
         )}
       />
 
@@ -535,7 +954,12 @@ export default function AdminPromptConfigPage() {
         )}
         preview={(
           <PreviewBlock title="Knowledge Tool Policy Block" description="Rendered from structured tool-policy config in the tenant runtime profile.">
-            <CodeBlock value={preview?.rendered?.knowledgeToolPolicy} />
+            <PreviewModeContent
+              mode={previewMode}
+              draft={previewDraft?.rendered?.knowledgeToolPolicy}
+              live={previewLive?.rendered?.knowledgeToolPolicy}
+              render={(value) => <CodeBlock value={value} />}
+            />
           </PreviewBlock>
         )}
       />
@@ -565,7 +989,12 @@ export default function AdminPromptConfigPage() {
         )}
         preview={(
           <PreviewBlock title="Greeting Instruction" description="The explicit greeting-turn instruction sent after the Realtime session is updated.">
-            <CodeBlock value={preview?.rendered?.greetingInstruction} />
+            <PreviewModeContent
+              mode={previewMode}
+              draft={previewDraft?.rendered?.greetingInstruction}
+              live={previewLive?.rendered?.greetingInstruction}
+              render={(value) => <CodeBlock value={value} />}
+            />
           </PreviewBlock>
         )}
       />
@@ -601,7 +1030,12 @@ export default function AdminPromptConfigPage() {
         )}
         preview={(
           <PreviewBlock title="Current Runtime Context Block" description="Derived from runtime entry mode, stage, and active assignment.">
-            <CodeBlock value={preview?.rendered?.runtimeContext} />
+            <PreviewModeContent
+              mode={previewMode}
+              draft={previewDraft?.rendered?.runtimeContext}
+              live={previewLive?.rendered?.runtimeContext}
+              render={(value) => <CodeBlock value={value} />}
+            />
           </PreviewBlock>
         )}
       />
@@ -656,26 +1090,37 @@ export default function AdminPromptConfigPage() {
         preview={(
           <>
             <PreviewBlock title="Post-Tool Response Restrictions" description="Baseline template plus currently active conditional additions.">
-              <div className="grid gap-3">
-                <RulesList title="Baseline Rules" items={preview?.rendered?.responseRestrictions?.baselineRules} />
-                <RulesList title="Active Conditional Rules" items={preview?.rendered?.responseRestrictions?.activeConditionalRules} />
-                <RulesList
-                  title="Conditional Templates"
-                  items={Object.values(preview?.rendered?.responseRestrictions?.conditionalTemplates || {})}
-                />
-              </div>
+              <PreviewModeContent
+                mode={previewMode}
+                draft={previewDraft?.rendered?.responseRestrictions}
+                live={previewLive?.rendered?.responseRestrictions}
+                render={(value) => (
+                  <div className="grid gap-3">
+                    <RulesList title="Baseline Rules" items={value?.baselineRules} />
+                    <RulesList title="Active Conditional Rules" items={value?.activeConditionalRules} />
+                    <RulesList title="Conditional Templates" items={Object.values(value?.conditionalTemplates || {})} />
+                  </div>
+                )}
+              />
             </PreviewBlock>
             <PreviewBlock title="Matched Override / Guardrail Context" description="Only populated when a preview query is provided.">
-              <div className="grid gap-3">
-                <RulesList
-                  title="Matched Overrides"
-                  items={(preview?.matched?.overrides || []).map((item) => item.title || item.override_type || 'override')}
-                />
-                <RulesList
-                  title="Matched Guardrails"
-                  items={(preview?.matched?.guardrails || []).map((item) => item.title || item.guardrail_type || 'guardrail')}
-                />
-              </div>
+              <PreviewModeContent
+                mode={previewMode}
+                draft={previewDraft?.matched}
+                live={previewLive?.matched}
+                render={(value) => (
+                  <div className="grid gap-3">
+                    <RulesList
+                      title="Matched Overrides"
+                      items={(value?.overrides || []).map((item) => item.title || item.override_type || 'override')}
+                    />
+                    <RulesList
+                      title="Matched Guardrails"
+                      items={(value?.guardrails || []).map((item) => item.title || item.guardrail_type || 'guardrail')}
+                    />
+                  </div>
+                )}
+              />
             </PreviewBlock>
           </>
         )}
@@ -685,15 +1130,25 @@ export default function AdminPromptConfigPage() {
         <div>
           <h2 className="text-lg font-semibold text-slate-900">7. Final Composed Output</h2>
           <p className="mt-1 text-sm text-slate-500">
-            These are the fully assembled runtime artifacts built from the layers above. This is the best place to verify the overall prompt stack before testing a call.
+            These are the fully assembled runtime artifacts built from the current global and tenant layers. Use this section to compare the last saved live prompt against your unsaved draft before testing a call.
           </p>
         </div>
         <div className="grid gap-4 xl:grid-cols-2">
           <PreviewBlock title="Final Gateway Session Instructions" description="Composed with the same shared builder the live gateway uses for `session.update`.">
-            <CodeBlock value={preview?.rendered?.finalGatewaySessionInstructions} />
+            <PreviewModeContent
+              mode={previewMode}
+              draft={previewDraft?.rendered?.finalGatewaySessionInstructions}
+              live={previewLive?.rendered?.finalGatewaySessionInstructions}
+              render={(value) => <CodeBlock value={value} />}
+            />
           </PreviewBlock>
-          <PreviewBlock title="Live Gateway Prompt Output" description="Built from the same response builder used by `/api/v1/gateway/prompt`.">
-            <CodeBlock value={JSON.stringify(preview?.gatewayPromptOutput || {}, null, 2)} />
+          <PreviewBlock title="Gateway Prompt Output" description="Built from the same response builder used by `/api/v1/gateway/prompt`.">
+            <PreviewModeContent
+              mode={previewMode}
+              draft={previewDraft?.gatewayPromptOutput}
+              live={previewLive?.gatewayPromptOutput}
+              render={(value) => <CodeBlock value={JSON.stringify(value || {}, null, 2)} />}
+            />
           </PreviewBlock>
         </div>
       </section>
