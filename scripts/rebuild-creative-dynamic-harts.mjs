@@ -8,6 +8,10 @@ import {
 } from "../pages/api/_lib/knowledgeReceptionistBuilds.js";
 import { syncCanonicalKnowledgePacks } from "../pages/api/_lib/knowledgeReceptionistPacks.js";
 import { assembleKnowledgeRuntimePreview } from "../pages/api/_lib/knowledgeReceptionistPrompt.js";
+import {
+  requireTenantArtifactDeleteApproval,
+  requireTenantBuildMutationApproval
+} from "./_safety.mjs";
 
 const { Pool } = pg;
 
@@ -349,6 +353,10 @@ async function main() {
   const databaseUrl = process.env.DATABASE_URL || "";
   if (!databaseUrl) {
     throw new Error("DATABASE_URL missing");
+  }
+  requireTenantBuildMutationApproval("scripts/rebuild-creative-dynamic-harts.mjs", TENANT_KEY, databaseUrl);
+  if (!SKIP_CLEANUP) {
+    requireTenantArtifactDeleteApproval("scripts/rebuild-creative-dynamic-harts.mjs", TENANT_KEY, databaseUrl);
   }
   process.env.KNOWLEDGE_RECEPTIONIST_DISABLE_BUILD_RATE_LIMIT = "true";
   console.error("phase:db_probe");

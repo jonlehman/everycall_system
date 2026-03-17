@@ -1,7 +1,11 @@
 import { cleanupTenantByKey, findQaTenants, QA_TENANT_PATTERNS } from "./_tenantCleanup.mjs";
+import { requireQaCleanupApproval } from "./_safety.mjs";
 const dryRun = process.env.QA_CLEANUP_DRY_RUN === "1";
 
 async function run() {
+  if (!dryRun) {
+    requireQaCleanupApproval("scripts/cleanup-qa-tenants.mjs");
+  }
   const matches = await findQaTenants(QA_TENANT_PATTERNS);
   console.log(`[cleanup-qa-tenants] matched=${matches.length} dryRun=${dryRun}`);
 

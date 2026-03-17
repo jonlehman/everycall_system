@@ -6,6 +6,7 @@ import {
   publishKnowledgeBuild,
   retrieveBuildRuntimeBundle
 } from "../pages/api/_lib/knowledgeReceptionistBuilds.js";
+import { requireTenantBuildMutationApproval } from "./_safety.mjs";
 
 const { Pool } = pg;
 
@@ -209,6 +210,7 @@ async function validateToolDedupeSimulation() {
 }
 
 async function main() {
+  requireTenantBuildMutationApproval("scripts/validate-tool-dedupe-and-warranty.mjs", TENANT_KEY);
   process.env.KNOWLEDGE_RECEPTIONIST_DISABLE_BUILD_RATE_LIMIT = "true";
   const pool = new Pool({ connectionString: mustDatabaseUrl() });
   try {

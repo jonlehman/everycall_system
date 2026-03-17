@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import pg from "pg";
 
 import promptHandler from "../pages/api/v1/gateway/prompt.js";
+import { requireSchemaResetApproval } from "./_safety.mjs";
 
 const { Pool } = pg;
 const REPO_ROOT = process.cwd();
@@ -132,6 +133,7 @@ function validateInterruptionScenario(voiceControl, label, turnResult, reason) {
 async function main() {
   const databaseUrl = process.env.DATABASE_URL || "";
   assert(databaseUrl, "DATABASE_URL is required");
+  requireSchemaResetApproval("scripts/validate-voice-runtime-hardening.mjs", databaseUrl);
   process.env.CALL_SUMMARY_TOKEN ||= "knowledge-cutover-validation-token";
 
   const baseSummary = runBaseCutoverValidation();

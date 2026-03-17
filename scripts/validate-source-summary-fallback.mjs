@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import pg from "pg";
 
 import { buildFallbackSourceSummary } from "../pages/api/_lib/knowledgeReceptionistCompiler.js";
+import { requireTenantBuildMutationApproval } from "./_safety.mjs";
 
 const { Pool } = pg;
 
@@ -21,6 +22,7 @@ function mustDatabaseUrl() {
 }
 
 async function main() {
+  requireTenantBuildMutationApproval("scripts/validate-source-summary-fallback.mjs", TENANT_KEY);
   const pool = new Pool({ connectionString: mustDatabaseUrl() });
   const buildId = createId("build_fallback_test");
   const batchId = createId("kbatch");

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { requireFlagApproval } from "./_safety.mjs";
 
 const baseUrl = process.env.APP_BASE_URL ?? "http://localhost:3000";
 const dryRun = process.env.CLIENT_UI_TEST_DRY_RUN === "1";
@@ -42,6 +43,12 @@ async function run() {
     console.log("DRY RUN: onboard -> visit client pages -> verify setup deep links");
     return;
   }
+  requireFlagApproval({
+    scriptName: "scripts/test-client-ui-v2-e2e.mjs",
+    action: "create a test tenant via onboarding and exercise authenticated client pages",
+    envName: "EVERYCALL_ALLOW_TEST_TENANT_ONBOARD",
+    extra: ["Set CLIENT_UI_TEST_DRY_RUN=1 to inspect the flow without creating data."]
+  });
 
   const seed = id();
   const onboardResp = await fetch(`${baseUrl}/api/v1/tenants/onboard`, {

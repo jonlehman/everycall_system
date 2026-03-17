@@ -22,6 +22,7 @@ import buildsHandler from "../pages/api/v1/knowledge/builds/index.js";
 import publishBuildHandler from "../pages/api/v1/knowledge/builds/[buildId]/publish.js";
 import promptHandler from "../pages/api/v1/gateway/prompt.js";
 import { assembleKnowledgeRuntimeTurn } from "../pages/api/_lib/knowledgeReceptionistPrompt.js";
+import { requireSchemaResetApproval } from "./_safety.mjs";
 
 const { Pool } = pg;
 
@@ -358,6 +359,7 @@ function summarizeTurn(turn) {
 async function main() {
   const databaseUrl = process.env.DATABASE_URL || "";
   assert(databaseUrl, "DATABASE_URL is required");
+  requireSchemaResetApproval("scripts/validate-knowledge-receptionist-cutover.mjs", databaseUrl);
   process.env.CALL_SUMMARY_TOKEN ||= "knowledge-cutover-validation-token";
 
   const summary = {
