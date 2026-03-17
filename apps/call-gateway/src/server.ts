@@ -85,6 +85,8 @@ type PendingToolSpeechWait = {
   tool: string;
   callId: string;
   requestedAtMs: number;
+  responseId?: string | null;
+  firstAudioLogged?: boolean;
 };
 
 type UsageTotals = {
@@ -367,9 +369,29 @@ function initRealtimeLog(callSid: string) {
   return logPath;
 }
 
+function ensureSessionRealtimeLogPath(session: StreamSession) {
+  if (session.realtimeLogPath) return session.realtimeLogPath;
+  const logPath = initRealtimeLog(session.callSid);
+  session.realtimeLogPath = logPath;
+  return logPath;
+}
+
 function logRealtimeEntry(session: StreamSession | undefined, entry: Record<string, unknown>) {
   if (!realtimeDebug && !realtimeTrace) return;
   const logPath = session?.realtimeLogPath;
+  if (!logPath) return;
+  try {
+    fs.appendFileSync(logPath, `${JSON.stringify(entry)}\n`);
+  } catch (err) {
+    logError("realtime_log_write_failed", {
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
+}
+
+function logRealtimeDetailEntry(session: StreamSession | undefined, entry: Record<string, unknown>) {
+  if (!session) return;
+  const logPath = ensureSessionRealtimeLogPath(session);
   if (!logPath) return;
   try {
     fs.appendFileSync(logPath, `${JSON.stringify(entry)}\n`);
@@ -863,23 +885,48 @@ function noteToolResponseRequested(session: StreamSession, tool: string, callId:
   session.pendingToolSpeechWait = {
     tool,
     callId,
-    requestedAtMs: performance.now()
+    requestedAtMs: performance.now(),
+    responseId: null,
+    firstAudioLogged: false
   };
 }
 
-function logRealtimeToolPayloads(params: {
+function estimatePayloadBytes(value: unknown) {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function logRealtimeToolPayloads(session: StreamSession, params: {
   callSid: string;
   tool: string;
   callId: string;
   toolResultEvent: Record<string, unknown>;
   responseEvent?: Record<string, unknown>;
 }) {
+  logRealtimeDetailEntry(session, {
+    ts: new Date().toISOString(),
+    kind: "tool_result_send",
+    callSid: params.callSid,
+    tool: params.tool,
+    callId: params.callId,
+    payload: params.toolResultEvent
+  });
+  if (params.responseEvent) {
+    logRealtimeDetailEntry(session, {
+      ts: new Date().toISOString(),
+      kind: "tool_response_create_send",
+      callSid: params.callSid,
+      tool: params.tool,
+      callId: params.callId,
+      payload: params.responseEvent
+    });
+  }
   logInfo("openai_realtime_tool_response_requested", {
     callSid: params.callSid,
     tool: params.tool,
     callId: params.callId,
-    toolResultPayload: JSON.stringify(params.toolResultEvent),
-    responseCreatePayload: params.responseEvent ? JSON.stringify(params.responseEvent) : undefined
+    traceFile: session.realtimeLogPath || ensureSessionRealtimeLogPath(session),
+    toolResultPayloadBytes: estimatePayloadBytes(params.toolResultEvent),
+    responseCreatePayloadBytes: params.responseEvent ? estimatePayloadBytes(params.responseEvent) : undefined
   });
 }
 
@@ -915,6 +962,42 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     });
 
     const toolOutput = formatKnowledgeRuntimeToolOutput(runtimeResult);
+    logRealtimeDetailEntry(session, {
+      ts: new Date().toISOString(),
+      kind: "planner_request",
+      callSid: session.callSid,
+      tool: name,
+      callId,
+      query,
+      payload: runtimeResult.retrieval_telemetry.planner_request_payload || null
+    });
+    logRealtimeDetailEntry(session, {
+      ts: new Date().toISOString(),
+      kind: "planner_response",
+      callSid: session.callSid,
+      tool: name,
+      callId,
+      query,
+      payload: runtimeResult.retrieval_telemetry.planner_response_payload || null
+    });
+    logRealtimeDetailEntry(session, {
+      ts: new Date().toISOString(),
+      kind: "embedding_request",
+      callSid: session.callSid,
+      tool: name,
+      callId,
+      query,
+      payload: runtimeResult.retrieval_telemetry.embedding_request_payload || null
+    });
+    logRealtimeDetailEntry(session, {
+      ts: new Date().toISOString(),
+      kind: "embedding_response",
+      callSid: session.callSid,
+      tool: name,
+      callId,
+      query,
+      payload: runtimeResult.retrieval_telemetry.embedding_response_payloads || []
+    });
     logInfo("knowledge_lookup_tool_called", {
       callSid: session.callSid,
       query,
@@ -956,17 +1039,18 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       totalGatewayTurnMs: typeof runtimeResult.retrieval_telemetry.total_gateway_turn_ms === "number"
         ? runtimeResult.retrieval_telemetry.total_gateway_turn_ms
         : undefined,
-      plannerRequestPayload: runtimeResult.retrieval_telemetry.planner_request_payload
-        ? JSON.stringify(runtimeResult.retrieval_telemetry.planner_request_payload)
+      traceFile: session.realtimeLogPath || ensureSessionRealtimeLogPath(session),
+      plannerRequestBytes: runtimeResult.retrieval_telemetry.planner_request_payload
+        ? estimatePayloadBytes(runtimeResult.retrieval_telemetry.planner_request_payload)
         : undefined,
-      plannerResponsePayload: runtimeResult.retrieval_telemetry.planner_response_payload
-        ? JSON.stringify(runtimeResult.retrieval_telemetry.planner_response_payload)
+      plannerResponseBytes: runtimeResult.retrieval_telemetry.planner_response_payload
+        ? estimatePayloadBytes(runtimeResult.retrieval_telemetry.planner_response_payload)
         : undefined,
-      embeddingRequestPayload: runtimeResult.retrieval_telemetry.embedding_request_payload
-        ? JSON.stringify(runtimeResult.retrieval_telemetry.embedding_request_payload)
+      embeddingRequestBytes: runtimeResult.retrieval_telemetry.embedding_request_payload
+        ? estimatePayloadBytes(runtimeResult.retrieval_telemetry.embedding_request_payload)
         : undefined,
-      embeddingResponsePayloads: Array.isArray(runtimeResult.retrieval_telemetry.embedding_response_payloads)
-        ? JSON.stringify(runtimeResult.retrieval_telemetry.embedding_response_payloads)
+      embeddingResponseBytes: Array.isArray(runtimeResult.retrieval_telemetry.embedding_response_payloads)
+        ? estimatePayloadBytes(runtimeResult.retrieval_telemetry.embedding_response_payloads)
         : undefined
     });
     await forwardToolResult(
@@ -987,7 +1071,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     const toolResultEvent = createFunctionCallOutputEvent(callId, toolOutput);
     const responseEvent = createAudioTextResponseEvent({});
     sendOpenAiEvent(session.openAiWs, toolResultEvent);
-    logRealtimeToolPayloads({
+    logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
       callId,
@@ -1016,7 +1100,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     const toolResultEvent = createFunctionCallOutputEvent(callId, validation);
     const responseEvent = createAudioTextResponseEvent({});
     sendOpenAiEvent(session.openAiWs, toolResultEvent);
-    logRealtimeToolPayloads({
+    logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
       callId,
@@ -1039,7 +1123,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     await forwardToolResult(session.callSid, session.tenantKey, name, { reason }, { status: "accepted", errors: [] });
     const toolResultEvent = createFunctionCallOutputEvent(callId, { status: "accepted", reason });
     sendOpenAiEvent(session.openAiWs, toolResultEvent);
-    logRealtimeToolPayloads({
+    logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
       callId,
@@ -1061,7 +1145,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
   const toolResultEvent = createFunctionCallOutputEvent(callId, { status: "accepted" });
   const responseEvent = createAudioTextResponseEvent({});
   sendOpenAiEvent(session.openAiWs, toolResultEvent);
-  logRealtimeToolPayloads({
+  logRealtimeToolPayloads(session, {
     callSid: session.callSid,
     tool: name,
     callId,
@@ -1222,6 +1306,18 @@ function connectOpenAiRealtime(session: StreamSession) {
     }
 
     if (type === "response.created") {
+      if (session.pendingToolSpeechWait && !session.pendingToolSpeechWait.responseId) {
+        session.pendingToolSpeechWait.responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
+        logRealtimeDetailEntry(session, {
+          ts: new Date().toISOString(),
+          kind: "tool_response_created",
+          callSid: session.callSid,
+          tool: session.pendingToolSpeechWait.tool,
+          callId: session.pendingToolSpeechWait.callId,
+          responseId: session.pendingToolSpeechWait.responseId,
+          payload: payloadMsg
+        });
+      }
       markAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
       noteAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
       logInfo("openai_realtime_response_created", {
@@ -1260,6 +1356,21 @@ function connectOpenAiRealtime(session: StreamSession) {
         outputTokens: usage.outputTokens,
         estimatedCostMicrosUsd: estimateUsageCostMicrosUsd(usage.inputTokens, usage.outputTokens)
       });
+      if (session.pendingToolSpeechWait) {
+        const responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
+        if (!session.pendingToolSpeechWait.responseId || session.pendingToolSpeechWait.responseId === responseId) {
+          logRealtimeDetailEntry(session, {
+            ts: new Date().toISOString(),
+            kind: "tool_response_done",
+            callSid: session.callSid,
+            tool: session.pendingToolSpeechWait.tool,
+            callId: session.pendingToolSpeechWait.callId,
+            responseId,
+            payload: payloadMsg
+          });
+          session.pendingToolSpeechWait = null;
+        }
+      }
       flushQueuedAssistantResponses(session);
       return;
     }
@@ -1281,7 +1392,7 @@ function connectOpenAiRealtime(session: StreamSession) {
     if (type === "response.output_audio.delta" || type === "response.audio.delta" || type === "output_audio.delta") {
       const audioBase64 = payloadMsg.delta || payloadMsg.audio?.delta || payloadMsg.audio?.data || payloadMsg.data || "";
       if (audioBase64) {
-        if (session.pendingToolSpeechWait) {
+        if (session.pendingToolSpeechWait && !session.pendingToolSpeechWait.firstAudioLogged) {
           const waitMs = Number((performance.now() - session.pendingToolSpeechWait.requestedAtMs).toFixed(3));
           logInfo("openai_realtime_tool_response_first_audio", {
             callSid: session.callSid,
@@ -1290,7 +1401,16 @@ function connectOpenAiRealtime(session: StreamSession) {
             responseId: payloadMsg?.response_id || payloadMsg?.response?.id || null,
             waitMs
           });
-          session.pendingToolSpeechWait = null;
+          logRealtimeDetailEntry(session, {
+            ts: new Date().toISOString(),
+            kind: "tool_response_first_audio",
+            callSid: session.callSid,
+            tool: session.pendingToolSpeechWait.tool,
+            callId: session.pendingToolSpeechWait.callId,
+            responseId: payloadMsg?.response_id || payloadMsg?.response?.id || null,
+            waitMs
+          });
+          session.pendingToolSpeechWait.firstAudioLogged = true;
         }
         noteAssistantResponseCreated(session, payloadMsg?.response_id || payloadMsg?.response?.id || null);
         noteAssistantOutputItem(session, payloadMsg?.item_id || payloadMsg?.item?.id || payloadMsg?.output_item?.id || null);
