@@ -1,14 +1,3 @@
-import {
-  buildCompanyContextBlockFromPromptConfig,
-  buildCallMissionBlockFromPromptConfig,
-  buildGatewaySessionInstructionsFromPromptConfig,
-  buildGreetingInstructionFromPromptConfig,
-  buildKnowledgeToolPolicyBlockFromPromptConfig,
-  buildResponseRestrictionDetailsFromPromptConfig,
-  buildRuntimeContextBlockFromPromptConfig,
-  selectMatchedGuardrails,
-  selectMatchedOverrides
-} from "@everycall/contracts";
 import { ensureTables, getPool } from "../../../../_lib/db.js";
 import { getAdminActor, requireSession } from "../../../../_lib/auth.js";
 import { buildGatewayPromptResponse } from "../../../../_lib/gatewayPromptResponse.js";
@@ -18,44 +7,7 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
-function buildPreviewVariant({
-  gatewayPrompt,
-  tenantKey,
-  runtimeEntryMode,
-  previewQuery
-}) {
-  const promptLayers = gatewayPrompt.promptLayers;
-  const runtimeProfile = gatewayPrompt.approvedConfiguration.runtime_profile || {};
-  const toolPolicy = runtimeProfile.tool_policy || {};
-  const matchedOverrides = previewQuery
-    ? selectMatchedOverrides(
-        gatewayPrompt.approvedConfiguration.overrides || [],
-        previewQuery,
-        {
-          active_domain_id: gatewayPrompt.initialCallState.active_domain_id,
-          active_subdomain_id: gatewayPrompt.initialCallState.active_subdomain_id
-        }
-      )
-    : [];
-  const matchedGuardrails = previewQuery
-    ? selectMatchedGuardrails(
-        gatewayPrompt.approvedConfiguration.guardrails || [],
-        previewQuery,
-        {
-          active_domain_id: gatewayPrompt.initialCallState.active_domain_id,
-          active_subdomain_id: gatewayPrompt.initialCallState.active_subdomain_id
-        },
-        gatewayPrompt.initialCallState
-      )
-    : [];
-
-  const responseRestrictionDetails = buildResponseRestrictionDetailsFromPromptConfig({
-    promptConfig: promptLayers,
-    runtimeEntryMode,
-    conciseResponses: runtimeProfile.runtime_defaults?.concise_responses,
-    matchedOverrides,
-    matchedGuardrails
-  });
+function buildPreviewVariant({ gatewayPrompt, tenantKey, runtimeEntryMode }) {
   const gatewayPromptOutput = buildGatewayPromptResponse(
     gatewayPrompt,
     buildFieldSchemaFromOutcomeSchema,
@@ -66,55 +18,12 @@ function buildPreviewVariant({
   );
 
   return {
-    promptLayers,
-    tenantRuntimeProfileValues: {
-      companyDescription: runtimeProfile.company_description || "",
-      greetingText: runtimeProfile.greeting_text || "",
-      aiDisclosure: runtimeProfile.wording_defaults?.ai_disclosure || "",
-      uncertaintyPhrase: runtimeProfile.wording_defaults?.uncertainty_phrase || "",
-      pricingFallback: runtimeProfile.wording_defaults?.pricing_fallback || "",
-      closingPhrase: runtimeProfile.wording_defaults?.closing_phrase || "",
-      conciseResponses: runtimeProfile.runtime_defaults?.concise_responses !== false,
-      requireKnowledgeLookup: runtimeProfile.tool_policy?.require_knowledge_lookup_for_tenant_facts !== false,
-      maxClarifyingQuestions: runtimeProfile.tool_policy?.max_clarifying_questions ?? 1,
-      allowEndCallOnlyAfterSpokenClose: runtimeProfile.tool_policy?.allow_end_call_only_after_spoken_close !== false
-    },
-    rendered: {
-      baseSystemPrompt: (promptLayers.baseSystemPrompt?.instructionLines || []).join("\n"),
-      companyContext: buildCompanyContextBlockFromPromptConfig(
-        promptLayers,
-        gatewayPrompt.companyContextSummary
-      ),
-      callMission: buildCallMissionBlockFromPromptConfig(
-        promptLayers,
-        gatewayPrompt.businessCallIntentSummary
-      ),
-      tenantPersonaHeader: promptLayers.tenantPersona?.headerLabel || "",
-      tenantPersona: gatewayPrompt.tenantPersona,
-      knowledgeToolPolicy: buildKnowledgeToolPolicyBlockFromPromptConfig(promptLayers, toolPolicy),
-      greetingInstruction: buildGreetingInstructionFromPromptConfig(promptLayers, gatewayPromptOutput.tenant_greeting),
-      runtimeContext: buildRuntimeContextBlockFromPromptConfig(promptLayers, {
-        currentStage: gatewayPrompt.initialCallState.current_stage,
-        activeDomainId: gatewayPrompt.initialCallState.active_domain_id,
-        activeSubdomainId: gatewayPrompt.initialCallState.active_subdomain_id
-      }),
-      responseRestrictions: responseRestrictionDetails,
-      finalGatewaySessionInstructions: buildGatewaySessionInstructionsFromPromptConfig({
-        promptConfig: promptLayers,
-        systemPrompt: gatewayPromptOutput.system_prompt,
-        companyContextSummary: gatewayPrompt.companyContextSummary,
-        businessCallIntentSummary: gatewayPrompt.businessCallIntentSummary,
-        tenantGreeting: gatewayPromptOutput.tenant_greeting,
-        toolPolicy,
-        currentStage: gatewayPrompt.initialCallState.current_stage,
-        activeDomainId: gatewayPrompt.initialCallState.active_domain_id,
-        activeSubdomainId: gatewayPrompt.initialCallState.active_subdomain_id
-      })
-    },
-    matched: {
-      overrides: matchedOverrides,
-      guardrails: matchedGuardrails
-    },
+    blueprint: gatewayPrompt.promptBlueprint,
+    tenantProfile: gatewayPrompt.tenantPromptProfile,
+    sectionOverrides: gatewayPrompt.sectionOverrides || {},
+    renderedSections: gatewayPrompt.renderedPromptSections || [],
+    renderedStartupPrompt: gatewayPrompt.systemPrompt,
+    runtimeToolDefinitions: gatewayPromptOutput.tool_definitions,
     gatewayPromptOutput
   };
 }
@@ -142,22 +51,8 @@ export default async function handler(req, res) {
     const body = typeof req.body === "object" && req.body ? req.body : {};
     const tenantKey = normalizeText(body.tenantKey);
     const runtimeEntryMode = normalizeText(body.runtimeEntryMode) || "customer_call";
-    const previewQuery = normalizeText(body.previewQuery);
-    const draftPromptConfig = body.config || body.promptConfig || null;
-    const draftRuntimeProfile = body.runtimeProfile || null;
     if (!tenantKey) {
       return res.status(400).json({ error: "missing_tenant_key" });
-    }
-
-    const tenantRow = await pool.query(
-      `SELECT tenant_key, name
-       FROM tenants
-       WHERE tenant_key = $1
-       LIMIT 1`,
-      [tenantKey]
-    );
-    if (!tenantRow.rowCount) {
-      return res.status(404).json({ error: "tenant_not_found" });
     }
 
     const liveGatewayPrompt = await assembleKnowledgeGatewayPrompt(pool, tenantKey, {
@@ -167,31 +62,29 @@ export default async function handler(req, res) {
     const draftGatewayPrompt = await assembleKnowledgeGatewayPrompt(pool, tenantKey, {
       callSid: `admin_preview_${runtimeEntryMode}`,
       runtimeEntryMode,
-      promptConfigOverride: draftPromptConfig || undefined,
-      runtimeProfileOverride: draftRuntimeProfile || undefined
+      promptBlueprintOverride: body.blueprint || body.promptBlueprint || null,
+      tenantPromptProfileOverride: body.tenantProfile || null,
+      sectionOverridesOverride: body.sectionOverrides || null
     });
 
     return res.status(200).json({
       ok: true,
-      tenant: tenantRow.rows[0],
-      runtimeEntryMode,
-      previewQuery,
+      tenant_key: tenantKey,
+      runtime_entry_mode: runtimeEntryMode,
       live: buildPreviewVariant({
         gatewayPrompt: liveGatewayPrompt,
         tenantKey,
-        runtimeEntryMode,
-        previewQuery
+        runtimeEntryMode
       }),
       draft: buildPreviewVariant({
         gatewayPrompt: draftGatewayPrompt,
         tenantKey,
-        runtimeEntryMode,
-        previewQuery
+        runtimeEntryMode
       })
     });
   } catch (err) {
     return res.status(500).json({
-      error: "admin_system_prompts_preview_error",
+      error: "admin_prompt_preview_error",
       message: err?.message || "unknown"
     });
   }

@@ -11,7 +11,6 @@ import fs from "node:fs";
 import * as AjvModule from "ajv";
 import {
   applyCapturedFieldsToCallState,
-  buildGatewayGreetingInstruction,
   buildGatewaySessionInstructions,
   clearKnowledgeBuildAssetCache,
   fetchKnowledgeRuntimeTurn,
@@ -78,7 +77,7 @@ type PendingToolCall = {
   argumentsText: string;
 };
 
-type EndCallArgs = {
+type FinishSessionArgs = {
   reason?: string;
 };
 
@@ -1115,10 +1114,10 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     return;
   }
 
-  if (name === "end_call") {
-    const endCallArgs = args as EndCallArgs;
-    const reason = String(endCallArgs.reason || "assistant_completed_call");
-    logInfo("assistant_end_call_requested", {
+  if (name === "finish_session") {
+    const finishSessionArgs = args as FinishSessionArgs;
+    const reason = String(finishSessionArgs.reason || "assistant_completed_call");
+    logInfo("assistant_finish_session_requested", {
       callSid: session.callSid,
       callId,
       reason
@@ -1139,7 +1138,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       clearTimeout(session.hangupTimer);
     }
     session.hangupTimer = setTimeout(() => {
-      void endCallSession(session, "assistant_end_call", true);
+      void endCallSession(session, "assistant_finish_session", true);
     }, drainMs);
     return;
   }
@@ -1287,9 +1286,7 @@ function connectOpenAiRealtime(session: StreamSession) {
         requestAssistantResponse(
           session,
           "greeting",
-          {
-            instructions: buildGatewayGreetingInstruction(payload)
-          },
+          {},
           "greeting"
         );
       }

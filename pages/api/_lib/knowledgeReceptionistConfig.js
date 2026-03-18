@@ -135,7 +135,7 @@ export const DEFAULT_RUNTIME_SESSION_CONFIG = {
 export const DEFAULT_RUNTIME_TOOL_POLICY = {
   require_knowledge_lookup_for_tenant_facts: true,
   max_clarifying_questions: 1,
-  allow_end_call_only_after_spoken_close: true,
+  allow_finish_session_only_after_spoken_close: true,
   require_single_question_turns: true
 };
 
@@ -940,6 +940,8 @@ function normalizeSessionConfig(value) {
 
 function normalizeToolPolicy(value) {
   const source = asObject(value);
+  const finishSessionOnlyAfterSpokenClose = source.allow_finish_session_only_after_spoken_close;
+  const legacyEndCallOnlyAfterSpokenClose = source.allow_end_call_only_after_spoken_close;
   return {
     require_knowledge_lookup_for_tenant_facts: source.require_knowledge_lookup_for_tenant_facts === undefined
       ? DEFAULT_RUNTIME_TOOL_POLICY.require_knowledge_lookup_for_tenant_facts
@@ -947,9 +949,9 @@ function normalizeToolPolicy(value) {
     max_clarifying_questions: Number.isFinite(Number(source.max_clarifying_questions ?? source.maxClarifyingQuestions))
       ? Number(source.max_clarifying_questions ?? source.maxClarifyingQuestions)
       : DEFAULT_RUNTIME_TOOL_POLICY.max_clarifying_questions,
-    allow_end_call_only_after_spoken_close: source.allow_end_call_only_after_spoken_close === undefined
-      ? DEFAULT_RUNTIME_TOOL_POLICY.allow_end_call_only_after_spoken_close
-      : Boolean(source.allow_end_call_only_after_spoken_close),
+    allow_finish_session_only_after_spoken_close: finishSessionOnlyAfterSpokenClose === undefined && legacyEndCallOnlyAfterSpokenClose === undefined
+      ? DEFAULT_RUNTIME_TOOL_POLICY.allow_finish_session_only_after_spoken_close
+      : Boolean(finishSessionOnlyAfterSpokenClose ?? legacyEndCallOnlyAfterSpokenClose),
     require_single_question_turns: source.require_single_question_turns === undefined
       ? DEFAULT_RUNTIME_TOOL_POLICY.require_single_question_turns
       : Boolean(source.require_single_question_turns)
@@ -1235,11 +1237,14 @@ function buildRuntimeProfileFieldSources(tenantKey, row, options = {}) {
         : null,
       hasOverride: Object.prototype.hasOwnProperty.call(rawToolPolicy, "max_clarifying_questions")
     }),
-    allowEndCallOnlyAfterSpokenClose: buildRuntimeProfileFieldState({
-      defaultValue: defaults.toolPolicy.allow_end_call_only_after_spoken_close,
-      effectiveValue: effective.toolPolicy.allow_end_call_only_after_spoken_close,
-      overrideValue: rawToolPolicy.allow_end_call_only_after_spoken_close,
-      hasOverride: Object.prototype.hasOwnProperty.call(rawToolPolicy, "allow_end_call_only_after_spoken_close")
+    allowFinishSessionOnlyAfterSpokenClose: buildRuntimeProfileFieldState({
+      defaultValue: defaults.toolPolicy.allow_finish_session_only_after_spoken_close,
+      effectiveValue: effective.toolPolicy.allow_finish_session_only_after_spoken_close,
+      overrideValue: Object.prototype.hasOwnProperty.call(rawToolPolicy, "allow_finish_session_only_after_spoken_close")
+        ? rawToolPolicy.allow_finish_session_only_after_spoken_close
+        : rawToolPolicy.allow_end_call_only_after_spoken_close,
+      hasOverride: Object.prototype.hasOwnProperty.call(rawToolPolicy, "allow_finish_session_only_after_spoken_close")
+        || Object.prototype.hasOwnProperty.call(rawToolPolicy, "allow_end_call_only_after_spoken_close")
     }),
     conciseResponses: buildRuntimeProfileFieldState({
       defaultValue: defaults.runtimeDefaults.concise_responses,

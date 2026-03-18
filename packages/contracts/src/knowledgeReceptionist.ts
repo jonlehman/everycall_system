@@ -271,15 +271,16 @@ export const runtimeBundleSchema = z.object({
   build_id: z.string().min(1),
   runtime_entry_mode: runtimeEntryModeSchema,
   runtime_mode: runtimeModeSchema,
-  active_domain_id: z.string().min(1),
+  active_domain_id: nullableStringSchema,
   active_subdomain_id: nullableStringSchema,
   detected_turn_intent: nullableStringSchema,
   selected_cards: z.array(runtimeBundleSelectedCardSchema).default([]),
   selected_answer_facts: z.array(runtimeBundleSelectedFactSchema).default([]),
   missing_critical_slots: stringArraySchema,
   state_delta: jsonRecordSchema,
-  response_rules: stringArraySchema,
-  confidence_score: z.number().min(0).max(1)
+  confidence_score: z.number().min(0).max(1),
+  forced_support_mode: z.boolean().optional(),
+  forced_confidence_score: z.number().min(0).max(1).optional()
 });
 
 export const callStateSchema = z.object({
@@ -399,7 +400,7 @@ export const knowledgeRuntimeSessionConfigSchema = z.object({
 export const knowledgeRuntimeToolPolicySchema = z.object({
   require_knowledge_lookup_for_tenant_facts: z.boolean().default(true),
   max_clarifying_questions: z.number().int().nonnegative().default(1),
-  allow_end_call_only_after_spoken_close: z.boolean().default(true),
+  allow_finish_session_only_after_spoken_close: z.boolean().default(true),
   require_single_question_turns: z.boolean().default(true)
 });
 
@@ -454,14 +455,30 @@ export const promptPackContextSchema = z.object({
 export const retrievalTelemetrySchema = z.object({
   query: z.string().min(1),
   duration_ms: z.number().nonnegative(),
-  candidate_count: z.number().int().nonnegative(),
-  selected_card_count: z.number().int().nonnegative(),
+  total_gateway_turn_ms: z.number().nonnegative().optional(),
   asset_cache_hit: z.boolean().optional(),
   asset_fetch_ms: z.number().nonnegative().optional(),
   asset_load_strategy: z.enum(["warm_cache", "cold_fallback"]).optional(),
-  lexical_weight: z.number(),
-  vector_weight: z.number(),
-  precedence_weight: z.number(),
+  recent_conversation_summary_ms: z.number().nonnegative().optional(),
+  planner_ms: z.number().nonnegative().optional(),
+  embedding_ms: z.number().nonnegative().optional(),
+  retrieval_ms: z.number().nonnegative().optional(),
+  packet_ms: z.number().nonnegative().optional(),
+  runtime_core_ms: z.number().nonnegative().optional(),
+  runtime_bundle_persist_ms: z.number().nonnegative().optional(),
+  coverage_gap_persist_ms: z.number().nonnegative().optional(),
+  planner_coverage_items: stringArraySchema.optional(),
+  embedded_coverage_items: stringArraySchema.optional(),
+  planner_request_payload: z.any().optional(),
+  planner_response_payload: z.any().optional(),
+  embedding_request_payload: z.any().optional(),
+  embedding_response_payloads: z.array(z.any()).default([]),
+  coverage: z.array(z.any()).default([]),
+  candidate_count: z.number().int().nonnegative().optional(),
+  selected_card_count: z.number().int().nonnegative().optional(),
+  lexical_weight: z.number().optional(),
+  vector_weight: z.number().optional(),
+  precedence_weight: z.number().optional(),
   top_scores: z.array(z.object({
     knowledge_card_id: z.string().min(1),
     lexical_score: z.number(),
@@ -491,7 +508,6 @@ export const knowledgePromptPayloadSchema = z.object({
   }),
   runtime_bundle: runtimeBundleSchema,
   call_state: callStateSchema,
-  response_restrictions: stringArraySchema,
   retrieval_telemetry: retrievalTelemetrySchema
 });
 
@@ -505,12 +521,15 @@ export const knowledgeGatewayConfigurationSchema = z.object({
 
 export const knowledgeGatewayRuntimeContextSchema = z.object({
   active_build_id: z.string().min(1),
-  active_domain_id: z.string().min(1),
+  active_domain_id: nullableStringSchema,
   active_subdomain_id: nullableStringSchema,
   runtime_entry_mode: runtimeEntryModeSchema,
   initial_call_state: callStateSchema,
-  prompt_layers: jsonRecordSchema.optional(),
-  prompt_payload: knowledgePromptPayloadSchema,
+  company_context_summary: z.string().default(""),
+  business_call_intent_summary: z.string().default(""),
+  prompt_blueprint: jsonRecordSchema.optional(),
+  tenant_prompt_profile: jsonRecordSchema.optional(),
+  rendered_prompt_sections: arbitraryObjectArraySchema.default([]),
   approved_configuration: knowledgeGatewayConfigurationSchema,
   token_counts: z.object({
     prompt_payload_tokens: z.number().int().nonnegative(),
@@ -543,20 +562,17 @@ export const gatewayRuntimeTurnRequestSchema = z.object({
 });
 
 export const gatewayRuntimeTurnResponseSchema = z.object({
+  answer_packet: jsonRecordSchema,
   runtime_bundle: runtimeBundleSchema,
   matched_overrides: z.array(knowledgeOverrideSchema).default([]),
   matched_guardrails: z.array(knowledgeGuardrailSchema).default([]),
   call_state: callStateSchema,
-  response_restrictions: stringArraySchema,
   retrieval_telemetry: retrievalTelemetrySchema,
   token_counts: z.object({
-    runtime_bundle_tokens: z.number().int().nonnegative(),
-    prompt_payload_tokens: z.number().int().nonnegative().optional()
-  }),
-  instruction_sections: z.object({
-    current_context: z.string().min(1),
-    approved_facts: z.string().min(1),
-    response_rules: z.string().min(1)
+    startup_prompt_tokens: z.number().int().nonnegative().optional(),
+    startup_instruction_tokens: z.number().int().nonnegative().optional(),
+    answer_packet_tokens: z.number().int().nonnegative().optional(),
+    runtime_bundle_tokens: z.number().int().nonnegative().optional()
   })
 });
 

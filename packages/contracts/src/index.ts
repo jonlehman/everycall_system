@@ -4,7 +4,7 @@ export * from "./knowledgePlannerRuntime.js";
 export * from "./knowledgePlannerEngine.js";
 export * from "./openAiStructured.js";
 export * from "./knowledgePolicySelection.js";
-export * from "./runtimePromptLayers.js";
+export * from "./promptBlueprints.js";
 
 export const inboundWebhookSchema = z.object({
   CallSid: z.string().min(1),
@@ -41,8 +41,7 @@ export const orchestrateTurnSchema = z.object({
       active_domain_id: z.string().min(1),
       active_subdomain_id: z.string().optional().nullable(),
       runtime_entry_mode: z.enum(["customer_call", "setup_interview"]),
-      current_stage: z.string().min(1),
-      response_restrictions: z.array(z.string().min(1)).default([])
+      current_stage: z.string().min(1)
     })
   })
 });
@@ -56,7 +55,7 @@ export const nextActionSchema = z.discriminatedUnion("type", [
     idempotency_key: z.string().min(1)
   }),
   z.object({ type: z.literal("handoff"), reason: z.string().min(1) }),
-  z.object({ type: z.literal("end_call"), reason: z.string().min(1) })
+  z.object({ type: z.literal("finish_session"), reason: z.string().min(1) })
 ]);
 
 export const ttsSynthesizeSchema = z.object({

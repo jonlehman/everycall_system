@@ -24,7 +24,7 @@
       "type": "object",
       "required": ["type"],
       "properties": {
-        "type": {"type": "string", "enum": ["speak", "tool_call", "handoff", "end_call"]},
+        "type": {"type": "string", "enum": ["speak", "tool_call", "handoff", "finish_session"]},
         "text": {"type": "string"},
         "tool_name": {"type": "string"},
         "tool_args": {"type": "object"},

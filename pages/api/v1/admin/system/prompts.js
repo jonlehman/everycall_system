@@ -1,11 +1,10 @@
 import { ensureTables, getPool } from "../../../_lib/db.js";
 import { getAdminActor, requireSession } from "../../../_lib/auth.js";
 import {
-  getPromptConfigDefaults,
-  loadSystemPromptConfig,
-  resetSystemPromptConfig,
-  saveSystemPromptConfig
-} from "../../../_lib/systemPromptConfig.js";
+  listPromptBlueprints,
+  loadPromptBlueprint,
+  savePromptBlueprint
+} from "../../../_lib/promptBlueprints.js";
 
 export default async function handler(req, res) {
   try {
@@ -23,8 +22,10 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "GET") {
-      const [config, tenants] = await Promise.all([
-        loadSystemPromptConfig(pool),
+      const promptBlueprintId = String(req.query?.promptBlueprintId || "").trim();
+      const [blueprints, activeBlueprint, tenants] = await Promise.all([
+        listPromptBlueprints(pool),
+        loadPromptBlueprint(pool, promptBlueprintId),
         pool.query(
           `SELECT tenant_key, name
            FROM tenants
@@ -33,36 +34,28 @@ export default async function handler(req, res) {
       ]);
       return res.status(200).json({
         ok: true,
-        config,
-        defaults: getPromptConfigDefaults(),
-        tenants: tenants.rows
+        blueprints,
+        active_blueprint: activeBlueprint,
+        tenants: tenants.rows || []
       });
     }
 
     if (req.method === "POST") {
       const body = typeof req.body === "object" && req.body ? req.body : {};
-      const config = await saveSystemPromptConfig(pool, body.config || {}, admin);
+      const blueprint = await savePromptBlueprint(pool, body.blueprint || body, admin);
+      const blueprints = await listPromptBlueprints(pool);
       return res.status(200).json({
         ok: true,
-        config,
-        defaults: getPromptConfigDefaults()
+        blueprints,
+        active_blueprint: blueprint
       });
     }
 
-    if (req.method === "DELETE") {
-      const config = await resetSystemPromptConfig(pool, admin);
-      return res.status(200).json({
-        ok: true,
-        config,
-        defaults: getPromptConfigDefaults()
-      });
-    }
-
-    res.setHeader("Allow", "GET, POST, DELETE");
+    res.setHeader("Allow", "GET, POST");
     return res.status(405).json({ error: "method_not_allowed" });
   } catch (err) {
     return res.status(500).json({
-      error: "admin_system_prompts_error",
+      error: "admin_prompt_blueprint_error",
       message: err?.message || "unknown"
     });
   }

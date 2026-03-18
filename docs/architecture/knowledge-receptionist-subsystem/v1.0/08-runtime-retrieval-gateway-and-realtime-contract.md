@@ -323,7 +323,7 @@ The product should strive for near-250 ms perceived response start on hot follow
 Realtime may be given a minimal tool set such as:
 - `knowledge_lookup`
 - `data_capture`
-- `end_call`
+- `finish_session`
 - optional `handoff`/`transfer` helper
 
 However, the gateway should remain the orchestrator of when these tools are meaningful.
@@ -381,4 +381,3 @@ This gives the gateway control over:
 - clarification policy
 - low-confidence behavior
 - handoff / emergency behavior
-

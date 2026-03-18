@@ -63,7 +63,7 @@ Exactly one action in `next_action`:
 Other `next_action.type` values:
 - `tool_call`
 - `handoff`
-- `end_call`
+- `finish_session`
 
 ## Validation rules
 - `tenant_id`, `call_id`, `turn_id` required.

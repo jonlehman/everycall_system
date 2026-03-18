@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 
 function cloneValue(value) {
@@ -17,17 +17,8 @@ function fetchJson(url, options) {
   });
 }
 
-function setByPath(object, path, value) {
-  const next = cloneValue(object);
-  let cursor = next;
-  for (let index = 0; index < path.length - 1; index += 1) {
-    cursor[path[index]] = cursor[path[index]] && typeof cursor[path[index]] === 'object'
-      ? cursor[path[index]]
-      : {};
-    cursor = cursor[path[index]];
-  }
-  cursor[path[path.length - 1]] = value;
-  return next;
+function normalizeText(value) {
+  return String(value || '').trim();
 }
 
 function joinLines(values) {
@@ -39,16 +30,6 @@ function splitLines(value) {
     .split('\n')
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function formatDisplayValue(value) {
-  if (value === undefined || value === null || value === '') return 'None';
-  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-  return String(value);
-}
-
-function fieldHasDraftChange(savedEffectiveValue, draftValue) {
-  return JSON.stringify(savedEffectiveValue ?? null) !== JSON.stringify(draftValue ?? null);
 }
 
 function Field({ label, hint, children }) {
@@ -66,51 +47,7 @@ function TextInput(props) {
 }
 
 function TextArea(props) {
-  return <textarea {...props} className={`min-h-[96px] rounded-md border border-slate-300 px-3 py-2 text-sm ${props.className || ''}`.trim()} />;
-}
-
-function LayerCard({ title, description, onReset, children, resetLabel = 'Reset to Saved' }) {
-  return (
-    <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold text-slate-900">{title}</h2>
-          {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
-        </div>
-        {onReset ? (
-          <Button variant="outline" size="sm" onClick={onReset}>{resetLabel}</Button>
-        ) : null}
-      </div>
-      <div className="mt-4 grid gap-3">{children}</div>
-    </section>
-  );
-}
-
-function PreviewBlock({ title, description, children }) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-3">
-        <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-        {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function PromptSection({ title, description, editor, preview }) {
-  return (
-    <section className="grid gap-3">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-        {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
-      </div>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <div className="grid gap-4">{editor}</div>
-        <div className="grid gap-4">{preview}</div>
-      </div>
-    </section>
-  );
+  return <textarea {...props} className={`min-h-[120px] rounded-md border border-slate-300 px-3 py-2 text-sm ${props.className || ''}`.trim()} />;
 }
 
 function CodeBlock({ value }) {
@@ -118,34 +55,6 @@ function CodeBlock({ value }) {
     <pre className="overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100 whitespace-pre-wrap">
       {String(value || '')}
     </pre>
-  );
-}
-
-function RulesList({ title, items }) {
-  const values = Array.isArray(items) ? items.filter(Boolean) : [];
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="text-sm font-semibold text-slate-900">{title}</div>
-      {values.length ? (
-        <ul className="mt-2 list-disc pl-5 text-sm text-slate-700">
-          {values.map((item, index) => <li key={`${title}-${index}`}>{item}</li>)}
-        </ul>
-      ) : (
-        <div className="mt-2 text-sm text-slate-500">None active.</div>
-      )}
-    </div>
-  );
-}
-
-function FormGroup({ title, description, children }) {
-  return (
-    <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div>
-        <div className="text-sm font-semibold text-slate-900">{title}</div>
-        {description ? <div className="mt-1 text-xs text-slate-500">{description}</div> : null}
-      </div>
-      {children}
-    </div>
   );
 }
 
@@ -157,36 +66,6 @@ function SourceBadge({ source }) {
     }`}>
       {isOverride ? 'Tenant override' : 'Inherited default'}
     </span>
-  );
-}
-
-function DraftBadge() {
-  return (
-    <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-      Draft changed
-    </span>
-  );
-}
-
-function TenantFieldState({ fieldState, draftValue }) {
-  const hasDraftChange = fieldHasDraftChange(fieldState?.effective_value, draftValue);
-  return (
-    <div className="grid gap-1 rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-slate-700">Saved source</span>
-        <SourceBadge source={fieldState?.source} />
-        {hasDraftChange ? <DraftBadge /> : null}
-      </div>
-      <div className="whitespace-pre-wrap">
-        <span className="font-medium text-slate-700">Saved override:</span> {formatDisplayValue(fieldState?.override_value)}
-      </div>
-      <div className="whitespace-pre-wrap">
-        <span className="font-medium text-slate-700">Default:</span> {formatDisplayValue(fieldState?.default_value)}
-      </div>
-      <div className="whitespace-pre-wrap">
-        <span className="font-medium text-slate-700">Effective now:</span> {formatDisplayValue(draftValue)}
-      </div>
-    </div>
   );
 }
 
@@ -203,45 +82,192 @@ function PreviewModeContent({ mode, draft, live, render }) {
   if (mode === 'compare') {
     return (
       <div className="grid gap-3 lg:grid-cols-2">
-        <PreviewVariantPanel label="Draft Effective">
-          {render(draft)}
-        </PreviewVariantPanel>
-        <PreviewVariantPanel label="Live Effective">
-          {render(live)}
-        </PreviewVariantPanel>
+        <PreviewVariantPanel label="Draft Effective">{render(draft)}</PreviewVariantPanel>
+        <PreviewVariantPanel label="Live Effective">{render(live)}</PreviewVariantPanel>
       </div>
     );
   }
   return render(mode === 'live' ? live : draft);
 }
 
-function renderTenantValueList(values) {
+function SectionCard({
+  section,
+  savedSection,
+  tenantOverride,
+  savedTenantOverride,
+  onSectionChange,
+  onTenantOverrideChange,
+  effectiveDraft,
+  effectiveLive,
+  previewMode
+}) {
   return (
-    <dl className="grid gap-2 text-sm text-slate-700">
-      <div><dt className="font-semibold text-slate-900">Company description</dt><dd>{values?.companyDescription || 'None set.'}</dd></div>
-      <div><dt className="font-semibold text-slate-900">Greeting</dt><dd>{values?.greetingText || 'None set.'}</dd></div>
-      <div><dt className="font-semibold text-slate-900">AI disclosure</dt><dd>{values?.aiDisclosure || 'None set.'}</dd></div>
-      <div><dt className="font-semibold text-slate-900">Uncertainty phrase</dt><dd>{values?.uncertaintyPhrase || 'None set.'}</dd></div>
-      <div><dt className="font-semibold text-slate-900">Pricing fallback</dt><dd>{values?.pricingFallback || 'None set.'}</dd></div>
-      <div><dt className="font-semibold text-slate-900">Closing phrase</dt><dd>{values?.closingPhrase || 'None set.'}</dd></div>
-      <div><dt className="font-semibold text-slate-900">Require knowledge lookup</dt><dd>{values ? (values.requireKnowledgeLookup ? 'Yes' : 'No') : 'None set.'}</dd></div>
-      <div><dt className="font-semibold text-slate-900">Max clarifying questions</dt><dd>{values?.maxClarifyingQuestions ?? 'None set.'}</dd></div>
-      <div><dt className="font-semibold text-slate-900">End call only after spoken close</dt><dd>{values ? (values.allowEndCallOnlyAfterSpokenClose ? 'Yes' : 'No') : 'None set.'}</dd></div>
-      <div><dt className="font-semibold text-slate-900">Concise responses</dt><dd>{values ? (values.conciseResponses ? 'Yes' : 'No') : 'None set.'}</dd></div>
-    </dl>
+    <section className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">{section.admin_metadata?.title || section.section_id}</h2>
+          <div className="mt-1 text-xs text-slate-500">
+            Section ID: <code>{section.section_id}</code>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onSectionChange(savedSection?.default_text || '')}
+          >
+            Reset Canonical
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onTenantOverrideChange(savedTenantOverride || '')}
+          >
+            Reset Override
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.95fr)]">
+        <Field
+          label="Canonical Section Text"
+          hint="Admin-editable global blueprint text. This is the default text for all tenants unless a tenant-specific override exists."
+        >
+          <TextArea value={section.default_text} onChange={(event) => onSectionChange(event.target.value)} className="min-h-[220px]" />
+        </Field>
+
+        <Field
+          label="Selected Tenant Override"
+          hint="Optional admin-only per-tenant override for this section. Leave blank to use the canonical section text."
+        >
+          <TextArea
+            value={tenantOverride || ''}
+            onChange={(event) => onTenantOverrideChange(event.target.value)}
+            className="min-h-[220px]"
+            placeholder="No tenant override"
+          />
+        </Field>
+
+        <div className="grid gap-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="text-sm font-semibold text-slate-900">Effective Preview</div>
+            <div className="mt-2 text-xs text-slate-500">
+              Canonical text is always editable globally. The selected tenant override only affects the chosen tenant.
+            </div>
+            <div className="mt-3">
+              <PreviewModeContent
+                mode={previewMode}
+                draft={effectiveDraft}
+                live={effectiveLive}
+                render={(value) => <CodeBlock value={value || ''} />}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
-function toTenantProfileOverride(profile) {
-  if (!profile) return null;
-  return {
-    company_description: profile.company_description || '',
-    greeting_text: profile.greeting_text || '',
-    session_config: profile.session_config || {},
-    tool_policy: profile.tool_policy || {},
-    wording_defaults: profile.wording_defaults || {},
-    runtime_defaults: profile.runtime_defaults || {}
-  };
+function TenantFieldState({ state, draftValue }) {
+  return (
+    <div className="grid gap-1 rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium text-slate-700">Saved source</span>
+        <SourceBadge source={state?.source} />
+      </div>
+      <div><span className="font-medium text-slate-700">Default:</span> {JSON.stringify(state?.default_value ?? null)}</div>
+      <div><span className="font-medium text-slate-700">Saved override:</span> {JSON.stringify(state?.override_value ?? null)}</div>
+      <div><span className="font-medium text-slate-700">Effective draft:</span> {JSON.stringify(draftValue ?? null)}</div>
+    </div>
+  );
+}
+
+function ToolDefinitionCard({ title, toolKey, draftTool, savedTool, onChange }) {
+  return (
+    <section className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+          <div className="mt-1 text-xs text-slate-500">
+            Tool name is code-driven: <code>{toolKey}</code>
+          </div>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => onChange(cloneValue(savedTool))}>Reset Tool Text</Button>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <Field label="Tool Description" hint="Admin-editable descriptive text merged into the runtime-exposed tool definition.">
+          <TextArea
+            value={draftTool?.description || ''}
+            onChange={(event) => onChange({ ...draftTool, description: event.target.value })}
+          />
+        </Field>
+        <Field label="Behavior Mode Label" hint="This is admin-facing metadata that documents the intended usage mode for the tool.">
+          <TextInput
+            value={draftTool?.behavior_mode || ''}
+            onChange={(event) => onChange({ ...draftTool, behavior_mode: event.target.value })}
+          />
+        </Field>
+      </div>
+      {toolKey === 'data_capture' ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Outcome Type Description" hint="Used for the fixed `outcome_type` parameter in the structured tool schema.">
+            <TextArea
+              value={draftTool?.outcome_type_description || ''}
+              onChange={(event) => onChange({ ...draftTool, outcome_type_description: event.target.value })}
+            />
+          </Field>
+          <Field label="Generic Field Description Template" hint="Applied to dynamic capture fields using `{field_name}`.">
+            <TextArea
+              value={draftTool?.generic_field_description_template || ''}
+              onChange={(event) => onChange({ ...draftTool, generic_field_description_template: event.target.value })}
+            />
+          </Field>
+        </div>
+      ) : (
+        <Field label="Parameter Description" hint="Admin-editable text for the fixed parameter description in the runtime-exposed tool definition.">
+          <TextArea
+            value={toolKey === 'knowledge_lookup'
+              ? draftTool?.parameter_descriptions?.query || ''
+              : draftTool?.parameter_descriptions?.reason || ''}
+            onChange={(event) => onChange({
+              ...draftTool,
+              parameter_descriptions: toolKey === 'knowledge_lookup'
+                ? { ...(draftTool?.parameter_descriptions || {}), query: event.target.value }
+                : { ...(draftTool?.parameter_descriptions || {}), reason: event.target.value }
+            })}
+          />
+        </Field>
+      )}
+    </section>
+  );
+}
+
+function PhraseGroupCard({ label, hint, values, savedValues, onChange }) {
+  return (
+    <section className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">{label}</h2>
+          <div className="mt-1 text-sm text-slate-500">{hint}</div>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => onChange(savedValues || [])}>Reset Group</Button>
+      </div>
+      <TextArea
+        value={joinLines(values)}
+        onChange={(event) => onChange(splitLines(event.target.value))}
+        className="min-h-[180px]"
+      />
+    </section>
+  );
+}
+
+function buildSectionMap(sections) {
+  return Object.fromEntries((sections || []).map((section) => [section.section_id, section]));
+}
+
+function buildRenderedSectionMap(renderedSections) {
+  return Object.fromEntries((renderedSections || []).map((section) => [section.section_id, section]));
 }
 
 export default function AdminPromptConfigPage() {
@@ -251,16 +277,20 @@ export default function AdminPromptConfigPage() {
   const [savingTenant, setSavingTenant] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [status, setStatus] = useState('');
-  const [defaults, setDefaults] = useState(null);
-  const [savedConfig, setSavedConfig] = useState(null);
-  const [config, setConfig] = useState(null);
+
+  const [blueprints, setBlueprints] = useState([]);
+  const [selectedBlueprintId, setSelectedBlueprintId] = useState('');
+  const [savedBlueprint, setSavedBlueprint] = useState(null);
+  const [draftBlueprint, setDraftBlueprint] = useState(null);
+
   const [tenants, setTenants] = useState([]);
   const [selectedTenant, setSelectedTenant] = useState('');
-  const [savedTenantProfile, setSavedTenantProfile] = useState(null);
-  const [tenantProfile, setTenantProfile] = useState(null);
-  const [tenantFieldSources, setTenantFieldSources] = useState(null);
+  const [savedTenantConfig, setSavedTenantConfig] = useState(null);
+  const [draftTenantProfile, setDraftTenantProfile] = useState(null);
+  const [draftSectionOverrides, setDraftSectionOverrides] = useState({});
+  const [tenantFieldSources, setTenantFieldSources] = useState({});
+
   const [runtimeEntryMode, setRuntimeEntryMode] = useState('customer_call');
-  const [previewQuery, setPreviewQuery] = useState('');
   const [previewMode, setPreviewMode] = useState('draft');
   const [preview, setPreview] = useState(null);
 
@@ -268,12 +298,11 @@ export default function AdminPromptConfigPage() {
 
   const loadPreview = async (
     tenantKey = selectedTenant,
-    entryMode = runtimeEntryMode,
-    query = previewQuery,
-    draftConfig = config,
-    draftTenantProfile = tenantProfile
+    blueprint = draftBlueprint,
+    tenantProfile = draftTenantProfile,
+    sectionOverrides = draftSectionOverrides
   ) => {
-    if (!tenantKey) return;
+    if (!tenantKey || !blueprint || !tenantProfile) return;
     setPreviewing(true);
     try {
       const data = await fetchJson('/api/v1/admin/system/prompts/preview', {
@@ -281,10 +310,10 @@ export default function AdminPromptConfigPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantKey,
-          runtimeEntryMode: entryMode,
-          previewQuery: query,
-          config: draftConfig,
-          runtimeProfile: toTenantProfileOverride(draftTenantProfile)
+          runtimeEntryMode,
+          blueprint,
+          tenantProfile,
+          sectionOverrides
         })
       });
       setPreview(data);
@@ -295,42 +324,49 @@ export default function AdminPromptConfigPage() {
     }
   };
 
-  const loadTenantProfile = async (tenantKey = selectedTenant, { silent = false } = {}) => {
+  const loadTenantConfig = async (tenantKey = selectedTenant, blueprintId = selectedBlueprintId) => {
     if (!tenantKey) return;
     setLoadingTenant(true);
-    if (!silent) {
-      setStatus('Loading tenant runtime profile...');
-    }
     try {
-      const data = await fetchJson(`/api/v1/admin/system/prompts/tenant-runtime-profile?tenantKey=${encodeURIComponent(tenantKey)}`);
-      setSavedTenantProfile(data.profile);
-      setTenantProfile(data.profile);
+      const data = await fetchJson(`/api/v1/admin/system/prompts/tenant-config?tenantKey=${encodeURIComponent(tenantKey)}&promptBlueprintId=${encodeURIComponent(blueprintId || '')}`);
+      const next = {
+        profile: data.profile,
+        section_overrides: data.section_overrides || {}
+      };
+      setSavedTenantConfig(next);
+      setDraftTenantProfile(data.profile);
+      setDraftSectionOverrides(
+        Object.fromEntries(
+          Object.entries(data.section_overrides || {}).map(([sectionId, value]) => [sectionId, value.override_text || ''])
+        )
+      );
       setTenantFieldSources(data.field_sources || {});
-      if (!silent) {
-        setStatus('Tenant runtime profile loaded.');
-      }
-      await loadPreview(tenantKey, runtimeEntryMode, previewQuery, config, data.profile);
+      await loadPreview(tenantKey, draftBlueprint, data.profile, Object.fromEntries(
+        Object.entries(data.section_overrides || {}).map(([sectionId, value]) => [sectionId, value.override_text || ''])
+      ));
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Failed to load tenant runtime profile.');
+      setStatus(err instanceof Error ? err.message : 'Failed to load tenant prompt config.');
     } finally {
       setLoadingTenant(false);
     }
   };
 
-  const loadPage = async () => {
+  const loadPage = async (promptBlueprintId = '') => {
     setLoading(true);
-    setStatus('Loading prompt configuration...');
     try {
-      const data = await fetchJson('/api/v1/admin/system/prompts');
-      const nextTenant = data.tenants?.[0]?.tenant_key || '';
-      setDefaults(data.defaults);
-      setSavedConfig(data.config);
-      setConfig(data.config);
+      const data = await fetchJson(`/api/v1/admin/system/prompts${promptBlueprintId ? `?promptBlueprintId=${encodeURIComponent(promptBlueprintId)}` : ''}`);
+      const activeBlueprint = data.active_blueprint;
+      const nextBlueprintId = activeBlueprint?.prompt_blueprint_id || data.blueprints?.[0]?.prompt_blueprint_id || '';
+      const nextTenant = selectedTenant || data.tenants?.[0]?.tenant_key || '';
+      setBlueprints(Array.isArray(data.blueprints) ? data.blueprints : []);
+      setSavedBlueprint(activeBlueprint);
+      setDraftBlueprint(activeBlueprint);
+      setSelectedBlueprintId(nextBlueprintId);
       setTenants(Array.isArray(data.tenants) ? data.tenants : []);
-      setSelectedTenant((current) => current || nextTenant);
-      setStatus('Prompt configuration loaded.');
+      setSelectedTenant(nextTenant);
+      setStatus('Prompt blueprint loaded.');
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Failed to load prompt configuration.');
+      setStatus(err instanceof Error ? err.message : 'Failed to load prompt blueprint.');
     } finally {
       setLoading(false);
     }
@@ -341,131 +377,168 @@ export default function AdminPromptConfigPage() {
   }, []);
 
   useEffect(() => {
-    if (!loading && selectedTenant) {
-      void loadTenantProfile(selectedTenant, { silent: true });
+    if (!loading && selectedTenant && selectedBlueprintId) {
+      void loadTenantConfig(selectedTenant, selectedBlueprintId);
     }
-  }, [loading, selectedTenant]);
+  }, [loading, selectedTenant, selectedBlueprintId]);
 
   useEffect(() => {
-    if (!loading && selectedTenant && tenantProfile) {
-      void loadPreview(selectedTenant, runtimeEntryMode, previewQuery, config, tenantProfile);
+    if (!loading && selectedTenant && draftBlueprint && draftTenantProfile) {
+      void loadPreview();
     }
   }, [runtimeEntryMode]);
 
-  const updateConfig = (path, value) => {
-    setConfig((current) => setByPath(current, path, value));
+  const savedSectionMap = useMemo(() => buildSectionMap(savedBlueprint?.sections), [savedBlueprint]);
+  const draftSectionMap = useMemo(() => buildSectionMap(draftBlueprint?.sections), [draftBlueprint]);
+  const liveRenderedSectionMap = useMemo(() => buildRenderedSectionMap(preview?.live?.renderedSections), [preview]);
+  const draftRenderedSectionMap = useMemo(() => buildRenderedSectionMap(preview?.draft?.renderedSections), [preview]);
+
+  const updateDraftSection = (sectionId, value) => {
+    setDraftBlueprint((current) => ({
+      ...current,
+      sections: (current.sections || []).map((section) => (
+        section.section_id === sectionId
+          ? { ...section, default_text: value }
+          : section
+      ))
+    }));
   };
 
-  const updateTenantProfile = (path, value) => {
-    setTenantProfile((current) => setByPath(current, path, value));
+  const updatePhraseGroup = (groupId, value) => {
+    setDraftBlueprint((current) => ({
+      ...current,
+      sample_phrase_groups: {
+        ...(current.sample_phrase_groups || {}),
+        [groupId]: value
+      }
+    }));
   };
 
-  const resetLayer = (path) => {
-    setConfig((current) => setByPath(current, path, cloneValue(path.reduce((cursor, key) => cursor?.[key], savedConfig))));
+  const updateToolDefinition = (toolKey, value) => {
+    setDraftBlueprint((current) => ({
+      ...current,
+      tool_definitions: {
+        ...(current.tool_definitions || {}),
+        [toolKey]: value
+      }
+    }));
   };
 
-  const saveConfig = async () => {
+  const updateTenantProfile = (key, value) => {
+    setDraftTenantProfile((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateTenantOverride = (sectionId, value) => {
+    setDraftSectionOverrides((current) => ({ ...current, [sectionId]: value }));
+  };
+
+  const saveGlobalBlueprint = async () => {
     setSavingGlobal(true);
-    setStatus('Saving global prompt configuration...');
     try {
       const data = await fetchJson('/api/v1/admin/system/prompts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config })
+        body: JSON.stringify({ blueprint: draftBlueprint })
       });
-      setSavedConfig(data.config);
-      setConfig(data.config);
-      setDefaults(data.defaults);
-      setStatus('Global prompt configuration saved.');
-      await loadPreview(selectedTenant, runtimeEntryMode, previewQuery, data.config, tenantProfile);
+      setBlueprints(data.blueprints || []);
+      setSavedBlueprint(data.active_blueprint);
+      setDraftBlueprint(data.active_blueprint);
+      setStatus('Global blueprint saved.');
+      await loadPreview(selectedTenant, data.active_blueprint, draftTenantProfile, draftSectionOverrides);
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Failed to save global prompt configuration.');
+      setStatus(err instanceof Error ? err.message : 'Failed to save blueprint.');
     } finally {
       setSavingGlobal(false);
     }
   };
 
-  const resetAll = async () => {
-    if (!window.confirm('Reset all global prompt layers back to defaults?')) return;
-    setSavingGlobal(true);
-    setStatus('Resetting global prompt configuration...');
-    try {
-      const data = await fetchJson('/api/v1/admin/system/prompts', { method: 'DELETE' });
-      setSavedConfig(data.config);
-      setConfig(data.config);
-      setDefaults(data.defaults);
-      setStatus('Global prompt configuration reset to defaults.');
-      await loadPreview(selectedTenant, runtimeEntryMode, previewQuery, data.config, tenantProfile);
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Failed to reset global prompt configuration.');
-    } finally {
-      setSavingGlobal(false);
-    }
-  };
-
-  const saveTenantProfile = async () => {
-    if (!selectedTenant || !tenantProfile) return;
+  const saveTenantConfig = async () => {
+    if (!selectedTenant) return;
     setSavingTenant(true);
-    setStatus(`Saving tenant runtime profile for ${selectedTenant}...`);
     try {
-      const data = await fetchJson('/api/v1/admin/system/prompts/tenant-runtime-profile', {
+      const data = await fetchJson('/api/v1/admin/system/prompts/tenant-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantKey: selectedTenant,
-          profile: toTenantProfileOverride(tenantProfile)
+          promptBlueprintId: selectedBlueprintId,
+          profile: draftTenantProfile,
+          sectionOverrides: draftSectionOverrides
         })
       });
-      setSavedTenantProfile(data.profile);
-      setTenantProfile(data.profile);
+      const next = {
+        profile: data.profile,
+        section_overrides: data.section_overrides || {}
+      };
+      setSavedTenantConfig(next);
+      setDraftTenantProfile(data.profile);
+      setDraftSectionOverrides(
+        Object.fromEntries(
+          Object.entries(data.section_overrides || {}).map(([sectionId, value]) => [sectionId, value.override_text || ''])
+        )
+      );
       setTenantFieldSources(data.field_sources || {});
-      setStatus('Tenant runtime profile saved.');
-      await loadPreview(selectedTenant, runtimeEntryMode, previewQuery, config, data.profile);
+      setStatus('Selected tenant prompt config saved.');
+      await loadPreview(selectedTenant, draftBlueprint, data.profile, Object.fromEntries(
+        Object.entries(data.section_overrides || {}).map(([sectionId, value]) => [sectionId, value.override_text || ''])
+      ));
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Failed to save tenant runtime profile.');
+      setStatus(err instanceof Error ? err.message : 'Failed to save tenant prompt config.');
     } finally {
       setSavingTenant(false);
     }
   };
 
-  const resetTenantToSaved = async () => {
-    if (!savedTenantProfile) return;
-    const nextProfile = cloneValue(savedTenantProfile);
-    setTenantProfile(nextProfile);
-    setStatus('Tenant runtime profile draft reset to the last saved version.');
-    await loadPreview(selectedTenant, runtimeEntryMode, previewQuery, config, nextProfile);
+  const resetDraftBlueprintToSaved = () => {
+    setDraftBlueprint(cloneValue(savedBlueprint));
+    setStatus('Global blueprint draft reset to the last saved version.');
+  };
+
+  const resetTenantToSaved = () => {
+    if (!savedTenantConfig) return;
+    setDraftTenantProfile(cloneValue(savedTenantConfig.profile));
+    setDraftSectionOverrides(
+      Object.fromEntries(
+        Object.entries(savedTenantConfig.section_overrides || {}).map(([sectionId, value]) => [sectionId, value.override_text || ''])
+      )
+    );
+    setStatus('Tenant draft reset to the last saved version.');
   };
 
   const resetTenantToDefaults = async () => {
     if (!selectedTenant) return;
-    if (!window.confirm(`Clear tenant runtime-profile overrides for ${selectedTenant} and return to inherited defaults?`)) return;
     setSavingTenant(true);
-    setStatus(`Resetting tenant runtime profile for ${selectedTenant}...`);
     try {
-      const data = await fetchJson('/api/v1/admin/system/prompts/tenant-runtime-profile', {
+      const data = await fetchJson('/api/v1/admin/system/prompts/tenant-config', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantKey: selectedTenant })
+        body: JSON.stringify({
+          tenantKey: selectedTenant,
+          promptBlueprintId: selectedBlueprintId,
+          mode: 'all'
+        })
       });
-      setSavedTenantProfile(data.profile);
-      setTenantProfile(data.profile);
+      const next = {
+        profile: data.profile,
+        section_overrides: data.section_overrides || {}
+      };
+      setSavedTenantConfig(next);
+      setDraftTenantProfile(data.profile);
+      setDraftSectionOverrides({});
       setTenantFieldSources(data.field_sources || {});
-      setStatus('Tenant runtime profile reset to inherited defaults.');
-      await loadPreview(selectedTenant, runtimeEntryMode, previewQuery, config, data.profile);
+      setStatus('Tenant prompt config reset to inherited defaults.');
+      await loadPreview(selectedTenant, draftBlueprint, data.profile, {});
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Failed to reset tenant runtime profile.');
+      setStatus(err instanceof Error ? err.message : 'Failed to reset tenant prompt config.');
     } finally {
       setSavingTenant(false);
     }
   };
 
-  const previewDraft = preview?.draft || null;
-  const previewLive = preview?.live || null;
-
-  if (loading || !config || !defaults || !savedConfig) {
+  if (loading || !draftBlueprint || !savedBlueprint) {
     return (
       <section className="grid gap-3">
-        <h1 className="m-0 text-2xl font-semibold tracking-tight">Prompt Config</h1>
+        <h1 className="m-0 text-2xl font-semibold tracking-tight">Prompt Blueprint</h1>
         <div className="rounded-xl border border-border bg-card p-4 text-sm text-slate-500 shadow-sm">
           {status || 'Loading...'}
         </div>
@@ -473,36 +546,39 @@ export default function AdminPromptConfigPage() {
     );
   }
 
+  const previewDraft = preview?.draft || null;
+  const previewLive = preview?.live || null;
+
   return (
     <section className="grid gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="m-0 text-2xl font-semibold tracking-tight">Prompt Config</h1>
+          <h1 className="m-0 text-2xl font-semibold tracking-tight">Prompt Blueprint</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Configure global runtime prompt layers, edit prompt-adjacent tenant runtime settings, and inspect the composed gateway prompt for the selected tenant.
-          </p>
-          <p className="mt-2 text-xs text-slate-500">
-            `Reset to Saved` restores only that draft layer to the last saved version. `Reset All` restores the full global prompt config to built-in defaults. `Reset Tenant To Defaults` clears tenant overrides in `knowledge_runtime_profiles`.
+            The startup prompt now comes from one canonical blueprint plus a narrow tenant prompt profile and optional admin-only per-tenant section overrides.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={loadPage} disabled={loading || savingGlobal || savingTenant}>Reload Page</Button>
-          <Button variant="outline" onClick={resetAll} disabled={savingGlobal}>Reset All Global Layers</Button>
-          <Button onClick={saveConfig} disabled={savingGlobal}>{savingGlobal ? 'Saving...' : 'Save Global Prompt Config'}</Button>
+          <Button variant="outline" onClick={() => loadPage(selectedBlueprintId)} disabled={loading || savingGlobal || savingTenant}>Reload</Button>
+          <Button variant="outline" onClick={resetDraftBlueprintToSaved} disabled={savingGlobal}>Reset Global To Saved</Button>
+          <Button onClick={saveGlobalBlueprint} disabled={savingGlobal}>{savingGlobal ? 'Saving...' : 'Save Global Blueprint'}</Button>
+          <Button variant="outline" onClick={resetTenantToSaved} disabled={savingTenant || !savedTenantConfig}>Reset Tenant To Saved</Button>
+          <Button variant="outline" onClick={resetTenantToDefaults} disabled={savingTenant || !selectedTenant}>Reset Tenant To Defaults</Button>
+          <Button onClick={saveTenantConfig} disabled={savingTenant || !selectedTenant || !draftTenantProfile}>{savingTenant ? 'Saving...' : 'Save Tenant Prompt Config'}</Button>
         </div>
       </div>
 
       <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm lg:grid-cols-2">
         <div>
-          <div className="text-sm font-semibold text-slate-900">Global Prompt Layers</div>
+          <div className="text-sm font-semibold text-slate-900">Global Blueprint Scope</div>
           <p className="mt-1 text-sm text-slate-600">
-            These edits affect every tenant because they change the shared prompt templates and wrappers used across the live runtime.
+            Global section text, sample phrase groups, and tool descriptions affect every tenant that uses this blueprint.
           </p>
         </div>
         <div>
-          <div className="text-sm font-semibold text-slate-900">Selected Tenant Runtime Profile</div>
+          <div className="text-sm font-semibold text-slate-900">Selected Tenant Scope</div>
           <p className="mt-1 text-sm text-slate-600">
-            These edits affect only <span className="font-medium text-slate-900">{selectedTenantRecord?.name || 'the selected tenant'}</span> and write back to <code>knowledge_runtime_profiles</code>.
+            Tenant fields and section overrides affect only <span className="font-medium text-slate-900">{selectedTenantRecord?.name || 'the selected tenant'}</span>.
           </p>
           <div className="mt-2 text-xs text-slate-500">
             Tenant key: <code>{selectedTenant || 'none selected'}</code>
@@ -510,735 +586,321 @@ export default function AdminPromptConfigPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-        <div className="grid gap-3 md:grid-cols-5">
-          <Field label="Tenant Preview" hint="Selects which tenant runtime profile is loaded into the tenant editor and merged into preview composition.">
-            <select
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-              value={selectedTenant}
-              onChange={(event) => setSelectedTenant(event.target.value)}
-            >
-              {tenants.map((tenant) => (
-                <option key={tenant.tenant_key} value={tenant.tenant_key}>
-                  {tenant.name} ({tenant.tenant_key})
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Runtime Entry Mode" hint="Changes stage/context and post-tool rule activation the same way the live runtime does.">
-            <select
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-              value={runtimeEntryMode}
-              onChange={(event) => setRuntimeEntryMode(event.target.value)}
-            >
-              <option value="customer_call">customer_call</option>
-              <option value="setup_interview">setup_interview</option>
-            </select>
-          </Field>
-          <Field label="Preview View" hint="Draft uses unsaved edits. Live uses the last saved global config and tenant profile. Compare shows both.">
-            <select
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-              value={previewMode}
-              onChange={(event) => setPreviewMode(event.target.value)}
-            >
-              <option value="draft">draft effective</option>
-              <option value="live">live effective</option>
-              <option value="compare">compare draft vs live</option>
-            </select>
-          </Field>
-          <Field
-            label="Preview Query"
-            hint="Optional. Used to resolve override/guardrail-driven conditional response rules."
+      <section className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-sm md:grid-cols-4">
+        <Field label="Blueprint Version" hint="The active blueprint is versioned. This is the canonical startup prompt document being edited.">
+          <select
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            value={selectedBlueprintId}
+            onChange={async (event) => {
+              const nextId = event.target.value;
+              setSelectedBlueprintId(nextId);
+              await loadPage(nextId);
+            }}
           >
-            <TextInput
-              value={previewQuery}
-              onChange={(event) => setPreviewQuery(event.target.value)}
-              placeholder="Caller question for rule preview"
-            />
-          </Field>
-          <div className="flex items-end">
-            <Button
-              variant="outline"
-              onClick={() => loadPreview(selectedTenant, runtimeEntryMode, previewQuery, config, tenantProfile)}
-              disabled={previewing || !selectedTenant}
-            >
-              {previewing ? 'Refreshing...' : 'Refresh Preview'}
-            </Button>
-          </div>
-        </div>
-        <div className="mt-3 text-sm text-slate-500">{status}</div>
-      </div>
+            {blueprints.map((blueprint) => (
+              <option key={blueprint.prompt_blueprint_id} value={blueprint.prompt_blueprint_id}>
+                {blueprint.name} (v{blueprint.version})
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Tenant" hint="Loads the selected tenant’s narrow prompt profile and admin-only section overrides.">
+          <select
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            value={selectedTenant}
+            onChange={(event) => setSelectedTenant(event.target.value)}
+          >
+            {tenants.map((tenant) => (
+              <option key={tenant.tenant_key} value={tenant.tenant_key}>
+                {tenant.name} ({tenant.tenant_key})
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Runtime Entry Mode" hint="Previews the same startup prompt path used for the selected entry mode.">
+          <select
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            value={runtimeEntryMode}
+            onChange={(event) => setRuntimeEntryMode(event.target.value)}
+          >
+            <option value="customer_call">customer_call</option>
+            <option value="setup_interview">setup_interview</option>
+          </select>
+        </Field>
+        <Field label="Preview View" hint="Draft uses the unsaved edits on this page. Live shows the last saved runtime configuration.">
+          <select
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            value={previewMode}
+            onChange={(event) => setPreviewMode(event.target.value)}
+          >
+            <option value="draft">draft effective</option>
+            <option value="live">live effective</option>
+            <option value="compare">compare</option>
+          </select>
+        </Field>
+      </section>
 
-      <section className="grid gap-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">Selected Tenant Runtime Profile</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Edit only the prompt-adjacent tenant fields that already live in the current runtime-profile source of truth. This page intentionally excludes unrelated routing controls and non-prompt runtime settings.
-            </p>
-            <div className="mt-2 text-xs text-slate-500">
-              Tenant: <span className="font-medium text-slate-700">{selectedTenantRecord?.name || 'Loading tenant...'}</span> <code>({selectedTenant || 'none'})</code>
+      <section className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Tenant Business Fields</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            This is the narrow tenant-facing data model. The tenant should edit values like these, not raw prompt prose.
+          </p>
+        </div>
+        {loadingTenant || !draftTenantProfile ? (
+          <div className="text-sm text-slate-500">Loading tenant prompt config...</div>
+        ) : (
+          <div className="grid gap-4 xl:grid-cols-3">
+            <div className="grid gap-3">
+              <Field label="Assistant Name" hint="Inserted into the startup prompt and opening line. Tenants should see this field.">
+                <TextInput value={draftTenantProfile.assistant_name || ''} onChange={(event) => updateTenantProfile('assistant_name', event.target.value)} />
+              </Field>
+              <TenantFieldState state={tenantFieldSources.assistant_name} draftValue={draftTenantProfile.assistant_name} />
+
+              <Field label="Business Name" hint="Inserted into the startup prompt and opening line. Defaults from the tenant record.">
+                <TextInput value={draftTenantProfile.business_name || ''} onChange={(event) => updateTenantProfile('business_name', event.target.value)} />
+              </Field>
+              <TenantFieldState state={tenantFieldSources.business_name} draftValue={draftTenantProfile.business_name} />
+
+              <Field label="Company Description" hint="This is the company narrative used in business context. It inherits from the active build summary when no tenant override exists.">
+                <TextArea value={draftTenantProfile.company_description || ''} onChange={(event) => updateTenantProfile('company_description', event.target.value)} />
+              </Field>
+              <TenantFieldState state={tenantFieldSources.company_description} draftValue={draftTenantProfile.company_description} />
+            </div>
+
+            <div className="grid gap-3">
+              <Field label="Opening Line" hint="Exact opening line spoken on the first turn. Tenants should see this field.">
+                <TextArea value={draftTenantProfile.opening_line || ''} onChange={(event) => updateTenantProfile('opening_line', event.target.value)} />
+              </Field>
+              <TenantFieldState state={tenantFieldSources.opening_line} draftValue={draftTenantProfile.opening_line} />
+
+              <Field label="AI Disclosure" hint="Used when the caller asks whether the receptionist is a robot or AI.">
+                <TextArea value={draftTenantProfile.ai_disclosure_line || ''} onChange={(event) => updateTenantProfile('ai_disclosure_line', event.target.value)} />
+              </Field>
+              <TenantFieldState state={tenantFieldSources.ai_disclosure_line} draftValue={draftTenantProfile.ai_disclosure_line} />
+
+              <Field label="Closing Phrase" hint="Used in the closing section as the preferred closing style.">
+                <TextArea value={draftTenantProfile.closing_phrase || ''} onChange={(event) => updateTenantProfile('closing_phrase', event.target.value)} />
+              </Field>
+              <TenantFieldState state={tenantFieldSources.closing_phrase} draftValue={draftTenantProfile.closing_phrase} />
+            </div>
+
+            <div className="grid gap-3">
+              <Field label="Lead Goal" hint="The business-facing next-step type, such as callback information or consultation request.">
+                <TextInput value={draftTenantProfile.lead_goal || ''} onChange={(event) => updateTenantProfile('lead_goal', event.target.value)} />
+              </Field>
+              <TenantFieldState state={tenantFieldSources.lead_goal} draftValue={draftTenantProfile.lead_goal} />
+
+              <Field label="Required Contact Fields" hint="One field per line. This stays tenant-visible and drives the required callback-information list in the startup prompt.">
+                <TextArea
+                  value={joinLines(draftTenantProfile.required_contact_fields)}
+                  onChange={(event) => updateTenantProfile('required_contact_fields', splitLines(event.target.value))}
+                />
+              </Field>
+              <TenantFieldState state={tenantFieldSources.required_contact_fields} draftValue={draftTenantProfile.required_contact_fields} />
+
+              <Field label="Basic No-Tool Allowed Statement" hint="This is the narrow general business statement the receptionist may say without calling knowledge_lookup.">
+                <TextArea
+                  value={draftTenantProfile.basic_no_tool_allowed_statement || ''}
+                  onChange={(event) => updateTenantProfile('basic_no_tool_allowed_statement', event.target.value)}
+                />
+              </Field>
+              <TenantFieldState state={tenantFieldSources.basic_no_tool_allowed_statement} draftValue={draftTenantProfile.basic_no_tool_allowed_statement} />
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => loadTenantProfile(selectedTenant)} disabled={!selectedTenant || loadingTenant || savingTenant}>
-              {loadingTenant ? 'Loading...' : 'Reload Tenant'}
-            </Button>
-            <Button variant="outline" onClick={resetTenantToSaved} disabled={!savedTenantProfile || savingTenant}>Reset Tenant To Saved</Button>
-            <Button variant="outline" onClick={resetTenantToDefaults} disabled={!selectedTenant || savingTenant}>Reset Tenant To Defaults</Button>
-            <Button onClick={saveTenantProfile} disabled={!tenantProfile || savingTenant}>{savingTenant ? 'Saving...' : 'Save Tenant Runtime Profile'}</Button>
-          </div>
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-          <div className="grid gap-4">
-            <LayerCard
-              title="Tenant Prompt-Adjacent Fields"
-              description="These fields come from the selected tenant's runtime profile. The input shows the current draft effective value, while the status block underneath shows saved inheritance vs override state."
-            >
-              <FormGroup
-                title="Company Context"
-                description="This tenant-scoped description tells the live receptionist what the business actually does before any knowledge lookup runs."
-              >
-                <Field label="Company Description" hint="Feeds the startup Company Context block in the live session instructions. Use this for what the business actually does, not for call-handling behavior.">
-                  <TextArea
-                    value={tenantProfile?.company_description || ''}
-                    onChange={(event) => updateTenantProfile(['company_description'], event.target.value)}
-                    className="min-h-[120px]"
-                  />
-                  <TenantFieldState fieldState={tenantFieldSources?.companyDescription} draftValue={tenantProfile?.company_description} />
-                </Field>
-              </FormGroup>
-
-              <FormGroup
-                title="Greeting And Wording Defaults"
-                description="These tenant-scoped values feed the greeting turn, tenant persona wording, and fallback phrasing used throughout the live call."
-              >
-                <Field label="Greeting" hint="Used as the tenant greeting text and also rendered into the tenant persona and greeting instruction preview.">
-                  <TextArea
-                    value={tenantProfile?.greeting_text || ''}
-                    onChange={(event) => updateTenantProfile(['greeting_text'], event.target.value)}
-                    className="min-h-[96px]"
-                  />
-                  <TenantFieldState fieldState={tenantFieldSources?.greetingText} draftValue={tenantProfile?.greeting_text} />
-                </Field>
-                <Field label="AI Disclosure" hint="Tenant-scoped wording used when the assistant identifies itself as automated.">
-                  <TextInput
-                    value={tenantProfile?.wording_defaults?.ai_disclosure || ''}
-                    onChange={(event) => updateTenantProfile(['wording_defaults', 'ai_disclosure'], event.target.value)}
-                  />
-                  <TenantFieldState fieldState={tenantFieldSources?.aiDisclosure} draftValue={tenantProfile?.wording_defaults?.ai_disclosure} />
-                </Field>
-                <Field label="Uncertainty Phrase" hint="Used when the assistant needs to soften or verify an answer.">
-                  <TextInput
-                    value={tenantProfile?.wording_defaults?.uncertainty_phrase || ''}
-                    onChange={(event) => updateTenantProfile(['wording_defaults', 'uncertainty_phrase'], event.target.value)}
-                  />
-                  <TenantFieldState fieldState={tenantFieldSources?.uncertaintyPhrase} draftValue={tenantProfile?.wording_defaults?.uncertainty_phrase} />
-                </Field>
-                <Field label="Pricing Fallback" hint="Tenant-safe wording for pricing or quote questions when exact numbers should not be invented.">
-                  <TextInput
-                    value={tenantProfile?.wording_defaults?.pricing_fallback || ''}
-                    onChange={(event) => updateTenantProfile(['wording_defaults', 'pricing_fallback'], event.target.value)}
-                  />
-                  <TenantFieldState fieldState={tenantFieldSources?.pricingFallback} draftValue={tenantProfile?.wording_defaults?.pricing_fallback} />
-                </Field>
-                <Field label="Closing Phrase" hint="Tenant-preferred close used near callback, handoff, or end-of-call moments.">
-                  <TextInput
-                    value={tenantProfile?.wording_defaults?.closing_phrase || ''}
-                    onChange={(event) => updateTenantProfile(['wording_defaults', 'closing_phrase'], event.target.value)}
-                  />
-                  <TenantFieldState fieldState={tenantFieldSources?.closingPhrase} draftValue={tenantProfile?.wording_defaults?.closing_phrase} />
-                </Field>
-              </FormGroup>
-
-              <FormGroup
-                title="Knowledge Tool Policy Values"
-                description="These tenant-scoped settings flow into the rendered knowledge-tool policy block and shape how aggressively the assistant clarifies before using the tool."
-              >
-                <Field label="Require Knowledge Lookup" hint="If enabled, tenant-specific facts should be grounded through `knowledge_lookup` rather than improvised.">
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                    value={tenantProfile?.tool_policy?.require_knowledge_lookup_for_tenant_facts ? 'true' : 'false'}
-                    onChange={(event) => updateTenantProfile(['tool_policy', 'require_knowledge_lookup_for_tenant_facts'], event.target.value === 'true')}
-                  >
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </select>
-                  <TenantFieldState fieldState={tenantFieldSources?.requireKnowledgeLookup} draftValue={tenantProfile?.tool_policy?.require_knowledge_lookup_for_tenant_facts} />
-                </Field>
-                <Field label="Max Clarifying Questions" hint="The current live prompt uses this to describe how many clarifying questions are allowed before a tool call.">
-                  <TextInput
-                    type="number"
-                    min="0"
-                    value={tenantProfile?.tool_policy?.max_clarifying_questions ?? 0}
-                    onChange={(event) => updateTenantProfile(['tool_policy', 'max_clarifying_questions'], Number(event.target.value || 0))}
-                  />
-                  <TenantFieldState fieldState={tenantFieldSources?.maxClarifyingQuestions} draftValue={tenantProfile?.tool_policy?.max_clarifying_questions} />
-                </Field>
-                <Field label="End Call Only After Spoken Close" hint="Prompt-level reminder that the assistant should only call `end_call` after it has already spoken the final closing sentence aloud.">
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                    value={tenantProfile?.tool_policy?.allow_end_call_only_after_spoken_close ? 'true' : 'false'}
-                    onChange={(event) => updateTenantProfile(['tool_policy', 'allow_end_call_only_after_spoken_close'], event.target.value === 'true')}
-                  >
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </select>
-                  <TenantFieldState fieldState={tenantFieldSources?.allowEndCallOnlyAfterSpokenClose} draftValue={tenantProfile?.tool_policy?.allow_end_call_only_after_spoken_close} />
-                </Field>
-              </FormGroup>
-
-              <FormGroup
-                title="Response Defaults"
-                description="These tenant-level defaults affect how the response-rule layer and tenant persona describe the runtime behavior."
-              >
-                <Field label="Concise Responses" hint="Feeds the response-style label in the tenant persona and activates the concise response rule after `knowledge_lookup`.">
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                    value={tenantProfile?.runtime_defaults?.concise_responses ? 'true' : 'false'}
-                    onChange={(event) => updateTenantProfile(['runtime_defaults', 'concise_responses'], event.target.value === 'true')}
-                  >
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </select>
-                  <TenantFieldState fieldState={tenantFieldSources?.conciseResponses} draftValue={tenantProfile?.runtime_defaults?.concise_responses} />
-                </Field>
-              </FormGroup>
-            </LayerCard>
-          </div>
-
-          <div className="grid gap-4">
-            <PreviewBlock
-              title="Tenant Effective Values"
-              description="These are the tenant-scoped values after inheritance is resolved. Draft uses unsaved edits from the form; live uses the last saved tenant profile."
-            >
-              <PreviewModeContent
-                mode={previewMode}
-                draft={previewDraft?.tenantRuntimeProfileValues}
-                live={previewLive?.tenantRuntimeProfileValues}
-                render={(values) => renderTenantValueList(values)}
-              />
-            </PreviewBlock>
-
-            <PreviewBlock
-              title="Tenant Inheritance Summary"
-              description="Saved inheritance state for each editable tenant field. This shows whether the selected tenant currently overrides the shared baseline or inherits it."
-            >
-              <div className="grid gap-2 text-sm text-slate-700">
-                {[
-                  ['Company description', tenantFieldSources?.companyDescription],
-                  ['Greeting', tenantFieldSources?.greetingText],
-                  ['AI disclosure', tenantFieldSources?.aiDisclosure],
-                  ['Uncertainty phrase', tenantFieldSources?.uncertaintyPhrase],
-                  ['Pricing fallback', tenantFieldSources?.pricingFallback],
-                  ['Closing phrase', tenantFieldSources?.closingPhrase],
-                  ['Require knowledge lookup', tenantFieldSources?.requireKnowledgeLookup],
-                  ['Max clarifying questions', tenantFieldSources?.maxClarifyingQuestions],
-                  ['End call only after spoken close', tenantFieldSources?.allowEndCallOnlyAfterSpokenClose],
-                  ['Concise responses', tenantFieldSources?.conciseResponses]
-                ].map(([label, fieldState]) => (
-                  <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-medium text-slate-900">{label}</div>
-                      <SourceBadge source={fieldState?.source} />
-                    </div>
-                    <div className="mt-2 whitespace-pre-wrap text-xs text-slate-600">
-                      Default: {formatDisplayValue(fieldState?.default_value)}
-                    </div>
-                    <div className="whitespace-pre-wrap text-xs text-slate-600">
-                      Saved override: {formatDisplayValue(fieldState?.override_value)}
-                    </div>
-                    <div className="whitespace-pre-wrap text-xs text-slate-600">
-                      Saved effective: {formatDisplayValue(fieldState?.effective_value)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </PreviewBlock>
-          </div>
-        </div>
+        )}
       </section>
-
-      <section className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
-        <div className="text-sm font-semibold text-slate-900">Global Prompt Layers</div>
-        <p className="text-sm text-slate-600">
-          The sections below edit shared prompt templates and wrappers. They affect all tenants because the live runtime composes every session from these global layers plus the selected tenant runtime profile above.
-        </p>
-      </section>
-
-      <PromptSection
-        title="1. Base Session Prompt"
-        description="This is the top-level persistent instruction block that stays active for the whole Realtime session."
-        editor={(
-          <LayerCard
-            title="Base System Prompt Template"
-            description="Global startup instructions before any tenant-specific or runtime-derived sections are appended."
-            onReset={() => resetLayer(['baseSystemPrompt'])}
-          >
-            <Field label="Instruction Lines" hint="This is the main global startup instruction block. Each line becomes part of the live `system_prompt` before tenant persona text is appended.">
-              <TextArea
-                value={joinLines(config.baseSystemPrompt.instructionLines)}
-                onChange={(event) => updateConfig(['baseSystemPrompt', 'instructionLines'], splitLines(event.target.value))}
-                className="min-h-[220px]"
-              />
-            </Field>
-          </LayerCard>
-        )}
-        preview={(
-          <PreviewBlock title="Base System Prompt" description="Editable global base layer before the tenant persona block.">
-            <PreviewModeContent
-              mode={previewMode}
-              draft={previewDraft?.rendered?.baseSystemPrompt}
-              live={previewLive?.rendered?.baseSystemPrompt}
-              render={(value) => <CodeBlock value={value} />}
-            />
-          </PreviewBlock>
-        )}
-      />
-
-      <PromptSection
-        title="2. Tenant Persona"
-        description="Global wrapper templates live on the left. The rendered persona block on the right uses the selected tenant runtime profile and the current prompt draft."
-        editor={(
-          <LayerCard
-            title="Tenant Persona Layer"
-            description="Editable wrapper + line templates. Tenant runtime-profile values stay tenant-scoped and render into preview."
-            onReset={() => resetLayer(['tenantPersona'])}
-          >
-            <Field label="Header Label" hint="This label separates the base system prompt from the rendered tenant persona section in the final startup prompt.">
-              <TextInput
-                value={config.tenantPersona.headerLabel}
-                onChange={(event) => updateConfig(['tenantPersona', 'headerLabel'], event.target.value)}
-              />
-            </Field>
-            <FormGroup
-              title="Persona Line Templates"
-              description="These wrappers control how tenant runtime-profile values are phrased inside the persona block."
-            >
-              <Field label="Business Role Template" hint="Controls how the approved business-call-intent summary is phrased inside the tenant persona block. This is separate from the explicit business-context block below.">
-                <TextInput
-                  value={config.tenantPersona.lineTemplates.businessRole}
-                  onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'businessRole'], event.target.value)}
-                />
-              </Field>
-              <Field label="Greeting Style Template" hint="Controls how the tenant’s runtime-profile greeting style is described to the runtime, not the spoken greeting itself.">
-                <TextInput
-                  value={config.tenantPersona.lineTemplates.greetingStyle}
-                  onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'greetingStyle'], event.target.value)}
-                />
-              </Field>
-              <Field label="Tone Template" hint="Wraps the resolved tone or default tone rules inside the tenant persona block.">
-                <TextInput
-                  value={config.tenantPersona.lineTemplates.tone}
-                  onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'tone'], event.target.value)}
-                />
-              </Field>
-              <Field label="AI Disclosure Template" hint="Wraps the tenant’s AI disclosure wording so the runtime knows how disclosure should be phrased.">
-                <TextInput
-                  value={config.tenantPersona.lineTemplates.aiDisclosure}
-                  onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'aiDisclosure'], event.target.value)}
-                />
-              </Field>
-              <Field label="Uncertainty Template" hint="Wraps the tenant’s preferred uncertainty phrase used when the assistant needs to soften or verify an answer.">
-                <TextInput
-                  value={config.tenantPersona.lineTemplates.uncertainty}
-                  onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'uncertainty'], event.target.value)}
-                />
-              </Field>
-              <Field label="Pricing Fallback Template" hint="Wraps the tenant’s fallback wording for pricing or quote questions when exact pricing should not be invented.">
-                <TextInput
-                  value={config.tenantPersona.lineTemplates.pricingFallback}
-                  onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'pricingFallback'], event.target.value)}
-                />
-              </Field>
-              <Field label="Closing Template" hint="Wraps the tenant’s preferred closing wording for callback, handoff, or end-of-call moments.">
-                <TextInput
-                  value={config.tenantPersona.lineTemplates.closing}
-                  onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'closing'], event.target.value)}
-                />
-              </Field>
-              <Field label="Response Style Template" hint="Controls how the resolved response-style label is stated inside the tenant persona block.">
-                <TextInput
-                  value={config.tenantPersona.lineTemplates.responseStyle}
-                  onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'responseStyle'], event.target.value)}
-                />
-              </Field>
-            </FormGroup>
-            <FormGroup
-              title="Fallback Defaults"
-              description="These defaults are only used when the selected tenant runtime profile does not provide a value."
-            >
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field label="Default Greeting Style" hint="Used only if the tenant runtime profile does not define greeting style wording.">
-                  <TextInput
-                    value={config.tenantPersona.defaults.greetingStyle}
-                    onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'greetingStyle'], event.target.value)}
-                  />
-                </Field>
-                <Field label="Default Tone" hint="Fallback tone text when the selected tenant has no specific tone rules.">
-                  <TextInput
-                    value={config.tenantPersona.defaults.tone}
-                    onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'tone'], event.target.value)}
-                  />
-                </Field>
-                <Field label="Default AI Disclosure" hint="Fallback disclosure wording when the tenant runtime profile does not provide one.">
-                  <TextInput
-                    value={config.tenantPersona.defaults.aiDisclosure}
-                    onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'aiDisclosure'], event.target.value)}
-                  />
-                </Field>
-                <Field label="Default Uncertainty Phrase" hint="Fallback uncertainty wording when the tenant runtime profile does not provide one.">
-                  <TextInput
-                    value={config.tenantPersona.defaults.uncertainty}
-                    onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'uncertainty'], event.target.value)}
-                  />
-                </Field>
-                <Field label="Default Pricing Fallback" hint="Fallback pricing-safe wording when the tenant runtime profile does not provide one.">
-                  <TextInput
-                    value={config.tenantPersona.defaults.pricingFallback}
-                    onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'pricingFallback'], event.target.value)}
-                  />
-                </Field>
-                <Field label="Default Closing Phrase" hint="Fallback closing wording when the tenant runtime profile does not provide one.">
-                  <TextInput
-                    value={config.tenantPersona.defaults.closing}
-                    onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'closing'], event.target.value)}
-                  />
-                </Field>
-                <Field label="Concise Response Style Label" hint="Used when the tenant runtime profile prefers concise responses. This label is rendered into the tenant persona block.">
-                  <TextInput
-                    value={config.tenantPersona.defaults.conciseResponseStyle}
-                    onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'conciseResponseStyle'], event.target.value)}
-                  />
-                </Field>
-                <Field label="Complete Response Style Label" hint="Used when the tenant runtime profile explicitly disables concise responses.">
-                  <TextInput
-                    value={config.tenantPersona.defaults.completeResponseStyle}
-                    onChange={(event) => updateConfig(['tenantPersona', 'defaults', 'completeResponseStyle'], event.target.value)}
-                  />
-                </Field>
-              </div>
-            </FormGroup>
-          </LayerCard>
-        )}
-        preview={(
-          <PreviewBlock title="Tenant Persona Block" description="Rendered from the selected tenant’s runtime profile values and the editable global wrapper/templates.">
-            <PreviewModeContent
-              mode={previewMode}
-              draft={`${previewDraft?.rendered?.tenantPersonaHeader || ''}\n${previewDraft?.rendered?.tenantPersona || ''}`.trim()}
-              live={`${previewLive?.rendered?.tenantPersonaHeader || ''}\n${previewLive?.rendered?.tenantPersona || ''}`.trim()}
-              render={(value) => <CodeBlock value={value} />}
-            />
-          </PreviewBlock>
-        )}
-      />
-
-      <PromptSection
-        title="3. Company Context"
-        description="This startup block gives Realtime true company-level context about what the tenant actually does before any tool call is needed."
-        editor={(
-          <LayerCard
-            title="Company Context Layer"
-            description="Rendered from the tenant runtime profile company description."
-            onReset={() => resetLayer(['companyContext'])}
-          >
-            <Field label="Header Label" hint="This section header appears above the company-description block in the final gateway session instructions.">
-              <TextInput
-                value={config.companyContext.headerLabel}
-                onChange={(event) => updateConfig(['companyContext', 'headerLabel'], event.target.value)}
-              />
-            </Field>
-            <Field label="Summary Template" hint="This renders the tenant’s company-description summary into the startup session instructions. Use `{company_context_summary}`.">
-              <TextInput
-                value={config.companyContext.summaryTemplate}
-                onChange={(event) => updateConfig(['companyContext', 'summaryTemplate'], event.target.value)}
-              />
-            </Field>
-          </LayerCard>
-        )}
-        preview={(
-          <PreviewBlock title="Company Context Block" description="Derived from the tenant runtime profile company description and included in the startup session instructions.">
-            <PreviewModeContent
-              mode={previewMode}
-              draft={previewDraft?.rendered?.companyContext}
-              live={previewLive?.rendered?.companyContext}
-              render={(value) => <CodeBlock value={value} />}
-            />
-          </PreviewBlock>
-        )}
-      />
-
-      <PromptSection
-        title="4. Call Mission"
-        description="This startup block describes how the receptionist should handle calls for this tenant. It comes from the tenant’s Business Call Intent, not from company-description data."
-        editor={(
-          <LayerCard
-            title="Call Mission Layer"
-            description="Rendered from the approved Business Call Intent summary."
-            onReset={() => resetLayer(['callMission'])}
-          >
-            <Field label="Header Label" hint="This section header appears above the call-handling mission block in the final gateway session instructions.">
-              <TextInput
-                value={config.callMission.headerLabel}
-                onChange={(event) => updateConfig(['callMission', 'headerLabel'], event.target.value)}
-              />
-            </Field>
-            <Field label="Summary Template" hint="This renders the tenant’s Business Call Intent summary into the startup session instructions. Use `{business_call_intent_summary}`.">
-              <TextInput
-                value={config.callMission.summaryTemplate}
-                onChange={(event) => updateConfig(['callMission', 'summaryTemplate'], event.target.value)}
-              />
-            </Field>
-          </LayerCard>
-        )}
-        preview={(
-          <PreviewBlock title="Call Mission Block" description="Derived from the tenant’s approved Business Call Intent and included in the startup session instructions.">
-            <PreviewModeContent
-              mode={previewMode}
-              draft={previewDraft?.rendered?.callMission}
-              live={previewLive?.rendered?.callMission}
-              render={(value) => <CodeBlock value={value} />}
-            />
-          </PreviewBlock>
-        )}
-      />
-
-      <PromptSection
-        title="5. Knowledge Tool Policy"
-        description="This structured policy block tells Realtime how to use `knowledge_lookup` and how much clarification is allowed before a tool call."
-        editor={(
-          <LayerCard
-            title="Knowledge Tool Policy Layer"
-            description="Structured prompt layer. Keep the templates focused on rendering the existing tool-policy fields."
-            onReset={() => resetLayer(['knowledgeToolPolicy'])}
-          >
-            <Field label="Header Label" hint="This section header appears above the rendered tool-policy lines in the final gateway session instructions.">
-              <TextInput
-                value={config.knowledgeToolPolicy.headerLabel}
-                onChange={(event) => updateConfig(['knowledgeToolPolicy', 'headerLabel'], event.target.value)}
-              />
-            </Field>
-            <Field label="Require Knowledge Lookup Template" hint="Renders the tenant tool-policy flag that tells the runtime whether tenant facts must go through `knowledge_lookup`.">
-              <TextInput
-                value={config.knowledgeToolPolicy.requireKnowledgeLookupTemplate}
-                onChange={(event) => updateConfig(['knowledgeToolPolicy', 'requireKnowledgeLookupTemplate'], event.target.value)}
-              />
-            </Field>
-            <Field label="Max Clarifying Questions Template" hint="Renders the structured `max_clarifying_questions` value from the tenant runtime profile into prompt text.">
-              <TextInput
-                value={config.knowledgeToolPolicy.maxClarifyingQuestionsTemplate}
-                onChange={(event) => updateConfig(['knowledgeToolPolicy', 'maxClarifyingQuestionsTemplate'], event.target.value)}
-              />
-            </Field>
-            <Field label="End Call After Spoken Close Template" hint="Renders the policy that end-call can only happen after a spoken close.">
-              <TextInput
-                value={config.knowledgeToolPolicy.endCallAfterSpokenCloseTemplate}
-                onChange={(event) => updateConfig(['knowledgeToolPolicy', 'endCallAfterSpokenCloseTemplate'], event.target.value)}
-              />
-            </Field>
-          </LayerCard>
-        )}
-        preview={(
-          <PreviewBlock title="Knowledge Tool Policy Block" description="Rendered from structured tool-policy config in the tenant runtime profile.">
-            <PreviewModeContent
-              mode={previewMode}
-              draft={previewDraft?.rendered?.knowledgeToolPolicy}
-              live={previewLive?.rendered?.knowledgeToolPolicy}
-              render={(value) => <CodeBlock value={value} />}
-            />
-          </PreviewBlock>
-        )}
-      />
-
-      <PromptSection
-        title="6. Greeting Turn"
-        description="This wrapper is only used when the gateway explicitly asks Realtime to speak the first greeting right after session startup."
-        editor={(
-          <LayerCard
-            title="Greeting Instruction Wrapper"
-            description="Used by the gateway when it explicitly requests the greeting turn right after session startup."
-            onReset={() => resetLayer(['greetingInstruction'])}
-          >
-            <Field label="Greeting Instruction Template" hint="This is not the tenant greeting itself. It is the wrapper instruction the gateway sends when it asks Realtime to speak the first greeting turn.">
-              <TextInput
-                value={config.greetingInstruction.template}
-                onChange={(event) => updateConfig(['greetingInstruction', 'template'], event.target.value)}
-              />
-            </Field>
-            <Field label="Fallback Greeting" hint="Used only when the selected tenant has no greeting text in its runtime profile.">
-              <TextInput
-                value={config.greetingInstruction.fallbackGreeting}
-                onChange={(event) => updateConfig(['greetingInstruction', 'fallbackGreeting'], event.target.value)}
-              />
-            </Field>
-          </LayerCard>
-        )}
-        preview={(
-          <PreviewBlock title="Greeting Instruction" description="The explicit greeting-turn instruction sent after the Realtime session is updated.">
-            <PreviewModeContent
-              mode={previewMode}
-              draft={previewDraft?.rendered?.greetingInstruction}
-              live={previewLive?.rendered?.greetingInstruction}
-              render={(value) => <CodeBlock value={value} />}
-            />
-          </PreviewBlock>
-        )}
-      />
-
-      <PromptSection
-        title="7. Runtime Context"
-        description="This runtime-derived block describes the current stage and assignment that the live gateway merges into the startup session instructions."
-        editor={(
-          <LayerCard
-            title="Current Runtime Context Layer"
-            description="Rendered into the final gateway session instructions from the current stage and active assignment."
-            onReset={() => resetLayer(['runtimeContext'])}
-          >
-            <Field label="Header Label" hint="This section header appears above the live runtime context block in the final gateway session instructions.">
-              <TextInput
-                value={config.runtimeContext.headerLabel}
-                onChange={(event) => updateConfig(['runtimeContext', 'headerLabel'], event.target.value)}
-              />
-            </Field>
-            <Field label="Stage Template" hint="Renders the current runtime stage, such as `opening`, into the startup session instructions.">
-              <TextInput
-                value={config.runtimeContext.stageTemplate}
-                onChange={(event) => updateConfig(['runtimeContext', 'stageTemplate'], event.target.value)}
-              />
-            </Field>
-            <Field label="Assignment Template" hint="Renders the current active domain/subdomain assignment into the startup session instructions.">
-              <TextInput
-                value={config.runtimeContext.assignmentTemplate}
-                onChange={(event) => updateConfig(['runtimeContext', 'assignmentTemplate'], event.target.value)}
-              />
-            </Field>
-          </LayerCard>
-        )}
-        preview={(
-          <PreviewBlock title="Current Runtime Context Block" description="Derived from runtime entry mode, stage, and active assignment.">
-            <PreviewModeContent
-              mode={previewMode}
-              draft={previewDraft?.rendered?.runtimeContext}
-              live={previewLive?.rendered?.runtimeContext}
-              render={(value) => <CodeBlock value={value} />}
-            />
-          </PreviewBlock>
-        )}
-      />
-
-      <PromptSection
-        title="8. Post-Tool Answer Rules"
-        description="These rules are attached after `knowledge_lookup` and shape how Realtime speaks from the answer packet on that turn."
-        editor={(
-          <LayerCard
-            title="Post-Tool Response Restriction Layer"
-            description="Baseline rules plus the conditional additions the gateway appends based on runtime mode, concise setting, overrides, and guardrails."
-            onReset={() => resetLayer(['responseRestrictions'])}
-          >
-            <Field label="Baseline Rules" hint="These are the baseline response rules sent back in `response_rules` after `knowledge_lookup`. They shape how Realtime speaks from the answer packet. One rule per line.">
-              <TextArea
-                value={joinLines(config.responseRestrictions.baselineRules)}
-                onChange={(event) => updateConfig(['responseRestrictions', 'baselineRules'], splitLines(event.target.value))}
-                className="min-h-[220px]"
-              />
-            </Field>
-            <FormGroup
-              title="Conditional Rule Templates"
-              description="These only activate when the matching runtime condition is present."
-            >
-              <Field label="Setup Interview Rule" hint="Added only when runtime entry mode is `setup_interview`.">
-                <TextInput
-                  value={config.responseRestrictions.setupInterviewRule}
-                  onChange={(event) => updateConfig(['responseRestrictions', 'setupInterviewRule'], event.target.value)}
-                />
-              </Field>
-              <Field label="Concise Response Rule" hint="Added when the tenant runtime profile prefers concise responses.">
-                <TextInput
-                  value={config.responseRestrictions.conciseResponseRule}
-                  onChange={(event) => updateConfig(['responseRestrictions', 'conciseResponseRule'], event.target.value)}
-                />
-              </Field>
-              <Field label="Override Priority Rule" hint="Added when a matching hard-fact or temporary-notice override is active for the turn.">
-                <TextInput
-                  value={config.responseRestrictions.overridePriorityRule}
-                  onChange={(event) => updateConfig(['responseRestrictions', 'overridePriorityRule'], event.target.value)}
-                />
-              </Field>
-              <Field label="Dangerous Guardrail Rule" hint="Added when the current query matches a dangerous-question guardrail.">
-                <TextInput
-                  value={config.responseRestrictions.dangerousQuestionRule}
-                  onChange={(event) => updateConfig(['responseRestrictions', 'dangerousQuestionRule'], event.target.value)}
-                />
-              </Field>
-            </FormGroup>
-          </LayerCard>
-        )}
-        preview={(
-          <>
-            <PreviewBlock title="Post-Tool Response Restrictions" description="Baseline template plus currently active conditional additions.">
-              <PreviewModeContent
-                mode={previewMode}
-                draft={previewDraft?.rendered?.responseRestrictions}
-                live={previewLive?.rendered?.responseRestrictions}
-                render={(value) => (
-                  <div className="grid gap-3">
-                    <RulesList title="Baseline Rules" items={value?.baselineRules} />
-                    <RulesList title="Active Conditional Rules" items={value?.activeConditionalRules} />
-                    <RulesList title="Conditional Templates" items={Object.values(value?.conditionalTemplates || {})} />
-                  </div>
-                )}
-              />
-            </PreviewBlock>
-            <PreviewBlock title="Matched Override / Guardrail Context" description="Only populated when a preview query is provided.">
-              <PreviewModeContent
-                mode={previewMode}
-                draft={previewDraft?.matched}
-                live={previewLive?.matched}
-                render={(value) => (
-                  <div className="grid gap-3">
-                    <RulesList
-                      title="Matched Overrides"
-                      items={(value?.overrides || []).map((item) => item.title || item.override_type || 'override')}
-                    />
-                    <RulesList
-                      title="Matched Guardrails"
-                      items={(value?.guardrails || []).map((item) => item.title || item.guardrail_type || 'guardrail')}
-                    />
-                  </div>
-                )}
-              />
-            </PreviewBlock>
-          </>
-        )}
-      />
 
       <section className="grid gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">7. Final Composed Output</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Sample Phrase Groups</h2>
           <p className="mt-1 text-sm text-slate-500">
-            These are the fully assembled runtime artifacts built from the current global and tenant layers. Use this section to compare the last saved live prompt against your unsaved draft before testing a call.
+            These are admin-only inspiration groups. They do not appear to tenants. If a group is empty, the optional sample-phrase section is omitted from the rendered prompt.
           </p>
         </div>
         <div className="grid gap-4 xl:grid-cols-2">
-          <PreviewBlock title="Final Gateway Session Instructions" description="Composed with the same shared builder the live gateway uses for `session.update`.">
+          <PhraseGroupCard
+            label="Greeting Samples"
+            hint="Short opening alternatives the model can treat as inspiration without repeating verbatim."
+            values={draftBlueprint.sample_phrase_groups?.greeting_samples || []}
+            savedValues={savedBlueprint.sample_phrase_groups?.greeting_samples || []}
+            onChange={(value) => updatePhraseGroup('greeting_samples', value)}
+          />
+          <PhraseGroupCard
+            label="Acknowledgement Samples"
+            hint="Examples of brief, natural acknowledgement turns."
+            values={draftBlueprint.sample_phrase_groups?.acknowledgement_samples || []}
+            savedValues={savedBlueprint.sample_phrase_groups?.acknowledgement_samples || []}
+            onChange={(value) => updatePhraseGroup('acknowledgement_samples', value)}
+          />
+          <PhraseGroupCard
+            label="Discovery-Question Samples"
+            hint="Examples of one-at-a-time discovery questions."
+            values={draftBlueprint.sample_phrase_groups?.discovery_question_samples || []}
+            savedValues={savedBlueprint.sample_phrase_groups?.discovery_question_samples || []}
+            onChange={(value) => updatePhraseGroup('discovery_question_samples', value)}
+          />
+          <PhraseGroupCard
+            label="Fit-Bridge Samples"
+            hint="Examples of gentle ‘this sounds like something we may be able to help with’ bridges."
+            values={draftBlueprint.sample_phrase_groups?.fit_bridge_samples || []}
+            savedValues={savedBlueprint.sample_phrase_groups?.fit_bridge_samples || []}
+            onChange={(value) => updatePhraseGroup('fit_bridge_samples', value)}
+          />
+          <PhraseGroupCard
+            label="Callback-Request Samples"
+            hint="Examples of low-pressure callback capture phrasing."
+            values={draftBlueprint.sample_phrase_groups?.callback_request_samples || []}
+            savedValues={savedBlueprint.sample_phrase_groups?.callback_request_samples || []}
+            onChange={(value) => updatePhraseGroup('callback_request_samples', value)}
+          />
+          <PhraseGroupCard
+            label="Closing Samples"
+            hint="Examples of short, warm closes."
+            values={draftBlueprint.sample_phrase_groups?.closing_samples || []}
+            savedValues={savedBlueprint.sample_phrase_groups?.closing_samples || []}
+            onChange={(value) => updatePhraseGroup('closing_samples', value)}
+          />
+        </div>
+      </section>
+
+      <section className="grid gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Runtime Tool Text</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Actual tool names, schema shape, and availability stay code-driven. Only descriptive text is admin-editable here.
+          </p>
+        </div>
+        <div className="grid gap-4 xl:grid-cols-3">
+          <ToolDefinitionCard
+            title="knowledge_lookup"
+            toolKey="knowledge_lookup"
+            draftTool={draftBlueprint.tool_definitions?.knowledge_lookup || {}}
+            savedTool={savedBlueprint.tool_definitions?.knowledge_lookup || {}}
+            onChange={(value) => updateToolDefinition('knowledge_lookup', value)}
+          />
+          <ToolDefinitionCard
+            title="data_capture"
+            toolKey="data_capture"
+            draftTool={draftBlueprint.tool_definitions?.data_capture || {}}
+            savedTool={savedBlueprint.tool_definitions?.data_capture || {}}
+            onChange={(value) => updateToolDefinition('data_capture', value)}
+          />
+          <ToolDefinitionCard
+            title="finish_session"
+            toolKey="finish_session"
+            draftTool={draftBlueprint.tool_definitions?.finish_session || {}}
+            savedTool={savedBlueprint.tool_definitions?.finish_session || {}}
+            onChange={(value) => updateToolDefinition('finish_session', value)}
+          />
+        </div>
+      </section>
+
+      <section className="grid gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Ordered Startup Prompt Sections</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Canonical section text is global. Tenant override text is admin-only and applies only to the selected tenant. The startup prompt is rendered from these sections in fixed order.
+          </p>
+        </div>
+        {(draftBlueprint.sections || []).map((section) => (
+          <SectionCard
+            key={section.section_id}
+            section={section}
+            savedSection={savedSectionMap[section.section_id]}
+            tenantOverride={draftSectionOverrides[section.section_id] || ''}
+            savedTenantOverride={savedTenantConfig?.section_overrides?.[section.section_id]?.override_text || ''}
+            onSectionChange={(value) => updateDraftSection(section.section_id, value)}
+            onTenantOverrideChange={(value) => updateTenantOverride(section.section_id, value)}
+            effectiveDraft={draftRenderedSectionMap[section.section_id]?.text || ''}
+            effectiveLive={liveRenderedSectionMap[section.section_id]?.text || ''}
+            previewMode={previewMode}
+          />
+        ))}
+      </section>
+
+      <section className="grid gap-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Rendered Runtime Preview</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Draft and live preview both come from the same production composition path used by the live gateway prompt endpoint.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => loadPreview()} disabled={previewing || !selectedTenant}>
+            {previewing ? 'Refreshing...' : 'Refresh Preview'}
+          </Button>
+        </div>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="mb-3">
+              <h3 className="text-base font-semibold text-slate-900">Startup Prompt</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                This is the final startup prompt that is sent to Realtime at session start.
+              </p>
+            </div>
             <PreviewModeContent
               mode={previewMode}
-              draft={previewDraft?.rendered?.finalGatewaySessionInstructions}
-              live={previewLive?.rendered?.finalGatewaySessionInstructions}
-              render={(value) => <CodeBlock value={value} />}
+              draft={previewDraft?.renderedStartupPrompt}
+              live={previewLive?.renderedStartupPrompt}
+              render={(value) => <CodeBlock value={value || ''} />}
             />
-          </PreviewBlock>
-          <PreviewBlock title="Gateway Prompt Output" description="Built from the same response builder used by `/api/v1/gateway/prompt`.">
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="mb-3">
+              <h3 className="text-base font-semibold text-slate-900">Runtime Tool Config</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                These are the actual runtime-exposed tool definitions after the code-driven registry is merged with admin text.
+              </p>
+            </div>
+            <PreviewModeContent
+              mode={previewMode}
+              draft={previewDraft?.runtimeToolDefinitions}
+              live={previewLive?.runtimeToolDefinitions}
+              render={(value) => <CodeBlock value={JSON.stringify(value || [], null, 2)} />}
+            />
+          </section>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="mb-3">
+              <h3 className="text-base font-semibold text-slate-900">Gateway Prompt Output</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                This is the output of the same gateway prompt response builder used by <code>/api/v1/gateway/prompt</code>.
+              </p>
+            </div>
             <PreviewModeContent
               mode={previewMode}
               draft={previewDraft?.gatewayPromptOutput}
               live={previewLive?.gatewayPromptOutput}
               render={(value) => <CodeBlock value={JSON.stringify(value || {}, null, 2)} />}
             />
-          </PreviewBlock>
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="mb-3">
+              <h3 className="text-base font-semibold text-slate-900">Effective Sections</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Use compare mode to see canonical-vs-override effects section by section.
+              </p>
+            </div>
+            <PreviewModeContent
+              mode={previewMode}
+              draft={previewDraft?.renderedSections}
+              live={previewLive?.renderedSections}
+              render={(value) => <CodeBlock value={JSON.stringify(value || [], null, 2)} />}
+            />
+          </section>
         </div>
       </section>
+
+      {status ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 shadow-sm">
+          {status}
+        </div>
+      ) : null}
     </section>
   );
 }

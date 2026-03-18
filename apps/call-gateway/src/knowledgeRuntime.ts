@@ -1,9 +1,6 @@
 import { performance } from "node:perf_hooks";
 import {
-  buildGatewaySessionInstructionsFromPromptConfig,
-  buildGreetingInstructionFromPromptConfig,
   buildPlannerOpenAiRequestBody,
-  buildResponseRestrictionsFromPromptConfig,
   buildRuntimeEmbeddingsRequestBody,
   executePlannerPgvectorRuntime,
   FORCE_SKIP_PLANNER,
@@ -35,12 +32,12 @@ export type GatewayPromptPayload = {
     runtime_entry_mode: string;
     initial_call_state: CallState;
     company_context_summary: string;
-    tenant_persona: string;
     business_call_intent_summary: string;
-    prompt_layers?: Record<string, unknown>;
+    prompt_blueprint?: Record<string, unknown>;
+    tenant_prompt_profile?: Record<string, unknown>;
+    rendered_prompt_sections?: Array<Record<string, unknown>>;
     approved_configuration: {
       runtime_profile: {
-        greeting_text: string;
         session_config: any;
         tool_policy: any;
         wording_defaults: any;
@@ -65,14 +62,8 @@ export type GatewayRuntimeTurnResponse = {
   matched_overrides: Array<Record<string, unknown>>;
   matched_guardrails: Array<Record<string, unknown>>;
   call_state: CallState;
-  response_restrictions: string[];
   retrieval_telemetry: Record<string, unknown>;
   token_counts: Record<string, unknown>;
-  instruction_sections: {
-    current_context: string;
-    approved_facts: string;
-    response_rules: string;
-  };
 };
 
 type RuntimeTurnInput = {
@@ -198,22 +189,6 @@ function deriveRuntimeMode(answerPacket: Record<string, unknown>, matchedGuardra
   return normalizeText(answerPacket.runtime_mode) || "clarify";
 }
 
-function buildResponseRestrictions(
-  runtimeEntryMode: string,
-  matchedGuardrails: Array<Record<string, unknown>>,
-  matchedOverrides: Array<Record<string, unknown>>,
-  configuration: GatewayPromptPayload["knowledge_runtime"]["approved_configuration"],
-  promptLayers: Record<string, unknown> | undefined
-) {
-  return buildResponseRestrictionsFromPromptConfig({
-    promptConfig: promptLayers || null,
-    runtimeEntryMode,
-    conciseResponses: configuration.runtime_profile.runtime_defaults?.concise_responses,
-    matchedOverrides,
-    matchedGuardrails
-  });
-}
-
 function buildCompatibilityBundle(
   answerPacket: Record<string, any>,
   promptPayload: GatewayPromptPayload,
@@ -269,57 +244,9 @@ function buildCompatibilityBundle(
     selected_answer_facts: selectedFacts,
     missing_critical_slots: [],
     state_delta: {},
-    response_rules: [],
     confidence_score: getRuntimeBundleConfidenceScore(answerPacket.coverage || []),
     forced_support_mode: FORCED_SUPPORT_MODE_ACTIVE,
     forced_confidence_score: FORCED_SUPPORT_MODE_ACTIVE ? FORCED_RUNTIME_CONFIDENCE_SCORE : undefined
-  };
-}
-
-function renderTurnInstructionSections(
-  systemPrompt: string,
-  responseRestrictions: string[],
-  answerPacket: Record<string, any>,
-  callState: CallState
-) {
-  const coverageLines = Array.isArray(answerPacket.coverage)
-    ? answerPacket.coverage.map((item: any) => `- ${normalizeText(item.requested_coverage_item_text)} [${normalizeText(item.support_strength)}]`)
-    : [];
-  return {
-    current_context: [
-      `Current stage: ${callState.current_stage}`,
-      `Current mode: ${normalizeText(answerPacket.runtime_mode) || "answer"}`,
-      `Active assignment: ${normalizeText(callState.active_domain_id)}${normalizeText(callState.active_subdomain_id) ? ` / ${normalizeText(callState.active_subdomain_id)}` : ""}`,
-      "Coverage requested:",
-      ...(coverageLines.length ? coverageLines : ["- none"])
-    ].join("\n"),
-    approved_facts: [
-      "Direct answer points:",
-      ...((Array.isArray(answerPacket.direct_answer_points) && answerPacket.direct_answer_points.length)
-        ? answerPacket.direct_answer_points.map((item: any) => `- ${normalizeText(item)}`)
-        : ["- none"]),
-      "",
-      "Qualifiers:",
-      ...((Array.isArray(answerPacket.qualifiers) && answerPacket.qualifiers.length)
-        ? answerPacket.qualifiers.map((item: any) => `- ${normalizeText(item)}`)
-        : ["- none"]),
-      "",
-      "Limits or exclusions:",
-      ...((Array.isArray(answerPacket.limits_or_exclusions) && answerPacket.limits_or_exclusions.length)
-        ? answerPacket.limits_or_exclusions.map((item: any) => `- ${normalizeText(item)}`)
-        : ["- none"]),
-      "",
-      "Next steps:",
-      ...((Array.isArray(answerPacket.next_step_options) && answerPacket.next_step_options.length)
-        ? answerPacket.next_step_options.map((item: any) => `- ${normalizeText(item)}`)
-        : ["- none"]),
-      "",
-      "Unsupported requested items:",
-      ...((Array.isArray(answerPacket.unsupported_requested_items) && answerPacket.unsupported_requested_items.length)
-        ? answerPacket.unsupported_requested_items.map((item: any) => `- ${normalizeText(item)}`)
-        : ["- none"])
-    ].join("\n"),
-    response_rules: `${systemPrompt}\n\nResponse rules:\n- ${responseRestrictions.join("\n- ")}`
   };
 }
 
@@ -342,24 +269,7 @@ export function isKnowledgeReceptionistPromptPayload(payload: GatewayPromptPaylo
 }
 
 export function buildGatewaySessionInstructions(payload: GatewayPromptPayload) {
-  return buildGatewaySessionInstructionsFromPromptConfig({
-    promptConfig: payload.knowledge_runtime.prompt_layers || null,
-    systemPrompt: payload.system_prompt,
-    companyContextSummary: payload.knowledge_runtime.company_context_summary,
-    businessCallIntentSummary: payload.knowledge_runtime.business_call_intent_summary,
-    tenantGreeting: payload.tenant_greeting,
-    toolPolicy: payload.knowledge_runtime.approved_configuration.runtime_profile.tool_policy || {},
-    currentStage: payload.knowledge_runtime.initial_call_state.current_stage,
-    activeDomainId: payload.knowledge_runtime.active_domain_id,
-    activeSubdomainId: payload.knowledge_runtime.active_subdomain_id
-  });
-}
-
-export function buildGatewayGreetingInstruction(payload: GatewayPromptPayload) {
-  return buildGreetingInstructionFromPromptConfig(
-    payload.knowledge_runtime.prompt_layers || null,
-    payload.tenant_greeting
-  );
+  return payload.system_prompt;
 }
 
 export function initializeKnowledgeCallState(payload: GatewayPromptPayload): CallState {
@@ -444,20 +354,7 @@ export function formatKnowledgeRuntimeToolOutput(result: GatewayRuntimeTurnRespo
     current_stage: result.call_state.current_stage,
     active_domain: result.runtime_bundle.active_domain_id,
     active_subdomain: result.runtime_bundle.active_subdomain_id,
-    response_rules: result.response_restrictions,
-    answer_packet: result.answer_packet,
-    matched_overrides: result.matched_overrides.map((item) => ({
-      type: item.override_type,
-      title: item.title,
-      body: item.body
-    })),
-    matched_guardrails: result.matched_guardrails.map((item) => ({
-      type: item.guardrail_type,
-      mode: item.mode,
-      approved_response_pattern: item.approved_response_pattern,
-      required_next_step: item.required_next_step,
-      risk_level: item.risk_level
-    }))
+    answer_packet: result.answer_packet
   };
 }
 
@@ -511,7 +408,9 @@ export async function fetchKnowledgeRuntimeTurn(
     buildId,
     queryText: query,
     recentConversationSummary,
-    tenantPersona: promptPayload.knowledge_runtime.tenant_persona,
+    tenantPersona: normalizeText(promptPayload.knowledge_runtime.company_context_summary)
+      || normalizeText(promptPayload.knowledge_runtime.tenant_prompt_profile?.business_name)
+      || "Business context is provided in the startup prompt.",
     businessCallIntentSummary: promptPayload.knowledge_runtime.business_call_intent_summary,
     currentStage: normalizeText(body.callState.current_stage) || "answer_or_route",
     ...(loaded.assets.planner_model ? { plannerModel: loaded.assets.planner_model } : {}),
@@ -536,7 +435,9 @@ export async function fetchKnowledgeRuntimeTurn(
         buildId,
         queryText: query,
         recentConversationSummary,
-        tenantPersona: promptPayload.knowledge_runtime.tenant_persona,
+        tenantPersona: normalizeText(promptPayload.knowledge_runtime.company_context_summary)
+          || normalizeText(promptPayload.knowledge_runtime.tenant_prompt_profile?.business_name)
+          || "Business context is provided in the startup prompt.",
         businessCallIntentSummary: promptPayload.knowledge_runtime.business_call_intent_summary,
         currentStage: normalizeText(body.callState.current_stage) || "answer_or_route",
         ...(loaded.assets.planner_model ? { plannerModel: loaded.assets.planner_model } : {})
@@ -557,23 +458,10 @@ export async function fetchKnowledgeRuntimeTurn(
     active_subdomain_id: loaded.assets.primarySubdomainId,
     uncertainty_mode: runtimeMode === "clarify" ? "needs_clarification" : null
   };
-  const responseRestrictions = buildResponseRestrictions(
-    body.callState.runtime_entry_mode,
-    matchedGuardrails,
-    matchedOverrides,
-    configuration,
-    promptPayload.knowledge_runtime.prompt_layers
-  );
   const finalAnswerPacket = {
     ...runtimeResult.answerPacket,
     runtime_mode: runtimeMode
   };
-  const instructionSections = renderTurnInstructionSections(
-    promptPayload.system_prompt,
-    responseRestrictions,
-    finalAnswerPacket,
-    nextCallState
-  );
 
   const runtimeBundlePersistStarted = performance.now();
   await pool.query(
@@ -625,7 +513,6 @@ export async function fetchKnowledgeRuntimeTurn(
     matched_overrides: matchedOverrides,
     matched_guardrails: matchedGuardrails,
     call_state: nextCallState,
-    response_restrictions: responseRestrictions,
     retrieval_telemetry: {
       query,
       duration_ms: durationMs,
@@ -656,8 +543,7 @@ export async function fetchKnowledgeRuntimeTurn(
       startup_instruction_tokens: promptPayload.knowledge_runtime.token_counts?.startup_instruction_tokens ?? 0,
       answer_packet_tokens: Number(finalAnswerPacket.token_counts?.packet_tokens || 0),
       runtime_bundle_tokens: estimateTokenCount(compatibilityBundle)
-    },
-    instruction_sections: instructionSections
+    }
   };
 }
 

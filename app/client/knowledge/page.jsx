@@ -1,9 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Autocomplete, Chip, TextField } from '@mui/material';
 import { Button } from '../../../components/ui/button';
-import { DEFAULT_PREFERRED_OUTCOME_OPTIONS, formatOutcomeLabel } from '../../../lib/knowledge-outcomes';
 import ClientPage from '../_components/ClientPage';
 
 function splitLines(value) {
@@ -89,27 +87,22 @@ function PreviewList({ title, items, emptyText = 'None.', formatter = (item) => 
 export default function KnowledgePage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState({ message: 'Loading knowledge workspace...', tone: 'warn' });
-  const [savingIntent, setSavingIntent] = useState(false);
-  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingPromptProfile, setSavingPromptProfile] = useState(false);
   const [buildBusy, setBuildBusy] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [publishingBuildId, setPublishingBuildId] = useState('');
   const [rollingBackBuildId, setRollingBackBuildId] = useState('');
 
-  const [intentForm, setIntentForm] = useState({
-    businessCallIntentId: '',
-    primaryGoal: '',
-    preferredOutcomes: DEFAULT_PREFERRED_OUTCOME_OPTIONS.map((item) => item.value),
-    toneRules: 'Be clear, short, and helpful on every turn.\nAnswer direct questions before continuing the script.\nAsk one question at a time.'
-  });
-  const [runtimeForm, setRuntimeForm] = useState({
+  const [promptProfileForm, setPromptProfileForm] = useState({
+    assistantName: '',
+    businessName: '',
     companyDescription: '',
-    greetingText: '',
-    voice: 'marin',
-    aiDisclosure: '',
-    uncertaintyPhrase: '',
-    pricingFallback: '',
-    closingPhrase: ''
+    openingLine: '',
+    aiDisclosureLine: '',
+    leadGoal: '',
+    requiredContactFields: '',
+    closingPhrase: '',
+    basicNoToolAllowedStatement: ''
   });
   const [buildForm, setBuildForm] = useState({ websiteUrl: '' });
   const [previewQuery, setPreviewQuery] = useState('');
@@ -129,8 +122,7 @@ export default function KnowledgePage() {
     }
     try {
       const [
-        intentData,
-        runtimeData,
+        promptProfileData,
         readinessData,
         buildData,
         overrideData,
@@ -138,8 +130,7 @@ export default function KnowledgePage() {
         outcomeData,
         documentData
       ] = await Promise.all([
-        fetchJson('/api/v1/knowledge/business-call-intent'),
-        fetchJson('/api/v1/knowledge/runtime-profile'),
+        fetchJson('/api/v1/knowledge/prompt-profile'),
         fetchJson('/api/v1/knowledge/readiness'),
         fetchJson('/api/v1/knowledge/builds'),
         fetchJson('/api/v1/knowledge/overrides'),
@@ -148,29 +139,20 @@ export default function KnowledgePage() {
         fetchJson('/api/v1/knowledge/uploaded-documents')
       ]);
 
-      const activeIntent = intentData?.activeIntent || intentData?.approvedIntent || intentData?.intents?.[0] || null;
-      const profile = runtimeData?.profile || null;
+      const promptProfile = promptProfileData?.profile || null;
       const readinessState = readinessData?.readiness || null;
       const builds = buildData?.builds || [];
 
-      setIntentForm({
-        businessCallIntentId: activeIntent?.business_call_intent_id || '',
-        primaryGoal: activeIntent?.primary_goal || '',
-        preferredOutcomes: Array.isArray(activeIntent?.preferred_outcomes_json)
-          ? activeIntent.preferred_outcomes_json
-          : DEFAULT_PREFERRED_OUTCOME_OPTIONS.map((item) => item.value),
-        toneRules: Array.isArray(activeIntent?.tone_rules_json)
-          ? activeIntent.tone_rules_json.join('\n')
-          : 'Be clear, short, and helpful on every turn.\nAnswer direct questions before continuing the script.\nAsk one question at a time.'
-      });
-      setRuntimeForm({
-        companyDescription: profile?.company_description || '',
-        greetingText: profile?.greeting_text || '',
-        voice: profile?.session_config?.voice || 'marin',
-        aiDisclosure: profile?.wording_defaults?.ai_disclosure || '',
-        uncertaintyPhrase: profile?.wording_defaults?.uncertainty_phrase || '',
-        pricingFallback: profile?.wording_defaults?.pricing_fallback || '',
-        closingPhrase: profile?.wording_defaults?.closing_phrase || ''
+      setPromptProfileForm({
+        assistantName: promptProfile?.assistant_name || '',
+        businessName: promptProfile?.business_name || '',
+        companyDescription: promptProfile?.company_description || '',
+        openingLine: promptProfile?.opening_line || '',
+        aiDisclosureLine: promptProfile?.ai_disclosure_line || '',
+        leadGoal: promptProfile?.lead_goal || '',
+        requiredContactFields: splitLines(promptProfile?.required_contact_fields || []).join('\n'),
+        closingPhrase: promptProfile?.closing_phrase || '',
+        basicNoToolAllowedStatement: promptProfile?.basic_no_tool_allowed_statement || ''
       });
       setReadiness(readinessState);
       setBuildState({
@@ -197,69 +179,37 @@ export default function KnowledgePage() {
     loadWorkspace();
   }, []);
 
-  const saveBusinessIntent = async () => {
-    setSavingIntent(true);
-    setStatus({ message: 'Saving Business Call Intent...', tone: 'warn' });
+  const savePromptProfile = async () => {
+    setSavingPromptProfile(true);
+    setStatus({ message: 'Saving receptionist presentation settings...', tone: 'warn' });
     try {
-      const data = await fetchJson('/api/v1/knowledge/business-call-intent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          intent: {
-            businessCallIntentId: intentForm.businessCallIntentId || undefined,
-            status: 'approved_live',
-            primaryGoal: intentForm.primaryGoal,
-            preferredOutcomes: Array.isArray(intentForm.preferredOutcomes) ? intentForm.preferredOutcomes : [],
-            toneRules: splitLines(intentForm.toneRules)
-          }
-        })
-      });
-      if (!data?.ok) {
-        setStatus({ message: data?.message || 'Could not save Business Call Intent.', tone: 'bad' });
-        return;
-      }
-      await loadWorkspace({ silent: true });
-      setStatus({ message: 'Business Call Intent saved.', tone: 'ok' });
-    } catch {
-      setStatus({ message: 'Could not save Business Call Intent.', tone: 'bad' });
-    } finally {
-      setSavingIntent(false);
-    }
-  };
-
-  const saveRuntimeProfile = async () => {
-    setSavingProfile(true);
-    setStatus({ message: 'Saving runtime profile...', tone: 'warn' });
-    try {
-      const data = await fetchJson('/api/v1/knowledge/runtime-profile', {
+      const data = await fetchJson('/api/v1/knowledge/prompt-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           profile: {
-            companyDescription: runtimeForm.companyDescription,
-            greetingText: runtimeForm.greetingText,
-            sessionConfig: {
-              voice: runtimeForm.voice
-            },
-            wordingDefaults: {
-              aiDisclosure: runtimeForm.aiDisclosure,
-              uncertaintyPhrase: runtimeForm.uncertaintyPhrase,
-              pricingFallback: runtimeForm.pricingFallback,
-              closingPhrase: runtimeForm.closingPhrase
-            }
+            assistantName: promptProfileForm.assistantName,
+            businessName: promptProfileForm.businessName,
+            companyDescription: promptProfileForm.companyDescription,
+            openingLine: promptProfileForm.openingLine,
+            aiDisclosureLine: promptProfileForm.aiDisclosureLine,
+            leadGoal: promptProfileForm.leadGoal,
+            requiredContactFields: splitLines(promptProfileForm.requiredContactFields),
+            closingPhrase: promptProfileForm.closingPhrase,
+            basicNoToolAllowedStatement: promptProfileForm.basicNoToolAllowedStatement
           }
         })
       });
       if (!data?.ok) {
-        setStatus({ message: data?.message || 'Could not save runtime profile.', tone: 'bad' });
+        setStatus({ message: data?.message || 'Could not save receptionist presentation settings.', tone: 'bad' });
         return;
       }
       await loadWorkspace({ silent: true });
-      setStatus({ message: 'Runtime profile saved.', tone: 'ok' });
+      setStatus({ message: 'Receptionist presentation settings saved.', tone: 'ok' });
     } catch {
-      setStatus({ message: 'Could not save runtime profile.', tone: 'bad' });
+      setStatus({ message: 'Could not save receptionist presentation settings.', tone: 'bad' });
     } finally {
-      setSavingProfile(false);
+      setSavingPromptProfile(false);
     }
   };
 
@@ -358,26 +308,6 @@ export default function KnowledgePage() {
     blockers: Array.isArray(readiness?.blockers) ? readiness.blockers : [],
     status: readiness?.status || 'not_started'
   }), [readiness]);
-  const preferredOutcomeOptions = useMemo(() => {
-    const seen = new Set();
-    const merged = [];
-    const sourceValues = [
-      ...(Array.isArray(callOutcomeSchema?.outcome_types_json) ? callOutcomeSchema.outcome_types_json : []),
-      ...(Array.isArray(intentForm.preferredOutcomes) ? intentForm.preferredOutcomes : []),
-      ...DEFAULT_PREFERRED_OUTCOME_OPTIONS.map((item) => item.value)
-    ];
-    for (const value of sourceValues) {
-      const normalized = String(value || '').trim();
-      if (!normalized || seen.has(normalized)) continue;
-      seen.add(normalized);
-      merged.push({ value: normalized, label: formatOutcomeLabel(normalized) });
-    }
-    return merged;
-  }, [callOutcomeSchema, intentForm.preferredOutcomes]);
-  const selectedPreferredOutcomeOptions = useMemo(
-    () => preferredOutcomeOptions.filter((option) => (intentForm.preferredOutcomes || []).includes(option.value)),
-    [preferredOutcomeOptions, intentForm.preferredOutcomes]
-  );
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewRuntimeBundle = preview?.runtimeBundle || null;
   const previewPlanner = preview?.planner || null;
@@ -403,111 +333,89 @@ export default function KnowledgePage() {
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="grid gap-3">
           <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Business Call Intent</h2>
-            <label>Primary Goal</label>
-            <textarea
-              value={intentForm.primaryGoal}
-              onChange={(event) => setIntentForm((current) => ({ ...current, primaryGoal: event.target.value }))}
-            />
-            <label className="mt-2.5">Preferred Outcomes</label>
-            <Autocomplete
-              multiple
-              disableCloseOnSelect
-              options={preferredOutcomeOptions}
-              value={selectedPreferredOutcomeOptions}
-              getOptionLabel={(option) => option.label}
-              isOptionEqualToValue={(option, value) => option.value === value.value}
-              onChange={(_, nextOptions) => setIntentForm((current) => ({
-                ...current,
-                preferredOutcomes: nextOptions.map((option) => option.value)
-              }))}
-              renderTags={(tagValue, getTagProps) => tagValue.map((option, index) => (
-                <Chip
-                  {...getTagProps({ index })}
-                  key={option.value}
-                  label={option.label}
-                  size="small"
-                />
-              ))}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Select one or more preferred outcomes"
-                  size="small"
-                />
-              )}
-              sx={{
-                mt: 1,
-                '& .MuiOutlinedInput-root': {
-                  backgroundColor: '#fff'
-                }
-              }}
-            />
-            <label className="mt-2.5">Tone Rules</label>
-            <textarea
-              value={intentForm.toneRules}
-              onChange={(event) => setIntentForm((current) => ({ ...current, toneRules: event.target.value }))}
-              style={{ minHeight: 120 }}
-            />
-            <div className="mt-3">
-              <Button onClick={saveBusinessIntent} disabled={savingIntent}>{savingIntent ? 'Saving...' : 'Save Intent'}</Button>
+            <h2 className="mt-0 text-lg font-semibold">Receptionist Presentation</h2>
+            <div className="text-sm text-slate-600">
+              These are the only prompt-adjacent fields tenants should control. The hidden behavior rules and tool policy stay on the admin side.
             </div>
-          </section>
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label>Assistant Name</label>
+                <input
+                  value={promptProfileForm.assistantName}
+                  onChange={(event) => setPromptProfileForm((current) => ({ ...current, assistantName: event.target.value }))}
+                />
+              </div>
+              <div>
+                <label>Business Name</label>
+                <input
+                  value={promptProfileForm.businessName}
+                  onChange={(event) => setPromptProfileForm((current) => ({ ...current, businessName: event.target.value }))}
+                />
+              </div>
+            </div>
 
-          <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Runtime Profile</h2>
-            <label>Company Description</label>
+            <label className="mt-2.5">Company Description</label>
             <textarea
-              value={runtimeForm.companyDescription}
-              onChange={(event) => setRuntimeForm((current) => ({ ...current, companyDescription: event.target.value }))}
+              value={promptProfileForm.companyDescription}
+              onChange={(event) => setPromptProfileForm((current) => ({ ...current, companyDescription: event.target.value }))}
               style={{ minHeight: 96 }}
             />
             <div className="mt-1 text-sm text-slate-600">
-              Feeds the live startup company-context block so the receptionist knows what the business actually does before any lookup.
+              This becomes the business-context narrative in the startup prompt. If you leave it blank, EveryCall inherits from the latest approved website/build summary when possible.
             </div>
-            <label>Greeting</label>
+
+            <label className="mt-2.5">Opening Line</label>
             <textarea
-              value={runtimeForm.greetingText}
-              onChange={(event) => setRuntimeForm((current) => ({ ...current, greetingText: event.target.value }))}
+              value={promptProfileForm.openingLine}
+              onChange={(event) => setPromptProfileForm((current) => ({ ...current, openingLine: event.target.value }))}
             />
+
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
-                <label>Voice</label>
-                <select value={runtimeForm.voice} onChange={(event) => setRuntimeForm((current) => ({ ...current, voice: event.target.value }))}>
-                  {['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'].map((voice) => (
-                    <option key={voice} value={voice}>{voice}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
                 <label>AI Disclosure</label>
-                <input
-                  value={runtimeForm.aiDisclosure}
-                  onChange={(event) => setRuntimeForm((current) => ({ ...current, aiDisclosure: event.target.value }))}
+                <textarea
+                  value={promptProfileForm.aiDisclosureLine}
+                  onChange={(event) => setPromptProfileForm((current) => ({ ...current, aiDisclosureLine: event.target.value }))}
                 />
               </div>
               <div>
-                <label>Uncertainty Phrase</label>
+                <label>Lead Goal</label>
                 <input
-                  value={runtimeForm.uncertaintyPhrase}
-                  onChange={(event) => setRuntimeForm((current) => ({ ...current, uncertaintyPhrase: event.target.value }))}
-                />
-              </div>
-              <div>
-                <label>Pricing Fallback</label>
-                <input
-                  value={runtimeForm.pricingFallback}
-                  onChange={(event) => setRuntimeForm((current) => ({ ...current, pricingFallback: event.target.value }))}
+                  value={promptProfileForm.leadGoal}
+                  onChange={(event) => setPromptProfileForm((current) => ({ ...current, leadGoal: event.target.value }))}
+                  placeholder="callback information"
                 />
               </div>
             </div>
+
+            <label className="mt-2.5">Required Contact Fields</label>
+            <textarea
+              value={promptProfileForm.requiredContactFields}
+              onChange={(event) => setPromptProfileForm((current) => ({ ...current, requiredContactFields: event.target.value }))}
+              style={{ minHeight: 96 }}
+              placeholder={'caller’s name\ncaller’s best phone number'}
+            />
+
             <label className="mt-2.5">Closing Phrase</label>
             <input
-              value={runtimeForm.closingPhrase}
-              onChange={(event) => setRuntimeForm((current) => ({ ...current, closingPhrase: event.target.value }))}
+              value={promptProfileForm.closingPhrase}
+              onChange={(event) => setPromptProfileForm((current) => ({ ...current, closingPhrase: event.target.value }))}
             />
+
+            <label className="mt-2.5">Basic No-Tool Allowed Statement</label>
+            <textarea
+              value={promptProfileForm.basicNoToolAllowedStatement}
+              onChange={(event) => setPromptProfileForm((current) => ({ ...current, basicNoToolAllowedStatement: event.target.value }))}
+              style={{ minHeight: 96 }}
+            />
+            <div className="mt-1 text-sm text-slate-600">
+              This is the narrow general business statement the receptionist may say without running a business-specific lookup.
+            </div>
+
             <div className="mt-3">
-              <Button onClick={saveRuntimeProfile} disabled={savingProfile}>{savingProfile ? 'Saving...' : 'Save Runtime Profile'}</Button>
+              <Button onClick={savePromptProfile} disabled={savingPromptProfile}>
+                {savingPromptProfile ? 'Saving...' : 'Save Receptionist Presentation'}
+              </Button>
             </div>
           </section>
 

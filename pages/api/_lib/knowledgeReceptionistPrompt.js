@@ -1,19 +1,25 @@
 import crypto from "node:crypto";
 import {
-  buildGatewaySessionInstructionsFromPromptConfig,
-  buildGatewaySystemPromptFromPromptConfig,
-  buildResponseRestrictionsFromPromptConfig,
-  buildTenantPersonaFromPromptConfig,
-  executePlannerPgvectorRuntime,
   FORCED_RUNTIME_CONFIDENCE_SCORE,
   FORCED_SUPPORT_MODE_ACTIVE,
   getRuntimeBundleConfidenceScore,
   selectMatchedGuardrails as selectSharedMatchedGuardrails,
-  selectMatchedOverrides as selectSharedMatchedOverrides
+  selectMatchedOverrides as selectSharedMatchedOverrides,
+  executePlannerPgvectorRuntime
 } from "@everycall/contracts";
 import { getKnowledgeBuild, loadActiveKnowledgeBuildAssets } from "./knowledgeReceptionistBuilds.js";
 import { loadApprovedConfigurationArtifacts } from "./knowledgeReceptionistConfig.js";
-import { loadSystemPromptConfig } from "./systemPromptConfig.js";
+import { buildPromptToolDefinitions, loadPromptRuntimeContext } from "./promptBlueprints.js";
+
+const DEFAULT_STAGE_IDS = [
+  "opening",
+  "discover_need",
+  "clarify_if_needed",
+  "answer_or_route",
+  "reassure_briefly",
+  "advance_next_step",
+  "confirm_and_close"
+];
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -24,7 +30,9 @@ function asObject(value) {
 }
 
 function asStringArray(value) {
-  return Array.isArray(value) ? value.map((item) => normalizeText(item)).filter(Boolean) : [];
+  return Array.isArray(value)
+    ? value.map((item) => normalizeText(item)).filter(Boolean)
+    : [];
 }
 
 function uniqueValues(values) {
@@ -69,11 +77,11 @@ function summarizeIntent(intent, runtimeEntryMode) {
       intent_type: runtimeEntryMode === "setup_interview" ? "setup_interview_intent" : "business_call_intent",
       primary_goal: runtimeEntryMode === "setup_interview"
         ? "Collect and confirm business facts needed for launch readiness."
-        : "Welcome callers, answer briefly, and move them toward the correct next step.",
+        : "Welcome callers, answer direct questions, and move them toward the right next step.",
       summary: runtimeEntryMode === "setup_interview"
         ? "Guide the owner through a structured setup interview and confirm important facts."
         : "Answer direct caller questions from approved business truth and move them toward the right next step.",
-      stage_ids: []
+      stage_ids: DEFAULT_STAGE_IDS
     };
   }
   const stageIds = asStringArray(
@@ -89,24 +97,24 @@ function summarizeIntent(intent, runtimeEntryMode) {
     primary_goal: normalizeText(intent.primary_goal),
     summary: normalizeText(intent.primary_goal)
       || (runtimeEntryMode === "setup_interview"
-        ? "Guide the owner through a structured setup interview and confirm the approved business truth."
-        : "Welcome callers, answer directly from approved business truth, and move them toward the next supported step."),
-    stage_ids: stageIds
+        ? "Guide the owner through a structured setup interview and confirm approved business truth."
+        : "Answer direct caller questions from approved business truth and move them toward the right next step."),
+    stage_ids: stageIds.length ? stageIds : DEFAULT_STAGE_IDS
   };
 }
 
 function normalizeRuntimeProfile(profile, tenantKey) {
-  if (!profile) return null;
+  const source = asObject(profile);
   return {
-    tenant_id: normalizeText(profile.tenant_key || profile.tenant_id) || tenantKey,
-    company_description: normalizeText(profile.company_description || profile.companyDescription),
-    greeting_text: normalizeText(profile.greeting_text || profile.greetingText),
-    session_config: asObject(profile.session_config || profile.sessionConfig),
-    tool_policy: asObject(profile.tool_policy || profile.toolPolicy),
-    wording_defaults: asObject(profile.wording_defaults || profile.wordingDefaults),
-    runtime_defaults: asObject(profile.runtime_defaults || profile.runtimeDefaults),
-    updated_at: profile.updated_at ? new Date(profile.updated_at).toISOString() : null,
-    created_at: profile.created_at ? new Date(profile.created_at).toISOString() : null
+    tenant_id: normalizeText(source.tenant_key || source.tenant_id) || tenantKey,
+    company_description: normalizeText(source.company_description || source.companyDescription),
+    greeting_text: normalizeText(source.greeting_text || source.greetingText),
+    session_config: asObject(source.session_config || source.sessionConfig),
+    tool_policy: asObject(source.tool_policy || source.toolPolicy),
+    wording_defaults: asObject(source.wording_defaults || source.wordingDefaults),
+    runtime_defaults: asObject(source.runtime_defaults || source.runtimeDefaults),
+    updated_at: source.updated_at ? new Date(source.updated_at).toISOString() : null,
+    created_at: source.created_at ? new Date(source.created_at).toISOString() : null
   };
 }
 
@@ -195,7 +203,7 @@ function createInitialCallState({
     call_id: callId,
     tenant_id: tenantKey,
     runtime_entry_mode: runtimeEntryMode,
-    current_stage: normalizeText(currentStage) || intentSummary.stage_ids[0] || (runtimeEntryMode === "setup_interview" ? "opening" : "discover_need"),
+    current_stage: normalizeText(currentStage) || intentSummary.stage_ids[0] || "opening",
     completed_stages: [],
     skipped_stages: [],
     active_domain_id: normalizeText(assignments[0]?.domain_id) || null,
@@ -210,28 +218,6 @@ function createInitialCallState({
     outcome_in_progress: null,
     uncertainty_mode: null
   };
-}
-
-function buildTenantPersona(runtimeProfile, intentSummary, promptConfig = null) {
-  return buildTenantPersonaFromPromptConfig(promptConfig, runtimeProfile, intentSummary);
-}
-
-function buildResponseRestrictions(runtimeEntryMode, matchedGuardrails = [], matchedOverrides = [], configuration = {}) {
-  return buildResponseRestrictionsFromPromptConfig({
-    promptConfig: configuration.prompt_layers || null,
-    runtimeEntryMode,
-    conciseResponses: configuration.runtime_profile?.runtime_defaults?.concise_responses,
-    matchedGuardrails,
-    matchedOverrides
-  });
-}
-
-function deriveRuntimeMode(answerPacket, matchedGuardrails = []) {
-  const guardrailModes = uniqueValues((matchedGuardrails || []).map((item) => normalizeText(item.mode)));
-  if (guardrailModes.includes("emergency_redirect")) return "emergency_redirect";
-  if (guardrailModes.includes("handoff")) return "handoff";
-  if (guardrailModes.includes("clarify")) return "clarify";
-  return normalizeText(answerPacket?.runtime_mode) || "clarify";
 }
 
 function buildCompatibilityBundle(answerPacket, runtimeEntryMode, build, cardResultsByCoverageItem = {}, factResultsByCoverageItem = {}) {
@@ -283,55 +269,18 @@ function buildCompatibilityBundle(answerPacket, runtimeEntryMode, build, cardRes
     selected_answer_facts: selectedFacts,
     missing_critical_slots: [],
     state_delta: {},
-    response_rules: [],
     confidence_score: getRuntimeBundleConfidenceScore(answerPacket.coverage || []),
     forced_support_mode: FORCED_SUPPORT_MODE_ACTIVE,
     forced_confidence_score: FORCED_SUPPORT_MODE_ACTIVE ? FORCED_RUNTIME_CONFIDENCE_SCORE : undefined
   };
 }
 
-function renderAnswerPacketInstructions(answerPacket, responseRestrictions) {
-  const coverageLines = (answerPacket.coverage || []).map((item) => (
-    `- ${item.requested_coverage_item_text} [${item.support_strength}]`
-  ));
-  const direct = (answerPacket.direct_answer_points || []).map((item) => `- ${item}`).join("\n") || "- none";
-  const qualifiers = (answerPacket.qualifiers || []).map((item) => `- ${item}`).join("\n") || "- none";
-  const limits = (answerPacket.limits_or_exclusions || []).map((item) => `- ${item}`).join("\n") || "- none";
-  const nextSteps = (answerPacket.next_step_options || []).map((item) => `- ${item}`).join("\n") || "- none";
-  const unsupported = (answerPacket.unsupported_requested_items || []).map((item) => `- ${item}`).join("\n") || "- none";
-  return {
-    current_context: `Coverage requested:\n${coverageLines.join("\n") || "- none"}`,
-    approved_facts: [
-      "Direct answer points:",
-      direct,
-      "",
-      "Qualifiers:",
-      qualifiers,
-      "",
-      "Limits or exclusions:",
-      limits,
-      "",
-      "Next steps:",
-      nextSteps,
-      "",
-      "Unsupported requested items:",
-      unsupported
-    ].join("\n"),
-    response_rules: `Response rules:\n- ${responseRestrictions.join("\n- ")}`
-  };
-}
-
-function renderGatewaySystemPrompt({ tenantPersona, promptConfig }) {
-  return buildGatewaySystemPromptFromPromptConfig(promptConfig, tenantPersona);
-}
-
-function buildPromptPreview(answerPacket, responseRestrictions) {
-  return [
-    "Answer packet:",
-    JSON.stringify(answerPacket, null, 2),
-    "",
-    `Response rules:\n- ${responseRestrictions.join("\n- ")}`
-  ].join("\n");
+function deriveRuntimeMode(answerPacket, matchedGuardrails = []) {
+  const guardrailModes = uniqueValues((matchedGuardrails || []).map((item) => normalizeText(item.mode)));
+  if (guardrailModes.includes("emergency_redirect")) return "emergency_redirect";
+  if (guardrailModes.includes("handoff")) return "handoff";
+  if (guardrailModes.includes("clarify")) return "clarify";
+  return normalizeText(answerPacket?.runtime_mode) || "clarify";
 }
 
 async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input = {}) {
@@ -342,9 +291,15 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
   if (!build) {
     throw new Error(buildId ? "build_not_found" : "no_active_build");
   }
-  const [{ businessCallIntent, overrides, guardrails, readiness, callOutcomeSchema, runtimeProfile }, setupInterviewIntent] = await Promise.all([
+
+  const [{ businessCallIntent, overrides, guardrails, readiness, callOutcomeSchema, runtimeProfile }, setupInterviewIntent, promptRuntime] = await Promise.all([
     loadApprovedConfigurationArtifacts(db, tenantKey),
-    runtimeEntryMode === "setup_interview" ? loadSetupInterviewIntent(db, tenantKey) : Promise.resolve(null)
+    runtimeEntryMode === "setup_interview" ? loadSetupInterviewIntent(db, tenantKey) : Promise.resolve(null),
+    loadPromptRuntimeContext(db, tenantKey, {
+      promptBlueprintOverride: input.promptBlueprintOverride || input.prompt_blueprint_override || null,
+      tenantPromptProfileOverride: input.tenantPromptProfileOverride || input.tenant_prompt_profile_override || null,
+      sectionOverridesOverride: input.sectionOverridesOverride || input.section_overrides_override || null
+    })
   ]);
 
   const intentSummary = summarizeIntent(
@@ -352,22 +307,17 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
     runtimeEntryMode
   );
 
-  const runtimeProfileOverride = input.runtimeProfileOverride || input.runtime_profile_override || null;
-  const normalizedRuntimeProfile = runtimeProfileOverride
-    ? normalizeRuntimeProfile(runtimeProfileOverride, tenantKey)
-    : normalizeRuntimeProfile(runtimeProfile, tenantKey);
-
   return {
     build,
     configuration: {
-      runtime_profile: normalizedRuntimeProfile,
+      runtime_profile: normalizeRuntimeProfile(runtimeProfile, tenantKey),
       overrides: (overrides || []).map((item) => normalizeOverrideForContract(item, tenantKey)).filter(Boolean),
       guardrails: (guardrails || []).map((item) => normalizeGuardrailForContract(item, tenantKey)).filter(Boolean),
       call_outcome_schema: normalizeCallOutcomeSchema(callOutcomeSchema) || undefined,
       readiness: normalizeReadinessForContract(readiness, tenantKey) || undefined
     },
     intentSummary,
-    companyContextSummary: normalizeText(normalizedRuntimeProfile?.company_description)
+    promptRuntime
   };
 }
 
@@ -399,13 +349,8 @@ export function buildFieldSchemaFromOutcomeSchema(callOutcomeSchema, fallbackFie
 export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) {
   const runtimeEntryMode = normalizeText(input.runtimeEntryMode || input.runtime_entry_mode) || "customer_call";
   const callId = normalizeText(input.callId || input.call_id || input.callSid || input.call_sid) || createId("call");
-  const promptConfigOverride = input.promptConfigOverride || input.prompt_config_override || null;
-  const [promptLayers, gatewayContext] = await Promise.all([
-    Promise.resolve(promptConfigOverride || loadSystemPromptConfig(db)),
-    loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input)
-  ]);
-  const { build, configuration, intentSummary, companyContextSummary } = gatewayContext;
-  configuration.prompt_layers = promptLayers;
+  const gatewayContext = await loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input);
+  const { build, configuration, intentSummary, promptRuntime } = gatewayContext;
   const initialCallState = createInitialCallState({
     tenantKey,
     callId,
@@ -414,36 +359,24 @@ export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) 
     intentSummary,
     currentStage: intentSummary.stage_ids[0]
   });
-  const tenantPersona = buildTenantPersonaFromPromptConfig(promptLayers, configuration.runtime_profile, intentSummary);
-  const systemPrompt = renderGatewaySystemPrompt({ tenantPersona, promptConfig: promptLayers });
-  const startupSessionInstructions = buildGatewaySessionInstructionsFromPromptConfig({
-    promptConfig: promptLayers,
-    systemPrompt,
-    companyContextSummary,
-    businessCallIntentSummary: intentSummary.summary,
-    tenantGreeting: configuration.runtime_profile?.greeting_text || "",
-    toolPolicy: configuration.runtime_profile?.tool_policy || {},
-    currentStage: initialCallState.current_stage,
-    activeDomainId: initialCallState.active_domain_id,
-    activeSubdomainId: initialCallState.active_subdomain_id
-  });
-
   return {
     build,
-    systemPrompt,
-    tenantPersona,
-    companyContextSummary,
-    promptLayers,
+    systemPrompt: promptRuntime.rendered.startupPrompt,
+    tenantPromptProfile: promptRuntime.tenantProfile,
+    promptBlueprint: promptRuntime.blueprint,
+    renderedPromptSections: promptRuntime.rendered.renderedSections,
+    sectionOverrides: promptRuntime.sectionOverrides,
+    companyContextSummary: promptRuntime.tenantProfile.company_description,
     businessCallIntentSummary: intentSummary.summary,
     approvedConfiguration: configuration,
     initialCallState,
     tokenCounts: {
-      startup_instruction_tokens: estimateTokenCount(startupSessionInstructions),
+      startup_instruction_tokens: estimateTokenCount(promptRuntime.rendered.startupPrompt),
       prompt_payload_tokens: estimateTokenCount({
         active_build_id: build.build_id,
-        company_context_summary: companyContextSummary,
-        tenant_persona: tenantPersona,
-        business_call_intent_summary: intentSummary.summary
+        company_context_summary: promptRuntime.tenantProfile.company_description,
+        business_call_intent_summary: intentSummary.summary,
+        tenant_prompt_profile: promptRuntime.tenantProfile
       })
     }
   };
@@ -457,23 +390,17 @@ export async function assembleKnowledgeRuntimeTurn(db, tenantKey, input = {}) {
   }
 
   const callId = normalizeText(input.callId || input.call_id || input.callSid || input.call_sid) || createId("call");
-  const promptConfigOverride = input.promptConfigOverride || input.prompt_config_override || null;
-  const [promptLayers, runtimeContext] = await Promise.all([
-    Promise.resolve(promptConfigOverride || loadSystemPromptConfig(db)),
-    loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input)
-  ]);
-  const { build, configuration, intentSummary } = runtimeContext;
-  configuration.prompt_layers = promptLayers;
+  const runtimeContext = await loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input);
+  const { build, configuration, intentSummary, promptRuntime } = runtimeContext;
   const callState = asObject(input.callState || input.call_state);
   const currentStage = normalizeText(callState.current_stage) || intentSummary.stage_ids[0] || "answer_or_route";
-  const tenantPersona = buildTenantPersonaFromPromptConfig(promptLayers, configuration.runtime_profile, intentSummary);
 
   const runtimeResult = await executePlannerPgvectorRuntime(db, {
     tenantKey,
     buildId: build.build_id,
     queryText: query,
     recentConversationSummary: normalizeText(input.recentConversationSummary || input.recent_conversation_summary || ""),
-    tenantPersona,
+    tenantPersona: promptRuntime.tenantProfile.company_description || promptRuntime.tenantProfile.business_name,
     businessCallIntentSummary: intentSummary.summary,
     currentStage,
     plannerModel: build.planner_model || undefined,
@@ -491,12 +418,6 @@ export async function assembleKnowledgeRuntimeTurn(db, tenantKey, input = {}) {
   const matchedOverrides = selectSharedMatchedOverrides(configuration.overrides || [], query, compatibilityBundle);
   const matchedGuardrails = selectSharedMatchedGuardrails(configuration.guardrails || [], query, compatibilityBundle, callState);
   const runtimeMode = deriveRuntimeMode(runtimeResult.answerPacket, matchedGuardrails);
-  const responseRestrictions = buildResponseRestrictions(runtimeEntryMode, matchedGuardrails, matchedOverrides, configuration);
-  const instructionSections = renderAnswerPacketInstructions(
-    { ...runtimeResult.answerPacket, runtime_mode: runtimeMode },
-    responseRestrictions
-  );
-
   const nextCallState = {
     ...createInitialCallState({
       tenantKey,
@@ -507,13 +428,11 @@ export async function assembleKnowledgeRuntimeTurn(db, tenantKey, input = {}) {
       currentStage
     }),
     ...callState,
-    current_stage: runtimeMode === "clarify" ? "clarify_if_needed" : (runtimeMode === "handoff" || runtimeMode === "emergency_redirect" ? "advance_next_step" : currentStage),
+    current_stage: runtimeMode === "clarify" ? "clarify_if_needed" : ((runtimeMode === "handoff" || runtimeMode === "emergency_redirect") ? "advance_next_step" : currentStage),
     last_turn_intent: query,
     last_bundle_id: runtimeResult.answerPacket.answer_packet_id,
     uncertainty_mode: runtimeMode === "clarify" ? "needs_clarification" : null
   };
-
-  const promptPreview = buildPromptPreview(runtimeResult.answerPacket, responseRestrictions);
 
   return {
     build,
@@ -526,19 +445,17 @@ export async function assembleKnowledgeRuntimeTurn(db, tenantKey, input = {}) {
       runtime_mode: runtimeMode
     },
     planner: runtimeResult.planner,
-    promptPreview,
+    promptPreview: promptRuntime.rendered.startupPrompt,
     promptPayloadTokens: estimateTokenCount(runtimeResult.answerPacket),
     matchedOverrides,
     matchedGuardrails,
     callState: nextCallState,
-    responseRestrictions,
     retrievalTelemetry: {
       ...runtimeResult.tokenCounts,
       planner_coverage_items: runtimeResult.planner.coverage_items,
       coverage: runtimeResult.answerPacket.coverage,
       coverage_support_events: runtimeResult.coverageSupportEvents
     },
-    instructionSections,
     tokenCounts: {
       runtime_bundle_tokens: estimateTokenCount(compatibilityBundle),
       prompt_payload_tokens: estimateTokenCount(runtimeResult.answerPacket),
@@ -559,7 +476,20 @@ export async function assembleKnowledgeRuntimePreview(db, tenantKey, input = {})
     matchedOverrides: turn.matchedOverrides,
     matchedGuardrails: turn.matchedGuardrails,
     tokenCounts: turn.tokenCounts,
-    retrievalTelemetry: turn.retrievalTelemetry,
-    instructionSections: turn.instructionSections
+    retrievalTelemetry: turn.retrievalTelemetry
+  };
+}
+
+export async function buildGatewayPromptArtifacts(db, tenantKey, input = {}) {
+  const gatewayPrompt = await assembleKnowledgeGatewayPrompt(db, tenantKey, input);
+  const fieldSchema = buildFieldSchemaFromOutcomeSchema(
+    gatewayPrompt.approvedConfiguration.call_outcome_schema,
+    {}
+  );
+  const toolDefinitions = buildPromptToolDefinitions(gatewayPrompt.promptBlueprint, fieldSchema);
+  return {
+    gatewayPrompt,
+    fieldSchema,
+    toolDefinitions
   };
 }
