@@ -270,6 +270,86 @@ function buildRenderedSectionMap(renderedSections) {
   return Object.fromEntries((renderedSections || []).map((section) => [section.section_id, section]));
 }
 
+const SECTION_GROUPS = [
+  {
+    id: 'identity-context',
+    title: 'Identity And Context',
+    description: 'Who the assistant is, what the business does, and the fixed opening/wording context.',
+    defaultOpen: true,
+    sectionIds: ['role_objective', 'business_context', 'wording_preferences']
+  },
+  {
+    id: 'conversation-behavior',
+    title: 'Conversation Behavior',
+    description: 'How the assistant should sound, discover context, and move through the conversation.',
+    defaultOpen: false,
+    sectionIds: [
+      'priority_order',
+      'personality_tone',
+      'variety',
+      'sample_phrase_guidance',
+      'core_behavioral_rules',
+      'conversational_attunement',
+      'discovery_and_fit',
+      'readiness_before_callback_capture',
+      'transition_to_callback_capture'
+    ]
+  },
+  {
+    id: 'lead-capture-safety',
+    title: 'Lead Capture And Safety',
+    description: 'Callback capture, accuracy, safety, uncertainty handling, closing, and final reminders.',
+    defaultOpen: false,
+    sectionIds: [
+      'lead_capture_rules',
+      'name_and_phone_accuracy',
+      'handling_uncertainty',
+      'filtering_rules',
+      'audio_conversation_safety',
+      'conversation_flow',
+      'closing',
+      'final_reminder'
+    ]
+  },
+  {
+    id: 'tools-boundaries',
+    title: 'Tools And Boundaries',
+    description: 'How the assistant should use tools and what it must not invent or assume.',
+    defaultOpen: false,
+    sectionIds: ['tools', 'knowledge_boundaries']
+  }
+];
+
+function JumpLink({ href, label }) {
+  return (
+    <a
+      href={href}
+      className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+    >
+      {label}
+    </a>
+  );
+}
+
+function CollapsibleSectionGroup({ id, title, description, defaultOpen, children }) {
+  return (
+    <details id={id} open={defaultOpen} className="rounded-xl border border-border bg-card shadow-sm">
+      <summary className="cursor-pointer list-none p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+            <p className="mt-1 text-sm text-slate-500">{description}</p>
+          </div>
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Open Group</span>
+        </div>
+      </summary>
+      <div className="grid gap-4 border-t border-slate-200 p-4 pt-4">
+        {children}
+      </div>
+    </details>
+  );
+}
+
 export default function AdminPromptConfigPage() {
   const [loading, setLoading] = useState(true);
   const [loadingTenant, setLoadingTenant] = useState(false);
@@ -548,6 +628,17 @@ export default function AdminPromptConfigPage() {
 
   const previewDraft = preview?.draft || null;
   const previewLive = preview?.live || null;
+  const groupedSections = SECTION_GROUPS.map((group) => ({
+    ...group,
+    sections: group.sectionIds
+      .map((sectionId) => draftSectionMap[sectionId])
+      .filter(Boolean)
+  })).filter((group) => group.sections.length);
+  const previewActionLabel = previewMode === 'compare'
+    ? 'Generate Compare Preview'
+    : previewMode === 'live'
+      ? 'Generate Live Preview'
+      : 'Generate Draft Preview';
 
   return (
     <section className="grid gap-4">
@@ -586,112 +677,168 @@ export default function AdminPromptConfigPage() {
         </div>
       </div>
 
-      <section className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-sm md:grid-cols-4">
-        <Field label="Blueprint Version" hint="The active blueprint is versioned. This is the canonical startup prompt document being edited.">
-          <select
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-            value={selectedBlueprintId}
-            onChange={async (event) => {
-              const nextId = event.target.value;
-              setSelectedBlueprintId(nextId);
-              await loadPage(nextId);
-            }}
-          >
-            {blueprints.map((blueprint) => (
-              <option key={blueprint.prompt_blueprint_id} value={blueprint.prompt_blueprint_id}>
-                {blueprint.name} (v{blueprint.version})
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Tenant" hint="Loads the selected tenant’s narrow prompt profile and admin-only section overrides.">
-          <select
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-            value={selectedTenant}
-            onChange={(event) => setSelectedTenant(event.target.value)}
-          >
-            {tenants.map((tenant) => (
-              <option key={tenant.tenant_key} value={tenant.tenant_key}>
-                {tenant.name} ({tenant.tenant_key})
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Runtime Entry Mode" hint="Previews the same startup prompt path used for the selected entry mode.">
-          <select
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-            value={runtimeEntryMode}
-            onChange={(event) => setRuntimeEntryMode(event.target.value)}
-          >
-            <option value="customer_call">customer_call</option>
-            <option value="setup_interview">setup_interview</option>
-          </select>
-        </Field>
-        <Field label="Preview View" hint="Draft uses the unsaved edits on this page. Live shows the last saved runtime configuration.">
-          <select
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-            value={previewMode}
-            onChange={(event) => setPreviewMode(event.target.value)}
-          >
-            <option value="draft">draft effective</option>
-            <option value="live">live effective</option>
-            <option value="compare">compare</option>
-          </select>
-        </Field>
+      <section className="flex flex-wrap gap-2">
+        <JumpLink href="#preview" label="1. Preview" />
+        <JumpLink href="#tenant-context" label="2. Tenant Context" />
+        <JumpLink href="#admin-assets" label="3. Phrase Groups And Tools" />
+        <JumpLink href="#prompt-sections" label="4. Prompt Sections" />
+        <JumpLink href="#runtime-debug" label="5. Runtime Debug" />
       </section>
 
-      <section className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+      <section id="preview" className="grid gap-4 rounded-xl border border-border bg-card p-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Preview And Generate</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Choose the blueprint, tenant, and entry mode here. Then generate a preview to see the exact full startup prompt that will be sent to Realtime.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => loadPreview()} disabled={previewing || !selectedTenant || !draftTenantProfile}>
+            {previewing ? 'Generating...' : previewActionLabel}
+          </Button>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.8fr)_minmax(0,1.2fr)]">
+          <section className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="text-sm font-semibold text-slate-900">Preview Controls</div>
+            <Field label="Blueprint Version" hint="The canonical prompt blueprint being edited. Global changes affect every tenant using this blueprint.">
+              <select
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                value={selectedBlueprintId}
+                onChange={async (event) => {
+                  const nextId = event.target.value;
+                  setSelectedBlueprintId(nextId);
+                  await loadPage(nextId);
+                }}
+              >
+                {blueprints.map((blueprint) => (
+                  <option key={blueprint.prompt_blueprint_id} value={blueprint.prompt_blueprint_id}>
+                    {blueprint.name} (v{blueprint.version})
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Tenant" hint="Loads the selected tenant’s business-facing values plus any admin-only section overrides.">
+              <select
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                value={selectedTenant}
+                onChange={(event) => setSelectedTenant(event.target.value)}
+              >
+                {tenants.map((tenant) => (
+                  <option key={tenant.tenant_key} value={tenant.tenant_key}>
+                    {tenant.name} ({tenant.tenant_key})
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Runtime Entry Mode" hint="Uses the same production composition path as the live gateway prompt for this entry mode.">
+              <select
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                value={runtimeEntryMode}
+                onChange={(event) => setRuntimeEntryMode(event.target.value)}
+              >
+                <option value="customer_call">customer_call</option>
+                <option value="setup_interview">setup_interview</option>
+              </select>
+            </Field>
+            <Field label="Preview View" hint="Draft uses unsaved edits on this page. Live shows the last saved configuration. Compare shows both side by side.">
+              <select
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                value={previewMode}
+                onChange={(event) => setPreviewMode(event.target.value)}
+              >
+                <option value="draft">draft effective</option>
+                <option value="live">live effective</option>
+                <option value="compare">compare</option>
+              </select>
+            </Field>
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+              <div className="font-medium text-slate-900">How to get the full prompt</div>
+              <div className="mt-2">
+                1. Pick the tenant and entry mode.
+              </div>
+              <div>2. Click <span className="font-medium text-slate-900">{previewActionLabel}</span>.</div>
+              <div>3. Read the result in <span className="font-medium text-slate-900">Full Rendered Startup Prompt</span> on the right.</div>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">Full Rendered Startup Prompt</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  This is the complete prompt sent at session start. It is the main behavior source for the call.
+                </p>
+              </div>
+              <span className="rounded-full bg-slate-200 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-700">
+                {previewMode === 'compare' ? 'draft vs live' : previewMode}
+              </span>
+            </div>
+            <PreviewModeContent
+              mode={previewMode}
+              draft={previewDraft?.renderedStartupPrompt}
+              live={previewLive?.renderedStartupPrompt}
+              render={(value) => <CodeBlock value={value || 'Generate a preview to see the full startup prompt.'} />}
+            />
+          </section>
+        </div>
+      </section>
+
+      <section id="tenant-context" className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Tenant Business Fields</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Tenant Context</h2>
           <p className="mt-1 text-sm text-slate-500">
-            This is the narrow tenant-facing data model. The tenant should edit values like these, not raw prompt prose.
+            These are the narrow business-facing values that shape the rendered prompt for the selected tenant. They should stay separate from the hidden behavior sections.
           </p>
         </div>
         {loadingTenant || !draftTenantProfile ? (
           <div className="text-sm text-slate-500">Loading tenant prompt config...</div>
         ) : (
           <div className="grid gap-4 xl:grid-cols-3">
-            <div className="grid gap-3">
-              <Field label="Assistant Name" hint="Inserted into the startup prompt and opening line. Tenants should see this field.">
+            <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-sm font-semibold text-slate-900">Identity</div>
+              <Field label="Assistant Name" hint="Inserted into the startup prompt and opening line.">
                 <TextInput value={draftTenantProfile.assistant_name || ''} onChange={(event) => updateTenantProfile('assistant_name', event.target.value)} />
               </Field>
               <TenantFieldState state={tenantFieldSources.assistant_name} draftValue={draftTenantProfile.assistant_name} />
 
-              <Field label="Business Name" hint="Inserted into the startup prompt and opening line. Defaults from the tenant record.">
+              <Field label="Business Name" hint="Inserted into the startup prompt and opening line.">
                 <TextInput value={draftTenantProfile.business_name || ''} onChange={(event) => updateTenantProfile('business_name', event.target.value)} />
               </Field>
               <TenantFieldState state={tenantFieldSources.business_name} draftValue={draftTenantProfile.business_name} />
 
-              <Field label="Company Description" hint="This is the company narrative used in business context. It inherits from the active build summary when no tenant override exists.">
+              <Field label="Company Description" hint="Business narrative used in the business-context section.">
                 <TextArea value={draftTenantProfile.company_description || ''} onChange={(event) => updateTenantProfile('company_description', event.target.value)} />
               </Field>
               <TenantFieldState state={tenantFieldSources.company_description} draftValue={draftTenantProfile.company_description} />
             </div>
 
-            <div className="grid gap-3">
-              <Field label="Opening Line" hint="Exact opening line spoken on the first turn. Tenants should see this field.">
+            <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-sm font-semibold text-slate-900">Opening And Closing</div>
+              <Field label="Opening Line" hint="Exact first-turn wording for this tenant.">
                 <TextArea value={draftTenantProfile.opening_line || ''} onChange={(event) => updateTenantProfile('opening_line', event.target.value)} />
               </Field>
               <TenantFieldState state={tenantFieldSources.opening_line} draftValue={draftTenantProfile.opening_line} />
 
-              <Field label="AI Disclosure" hint="Used when the caller asks whether the receptionist is a robot or AI.">
+              <Field label="AI Disclosure" hint="Used when the caller asks whether the assistant is a robot or AI.">
                 <TextArea value={draftTenantProfile.ai_disclosure_line || ''} onChange={(event) => updateTenantProfile('ai_disclosure_line', event.target.value)} />
               </Field>
               <TenantFieldState state={tenantFieldSources.ai_disclosure_line} draftValue={draftTenantProfile.ai_disclosure_line} />
 
-              <Field label="Closing Phrase" hint="Used in the closing section as the preferred closing style.">
+              <Field label="Closing Phrase" hint="Preferred short closing used in the closing section.">
                 <TextArea value={draftTenantProfile.closing_phrase || ''} onChange={(event) => updateTenantProfile('closing_phrase', event.target.value)} />
               </Field>
               <TenantFieldState state={tenantFieldSources.closing_phrase} draftValue={draftTenantProfile.closing_phrase} />
             </div>
 
-            <div className="grid gap-3">
-              <Field label="Lead Goal" hint="The business-facing next-step type, such as callback information or consultation request.">
+            <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-sm font-semibold text-slate-900">Lead Capture Context</div>
+              <Field label="Lead Goal" hint="Business-facing next-step type, such as callback information or consultation request.">
                 <TextInput value={draftTenantProfile.lead_goal || ''} onChange={(event) => updateTenantProfile('lead_goal', event.target.value)} />
               </Field>
               <TenantFieldState state={tenantFieldSources.lead_goal} draftValue={draftTenantProfile.lead_goal} />
 
-              <Field label="Required Contact Fields" hint="One field per line. This stays tenant-visible and drives the required callback-information list in the startup prompt.">
+              <Field label="Required Contact Fields" hint="One field per line. Drives the required callback-information list in the rendered prompt.">
                 <TextArea
                   value={joinLines(draftTenantProfile.required_contact_fields)}
                   onChange={(event) => updateTenantProfile('required_contact_fields', splitLines(event.target.value))}
@@ -699,7 +846,7 @@ export default function AdminPromptConfigPage() {
               </Field>
               <TenantFieldState state={tenantFieldSources.required_contact_fields} draftValue={draftTenantProfile.required_contact_fields} />
 
-              <Field label="Basic No-Tool Allowed Statement" hint="This is the narrow general business statement the receptionist may say without calling knowledge_lookup.">
+              <Field label="Basic No-Tool Allowed Statement" hint="Narrow business statement allowed without `knowledge_lookup`.">
                 <TextArea
                   value={draftTenantProfile.basic_no_tool_allowed_statement || ''}
                   onChange={(event) => updateTenantProfile('basic_no_tool_allowed_statement', event.target.value)}
@@ -711,189 +858,195 @@ export default function AdminPromptConfigPage() {
         )}
       </section>
 
-      <section className="grid gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">Sample Phrase Groups</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            These are admin-only inspiration groups. They do not appear to tenants. If a group is empty, the optional sample-phrase section is omitted from the rendered prompt.
-          </p>
-        </div>
-        <div className="grid gap-4 xl:grid-cols-2">
-          <PhraseGroupCard
-            label="Greeting Samples"
-            hint="Short opening alternatives the model can treat as inspiration without repeating verbatim."
-            values={draftBlueprint.sample_phrase_groups?.greeting_samples || []}
-            savedValues={savedBlueprint.sample_phrase_groups?.greeting_samples || []}
-            onChange={(value) => updatePhraseGroup('greeting_samples', value)}
-          />
-          <PhraseGroupCard
-            label="Acknowledgement Samples"
-            hint="Examples of brief, natural acknowledgement turns."
-            values={draftBlueprint.sample_phrase_groups?.acknowledgement_samples || []}
-            savedValues={savedBlueprint.sample_phrase_groups?.acknowledgement_samples || []}
-            onChange={(value) => updatePhraseGroup('acknowledgement_samples', value)}
-          />
-          <PhraseGroupCard
-            label="Discovery-Question Samples"
-            hint="Examples of one-at-a-time discovery questions."
-            values={draftBlueprint.sample_phrase_groups?.discovery_question_samples || []}
-            savedValues={savedBlueprint.sample_phrase_groups?.discovery_question_samples || []}
-            onChange={(value) => updatePhraseGroup('discovery_question_samples', value)}
-          />
-          <PhraseGroupCard
-            label="Fit-Bridge Samples"
-            hint="Examples of gentle ‘this sounds like something we may be able to help with’ bridges."
-            values={draftBlueprint.sample_phrase_groups?.fit_bridge_samples || []}
-            savedValues={savedBlueprint.sample_phrase_groups?.fit_bridge_samples || []}
-            onChange={(value) => updatePhraseGroup('fit_bridge_samples', value)}
-          />
-          <PhraseGroupCard
-            label="Callback-Request Samples"
-            hint="Examples of low-pressure callback capture phrasing."
-            values={draftBlueprint.sample_phrase_groups?.callback_request_samples || []}
-            savedValues={savedBlueprint.sample_phrase_groups?.callback_request_samples || []}
-            onChange={(value) => updatePhraseGroup('callback_request_samples', value)}
-          />
-          <PhraseGroupCard
-            label="Closing Samples"
-            hint="Examples of short, warm closes."
-            values={draftBlueprint.sample_phrase_groups?.closing_samples || []}
-            savedValues={savedBlueprint.sample_phrase_groups?.closing_samples || []}
-            onChange={(value) => updatePhraseGroup('closing_samples', value)}
-          />
-        </div>
+      <section id="admin-assets" className="grid gap-4 xl:grid-cols-2">
+        <section className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Sample Phrase Groups</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Admin-only phrase inspiration. These do not appear to tenants.
+            </p>
+          </div>
+          <div className="grid gap-4">
+            <PhraseGroupCard
+              label="Greeting Samples"
+              hint="Short opening alternatives the model can treat as inspiration without repeating verbatim."
+              values={draftBlueprint.sample_phrase_groups?.greeting_samples || []}
+              savedValues={savedBlueprint.sample_phrase_groups?.greeting_samples || []}
+              onChange={(value) => updatePhraseGroup('greeting_samples', value)}
+            />
+            <PhraseGroupCard
+              label="Acknowledgement Samples"
+              hint="Examples of brief, natural acknowledgement turns."
+              values={draftBlueprint.sample_phrase_groups?.acknowledgement_samples || []}
+              savedValues={savedBlueprint.sample_phrase_groups?.acknowledgement_samples || []}
+              onChange={(value) => updatePhraseGroup('acknowledgement_samples', value)}
+            />
+            <PhraseGroupCard
+              label="Discovery-Question Samples"
+              hint="Examples of one-at-a-time discovery questions."
+              values={draftBlueprint.sample_phrase_groups?.discovery_question_samples || []}
+              savedValues={savedBlueprint.sample_phrase_groups?.discovery_question_samples || []}
+              onChange={(value) => updatePhraseGroup('discovery_question_samples', value)}
+            />
+            <PhraseGroupCard
+              label="Fit-Bridge Samples"
+              hint="Examples of gentle ‘this sounds like something we may be able to help with’ bridges."
+              values={draftBlueprint.sample_phrase_groups?.fit_bridge_samples || []}
+              savedValues={savedBlueprint.sample_phrase_groups?.fit_bridge_samples || []}
+              onChange={(value) => updatePhraseGroup('fit_bridge_samples', value)}
+            />
+            <PhraseGroupCard
+              label="Callback-Request Samples"
+              hint="Examples of low-pressure callback capture phrasing."
+              values={draftBlueprint.sample_phrase_groups?.callback_request_samples || []}
+              savedValues={savedBlueprint.sample_phrase_groups?.callback_request_samples || []}
+              onChange={(value) => updatePhraseGroup('callback_request_samples', value)}
+            />
+            <PhraseGroupCard
+              label="Closing Samples"
+              hint="Examples of short, warm closes."
+              values={draftBlueprint.sample_phrase_groups?.closing_samples || []}
+              savedValues={savedBlueprint.sample_phrase_groups?.closing_samples || []}
+              onChange={(value) => updatePhraseGroup('closing_samples', value)}
+            />
+          </div>
+        </section>
+
+        <section className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Runtime Tool Text</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Actual tool names and schema stay code-driven. Only the descriptive text is editable here.
+            </p>
+          </div>
+          <div className="grid gap-4">
+            <ToolDefinitionCard
+              title="knowledge_lookup"
+              toolKey="knowledge_lookup"
+              draftTool={draftBlueprint.tool_definitions?.knowledge_lookup || {}}
+              savedTool={savedBlueprint.tool_definitions?.knowledge_lookup || {}}
+              onChange={(value) => updateToolDefinition('knowledge_lookup', value)}
+            />
+            <ToolDefinitionCard
+              title="data_capture"
+              toolKey="data_capture"
+              draftTool={draftBlueprint.tool_definitions?.data_capture || {}}
+              savedTool={savedBlueprint.tool_definitions?.data_capture || {}}
+              onChange={(value) => updateToolDefinition('data_capture', value)}
+            />
+            <ToolDefinitionCard
+              title="finish_session"
+              toolKey="finish_session"
+              draftTool={draftBlueprint.tool_definitions?.finish_session || {}}
+              savedTool={savedBlueprint.tool_definitions?.finish_session || {}}
+              onChange={(value) => updateToolDefinition('finish_session', value)}
+            />
+          </div>
+        </section>
       </section>
 
-      <section className="grid gap-3">
+      <section id="prompt-sections" className="grid gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Runtime Tool Text</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Prompt Sections</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Actual tool names, schema shape, and availability stay code-driven. Only descriptive text is admin-editable here.
+            Sections are grouped by purpose so related instructions stay together. Canonical text is global; tenant override text affects only the selected tenant.
           </p>
         </div>
-        <div className="grid gap-4 xl:grid-cols-3">
-          <ToolDefinitionCard
-            title="knowledge_lookup"
-            toolKey="knowledge_lookup"
-            draftTool={draftBlueprint.tool_definitions?.knowledge_lookup || {}}
-            savedTool={savedBlueprint.tool_definitions?.knowledge_lookup || {}}
-            onChange={(value) => updateToolDefinition('knowledge_lookup', value)}
-          />
-          <ToolDefinitionCard
-            title="data_capture"
-            toolKey="data_capture"
-            draftTool={draftBlueprint.tool_definitions?.data_capture || {}}
-            savedTool={savedBlueprint.tool_definitions?.data_capture || {}}
-            onChange={(value) => updateToolDefinition('data_capture', value)}
-          />
-          <ToolDefinitionCard
-            title="finish_session"
-            toolKey="finish_session"
-            draftTool={draftBlueprint.tool_definitions?.finish_session || {}}
-            savedTool={savedBlueprint.tool_definitions?.finish_session || {}}
-            onChange={(value) => updateToolDefinition('finish_session', value)}
-          />
-        </div>
-      </section>
-
-      <section className="grid gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">Ordered Startup Prompt Sections</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Canonical section text is global. Tenant override text is admin-only and applies only to the selected tenant. The startup prompt is rendered from these sections in fixed order.
-          </p>
-        </div>
-        {(draftBlueprint.sections || []).map((section) => (
-          <SectionCard
-            key={section.section_id}
-            section={section}
-            savedSection={savedSectionMap[section.section_id]}
-            tenantOverride={draftSectionOverrides[section.section_id] || ''}
-            savedTenantOverride={savedTenantConfig?.section_overrides?.[section.section_id]?.override_text || ''}
-            onSectionChange={(value) => updateDraftSection(section.section_id, value)}
-            onTenantOverrideChange={(value) => updateTenantOverride(section.section_id, value)}
-            effectiveDraft={draftRenderedSectionMap[section.section_id]?.text || ''}
-            effectiveLive={liveRenderedSectionMap[section.section_id]?.text || ''}
-            previewMode={previewMode}
-          />
+        {groupedSections.map((group) => (
+          <CollapsibleSectionGroup
+            key={group.id}
+            id={group.id}
+            title={group.title}
+            description={group.description}
+            defaultOpen={group.defaultOpen}
+          >
+            {group.sections.map((section) => (
+              <SectionCard
+                key={section.section_id}
+                section={section}
+                savedSection={savedSectionMap[section.section_id]}
+                tenantOverride={draftSectionOverrides[section.section_id] || ''}
+                savedTenantOverride={savedTenantConfig?.section_overrides?.[section.section_id]?.override_text || ''}
+                onSectionChange={(value) => updateDraftSection(section.section_id, value)}
+                onTenantOverrideChange={(value) => updateTenantOverride(section.section_id, value)}
+                effectiveDraft={draftRenderedSectionMap[section.section_id]?.text || ''}
+                effectiveLive={liveRenderedSectionMap[section.section_id]?.text || ''}
+                previewMode={previewMode}
+              />
+            ))}
+          </CollapsibleSectionGroup>
         ))}
       </section>
 
-      <section className="grid gap-3">
+      <section id="runtime-debug" className="grid gap-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Rendered Runtime Preview</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Runtime Debug</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Draft and live preview both come from the same production composition path used by the live gateway prompt endpoint.
+              Lower-level payloads from the same production composition path. Useful when the rendered full prompt alone is not enough.
             </p>
           </div>
           <Button variant="outline" onClick={() => loadPreview()} disabled={previewing || !selectedTenant}>
-            {previewing ? 'Refreshing...' : 'Refresh Preview'}
+            {previewing ? 'Refreshing...' : 'Refresh Runtime Debug'}
           </Button>
         </div>
-        <div className="grid gap-4 xl:grid-cols-2">
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="mb-3">
-              <h3 className="text-base font-semibold text-slate-900">Startup Prompt</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                This is the final startup prompt that is sent to Realtime at session start.
-              </p>
-            </div>
-            <PreviewModeContent
-              mode={previewMode}
-              draft={previewDraft?.renderedStartupPrompt}
-              live={previewLive?.renderedStartupPrompt}
-              render={(value) => <CodeBlock value={value || ''} />}
-            />
-          </section>
 
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="mb-3">
+        <details className="rounded-xl border border-border bg-card shadow-sm">
+          <summary className="cursor-pointer list-none p-4">
+            <div>
               <h3 className="text-base font-semibold text-slate-900">Runtime Tool Config</h3>
               <p className="mt-1 text-sm text-slate-500">
-                These are the actual runtime-exposed tool definitions after the code-driven registry is merged with admin text.
+                Runtime-exposed tool definitions after the code-driven registry is merged with admin text.
               </p>
             </div>
+          </summary>
+          <div className="border-t border-slate-200 p-4">
             <PreviewModeContent
               mode={previewMode}
               draft={previewDraft?.runtimeToolDefinitions}
               live={previewLive?.runtimeToolDefinitions}
               render={(value) => <CodeBlock value={JSON.stringify(value || [], null, 2)} />}
             />
-          </section>
-        </div>
+          </div>
+        </details>
 
-        <div className="grid gap-4 xl:grid-cols-2">
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="mb-3">
+        <details className="rounded-xl border border-border bg-card shadow-sm">
+          <summary className="cursor-pointer list-none p-4">
+            <div>
               <h3 className="text-base font-semibold text-slate-900">Gateway Prompt Output</h3>
               <p className="mt-1 text-sm text-slate-500">
-                This is the output of the same gateway prompt response builder used by <code>/api/v1/gateway/prompt</code>.
+                Full output from the same builder used by <code>/api/v1/gateway/prompt</code>.
               </p>
             </div>
+          </summary>
+          <div className="border-t border-slate-200 p-4">
             <PreviewModeContent
               mode={previewMode}
               draft={previewDraft?.gatewayPromptOutput}
               live={previewLive?.gatewayPromptOutput}
               render={(value) => <CodeBlock value={JSON.stringify(value || {}, null, 2)} />}
             />
-          </section>
+          </div>
+        </details>
 
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="mb-3">
+        <details className="rounded-xl border border-border bg-card shadow-sm">
+          <summary className="cursor-pointer list-none p-4">
+            <div>
               <h3 className="text-base font-semibold text-slate-900">Effective Sections</h3>
               <p className="mt-1 text-sm text-slate-500">
-                Use compare mode to see canonical-vs-override effects section by section.
+                The per-section rendered output after blueprint text, tenant values, and tenant overrides are applied.
               </p>
             </div>
+          </summary>
+          <div className="border-t border-slate-200 p-4">
             <PreviewModeContent
               mode={previewMode}
               draft={previewDraft?.renderedSections}
               live={previewLive?.renderedSections}
               render={(value) => <CodeBlock value={JSON.stringify(value || [], null, 2)} />}
             />
-          </section>
-        </div>
+          </div>
+        </details>
       </section>
 
       {status ? (
