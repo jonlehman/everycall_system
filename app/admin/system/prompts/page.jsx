@@ -42,6 +42,19 @@ function Field({ label, hint, children }) {
   );
 }
 
+function formatCompactValue(value) {
+  if (Array.isArray(value)) {
+    return value.length ? value.join(', ') : 'none';
+  }
+  if (value === null || value === undefined || value === '') {
+    return 'none';
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
 function TextInput(props) {
   return <input {...props} className={`rounded-md border border-slate-300 px-3 py-2 text-sm ${props.className || ''}`.trim()} />;
 }
@@ -169,16 +182,31 @@ function SectionCard({
   );
 }
 
-function TenantFieldState({ state, draftValue }) {
+function TenantFieldBlock({ label, hint, state, draftValue, children }) {
   return (
-    <div className="grid gap-1 rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-slate-700">Saved source</span>
+    <div className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-slate-900">{label}</div>
+          {hint ? <div className="mt-1 text-xs text-slate-500">{hint}</div> : null}
+        </div>
         <SourceBadge source={state?.source} />
       </div>
-      <div><span className="font-medium text-slate-700">Default:</span> {JSON.stringify(state?.default_value ?? null)}</div>
-      <div><span className="font-medium text-slate-700">Saved override:</span> {JSON.stringify(state?.override_value ?? null)}</div>
-      <div><span className="font-medium text-slate-700">Effective draft:</span> {JSON.stringify(draftValue ?? null)}</div>
+      {children}
+      <div className="grid gap-2 text-[11px] text-slate-600 md:grid-cols-3">
+        <div className="rounded-md bg-slate-50 p-2">
+          <div className="font-medium text-slate-700">Default</div>
+          <div className="mt-1 break-words">{formatCompactValue(state?.default_value)}</div>
+        </div>
+        <div className="rounded-md bg-slate-50 p-2">
+          <div className="font-medium text-slate-700">Saved Override</div>
+          <div className="mt-1 break-words">{formatCompactValue(state?.override_value)}</div>
+        </div>
+        <div className="rounded-md bg-slate-50 p-2">
+          <div className="font-medium text-slate-700">Draft Effective</div>
+          <div className="mt-1 break-words">{formatCompactValue(draftValue)}</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -698,60 +726,62 @@ export default function AdminPromptConfigPage() {
           </Button>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.8fr)_minmax(0,1.2fr)]">
-          <section className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(340px,0.78fr)_minmax(0,1.22fr)]">
+          <section className="grid self-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div className="text-sm font-semibold text-slate-900">Preview Controls</div>
-            <Field label="Blueprint Version" hint="The canonical prompt blueprint being edited. Global changes affect every tenant using this blueprint.">
-              <select
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                value={selectedBlueprintId}
-                onChange={async (event) => {
-                  const nextId = event.target.value;
-                  setSelectedBlueprintId(nextId);
-                  await loadPage(nextId);
-                }}
-              >
-                {blueprints.map((blueprint) => (
-                  <option key={blueprint.prompt_blueprint_id} value={blueprint.prompt_blueprint_id}>
-                    {blueprint.name} (v{blueprint.version})
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Tenant" hint="Loads the selected tenant’s business-facing values plus any admin-only section overrides.">
-              <select
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                value={selectedTenant}
-                onChange={(event) => setSelectedTenant(event.target.value)}
-              >
-                {tenants.map((tenant) => (
-                  <option key={tenant.tenant_key} value={tenant.tenant_key}>
-                    {tenant.name} ({tenant.tenant_key})
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Runtime Entry Mode" hint="Uses the same production composition path as the live gateway prompt for this entry mode.">
-              <select
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                value={runtimeEntryMode}
-                onChange={(event) => setRuntimeEntryMode(event.target.value)}
-              >
-                <option value="customer_call">customer_call</option>
-                <option value="setup_interview">setup_interview</option>
-              </select>
-            </Field>
-            <Field label="Preview View" hint="Draft uses unsaved edits on this page. Live shows the last saved configuration. Compare shows both side by side.">
-              <select
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                value={previewMode}
-                onChange={(event) => setPreviewMode(event.target.value)}
-              >
-                <option value="draft">draft effective</option>
-                <option value="live">live effective</option>
-                <option value="compare">compare</option>
-              </select>
-            </Field>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+              <Field label="Blueprint Version" hint="The canonical prompt blueprint being edited. Global changes affect every tenant using this blueprint.">
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  value={selectedBlueprintId}
+                  onChange={async (event) => {
+                    const nextId = event.target.value;
+                    setSelectedBlueprintId(nextId);
+                    await loadPage(nextId);
+                  }}
+                >
+                  {blueprints.map((blueprint) => (
+                    <option key={blueprint.prompt_blueprint_id} value={blueprint.prompt_blueprint_id}>
+                      {blueprint.name} (v{blueprint.version})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Tenant" hint="Loads the selected tenant’s business-facing values plus any admin-only section overrides.">
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  value={selectedTenant}
+                  onChange={(event) => setSelectedTenant(event.target.value)}
+                >
+                  {tenants.map((tenant) => (
+                    <option key={tenant.tenant_key} value={tenant.tenant_key}>
+                      {tenant.name} ({tenant.tenant_key})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Runtime Entry Mode" hint="Uses the same production composition path as the live gateway prompt for this entry mode.">
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  value={runtimeEntryMode}
+                  onChange={(event) => setRuntimeEntryMode(event.target.value)}
+                >
+                  <option value="customer_call">customer_call</option>
+                  <option value="setup_interview">setup_interview</option>
+                </select>
+              </Field>
+              <Field label="Preview View" hint="Draft uses unsaved edits on this page. Live shows the last saved configuration. Compare shows both side by side.">
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  value={previewMode}
+                  onChange={(event) => setPreviewMode(event.target.value)}
+                >
+                  <option value="draft">draft effective</option>
+                  <option value="live">live effective</option>
+                  <option value="compare">compare</option>
+                </select>
+              </Field>
+            </div>
             <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
               <div className="font-medium text-slate-900">How to get the full prompt</div>
               <div className="mt-2">
@@ -797,62 +827,53 @@ export default function AdminPromptConfigPage() {
           <div className="grid gap-4 xl:grid-cols-3">
             <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
               <div className="text-sm font-semibold text-slate-900">Identity</div>
-              <Field label="Assistant Name" hint="Inserted into the startup prompt and opening line.">
+              <TenantFieldBlock label="Assistant Name" hint="Inserted into the startup prompt and opening line." state={tenantFieldSources.assistant_name} draftValue={draftTenantProfile.assistant_name}>
                 <TextInput value={draftTenantProfile.assistant_name || ''} onChange={(event) => updateTenantProfile('assistant_name', event.target.value)} />
-              </Field>
-              <TenantFieldState state={tenantFieldSources.assistant_name} draftValue={draftTenantProfile.assistant_name} />
+              </TenantFieldBlock>
 
-              <Field label="Business Name" hint="Inserted into the startup prompt and opening line.">
+              <TenantFieldBlock label="Business Name" hint="Inserted into the startup prompt and opening line." state={tenantFieldSources.business_name} draftValue={draftTenantProfile.business_name}>
                 <TextInput value={draftTenantProfile.business_name || ''} onChange={(event) => updateTenantProfile('business_name', event.target.value)} />
-              </Field>
-              <TenantFieldState state={tenantFieldSources.business_name} draftValue={draftTenantProfile.business_name} />
+              </TenantFieldBlock>
 
-              <Field label="Company Description" hint="Business narrative used in the business-context section.">
+              <TenantFieldBlock label="Company Description" hint="Business narrative used in the business-context section." state={tenantFieldSources.company_description} draftValue={draftTenantProfile.company_description}>
                 <TextArea value={draftTenantProfile.company_description || ''} onChange={(event) => updateTenantProfile('company_description', event.target.value)} />
-              </Field>
-              <TenantFieldState state={tenantFieldSources.company_description} draftValue={draftTenantProfile.company_description} />
+              </TenantFieldBlock>
             </div>
 
             <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
               <div className="text-sm font-semibold text-slate-900">Opening And Closing</div>
-              <Field label="Opening Line" hint="Exact first-turn wording for this tenant.">
+              <TenantFieldBlock label="Opening Line" hint="Exact first-turn wording for this tenant." state={tenantFieldSources.opening_line} draftValue={draftTenantProfile.opening_line}>
                 <TextArea value={draftTenantProfile.opening_line || ''} onChange={(event) => updateTenantProfile('opening_line', event.target.value)} />
-              </Field>
-              <TenantFieldState state={tenantFieldSources.opening_line} draftValue={draftTenantProfile.opening_line} />
+              </TenantFieldBlock>
 
-              <Field label="AI Disclosure" hint="Used when the caller asks whether the assistant is a robot or AI.">
+              <TenantFieldBlock label="AI Disclosure" hint="Used when the caller asks whether the assistant is a robot or AI." state={tenantFieldSources.ai_disclosure_line} draftValue={draftTenantProfile.ai_disclosure_line}>
                 <TextArea value={draftTenantProfile.ai_disclosure_line || ''} onChange={(event) => updateTenantProfile('ai_disclosure_line', event.target.value)} />
-              </Field>
-              <TenantFieldState state={tenantFieldSources.ai_disclosure_line} draftValue={draftTenantProfile.ai_disclosure_line} />
+              </TenantFieldBlock>
 
-              <Field label="Closing Phrase" hint="Preferred short closing used in the closing section.">
+              <TenantFieldBlock label="Closing Phrase" hint="Preferred short closing used in the closing section." state={tenantFieldSources.closing_phrase} draftValue={draftTenantProfile.closing_phrase}>
                 <TextArea value={draftTenantProfile.closing_phrase || ''} onChange={(event) => updateTenantProfile('closing_phrase', event.target.value)} />
-              </Field>
-              <TenantFieldState state={tenantFieldSources.closing_phrase} draftValue={draftTenantProfile.closing_phrase} />
+              </TenantFieldBlock>
             </div>
 
             <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
               <div className="text-sm font-semibold text-slate-900">Lead Capture Context</div>
-              <Field label="Lead Goal" hint="Business-facing next-step type, such as callback information or consultation request.">
+              <TenantFieldBlock label="Lead Goal" hint="Business-facing next-step type, such as callback information or consultation request." state={tenantFieldSources.lead_goal} draftValue={draftTenantProfile.lead_goal}>
                 <TextInput value={draftTenantProfile.lead_goal || ''} onChange={(event) => updateTenantProfile('lead_goal', event.target.value)} />
-              </Field>
-              <TenantFieldState state={tenantFieldSources.lead_goal} draftValue={draftTenantProfile.lead_goal} />
+              </TenantFieldBlock>
 
-              <Field label="Required Contact Fields" hint="One field per line. Drives the required callback-information list in the rendered prompt.">
+              <TenantFieldBlock label="Required Contact Fields" hint="One field per line. Drives the required callback-information list in the rendered prompt." state={tenantFieldSources.required_contact_fields} draftValue={draftTenantProfile.required_contact_fields}>
                 <TextArea
                   value={joinLines(draftTenantProfile.required_contact_fields)}
                   onChange={(event) => updateTenantProfile('required_contact_fields', splitLines(event.target.value))}
                 />
-              </Field>
-              <TenantFieldState state={tenantFieldSources.required_contact_fields} draftValue={draftTenantProfile.required_contact_fields} />
+              </TenantFieldBlock>
 
-              <Field label="Basic No-Tool Allowed Statement" hint="Narrow business statement allowed without `knowledge_lookup`.">
+              <TenantFieldBlock label="Basic No-Tool Allowed Statement" hint="Narrow business statement allowed without `knowledge_lookup`." state={tenantFieldSources.basic_no_tool_allowed_statement} draftValue={draftTenantProfile.basic_no_tool_allowed_statement}>
                 <TextArea
                   value={draftTenantProfile.basic_no_tool_allowed_statement || ''}
                   onChange={(event) => updateTenantProfile('basic_no_tool_allowed_statement', event.target.value)}
                 />
-              </Field>
-              <TenantFieldState state={tenantFieldSources.basic_no_tool_allowed_statement} draftValue={draftTenantProfile.basic_no_tool_allowed_statement} />
+              </TenantFieldBlock>
             </div>
           </div>
         )}
