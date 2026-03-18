@@ -181,6 +181,33 @@ function normalizeCallOutcomeSchema(schema) {
   };
 }
 
+async function loadTenantCompanyContext(db, tenantKey) {
+  const res = await db.query(
+    `SELECT t.name,
+            t.industry,
+            oi.services_offered
+     FROM tenants t
+     LEFT JOIN LATERAL (
+       SELECT services_offered
+       FROM onboarding_intake
+       WHERE tenant_key = t.tenant_key
+       ORDER BY created_at DESC
+       LIMIT 1
+     ) oi ON TRUE
+     WHERE t.tenant_key = $1
+     LIMIT 1`,
+    [tenantKey]
+  );
+  const row = res.rows?.[0] || {};
+  const servicesOffered = normalizeText(row.services_offered);
+  if (servicesOffered) return servicesOffered;
+  const businessName = normalizeText(row.name);
+  const industry = normalizeText(row.industry);
+  if (businessName && industry) return `${businessName} is a ${industry} business.`;
+  if (industry) return `This business operates in ${industry}.`;
+  return "";
+}
+
 function createInitialCallState({
   tenantKey,
   callId,
@@ -341,9 +368,10 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
   if (!build) {
     throw new Error(buildId ? "build_not_found" : "no_active_build");
   }
-  const [{ businessCallIntent, overrides, guardrails, readiness, callOutcomeSchema, runtimeProfile }, setupInterviewIntent] = await Promise.all([
+  const [{ businessCallIntent, overrides, guardrails, readiness, callOutcomeSchema, runtimeProfile }, setupInterviewIntent, companyContextSummary] = await Promise.all([
     loadApprovedConfigurationArtifacts(db, tenantKey),
-    runtimeEntryMode === "setup_interview" ? loadSetupInterviewIntent(db, tenantKey) : Promise.resolve(null)
+    runtimeEntryMode === "setup_interview" ? loadSetupInterviewIntent(db, tenantKey) : Promise.resolve(null),
+    loadTenantCompanyContext(db, tenantKey)
   ]);
 
   const intentSummary = summarizeIntent(
@@ -364,7 +392,8 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
       call_outcome_schema: normalizeCallOutcomeSchema(callOutcomeSchema) || undefined,
       readiness: normalizeReadinessForContract(readiness, tenantKey) || undefined
     },
-    intentSummary
+    intentSummary,
+    companyContextSummary
   };
 }
 
@@ -401,7 +430,7 @@ export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) 
     Promise.resolve(promptConfigOverride || loadSystemPromptConfig(db)),
     loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input)
   ]);
-  const { build, configuration, intentSummary } = gatewayContext;
+  const { build, configuration, intentSummary, companyContextSummary } = gatewayContext;
   configuration.prompt_layers = promptLayers;
   const initialCallState = createInitialCallState({
     tenantKey,
@@ -416,6 +445,7 @@ export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) 
   const startupSessionInstructions = buildGatewaySessionInstructionsFromPromptConfig({
     promptConfig: promptLayers,
     systemPrompt,
+    companyContextSummary,
     businessCallIntentSummary: intentSummary.summary,
     tenantGreeting: configuration.runtime_profile?.greeting_text || "",
     toolPolicy: configuration.runtime_profile?.tool_policy || {},
@@ -428,6 +458,7 @@ export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) 
     build,
     systemPrompt,
     tenantPersona,
+    companyContextSummary,
     promptLayers,
     businessCallIntentSummary: intentSummary.summary,
     approvedConfiguration: configuration,
@@ -436,6 +467,7 @@ export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) 
       startup_instruction_tokens: estimateTokenCount(startupSessionInstructions),
       prompt_payload_tokens: estimateTokenCount({
         active_build_id: build.build_id,
+        company_context_summary: companyContextSummary,
         tenant_persona: tenantPersona,
         business_call_intent_summary: intentSummary.summary
       })

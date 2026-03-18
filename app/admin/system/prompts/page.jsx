@@ -918,34 +918,34 @@ export default function AdminPromptConfigPage() {
       />
 
       <PromptSection
-        title="3. Business Context"
-        description="This startup block tells Realtime, in plain language, what the company does and how incoming calls for that business should be handled."
+        title="3. Company Context"
+        description="This startup block gives Realtime true company-level context about what the tenant actually does before any tool call is needed."
         editor={(
           <LayerCard
-            title="Business Context Layer"
-            description="Rendered from the approved business-call-intent summary that already exists at session start."
-            onReset={() => resetLayer(['businessContext'])}
+            title="Company Context Layer"
+            description="Rendered from tenant company context, currently sourced from onboarding intake services offered."
+            onReset={() => resetLayer(['companyContext'])}
           >
-            <Field label="Header Label" hint="This section header appears above the explicit business-context block in the final gateway session instructions.">
+            <Field label="Header Label" hint="This section header appears above the company-description block in the final gateway session instructions.">
               <TextInput
-                value={config.businessContext.headerLabel}
-                onChange={(event) => updateConfig(['businessContext', 'headerLabel'], event.target.value)}
+                value={config.companyContext.headerLabel}
+                onChange={(event) => updateConfig(['companyContext', 'headerLabel'], event.target.value)}
               />
             </Field>
-            <Field label="Summary Template" hint="This renders the approved business-call-intent summary into the startup session instructions so the model knows what the company does before any tool call. Use `{business_call_intent_summary}`.">
+            <Field label="Summary Template" hint="This renders the tenant’s company-description summary into the startup session instructions. Use `{company_context_summary}`.">
               <TextInput
-                value={config.businessContext.summaryTemplate}
-                onChange={(event) => updateConfig(['businessContext', 'summaryTemplate'], event.target.value)}
+                value={config.companyContext.summaryTemplate}
+                onChange={(event) => updateConfig(['companyContext', 'summaryTemplate'], event.target.value)}
               />
             </Field>
           </LayerCard>
         )}
         preview={(
-          <PreviewBlock title="Business Context Block" description="Derived from the tenant’s approved business-call-intent summary and included in the startup session instructions.">
+          <PreviewBlock title="Company Context Block" description="Derived from tenant company information and included in the startup session instructions.">
             <PreviewModeContent
               mode={previewMode}
-              draft={previewDraft?.rendered?.businessContext}
-              live={previewLive?.rendered?.businessContext}
+              draft={previewDraft?.rendered?.companyContext}
+              live={previewLive?.rendered?.companyContext}
               render={(value) => <CodeBlock value={value} />}
             />
           </PreviewBlock>
@@ -953,7 +953,42 @@ export default function AdminPromptConfigPage() {
       />
 
       <PromptSection
-        title="4. Knowledge Tool Policy"
+        title="4. Call Mission"
+        description="This startup block describes how the receptionist should handle calls for this tenant. It comes from the tenant’s Business Call Intent, not from company-description data."
+        editor={(
+          <LayerCard
+            title="Call Mission Layer"
+            description="Rendered from the approved Business Call Intent summary."
+            onReset={() => resetLayer(['callMission'])}
+          >
+            <Field label="Header Label" hint="This section header appears above the call-handling mission block in the final gateway session instructions.">
+              <TextInput
+                value={config.callMission.headerLabel}
+                onChange={(event) => updateConfig(['callMission', 'headerLabel'], event.target.value)}
+              />
+            </Field>
+            <Field label="Summary Template" hint="This renders the tenant’s Business Call Intent summary into the startup session instructions. Use `{business_call_intent_summary}`.">
+              <TextInput
+                value={config.callMission.summaryTemplate}
+                onChange={(event) => updateConfig(['callMission', 'summaryTemplate'], event.target.value)}
+              />
+            </Field>
+          </LayerCard>
+        )}
+        preview={(
+          <PreviewBlock title="Call Mission Block" description="Derived from the tenant’s approved Business Call Intent and included in the startup session instructions.">
+            <PreviewModeContent
+              mode={previewMode}
+              draft={previewDraft?.rendered?.callMission}
+              live={previewLive?.rendered?.callMission}
+              render={(value) => <CodeBlock value={value} />}
+            />
+          </PreviewBlock>
+        )}
+      />
+
+      <PromptSection
+        title="5. Knowledge Tool Policy"
         description="This structured policy block tells Realtime how to use `knowledge_lookup` and how much clarification is allowed before a tool call."
         editor={(
           <LayerCard
@@ -1000,7 +1035,7 @@ export default function AdminPromptConfigPage() {
       />
 
       <PromptSection
-        title="5. Greeting Turn"
+        title="6. Greeting Turn"
         description="This wrapper is only used when the gateway explicitly asks Realtime to speak the first greeting right after session startup."
         editor={(
           <LayerCard
@@ -1035,7 +1070,7 @@ export default function AdminPromptConfigPage() {
       />
 
       <PromptSection
-        title="6. Runtime Context"
+        title="7. Runtime Context"
         description="This runtime-derived block describes the current stage and assignment that the live gateway merges into the startup session instructions."
         editor={(
           <LayerCard
@@ -1076,7 +1111,7 @@ export default function AdminPromptConfigPage() {
       />
 
       <PromptSection
-        title="7. Post-Tool Answer Rules"
+        title="8. Post-Tool Answer Rules"
         description="These rules are attached after `knowledge_lookup` and shape how Realtime speaks from the answer packet on that turn."
         editor={(
           <LayerCard

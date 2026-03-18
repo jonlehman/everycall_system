@@ -2,7 +2,11 @@ export type RuntimePromptConfig = {
   baseSystemPrompt: {
     instructionLines: string[];
   };
-  businessContext: {
+  companyContext: {
+    headerLabel: string;
+    summaryTemplate: string;
+  };
+  callMission: {
     headerLabel: string;
     summaryTemplate: string;
   };
@@ -82,9 +86,13 @@ const DEFAULT_RUNTIME_PROMPT_CONFIG: RuntimePromptConfig = {
       "Keep each response to one or two short sentences unless the caller clearly needs a concise clarification."
     ]
   },
-  businessContext: {
-    headerLabel: "Business context:",
-    summaryTemplate: "- What this business does: {business_call_intent_summary}"
+  companyContext: {
+    headerLabel: "Company context:",
+    summaryTemplate: "- What this business does: {company_context_summary}"
+  },
+  callMission: {
+    headerLabel: "Call handling mission:",
+    summaryTemplate: "- Mission for this call flow: {business_call_intent_summary}"
   },
   tenantPersona: {
     headerLabel: "Tenant persona and wording:",
@@ -195,7 +203,9 @@ export function normalizeRuntimePromptConfig(input: unknown): RuntimePromptConfi
   const defaults = cloneDefaults();
   const source = asObject(input);
   const baseSystemPrompt = asObject(source.baseSystemPrompt);
-  const businessContext = asObject(source.businessContext);
+  const companyContext = asObject(source.companyContext);
+  const callMission = asObject(source.callMission);
+  const legacyBusinessContext = asObject(source.businessContext);
   const tenantPersona = asObject(source.tenantPersona);
   const tenantPersonaLines = asObject(tenantPersona.lineTemplates);
   const tenantPersonaDefaults = asObject(tenantPersona.defaults);
@@ -211,9 +221,13 @@ export function normalizeRuntimePromptConfig(input: unknown): RuntimePromptConfi
         defaults.baseSystemPrompt.instructionLines
       )
     },
-    businessContext: {
-      headerLabel: normalizeText(businessContext.headerLabel) || defaults.businessContext.headerLabel,
-      summaryTemplate: normalizeText(businessContext.summaryTemplate) || defaults.businessContext.summaryTemplate
+    companyContext: {
+      headerLabel: normalizeText(companyContext.headerLabel) || defaults.companyContext.headerLabel,
+      summaryTemplate: normalizeText(companyContext.summaryTemplate) || defaults.companyContext.summaryTemplate
+    },
+    callMission: {
+      headerLabel: normalizeText(callMission.headerLabel) || normalizeText(legacyBusinessContext.headerLabel) || defaults.callMission.headerLabel,
+      summaryTemplate: normalizeText(callMission.summaryTemplate) || normalizeText(legacyBusinessContext.summaryTemplate) || defaults.callMission.summaryTemplate
     },
     tenantPersona: {
       headerLabel: normalizeText(tenantPersona.headerLabel) || defaults.tenantPersona.headerLabel,
@@ -310,17 +324,30 @@ export function buildTenantPersonaFromPromptConfig(
   ].map((line) => normalizeText(line)).filter(Boolean).join("\n");
 }
 
-export function buildBusinessContextBlockFromPromptConfig(
+export function buildCompanyContextBlockFromPromptConfig(
+  promptConfig: RuntimePromptConfig | unknown,
+  companyContextSummary: string | null | undefined
+) {
+  const config = normalizeRuntimePromptConfig(promptConfig);
+  const summary = normalizeText(companyContextSummary);
+  if (!summary) return "";
+  const line = normalizeText(applyTemplate(config.companyContext.summaryTemplate, {
+    company_context_summary: summary
+  }));
+  return [config.companyContext.headerLabel, line].filter(Boolean).join("\n");
+}
+
+export function buildCallMissionBlockFromPromptConfig(
   promptConfig: RuntimePromptConfig | unknown,
   businessCallIntentSummary: string | null | undefined
 ) {
   const config = normalizeRuntimePromptConfig(promptConfig);
   const summary = normalizeText(businessCallIntentSummary);
   if (!summary) return "";
-  const line = normalizeText(applyTemplate(config.businessContext.summaryTemplate, {
+  const line = normalizeText(applyTemplate(config.callMission.summaryTemplate, {
     business_call_intent_summary: summary
   }));
-  return [config.businessContext.headerLabel, line].filter(Boolean).join("\n");
+  return [config.callMission.headerLabel, line].filter(Boolean).join("\n");
 }
 
 export function buildGatewaySystemPromptFromPromptConfig(
@@ -384,6 +411,7 @@ export function buildRuntimeContextBlockFromPromptConfig(
 export function buildGatewaySessionInstructionsFromPromptConfig(input: {
   promptConfig?: RuntimePromptConfig | unknown;
   systemPrompt: string;
+  companyContextSummary?: string | null;
   businessCallIntentSummary?: string | null;
   tenantGreeting?: string | null;
   toolPolicy?: Record<string, unknown> | null;
@@ -391,7 +419,11 @@ export function buildGatewaySessionInstructionsFromPromptConfig(input: {
   activeDomainId?: string | null;
   activeSubdomainId?: string | null;
 }) {
-  const businessContextBlock = buildBusinessContextBlockFromPromptConfig(
+  const companyContextBlock = buildCompanyContextBlockFromPromptConfig(
+    input.promptConfig,
+    input.companyContextSummary
+  );
+  const callMissionBlock = buildCallMissionBlockFromPromptConfig(
     input.promptConfig,
     input.businessCallIntentSummary
   );
@@ -403,7 +435,8 @@ export function buildGatewaySessionInstructionsFromPromptConfig(input: {
   });
   return [
     normalizeText(input.systemPrompt),
-    businessContextBlock,
+    companyContextBlock,
+    callMissionBlock,
     policyBlock,
     normalizeText(input.tenantGreeting) ? `Greeting:\n${normalizeText(input.tenantGreeting)}` : "",
     runtimeContextBlock

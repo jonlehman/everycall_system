@@ -1,5 +1,6 @@
 import {
-  buildBusinessContextBlockFromPromptConfig,
+  buildCompanyContextBlockFromPromptConfig,
+  buildCallMissionBlockFromPromptConfig,
   buildGatewaySessionInstructionsFromPromptConfig,
   buildGreetingInstructionFromPromptConfig,
   buildKnowledgeToolPolicyBlockFromPromptConfig,
@@ -79,7 +80,11 @@ function buildPreviewVariant({
     },
     rendered: {
       baseSystemPrompt: (promptLayers.baseSystemPrompt?.instructionLines || []).join("\n"),
-      businessContext: buildBusinessContextBlockFromPromptConfig(
+      companyContext: buildCompanyContextBlockFromPromptConfig(
+        promptLayers,
+        gatewayPrompt.companyContextSummary
+      ),
+      callMission: buildCallMissionBlockFromPromptConfig(
         promptLayers,
         gatewayPrompt.businessCallIntentSummary
       ),
@@ -96,6 +101,7 @@ function buildPreviewVariant({
       finalGatewaySessionInstructions: buildGatewaySessionInstructionsFromPromptConfig({
         promptConfig: promptLayers,
         systemPrompt: gatewayPromptOutput.system_prompt,
+        companyContextSummary: gatewayPrompt.companyContextSummary,
         businessCallIntentSummary: gatewayPrompt.businessCallIntentSummary,
         tenantGreeting: gatewayPromptOutput.tenant_greeting,
         toolPolicy,

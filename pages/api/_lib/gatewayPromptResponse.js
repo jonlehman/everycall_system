@@ -76,6 +76,7 @@ export function buildGatewayPromptResponse(gatewayPrompt, buildFieldSchemaFromOu
       active_subdomain_id: gatewayPrompt.initialCallState.active_subdomain_id,
       runtime_entry_mode: gatewayPrompt.initialCallState.runtime_entry_mode,
       initial_call_state: gatewayPrompt.initialCallState,
+      company_context_summary: gatewayPrompt.companyContextSummary || "",
       tenant_persona: gatewayPrompt.tenantPersona,
       business_call_intent_summary: gatewayPrompt.businessCallIntentSummary,
       prompt_layers: gatewayPrompt.promptLayers,
