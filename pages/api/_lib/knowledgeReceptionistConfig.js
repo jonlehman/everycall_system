@@ -238,6 +238,7 @@ async function assertConfigTablesReady(db) {
   ) {
     throw new Error("knowledge_receptionist_migrations_not_applied");
   }
+  await db.query(`ALTER TABLE knowledge_runtime_profiles ADD COLUMN IF NOT EXISTS company_description TEXT;`);
 }
 
 function actorId(actor) {
@@ -974,8 +975,36 @@ function defaultGreetingText(tenantKey) {
   return `Thanks for calling ${fallbackName}. How can I help?`;
 }
 
+async function loadDefaultCompanyDescription(db, tenantKey) {
+  const res = await db.query(
+    `SELECT t.name,
+            t.industry,
+            oi.services_offered
+     FROM tenants t
+     LEFT JOIN LATERAL (
+       SELECT services_offered
+       FROM onboarding_intake
+       WHERE tenant_key = t.tenant_key
+       ORDER BY created_at DESC
+       LIMIT 1
+     ) oi ON TRUE
+     WHERE t.tenant_key = $1
+     LIMIT 1`,
+    [tenantKey]
+  );
+  const row = res.rows?.[0] || {};
+  const servicesOffered = normalizeText(row.services_offered);
+  if (servicesOffered) return servicesOffered;
+  const businessName = normalizeText(row.name);
+  const industry = normalizeText(row.industry);
+  if (businessName && industry) return `${businessName} is a ${industry} business.`;
+  if (industry) return `This business operates in ${industry}.`;
+  return "";
+}
+
 function rawRuntimeProfilePayloadFromRow(row) {
   return {
+    company_description: row?.company_description,
     greeting_text: row?.greeting_text,
     session_config: row?.session_config_json,
     tool_policy: row?.tool_policy_json,
@@ -984,9 +1013,11 @@ function rawRuntimeProfilePayloadFromRow(row) {
   };
 }
 
-function normalizeRuntimeProfilePayload(tenantKey, payload = {}) {
+function normalizeRuntimeProfilePayload(tenantKey, payload = {}, options = {}) {
   const source = asObject(payload);
+  const companyDescriptionDefault = normalizeText(options.companyDescriptionDefault || options.company_description_default);
   return {
+    companyDescription: normalizeText(source.companyDescription || source.company_description) || companyDescriptionDefault,
     greetingText: normalizeText(source.greetingText || source.greeting_text) || defaultGreetingText(tenantKey),
     sessionConfig: normalizeSessionConfig(source.sessionConfig || source.session_config),
     toolPolicy: normalizeToolPolicy(source.toolPolicy || source.tool_policy),
@@ -995,16 +1026,18 @@ function normalizeRuntimeProfilePayload(tenantKey, payload = {}) {
   };
 }
 
-function mapRuntimeProfileRow(tenantKey, row) {
+function mapRuntimeProfileRow(tenantKey, row, options = {}) {
   const profile = normalizeRuntimeProfilePayload(tenantKey, {
+    company_description: row?.company_description,
     greeting_text: row?.greeting_text,
     session_config: row?.session_config_json,
     tool_policy: row?.tool_policy_json,
     wording_defaults: row?.wording_defaults_json,
     runtime_defaults: row?.runtime_defaults_json
-  });
+  }, options);
   return {
     tenant_key: tenantKey,
+    company_description: profile.companyDescription,
     greeting_text: profile.greetingText,
     session_config: profile.sessionConfig,
     tool_policy: profile.toolPolicy,
@@ -1025,16 +1058,18 @@ function buildRuntimeProfileFieldState({ defaultValue, effectiveValue, overrideV
   };
 }
 
-function comparableRuntimeProfile(profile, tenantKey) {
+function comparableRuntimeProfile(profile, tenantKey, options = {}) {
   const normalized = normalizeRuntimeProfilePayload(tenantKey, {
+    company_description: profile?.company_description,
     greeting_text: profile?.greeting_text,
     session_config: profile?.session_config,
     tool_policy: profile?.tool_policy,
     wording_defaults: profile?.wording_defaults,
     runtime_defaults: profile?.runtime_defaults
-  });
+  }, options);
   return {
     tenant_key: tenantKey,
+    company_description: normalized.companyDescription,
     greeting_text: normalized.greetingText,
     session_config: normalized.sessionConfig,
     tool_policy: normalized.toolPolicy,
@@ -1062,15 +1097,21 @@ function pruneInheritedValue(value, defaultValue) {
   return JSON.stringify(value) === JSON.stringify(defaultValue) ? undefined : value;
 }
 
-function buildRuntimeProfileFieldSources(tenantKey, row) {
+function buildRuntimeProfileFieldSources(tenantKey, row, options = {}) {
   const raw = rawRuntimeProfilePayloadFromRow(row);
-  const defaults = normalizeRuntimeProfilePayload(tenantKey, {});
-  const effective = normalizeRuntimeProfilePayload(tenantKey, raw);
+  const defaults = normalizeRuntimeProfilePayload(tenantKey, {}, options);
+  const effective = normalizeRuntimeProfilePayload(tenantKey, raw, options);
   const rawToolPolicy = asObject(raw.tool_policy);
   const rawWordingDefaults = asObject(raw.wording_defaults);
   const rawRuntimeDefaults = asObject(raw.runtime_defaults);
 
   return {
+    companyDescription: buildRuntimeProfileFieldState({
+      defaultValue: defaults.companyDescription,
+      effectiveValue: effective.companyDescription,
+      overrideValue: normalizeText(raw.company_description),
+      hasOverride: raw.company_description !== undefined && raw.company_description !== null && normalizeText(raw.company_description).length > 0
+    }),
     greetingText: buildRuntimeProfileFieldState({
       defaultValue: defaults.greetingText,
       effectiveValue: effective.greetingText,
@@ -1132,30 +1173,36 @@ function buildRuntimeProfileFieldSources(tenantKey, row) {
 
 export async function loadKnowledgeRuntimeProfile(db, tenantKey) {
   await assertConfigTablesReady(db);
-  const res = await db.query(
-    `SELECT tenant_key, greeting_text, session_config_json, tool_policy_json, wording_defaults_json,
+  const [companyDescriptionDefault, res] = await Promise.all([
+    loadDefaultCompanyDescription(db, tenantKey),
+    db.query(
+      `SELECT tenant_key, company_description, greeting_text, session_config_json, tool_policy_json, wording_defaults_json,
             runtime_defaults_json, updated_by_id, updated_at, created_at
-     FROM knowledge_runtime_profiles
-     WHERE tenant_key = $1
-     LIMIT 1`,
-    [tenantKey]
-  );
-  return mapRuntimeProfileRow(tenantKey, res.rows[0] || null);
+       FROM knowledge_runtime_profiles
+       WHERE tenant_key = $1
+       LIMIT 1`,
+      [tenantKey]
+    )
+  ]);
+  return mapRuntimeProfileRow(tenantKey, res.rows[0] || null, { companyDescriptionDefault });
 }
 
 export async function loadKnowledgeRuntimeProfileEditorState(db, tenantKey) {
   await assertConfigTablesReady(db);
-  const res = await db.query(
-    `SELECT tenant_key, greeting_text, session_config_json, tool_policy_json, wording_defaults_json,
+  const [companyDescriptionDefault, res] = await Promise.all([
+    loadDefaultCompanyDescription(db, tenantKey),
+    db.query(
+      `SELECT tenant_key, company_description, greeting_text, session_config_json, tool_policy_json, wording_defaults_json,
             runtime_defaults_json, updated_by_id, updated_at, created_at
-     FROM knowledge_runtime_profiles
-     WHERE tenant_key = $1
-     LIMIT 1`,
-    [tenantKey]
-  );
+       FROM knowledge_runtime_profiles
+       WHERE tenant_key = $1
+       LIMIT 1`,
+      [tenantKey]
+    )
+  ]);
   const row = res.rows[0] || null;
-  const profile = mapRuntimeProfileRow(tenantKey, row);
-  const fieldSources = buildRuntimeProfileFieldSources(tenantKey, row);
+  const profile = mapRuntimeProfileRow(tenantKey, row, { companyDescriptionDefault });
+  const fieldSources = buildRuntimeProfileFieldSources(tenantKey, row, { companyDescriptionDefault });
   const hasOverrides = Object.values(fieldSources).some((item) => item?.source === "tenant_override");
   return {
     profile,
@@ -1167,9 +1214,11 @@ export async function loadKnowledgeRuntimeProfileEditorState(db, tenantKey) {
 export async function saveKnowledgeRuntimeProfile(db, tenantKey, payload = {}, actor = null) {
   await assertConfigTablesReady(db);
   return withTransaction(db, async (client) => {
+    const companyDescriptionDefault = await loadDefaultCompanyDescription(client, tenantKey);
     const previous = await loadKnowledgeRuntimeProfile(client, tenantKey);
-    const normalized = normalizeRuntimeProfilePayload(tenantKey, payload);
-    const defaults = normalizeRuntimeProfilePayload(tenantKey, {});
+    const normalized = normalizeRuntimeProfilePayload(tenantKey, payload, { companyDescriptionDefault });
+    const defaults = normalizeRuntimeProfilePayload(tenantKey, {}, { companyDescriptionDefault });
+    const companyDescriptionOverride = normalized.companyDescription === defaults.companyDescription ? null : normalized.companyDescription;
     const greetingOverride = normalized.greetingText === defaults.greetingText ? null : normalized.greetingText;
     const sessionConfigOverrides = pruneInheritedValue(normalized.sessionConfig, defaults.sessionConfig) || null;
     const toolPolicyOverrides = pruneInheritedValue(normalized.toolPolicy, defaults.toolPolicy) || null;
@@ -1177,12 +1226,13 @@ export async function saveKnowledgeRuntimeProfile(db, tenantKey, payload = {}, a
     const runtimeDefaultOverrides = pruneInheritedValue(normalized.runtimeDefaults, defaults.runtimeDefaults) || null;
     await client.query(
       `INSERT INTO knowledge_runtime_profiles (
-         tenant_key, greeting_text, session_config_json, tool_policy_json, wording_defaults_json,
+         tenant_key, company_description, greeting_text, session_config_json, tool_policy_json, wording_defaults_json,
          runtime_defaults_json, updated_by_id, updated_at
        )
-       VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7, NOW())
+       VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, NOW())
        ON CONFLICT (tenant_key)
-       DO UPDATE SET greeting_text = EXCLUDED.greeting_text,
+       DO UPDATE SET company_description = EXCLUDED.company_description,
+                     greeting_text = EXCLUDED.greeting_text,
                      session_config_json = EXCLUDED.session_config_json,
                      tool_policy_json = EXCLUDED.tool_policy_json,
                      wording_defaults_json = EXCLUDED.wording_defaults_json,
@@ -1191,6 +1241,7 @@ export async function saveKnowledgeRuntimeProfile(db, tenantKey, payload = {}, a
                      updated_at = NOW()`,
       [
         tenantKey,
+        companyDescriptionOverride,
         greetingOverride,
         JSON.stringify(sessionConfigOverrides),
         JSON.stringify(toolPolicyOverrides),
@@ -1199,8 +1250,9 @@ export async function saveKnowledgeRuntimeProfile(db, tenantKey, payload = {}, a
         actorId(actor)
       ]
     );
-    const changedFields = diffObjectPaths(comparableRuntimeProfile(previous, tenantKey), {
+    const changedFields = diffObjectPaths(comparableRuntimeProfile(previous, tenantKey, { companyDescriptionDefault }), {
       tenant_key: tenantKey,
+      company_description: normalized.companyDescription,
       greeting_text: normalized.greetingText,
       session_config: normalized.sessionConfig,
       tool_policy: normalized.toolPolicy,
@@ -1214,6 +1266,7 @@ export async function saveKnowledgeRuntimeProfile(db, tenantKey, payload = {}, a
     ), {
       target_tenant: tenantKey,
       changed_fields: changedFields,
+      company_description: normalized.companyDescription,
       greeting_text: normalized.greetingText
     });
     return loadKnowledgeRuntimeProfile(client, tenantKey);
@@ -1223,6 +1276,7 @@ export async function saveKnowledgeRuntimeProfile(db, tenantKey, payload = {}, a
 export async function resetKnowledgeRuntimeProfileToDefaults(db, tenantKey, actor = null) {
   await assertConfigTablesReady(db);
   return withTransaction(db, async (client) => {
+    const companyDescriptionDefault = await loadDefaultCompanyDescription(client, tenantKey);
     const previous = await loadKnowledgeRuntimeProfile(client, tenantKey);
     await client.query(
       `DELETE FROM knowledge_runtime_profiles
@@ -1236,7 +1290,10 @@ export async function resetKnowledgeRuntimeProfileToDefaults(db, tenantKey, acto
       "admin.tenant_runtime_profile.reset_to_defaults"
     ), {
       target_tenant: tenantKey,
-      changed_fields: diffObjectPaths(comparableRuntimeProfile(previous, tenantKey), comparableRuntimeProfile(next, tenantKey))
+      changed_fields: diffObjectPaths(
+        comparableRuntimeProfile(previous, tenantKey, { companyDescriptionDefault }),
+        comparableRuntimeProfile(next, tenantKey, { companyDescriptionDefault })
+      )
     });
     return loadKnowledgeRuntimeProfileEditorState(client, tenantKey);
   });

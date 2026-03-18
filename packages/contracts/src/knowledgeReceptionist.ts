@@ -420,6 +420,7 @@ export const knowledgeRuntimeDefaultsSchema = z.object({
 
 export const knowledgeRuntimeProfileSchema = z.object({
   tenant_id: z.string().min(1),
+  company_description: z.string().default(""),
   greeting_text: z.string().min(1),
   session_config: knowledgeRuntimeSessionConfigSchema,
   tool_policy: knowledgeRuntimeToolPolicySchema,

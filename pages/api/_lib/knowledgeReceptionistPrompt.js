@@ -99,11 +99,12 @@ function normalizeRuntimeProfile(profile, tenantKey) {
   if (!profile) return null;
   return {
     tenant_id: normalizeText(profile.tenant_key || profile.tenant_id) || tenantKey,
-    greeting_text: normalizeText(profile.greeting_text),
-    session_config: asObject(profile.session_config),
-    tool_policy: asObject(profile.tool_policy),
-    wording_defaults: asObject(profile.wording_defaults),
-    runtime_defaults: asObject(profile.runtime_defaults),
+    company_description: normalizeText(profile.company_description || profile.companyDescription),
+    greeting_text: normalizeText(profile.greeting_text || profile.greetingText),
+    session_config: asObject(profile.session_config || profile.sessionConfig),
+    tool_policy: asObject(profile.tool_policy || profile.toolPolicy),
+    wording_defaults: asObject(profile.wording_defaults || profile.wordingDefaults),
+    runtime_defaults: asObject(profile.runtime_defaults || profile.runtimeDefaults),
     updated_at: profile.updated_at ? new Date(profile.updated_at).toISOString() : null,
     created_at: profile.created_at ? new Date(profile.created_at).toISOString() : null
   };
@@ -179,33 +180,6 @@ function normalizeCallOutcomeSchema(schema) {
     validation_rules: asStringArray(schema.validation_rules_json),
     metadata: asObject(schema.metadata_json)
   };
-}
-
-async function loadTenantCompanyContext(db, tenantKey) {
-  const res = await db.query(
-    `SELECT t.name,
-            t.industry,
-            oi.services_offered
-     FROM tenants t
-     LEFT JOIN LATERAL (
-       SELECT services_offered
-       FROM onboarding_intake
-       WHERE tenant_key = t.tenant_key
-       ORDER BY created_at DESC
-       LIMIT 1
-     ) oi ON TRUE
-     WHERE t.tenant_key = $1
-     LIMIT 1`,
-    [tenantKey]
-  );
-  const row = res.rows?.[0] || {};
-  const servicesOffered = normalizeText(row.services_offered);
-  if (servicesOffered) return servicesOffered;
-  const businessName = normalizeText(row.name);
-  const industry = normalizeText(row.industry);
-  if (businessName && industry) return `${businessName} is a ${industry} business.`;
-  if (industry) return `This business operates in ${industry}.`;
-  return "";
 }
 
 function createInitialCallState({
@@ -368,10 +342,9 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
   if (!build) {
     throw new Error(buildId ? "build_not_found" : "no_active_build");
   }
-  const [{ businessCallIntent, overrides, guardrails, readiness, callOutcomeSchema, runtimeProfile }, setupInterviewIntent, companyContextSummary] = await Promise.all([
+  const [{ businessCallIntent, overrides, guardrails, readiness, callOutcomeSchema, runtimeProfile }, setupInterviewIntent] = await Promise.all([
     loadApprovedConfigurationArtifacts(db, tenantKey),
-    runtimeEntryMode === "setup_interview" ? loadSetupInterviewIntent(db, tenantKey) : Promise.resolve(null),
-    loadTenantCompanyContext(db, tenantKey)
+    runtimeEntryMode === "setup_interview" ? loadSetupInterviewIntent(db, tenantKey) : Promise.resolve(null)
   ]);
 
   const intentSummary = summarizeIntent(
@@ -380,20 +353,21 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
   );
 
   const runtimeProfileOverride = input.runtimeProfileOverride || input.runtime_profile_override || null;
+  const normalizedRuntimeProfile = runtimeProfileOverride
+    ? normalizeRuntimeProfile(runtimeProfileOverride, tenantKey)
+    : normalizeRuntimeProfile(runtimeProfile, tenantKey);
 
   return {
     build,
     configuration: {
-      runtime_profile: runtimeProfileOverride
-        ? normalizeRuntimeProfile(runtimeProfileOverride, tenantKey)
-        : normalizeRuntimeProfile(runtimeProfile, tenantKey),
+      runtime_profile: normalizedRuntimeProfile,
       overrides: (overrides || []).map((item) => normalizeOverrideForContract(item, tenantKey)).filter(Boolean),
       guardrails: (guardrails || []).map((item) => normalizeGuardrailForContract(item, tenantKey)).filter(Boolean),
       call_outcome_schema: normalizeCallOutcomeSchema(callOutcomeSchema) || undefined,
       readiness: normalizeReadinessForContract(readiness, tenantKey) || undefined
     },
     intentSummary,
-    companyContextSummary
+    companyContextSummary: normalizeText(normalizedRuntimeProfile?.company_description)
   };
 }
 

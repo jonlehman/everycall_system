@@ -68,6 +68,7 @@ function buildPreviewVariant({
   return {
     promptLayers,
     tenantRuntimeProfileValues: {
+      companyDescription: runtimeProfile.company_description || "",
       greetingText: runtimeProfile.greeting_text || "",
       aiDisclosure: runtimeProfile.wording_defaults?.ai_disclosure || "",
       uncertaintyPhrase: runtimeProfile.wording_defaults?.uncertainty_phrase || "",

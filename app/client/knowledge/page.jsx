@@ -103,6 +103,7 @@ export default function KnowledgePage() {
     toneRules: 'Be clear, short, and helpful on every turn.\nAnswer direct questions before continuing the script.\nAsk one question at a time.'
   });
   const [runtimeForm, setRuntimeForm] = useState({
+    companyDescription: '',
     greetingText: '',
     voice: 'marin',
     aiDisclosure: '',
@@ -163,6 +164,7 @@ export default function KnowledgePage() {
           : 'Be clear, short, and helpful on every turn.\nAnswer direct questions before continuing the script.\nAsk one question at a time.'
       });
       setRuntimeForm({
+        companyDescription: profile?.company_description || '',
         greetingText: profile?.greeting_text || '',
         voice: profile?.session_config?.voice || 'marin',
         aiDisclosure: profile?.wording_defaults?.ai_disclosure || '',
@@ -234,6 +236,7 @@ export default function KnowledgePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           profile: {
+            companyDescription: runtimeForm.companyDescription,
             greetingText: runtimeForm.greetingText,
             sessionConfig: {
               voice: runtimeForm.voice
@@ -452,7 +455,16 @@ export default function KnowledgePage() {
           </section>
 
           <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Runtime Defaults</h2>
+            <h2 className="mt-0 text-lg font-semibold">Runtime Profile</h2>
+            <label>Company Description</label>
+            <textarea
+              value={runtimeForm.companyDescription}
+              onChange={(event) => setRuntimeForm((current) => ({ ...current, companyDescription: event.target.value }))}
+              style={{ minHeight: 96 }}
+            />
+            <div className="mt-1 text-sm text-slate-600">
+              Feeds the live startup company-context block so the receptionist knows what the business actually does before any lookup.
+            </div>
             <label>Greeting</label>
             <textarea
               value={runtimeForm.greetingText}
@@ -495,7 +507,7 @@ export default function KnowledgePage() {
               onChange={(event) => setRuntimeForm((current) => ({ ...current, closingPhrase: event.target.value }))}
             />
             <div className="mt-3">
-              <Button onClick={saveRuntimeProfile} disabled={savingProfile}>{savingProfile ? 'Saving...' : 'Save Runtime Defaults'}</Button>
+              <Button onClick={saveRuntimeProfile} disabled={savingProfile}>{savingProfile ? 'Saving...' : 'Save Runtime Profile'}</Button>
             </div>
           </section>
 

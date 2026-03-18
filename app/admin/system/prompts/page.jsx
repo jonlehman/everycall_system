@@ -218,6 +218,7 @@ function PreviewModeContent({ mode, draft, live, render }) {
 function renderTenantValueList(values) {
   return (
     <dl className="grid gap-2 text-sm text-slate-700">
+      <div><dt className="font-semibold text-slate-900">Company description</dt><dd>{values?.companyDescription || 'None set.'}</dd></div>
       <div><dt className="font-semibold text-slate-900">Greeting</dt><dd>{values?.greetingText || 'None set.'}</dd></div>
       <div><dt className="font-semibold text-slate-900">AI disclosure</dt><dd>{values?.aiDisclosure || 'None set.'}</dd></div>
       <div><dt className="font-semibold text-slate-900">Uncertainty phrase</dt><dd>{values?.uncertaintyPhrase || 'None set.'}</dd></div>
@@ -234,6 +235,7 @@ function renderTenantValueList(values) {
 function toTenantProfileOverride(profile) {
   if (!profile) return null;
   return {
+    company_description: profile.company_description || '',
     greeting_text: profile.greeting_text || '',
     session_config: profile.session_config || {},
     tool_policy: profile.tool_policy || {},
@@ -595,6 +597,20 @@ export default function AdminPromptConfigPage() {
               description="These fields come from the selected tenant's runtime profile. The input shows the current draft effective value, while the status block underneath shows saved inheritance vs override state."
             >
               <FormGroup
+                title="Company Context"
+                description="This tenant-scoped description tells the live receptionist what the business actually does before any knowledge lookup runs."
+              >
+                <Field label="Company Description" hint="Feeds the startup Company Context block in the live session instructions. Use this for what the business actually does, not for call-handling behavior.">
+                  <TextArea
+                    value={tenantProfile?.company_description || ''}
+                    onChange={(event) => updateTenantProfile(['company_description'], event.target.value)}
+                    className="min-h-[120px]"
+                  />
+                  <TenantFieldState fieldState={tenantFieldSources?.companyDescription} draftValue={tenantProfile?.company_description} />
+                </Field>
+              </FormGroup>
+
+              <FormGroup
                 title="Greeting And Wording Defaults"
                 description="These tenant-scoped values feed the greeting turn, tenant persona wording, and fallback phrasing used throughout the live call."
               >
@@ -711,6 +727,7 @@ export default function AdminPromptConfigPage() {
             >
               <div className="grid gap-2 text-sm text-slate-700">
                 {[
+                  ['Company description', tenantFieldSources?.companyDescription],
                   ['Greeting', tenantFieldSources?.greetingText],
                   ['AI disclosure', tenantFieldSources?.aiDisclosure],
                   ['Uncertainty phrase', tenantFieldSources?.uncertaintyPhrase],
@@ -923,7 +940,7 @@ export default function AdminPromptConfigPage() {
         editor={(
           <LayerCard
             title="Company Context Layer"
-            description="Rendered from tenant company context, currently sourced from onboarding intake services offered."
+            description="Rendered from the tenant runtime profile company description."
             onReset={() => resetLayer(['companyContext'])}
           >
             <Field label="Header Label" hint="This section header appears above the company-description block in the final gateway session instructions.">
@@ -941,7 +958,7 @@ export default function AdminPromptConfigPage() {
           </LayerCard>
         )}
         preview={(
-          <PreviewBlock title="Company Context Block" description="Derived from tenant company information and included in the startup session instructions.">
+          <PreviewBlock title="Company Context Block" description="Derived from the tenant runtime profile company description and included in the startup session instructions.">
             <PreviewModeContent
               mode={previewMode}
               draft={previewDraft?.rendered?.companyContext}

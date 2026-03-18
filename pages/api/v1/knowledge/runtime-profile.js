@@ -27,7 +27,28 @@ export default async function handler(req, res) {
 
     if (req.method === "POST") {
       const body = typeof req.body === "object" && req.body ? req.body : {};
-      const profile = await saveKnowledgeRuntimeProfile(pool, tenantKey, body.profile || body, session);
+      const current = await loadKnowledgeRuntimeProfile(pool, tenantKey);
+      const incoming = body.profile || body;
+      const profile = await saveKnowledgeRuntimeProfile(pool, tenantKey, {
+        ...current,
+        ...incoming,
+        session_config: {
+          ...(current?.session_config || {}),
+          ...(incoming?.session_config || {})
+        },
+        tool_policy: {
+          ...(current?.tool_policy || {}),
+          ...(incoming?.tool_policy || {})
+        },
+        wording_defaults: {
+          ...(current?.wording_defaults || {}),
+          ...(incoming?.wording_defaults || {})
+        },
+        runtime_defaults: {
+          ...(current?.runtime_defaults || {}),
+          ...(incoming?.runtime_defaults || {})
+        }
+      }, session);
       return res.status(200).json({ ok: true, profile });
     }
 
