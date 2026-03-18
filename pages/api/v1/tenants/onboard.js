@@ -149,7 +149,7 @@ function defaultBusinessIntent(payload) {
 
 function defaultRuntimeProfile(payload) {
   return {
-    companyDescription: payload.servicesOffered.join(", ") || "",
+    companyDescription: "",
     greetingText: payload.greetingText || `Thanks for calling ${payload.businessName}. How can I help?`,
     sessionConfig: undefined,
     toolPolicy: DEFAULT_RUNTIME_TOOL_POLICY,
