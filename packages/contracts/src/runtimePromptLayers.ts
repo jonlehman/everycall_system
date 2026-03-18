@@ -2,6 +2,10 @@ export type RuntimePromptConfig = {
   baseSystemPrompt: {
     instructionLines: string[];
   };
+  businessContext: {
+    headerLabel: string;
+    summaryTemplate: string;
+  };
   tenantPersona: {
     headerLabel: string;
     lineTemplates: {
@@ -77,6 +81,10 @@ const DEFAULT_RUNTIME_PROMPT_CONFIG: RuntimePromptConfig = {
       "If the remaining material still conflicts, avoid making a hard unsupported claim and offer a callback or follow-up.",
       "Keep each response to one or two short sentences unless the caller clearly needs a concise clarification."
     ]
+  },
+  businessContext: {
+    headerLabel: "Business context:",
+    summaryTemplate: "- What this business does: {business_call_intent_summary}"
   },
   tenantPersona: {
     headerLabel: "Tenant persona and wording:",
@@ -187,6 +195,7 @@ export function normalizeRuntimePromptConfig(input: unknown): RuntimePromptConfi
   const defaults = cloneDefaults();
   const source = asObject(input);
   const baseSystemPrompt = asObject(source.baseSystemPrompt);
+  const businessContext = asObject(source.businessContext);
   const tenantPersona = asObject(source.tenantPersona);
   const tenantPersonaLines = asObject(tenantPersona.lineTemplates);
   const tenantPersonaDefaults = asObject(tenantPersona.defaults);
@@ -201,6 +210,10 @@ export function normalizeRuntimePromptConfig(input: unknown): RuntimePromptConfi
         baseSystemPrompt.instructionLines,
         defaults.baseSystemPrompt.instructionLines
       )
+    },
+    businessContext: {
+      headerLabel: normalizeText(businessContext.headerLabel) || defaults.businessContext.headerLabel,
+      summaryTemplate: normalizeText(businessContext.summaryTemplate) || defaults.businessContext.summaryTemplate
     },
     tenantPersona: {
       headerLabel: normalizeText(tenantPersona.headerLabel) || defaults.tenantPersona.headerLabel,
@@ -297,6 +310,19 @@ export function buildTenantPersonaFromPromptConfig(
   ].map((line) => normalizeText(line)).filter(Boolean).join("\n");
 }
 
+export function buildBusinessContextBlockFromPromptConfig(
+  promptConfig: RuntimePromptConfig | unknown,
+  businessCallIntentSummary: string | null | undefined
+) {
+  const config = normalizeRuntimePromptConfig(promptConfig);
+  const summary = normalizeText(businessCallIntentSummary);
+  if (!summary) return "";
+  const line = normalizeText(applyTemplate(config.businessContext.summaryTemplate, {
+    business_call_intent_summary: summary
+  }));
+  return [config.businessContext.headerLabel, line].filter(Boolean).join("\n");
+}
+
 export function buildGatewaySystemPromptFromPromptConfig(
   promptConfig: RuntimePromptConfig | unknown,
   tenantPersona: string
@@ -358,12 +384,17 @@ export function buildRuntimeContextBlockFromPromptConfig(
 export function buildGatewaySessionInstructionsFromPromptConfig(input: {
   promptConfig?: RuntimePromptConfig | unknown;
   systemPrompt: string;
+  businessCallIntentSummary?: string | null;
   tenantGreeting?: string | null;
   toolPolicy?: Record<string, unknown> | null;
   currentStage: string;
   activeDomainId?: string | null;
   activeSubdomainId?: string | null;
 }) {
+  const businessContextBlock = buildBusinessContextBlockFromPromptConfig(
+    input.promptConfig,
+    input.businessCallIntentSummary
+  );
   const policyBlock = buildKnowledgeToolPolicyBlockFromPromptConfig(input.promptConfig, input.toolPolicy);
   const runtimeContextBlock = buildRuntimeContextBlockFromPromptConfig(input.promptConfig, {
     currentStage: input.currentStage,
@@ -372,6 +403,7 @@ export function buildGatewaySessionInstructionsFromPromptConfig(input: {
   });
   return [
     normalizeText(input.systemPrompt),
+    businessContextBlock,
     policyBlock,
     normalizeText(input.tenantGreeting) ? `Greeting:\n${normalizeText(input.tenantGreeting)}` : "",
     runtimeContextBlock

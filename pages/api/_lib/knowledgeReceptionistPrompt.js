@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import {
+  buildGatewaySessionInstructionsFromPromptConfig,
   buildGatewaySystemPromptFromPromptConfig,
   buildResponseRestrictionsFromPromptConfig,
   buildTenantPersonaFromPromptConfig,
@@ -412,6 +413,16 @@ export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) 
   });
   const tenantPersona = buildTenantPersonaFromPromptConfig(promptLayers, configuration.runtime_profile, intentSummary);
   const systemPrompt = renderGatewaySystemPrompt({ tenantPersona, promptConfig: promptLayers });
+  const startupSessionInstructions = buildGatewaySessionInstructionsFromPromptConfig({
+    promptConfig: promptLayers,
+    systemPrompt,
+    businessCallIntentSummary: intentSummary.summary,
+    tenantGreeting: configuration.runtime_profile?.greeting_text || "",
+    toolPolicy: configuration.runtime_profile?.tool_policy || {},
+    currentStage: initialCallState.current_stage,
+    activeDomainId: initialCallState.active_domain_id,
+    activeSubdomainId: initialCallState.active_subdomain_id
+  });
 
   return {
     build,
@@ -422,7 +433,7 @@ export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) 
     approvedConfiguration: configuration,
     initialCallState,
     tokenCounts: {
-      startup_instruction_tokens: estimateTokenCount(systemPrompt),
+      startup_instruction_tokens: estimateTokenCount(startupSessionInstructions),
       prompt_payload_tokens: estimateTokenCount({
         active_build_id: build.build_id,
         tenant_persona: tenantPersona,

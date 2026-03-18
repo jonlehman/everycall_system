@@ -1,4 +1,5 @@
 import {
+  buildBusinessContextBlockFromPromptConfig,
   buildGatewaySessionInstructionsFromPromptConfig,
   buildGreetingInstructionFromPromptConfig,
   buildKnowledgeToolPolicyBlockFromPromptConfig,
@@ -78,6 +79,10 @@ function buildPreviewVariant({
     },
     rendered: {
       baseSystemPrompt: (promptLayers.baseSystemPrompt?.instructionLines || []).join("\n"),
+      businessContext: buildBusinessContextBlockFromPromptConfig(
+        promptLayers,
+        gatewayPrompt.businessCallIntentSummary
+      ),
       tenantPersonaHeader: promptLayers.tenantPersona?.headerLabel || "",
       tenantPersona: gatewayPrompt.tenantPersona,
       knowledgeToolPolicy: buildKnowledgeToolPolicyBlockFromPromptConfig(promptLayers, toolPolicy),
@@ -91,6 +96,7 @@ function buildPreviewVariant({
       finalGatewaySessionInstructions: buildGatewaySessionInstructionsFromPromptConfig({
         promptConfig: promptLayers,
         systemPrompt: gatewayPromptOutput.system_prompt,
+        businessCallIntentSummary: gatewayPrompt.businessCallIntentSummary,
         tenantGreeting: gatewayPromptOutput.tenant_greeting,
         toolPolicy,
         currentStage: gatewayPrompt.initialCallState.current_stage,

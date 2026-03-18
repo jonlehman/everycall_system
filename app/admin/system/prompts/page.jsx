@@ -799,7 +799,7 @@ export default function AdminPromptConfigPage() {
               title="Persona Line Templates"
               description="These wrappers control how tenant runtime-profile values are phrased inside the persona block."
             >
-              <Field label="Business Role Template" hint="Controls how the approved business-call-intent summary is phrased inside the tenant persona block.">
+              <Field label="Business Role Template" hint="Controls how the approved business-call-intent summary is phrased inside the tenant persona block. This is separate from the explicit business-context block below.">
                 <TextInput
                   value={config.tenantPersona.lineTemplates.businessRole}
                   onChange={(event) => updateConfig(['tenantPersona', 'lineTemplates', 'businessRole'], event.target.value)}
@@ -918,7 +918,42 @@ export default function AdminPromptConfigPage() {
       />
 
       <PromptSection
-        title="3. Knowledge Tool Policy"
+        title="3. Business Context"
+        description="This startup block tells Realtime, in plain language, what the company does and how incoming calls for that business should be handled."
+        editor={(
+          <LayerCard
+            title="Business Context Layer"
+            description="Rendered from the approved business-call-intent summary that already exists at session start."
+            onReset={() => resetLayer(['businessContext'])}
+          >
+            <Field label="Header Label" hint="This section header appears above the explicit business-context block in the final gateway session instructions.">
+              <TextInput
+                value={config.businessContext.headerLabel}
+                onChange={(event) => updateConfig(['businessContext', 'headerLabel'], event.target.value)}
+              />
+            </Field>
+            <Field label="Summary Template" hint="This renders the approved business-call-intent summary into the startup session instructions so the model knows what the company does before any tool call. Use `{business_call_intent_summary}`.">
+              <TextInput
+                value={config.businessContext.summaryTemplate}
+                onChange={(event) => updateConfig(['businessContext', 'summaryTemplate'], event.target.value)}
+              />
+            </Field>
+          </LayerCard>
+        )}
+        preview={(
+          <PreviewBlock title="Business Context Block" description="Derived from the tenant’s approved business-call-intent summary and included in the startup session instructions.">
+            <PreviewModeContent
+              mode={previewMode}
+              draft={previewDraft?.rendered?.businessContext}
+              live={previewLive?.rendered?.businessContext}
+              render={(value) => <CodeBlock value={value} />}
+            />
+          </PreviewBlock>
+        )}
+      />
+
+      <PromptSection
+        title="4. Knowledge Tool Policy"
         description="This structured policy block tells Realtime how to use `knowledge_lookup` and how much clarification is allowed before a tool call."
         editor={(
           <LayerCard
@@ -965,7 +1000,7 @@ export default function AdminPromptConfigPage() {
       />
 
       <PromptSection
-        title="4. Greeting Turn"
+        title="5. Greeting Turn"
         description="This wrapper is only used when the gateway explicitly asks Realtime to speak the first greeting right after session startup."
         editor={(
           <LayerCard
@@ -1000,7 +1035,7 @@ export default function AdminPromptConfigPage() {
       />
 
       <PromptSection
-        title="5. Runtime Context"
+        title="6. Runtime Context"
         description="This runtime-derived block describes the current stage and assignment that the live gateway merges into the startup session instructions."
         editor={(
           <LayerCard
@@ -1041,7 +1076,7 @@ export default function AdminPromptConfigPage() {
       />
 
       <PromptSection
-        title="6. Post-Tool Answer Rules"
+        title="7. Post-Tool Answer Rules"
         description="These rules are attached after `knowledge_lookup` and shape how Realtime speaks from the answer packet on that turn."
         editor={(
           <LayerCard

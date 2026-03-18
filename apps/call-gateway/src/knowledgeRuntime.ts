@@ -344,6 +344,7 @@ export function buildGatewaySessionInstructions(payload: GatewayPromptPayload) {
   return buildGatewaySessionInstructionsFromPromptConfig({
     promptConfig: payload.knowledge_runtime.prompt_layers || null,
     systemPrompt: payload.system_prompt,
+    businessCallIntentSummary: payload.knowledge_runtime.business_call_intent_summary,
     tenantGreeting: payload.tenant_greeting,
     toolPolicy: payload.knowledge_runtime.approved_configuration.runtime_profile.tool_policy || {},
     currentStage: payload.knowledge_runtime.initial_call_state.current_stage,
