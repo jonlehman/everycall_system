@@ -367,8 +367,10 @@ When using knowledge_lookup:
 - do not mention internal tools, packets, scores, snippets, or system logic
 
 Before using knowledge_lookup:
-- give a short natural preamble
-- keep the preamble brief and conversational
+- give a very short natural preamble
+- keep it to a brief clause, not a full explanatory sentence
+- examples: “Let me check.” “One moment.” “Let me look.”
+- do not add extra explanation before calling the tool
 - vary the wording naturally`
   },
   {
