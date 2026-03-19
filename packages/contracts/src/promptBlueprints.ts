@@ -407,8 +407,13 @@ If supported information is missing or conflicting:
     allowed_placeholders: [],
     default_text: `# Audio / Conversation Safety
 - Only respond to clear audio or clear text.
-- If the caller’s speech is partial, noisy, cut off, silent, or unintelligible, ask them to repeat it.
+- Treat short fillers, hesitations, false starts, and one- or two-word fragments as the caller still holding the turn, not as a complete request.
+- If the caller seems to be thinking, restarting, or searching for words, wait briefly instead of jumping in.
+- If the caller’s speech is partial, noisy, cut off, silent, or unintelligible, use one short neutral reprompt.
+- Keep reprompts brief, such as "Go ahead." "Take your time." "What’s the main issue?"
 - Do not guess what the caller said.
+- Do not stack apologies or keep re-asking the same question in slightly different wording.
+- After two unclear attempts, ask one simple grounding question instead of another generic repeat request.
 - If the caller refers to earlier context that is not clearly available, briefly say so and ask them to restate the key part.
 - If the session appears to have restarted or context is missing, do not pretend to remember prior details.`
   },
@@ -710,9 +715,9 @@ export function getPromptSectionSeeds() {
 export function getDefaultPromptBlueprintSeed() {
   return {
     blueprint_key: "canonical_receptionist",
-    version: 2,
+    version: 3,
     status: "active" as PromptBlueprintStatus,
-    name: "Canonical Receptionist v2",
+    name: "Canonical Receptionist v3",
     sample_phrase_groups: normalizeSamplePhraseGroups(DEFAULT_SAMPLE_PHRASE_GROUPS),
     tool_definitions: {
       knowledge_lookup: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup.parameter_descriptions } },

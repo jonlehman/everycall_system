@@ -224,6 +224,8 @@ function buildFieldState({ defaultValue, effectiveValue, overrideValue, hasOverr
   };
 }
 
+let ensureDefaultPromptBlueprintPromise = null;
+
 function valuesEqual(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -246,58 +248,71 @@ function normalizeStoredTenantPromptProfile(row, defaults) {
 }
 
 async function ensureDefaultPromptBlueprint(db) {
-  const seed = getDefaultPromptBlueprintSeed();
-  const promptBlueprintId = `pb_${seed.blueprint_key}_v${seed.version}`;
-  const existingVersion = await db.query(
-    `SELECT prompt_blueprint_id
-     FROM prompt_blueprints
-     WHERE blueprint_key = $1
-       AND version = $2
-     LIMIT 1`,
-    [seed.blueprint_key, seed.version]
-  );
-  if (existingVersion.rowCount) {
-    return;
+  if (ensureDefaultPromptBlueprintPromise) {
+    return ensureDefaultPromptBlueprintPromise;
   }
-  await db.query(
-    `UPDATE prompt_blueprints
-     SET status = 'archived',
-         updated_at = NOW()
-     WHERE blueprint_key = $1
-       AND status = 'active'`,
-    [seed.blueprint_key]
-  );
-  await db.query(
-    `INSERT INTO prompt_blueprints (
-       prompt_blueprint_id, blueprint_key, version, status, name, sample_phrase_groups_json, tool_definitions_json
-     )
-     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)`,
-    [
-      promptBlueprintId,
-      seed.blueprint_key,
-      seed.version,
-      seed.status,
-      seed.name,
-      JSON.stringify(seed.sample_phrase_groups),
-      JSON.stringify(seed.tool_definitions)
-    ]
-  );
-  for (const section of seed.sections) {
+  ensureDefaultPromptBlueprintPromise = (async () => {
+    const seed = getDefaultPromptBlueprintSeed();
+    const promptBlueprintId = `pb_${seed.blueprint_key}_v${seed.version}`;
     await db.query(
-      `INSERT INTO prompt_blueprint_sections (
-         prompt_blueprint_id, section_id, section_order, default_text, is_template, allowed_placeholders_json, admin_metadata_json
+      `UPDATE prompt_blueprints
+       SET status = 'archived',
+           updated_at = NOW()
+       WHERE blueprint_key = $1
+         AND status = 'active'
+         AND prompt_blueprint_id <> $2`,
+      [seed.blueprint_key, promptBlueprintId]
+    );
+    await db.query(
+      `INSERT INTO prompt_blueprints (
+         prompt_blueprint_id, blueprint_key, version, status, name, sample_phrase_groups_json, tool_definitions_json
        )
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)`,
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+       ON CONFLICT (prompt_blueprint_id)
+       DO UPDATE SET blueprint_key = EXCLUDED.blueprint_key,
+                     version = EXCLUDED.version,
+                     status = EXCLUDED.status,
+                     name = EXCLUDED.name,
+                     sample_phrase_groups_json = EXCLUDED.sample_phrase_groups_json,
+                     tool_definitions_json = EXCLUDED.tool_definitions_json,
+                     updated_at = NOW()`,
       [
         promptBlueprintId,
-        section.section_id,
-        section.section_order,
-        section.default_text,
-        section.is_template,
-        JSON.stringify(section.allowed_placeholders || []),
-        JSON.stringify(section.admin_metadata || {})
+        seed.blueprint_key,
+        seed.version,
+        seed.status,
+        seed.name,
+        JSON.stringify(seed.sample_phrase_groups),
+        JSON.stringify(seed.tool_definitions)
       ]
     );
+    await db.query(
+      `DELETE FROM prompt_blueprint_sections
+       WHERE prompt_blueprint_id = $1`,
+      [promptBlueprintId]
+    );
+    for (const section of seed.sections) {
+      await db.query(
+        `INSERT INTO prompt_blueprint_sections (
+           prompt_blueprint_id, section_id, section_order, default_text, is_template, allowed_placeholders_json, admin_metadata_json
+         )
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)`,
+        [
+          promptBlueprintId,
+          section.section_id,
+          section.section_order,
+          section.default_text,
+          section.is_template,
+          JSON.stringify(section.allowed_placeholders || []),
+          JSON.stringify(section.admin_metadata || {})
+        ]
+      );
+    }
+  })();
+  try {
+    await ensureDefaultPromptBlueprintPromise;
+  } finally {
+    ensureDefaultPromptBlueprintPromise = null;
   }
 }
 
