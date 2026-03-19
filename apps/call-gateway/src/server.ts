@@ -65,6 +65,7 @@ const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "raw").toLowerCase();
 const outboundAudioFrameMs = 20;
 const outboundJitterBufferFrames = Math.max(1, Number(process.env.TELNYX_OUTBOUND_BUFFER_FRAMES || "3"));
+const callerWeakTurnHoldMs = Math.max(0, Number(process.env.CALLER_WEAK_TURN_HOLD_MS || "1500"));
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
 const realtimeLogRoot = String(process.env.REALTIME_LOG_FILE || "/tmp/realtime-logs.jsonl");
@@ -161,6 +162,12 @@ type StreamSession = {
   completedToolCallKeys?: Set<string>;
   pendingToolSpeechWait?: PendingToolSpeechWait | null;
   audioPumpTrace?: AudioPumpTrace | null;
+  pendingCallerTurnTimer?: NodeJS.Timeout | null;
+  pendingCallerTurnKey?: string | null;
+  pendingCallerTurnTranscript?: string | null;
+  pendingCallerTurnWeak?: boolean;
+  lastCallerTurnResponseKey?: string | null;
+  lastCallerSpeechStoppedAtMs?: number | null;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -203,8 +210,167 @@ function createStreamSession(
     completedToolCallKeys: new Set<string>(),
     pendingToolSpeechWait: null,
     audioPumpTrace: null,
+    pendingCallerTurnTimer: null,
+    pendingCallerTurnKey: null,
+    pendingCallerTurnTranscript: null,
+    pendingCallerTurnWeak: false,
+    lastCallerTurnResponseKey: null,
+    lastCallerSpeechStoppedAtMs: null,
     ...(realtimeLogPath ? { realtimeLogPath } : {})
   };
+}
+
+function normalizeText(value: unknown) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function truncateText(value: unknown, limit = 120) {
+  const text = normalizeText(value);
+  if (!text) return "";
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+const fillerTokens = new Set([
+  "uh",
+  "uhh",
+  "uhhh",
+  "um",
+  "umm",
+  "ummm",
+  "hmm",
+  "hm",
+  "mm",
+  "mmm",
+  "er",
+  "ah",
+  "uh-huh",
+  "mhm"
+]);
+
+type CallerTurnAssessment = {
+  shouldDelay: boolean;
+  reason: string;
+  normalizedTranscript: string;
+};
+
+function assessCallerTurnTranscript(transcript: string): CallerTurnAssessment {
+  const normalizedTranscript = normalizeText(transcript);
+  if (!normalizedTranscript) {
+    return {
+      shouldDelay: false,
+      reason: "empty_transcript",
+      normalizedTranscript
+    };
+  }
+
+  const normalizedPhrase = normalizedTranscript
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}' ]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = normalizedPhrase.match(/[\p{L}\p{N}']+/gu) || [];
+  if (!words.length) {
+    return {
+      shouldDelay: false,
+      reason: "empty_words",
+      normalizedTranscript
+    };
+  }
+
+  const lastWord = words[words.length - 1] || "";
+  const fillerOnly = words.every((word) => fillerTokens.has(word));
+  const trailingFiller = fillerTokens.has(lastWord);
+
+  let reason = "clear_turn";
+  if (fillerOnly) {
+    reason = "filler_only";
+  } else if (trailingFiller) {
+    reason = "ends_with_filler";
+  }
+
+  return {
+    shouldDelay: fillerOnly || trailingFiller,
+    reason,
+    normalizedTranscript
+  };
+}
+
+function clearPendingCallerTurnResponse(session: StreamSession, reason: string) {
+  if (session.pendingCallerTurnTimer) {
+    clearTimeout(session.pendingCallerTurnTimer);
+    session.pendingCallerTurnTimer = null;
+    logInfo("caller_turn_response_cleared", {
+      callSid: session.callSid,
+      reason,
+      weak: session.pendingCallerTurnWeak || false,
+      turnKey: session.pendingCallerTurnKey || undefined,
+      transcript: session.pendingCallerTurnTranscript ? truncateText(session.pendingCallerTurnTranscript, 80) : undefined
+    });
+  }
+  session.pendingCallerTurnKey = null;
+  session.pendingCallerTurnTranscript = null;
+  session.pendingCallerTurnWeak = false;
+}
+
+function scheduleCallerTurnResponse(session: StreamSession, transcript: string, turnKey: string) {
+  const dedupeKey = `caller_turn:${turnKey}`;
+  if (session.lastCallerTurnResponseKey === dedupeKey) {
+    return;
+  }
+
+  const assessment = assessCallerTurnTranscript(transcript);
+  if (!assessment.shouldDelay) {
+    return;
+  }
+
+  clearPendingCallerTurnResponse(session, "rescheduled");
+  const elapsedSinceSpeechStoppedMs = session.lastCallerSpeechStoppedAtMs
+    ? Math.max(0, performance.now() - session.lastCallerSpeechStoppedAtMs)
+    : 0;
+  const delayMs = Math.max(0, callerWeakTurnHoldMs - elapsedSinceSpeechStoppedMs);
+
+  if (delayMs <= 0) {
+    session.lastCallerTurnResponseKey = dedupeKey;
+    logInfo("caller_turn_response_requested", {
+      callSid: session.callSid,
+      weak: true,
+      reason: assessment.reason,
+      delayMs: 0,
+      transcript: truncateText(assessment.normalizedTranscript, 80)
+    });
+    requestAssistantResponse(session, "caller_turn", {}, dedupeKey);
+    return;
+  }
+
+  session.pendingCallerTurnKey = dedupeKey;
+  session.pendingCallerTurnTranscript = assessment.normalizedTranscript;
+  session.pendingCallerTurnWeak = true;
+  session.pendingCallerTurnTimer = setTimeout(() => {
+    if (session.pendingCallerTurnKey !== dedupeKey) {
+      return;
+    }
+    session.pendingCallerTurnTimer = null;
+    session.pendingCallerTurnKey = null;
+    session.pendingCallerTurnTranscript = null;
+    session.pendingCallerTurnWeak = false;
+    session.lastCallerTurnResponseKey = dedupeKey;
+    logInfo("caller_turn_response_requested", {
+      callSid: session.callSid,
+      weak: true,
+      reason: assessment.reason,
+      delayMs,
+      transcript: truncateText(assessment.normalizedTranscript, 80)
+    });
+    requestAssistantResponse(session, "caller_turn", {}, dedupeKey);
+  }, delayMs);
+
+  logInfo("caller_turn_response_delayed", {
+    callSid: session.callSid,
+    weak: true,
+    reason: assessment.reason,
+    delayMs,
+    transcript: truncateText(assessment.normalizedTranscript, 80)
+  });
 }
 
 function logPrewarmOutcome(callSid: string, tenantKey: string, source: string, result: { status: "ready" | "failed"; fetchMs: number; cacheHit: boolean; message?: string; buildId?: string }) {
@@ -787,7 +953,11 @@ function startOutputPump(session: StreamSession) {
   }, 5);
 }
 
-async function interruptAssistantForCallerSpeech(session: StreamSession | undefined, reason: string) {
+async function interruptAssistantForCallerSpeech(
+  session: StreamSession | undefined,
+  reason: string,
+  options: { persistKnowledgeState?: boolean } = {}
+) {
   if (!session || !hasPendingAssistantAudio(session)) return false;
   const plan = buildAssistantInterruptionPlan(session, reason);
   if (!plan.shouldInterrupt) return false;
@@ -796,7 +966,7 @@ async function interruptAssistantForCallerSpeech(session: StreamSession | undefi
     sendOpenAiEvent(session.openAiWs, event);
   }
   applyAssistantInterruption(session, plan);
-  if (session.knowledgeCallState) {
+  if (options.persistKnowledgeState !== false && session.knowledgeCallState) {
     await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
       source: "barge_in",
       reason,
@@ -856,6 +1026,7 @@ async function endCallSession(session: StreamSession | undefined, reason: string
   if (!session || session.isShuttingDown) return;
   session.isShuttingDown = true;
   session.callActive = false;
+  clearPendingCallerTurnResponse(session, "call_end");
   await persistCallUsage(session);
   if (session.knowledgeCallState) {
     await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
@@ -1503,6 +1674,11 @@ function connectOpenAiRealtime(session: StreamSession) {
       }
       markAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
       noteAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
+      if (session.pendingCallerTurnTimer && session.pendingCallerTurnWeak && !session.pendingToolSpeechWait) {
+        await interruptAssistantForCallerSpeech(session, "caller_turn_trailing_filler_hold", {
+          persistKnowledgeState: false
+        });
+      }
       logInfo("openai_realtime_response_created", {
         callSid: session.callSid,
         responseId: payloadMsg?.response?.id || payloadMsg?.response_id
@@ -1629,10 +1805,34 @@ function connectOpenAiRealtime(session: StreamSession) {
           [session.callSid, session.tenantKey, "caller", String(transcript)]
         );
       }
+      const turnKey = String(
+        payloadMsg.item_id
+          || payloadMsg?.item?.id
+          || payloadMsg?.conversation_item_id
+          || payloadMsg.event_id
+          || `caller_turn_${Date.now()}`
+      );
+      const assessment = assessCallerTurnTranscript(String(transcript || ""));
+      if (assessment.shouldDelay) {
+        if (hasActiveAssistantResponse(session) && !session.pendingToolSpeechWait) {
+          await interruptAssistantForCallerSpeech(session, "caller_turn_trailing_filler_hold", {
+            persistKnowledgeState: false
+          });
+        }
+        scheduleCallerTurnResponse(session, String(transcript || ""), turnKey);
+      } else {
+        clearPendingCallerTurnResponse(session, "clear_turn_completed");
+      }
+      return;
+    }
+
+    if (type === "input_audio_buffer.speech_stopped") {
+      session.lastCallerSpeechStoppedAtMs = performance.now();
       return;
     }
 
     if (type === "input_audio_buffer.speech_started") {
+      clearPendingCallerTurnResponse(session, "caller_resumed_speech");
       await interruptAssistantForCallerSpeech(session, "caller_speech_detected_realtime");
       return;
     }
