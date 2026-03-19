@@ -672,27 +672,37 @@ export default function AdminPromptConfigPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => loadPage(selectedBlueprintId)} disabled={loading || savingGlobal || savingTenant}>Reload</Button>
-          <Button variant="outline" onClick={resetDraftBlueprintToSaved} disabled={savingGlobal}>Reset Global To Saved</Button>
-          <Button onClick={saveGlobalBlueprint} disabled={savingGlobal}>{savingGlobal ? 'Saving...' : 'Save Global Blueprint'}</Button>
-          <Button variant="outline" onClick={resetTenantToSaved} disabled={savingTenant || !savedTenantConfig}>Reset Tenant To Saved</Button>
-          <Button variant="outline" onClick={resetTenantToDefaults} disabled={savingTenant || !selectedTenant}>Reset Tenant To Defaults</Button>
-          <Button onClick={saveTenantConfig} disabled={savingTenant || !selectedTenant || !draftTenantProfile}>{savingTenant ? 'Saving...' : 'Save Tenant Prompt Config'}</Button>
+          <div className="grid gap-2 rounded-xl border border-sky-200 bg-sky-50 p-2">
+            <div className="px-1 text-[11px] font-semibold uppercase tracking-wide text-sky-700">Global Blueprint</div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" className="border-sky-200 bg-white text-sky-900 hover:bg-sky-100" onClick={resetDraftBlueprintToSaved} disabled={savingGlobal}>Reset Global To Saved</Button>
+              <Button className="bg-sky-600 text-white hover:bg-sky-700" onClick={saveGlobalBlueprint} disabled={savingGlobal}>{savingGlobal ? 'Saving...' : 'Save Global Blueprint'}</Button>
+            </div>
+          </div>
+          <div className="grid gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-2">
+            <div className="px-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Selected Tenant</div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" className="border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-100" onClick={resetTenantToSaved} disabled={savingTenant || !savedTenantConfig}>Reset Tenant To Saved</Button>
+              <Button variant="outline" className="border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-100" onClick={resetTenantToDefaults} disabled={savingTenant || !selectedTenant}>Reset Tenant To Defaults</Button>
+              <Button className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={saveTenantConfig} disabled={savingTenant || !selectedTenant || !draftTenantProfile}>{savingTenant ? 'Saving...' : 'Save Tenant Prompt Config'}</Button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm lg:grid-cols-2">
-        <div>
-          <div className="text-sm font-semibold text-slate-900">Global Blueprint Scope</div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
+          <div className="text-sm font-semibold text-sky-900">Global Blueprint Scope</div>
           <p className="mt-1 text-sm text-slate-600">
             Global section text, sample phrase groups, and tool descriptions affect every tenant that uses this blueprint.
           </p>
         </div>
-        <div>
-          <div className="text-sm font-semibold text-slate-900">Selected Tenant Scope</div>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+          <div className="text-sm font-semibold text-emerald-900">Selected Tenant Scope</div>
           <p className="mt-1 text-sm text-slate-600">
             Tenant fields and section overrides affect only <span className="font-medium text-slate-900">{selectedTenantRecord?.name || 'the selected tenant'}</span>.
           </p>
-          <div className="mt-2 text-xs text-slate-500">
+          <div className="mt-2 text-xs text-emerald-700">
             Tenant key: <code>{selectedTenant || 'none selected'}</code>
           </div>
         </div>
@@ -807,10 +817,10 @@ export default function AdminPromptConfigPage() {
         </div>
       </section>
 
-      <section id="tenant-context" className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+      <section id="tenant-context" className="grid gap-3 rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 shadow-sm">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Tenant Context</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="text-lg font-semibold text-emerald-950">Tenant Context</h2>
+          <p className="mt-1 text-sm text-emerald-900/70">
             These are the narrow business-facing values that shape the rendered prompt for the selected tenant. They should stay separate from the hidden behavior sections.
           </p>
         </div>
@@ -818,7 +828,7 @@ export default function AdminPromptConfigPage() {
           <div className="text-sm text-slate-500">Loading tenant prompt config...</div>
         ) : (
           <div className="grid gap-4 xl:grid-cols-3">
-            <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="grid gap-3 rounded-xl border border-emerald-200 bg-white/90 p-3">
               <div className="text-sm font-semibold text-slate-900">Identity</div>
               <TenantFieldBlock label="Assistant Name" hint="Inserted into the startup prompt and opening line." state={tenantFieldSources.assistant_name} draftValue={draftTenantProfile.assistant_name}>
                 <TextInput value={draftTenantProfile.assistant_name || ''} onChange={(event) => updateTenantProfile('assistant_name', event.target.value)} />
@@ -833,7 +843,7 @@ export default function AdminPromptConfigPage() {
               </TenantFieldBlock>
             </div>
 
-            <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="grid gap-3 rounded-xl border border-emerald-200 bg-white/90 p-3">
               <div className="text-sm font-semibold text-slate-900">Opening And Closing</div>
               <TenantFieldBlock label="Opening Line" hint="Exact first-turn wording for this tenant." state={tenantFieldSources.opening_line} draftValue={draftTenantProfile.opening_line}>
                 <TextArea value={draftTenantProfile.opening_line || ''} onChange={(event) => updateTenantProfile('opening_line', event.target.value)} />
@@ -848,7 +858,7 @@ export default function AdminPromptConfigPage() {
               </TenantFieldBlock>
             </div>
 
-            <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="grid gap-3 rounded-xl border border-emerald-200 bg-white/90 p-3">
               <div className="text-sm font-semibold text-slate-900">Lead Capture Context</div>
               <TenantFieldBlock label="Lead Goal" hint="Business-facing next-step type, such as callback information or consultation request." state={tenantFieldSources.lead_goal} draftValue={draftTenantProfile.lead_goal}>
                 <TextInput value={draftTenantProfile.lead_goal || ''} onChange={(event) => updateTenantProfile('lead_goal', event.target.value)} />
