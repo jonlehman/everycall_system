@@ -64,6 +64,7 @@ const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "raw").toLowerCase();
 const outboundAudioFrameMs = 20;
+const outboundJitterBufferFrames = Math.max(1, Number(process.env.TELNYX_OUTBOUND_BUFFER_FRAMES || "3"));
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
 const realtimeLogRoot = String(process.env.REALTIME_LOG_FILE || "/tmp/realtime-logs.jsonl");
@@ -687,6 +688,12 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
   startOutputPump(session);
 }
 
+function hasBufferedFramesReady(session: StreamSession) {
+  const queuedFrames = session.outputQueue?.length || 0;
+  if (queuedFrames === 0) return false;
+  return queuedFrames >= outboundJitterBufferFrames || !session.currentResponseId;
+}
+
 function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.now()) {
   const trace = ensureAudioPumpTrace(session);
   if (!session.outputQueue || session.outputQueue.length === 0) {
@@ -737,7 +744,8 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
 
 function startOutputPump(session: StreamSession) {
   if (session.outputTimer) return;
-  if (!session.outputQueue || session.outputQueue.length === 0) {
+  if (!hasBufferedFramesReady(session)) {
+    session.outputPrimed = false;
     return;
   }
   session.outputPrimed = true;
@@ -745,12 +753,21 @@ function startOutputPump(session: StreamSession) {
   pumpAvailableOutputFrames(session, session.outputNextFrameAtMs);
   session.outputTimer = setInterval(() => {
     const nowMs = performance.now();
+    if (!session.outputPrimed) {
+      if (!hasBufferedFramesReady(session)) {
+        return;
+      }
+      session.outputPrimed = true;
+      session.outputNextFrameAtMs = nowMs;
+    }
     pumpAvailableOutputFrames(session, nowMs);
     if (!session.outputQueue || session.outputQueue.length === 0) {
       // Realtime audio can arrive in bursts. Keep the Telnyx pump alive while the
-      // current assistant response is still active so the next chunk can be sent
-      // immediately instead of stopping and waiting to re-prime the queue.
+      // current assistant response is still active so the next chunk can re-prime
+      // a small jitter buffer instead of forcing a full pump restart.
       if (session.currentResponseId) {
+        session.outputPrimed = false;
+        session.outputNextFrameAtMs = null;
         return;
       }
       if (session.outputTimer) {
