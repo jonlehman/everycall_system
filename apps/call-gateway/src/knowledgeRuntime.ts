@@ -112,6 +112,12 @@ function uniqueValues(values: string[]) {
   return output;
 }
 
+function asStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.map((item) => normalizeText(item)).filter(Boolean)
+    : [];
+}
+
 function estimateTokenCount(value: unknown) {
   const text = typeof value === "string" ? value : JSON.stringify(value);
   return Math.ceil(Buffer.byteLength(String(text || ""), "utf8") / 4);
@@ -349,12 +355,42 @@ export function applyCapturedFieldsToCallState(callState: CallState, payload: Re
 }
 
 export function formatKnowledgeRuntimeToolOutput(result: GatewayRuntimeTurnResponse) {
+  const answerPacket = asObject(result.answer_packet);
+  const coverage = Array.isArray(answerPacket.coverage) ? answerPacket.coverage : [];
+  const coverageSummary = coverage
+    .slice(0, 2)
+    .map((item) => {
+      const row = asObject(item);
+      const requestedItem = normalizeText(row.requested_coverage_item_text);
+      const supportStrength = normalizeText(row.support_strength);
+      if (!requestedItem && !supportStrength) return null;
+      return {
+        requested_item: requestedItem || null,
+        support_strength: supportStrength || null
+      };
+    })
+    .filter(Boolean);
+  const directAnswerPoints = uniqueValues(asStringArray(answerPacket.direct_answer_points)).slice(0, 4);
+  const qualifiers = uniqueValues(asStringArray(answerPacket.qualifiers)).slice(0, 3);
+  const limitsOrExclusions = uniqueValues(asStringArray(answerPacket.limits_or_exclusions)).slice(0, 3);
+  const unsupportedRequestedItems = uniqueValues(asStringArray(answerPacket.unsupported_requested_items)).slice(0, 3);
+
   return {
     mode: result.answer_packet.runtime_mode,
     current_stage: result.call_state.current_stage,
     active_domain: result.runtime_bundle.active_domain_id,
     active_subdomain: result.runtime_bundle.active_subdomain_id,
-    answer_packet: result.answer_packet
+    lookup_result: {
+      query_text: normalizeText(answerPacket.query_text) || null,
+      support_strength: normalizeText(answerPacket.support_strength)
+        || normalizeText(asObject(coverage[0]).support_strength)
+        || null,
+      direct_answer_points: directAnswerPoints,
+      qualifiers,
+      limits_or_exclusions: limitsOrExclusions,
+      unsupported_requested_items: unsupportedRequestedItems,
+      coverage: coverageSummary
+    }
   };
 }
 
