@@ -11,9 +11,9 @@ function normalizeAssignments(value) {
   return value
     .map((item) => ({
       domainId: String(item?.domainId || item?.domain_id || "").trim(),
-      subdomainId: String(item?.subdomainId || item?.subdomain_id || "").trim()
+      subdomainId: String(item?.subdomainId || item?.subdomain_id || "").trim() || null
     }))
-    .filter((item) => item.domainId && item.subdomainId);
+    .filter((item) => item.domainId);
 }
 
 function getTenantKey(req) {

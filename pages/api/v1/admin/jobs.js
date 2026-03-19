@@ -18,10 +18,17 @@ export default async function handler(req, res) {
       const rows = await pool.query(
         `SELECT pj.id, pj.tenant_key, pj.stage, pj.status, pj.status_detail, pj.provider, pj.provider_reference,
                 pj.error_code, pj.error_message, pj.attempted_at, pj.completed_at, pj.updated_at,
-                oi.owner_name, oi.owner_email,
+                tu.owner_name, tu.owner_email,
                 t.telnyx_voice_status
          FROM provisioning_jobs pj
-         LEFT JOIN onboarding_intake oi ON oi.tenant_key = pj.tenant_key
+         LEFT JOIN LATERAL (
+           SELECT name AS owner_name, email AS owner_email
+           FROM tenant_users
+           WHERE tenant_key = pj.tenant_key
+             AND role = 'owner'
+           ORDER BY id ASC
+           LIMIT 1
+         ) tu ON TRUE
          LEFT JOIN tenants t ON t.tenant_key = pj.tenant_key
          ${tenantKey ? "WHERE pj.tenant_key = $1" : ""}
          ORDER BY updated_at DESC

@@ -26,16 +26,17 @@ export default async function handler(req, res) {
          t.tenant_key,
          t.name,
          t.status,
-         oi.owner_name,
-         oi.owner_email
+         tu.owner_name,
+         tu.owner_email
        FROM tenants t
        LEFT JOIN LATERAL (
-         SELECT owner_name, owner_email
-         FROM onboarding_intake oi
-         WHERE oi.tenant_key = t.tenant_key
-         ORDER BY oi.created_at DESC
+         SELECT name AS owner_name, email AS owner_email
+         FROM tenant_users
+         WHERE tenant_key = t.tenant_key
+           AND role = 'owner'
+         ORDER BY id ASC
          LIMIT 1
-       ) oi ON TRUE
+       ) tu ON TRUE
        WHERE COALESCE(NULLIF(TRIM(t.telnyx_voice_number), ''), '') = ''
        ORDER BY t.name ASC, t.tenant_key ASC`
     );

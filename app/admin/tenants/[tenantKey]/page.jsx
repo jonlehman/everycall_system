@@ -17,7 +17,7 @@ const FIELD_SECTIONS = [
       { key: 'plan', label: 'Plan', type: 'text', hint: 'Commercial plan label shown in admin.' },
       { key: 'plan_code', label: 'Plan code', type: 'text', hint: 'Internal billing/plan identifier if one exists.' },
       { key: 'primary_number', label: 'Primary number', type: 'text', hint: 'Customer-facing main number for the tenant.' },
-      { key: 'industry', label: 'Industry', type: 'text', hint: 'Tenant business category or vertical.' }
+      { key: 'industry', label: 'Business Category', type: 'text', hint: 'Broad business category used for knowledge-pack defaults.' }
     ]
   },
   {

@@ -38,6 +38,7 @@ const TENANT_KEY_TABLES = [
   "dispatch_queue",
   "routing_rules",
   "tenant_settings",
+  "tenant_bootstrap_profiles",
   "onboarding_intake",
   "audit_log",
   "billing_events",

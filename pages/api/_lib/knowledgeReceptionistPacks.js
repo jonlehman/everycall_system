@@ -8,6 +8,17 @@ import {
 const PACK_SOURCE_PATH = "config/knowledge-receptionist/packs/v1/index.js";
 
 const INDUSTRY_TO_ASSIGNMENT = {
+  service_business: [{ domainId: "service_business", subdomainId: null }],
+  medical: [{ domainId: "medical", subdomainId: null }],
+  dental: [{ domainId: "dental", subdomainId: null }],
+  therapy_practice: [{ domainId: "therapy_practice", subdomainId: null }],
+  legal: [{ domainId: "legal", subdomainId: null }],
+  accounting: [{ domainId: "accounting", subdomainId: null }],
+  professional_services: [{ domainId: "professional_services", subdomainId: null }],
+  wellness_beauty: [{ domainId: "wellness_beauty", subdomainId: null }],
+  real_estate_property: [{ domainId: "real_estate_property", subdomainId: null }],
+  education_training: [{ domainId: "education_training", subdomainId: null }],
+  retail_showroom: [{ domainId: "retail_showroom", subdomainId: null }],
   plumbing: [{ domainId: "service_business", subdomainId: "service_business.plumbing" }],
   hvac: [{ domainId: "service_business", subdomainId: "service_business.hvac" }],
   electrical: [{ domainId: "service_business", subdomainId: "service_business.electrical" }],
@@ -57,9 +68,9 @@ function uniqueAssignments(assignments) {
   const output = [];
   for (const item of assignments || []) {
     const domainId = normalizeText(item?.domainId || item?.domain_id);
-    const subdomainId = normalizeText(item?.subdomainId || item?.subdomain_id);
-    if (!domainId || !subdomainId) continue;
-    const key = `${domainId}::${subdomainId}`;
+    const subdomainId = normalizeText(item?.subdomainId || item?.subdomain_id) || null;
+    if (!domainId) continue;
+    const key = `${domainId}::${subdomainId || ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
     output.push({ domainId, subdomainId });

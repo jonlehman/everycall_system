@@ -165,7 +165,7 @@ export default function KnowledgePage() {
       setCallOutcomeSchema(outcomeData?.activeSchema || outcomeData?.schemas?.[0] || null);
       setUploadedDocuments(Array.isArray(documentData?.documents) ? documentData.documents : []);
       setBuildForm((current) => ({
-        websiteUrl: current.websiteUrl || buildData?.intakeWebsiteUrl || builds[0]?.metadata_json?.website_url || ''
+        websiteUrl: current.websiteUrl || buildData?.bootstrapWebsiteUrl || builds[0]?.metadata_json?.website_url || ''
       }));
       setStatus({ message: 'Knowledge workspace loaded.', tone: 'ok' });
     } catch {
@@ -335,7 +335,7 @@ export default function KnowledgePage() {
           <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
             <h2 className="mt-0 text-lg font-semibold">Receptionist Presentation</h2>
             <div className="text-sm text-slate-600">
-              These are the only prompt-adjacent fields tenants should control. The hidden behavior rules and tool policy stay on the admin side.
+              These are the business-facing fields tenants should control. Behavior rules, capture logic, and tool policy stay on the admin side.
             </div>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
@@ -369,47 +369,8 @@ export default function KnowledgePage() {
               value={promptProfileForm.openingLine}
               onChange={(event) => setPromptProfileForm((current) => ({ ...current, openingLine: event.target.value }))}
             />
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <label>AI Disclosure</label>
-                <textarea
-                  value={promptProfileForm.aiDisclosureLine}
-                  onChange={(event) => setPromptProfileForm((current) => ({ ...current, aiDisclosureLine: event.target.value }))}
-                />
-              </div>
-              <div>
-                <label>Lead Goal</label>
-                <input
-                  value={promptProfileForm.leadGoal}
-                  onChange={(event) => setPromptProfileForm((current) => ({ ...current, leadGoal: event.target.value }))}
-                  placeholder="callback information"
-                />
-              </div>
-            </div>
-
-            <label className="mt-2.5">Required Contact Fields</label>
-            <textarea
-              value={promptProfileForm.requiredContactFields}
-              onChange={(event) => setPromptProfileForm((current) => ({ ...current, requiredContactFields: event.target.value }))}
-              style={{ minHeight: 96 }}
-              placeholder={'caller’s name\ncaller’s best phone number'}
-            />
-
-            <label className="mt-2.5">Closing Phrase</label>
-            <input
-              value={promptProfileForm.closingPhrase}
-              onChange={(event) => setPromptProfileForm((current) => ({ ...current, closingPhrase: event.target.value }))}
-            />
-
-            <label className="mt-2.5">Basic No-Tool Allowed Statement</label>
-            <textarea
-              value={promptProfileForm.basicNoToolAllowedStatement}
-              onChange={(event) => setPromptProfileForm((current) => ({ ...current, basicNoToolAllowedStatement: event.target.value }))}
-              style={{ minHeight: 96 }}
-            />
             <div className="mt-1 text-sm text-slate-600">
-              This is the narrow general business statement the receptionist may say without running a business-specific lookup.
+              AI disclosure, callback capture defaults, and closing language use system defaults unless an admin changes them.
             </div>
 
             <div className="mt-3">
@@ -429,7 +390,7 @@ export default function KnowledgePage() {
             />
             {!latestBuild && buildForm.websiteUrl ? (
               <div className="mt-2 text-sm text-slate-600">
-                Pre-filled from intake. You can change it before creating the first build.
+                Pre-filled from tenant setup. You can change it before creating the first build.
               </div>
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2">

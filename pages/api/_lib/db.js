@@ -238,6 +238,20 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE onboarding_intake ADD COLUMN IF NOT EXISTS website TEXT;`);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_bootstrap_profiles (
+      tenant_key TEXT PRIMARY KEY REFERENCES tenants(tenant_key) ON DELETE CASCADE,
+      website_url TEXT,
+      company_description TEXT,
+      business_category TEXT,
+      source_mode TEXT NOT NULL DEFAULT 'website_first',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`ALTER TABLE IF EXISTS tenant_domain_assignments ALTER COLUMN subdomain_id DROP NOT NULL;`);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS admin_users (
       id BIGSERIAL PRIMARY KEY,
       username TEXT NOT NULL,

@@ -1058,27 +1058,19 @@ async function loadDefaultCompanyDescription(db, tenantKey) {
   if (buildDerived) return buildDerived;
   const res = await db.query(
     `SELECT t.name,
-            t.industry,
-            oi.services_offered
+            bp.company_description
      FROM tenants t
-     LEFT JOIN LATERAL (
-       SELECT services_offered
-       FROM onboarding_intake
-       WHERE tenant_key = t.tenant_key
-       ORDER BY created_at DESC
-       LIMIT 1
-     ) oi ON TRUE
+     LEFT JOIN tenant_bootstrap_profiles bp
+       ON bp.tenant_key = t.tenant_key
      WHERE t.tenant_key = $1
      LIMIT 1`,
     [tenantKey]
   );
   const row = res.rows?.[0] || {};
-  const servicesOffered = normalizeText(row.services_offered);
-  if (servicesOffered) return servicesOffered;
+  const bootstrapDescription = normalizeText(row.company_description);
+  if (bootstrapDescription) return bootstrapDescription;
   const businessName = normalizeText(row.name);
-  const industry = normalizeText(row.industry);
-  if (businessName && industry) return `${businessName} is a ${industry} business.`;
-  if (industry) return `This business operates in ${industry}.`;
+  if (businessName) return businessName;
   return "";
 }
 

@@ -49,8 +49,8 @@ export async function getTenantBillingState(pool, tenantKey) {
        t.plan_code,
        t.status,
        t.created_at,
-       oi.owner_name,
-       oi.owner_email,
+       tu.name AS owner_name,
+       tu.email AS owner_email,
        t.telnyx_voice_number,
        t.billing_status,
        t.trial_started_at,
@@ -80,8 +80,14 @@ export async function getTenantBillingState(pool, tenantKey) {
      FROM tenants t
      LEFT JOIN tenant_billing_accounts b
        ON b.tenant_key = t.tenant_key
-     LEFT JOIN onboarding_intake oi
-       ON oi.tenant_key = t.tenant_key
+     LEFT JOIN LATERAL (
+       SELECT name, email
+       FROM tenant_users
+       WHERE tenant_key = t.tenant_key
+         AND role = 'owner'
+       ORDER BY id ASC
+       LIMIT 1
+     ) tu ON TRUE
      WHERE t.tenant_key = $1
      LIMIT 1`,
     [tenantKey]

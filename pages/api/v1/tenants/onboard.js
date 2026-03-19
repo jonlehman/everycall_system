@@ -11,12 +11,14 @@ import {
   saveKnowledgeReadiness,
   saveKnowledgeRuntimeProfile
 } from "../../_lib/knowledgeReceptionistConfig.js";
+import { saveTenantPromptProfile } from "../../_lib/promptBlueprints.js";
 import {
   inferKnowledgeAssignmentsForIndustry,
   resolveTenantDomainAssignments,
   syncCanonicalKnowledgePacks
 } from "../../_lib/knowledgeReceptionistPacks.js";
 import { saveSetupInterviewIntent } from "../../_lib/knowledgeReceptionistSetupInterview.js";
+import { saveTenantBootstrapProfile } from "../../_lib/tenantBootstrapProfiles.js";
 
 function slugify(input) {
   return String(input || "")
@@ -39,56 +41,26 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
-function normalizeStringArray(value) {
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeText(item)).filter(Boolean);
-  }
-  const text = normalizeText(value);
-  return text ? [text] : [];
-}
-
-function normalizeAssignments(value) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => ({
-      domainId: normalizeText(item?.domainId || item?.domain_id),
-      subdomainId: normalizeText(item?.subdomainId || item?.subdomain_id)
-    }))
-    .filter((item) => item.domainId && item.subdomainId);
-}
-
 function parsePayload(body) {
   const businessName = normalizeText(body.businessName);
-  const industry = normalizeText(body.industry);
+  const businessCategory = normalizeText(body.businessCategory || body.business_category || body.industry)
+    || "professional_services";
   const ownerName = normalizeText(body.ownerName);
   const ownerEmail = normalizeText(body.ownerEmail).toLowerCase();
   const password = String(body.password || "");
   const website = normalizeText(body.website);
-  const phone = normalizeText(body.phone || body.primaryNumber);
-  const serviceArea = normalizeText(body.serviceArea);
-  const address = normalizeText(body.address);
-  const timezone = normalizeText(body.timezone) || "America/Los_Angeles";
-  const businessHours = normalizeText(body.businessHours);
-  const primaryGoals = normalizeStringArray(body.primaryGoals || body.primaryGoal);
-  const servicesOffered = normalizeStringArray(body.servicesOffered);
-  const requestedAssignments = normalizeAssignments(body.assignments);
+  const companyDescription = normalizeText(body.companyDescription || body.company_description);
   const bootstrapMode = normalizeText(body.bootstrapMode || body.bootstrap_mode) || (website ? "website_first" : "setup_interview");
 
   return {
     businessName,
-    industry,
+    businessCategory,
     ownerName,
     ownerEmail,
     password,
     website,
-    phone,
-    serviceArea,
-    address,
-    timezone,
-    businessHours,
-    primaryGoals: primaryGoals.length ? primaryGoals : ["Answer callers briefly and move them to the correct next step."],
-    servicesOffered,
-    requestedAssignments,
+    companyDescription,
+    primaryGoal: "Answer callers briefly and move them to the correct next step.",
     bootstrapMode,
     greetingText: normalizeText(body.greetingText || body.greeting_text)
   };
@@ -97,24 +69,23 @@ function parsePayload(body) {
 function validatePayload(payload) {
   const fieldErrors = {};
   if (!payload.businessName) fieldErrors.businessName = "Business name is required.";
-  if (!payload.industry) fieldErrors.industry = "Industry is required.";
+  if (!payload.businessCategory) fieldErrors.businessCategory = "Business category is required.";
   if (!payload.ownerName) fieldErrors.ownerName = "Owner name is required.";
   if (!payload.ownerEmail) fieldErrors.ownerEmail = "Owner email is required.";
   if (!payload.password || payload.password.length < 8) fieldErrors.password = "Password must be at least 8 characters.";
-  if (!payload.serviceArea) fieldErrors.serviceArea = "Service area is required.";
-  if (!payload.primaryGoals.length) fieldErrors.primaryGoals = "At least one primary goal is required.";
-  if (!payload.requestedAssignments.length && !inferKnowledgeAssignmentsForIndustry(payload.industry).length) {
-    fieldErrors.assignments = "A canonical domain/subdomain assignment is required.";
+  if (!payload.companyDescription) fieldErrors.companyDescription = "A short business description is required.";
+  if (!inferKnowledgeAssignmentsForIndustry(payload.businessCategory).length) {
+    fieldErrors.businessCategory = "Choose the business category that fits best.";
   }
   return fieldErrors;
 }
 
 function defaultBusinessIntent(payload) {
-  const primaryGoal = payload.primaryGoals[0] || "Answer callers briefly and move them to the correct next step.";
+  const primaryGoal = payload.primaryGoal || "Answer callers briefly and move them to the correct next step.";
   return {
     status: "approved_live",
     primaryGoal,
-    secondaryGoals: payload.primaryGoals.slice(1),
+    secondaryGoals: [],
     preferredOutcomes: ["callback_request", "message_taken", "transfer"],
     disallowedOutcomes: ["technical_advice", "invented_pricing"],
     toneRules: [
@@ -141,22 +112,20 @@ function defaultBusinessIntent(payload) {
     greetingConfig: {
       business_name: payload.businessName
     },
-    terminologyPreferences: {
-      services_offered: payload.servicesOffered
-    }
+    terminologyPreferences: {}
   };
 }
 
 function defaultRuntimeProfile(payload) {
   return {
-    companyDescription: "",
+    companyDescription: payload.companyDescription,
     greetingText: payload.greetingText || `Thanks for calling ${payload.businessName}. How can I help?`,
     sessionConfig: undefined,
     toolPolicy: DEFAULT_RUNTIME_TOOL_POLICY,
     wordingDefaults: DEFAULT_RUNTIME_WORDING_DEFAULTS,
     runtimeDefaults: {
       ...DEFAULT_RUNTIME_BEHAVIOR_DEFAULTS,
-      after_hours_mode: payload.businessHours ? "follow_intent_strategy" : "capture_and_callback"
+      after_hours_mode: "capture_and_callback"
     }
   };
 }
@@ -188,11 +157,11 @@ function defaultCallOutcomeSchema(payload, assignments) {
 
 function initialReadinessChecklist(payload) {
   return {
-    hours_confirmed: Boolean(payload.businessHours),
-    address_confirmed: Boolean(payload.address),
-    phone_confirmed: Boolean(payload.phone),
-    after_hours_configured: Boolean(payload.businessHours),
-    service_area_confirmed: Boolean(payload.serviceArea),
+    hours_confirmed: false,
+    address_confirmed: false,
+    phone_confirmed: false,
+    after_hours_configured: false,
+    service_area_confirmed: false,
     dangerous_question_reviewed: false,
     hard_overrides_reviewed: false,
     temporary_notices_checked: false,
@@ -241,7 +210,7 @@ export default async function handler(req, res) {
           await client.query(
             `INSERT INTO tenants (tenant_key, name, status, data_region, plan, primary_number, industry)
              VALUES ($1, $2, 'active', 'US', 'Growth', $3, $4)`,
-            [tenantKey, payload.businessName, payload.phone || null, payload.industry]
+            [tenantKey, payload.businessName, null, payload.businessCategory]
           );
           break;
         } catch (err) {
@@ -271,27 +240,6 @@ export default async function handler(req, res) {
       ownerUserId = userRes.rows[0]?.id || null;
 
       await client.query(
-        `INSERT INTO onboarding_intake (
-           tenant_key, owner_name, owner_email, website, phone, service_area, address, timezone,
-           business_hours, services_offered, primary_goal
-         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [
-          tenantKey,
-          payload.ownerName,
-          payload.ownerEmail,
-          payload.website || null,
-          payload.phone || null,
-          payload.serviceArea,
-          payload.address || null,
-          payload.timezone,
-          payload.businessHours || null,
-          payload.servicesOffered.join(", ") || null,
-          payload.primaryGoals.join(", ")
-        ]
-      );
-
-      await client.query(
         `INSERT INTO routing_rules (tenant_key, primary_queue, emergency_behavior, after_hours_behavior, business_hours)
          VALUES ($1, $2, $3, $4, $5)`,
         [
@@ -299,26 +247,41 @@ export default async function handler(req, res) {
           "Dispatch Team",
           "handoff_or_emergency_redirect",
           "capture_and_callback",
-          payload.businessHours || "Unknown"
+          "Unknown"
         ]
       );
 
       await client.query(
         `INSERT INTO tenant_settings (tenant_key, timezone, notes)
          VALUES ($1, $2, $3)`,
-        [tenantKey, payload.timezone, payload.primaryGoals.join(", ")]
+        [tenantKey, "America/Los_Angeles", payload.companyDescription]
       );
 
       await ensureTenantBillingAccount(client, tenantKey);
 
+      const bootstrapProfile = await saveTenantBootstrapProfile(client, tenantKey, {
+        websiteUrl: payload.website,
+        companyDescription: payload.companyDescription,
+        businessCategory: payload.businessCategory,
+        sourceMode: payload.bootstrapMode
+      });
+
       const assignments = await resolveTenantDomainAssignments(
         client,
         tenantKey,
-        payload.requestedAssignments.length ? payload.requestedAssignments : inferKnowledgeAssignmentsForIndustry(payload.industry)
+        inferKnowledgeAssignmentsForIndustry(payload.businessCategory)
       );
       if (!assignments.length) {
         throw new Error("domain_assignment_required");
       }
+
+      const promptProfile = await saveTenantPromptProfile(client, tenantKey, {
+        business_name: payload.businessName,
+        company_description: payload.companyDescription
+      }, {
+        role: "tenant",
+        user_id: ownerUserId
+      });
 
       const businessCallIntent = await saveBusinessCallIntent(client, tenantKey, defaultBusinessIntent(payload), {
         role: "tenant",
@@ -348,7 +311,7 @@ export default async function handler(req, res) {
         setupInterviewIntent = await saveSetupInterviewIntent(client, tenantKey, {
           status: "approved_live",
           primaryGoal: `Collect and confirm business facts for ${payload.businessName}.`,
-          requiredCaptureCategories: ["services", "hours", "service_area", "after_hours", "handoff_paths"]
+          requiredCaptureCategories: ["business_overview", "services", "hours", "service_area", "handoff_paths"]
         });
       }
 
@@ -365,6 +328,8 @@ export default async function handler(req, res) {
         ok: true,
         tenantKey,
         bootstrapMode: payload.bootstrapMode,
+        bootstrapProfile,
+        promptProfile,
         assignments,
         businessCallIntent,
         runtimeProfile,

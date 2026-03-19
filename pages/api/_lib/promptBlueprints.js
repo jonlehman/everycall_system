@@ -9,6 +9,7 @@ import {
   validatePromptBlueprintBundle,
   validateTenantPromptProfile
 } from "@everycall/contracts";
+import { loadTenantBootstrapProfile } from "./tenantBootstrapProfiles.js";
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -194,16 +195,19 @@ async function loadTenantName(db, tenantKey) {
 }
 
 async function buildTenantPromptProfileDefaults(db, tenantKey) {
-  const [tenant, buildSummary] = await Promise.all([
+  const [tenant, buildSummary, bootstrapProfile] = await Promise.all([
     loadTenantName(db, tenantKey),
-    loadBuildDerivedCompanyDescription(db, tenantKey)
+    loadBuildDerivedCompanyDescription(db, tenantKey),
+    loadTenantBootstrapProfile(db, tenantKey)
   ]);
   const defaults = getDefaultTenantPromptProfile();
+  const bootstrapDescription = normalizeText(bootstrapProfile?.company_description);
+  const companyDescription = bootstrapDescription || buildSummary;
   return normalizeTenantPromptProfile({
     tenant_key: tenantKey,
     assistant_name: defaults.assistant_name,
     business_name: normalizeText(tenant?.name),
-    company_description: buildSummary,
+    company_description: companyDescription,
     opening_line: normalizeText(tenant?.name)
       ? `Thanks for calling ${normalizeText(tenant.name)}. This is ${defaults.assistant_name}. How can I help you today?`
       : defaults.opening_line,
@@ -211,7 +215,7 @@ async function buildTenantPromptProfileDefaults(db, tenantKey) {
     lead_goal: defaults.lead_goal,
     required_contact_fields: defaults.required_contact_fields,
     closing_phrase: defaults.closing_phrase,
-    basic_no_tool_allowed_statement: buildSummary
+    basic_no_tool_allowed_statement: companyDescription
   });
 }
 
@@ -546,7 +550,7 @@ export async function saveTenantPromptProfile(db, tenantKey, input = {}, actor =
   return withTransaction(db, async (client) => {
     const previous = await loadTenantPromptProfile(client, tenantKey);
     const defaults = await buildTenantPromptProfileDefaults(client, tenantKey);
-    const normalized = normalizeTenantPromptProfile(input, defaults);
+    const normalized = normalizeTenantPromptProfile(input, previous);
     const validation = validateTenantPromptProfile(normalized);
     if (!validation.valid) {
       throw new Error(`invalid_tenant_prompt_profile:${validation.errors.join(",")}`);

@@ -57,10 +57,17 @@ export default async function handler(req, res) {
          t.telnyx_voice_monthly_cost_cents,
          t.telnyx_voice_upfront_cost_cents,
          t.telnyx_voice_purchased_at,
-         oi.owner_name,
-         oi.owner_email
+         tu.owner_name,
+         tu.owner_email
        FROM tenants t
-       LEFT JOIN onboarding_intake oi ON oi.tenant_key = t.tenant_key
+       LEFT JOIN LATERAL (
+         SELECT name AS owner_name, email AS owner_email
+         FROM tenant_users
+         WHERE tenant_key = t.tenant_key
+           AND role = 'owner'
+         ORDER BY id ASC
+         LIMIT 1
+       ) tu ON TRUE
        WHERE t.telnyx_voice_number IS NOT NULL
           OR t.telnyx_voice_status IS NOT NULL
        ORDER BY t.name ASC`

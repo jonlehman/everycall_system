@@ -3,36 +3,32 @@
 import { useEffect, useMemo, useState } from 'react';
 import './intake.css';
 
-const INDUSTRIES = [
-  { value: 'cleaning', label: 'Cleaning' },
-  { value: 'electrical', label: 'Electrical' },
-  { value: 'garage_door', label: 'Garage Door' },
-  { value: 'general_contractor', label: 'General Contractor' },
-  { value: 'hvac', label: 'HVAC' },
-  { value: 'landscaping', label: 'Landscaping' },
-  { value: 'locksmith', label: 'Locksmith' },
-  { value: 'pest_control', label: 'Pest Control' },
-  { value: 'plumbing', label: 'Plumbing' },
-  { value: 'roofing', label: 'Roofing' },
-  { value: 'window_installers', label: 'Window Installers' }
+const BUSINESS_CATEGORIES = [
+  { value: 'professional_services', label: 'Professional Services' },
+  { value: 'service_business', label: 'Service Business' },
+  { value: 'medical', label: 'Medical' },
+  { value: 'dental', label: 'Dental' },
+  { value: 'therapy_practice', label: 'Therapy Practice' },
+  { value: 'legal', label: 'Legal' },
+  { value: 'accounting', label: 'Accounting' },
+  { value: 'wellness_beauty', label: 'Wellness & Beauty' },
+  { value: 'real_estate_property', label: 'Real Estate & Property' },
+  { value: 'education_training', label: 'Education & Training' },
+  { value: 'retail_showroom', label: 'Retail Showroom' }
 ];
 
 function createInitialForm(qaMode = false) {
   return {
     businessName: qaMode ? 'Knowledge Receptionist QA Tenant' : '',
-    industry: 'plumbing',
+    businessCategory: 'professional_services',
     ownerName: qaMode ? 'QA Owner' : '',
     ownerEmail: qaMode ? 'qa-owner@example.com' : '',
     password: qaMode ? 'Password123!' : '',
     confirmPassword: qaMode ? 'Password123!' : '',
     website: '',
-    phone: '',
-    serviceArea: '',
-    address: '',
-    timezone: 'America/Los_Angeles',
-    businessHours: '',
-    greetingText: '',
-    bootstrapMode: 'website_first'
+    companyDescription: qaMode
+      ? 'We build custom software and automation systems for businesses.'
+      : ''
   };
 }
 
@@ -43,7 +39,6 @@ function fetchJson(url, options) {
 export function IntakePageClient({ qaMode = false } = {}) {
   const initialForm = useMemo(() => createInitialForm(Boolean(qaMode)), [qaMode]);
   const [form, setForm] = useState(initialForm);
-  const [preview, setPreview] = useState(null);
   const [status, setStatus] = useState({ message: '', tone: 'normal' });
   const [busy, setBusy] = useState(false);
   const [activation, setActivation] = useState(null);
@@ -59,36 +54,14 @@ export function IntakePageClient({ qaMode = false } = {}) {
 
   const setFormValue = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
-  const runPreview = async () => {
-    setBusy(true);
-    setStatus({ message: 'Previewing bootstrap path...', tone: 'warn' });
-    try {
-      const data = await fetchJson('/api/v1/tenants/enrichment/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          website: form.website,
-          industry: form.industry,
-          bootstrapMode: form.bootstrapMode
-        })
-      });
-      if (!data?.ok) {
-        setStatus({ message: data?.message || 'Could not preview bootstrap path.', tone: 'bad' });
-        return;
-      }
-      setPreview(data.preview || null);
-      setStatus({ message: 'Bootstrap preview ready.', tone: 'ok' });
-    } catch {
-      setStatus({ message: 'Could not preview bootstrap path.', tone: 'bad' });
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const submit = async (event) => {
     event.preventDefault();
     if (!form.businessName.trim() || !form.ownerName.trim() || !form.ownerEmail.trim()) {
       setStatus({ message: 'Business name, owner name, and owner email are required.', tone: 'bad' });
+      return;
+    }
+    if (!form.companyDescription.trim()) {
+      setStatus({ message: 'Add a short description of what the business does.', tone: 'bad' });
       return;
     }
     if (!form.password || form.password.length < 8) {
@@ -101,25 +74,19 @@ export function IntakePageClient({ qaMode = false } = {}) {
     }
 
     setBusy(true);
-    setStatus({ message: 'Creating tenant on the new subsystem...', tone: 'warn' });
+    setStatus({ message: 'Creating tenant...', tone: 'warn' });
     try {
       const data = await fetchJson('/api/v1/tenants/onboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           businessName: form.businessName,
-          industry: form.industry,
+          businessCategory: form.businessCategory,
           ownerName: form.ownerName,
           ownerEmail: form.ownerEmail,
           password: form.password,
           website: form.website,
-          phone: form.phone,
-          serviceArea: form.serviceArea,
-          address: form.address,
-          timezone: form.timezone,
-          businessHours: form.businessHours,
-          greetingText: form.greetingText,
-          bootstrapMode: form.bootstrapMode
+          companyDescription: form.companyDescription
         })
       });
       if (!data?.ok) {
@@ -140,101 +107,87 @@ export function IntakePageClient({ qaMode = false } = {}) {
       <div className="intake-page">
         <section className="intake-hero">
           <p className="intake-eyebrow">EveryCall Intake</p>
-          <h1>Bootstrap a tenant on the new knowledge/receptionist subsystem</h1>
-          <p>No legacy prompt, FAQ, topic, or compatibility setup is created from this flow.</p>
+          <h1>Set up a new tenant</h1>
+          <p>Create the account, give Sarah the basic business context, and continue to the Knowledge Workspace.</p>
         </section>
 
         <form className="intake-card" onSubmit={submit}>
-          <div className={`intake-status ${status.tone || 'normal'}`}>{status.message || 'Enter tenant details to bootstrap the new subsystem.'}</div>
+          <div className={`intake-status ${status.tone || 'normal'}`}>
+            {status.message || 'Enter the minimum needed to create the tenant and seed the receptionist.'}
+          </div>
+
+          <div className="intake-stack">
+            <h2 className="intake-section-title">Account</h2>
+          </div>
 
           <div className="intake-grid">
-            <div>
+            <div className="intake-stack">
               <label>Business Name</label>
               <input value={form.businessName} onChange={(event) => setFormValue('businessName', event.target.value)} />
             </div>
-            <div>
-              <label>Industry</label>
-              <select value={form.industry} onChange={(event) => setFormValue('industry', event.target.value)}>
-                {INDUSTRIES.map((industry) => (
-                  <option key={industry.value} value={industry.value}>{industry.label}</option>
+            <div className="intake-stack">
+              <label>Business Category</label>
+              <select value={form.businessCategory} onChange={(event) => setFormValue('businessCategory', event.target.value)}>
+                {BUSINESS_CATEGORIES.map((category) => (
+                  <option key={category.value} value={category.value}>{category.label}</option>
                 ))}
               </select>
             </div>
-            <div>
+            <div className="intake-stack">
               <label>Owner Name</label>
               <input value={form.ownerName} onChange={(event) => setFormValue('ownerName', event.target.value)} />
             </div>
-            <div>
+            <div className="intake-stack">
               <label>Owner Email</label>
               <input value={form.ownerEmail} onChange={(event) => setFormValue('ownerEmail', event.target.value)} />
             </div>
-            <div>
+            <div className="intake-stack">
               <label>Password</label>
               <input type="password" value={form.password} onChange={(event) => setFormValue('password', event.target.value)} />
             </div>
-            <div>
+            <div className="intake-stack">
               <label>Confirm Password</label>
               <input type="password" value={form.confirmPassword} onChange={(event) => setFormValue('confirmPassword', event.target.value)} />
             </div>
-            <div>
-              <label>Website</label>
-              <input value={form.website} onChange={(event) => setFormValue('website', event.target.value)} placeholder="https://example.com" />
-            </div>
-            <div>
-              <label>Bootstrap Mode</label>
-              <select value={form.bootstrapMode} onChange={(event) => setFormValue('bootstrapMode', event.target.value)}>
-                <option value="website_first">Website First</option>
-                <option value="setup_interview">Setup Interview</option>
-              </select>
-            </div>
-            <div>
-              <label>Phone</label>
-              <input value={form.phone} onChange={(event) => setFormValue('phone', event.target.value)} />
-            </div>
-            <div>
-              <label>Service Area</label>
-              <input value={form.serviceArea} onChange={(event) => setFormValue('serviceArea', event.target.value)} />
-            </div>
-            <div>
-              <label>Timezone</label>
-              <input value={form.timezone} onChange={(event) => setFormValue('timezone', event.target.value)} />
-            </div>
-            <div>
-              <label>Greeting</label>
-              <input value={form.greetingText} onChange={(event) => setFormValue('greetingText', event.target.value)} />
+          </div>
+
+          <div className="intake-stack" style={{ marginTop: 18 }}>
+            <h2 className="intake-section-title">Business Context</h2>
+          </div>
+
+          <div className="intake-grid">
+            <div className="intake-stack intake-full">
+              <label>Website URL (Optional)</label>
+              <input
+                value={form.website}
+                onChange={(event) => setFormValue('website', event.target.value)}
+                placeholder="https://example.com"
+              />
+              <div className="intake-muted">If available, this will prefill the first website build in the Knowledge Workspace.</div>
             </div>
           </div>
 
-          <label className="mt-4">Address</label>
-          <textarea value={form.address} onChange={(event) => setFormValue('address', event.target.value)} />
-          <label className="mt-4">Business Hours</label>
-          <textarea value={form.businessHours} onChange={(event) => setFormValue('businessHours', event.target.value)} />
+          <div className="intake-stack" style={{ marginTop: 14 }}>
+            <label>What does the business do?</label>
+            <textarea
+              value={form.companyDescription}
+              onChange={(event) => setFormValue('companyDescription', event.target.value)}
+              placeholder="Describe the business in one or two short sentences."
+            />
+            <div className="intake-muted">This becomes the initial business context for Sarah until a stronger website build is published.</div>
+          </div>
 
-          <div className="intake-actions">
-            <button type="button" className="btn secondary" onClick={runPreview} disabled={busy}>Preview Bootstrap</button>
-            <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Working...' : 'Create Tenant'}</button>
+          <div className="intake-actions" style={{ marginTop: 18 }}>
+            <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Creating...' : 'Create Tenant'}</button>
           </div>
         </form>
-
-        {preview ? (
-          <section className="intake-card">
-            <h2>Bootstrap Preview</h2>
-            <p><strong>Canonical spec path:</strong> {preview.canonical_spec_path}</p>
-            <p><strong>Bootstrap mode:</strong> {preview.bootstrap_mode}</p>
-            <p><strong>Assignments:</strong> {(preview.assignments || []).map((item) => `${item.domainId}/${item.subdomainId}`).join(', ') || 'none'}</p>
-            <p><strong>Source channels:</strong> {(preview.approved_source_channels || []).join(', ') || 'none'}</p>
-            <p><strong>Blockers:</strong> {(preview.blockers || []).join(', ') || 'none'}</p>
-          </section>
-        ) : null}
 
         {activation ? (
           <section className="intake-card">
             <h2>Tenant Created</h2>
             <p><strong>Tenant key:</strong> {activation.tenantKey || 'created'}</p>
-            <p><strong>Business Call Intent:</strong> {activation.businessCallIntent?.business_call_intent_id || 'created'}</p>
-            <p><strong>Runtime profile:</strong> {activation.runtimeProfile?.greeting_text || 'created'}</p>
-            <p><strong>Outcome schema:</strong> {activation.callOutcomeSchema?.call_outcome_schema_id || 'created'}</p>
-            <p><strong>Next step:</strong> Create and publish the first knowledge build.</p>
+            <p><strong>Prompt profile:</strong> {activation.promptProfile?.business_name || form.businessName}</p>
+            <p><strong>Next step:</strong> Continue to the Knowledge Workspace and create the first build when you are ready.</p>
             <div className="intake-actions">
               <a className="btn primary" href={nextHref}>Continue to Knowledge Workspace</a>
             </div>

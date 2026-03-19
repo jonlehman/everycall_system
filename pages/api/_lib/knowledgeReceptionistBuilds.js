@@ -4,6 +4,7 @@ import { executePlannerPgvectorRuntime } from "@everycall/contracts";
 import { extractTextFromDocumentBuffer } from "./knowledgeReceptionistFiles.js";
 import { buildSourceChunksForSourceItem, compileKnowledgeBuildArtifacts } from "./knowledgeReceptionistCompiler.js";
 import { loadTenantDomainAssignments, resolveTenantDomainAssignments, syncCanonicalKnowledgePacks } from "./knowledgeReceptionistPacks.js";
+import { loadTenantBootstrapProfile } from "./tenantBootstrapProfiles.js";
 
 const BUILD_RATE_LIMIT_HOURS = 24;
 const MAX_WEBSITE_PAGES = 500;
@@ -3152,7 +3153,7 @@ async function updateBuildAfterValidation(db, buildId, counts, validationSummary
 
 export async function listKnowledgeReceptionistBuilds(db, tenantKey) {
   await assertSliceTablesReady(db);
-  const [buildsRes, pointerRes, assignments, intakeRes] = await Promise.all([
+  const [buildsRes, pointerRes, assignments, bootstrapProfile] = await Promise.all([
     db.query(
       `SELECT build_id, status, version, domain_assignments_json, source_channels_json, artifact_counts_json,
               quality_summary_json, warnings_json, validation_summary_json, published_at, supersedes_build_id,
@@ -3170,21 +3171,14 @@ export async function listKnowledgeReceptionistBuilds(db, tenantKey) {
       [tenantKey]
     ),
     loadTenantDomainAssignments(db, tenantKey),
-    db.query(
-      `SELECT website
-       FROM onboarding_intake
-       WHERE tenant_key = $1
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [tenantKey]
-    )
+    loadTenantBootstrapProfile(db, tenantKey)
   ]);
 
   return {
     activeBuild: pointerRes.rows[0] || null,
     assignments,
     builds: buildsRes.rows || [],
-    intakeWebsiteUrl: normalizeWebsiteUrl(intakeRes.rows[0]?.website || "")
+    bootstrapWebsiteUrl: normalizeWebsiteUrl(bootstrapProfile?.website_url || "")
   };
 }
 
@@ -3202,15 +3196,8 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
   const forceRescrape = input.forceRescrape === true
     || String(input.forceRescrape || input.force_rescrape || "").toLowerCase() === "true";
   if (!websiteUrl && !uploadedDocumentIds.length && !setupInterviewSessionIds.length) {
-    const intakeRes = await db.query(
-      `SELECT website
-       FROM onboarding_intake
-       WHERE tenant_key = $1
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [tenantKey]
-    );
-    websiteUrl = normalizeWebsiteUrl(intakeRes.rows[0]?.website);
+    const bootstrapProfile = await loadTenantBootstrapProfile(db, tenantKey);
+    websiteUrl = normalizeWebsiteUrl(bootstrapProfile?.website_url);
   }
   if (!websiteUrl && !uploadedDocumentIds.length && !setupInterviewSessionIds.length) {
     throw new Error("approved_source_required");
