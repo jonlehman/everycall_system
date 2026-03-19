@@ -65,7 +65,8 @@ const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "raw").toLowerCase();
 const outboundAudioFrameMs = 20;
 const outboundJitterBufferFrames = Math.max(1, Number(process.env.TELNYX_OUTBOUND_BUFFER_FRAMES || "3"));
-const callerWeakTurnHoldMs = Math.max(0, Number(process.env.CALLER_WEAK_TURN_HOLD_MS || "1500"));
+const trailingFillerHoldMs = Math.max(0, Number(process.env.CALLER_TRAILING_FILLER_HOLD_MS || "1500"));
+const starterFragmentHoldMs = Math.max(0, Number(process.env.CALLER_STARTER_FRAGMENT_HOLD_MS || "1200"));
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
 const realtimeLogRoot = String(process.env.REALTIME_LOG_FILE || "/tmp/realtime-logs.jsonl");
@@ -247,10 +248,74 @@ const fillerTokens = new Set([
   "mhm"
 ]);
 
+const starterFragmentLastWords = new Set([
+  "a",
+  "an",
+  "the",
+  "my",
+  "our",
+  "your",
+  "this",
+  "that",
+  "these",
+  "those",
+  "and",
+  "but",
+  "so",
+  "because",
+  "to",
+  "for",
+  "with",
+  "of",
+  "i",
+  "i'm",
+  "im",
+  "it",
+  "it's",
+  "its"
+]);
+
+const singleWordStarterFragments = new Set([
+  "ai",
+  "app",
+  "well",
+  "so",
+  "because",
+  "actually",
+  "just"
+]);
+
+const starterFragmentPhrases = [
+  /^i$/,
+  /^i'm$/,
+  /^im$/,
+  /^i have$/,
+  /^i have a$/,
+  /^i have an$/,
+  /^i need$/,
+  /^i need a$/,
+  /^i need an$/,
+  /^i need help$/,
+  /^i want$/,
+  /^i want to$/,
+  /^it$/,
+  /^it's$/,
+  /^its$/,
+  /^it's a$/,
+  /^its a$/,
+  /^the$/,
+  /^a$/,
+  /^an$/,
+  /^well$/,
+  /^so$/,
+  /^because$/
+];
+
 type CallerTurnAssessment = {
   shouldDelay: boolean;
   reason: string;
   normalizedTranscript: string;
+  holdMs: number;
 };
 
 function assessCallerTurnTranscript(transcript: string): CallerTurnAssessment {
@@ -259,7 +324,8 @@ function assessCallerTurnTranscript(transcript: string): CallerTurnAssessment {
     return {
       shouldDelay: false,
       reason: "empty_transcript",
-      normalizedTranscript
+      normalizedTranscript,
+      holdMs: 0
     };
   }
 
@@ -273,25 +339,54 @@ function assessCallerTurnTranscript(transcript: string): CallerTurnAssessment {
     return {
       shouldDelay: false,
       reason: "empty_words",
-      normalizedTranscript
+      normalizedTranscript,
+      holdMs: 0
     };
   }
 
+  const phrase = words.join(" ");
   const lastWord = words[words.length - 1] || "";
   const fillerOnly = words.every((word) => fillerTokens.has(word));
   const trailingFiller = fillerTokens.has(lastWord);
 
-  let reason = "clear_turn";
   if (fillerOnly) {
-    reason = "filler_only";
-  } else if (trailingFiller) {
-    reason = "ends_with_filler";
+    return {
+      shouldDelay: true,
+      reason: "filler_only",
+      normalizedTranscript,
+      holdMs: trailingFillerHoldMs
+    };
+  }
+
+  if (trailingFiller) {
+    return {
+      shouldDelay: true,
+      reason: "ends_with_filler",
+      normalizedTranscript,
+      holdMs: trailingFillerHoldMs
+    };
+  }
+
+  const shortTurn = words.length <= 4;
+  const explicitStarterPhrase = starterFragmentPhrases.some((pattern) => pattern.test(phrase));
+  const singleWordStarter = words.length === 1 && singleWordStarterFragments.has(lastWord);
+  const trailingStarterWord = shortTurn && starterFragmentLastWords.has(lastWord);
+  const starterFragment = explicitStarterPhrase || singleWordStarter || trailingStarterWord;
+
+  if (starterFragment) {
+    return {
+      shouldDelay: true,
+      reason: "starter_fragment",
+      normalizedTranscript,
+      holdMs: starterFragmentHoldMs
+    };
   }
 
   return {
-    shouldDelay: fillerOnly || trailingFiller,
-    reason,
-    normalizedTranscript
+    shouldDelay: false,
+    reason: "clear_turn",
+    normalizedTranscript,
+    holdMs: 0
   };
 }
 
@@ -327,7 +422,7 @@ function scheduleCallerTurnResponse(session: StreamSession, transcript: string, 
   const elapsedSinceSpeechStoppedMs = session.lastCallerSpeechStoppedAtMs
     ? Math.max(0, performance.now() - session.lastCallerSpeechStoppedAtMs)
     : 0;
-  const delayMs = Math.max(0, callerWeakTurnHoldMs - elapsedSinceSpeechStoppedMs);
+  const delayMs = Math.max(0, assessment.holdMs - elapsedSinceSpeechStoppedMs);
 
   if (delayMs <= 0) {
     session.lastCallerTurnResponseKey = dedupeKey;
@@ -1675,7 +1770,7 @@ function connectOpenAiRealtime(session: StreamSession) {
       markAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
       noteAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
       if (session.pendingCallerTurnTimer && session.pendingCallerTurnWeak && !session.pendingToolSpeechWait) {
-        await interruptAssistantForCallerSpeech(session, "caller_turn_trailing_filler_hold", {
+        await interruptAssistantForCallerSpeech(session, "caller_turn_weak_hold", {
           persistKnowledgeState: false
         });
       }
@@ -1815,7 +1910,7 @@ function connectOpenAiRealtime(session: StreamSession) {
       const assessment = assessCallerTurnTranscript(String(transcript || ""));
       if (assessment.shouldDelay) {
         if (hasActiveAssistantResponse(session) && !session.pendingToolSpeechWait) {
-          await interruptAssistantForCallerSpeech(session, "caller_turn_trailing_filler_hold", {
+          await interruptAssistantForCallerSpeech(session, "caller_turn_weak_hold", {
             persistKnowledgeState: false
           });
         }
