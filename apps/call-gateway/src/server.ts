@@ -63,6 +63,7 @@ const signatureRequired = (process.env.TELNYX_SIGNATURE_REQUIRED || "true").toLo
 const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "raw").toLowerCase();
+const outboundAudioFrameMs = 20;
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
 const realtimeLogRoot = String(process.env.REALTIME_LOG_FILE || "/tmp/realtime-logs.jsonl");
@@ -592,12 +593,18 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
 
 function startOutputPump(session: StreamSession) {
   if (session.outputTimer) return;
-  if (!session.outputPrimed && session.outputQueue && session.outputQueue.length < 3) {
+  if (!session.outputQueue || session.outputQueue.length === 0) {
     return;
   }
   session.outputPrimed = true;
   session.outputTimer = setInterval(() => {
     if (!session.outputQueue || session.outputQueue.length === 0) {
+      // Realtime audio can arrive in bursts. Keep the Telnyx pump alive while the
+      // current assistant response is still active so the next chunk can be sent
+      // immediately instead of stopping and waiting to re-prime the queue.
+      if (session.currentResponseId) {
+        return;
+      }
       if (session.outputTimer) {
         clearInterval(session.outputTimer);
         session.outputTimer = null;
@@ -614,7 +621,7 @@ function startOutputPump(session: StreamSession) {
     if (!payload) return;
     noteAssistantAudioFrameSent(session);
     sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, payload.toString("base64"));
-  }, 20);
+  }, outboundAudioFrameMs);
 }
 
 async function interruptAssistantForCallerSpeech(session: StreamSession | undefined, reason: string) {
