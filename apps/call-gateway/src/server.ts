@@ -65,9 +65,6 @@ const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "raw").toLowerCase();
 const outboundAudioFrameMs = 20;
 const outboundJitterBufferFrames = Math.max(1, Number(process.env.TELNYX_OUTBOUND_BUFFER_FRAMES || "3"));
-const ellipsisHoldMs = Math.max(0, Number(process.env.CALLER_ELLIPSIS_HOLD_MS || "3000"));
-const trailingFillerHoldMs = Math.max(0, Number(process.env.CALLER_TRAILING_FILLER_HOLD_MS || "1500"));
-const starterFragmentHoldMs = Math.max(0, Number(process.env.CALLER_STARTER_FRAGMENT_HOLD_MS || "1200"));
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
 const realtimeLogRoot = String(process.env.REALTIME_LOG_FILE || "/tmp/realtime-logs.jsonl");
@@ -164,12 +161,6 @@ type StreamSession = {
   completedToolCallKeys?: Set<string>;
   pendingToolSpeechWait?: PendingToolSpeechWait | null;
   audioPumpTrace?: AudioPumpTrace | null;
-  pendingCallerTurnTimer?: NodeJS.Timeout | null;
-  pendingCallerTurnKey?: string | null;
-  pendingCallerTurnTranscript?: string | null;
-  pendingCallerTurnWeak?: boolean;
-  lastCallerTurnResponseKey?: string | null;
-  lastCallerSpeechStoppedAtMs?: number | null;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -212,270 +203,8 @@ function createStreamSession(
     completedToolCallKeys: new Set<string>(),
     pendingToolSpeechWait: null,
     audioPumpTrace: null,
-    pendingCallerTurnTimer: null,
-    pendingCallerTurnKey: null,
-    pendingCallerTurnTranscript: null,
-    pendingCallerTurnWeak: false,
-    lastCallerTurnResponseKey: null,
-    lastCallerSpeechStoppedAtMs: null,
     ...(realtimeLogPath ? { realtimeLogPath } : {})
   };
-}
-
-function normalizeText(value: unknown) {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function truncateText(value: unknown, limit = 120) {
-  const text = normalizeText(value);
-  if (!text) return "";
-  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
-}
-
-const fillerTokens = new Set([
-  "uh",
-  "uhh",
-  "uhhh",
-  "um",
-  "umm",
-  "ummm",
-  "hmm",
-  "hm",
-  "mm",
-  "mmm",
-  "er",
-  "ah",
-  "uh-huh",
-  "mhm"
-]);
-
-const starterFragmentLastWords = new Set([
-  "a",
-  "an",
-  "the",
-  "my",
-  "our",
-  "your",
-  "this",
-  "that",
-  "these",
-  "those",
-  "and",
-  "but",
-  "so",
-  "because",
-  "to",
-  "for",
-  "with",
-  "of",
-  "i",
-  "i'm",
-  "im",
-  "it",
-  "it's",
-  "its"
-]);
-
-const singleWordStarterFragments = new Set([
-  "ai",
-  "app",
-  "well",
-  "so",
-  "because",
-  "actually",
-  "just"
-]);
-
-const starterFragmentPhrases = [
-  /^i$/,
-  /^i'm$/,
-  /^im$/,
-  /^i have$/,
-  /^i have a$/,
-  /^i have an$/,
-  /^i need$/,
-  /^i need a$/,
-  /^i need an$/,
-  /^i need help$/,
-  /^i want$/,
-  /^i want to$/,
-  /^it$/,
-  /^it's$/,
-  /^its$/,
-  /^it's a$/,
-  /^its a$/,
-  /^the$/,
-  /^a$/,
-  /^an$/,
-  /^well$/,
-  /^so$/,
-  /^because$/
-];
-
-type CallerTurnAssessment = {
-  shouldDelay: boolean;
-  reason: string;
-  normalizedTranscript: string;
-  holdMs: number;
-};
-
-function assessCallerTurnTranscript(transcript: string): CallerTurnAssessment {
-  const normalizedTranscript = normalizeText(transcript);
-  if (!normalizedTranscript) {
-    return {
-      shouldDelay: false,
-      reason: "empty_transcript",
-      normalizedTranscript,
-      holdMs: 0
-    };
-  }
-
-  if (/(\.\.\.|…)\s*$/u.test(normalizedTranscript)) {
-    return {
-      shouldDelay: true,
-      reason: "ends_with_ellipsis",
-      normalizedTranscript,
-      holdMs: ellipsisHoldMs
-    };
-  }
-
-  const normalizedPhrase = normalizedTranscript
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}' ]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const words = normalizedPhrase.match(/[\p{L}\p{N}']+/gu) || [];
-  if (!words.length) {
-    return {
-      shouldDelay: false,
-      reason: "empty_words",
-      normalizedTranscript,
-      holdMs: 0
-    };
-  }
-
-  const phrase = words.join(" ");
-  const lastWord = words[words.length - 1] || "";
-  const fillerOnly = words.every((word) => fillerTokens.has(word));
-  const trailingFiller = fillerTokens.has(lastWord);
-
-  if (fillerOnly) {
-    return {
-      shouldDelay: true,
-      reason: "filler_only",
-      normalizedTranscript,
-      holdMs: trailingFillerHoldMs
-    };
-  }
-
-  if (trailingFiller) {
-    return {
-      shouldDelay: true,
-      reason: "ends_with_filler",
-      normalizedTranscript,
-      holdMs: trailingFillerHoldMs
-    };
-  }
-
-  const shortTurn = words.length <= 4;
-  const explicitStarterPhrase = starterFragmentPhrases.some((pattern) => pattern.test(phrase));
-  const singleWordStarter = words.length === 1 && singleWordStarterFragments.has(lastWord);
-  const trailingStarterWord = shortTurn && starterFragmentLastWords.has(lastWord);
-  const starterFragment = explicitStarterPhrase || singleWordStarter || trailingStarterWord;
-
-  if (starterFragment) {
-    return {
-      shouldDelay: true,
-      reason: "starter_fragment",
-      normalizedTranscript,
-      holdMs: starterFragmentHoldMs
-    };
-  }
-
-  return {
-    shouldDelay: false,
-    reason: "clear_turn",
-    normalizedTranscript,
-    holdMs: 0
-  };
-}
-
-function clearPendingCallerTurnResponse(session: StreamSession, reason: string) {
-  if (session.pendingCallerTurnTimer) {
-    clearTimeout(session.pendingCallerTurnTimer);
-    session.pendingCallerTurnTimer = null;
-    logInfo("caller_turn_response_cleared", {
-      callSid: session.callSid,
-      reason,
-      weak: session.pendingCallerTurnWeak || false,
-      turnKey: session.pendingCallerTurnKey || undefined,
-      transcript: session.pendingCallerTurnTranscript ? truncateText(session.pendingCallerTurnTranscript, 80) : undefined
-    });
-  }
-  session.pendingCallerTurnKey = null;
-  session.pendingCallerTurnTranscript = null;
-  session.pendingCallerTurnWeak = false;
-}
-
-function scheduleCallerTurnResponse(session: StreamSession, transcript: string, turnKey: string) {
-  const dedupeKey = `caller_turn:${turnKey}`;
-  if (session.lastCallerTurnResponseKey === dedupeKey) {
-    return;
-  }
-
-  const assessment = assessCallerTurnTranscript(transcript);
-  if (!assessment.shouldDelay) {
-    return;
-  }
-
-  clearPendingCallerTurnResponse(session, "rescheduled");
-  const elapsedSinceSpeechStoppedMs = session.lastCallerSpeechStoppedAtMs
-    ? Math.max(0, performance.now() - session.lastCallerSpeechStoppedAtMs)
-    : 0;
-  const delayMs = Math.max(0, assessment.holdMs - elapsedSinceSpeechStoppedMs);
-
-  if (delayMs <= 0) {
-    session.lastCallerTurnResponseKey = dedupeKey;
-    logInfo("caller_turn_response_requested", {
-      callSid: session.callSid,
-      weak: true,
-      reason: assessment.reason,
-      delayMs: 0,
-      transcript: truncateText(assessment.normalizedTranscript, 80)
-    });
-    requestAssistantResponse(session, "caller_turn", {}, dedupeKey);
-    return;
-  }
-
-  session.pendingCallerTurnKey = dedupeKey;
-  session.pendingCallerTurnTranscript = assessment.normalizedTranscript;
-  session.pendingCallerTurnWeak = true;
-  session.pendingCallerTurnTimer = setTimeout(() => {
-    if (session.pendingCallerTurnKey !== dedupeKey) {
-      return;
-    }
-    session.pendingCallerTurnTimer = null;
-    session.pendingCallerTurnKey = null;
-    session.pendingCallerTurnTranscript = null;
-    session.pendingCallerTurnWeak = false;
-    session.lastCallerTurnResponseKey = dedupeKey;
-    logInfo("caller_turn_response_requested", {
-      callSid: session.callSid,
-      weak: true,
-      reason: assessment.reason,
-      delayMs,
-      transcript: truncateText(assessment.normalizedTranscript, 80)
-    });
-    requestAssistantResponse(session, "caller_turn", {}, dedupeKey);
-  }, delayMs);
-
-  logInfo("caller_turn_response_delayed", {
-    callSid: session.callSid,
-    weak: true,
-    reason: assessment.reason,
-    delayMs,
-    transcript: truncateText(assessment.normalizedTranscript, 80)
-  });
 }
 
 function logPrewarmOutcome(callSid: string, tenantKey: string, source: string, result: { status: "ready" | "failed"; fetchMs: number; cacheHit: boolean; message?: string; buildId?: string }) {
@@ -795,6 +524,30 @@ function createAudioTextResponseEvent(response: Record<string, unknown> = {}) {
   };
 }
 
+function buildRealtimeTurnDetectionConfig(turnDetection: Record<string, unknown> | undefined) {
+  const type = String(turnDetection?.type || "semantic_vad").trim() || "semantic_vad";
+  const createResponse = turnDetection?.create_response === undefined ? true : Boolean(turnDetection.create_response);
+  const interruptResponse = turnDetection?.interrupt_response === undefined ? true : Boolean(turnDetection.interrupt_response);
+  if (type === "semantic_vad") {
+    const eagerness = String(turnDetection?.eagerness || "high").trim() || "high";
+    return {
+      type: "semantic_vad",
+      eagerness,
+      create_response: createResponse,
+      interrupt_response: interruptResponse
+    };
+  }
+  return {
+    type,
+    threshold: typeof turnDetection?.threshold === "number" ? turnDetection.threshold : 0.75,
+    prefix_padding_ms: typeof turnDetection?.prefix_padding_ms === "number" ? turnDetection.prefix_padding_ms : 300,
+    silence_duration_ms: typeof turnDetection?.silence_duration_ms === "number" ? turnDetection.silence_duration_ms : 600,
+    idle_timeout_ms: turnDetection?.idle_timeout_ms === undefined ? null : turnDetection.idle_timeout_ms,
+    create_response: createResponse,
+    interrupt_response: interruptResponse
+  };
+}
+
 function createFunctionCallOutputEvent(callId: string, output: unknown) {
   return {
     type: "conversation.item.create",
@@ -1058,11 +811,7 @@ function startOutputPump(session: StreamSession) {
   }, 5);
 }
 
-async function interruptAssistantForCallerSpeech(
-  session: StreamSession | undefined,
-  reason: string,
-  options: { persistKnowledgeState?: boolean } = {}
-) {
+async function interruptAssistantForCallerSpeech(session: StreamSession | undefined, reason: string) {
   if (!session || !hasPendingAssistantAudio(session)) return false;
   const plan = buildAssistantInterruptionPlan(session, reason);
   if (!plan.shouldInterrupt) return false;
@@ -1071,7 +820,7 @@ async function interruptAssistantForCallerSpeech(
     sendOpenAiEvent(session.openAiWs, event);
   }
   applyAssistantInterruption(session, plan);
-  if (options.persistKnowledgeState !== false && session.knowledgeCallState) {
+  if (session.knowledgeCallState) {
     await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
       source: "barge_in",
       reason,
@@ -1131,7 +880,6 @@ async function endCallSession(session: StreamSession | undefined, reason: string
   if (!session || session.isShuttingDown) return;
   session.isShuttingDown = true;
   session.callActive = false;
-  clearPendingCallerTurnResponse(session, "call_end");
   await persistCallUsage(session);
   if (session.knowledgeCallState) {
     await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
@@ -1679,11 +1427,7 @@ function connectOpenAiRealtime(session: StreamSession) {
         input_audio_format: payload.session_config.input_audio_format || "g711_ulaw",
         output_audio_format: payload.session_config.output_audio_format || "g711_ulaw",
         voice: payload.session_config.voice,
-        turn_detection: {
-          ...payload.session_config.turn_detection,
-          create_response: payload.session_config.turn_detection.create_response ?? true,
-          interrupt_response: payload.session_config.turn_detection.interrupt_response ?? true
-        },
+        turn_detection: buildRealtimeTurnDetectionConfig(payload.session_config.turn_detection),
         input_audio_transcription: {
           model: payload.session_config.transcription_model || "gpt-4o-mini-transcribe",
           language: "en"
@@ -1779,11 +1523,6 @@ function connectOpenAiRealtime(session: StreamSession) {
       }
       markAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
       noteAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
-      if (session.pendingCallerTurnTimer && session.pendingCallerTurnWeak && !session.pendingToolSpeechWait) {
-        await interruptAssistantForCallerSpeech(session, "caller_turn_weak_hold", {
-          persistKnowledgeState: false
-        });
-      }
       logInfo("openai_realtime_response_created", {
         callSid: session.callSid,
         responseId: payloadMsg?.response?.id || payloadMsg?.response_id
@@ -1910,34 +1649,10 @@ function connectOpenAiRealtime(session: StreamSession) {
           [session.callSid, session.tenantKey, "caller", String(transcript)]
         );
       }
-      const turnKey = String(
-        payloadMsg.item_id
-          || payloadMsg?.item?.id
-          || payloadMsg?.conversation_item_id
-          || payloadMsg.event_id
-          || `caller_turn_${Date.now()}`
-      );
-      const assessment = assessCallerTurnTranscript(String(transcript || ""));
-      if (assessment.shouldDelay) {
-        if (hasActiveAssistantResponse(session) && !session.pendingToolSpeechWait) {
-          await interruptAssistantForCallerSpeech(session, "caller_turn_weak_hold", {
-            persistKnowledgeState: false
-          });
-        }
-        scheduleCallerTurnResponse(session, String(transcript || ""), turnKey);
-      } else {
-        clearPendingCallerTurnResponse(session, "clear_turn_completed");
-      }
-      return;
-    }
-
-    if (type === "input_audio_buffer.speech_stopped") {
-      session.lastCallerSpeechStoppedAtMs = performance.now();
       return;
     }
 
     if (type === "input_audio_buffer.speech_started") {
-      clearPendingCallerTurnResponse(session, "caller_resumed_speech");
       await interruptAssistantForCallerSpeech(session, "caller_speech_detected_realtime");
       return;
     }

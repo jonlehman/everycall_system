@@ -118,11 +118,8 @@ export const DEFAULT_RUNTIME_SESSION_CONFIG = {
   voice: "marin",
   max_output_tokens: 4096,
   turn_detection: {
-    type: "server_vad",
-    threshold: 0.75,
-    prefix_padding_ms: 300,
-    silence_duration_ms: 600,
-    idle_timeout_ms: null,
+    type: "semantic_vad",
+    eagerness: "high",
     create_response: true,
     interrupt_response: true
   },
@@ -898,6 +895,7 @@ export async function saveCallOutcomeSchema(db, tenantKey, payload = {}, actor =
 function normalizeSessionConfig(value) {
   const source = asObject(value);
   const turnDetection = asObject(source.turn_detection || source.turnDetection);
+  const turnDetectionType = normalizeText(turnDetection.type) || DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.type;
   return {
     model: normalizeText(source.model) || DEFAULT_RUNTIME_SESSION_CONFIG.model,
     voice: normalizeText(source.voice) || DEFAULT_RUNTIME_SESSION_CONFIG.voice,
@@ -905,21 +903,22 @@ function normalizeSessionConfig(value) {
       ? Number(source.max_output_tokens ?? source.maxOutputTokens)
       : DEFAULT_RUNTIME_SESSION_CONFIG.max_output_tokens,
     turn_detection: {
-      type: normalizeText(turnDetection.type) || DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.type,
+      type: turnDetectionType,
+      eagerness: normalizeText(turnDetection.eagerness) || DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.eagerness,
       threshold: Number.isFinite(Number(turnDetection.threshold))
         ? Number(turnDetection.threshold)
-        : DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.threshold,
+        : 0.75,
       prefix_padding_ms: Number.isFinite(Number(turnDetection.prefix_padding_ms ?? turnDetection.prefixPaddingMs))
         ? Number(turnDetection.prefix_padding_ms ?? turnDetection.prefixPaddingMs)
-        : DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.prefix_padding_ms,
+        : 300,
       silence_duration_ms: Number.isFinite(Number(turnDetection.silence_duration_ms ?? turnDetection.silenceDurationMs))
         ? Number(turnDetection.silence_duration_ms ?? turnDetection.silenceDurationMs)
-        : DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.silence_duration_ms,
+        : 600,
       idle_timeout_ms: turnDetection.idle_timeout_ms === null || turnDetection.idleTimeoutMs === null
         ? null
         : Number.isFinite(Number(turnDetection.idle_timeout_ms ?? turnDetection.idleTimeoutMs))
           ? Number(turnDetection.idle_timeout_ms ?? turnDetection.idleTimeoutMs)
-          : DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.idle_timeout_ms,
+          : null,
       create_response: turnDetection.create_response === undefined
         ? DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.create_response
         : Boolean(turnDetection.create_response),

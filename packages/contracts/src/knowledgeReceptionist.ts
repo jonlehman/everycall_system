@@ -384,9 +384,10 @@ export const knowledgeRuntimeSessionConfigSchema = z.object({
   max_output_tokens: z.number().int().positive().optional(),
   turn_detection: z.object({
     type: z.string().min(1),
-    threshold: z.number(),
-    prefix_padding_ms: z.number().int().nonnegative(),
-    silence_duration_ms: z.number().int().nonnegative(),
+    eagerness: z.string().min(1).optional(),
+    threshold: z.number().optional(),
+    prefix_padding_ms: z.number().int().nonnegative().optional(),
+    silence_duration_ms: z.number().int().nonnegative().optional(),
     idle_timeout_ms: z.number().int().nonnegative().nullable().optional(),
     create_response: z.boolean().optional(),
     interrupt_response: z.boolean().optional()
