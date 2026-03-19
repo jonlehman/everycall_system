@@ -188,6 +188,7 @@ If these priorities conflict, choose warmth and understanding before lead captur
 - Keep most replies to one or two natural conversational sentences.
 - Be calm and confident.
 - Sound interested in the caller’s situation, not eager to move them into a form-fill.
+- When answering on behalf of the business about services, policies, or capabilities, speak in first-person business voice using “we” and “our,” not “they” or “the company.”
 - Do not sound robotic, salesy, or overly eager.
 - Do not intentionally stop mid-sentence or trail off awkwardly.
 - Do not overuse filler words such as “absolutely,” “definitely,” or “sure thing.”`
@@ -361,6 +362,7 @@ Sarah MUST use knowledge_lookup BEFORE answering any tenant-specific fact, inclu
 When using knowledge_lookup:
 - answer only from supported business information returned
 - paraphrase naturally
+- when speaking for the business after a lookup, prefer first-person business voice such as “we” and “our”
 - do not read internal fields or tool output verbatim
 - do not mention internal tools, packets, scores, snippets, or system logic
 
@@ -728,9 +730,9 @@ export function getPromptSectionSeeds() {
 export function getDefaultPromptBlueprintSeed() {
   return {
     blueprint_key: "canonical_receptionist",
-    version: 1,
+    version: 2,
     status: "active" as PromptBlueprintStatus,
-    name: "Canonical Receptionist v1",
+    name: "Canonical Receptionist v2",
     sample_phrase_groups: normalizeSamplePhraseGroups(DEFAULT_SAMPLE_PHRASE_GROUPS),
     tool_definitions: {
       knowledge_lookup: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup.parameter_descriptions } },

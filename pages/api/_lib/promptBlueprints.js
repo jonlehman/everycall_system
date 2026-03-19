@@ -246,17 +246,27 @@ function normalizeStoredTenantPromptProfile(row, defaults) {
 }
 
 async function ensureDefaultPromptBlueprint(db) {
-  const existing = await db.query(
+  const seed = getDefaultPromptBlueprintSeed();
+  const promptBlueprintId = `pb_${seed.blueprint_key}_v${seed.version}`;
+  const existingVersion = await db.query(
     `SELECT prompt_blueprint_id
      FROM prompt_blueprints
-     ORDER BY updated_at DESC
-     LIMIT 1`
+     WHERE blueprint_key = $1
+       AND version = $2
+     LIMIT 1`,
+    [seed.blueprint_key, seed.version]
   );
-  if (existing.rowCount) {
+  if (existingVersion.rowCount) {
     return;
   }
-  const seed = getDefaultPromptBlueprintSeed();
-  const promptBlueprintId = "pb_canonical_receptionist_v1";
+  await db.query(
+    `UPDATE prompt_blueprints
+     SET status = 'archived',
+         updated_at = NOW()
+     WHERE blueprint_key = $1
+       AND status = 'active'`,
+    [seed.blueprint_key]
+  );
   await db.query(
     `INSERT INTO prompt_blueprints (
        prompt_blueprint_id, blueprint_key, version, status, name, sample_phrase_groups_json, tool_definitions_json
