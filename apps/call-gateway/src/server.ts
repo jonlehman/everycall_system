@@ -103,6 +103,21 @@ type UsageTotals = {
   responseCount: number;
 };
 
+type AudioPumpTrace = {
+  responseId: string | null;
+  chunksQueued: number;
+  framesSent: number;
+  underrunCount: number;
+  underrunStartAtMs: number | null;
+  totalUnderrunMs: number;
+  maxUnderrunMs: number;
+  timerLateCount: number;
+  totalTimerLateMs: number;
+  maxTimerLateMs: number;
+  catchupBurstCount: number;
+  maxBurstFrames: number;
+};
+
 type StreamSession = {
   callControlId: string;
   callSid: string;
@@ -144,6 +159,7 @@ type StreamSession = {
   executingToolCallKeys?: Set<string>;
   completedToolCallKeys?: Set<string>;
   pendingToolSpeechWait?: PendingToolSpeechWait | null;
+  audioPumpTrace?: AudioPumpTrace | null;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -185,6 +201,7 @@ function createStreamSession(
     executingToolCallKeys: new Set<string>(),
     completedToolCallKeys: new Set<string>(),
     pendingToolSpeechWait: null,
+    audioPumpTrace: null,
     ...(realtimeLogPath ? { realtimeLogPath } : {})
   };
 }
@@ -517,6 +534,80 @@ function createFunctionCallOutputEvent(callId: string, output: unknown) {
   };
 }
 
+function createAudioPumpTrace(responseId?: string | null): AudioPumpTrace {
+  return {
+    responseId: responseId || null,
+    chunksQueued: 0,
+    framesSent: 0,
+    underrunCount: 0,
+    underrunStartAtMs: null,
+    totalUnderrunMs: 0,
+    maxUnderrunMs: 0,
+    timerLateCount: 0,
+    totalTimerLateMs: 0,
+    maxTimerLateMs: 0,
+    catchupBurstCount: 0,
+    maxBurstFrames: 0
+  };
+}
+
+function ensureAudioPumpTrace(session: StreamSession, responseId?: string | null) {
+  const normalizedResponseId = String(responseId || session.currentResponseId || "").trim() || null;
+  if (!session.audioPumpTrace || session.audioPumpTrace.responseId !== normalizedResponseId) {
+    session.audioPumpTrace = createAudioPumpTrace(normalizedResponseId);
+  }
+  return session.audioPumpTrace;
+}
+
+function closeAudioUnderrun(trace: AudioPumpTrace | null | undefined, nowMs: number) {
+  if (!trace || trace.underrunStartAtMs === null) return;
+  const durationMs = Math.max(0, nowMs - trace.underrunStartAtMs);
+  trace.totalUnderrunMs += durationMs;
+  trace.maxUnderrunMs = Math.max(trace.maxUnderrunMs, durationMs);
+  trace.underrunStartAtMs = null;
+}
+
+function logAudioPumpTraceSummary(
+  session: StreamSession,
+  stage: "response_done" | "playback_drained" | "interrupted"
+) {
+  const trace = session.audioPumpTrace;
+  if (!trace) return;
+  closeAudioUnderrun(trace, performance.now());
+  if (trace.chunksQueued === 0 && trace.framesSent === 0) {
+    if (stage === "playback_drained" || stage === "interrupted") {
+      session.audioPumpTrace = null;
+    }
+    return;
+  }
+  const payload = {
+    callSid: session.callSid,
+    stage,
+    responseId: trace.responseId || undefined,
+    chunksQueued: trace.chunksQueued,
+    framesSent: trace.framesSent,
+    underrunCount: trace.underrunCount,
+    totalUnderrunMs: Number(trace.totalUnderrunMs.toFixed(3)),
+    maxUnderrunMs: Number(trace.maxUnderrunMs.toFixed(3)),
+    timerLateCount: trace.timerLateCount,
+    totalTimerLateMs: Number(trace.totalTimerLateMs.toFixed(3)),
+    maxTimerLateMs: Number(trace.maxTimerLateMs.toFixed(3)),
+    catchupBurstCount: trace.catchupBurstCount,
+    maxBurstFrames: trace.maxBurstFrames,
+    queuedFramesRemaining: session.outputQueue?.length || 0,
+    bufferedBytesRemaining: session.outputBuffer?.length || 0
+  };
+  logInfo("assistant_audio_pump_trace", payload);
+  logRealtimeDetailEntry(session, {
+    ts: new Date().toISOString(),
+    kind: "assistant_audio_pump_trace",
+    ...payload
+  });
+  if (stage === "playback_drained" || stage === "interrupted") {
+    session.audioPumpTrace = null;
+  }
+}
+
 function requestAssistantResponse(
   session: StreamSession,
   reason: string,
@@ -582,6 +673,9 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
   if (!session.outputQueue) {
     session.outputQueue = [];
   }
+  const trace = ensureAudioPumpTrace(session);
+  trace.chunksQueued += 1;
+  closeAudioUnderrun(trace, performance.now());
   noteAssistantAudioChunkQueued(session);
   let offset = 0;
   while (buffer.length - offset >= frameSize) {
@@ -594,11 +688,24 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
 }
 
 function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.now()) {
+  const trace = ensureAudioPumpTrace(session);
   if (!session.outputQueue || session.outputQueue.length === 0) {
+    if (session.currentResponseId && trace.underrunStartAtMs === null) {
+      trace.underrunCount += 1;
+      trace.underrunStartAtMs = nowMs;
+    }
     return 0;
   }
   if (!session.outputNextFrameAtMs) {
     session.outputNextFrameAtMs = nowMs;
+  }
+
+  closeAudioUnderrun(trace, nowMs);
+  const lateMs = Math.max(0, nowMs - session.outputNextFrameAtMs);
+  if (lateMs >= 5) {
+    trace.timerLateCount += 1;
+    trace.totalTimerLateMs += lateMs;
+    trace.maxTimerLateMs = Math.max(trace.maxTimerLateMs, lateMs);
   }
 
   const frameBudget = Math.min(
@@ -606,6 +713,10 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
     Math.max(1, Math.floor((nowMs - session.outputNextFrameAtMs) / outboundAudioFrameMs) + 1),
     8
   );
+  if (frameBudget > 1) {
+    trace.catchupBurstCount += 1;
+    trace.maxBurstFrames = Math.max(trace.maxBurstFrames, frameBudget);
+  }
 
   let sent = 0;
   while (sent < frameBudget && session.outputQueue.length > 0) {
@@ -616,6 +727,7 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
     session.outputNextFrameAtMs = (session.outputNextFrameAtMs || nowMs) + outboundAudioFrameMs;
     sent += 1;
   }
+  trace.framesSent += sent;
 
   if (session.outputNextFrameAtMs && session.outputNextFrameAtMs < nowMs - (outboundAudioFrameMs * 4)) {
     session.outputNextFrameAtMs = nowMs;
@@ -650,6 +762,7 @@ function startOutputPump(session: StreamSession) {
         session.outputBuffer = Buffer.alloc(0);
       }
       if (!(session.outputBuffer && session.outputBuffer.length > 0) && !session.currentResponseId) {
+        logAudioPumpTraceSummary(session, "playback_drained");
         noteAssistantPlaybackDrained(session);
       }
       return;
@@ -675,6 +788,7 @@ async function interruptAssistantForCallerSpeech(session: StreamSession | undefi
       buffered_bytes_dropped: plan.bufferedBytesDropped
     });
   }
+  logAudioPumpTraceSummary(session, "interrupted");
   logInfo("assistant_response_canceled", {
     callSid: session.callSid,
     callControlId: session.callControlId,
@@ -1347,6 +1461,7 @@ function connectOpenAiRealtime(session: StreamSession) {
     }
 
     if (type === "response.created") {
+      ensureAudioPumpTrace(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
       if (session.pendingToolSpeechWait && !session.pendingToolSpeechWait.responseId) {
         session.pendingToolSpeechWait.responseCreatedAtMs = performance.now();
         session.pendingToolSpeechWait.responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
@@ -1407,6 +1522,7 @@ function connectOpenAiRealtime(session: StreamSession) {
         outputTokens: usage.outputTokens,
         estimatedCostMicrosUsd: estimateUsageCostMicrosUsd(usage.inputTokens, usage.outputTokens)
       });
+      logAudioPumpTraceSummary(session, "response_done");
       if (session.pendingToolSpeechWait) {
         const responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
         if (!session.pendingToolSpeechWait.responseId || session.pendingToolSpeechWait.responseId === responseId) {
