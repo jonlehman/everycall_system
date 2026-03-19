@@ -121,6 +121,7 @@ type StreamSession = {
   outputQueue?: Buffer[];
   outputBuffer?: Buffer;
   outputTimer?: NodeJS.Timeout | null;
+  outputNextFrameAtMs?: number | null;
   hangupTimer?: NodeJS.Timeout | null;
   outputPrimed?: boolean;
   currentResponseId?: string | null;
@@ -171,6 +172,7 @@ function createStreamSession(
     knowledgeCallState,
     outputQueue: [],
     outputBuffer: Buffer.alloc(0),
+    outputNextFrameAtMs: null,
     outputPrimed: false,
     currentResponseId: null,
     currentAssistantItemId: null,
@@ -591,13 +593,47 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
   startOutputPump(session);
 }
 
+function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.now()) {
+  if (!session.outputQueue || session.outputQueue.length === 0) {
+    return 0;
+  }
+  if (!session.outputNextFrameAtMs) {
+    session.outputNextFrameAtMs = nowMs;
+  }
+
+  const frameBudget = Math.min(
+    session.outputQueue.length,
+    Math.max(1, Math.floor((nowMs - session.outputNextFrameAtMs) / outboundAudioFrameMs) + 1),
+    8
+  );
+
+  let sent = 0;
+  while (sent < frameBudget && session.outputQueue.length > 0) {
+    const payload = session.outputQueue.shift();
+    if (!payload) break;
+    noteAssistantAudioFrameSent(session);
+    sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, payload.toString("base64"));
+    session.outputNextFrameAtMs = (session.outputNextFrameAtMs || nowMs) + outboundAudioFrameMs;
+    sent += 1;
+  }
+
+  if (session.outputNextFrameAtMs && session.outputNextFrameAtMs < nowMs - (outboundAudioFrameMs * 4)) {
+    session.outputNextFrameAtMs = nowMs;
+  }
+  return sent;
+}
+
 function startOutputPump(session: StreamSession) {
   if (session.outputTimer) return;
   if (!session.outputQueue || session.outputQueue.length === 0) {
     return;
   }
   session.outputPrimed = true;
+  session.outputNextFrameAtMs = performance.now();
+  pumpAvailableOutputFrames(session, session.outputNextFrameAtMs);
   session.outputTimer = setInterval(() => {
+    const nowMs = performance.now();
+    pumpAvailableOutputFrames(session, nowMs);
     if (!session.outputQueue || session.outputQueue.length === 0) {
       // Realtime audio can arrive in bursts. Keep the Telnyx pump alive while the
       // current assistant response is still active so the next chunk can be sent
@@ -609,6 +645,7 @@ function startOutputPump(session: StreamSession) {
         clearInterval(session.outputTimer);
         session.outputTimer = null;
       }
+      session.outputNextFrameAtMs = null;
       if (session.outputBuffer && session.outputBuffer.length > 0 && !session.currentResponseId) {
         session.outputBuffer = Buffer.alloc(0);
       }
@@ -617,11 +654,7 @@ function startOutputPump(session: StreamSession) {
       }
       return;
     }
-    const payload = session.outputQueue.shift();
-    if (!payload) return;
-    noteAssistantAudioFrameSent(session);
-    sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, payload.toString("base64"));
-  }, outboundAudioFrameMs);
+  }, 5);
 }
 
 async function interruptAssistantForCallerSpeech(session: StreamSession | undefined, reason: string) {
@@ -710,6 +743,7 @@ async function endCallSession(session: StreamSession | undefined, reason: string
     clearInterval(session.outputTimer);
     session.outputTimer = null;
   }
+  session.outputNextFrameAtMs = null;
 
   if (session.hangupTimer) {
     clearTimeout(session.hangupTimer);
