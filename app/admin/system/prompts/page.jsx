@@ -314,35 +314,28 @@ const SECTION_GROUPS = [
     sectionIds: [
       'priority_order',
       'personality_tone',
-      'variety',
-      'sample_phrase_guidance',
       'core_behavioral_rules',
       'conversational_attunement',
-      'discovery_and_fit',
-      'readiness_before_callback_capture',
-      'transition_to_callback_capture'
+      'readiness_before_callback_capture'
     ]
   },
   {
     id: 'lead-capture-safety',
     title: 'Lead Capture And Safety',
-    description: 'Callback capture, accuracy, safety, uncertainty handling, closing, and final reminders.',
+    description: 'Callback capture, accuracy, audio safety, conversation staging, and closing behavior.',
     defaultOpen: false,
     sectionIds: [
       'lead_capture_rules',
       'name_and_phone_accuracy',
-      'handling_uncertainty',
-      'filtering_rules',
       'audio_conversation_safety',
       'conversation_flow',
-      'closing',
-      'final_reminder'
+      'closing'
     ]
   },
   {
     id: 'tools-boundaries',
     title: 'Tools And Boundaries',
-    description: 'How the assistant should use tools and what it must not invent or assume.',
+    description: 'How the assistant should use tools, resume the call flow after lookups, and stay within factual boundaries.',
     defaultOpen: false,
     sectionIds: ['tools', 'knowledge_boundaries']
   }
