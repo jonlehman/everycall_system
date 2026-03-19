@@ -215,10 +215,17 @@ export default function TenantManagePage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [provisionBusy, setProvisionBusy] = useState(false);
   const [deprovisionBusy, setDeprovisionBusy] = useState(false);
+  const [passwordDraft, setPasswordDraft] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [passwordBusy, setPasswordBusy] = useState(false);
 
   const savedDraft = useMemo(() => (tenant ? buildDraftFromTenant(tenant) : null), [tenant]);
   const changedCount = useMemo(() => countChangedFields(draft, savedDraft), [draft, savedDraft]);
   const hasUnsavedChanges = changedCount > 0;
+  const primaryUser = useMemo(() => {
+    if (!users.length) return null;
+    return users.find((user) => user.role === 'owner') || users[0];
+  }, [users]);
 
   const loadTenant = async () => {
     if (!tenantKey) return;
@@ -338,6 +345,38 @@ export default function TenantManagePage() {
       setStatus(error?.message || 'Deprovision failed.');
     } finally {
       setDeprovisionBusy(false);
+    }
+  };
+
+  const setPrimaryUserPassword = async () => {
+    if (!primaryUser) {
+      setStatus('No tenant user exists for this tenant.');
+      return;
+    }
+    if (!passwordDraft || passwordDraft.length < 8) {
+      setStatus('Password must be at least 8 characters.');
+      return;
+    }
+    if (passwordDraft !== passwordConfirm) {
+      setStatus('Passwords do not match.');
+      return;
+    }
+
+    setPasswordBusy(true);
+    setStatus('Updating primary user password...');
+    try {
+      const data = await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/primary-user-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordDraft })
+      });
+      setPasswordDraft('');
+      setPasswordConfirm('');
+      setStatus(`Updated password for ${data?.user?.email || primaryUser.email}.`);
+    } catch (error) {
+      setStatus(error?.message || 'Password update failed.');
+    } finally {
+      setPasswordBusy(false);
     }
   };
 
@@ -471,6 +510,58 @@ export default function TenantManagePage() {
                 <div className="text-sm text-slate-500">No tenant users found.</div>
               )}
             </div>
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <h2 className="m-0 text-lg font-semibold">Primary User Access</h2>
+            <div className="mt-2 text-sm text-slate-500">
+              Set a new password for the tenant’s main login account. This targets the owner user when present, otherwise the first tenant user.
+            </div>
+            {primaryUser ? (
+              <div className="mt-3 grid gap-3">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                  <div className="font-medium text-slate-900">{primaryUser.name || primaryUser.email}</div>
+                  <div className="text-slate-500">{primaryUser.email}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {primaryUser.role || 'user'} · {primaryUser.status || 'active'}
+                  </div>
+                </div>
+                <Field label="New Password" hint="Admin-only direct password set for the tenant’s main user account. Minimum 8 characters.">
+                  <TextInput
+                    type="password"
+                    value={passwordDraft}
+                    onChange={(event) => setPasswordDraft(event.target.value)}
+                    placeholder="Enter a new password"
+                  />
+                </Field>
+                <Field label="Confirm Password" hint="Re-enter the same password before saving.">
+                  <TextInput
+                    type="password"
+                    value={passwordConfirm}
+                    onChange={(event) => setPasswordConfirm(event.target.value)}
+                    placeholder="Confirm the password"
+                  />
+                </Field>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={setPrimaryUserPassword} disabled={passwordBusy || !passwordDraft || !passwordConfirm}>
+                    {passwordBusy ? 'Updating...' : 'Set Primary User Password'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setPasswordDraft('');
+                      setPasswordConfirm('');
+                      setStatus('Cleared unsaved password input.');
+                    }}
+                    disabled={passwordBusy || (!passwordDraft && !passwordConfirm)}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 text-sm text-slate-500">No tenant users found, so there is no primary login account to update.</div>
+            )}
           </section>
 
           <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
