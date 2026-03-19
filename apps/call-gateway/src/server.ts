@@ -65,6 +65,7 @@ const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "raw").toLowerCase();
 const outboundAudioFrameMs = 20;
 const outboundJitterBufferFrames = Math.max(1, Number(process.env.TELNYX_OUTBOUND_BUFFER_FRAMES || "3"));
+const ellipsisHoldMs = Math.max(0, Number(process.env.CALLER_ELLIPSIS_HOLD_MS || "3000"));
 const trailingFillerHoldMs = Math.max(0, Number(process.env.CALLER_TRAILING_FILLER_HOLD_MS || "1500"));
 const starterFragmentHoldMs = Math.max(0, Number(process.env.CALLER_STARTER_FRAGMENT_HOLD_MS || "1200"));
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
@@ -326,6 +327,15 @@ function assessCallerTurnTranscript(transcript: string): CallerTurnAssessment {
       reason: "empty_transcript",
       normalizedTranscript,
       holdMs: 0
+    };
+  }
+
+  if (/(\.\.\.|…)\s*$/u.test(normalizedTranscript)) {
+    return {
+      shouldDelay: true,
+      reason: "ends_with_ellipsis",
+      normalizedTranscript,
+      holdMs: ellipsisHoldMs
     };
   }
 
