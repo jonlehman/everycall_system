@@ -398,12 +398,20 @@ const CHUNK_SOFT_CHAR_LIMIT = readPositiveIntEnv("KNOWLEDGE_BUILD_CHUNK_SOFT_CHA
 const CHUNK_HARD_CHAR_LIMIT = readPositiveIntEnv("KNOWLEDGE_BUILD_CHUNK_HARD_CHAR_LIMIT", 1800);
 const SOURCE_SUMMARY_BATCH_TOKEN_BUDGET = readPositiveIntEnv("KNOWLEDGE_BUILD_SOURCE_SUMMARY_BATCH_TOKENS", 18000);
 const SOURCE_SUMMARY_BATCH_CONCURRENCY = readPositiveIntEnv("KNOWLEDGE_BUILD_SOURCE_SUMMARY_BATCH_CONCURRENCY", 2);
+const SOURCE_SUMMARY_BATCH_MAX_ITEMS = readPositiveIntEnv("KNOWLEDGE_BUILD_SOURCE_SUMMARY_BATCH_MAX_ITEMS", 12);
 const SOURCE_SUMMARY_RESPONSE_TOKENS = readPositiveIntEnv("KNOWLEDGE_BUILD_SOURCE_SUMMARY_RESPONSE_TOKENS", 4200);
 const TOPIC_WINDOW_TOKEN_BUDGET = readPositiveIntEnv("KNOWLEDGE_BUILD_TOPIC_WINDOW_TOKENS", 18000);
+const TOPIC_WINDOW_MAX_ITEMS = readPositiveIntEnv("KNOWLEDGE_BUILD_TOPIC_WINDOW_MAX_ITEMS", 24);
 const TOPIC_WINDOW_RESPONSE_TOKENS = readPositiveIntEnv("KNOWLEDGE_BUILD_TOPIC_WINDOW_RESPONSE_TOKENS", 2600);
 const SOURCE_ARTIFACT_BATCH_TOKEN_BUDGET = readPositiveIntEnv("KNOWLEDGE_BUILD_SOURCE_ARTIFACT_BATCH_TOKENS", 22000);
 const SOURCE_ARTIFACT_BATCH_CONCURRENCY = readPositiveIntEnv("KNOWLEDGE_BUILD_SOURCE_ARTIFACT_BATCH_CONCURRENCY", 2);
+const SOURCE_ARTIFACT_BATCH_MAX_ITEMS = readPositiveIntEnv("KNOWLEDGE_BUILD_SOURCE_ARTIFACT_BATCH_MAX_ITEMS", 8);
 const SOURCE_ARTIFACT_RESPONSE_TOKENS = readPositiveIntEnv("KNOWLEDGE_BUILD_SOURCE_ARTIFACT_RESPONSE_TOKENS", 6200);
+const MAX_COMPILE_SOURCE_RECORDS = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_COMPILE_SOURCES", 24);
+const MAX_COMPILE_BLOG_SOURCE_RECORDS = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_COMPILE_BLOG_SOURCES", 2);
+const MAX_COMPILE_UNKNOWN_WEBSITE_PAGE_RECORDS = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_COMPILE_UNKNOWN_WEBSITE_PAGES", 4);
+const MAX_COMPILE_CONTACT_PAGE_RECORDS = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_COMPILE_CONTACT_PAGES", 2);
+const MAX_COMPILE_SERVICE_AREA_PAGE_RECORDS = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_COMPILE_SERVICE_AREA_PAGES", 3);
 
 function slugify(value) {
   return normalizeText(value)
@@ -417,6 +425,154 @@ function truncateText(value, limit = 320) {
   const text = normalizeText(value);
   if (!text) return "";
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function compileSourcePathDepth(sourceLocator) {
+  try {
+    return new URL(sourceLocator).pathname.split("/").filter(Boolean).length;
+  } catch {
+    return 99;
+  }
+}
+
+function compileSourceRecordScore(record, index = 0) {
+  const sourceItem = record?.sourceItem || {};
+  const sourceChannel = normalizeText(sourceItem.sourceChannel);
+  const pageType = normalizeText(sourceItem.pageType) || "unknown_mixed";
+  const sourceAuthority = normalizeText(sourceItem.sourceAuthority);
+  const contentClass = normalizeText(sourceItem.contentClass) || "operational_core";
+  const locator = normalizeText(sourceItem.sourceLocator);
+
+  const channelScore = {
+    owner_interview: 220,
+    uploaded_document: 180,
+    website_file: 150,
+    website_page: 120
+  }[sourceChannel] || 100;
+
+  const pageTypeScore = {
+    home: 120,
+    service_detail: 115,
+    faq: 110,
+    policy: 108,
+    process: 104,
+    hours: 100,
+    contact: 96,
+    service_area: 92,
+    unknown_mixed: 55,
+    blog_article: 20
+  }[pageType] || 70;
+
+  const authorityScore = {
+    owner_interview_confirmed: 35,
+    uploaded_first_party_policy: 28,
+    uploaded_first_party_operational: 24,
+    website_public_downloadable: 18,
+    website_public_page: 12,
+    uploaded_first_party_reference: 10,
+    owner_interview_unconfirmed: 6
+  }[sourceAuthority] || 0;
+
+  const contentClassScore = {
+    operational_core: 18,
+    policy_boundary: 16,
+    descriptive: 6,
+    educational: -10,
+    marketing: -14
+  }[contentClass] || 0;
+
+  let rootBonus = 0;
+  try {
+    const url = new URL(locator);
+    if (url.pathname === "/" || url.pathname === "") {
+      rootBonus = 18;
+    }
+  } catch {
+    rootBonus = 0;
+  }
+
+  return channelScore
+    + pageTypeScore
+    + authorityScore
+    + contentClassScore
+    + rootBonus
+    - (compileSourcePathDepth(locator) * 0.5)
+    - (index * 0.001);
+}
+
+function selectSourceCompileRecords(sourceRecords, warnings) {
+  const records = Array.isArray(sourceRecords) ? sourceRecords : [];
+  if (!records.length) return [];
+
+  const compileEnabledRecords = records.filter((record) => record?.sourceItem?.compileEnabled !== false);
+  if (compileEnabledRecords.length <= MAX_COMPILE_SOURCE_RECORDS) {
+    if (compileEnabledRecords.length !== records.length) {
+      warnings.push(`compile_disabled_sources_skipped:${compileEnabledRecords.length}_of_${records.length}`);
+    }
+    return compileEnabledRecords;
+  }
+
+  const pageTypeCaps = {
+    blog_article: MAX_COMPILE_BLOG_SOURCE_RECORDS,
+    unknown_mixed: MAX_COMPILE_UNKNOWN_WEBSITE_PAGE_RECORDS,
+    contact: MAX_COMPILE_CONTACT_PAGE_RECORDS,
+    service_area: MAX_COMPILE_SERVICE_AREA_PAGE_RECORDS
+  };
+  const selected = [];
+  const deferred = [];
+  const pageTypeCounts = new Map();
+  const ranked = compileEnabledRecords
+    .map((record, index) => ({
+      record,
+      score: compileSourceRecordScore(record, index),
+      pageType: normalizeText(record?.sourceItem?.pageType) || "unknown_mixed",
+      sourceChannel: normalizeText(record?.sourceItem?.sourceChannel)
+    }))
+    .sort((left, right) => right.score - left.score);
+
+  for (const entry of ranked) {
+    if (selected.length >= MAX_COMPILE_SOURCE_RECORDS) break;
+    if (entry.sourceChannel === "website_page") {
+      const cap = pageTypeCaps[entry.pageType];
+      const currentCount = Number(pageTypeCounts.get(entry.pageType) || 0);
+      if (cap && currentCount >= cap) {
+        deferred.push(entry);
+        continue;
+      }
+      pageTypeCounts.set(entry.pageType, currentCount + 1);
+    }
+    selected.push(entry);
+  }
+
+  if (selected.length < MAX_COMPILE_SOURCE_RECORDS) {
+    for (const entry of deferred) {
+      if (selected.length >= MAX_COMPILE_SOURCE_RECORDS) break;
+      selected.push(entry);
+    }
+  }
+
+  const selectedRecords = selected.map((entry) => entry.record);
+  const droppedCount = compileEnabledRecords.length - selectedRecords.length;
+  if (records.length !== compileEnabledRecords.length) {
+    warnings.push(`compile_disabled_sources_skipped:${compileEnabledRecords.length}_of_${records.length}`);
+  }
+  if (droppedCount > 0) {
+    warnings.push(`compile_source_budget_applied:${selectedRecords.length}_of_${compileEnabledRecords.length}`);
+    const selectedPageTypeCounts = {};
+    for (const entry of selected) {
+      if (entry.sourceChannel !== "website_page") continue;
+      selectedPageTypeCounts[entry.pageType] = Number(selectedPageTypeCounts[entry.pageType] || 0) + 1;
+    }
+    logCompilerProgress("compiler_source_selection_applied", {
+      totalSourceCount: records.length,
+      compileEnabledSourceCount: compileEnabledRecords.length,
+      selectedSourceCount: selectedRecords.length,
+      droppedSourceCount: droppedCount,
+      selectedWebsitePageTypeCounts: selectedPageTypeCounts
+    });
+  }
+
+  return selectedRecords;
 }
 
 function buildCallerPhrases(title, lines) {
@@ -1857,7 +2013,7 @@ async function runSourceSummaryStage(db, buildInfo, sourceRecords, buildModel, w
   const summaryBatches = batchItemsByTokenBudget(summaryPromptItems, {
     baseTokens: estimateTokenCount(buildSourceSummarySystemPrompt()) + 800,
     maxTokens: SOURCE_SUMMARY_BATCH_TOKEN_BUDGET,
-    maxItems: 24
+    maxItems: SOURCE_SUMMARY_BATCH_MAX_ITEMS
   });
 
   logCompilerProgress("source_summary_batches_planned", {
@@ -1988,7 +2144,7 @@ async function runTopicInventoryStage(db, buildInfo, sourceRecords, sourceSummar
   const windows = batchItemsByTokenBudget(summaryItems, {
     baseTokens: estimateTokenCount(buildTopicInventorySystemPrompt()) + 800,
     maxTokens: TOPIC_WINDOW_TOKEN_BUDGET,
-    maxItems: 64
+    maxItems: TOPIC_WINDOW_MAX_ITEMS
   });
   const existingBatches = await loadExistingTopicBatchResults(db, buildInfo);
   const partials = [];
@@ -2076,7 +2232,7 @@ async function runSourceArtifactStage(db, buildInfo, sourceRecords, topicRows, w
   const artifactBatches = batchItemsByTokenBudget(artifactPromptItems, {
     baseTokens: estimateTokenCount(buildArtifactExtractionSystemPrompt()) + topicInventoryTokenEstimate + 800,
     maxTokens: SOURCE_ARTIFACT_BATCH_TOKEN_BUDGET,
-    maxItems: 16
+    maxItems: SOURCE_ARTIFACT_BATCH_MAX_ITEMS
   });
 
   logCompilerProgress("artifact_batches_planned", {
@@ -2378,7 +2534,8 @@ async function embedArtifacts(cards, facts, buildInfo) {
 
 export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
   const buildModel = process.env.OPENAI_KNOWLEDGE_BUILD_MODEL || "gpt-4.1";
-  const sourceRecords = await loadSourceCompileRecords(db, buildInfo);
+  const warnings = [];
+  const sourceRecords = selectSourceCompileRecords(await loadSourceCompileRecords(db, buildInfo), warnings);
   const sourceChunks = sourceRecords.flatMap((record) => record.sourceChunks);
   logCompilerProgress("compiler_started", {
     buildId: buildInfo.build_id,
@@ -2386,7 +2543,6 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
     chunkCount: sourceChunks.length
   });
 
-  const warnings = [];
   const sourceSummaries = await runSourceSummaryStage(db, buildInfo, sourceRecords, buildModel, warnings);
   const sourceSummaryDigest = buildSourceSummaryDigest(sourceSummaries);
 

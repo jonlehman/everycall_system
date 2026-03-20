@@ -6,11 +6,17 @@ import { buildSourceChunksForSourceItem, compileKnowledgeBuildArtifacts } from "
 import { loadTenantDomainAssignments, resolveTenantDomainAssignments, syncCanonicalKnowledgePacks } from "./knowledgeReceptionistPacks.js";
 import { loadTenantBootstrapProfile } from "./tenantBootstrapProfiles.js";
 
+function readPositiveIntEnv(name, fallback) {
+  const value = Number.parseInt(String(process.env[name] || ""), 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 const BUILD_RATE_LIMIT_HOURS = 24;
-const MAX_WEBSITE_PAGES = 500;
-const MAX_WEBSITE_FILES = 25;
-const CRAWL_BATCH_SIZE = 4;
-const FETCH_TIMEOUT_MS = 8000;
+const MAX_WEBSITE_PAGES = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_WEBSITE_PAGES", 80);
+const MAX_WEBSITE_FILES = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_WEBSITE_FILES", 12);
+const CRAWL_BATCH_SIZE = readPositiveIntEnv("KNOWLEDGE_BUILD_CRAWL_BATCH_SIZE", 4);
+const FETCH_TIMEOUT_MS = readPositiveIntEnv("KNOWLEDGE_BUILD_FETCH_TIMEOUT_MS", 5000);
+const WEBSITE_CRAWL_DEADLINE_MS = readPositiveIntEnv("KNOWLEDGE_BUILD_CRAWL_DEADLINE_MS", 90000);
 const SOURCE_DISCOVERY_BATCH_SIZE = 25;
 const SOURCE_PERSIST_BATCH_SIZE = 8;
 const SOURCE_SEGMENT_INSERT_ROW_LIMIT = 1500;
@@ -639,6 +645,14 @@ function recordDiscoveryEntry(store, key, entry) {
   store.set(key, entry);
 }
 
+function pushUniqueValue(list, value) {
+  const text = normalizeText(value);
+  if (!text) return;
+  if (!list.includes(text)) {
+    list.push(text);
+  }
+}
+
 async function fetchWebsiteDownloadable(url) {
   try {
     const response = await fetchWithTimeout(url);
@@ -694,6 +708,9 @@ async function crawlWebsiteSources(rootUrl) {
   if (!normalizedRootUrl) {
     throw new Error("website_url_required");
   }
+  const crawlStartedAt = performance.now();
+  const crawlDeadlineAt = crawlStartedAt + WEBSITE_CRAWL_DEADLINE_MS;
+  const truncationReasons = [];
 
   const firstPage = await fetchWebsitePage(normalizedRootUrl);
   if (!firstPage.ok) {
@@ -727,10 +744,15 @@ async function crawlWebsiteSources(rootUrl) {
     initialDiscoveredPageQueue: queue.length,
     initialDiscoveredFileQueue: downloadableQueue.length,
     maxWebsitePages: MAX_WEBSITE_PAGES,
-    maxWebsiteFiles: MAX_WEBSITE_FILES
+    maxWebsiteFiles: MAX_WEBSITE_FILES,
+    crawlDeadlineMs: WEBSITE_CRAWL_DEADLINE_MS
   });
 
   while (queue.length && pages.length < MAX_WEBSITE_PAGES) {
+    if (performance.now() >= crawlDeadlineAt) {
+      pushUniqueValue(truncationReasons, "crawl_deadline_reached");
+      break;
+    }
     const batch = queue.splice(0, CRAWL_BATCH_SIZE);
     const results = await Promise.all(batch.map((url) => fetchWebsitePage(url)));
     for (const result of results) {
@@ -792,6 +814,10 @@ async function crawlWebsiteSources(rootUrl) {
 
   const files = [];
   while (downloadableQueue.length && files.length < MAX_WEBSITE_FILES) {
+    if (performance.now() >= crawlDeadlineAt) {
+      pushUniqueValue(truncationReasons, "crawl_deadline_reached");
+      break;
+    }
     const batch = downloadableQueue.splice(0, CRAWL_BATCH_SIZE);
     const results = await Promise.all(batch.map((url) => fetchWebsiteDownloadable(url)));
     for (const result of results) {
@@ -834,12 +860,23 @@ async function crawlWebsiteSources(rootUrl) {
     });
   }
 
+  if (queue.length && pages.length >= MAX_WEBSITE_PAGES) {
+    pushUniqueValue(truncationReasons, "max_website_pages_reached");
+  }
+  if (downloadableQueue.length && files.length >= MAX_WEBSITE_FILES) {
+    pushUniqueValue(truncationReasons, "max_website_files_reached");
+  }
+  if ((queue.length || downloadableQueue.length) && performance.now() >= crawlDeadlineAt) {
+    pushUniqueValue(truncationReasons, "crawl_deadline_reached");
+  }
+
   const includedPageUrls = new Set(pages.map((page) => page.url));
   const includedFileUrls = new Set(files.map((file) => file.sourceUrl));
   const filteredFailedPageEntries = Array.from(failedPageByLocator.values())
     .filter((entry) => !includedPageUrls.has(normalizeText(entry.sourceLocator)));
   const filteredFailedFileEntries = Array.from(failedFileByLocator.values())
     .filter((entry) => !includedFileUrls.has(normalizeText(entry.sourceLocator)));
+  const crawlElapsedMs = Math.round((performance.now() - crawlStartedAt) * 100) / 100;
 
   return {
     pages: pages.map((page) => ({
@@ -853,6 +890,10 @@ async function crawlWebsiteSources(rootUrl) {
     files,
     crawlSummary: {
       rootUrl: normalizedRootUrl,
+      crawlDeadlineMs: WEBSITE_CRAWL_DEADLINE_MS,
+      crawlElapsedMs,
+      truncated: truncationReasons.length > 0,
+      truncationReasons,
       discoveredWebsitePages: discoveredPageUrls.size,
       discoveredWebsiteFiles: discoveredFileUrls.size,
       includedWebsitePages: pages.length,
@@ -1867,6 +1908,10 @@ function buildSourceCollectionSummary(discoveryEntries, websiteSummary = null) {
   return {
     root_url: normalizeText(websiteSummary?.rootUrl) || null,
     ...totals,
+    crawl_deadline_ms: Number(websiteSummary?.crawlDeadlineMs || 0),
+    crawl_elapsed_ms: Number(websiteSummary?.crawlElapsedMs || 0),
+    crawl_truncated: Boolean(websiteSummary?.truncated),
+    crawl_truncation_reasons: Array.isArray(websiteSummary?.truncationReasons) ? websiteSummary.truncationReasons.filter(Boolean) : [],
     discovered_website_pages: Number(websiteSummary?.discoveredWebsitePages || 0),
     discovered_website_files: Number(websiteSummary?.discoveredWebsiteFiles || 0),
     included_website_pages: Number(websiteSummary?.includedWebsitePages || 0),
@@ -1981,7 +2026,13 @@ async function collectBuildSourcePayload(db, tenantKey, input = {}, websiteUrl =
   return {
     sourceItems: includedSourceItems,
     discoveryEntries,
-    crawlSummary: buildSourceCollectionSummary(discoveryEntries, websiteResult?.crawlSummary || null)
+    crawlSummary: buildSourceCollectionSummary(discoveryEntries, websiteResult?.crawlSummary || null),
+    warnings: Array.isArray(websiteResult?.crawlSummary?.truncationReasons) && websiteResult.crawlSummary.truncationReasons.length
+      ? uniqueValues([
+          "website_crawl_truncated",
+          ...websiteResult.crawlSummary.truncationReasons.map((reason) => `website_crawl_${normalizeText(reason)}`)
+        ])
+      : []
   };
 }
 
@@ -3362,6 +3413,7 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
       if (!(sourcePayload.sourceItems || []).length) {
         throw new Error("approved_source_required");
       }
+      extraWarnings.push(...uniqueValues(sourcePayload.warnings || []));
       await persistDiscoveredSourceItems(
         db,
         rawBuildInfo,
