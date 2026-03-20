@@ -37,6 +37,14 @@ export default function Header() {
     }, 500);
   };
 
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/v1/auth/logout', { method: 'POST' });
+    } finally {
+      window.location.href = '/login';
+    }
+  };
+
   useEffect(() => {
     const handleClick = () => {
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -149,7 +157,7 @@ export default function Header() {
 
         {open ? (
           <div
-            className="absolute right-0 top-12 z-20 min-w-[220px] rounded-lg border border-border bg-card p-2 shadow-md"
+            className="absolute right-0 top-12 z-20 min-w-[240px] rounded-lg border border-border bg-white p-2 shadow-md"
             onMouseEnter={openMenu}
             onMouseLeave={(event) => {
               if (!(event.relatedTarget && event.currentTarget.contains(event.relatedTarget))) {
@@ -163,6 +171,14 @@ export default function Header() {
             <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/team">Team Users</Link>
             <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/routing">Routing</Link>
             <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/settings">Account Settings</Link>
+            <div className="my-1 border-t border-slate-200" />
+            <button
+              className="block w-full rounded-md px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+              type="button"
+              onClick={handleLogout}
+            >
+              Sign out
+            </button>
           </div>
         ) : null}
       </div>
