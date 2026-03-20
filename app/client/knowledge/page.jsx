@@ -15,6 +15,19 @@ function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const commaIndex = result.indexOf(',');
+      resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
+    };
+    reader.onerror = () => reject(new Error('file_read_failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
 function ArtifactStat({ label, value }) {
   return (
     <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
@@ -88,6 +101,8 @@ export default function KnowledgePage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState({ message: 'Loading knowledge workspace...', tone: 'warn' });
   const [savingPromptProfile, setSavingPromptProfile] = useState(false);
+  const [savingDocument, setSavingDocument] = useState(false);
+  const [readingDocumentFile, setReadingDocumentFile] = useState(false);
   const [buildBusy, setBuildBusy] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [publishingBuildId, setPublishingBuildId] = useState('');
@@ -103,6 +118,14 @@ export default function KnowledgePage() {
     requiredContactFields: '',
     closingPhrase: '',
     basicNoToolAllowedStatement: ''
+  });
+  const [documentForm, setDocumentForm] = useState({
+    title: '',
+    documentClass: 'operational',
+    bodyText: '',
+    filename: '',
+    mimeType: 'text/plain',
+    fileBase64: ''
   });
   const [buildForm, setBuildForm] = useState({ websiteUrl: '' });
   const [previewQuery, setPreviewQuery] = useState('');
@@ -214,13 +237,6 @@ export default function KnowledgePage() {
   };
 
   const createBuild = async () => {
-    if (buildState.builds.length > 0) {
-      setStatus({
-        message: 'A build has already been created for this account. Please contact support if you need another build.',
-        tone: 'warn'
-      });
-      return;
-    }
     setBuildBusy(true);
     setStatus({ message: 'Creating build...', tone: 'warn' });
     try {
@@ -228,7 +244,8 @@ export default function KnowledgePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          websiteUrl: buildForm.websiteUrl.trim() || undefined
+          websiteUrl: buildForm.websiteUrl.trim() || undefined,
+          uploadedDocumentIds: approvedUploadedDocuments.map((document) => document.uploaded_document_id)
         })
       });
       if (!data?.ok) {
@@ -241,6 +258,87 @@ export default function KnowledgePage() {
       setStatus({ message: 'Build failed.', tone: 'bad' });
     } finally {
       setBuildBusy(false);
+    }
+  };
+
+  const saveUploadedDocument = async () => {
+    const title = documentForm.title.trim();
+    const bodyText = documentForm.bodyText.trim();
+    if (!title && !documentForm.filename) {
+      setStatus({ message: 'Uploaded documents need a title or filename.', tone: 'bad' });
+      return;
+    }
+    if (!bodyText && !documentForm.fileBase64) {
+      setStatus({ message: 'Add document text or choose a file to upload.', tone: 'bad' });
+      return;
+    }
+
+    setSavingDocument(true);
+    setStatus({ message: 'Saving uploaded document...', tone: 'warn' });
+    try {
+      const data = await fetchJson('/api/v1/knowledge/uploaded-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          document: {
+            title: title || undefined,
+            documentClass: documentForm.documentClass,
+            bodyText: bodyText || undefined,
+            filename: documentForm.filename || undefined,
+            mimeType: documentForm.mimeType || undefined,
+            fileBase64: documentForm.fileBase64 || undefined
+          }
+        })
+      });
+      if (!data?.ok) {
+        setStatus({ message: data?.message || 'Could not save uploaded document.', tone: 'bad' });
+        return;
+      }
+      setDocumentForm({
+        title: '',
+        documentClass: 'operational',
+        bodyText: '',
+        filename: '',
+        mimeType: 'text/plain',
+        fileBase64: ''
+      });
+      await loadWorkspace({ silent: true });
+      setStatus({ message: 'Uploaded document saved. Include it in the next build to make it live.', tone: 'ok' });
+    } catch {
+      setStatus({ message: 'Could not save uploaded document.', tone: 'bad' });
+    } finally {
+      setSavingDocument(false);
+    }
+  };
+
+  const handleDocumentFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setDocumentForm((current) => ({
+        ...current,
+        filename: '',
+        mimeType: 'text/plain',
+        fileBase64: ''
+      }));
+      return;
+    }
+
+    setReadingDocumentFile(true);
+    try {
+      const encoded = await fileToBase64(file);
+      setDocumentForm((current) => ({
+        ...current,
+        title: current.title || file.name.replace(/\.[^.]+$/, ''),
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        fileBase64: encoded
+      }));
+      setStatus({ message: `Attached ${file.name}. Save the document to use it in future builds.`, tone: 'ok' });
+    } catch {
+      setStatus({ message: 'Could not read the selected file.', tone: 'bad' });
+    } finally {
+      setReadingDocumentFile(false);
+      event.target.value = '';
     }
   };
 
@@ -311,11 +409,11 @@ export default function KnowledgePage() {
   };
 
   const latestBuild = buildState.builds[0] || null;
-  const buildCreationLocked = buildState.builds.length > 0;
   const readinessSummary = useMemo(() => ({
     blockers: Array.isArray(readiness?.blockers) ? readiness.blockers : [],
     status: readiness?.status || 'not_started'
   }), [readiness]);
+  const approvedUploadedDocuments = uploadedDocuments.filter((document) => String(document?.status || '').trim() === 'approved');
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewRuntimeBundle = preview?.runtimeBundle || null;
   const previewPlanner = preview?.planner || null;
@@ -327,7 +425,7 @@ export default function KnowledgePage() {
   return (
     <ClientPage
       title="Knowledge Workspace"
-      subtitle="Manage the single knowledge build pipeline, runtime defaults, and build publishing."
+      subtitle="Manage knowledge builds, uploaded documents, runtime defaults, and build publishing."
       status={status}
       primaryAction={{ label: loading ? 'Loading...' : 'Reload', brand: true, onClick: () => loadWorkspace(), disabled: loading }}
     >
@@ -401,14 +499,12 @@ export default function KnowledgePage() {
                 Pre-filled from tenant setup. You can change it before creating the first build.
               </div>
             ) : null}
-            {buildCreationLocked ? (
-              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                A build has already been created for this account. Please contact support if you need another build.
-              </div>
-            ) : null}
+            <div className="mt-2 text-sm text-slate-600">
+              This build will include {approvedUploadedDocuments.length} approved uploaded document{approvedUploadedDocuments.length === 1 ? '' : 's'}.
+            </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button onClick={createBuild} disabled={buildBusy || buildCreationLocked}>
-                {buildBusy ? 'Building...' : (buildCreationLocked ? 'Build Already Created' : 'Create Build')}
+              <Button onClick={createBuild} disabled={buildBusy}>
+                {buildBusy ? 'Building...' : 'Create Build'}
               </Button>
             </div>
             {latestBuild ? (
@@ -419,6 +515,85 @@ export default function KnowledgePage() {
                 <div>Warnings: {Array.isArray(latestBuild.warnings_json) ? latestBuild.warnings_json.length : 0}</div>
               </div>
             ) : null}
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
+            <h2 className="mt-0 text-lg font-semibold">Uploaded Documents</h2>
+            <div className="text-sm text-slate-600">
+              Upload first-party pricing, policy, and process documents here. They are pulled into the next build automatically.
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label>Document Title</label>
+                <input
+                  value={documentForm.title}
+                  onChange={(event) => setDocumentForm((current) => ({ ...current, title: event.target.value }))}
+                  placeholder="Large-opening door quoting rules"
+                />
+              </div>
+              <div>
+                <label>Document Class</label>
+                <select
+                  value={documentForm.documentClass}
+                  onChange={(event) => setDocumentForm((current) => ({ ...current, documentClass: event.target.value }))}
+                >
+                  <option value="operational">Operational</option>
+                  <option value="policy">Policy</option>
+                  <option value="reference">Reference</option>
+                  <option value="marketing">Marketing</option>
+                  <option value="unclassified">Unclassified</option>
+                </select>
+              </div>
+            </div>
+
+            <label className="mt-2.5">Upload File</label>
+            <input
+              type="file"
+              accept=".txt,.md,.pdf,.doc,.docx"
+              onChange={handleDocumentFileChange}
+              disabled={readingDocumentFile || savingDocument}
+            />
+            <div className="mt-1 text-sm text-slate-600">
+              Optional. Use this for PDFs or Word docs. You can also paste plain text below.
+              {documentForm.filename ? ` Attached: ${documentForm.filename}.` : ''}
+            </div>
+
+            <label className="mt-2.5">Document Text</label>
+            <textarea
+              value={documentForm.bodyText}
+              onChange={(event) => setDocumentForm((current) => ({ ...current, bodyText: event.target.value }))}
+              style={{ minHeight: 140 }}
+              placeholder="Example: For large sliding door system installation, a custom quote is required."
+            />
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button onClick={saveUploadedDocument} disabled={savingDocument || readingDocumentFile}>
+                {savingDocument ? 'Saving...' : (readingDocumentFile ? 'Reading File...' : 'Save Uploaded Document')}
+              </Button>
+            </div>
+
+            <div className="mt-4 grid gap-2">
+              {uploadedDocuments.length ? uploadedDocuments.map((document) => (
+                <div key={document.uploaded_document_id} className="rounded-lg border border-slate-200 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="font-semibold text-slate-900">{document.title}</div>
+                      <div className="text-xs text-slate-500">{document.uploaded_document_id}</div>
+                    </div>
+                    <span className={`badge ${document.status === 'approved' ? 'ok' : 'warn'}`}>{document.status}</span>
+                  </div>
+                  <div className="mt-2 text-sm text-slate-600">
+                    {formatLabel(document.document_class)} · {formatLabel(document.source_authority)}
+                  </div>
+                  {document.filename ? (
+                    <div className="mt-1 text-xs text-slate-500">File: {document.filename}</div>
+                  ) : null}
+                </div>
+              )) : (
+                <div className="text-sm text-slate-500">No uploaded documents yet.</div>
+              )}
+            </div>
           </section>
         </div>
 

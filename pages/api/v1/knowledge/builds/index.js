@@ -48,24 +48,6 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "POST") {
-      if (session.role !== "admin") {
-        const existingBuildRes = await pool.query(
-          `SELECT build_id, status
-           FROM knowledge_builds
-           WHERE tenant_key = $1
-           ORDER BY created_at DESC
-           LIMIT 1`,
-          [tenantKey]
-        );
-        if (existingBuildRes.rowCount) {
-          return fail(
-            res,
-            409,
-            "build_already_created",
-            "A knowledge build has already been created for this account. Please contact support if you need another build."
-          );
-        }
-      }
       const body = typeof req.body === "object" && req.body ? req.body : {};
       const buildResult = await createKnowledgeBuild(pool, tenantKey, {
         websiteUrl: body.websiteUrl || body.website_url,
@@ -97,9 +79,6 @@ export default async function handler(req, res) {
     }
     if (message === "setup_interview_session_not_found") {
       return fail(res, 404, "setup_interview_session_not_found", "One or more setup interview sessions were not found for this tenant.");
-    }
-    if (message === "build_rate_limited") {
-      return fail(res, 429, "build_rate_limited", "Build initiation is limited to once per 24-hour window.");
     }
     if (message === "website_fetch_failed") {
       return fail(res, 502, "website_fetch_failed", "Unable to fetch the approved website for this build.");

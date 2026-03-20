@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { z } from "zod";
 import { runtimeModeSchema, type RuntimeMode } from "./knowledgeReceptionist.js";
+import { sourcePrecedenceScoreFromMetadata } from "./knowledgeSourcePrecedence.js";
 
 const stringArraySchema = z.array(z.string().min(1)).default([]);
 const jsonRecordSchema = z.record(z.any()).default({});
@@ -384,14 +385,20 @@ function factSelectionWeight(intent: CoverageIntentProfile, fact: RetrievedFactS
 
 function selectCoverageCards(intent: CoverageIntentProfile, cards: RetrievedCardSupport[]) {
   const ranked = cards
-    .map((card, index) => ({
-      card,
-      index,
-      weight: cardSelectionWeight(intent, card),
-      score: card.similarity + (cardSelectionWeight(intent, card) * 0.03)
-    }))
+    .map((card, index) => {
+      const weight = cardSelectionWeight(intent, card);
+      const precedence = sourcePrecedenceScoreFromMetadata(card.metadata);
+      return {
+        card,
+        index,
+        weight,
+        precedence,
+        score: card.similarity + (weight * 0.03) + precedence
+      };
+    })
     .sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
+      if (right.precedence !== left.precedence) return right.precedence - left.precedence;
       if (right.weight !== left.weight) return right.weight - left.weight;
       if (right.card.similarity !== left.card.similarity) return right.card.similarity - left.card.similarity;
       return left.index - right.index;
@@ -452,15 +459,18 @@ function selectCoverageFacts(intent: CoverageIntentProfile, usedCards: Retrieved
       const directlyReferencedBySelectedCard = selectedCardFactIds.has(fact.knowledge_fact_id);
       const linkageBoost = linkedToSelectedCard || directlyReferencedBySelectedCard ? 1.5 : 0;
       const weight = factSelectionWeight(intent, fact) + linkageBoost;
+      const precedence = sourcePrecedenceScoreFromMetadata(fact.metadata);
       return {
         fact,
         index,
         weight,
-        score: fact.similarity + (weight * 0.03)
+        precedence,
+        score: fact.similarity + (weight * 0.03) + precedence
       };
     })
     .sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
+      if (right.precedence !== left.precedence) return right.precedence - left.precedence;
       if (right.weight !== left.weight) return right.weight - left.weight;
       if (right.fact.similarity !== left.fact.similarity) return right.fact.similarity - left.fact.similarity;
       return left.index - right.index;

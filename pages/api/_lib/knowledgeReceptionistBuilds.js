@@ -11,7 +11,6 @@ function readPositiveIntEnv(name, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-const BUILD_RATE_LIMIT_HOURS = 24;
 const MAX_WEBSITE_PAGES = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_WEBSITE_PAGES", 80);
 const MAX_WEBSITE_FILES = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_WEBSITE_FILES", 12);
 const CRAWL_BATCH_SIZE = readPositiveIntEnv("KNOWLEDGE_BUILD_CRAWL_BATCH_SIZE", 4);
@@ -1621,26 +1620,8 @@ async function nextBuildVersion(db, tenantKey) {
 }
 
 async function assertBuildRateLimit(db, tenantKey) {
-  // Dev/test deployments can bypass the once-per-24-hour build gate by setting
-  // KNOWLEDGE_RECEPTIONIST_DISABLE_BUILD_RATE_LIMIT=true in the environment.
-  if (envFlagEnabled("KNOWLEDGE_RECEPTIONIST_DISABLE_BUILD_RATE_LIMIT")) {
-    return;
-  }
-
-  const res = await db.query(
-    `SELECT created_at
-     FROM knowledge_builds
-     WHERE tenant_key = $1
-     ORDER BY created_at DESC
-     LIMIT 1`,
-    [tenantKey]
-  );
-  const createdAt = res.rows[0]?.created_at ? new Date(res.rows[0].created_at) : null;
-  if (!createdAt) return;
-  const elapsedMs = Date.now() - createdAt.getTime();
-  if (elapsedMs < BUILD_RATE_LIMIT_HOURS * 60 * 60 * 1000) {
-    throw new Error("build_rate_limited");
-  }
+  void db;
+  void tenantKey;
 }
 
 function sameNormalizedIdArray(left, right) {

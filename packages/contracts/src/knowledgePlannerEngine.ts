@@ -16,6 +16,7 @@ import {
   callOpenAiJsonModel,
   embedOpenAiTextsDetailed
 } from "./openAiStructured.js";
+import { sourcePrecedenceScoreFromMetadata } from "./knowledgeSourcePrecedence.js";
 
 type QueryResultRow = Record<string, any>;
 type QueryResult = { rowCount?: number | null; rows?: QueryResultRow[] | null };
@@ -87,6 +88,13 @@ function asStringArray(value: unknown) {
 
 function asRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function mergeSupportMetadataWithScope(supportMetadata: unknown, scopeMetadata: unknown) {
+  return {
+    ...asRecord(scopeMetadata),
+    ...asRecord(supportMetadata)
+  };
 }
 
 function uniqueValues(values: Iterable<unknown>) {
@@ -221,19 +229,22 @@ function rerankCardSupport(coverageItemText: string, items: RetrievedCardSupport
     if (intent.isProcess && ["process", "faq_answer", "overview", "capability"].includes(role)) {
       intentBoost += 0.08;
     }
+    const precedence = sourcePrecedenceScoreFromMetadata(item.metadata);
     const lexical = canonicalLexical + topicLexical + supportLexical;
     const score = item.similarity
       + (canonicalLexical * 0.03)
       + (topicLexical * 0.085)
       + (supportLexical * 0.015)
       + intentBoost
+      + precedence
       - (specificityPenalty * 0.015);
-    return { item, index, lexical, topicLexical, intentBoost, score };
+    return { item, index, lexical, topicLexical, intentBoost, precedence, score };
   });
 
   const sorted = scored
     .sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
+      if (right.precedence !== left.precedence) return right.precedence - left.precedence;
       if (right.intentBoost !== left.intentBoost) return right.intentBoost - left.intentBoost;
       if (right.topicLexical !== left.topicLexical) return right.topicLexical - left.topicLexical;
       if (right.lexical !== left.lexical) return right.lexical - left.lexical;
@@ -313,16 +324,19 @@ function rerankFactSupport(coverageItemText: string, items: RetrievedFactSupport
         }
       }
       if (intent.isProcess && ["process", "applicability", "capability"].includes(role)) intentBoost += 0.06;
+      const precedence = sourcePrecedenceScoreFromMetadata(item.metadata);
       return {
         item,
         index,
         lexical,
         intentBoost,
-        score: item.similarity + (lexical * 0.03) + intentBoost - (specificityPenalty * 0.01)
+        precedence,
+        score: item.similarity + (lexical * 0.03) + intentBoost + precedence - (specificityPenalty * 0.01)
       };
     })
     .sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
+      if (right.precedence !== left.precedence) return right.precedence - left.precedence;
       if (right.intentBoost !== left.intentBoost) return right.intentBoost - left.intentBoost;
       if (right.lexical !== left.lexical) return right.lexical - left.lexical;
       if (right.item.similarity !== left.item.similarity) return right.item.similarity - left.item.similarity;
@@ -491,6 +505,7 @@ async function retrieveCardSupportBatch(db: Queryable, input: {
          c.support_summary,
          c.source_ref_ids_json,
          c.source_span_refs_json,
+         c.scope_json,
          c.support_metadata_json,
          COALESCE(t.topic_name, NULL) AS topic_name,
          COALESCE(st.subtopic_name, NULL) AS subtopic_name,
@@ -526,6 +541,7 @@ async function retrieveCardSupportBatch(db: Queryable, input: {
 
   return (res.rows || []).reduce((acc, row) => {
     const coverageItemText = normalizeText(row.coverage_item_text);
+    const metadata = mergeSupportMetadataWithScope(row.support_metadata_json, row.scope_json);
     const list = acc[coverageItemText] || [];
     list.push({
       coverage_item_text: coverageItemText,
@@ -540,7 +556,7 @@ async function retrieveCardSupportBatch(db: Queryable, input: {
       source_ref_ids: asStringArray(row.source_ref_ids_json),
       source_chunk_ids: asStringArray(Array.isArray(row.source_span_refs_json) ? row.source_span_refs_json.map((item: any) => item?.source_chunk_id) : []),
       fact_ids: asStringArray(asRecord(row.support_metadata_json).fact_ids),
-      metadata: asRecord(row.support_metadata_json)
+      metadata
     });
     acc[coverageItemText] = list;
     return acc;
@@ -570,6 +586,7 @@ async function retrieveFactSupportBatch(db: Queryable, input: {
          f.support_type,
          f.qualifier_json,
          f.boundary_json,
+         f.scope_json,
          f.support_metadata_json,
          f.source_ref_ids_json,
          f.source_chunk_ids_json,
@@ -609,6 +626,7 @@ async function retrieveFactSupportBatch(db: Queryable, input: {
     const qualifierJson = asRecord(row.qualifier_json);
     const boundaryJson = asRecord(row.boundary_json);
     const supportMetadata = asRecord(row.support_metadata_json);
+    const metadata = mergeSupportMetadataWithScope(supportMetadata, row.scope_json);
     const coverageItemText = normalizeText(row.coverage_item_text);
     const list = acc[coverageItemText] || [];
     list.push({
@@ -637,7 +655,7 @@ async function retrieveFactSupportBatch(db: Queryable, input: {
       source_ref_ids: asStringArray(row.source_ref_ids_json),
       source_chunk_ids: asStringArray(row.source_chunk_ids_json),
       card_ids: asStringArray(supportMetadata.card_ids),
-      metadata: supportMetadata
+      metadata
     });
     acc[coverageItemText] = list;
     return acc;

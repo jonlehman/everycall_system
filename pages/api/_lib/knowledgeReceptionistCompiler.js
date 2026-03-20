@@ -560,9 +560,6 @@ function selectSourceCompileRecords(sourceRecords, warnings) {
     quote_form: MAX_COMPILE_QUOTE_FORM_PAGE_RECORDS,
     service_area: MAX_COMPILE_SERVICE_AREA_PAGE_RECORDS
   };
-  const selected = [];
-  const deferred = [];
-  const pageTypeCounts = new Map();
   const ranked = compileEnabledRecords
     .map((record, index) => ({
       record,
@@ -572,17 +569,26 @@ function selectSourceCompileRecords(sourceRecords, warnings) {
     }))
     .sort((left, right) => right.score - left.score);
 
-  for (const entry of ranked) {
+  const selected = [];
+  const deferred = [];
+  const pageTypeCounts = new Map();
+  const prioritized = ranked.filter((entry) => entry.sourceChannel !== "website_page");
+  const websitePages = ranked.filter((entry) => entry.sourceChannel === "website_page");
+
+  for (const entry of prioritized) {
     if (selected.length >= MAX_COMPILE_SOURCE_RECORDS) break;
-    if (entry.sourceChannel === "website_page") {
-      const cap = pageTypeCaps[entry.pageType];
-      const currentCount = Number(pageTypeCounts.get(entry.pageType) || 0);
-      if (cap && currentCount >= cap) {
-        deferred.push(entry);
-        continue;
-      }
-      pageTypeCounts.set(entry.pageType, currentCount + 1);
+    selected.push(entry);
+  }
+
+  for (const entry of websitePages) {
+    if (selected.length >= MAX_COMPILE_SOURCE_RECORDS) break;
+    const cap = pageTypeCaps[entry.pageType];
+    const currentCount = Number(pageTypeCounts.get(entry.pageType) || 0);
+    if (cap && currentCount >= cap) {
+      deferred.push(entry);
+      continue;
     }
+    pageTypeCounts.set(entry.pageType, currentCount + 1);
     selected.push(entry);
   }
 
@@ -2457,7 +2463,13 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
         source_chunk_ids_json: [],
         qualifier_json: { statements: uniqueValues(fact.qualifiers || []) },
         boundary_json: { statements: uniqueValues(fact.boundary_notes || []) },
-        support_metadata_json: { next_steps: uniqueValues(fact.next_steps || []), card_ids: [] },
+        support_metadata_json: {
+          next_steps: uniqueValues(fact.next_steps || []),
+          card_ids: [],
+          source_channels: uniqueValues([sourceItem.sourceChannel]),
+          source_authorities: uniqueValues([sourceItem.sourceAuthority]),
+          content_classes: uniqueValues([sourceItem.contentClass])
+        },
         search_text: factSearchText(fact, fact.topic_name, fact.subtopic_name)
       };
       current.source_ref_ids_json = uniqueValues([...(current.source_ref_ids_json || []), sourceRefId]);
@@ -2472,7 +2484,10 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
       };
       current.support_metadata_json = {
         ...(current.support_metadata_json || {}),
-        next_steps: uniqueValues([...(current.support_metadata_json?.next_steps || []), ...(fact.next_steps || [])])
+        next_steps: uniqueValues([...(current.support_metadata_json?.next_steps || []), ...(fact.next_steps || [])]),
+        source_channels: uniqueValues([...(current.support_metadata_json?.source_channels || []), sourceItem.sourceChannel]),
+        source_authorities: uniqueValues([...(current.support_metadata_json?.source_authorities || []), sourceItem.sourceAuthority]),
+        content_classes: uniqueValues([...(current.support_metadata_json?.content_classes || []), sourceItem.contentClass])
       };
       factMap.set(key, current);
       factIdByKey.set(normalizeText(fact.fact_key).toLowerCase(), current.knowledge_fact_id);
@@ -2527,7 +2542,10 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
         quality_score: 0.8,
         search_text: cardSearchText(card, supportingFacts, card.topic_name, card.subtopic_name),
         support_metadata_json: {
-          fact_ids: supportingFactIds
+          fact_ids: supportingFactIds,
+          source_channels: uniqueValues([sourceItem.sourceChannel]),
+          source_authorities: uniqueValues([sourceItem.sourceAuthority]),
+          content_classes: uniqueValues([sourceItem.contentClass])
         }
       };
       current.aliases_json = uniqueValues([...(current.aliases_json || []), ...(card.aliases || [])]);
@@ -2545,7 +2563,10 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
       current.source_span_refs_json = [...(current.source_span_refs_json || []), ...spanRefs];
       current.support_metadata_json = {
         ...(current.support_metadata_json || {}),
-        fact_ids: uniqueValues([...(current.support_metadata_json?.fact_ids || []), ...supportingFactIds])
+        fact_ids: uniqueValues([...(current.support_metadata_json?.fact_ids || []), ...supportingFactIds]),
+        source_channels: uniqueValues([...(current.support_metadata_json?.source_channels || []), sourceItem.sourceChannel]),
+        source_authorities: uniqueValues([...(current.support_metadata_json?.source_authorities || []), sourceItem.sourceAuthority]),
+        content_classes: uniqueValues([...(current.support_metadata_json?.content_classes || []), sourceItem.contentClass])
       };
       cardMap.set(key, current);
     }
