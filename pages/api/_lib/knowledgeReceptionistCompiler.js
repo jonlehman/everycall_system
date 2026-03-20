@@ -411,6 +411,8 @@ const MAX_COMPILE_SOURCE_RECORDS = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_COMPI
 const MAX_COMPILE_BLOG_SOURCE_RECORDS = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_COMPILE_BLOG_SOURCES", 2);
 const MAX_COMPILE_UNKNOWN_WEBSITE_PAGE_RECORDS = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_COMPILE_UNKNOWN_WEBSITE_PAGES", 4);
 const MAX_COMPILE_CONTACT_PAGE_RECORDS = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_COMPILE_CONTACT_PAGES", 2);
+const MAX_COMPILE_CONTACT_FORM_PAGE_RECORDS = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_COMPILE_CONTACT_FORM_PAGES", 1);
+const MAX_COMPILE_QUOTE_FORM_PAGE_RECORDS = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_COMPILE_QUOTE_FORM_PAGES", 1);
 const MAX_COMPILE_SERVICE_AREA_PAGE_RECORDS = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_COMPILE_SERVICE_AREA_PAGES", 3);
 
 function slugify(value) {
@@ -433,6 +435,41 @@ function compileSourcePathDepth(sourceLocator) {
   } catch {
     return 99;
   }
+}
+
+function normalizePageType(pageType) {
+  return normalizeText(pageType).toLowerCase();
+}
+
+function normalizeContentClass(contentClass) {
+  return normalizeText(contentClass).toLowerCase();
+}
+
+function isRestrictedProcessSource(sourceItem = {}) {
+  const pageType = normalizePageType(sourceItem.pageType);
+  const contentClass = normalizeContentClass(sourceItem.contentClass);
+  return pageType === "quote_form"
+    || pageType === "contact_form"
+    || contentClass === "restricted_process";
+}
+
+function buildRestrictedSourceScope(sourceItem = {}) {
+  if (!isRestrictedProcessSource(sourceItem)) return null;
+  const pageType = normalizePageType(sourceItem.pageType);
+  const rawTitle = normalizeText(sourceItem.title).replace(/\s*[-|–]\s*.*$/, "");
+  const genericTitle = /^(request a quote|get a quote|quote request|free estimate|estimate|contact us|get in touch|contact)$/i.test(rawTitle);
+  if (pageType === "quote_form") {
+    return {
+      topicName: "Quote Request Process",
+      subtopicName: truncateText(titleCaseWords(genericTitle ? "Quote Request Form" : rawTitle) || "Quote Request Form", 80),
+      description: "Quote request workflow, intake details, and form-specific consent language supported by this source."
+    };
+  }
+  return {
+    topicName: "Contact Request Process",
+    subtopicName: truncateText(titleCaseWords(genericTitle ? "Contact Form" : rawTitle) || "Contact Form", 80),
+    description: "Contact request workflow, contact methods, and form-specific consent language supported by this source."
+  };
 }
 
 function compileSourceRecordScore(record, index = 0) {
@@ -458,6 +495,8 @@ function compileSourceRecordScore(record, index = 0) {
     process: 104,
     hours: 100,
     contact: 96,
+    quote_form: 74,
+    contact_form: 72,
     service_area: 92,
     unknown_mixed: 55,
     blog_article: 20
@@ -476,6 +515,7 @@ function compileSourceRecordScore(record, index = 0) {
   const contentClassScore = {
     operational_core: 18,
     policy_boundary: 16,
+    restricted_process: 2,
     descriptive: 6,
     educational: -10,
     marketing: -14
@@ -516,6 +556,8 @@ function selectSourceCompileRecords(sourceRecords, warnings) {
     blog_article: MAX_COMPILE_BLOG_SOURCE_RECORDS,
     unknown_mixed: MAX_COMPILE_UNKNOWN_WEBSITE_PAGE_RECORDS,
     contact: MAX_COMPILE_CONTACT_PAGE_RECORDS,
+    contact_form: MAX_COMPILE_CONTACT_FORM_PAGE_RECORDS,
+    quote_form: MAX_COMPILE_QUOTE_FORM_PAGE_RECORDS,
     service_area: MAX_COMPILE_SERVICE_AREA_PAGE_RECORDS
   };
   const selected = [];
@@ -694,6 +736,7 @@ function buildSourceSummarySystemPrompt() {
     "Return strict JSON only with one result item per source_ref_id.",
     "Read each source item independently and do not merge or blend items together.",
     "Do not invent details not supported by a source item.",
+    "If source.page_type is quote_form or contact_form, keep the summary limited to that source's request workflow, contact methods, and consent/compliance details. Do not recast it as company overview, team, or ownership.",
     "Preserve applicability, exclusions, limits, scope, process, next-step, and ambiguity when present.",
     "Always provide a non-empty summary for each source item.",
     "Summaries should support later topic inventory generation."
@@ -785,6 +828,7 @@ function buildArtifactExtractionSystemPrompt() {
     "Return strict JSON only with one result item per source_ref_id.",
     "Each result item must only use evidence from that source item and its source_chunk_ids.",
     "Use the provided topic inventory to organize the extracted cards and facts.",
+    "If source.page_type is quote_form or contact_form, keep cards and facts limited to that source's request workflow, contact methods, and consent/compliance details. Do not emit company-overview, ownership, or team cards from those sources.",
     "Cards are retrieval-oriented answerable units, not whole-page summaries.",
     "Facts preserve richer detail such as applicability, exclusions, limits, scope, process, next steps, and ambiguity.",
     "Do not invent details not present in the source chunks.",
@@ -1452,6 +1496,17 @@ function buildArtifactBatchPromptItem(record) {
 }
 
 function fallbackCandidateTopics(record) {
+  const restrictedScope = buildRestrictedSourceScope(record.sourceItem);
+  if (restrictedScope) {
+    return [{
+      topic_name: restrictedScope.topicName,
+      description: restrictedScope.description,
+      candidate_subtopics: [{
+        subtopic_name: restrictedScope.subtopicName,
+        description: restrictedScope.description
+      }]
+    }];
+  }
   const baseName = normalizeText(record.sourceItem.title || record.sourceItem.pageType || "Business Information");
   const topicName = titleCaseWords(baseName.replace(/\s*[-|–]\s*.*$/, "")) || "Business Information";
   return [{
@@ -1731,6 +1786,10 @@ function buildFallbackCards(sourceItem, sourceChunks, facts, topicName, subtopic
   }];
 }
 
+function shouldAllowEnumeratedUnitCards(sourceItem) {
+  return !isRestrictedProcessSource(sourceItem);
+}
+
 function factRoleBucket(role) {
   const normalized = normalizeText(role).toLowerCase();
   if (["overview", "definition", "faq_answer", "capability", "coverage", "service_detail", "answer"].includes(normalized)) {
@@ -1822,7 +1881,10 @@ function selectSupportingFactKeysForCard(card, facts) {
   return uniqueValues(directFallback).slice(0, 2);
 }
 
-function buildEnumeratedUnitCards(sourceChunks, facts, topicName, subtopicName, existingCards = []) {
+function buildEnumeratedUnitCards(sourceItem, sourceChunks, facts, topicName, subtopicName, existingCards = []) {
+  if (!shouldAllowEnumeratedUnitCards(sourceItem)) {
+    return [];
+  }
   const existingNames = new Set(existingCards.map((card) => normalizeText(card.canonical_name).toLowerCase()));
   const cards = [];
   for (const fact of facts) {
@@ -1852,9 +1914,18 @@ function buildEnumeratedUnitCards(sourceChunks, facts, topicName, subtopicName, 
 }
 
 function ensureArtifactsHaveFallbackSupport({ sourceItem, sourceChunks, extracted, topicInventory }) {
-  const baseTopicName = normalizeText(extracted.cards?.[0]?.topic_name || extracted.facts?.[0]?.topic_name || topicInventory.topics?.[0]?.topic_name || "Business Information");
+  const restrictedScope = buildRestrictedSourceScope(sourceItem);
+  const forceRestrictedScope = Boolean(restrictedScope);
+  const baseTopicName = normalizeText(
+    restrictedScope?.topicName
+      || extracted.cards?.[0]?.topic_name
+      || extracted.facts?.[0]?.topic_name
+      || topicInventory.topics?.[0]?.topic_name
+      || "Business Information"
+  );
   const baseSubtopicName = normalizeText(
-    extracted.cards?.[0]?.subtopic_name
+    restrictedScope?.subtopicName
+      || extracted.cards?.[0]?.subtopic_name
       || extracted.facts?.[0]?.subtopic_name
       || topicInventory.topics?.[0]?.subtopics?.[0]?.subtopic_name
       || ""
@@ -1863,13 +1934,13 @@ function ensureArtifactsHaveFallbackSupport({ sourceItem, sourceChunks, extracte
   let facts = Array.isArray(extracted.facts) ? extracted.facts.map((fact, index) => ({
     ...fact,
     fact_key: deriveFactKey(fact, index),
-    topic_name: normalizeText(fact.topic_name || baseTopicName) || baseTopicName,
-    subtopic_name: normalizeText(fact.subtopic_name || baseSubtopicName || "") || null
+    topic_name: forceRestrictedScope ? baseTopicName : (normalizeText(fact.topic_name || baseTopicName) || baseTopicName),
+    subtopic_name: forceRestrictedScope ? baseSubtopicName : (normalizeText(fact.subtopic_name || baseSubtopicName || "") || null)
   })) : [];
 
   let cards = Array.isArray(extracted.cards) ? extracted.cards.map((card) => {
-    const topicName = normalizeText(card.topic_name || baseTopicName) || baseTopicName;
-    const subtopicName = normalizeText(card.subtopic_name || baseSubtopicName || "") || null;
+    const topicName = forceRestrictedScope ? baseTopicName : (normalizeText(card.topic_name || baseTopicName) || baseTopicName);
+    const subtopicName = forceRestrictedScope ? baseSubtopicName : (normalizeText(card.subtopic_name || baseSubtopicName || "") || null);
     const canonicalName = looksGenericCardName(card.canonical_name)
       ? deriveSpecificCardName({
         canonicalName: card.canonical_name,
@@ -1894,7 +1965,7 @@ function ensureArtifactsHaveFallbackSupport({ sourceItem, sourceChunks, extracte
     cards = buildFallbackCards(sourceItem, sourceChunks, facts, baseTopicName, baseSubtopicName);
   }
 
-  const enumeratedCards = buildEnumeratedUnitCards(sourceChunks, facts, baseTopicName, baseSubtopicName, cards);
+  const enumeratedCards = buildEnumeratedUnitCards(sourceItem, sourceChunks, facts, baseTopicName, baseSubtopicName, cards);
   if (enumeratedCards.length) {
     cards = [...cards, ...enumeratedCards];
   }
@@ -2339,12 +2410,14 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
 
   for (const extracted of extractedBySource) {
     const { sourceItem, sourceRefId, sourceChunks, facts: extractedFacts, cards: extractedCards } = extracted;
+    const sourceLocalOnly = isRestrictedProcessSource(sourceItem);
     const factIdByKey = new Map();
 
     for (const fact of extractedFacts) {
       const topicId = findTopicId(topicRows, fact.topic_name);
       const subtopicId = findSubtopicId(topicRows, fact.topic_name, fact.subtopic_name);
       const key = [
+        sourceLocalOnly ? normalizeText(sourceRefId).toLowerCase() : "",
         normalizeText(fact.topic_name).toLowerCase(),
         normalizeText(fact.subtopic_name).toLowerCase(),
         normalizeText(fact.fact_role).toLowerCase(),
@@ -2371,7 +2444,8 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
           source_channel: sourceItem.sourceChannel,
           source_locator: sourceItem.sourceLocator,
           page_type: sourceItem.pageType,
-          content_class: sourceItem.contentClass
+          content_class: sourceItem.contentClass,
+          merge_scope: sourceLocalOnly ? "source_local_only" : "global_mergeable"
         },
         content_class: sourceItem.contentClass,
         risk_level: "normal",
@@ -2408,6 +2482,7 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
       const topicId = findTopicId(topicRows, card.topic_name);
       const subtopicId = findSubtopicId(topicRows, card.topic_name, card.subtopic_name);
       const key = [
+        sourceLocalOnly ? normalizeText(sourceRefId).toLowerCase() : "",
         normalizeText(card.topic_name).toLowerCase(),
         normalizeText(card.subtopic_name).toLowerCase(),
         normalizeText(card.card_role).toLowerCase(),
@@ -2437,7 +2512,8 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
           source_channel: sourceItem.sourceChannel,
           source_locator: sourceItem.sourceLocator,
           page_type: sourceItem.pageType,
-          content_class: sourceItem.contentClass
+          content_class: sourceItem.contentClass,
+          merge_scope: sourceLocalOnly ? "source_local_only" : "global_mergeable"
         },
         speakable_summary: truncateText(card.summary, 300),
         support_summary: truncateText(card.support_summary || card.summary, 420),

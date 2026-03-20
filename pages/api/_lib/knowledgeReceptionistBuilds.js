@@ -239,12 +239,26 @@ function isDownloadableUrl(url) {
   return /\.(pdf|txt|md|csv|json|html|htm)$/i.test(path);
 }
 
+function isQuoteFormPath(path) {
+  return /\/(quote|quotes|request-quote|get-a-quote|get-quote|free-quote|estimate|estimates|request-estimate|request-an-estimate)\b/.test(path);
+}
+
+function isContactFormPath(path) {
+  return /\/(contact|contact-us|get-in-touch|request-info|request-information)\b/.test(path);
+}
+
+function hasRestrictedFormSignals(text) {
+  return /\b(request a quote|get a quote|free estimate|quote request|estimate request|contact us|get in touch|send us a message|submit(ting)? this form|message and data rates|message frequency varies|consent is not a condition of purchase|reply stop|reply help|providing your phone number)\b/.test(text);
+}
+
 function classifyPageType(url) {
   const path = String(url.pathname || "/").toLowerCase();
   if (path === "/" || path === "") return "home";
+  if (isQuoteFormPath(path)) return "quote_form";
+  if (isContactFormPath(path)) return "contact_form";
   if (/\/(faq|faqs)\b/.test(path)) return "faq";
   if (/\/(service-area|service-areas|locations?)\b/.test(path)) return "service_area";
-  if (/\/(contact|about|team|providers?)\b/.test(path)) return "contact";
+  if (/\/(about|team|providers?)\b/.test(path)) return "contact";
   if (/\b(policy|policies|terms|privacy|new-patient|insurance|financing|payment|warranty|guarantee)\b/.test(path)) return "policy";
   if (/\/blog\b/.test(path)) return "blog_article";
   if (/\/(services?|repair|replacement|installation)\b/.test(path)) return "service_detail";
@@ -300,6 +314,7 @@ function inferDocumentClass({ sourceChannel, sourceKind, sourceAuthority, pageTy
     if (sourceKind === "pdf") return "reference";
   }
   if (pageType === "policy" || pageType === "hours") return "policy";
+  if (pageType === "quote_form" || pageType === "contact_form") return "reference";
   if (pageType === "blog_article") return "reference";
   if (/\/about\b/.test(String(sourceLocator).toLowerCase()) && pageType === "contact") return "reference";
   return "operational";
@@ -311,6 +326,7 @@ function inferContentClass({ sourceChannel, sourceAuthority, pageType, documentC
   if (sourceAuthority === "uploaded_first_party_marketing") return "marketing";
   if (sourceChannel === "owner_interview" && sourceAuthority === "owner_interview_unconfirmed") return "descriptive";
   if (pageType === "policy" || pageType === "hours" || documentClass === "policy") return "policy_boundary";
+  if (pageType === "quote_form" || pageType === "contact_form") return "restricted_process";
   if (pageType === "blog_article") return "educational";
   if (pageType === "contact") return "descriptive";
   if (documentClass === "reference") return "descriptive";
@@ -375,12 +391,20 @@ function analyzeSourceClassification(input = {}) {
   scorePageTypePattern(scoreboard, "service_area", "title", `${titleText} ${headingText}`, [/\b(service areas?|areas we serve|locations?|cities we serve|where we serve)\b/], 5);
   scorePageTypePattern(scoreboard, "service_area", "text", combinedShortText, [/\b(serving|service area|coverage area|areas we serve|cities we serve)\b/], 2);
 
+  scorePageTypePattern(scoreboard, "quote_form", "path", path, [/\/(quote|quotes|request-quote|get-a-quote|get-quote|free-quote|estimate|estimates|request-estimate|request-an-estimate)\b/], 8);
+  scorePageTypePattern(scoreboard, "quote_form", "title", `${titleText} ${headingText}`, [/\b(request a quote|get a quote|free estimate|quote request|estimate request)\b/], 7);
+  scorePageTypePattern(scoreboard, "quote_form", "text", combinedShortText, [/\b(request a quote|get a quote|free estimate|quote request|estimate request)\b/, /\b(submit(ting)? this form|message and data rates|consent is not a condition of purchase|reply stop|reply help)\b/], 3);
+
+  scorePageTypePattern(scoreboard, "contact_form", "path", path, [/\/(contact|contact-us|get-in-touch|request-info|request-information)\b/], 7);
+  scorePageTypePattern(scoreboard, "contact_form", "title", `${titleText} ${headingText}`, [/\b(contact us|get in touch|send us a message|request information|reach out)\b/], 6);
+  scorePageTypePattern(scoreboard, "contact_form", "text", combinedShortText, [/\b(contact us|get in touch|send us a message|request information)\b/, /\b(submit(ting)? this form|message and data rates|consent is not a condition of purchase|reply stop|reply help)\b/], 2.5);
+
   scorePageTypePattern(scoreboard, "policy", "path", path, [/\b(warranty|guarantee|financing|payment|terms|privacy|policy|after-hours?|insurance)\b/], 6);
   scorePageTypePattern(scoreboard, "policy", "title", `${titleText} ${headingText}`, [/\b(warranty|guarantee|financing|payment options?|terms|privacy|after hours?|insurance)\b/], 5);
   scorePageTypePattern(scoreboard, "policy", "text", combinedShortText, [/\b(warranty|guarantee|financing|payment options?|eligibility|applies|qualify|coverage|exclusions?|limitations?|terms and conditions)\b/], 2);
 
-  scorePageTypePattern(scoreboard, "contact", "path", path, [/\/(contact|about|team|providers?|staff)\b/], 4);
-  scorePageTypePattern(scoreboard, "contact", "title", `${titleText} ${headingText}`, [/\b(contact us|get in touch|office|our team|provider|about us)\b/], 4);
+  scorePageTypePattern(scoreboard, "contact", "path", path, [/\/(about|team|providers?|staff)\b/], 4);
+  scorePageTypePattern(scoreboard, "contact", "title", `${titleText} ${headingText}`, [/\b(office|our team|provider|about us|meet the team)\b/], 4);
   scorePageTypePattern(scoreboard, "contact", "text", combinedShortText, [/\b(call us|phone|email|office|visit us|address)\b/], 1.5);
 
   scorePageTypePattern(scoreboard, "blog_article", "path", path, [/\/blog\b/, /\/articles?\b/, /\/guides?\b/], 6);
@@ -420,6 +444,12 @@ function analyzeSourceClassification(input = {}) {
   }
   if ((scoreboard.get("policy")?.score || 0) >= 6 && (scoreboard.get("service_detail")?.score || 0) > 0) {
     addPageTypeScore(scoreboard, "policy", 2, "disambiguation:policy_over_service_detail");
+  }
+  if (hasRestrictedFormSignals(combinedShortText) && isQuoteFormPath(path)) {
+    addPageTypeScore(scoreboard, "quote_form", 4, "text:restricted_form_signals_quote");
+  }
+  if (hasRestrictedFormSignals(combinedShortText) && isContactFormPath(path)) {
+    addPageTypeScore(scoreboard, "contact_form", 4, "text:restricted_form_signals_contact");
   }
 
   addPageTypeScore(scoreboard, "unknown_mixed", 0.5, "fallback");
@@ -926,6 +956,7 @@ function inferObjectType(pageType) {
   if (pageType === "service_detail") return "offering";
   if (pageType === "service_area") return "service_area";
   if (pageType === "policy") return "policy";
+  if (pageType === "quote_form" || pageType === "contact_form") return "process";
   if (pageType === "contact") return "contact_channel";
   if (pageType === "process") return "process";
   return "faq";
@@ -936,6 +967,7 @@ function inferCardType(pageType) {
   if (pageType === "service_detail") return "service";
   if (pageType === "service_area") return "coverage";
   if (pageType === "policy") return "policy";
+  if (pageType === "quote_form" || pageType === "contact_form") return "process";
   if (pageType === "contact") return "process";
   return "general";
 }
@@ -974,6 +1006,7 @@ function sourceAuthorityPriority(sourceAuthority) {
 function contentClassPriority(contentClass) {
   if (contentClass === "policy_boundary") return 30;
   if (contentClass === "operational_core") return 24;
+  if (contentClass === "restricted_process") return 8;
   if (contentClass === "descriptive") return 10;
   if (contentClass === "educational") return 3;
   return 0;
