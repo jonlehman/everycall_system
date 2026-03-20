@@ -214,6 +214,13 @@ export default function KnowledgePage() {
   };
 
   const createBuild = async () => {
+    if (buildState.builds.length > 0) {
+      setStatus({
+        message: 'A build has already been created for this account. Please contact support if you need another build.',
+        tone: 'warn'
+      });
+      return;
+    }
     setBuildBusy(true);
     setStatus({ message: 'Creating build...', tone: 'warn' });
     try {
@@ -304,6 +311,7 @@ export default function KnowledgePage() {
   };
 
   const latestBuild = buildState.builds[0] || null;
+  const buildCreationLocked = buildState.builds.length > 0;
   const readinessSummary = useMemo(() => ({
     blockers: Array.isArray(readiness?.blockers) ? readiness.blockers : [],
     status: readiness?.status || 'not_started'
@@ -393,8 +401,15 @@ export default function KnowledgePage() {
                 Pre-filled from tenant setup. You can change it before creating the first build.
               </div>
             ) : null}
+            {buildCreationLocked ? (
+              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                A build has already been created for this account. Please contact support if you need another build.
+              </div>
+            ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button onClick={createBuild} disabled={buildBusy}>{buildBusy ? 'Building...' : 'Create Build'}</Button>
+              <Button onClick={createBuild} disabled={buildBusy || buildCreationLocked}>
+                {buildBusy ? 'Building...' : (buildCreationLocked ? 'Build Already Created' : 'Create Build')}
+              </Button>
             </div>
             {latestBuild ? (
               <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
