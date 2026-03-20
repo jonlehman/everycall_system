@@ -65,6 +65,55 @@ function renderBuildProgress(build) {
   return `${progress.label}: ${progress.summary}`;
 }
 
+function progressStageTone(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'done') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  if (normalized === 'active') return 'border-slate-900 bg-slate-900 text-white';
+  return 'border-slate-200 bg-white text-slate-500';
+}
+
+function BuildProgressMeter({ build, compact = false }) {
+  const progress = build?.progress || null;
+  if (!progress || typeof progress.percent !== 'number') return null;
+  const details = Array.isArray(progress.details) ? progress.details.filter(Boolean) : [];
+  const stages = Array.isArray(progress.stages) ? progress.stages : [];
+  return (
+    <div className="mt-2">
+      <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+        <span>{progress.label}</span>
+        <span>{progress.percent}%{progress.step && progress.stepTotal ? ` • Step ${progress.step} of ${progress.stepTotal}` : ''}</span>
+      </div>
+      <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-200">
+        <div
+          className="h-full rounded-full bg-slate-900 transition-all"
+          style={{ width: `${Math.max(4, progress.percent)}%` }}
+        />
+      </div>
+      {stages.length ? (
+        <div className={`mt-2 grid gap-1 ${compact ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-4 xl:grid-cols-7'}`}>
+          {stages.map((stage) => (
+            <div
+              key={`${build?.build_id || 'build'}-${stage.key}`}
+              className={`rounded-md border px-2 py-1 text-[11px] font-medium ${progressStageTone(stage.status)}`}
+            >
+              {stage.label}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {details.length ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {details.slice(0, compact ? 3 : 5).map((detail) => (
+            <span key={`${build?.build_id || 'build'}-${detail}`} className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-700">
+              {detail}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ensureSentence(value) {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -562,14 +611,7 @@ export default function KnowledgePage() {
                 <div>ID: {latestBuild.build_id}</div>
                 <div>Status: {latestBuild.status}</div>
                 <div>{renderBuildProgress(latestBuild)}</div>
-                {typeof latestBuild.progress?.percent === 'number' ? (
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-                    <div
-                      className="h-full rounded-full bg-slate-900 transition-all"
-                      style={{ width: `${Math.max(4, latestBuild.progress.percent)}%` }}
-                    />
-                  </div>
-                ) : null}
+                <BuildProgressMeter build={latestBuild} />
                 <div>Warnings: {Array.isArray(latestBuild.warnings_json) ? latestBuild.warnings_json.length : 0}</div>
               </div>
             ) : null}
@@ -696,14 +738,7 @@ export default function KnowledgePage() {
                     Cards: {build.artifact_counts_json?.cards || 0} · Facts: {build.artifact_counts_json?.facts || 0}
                   </div>
                   <div className="mt-1 text-sm text-slate-600">{renderBuildProgress(build)}</div>
-                  {typeof build.progress?.percent === 'number' && isBuildActive(build) ? (
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-                      <div
-                        className="h-full rounded-full bg-slate-900 transition-all"
-                        style={{ width: `${Math.max(4, build.progress.percent)}%` }}
-                      />
-                    </div>
-                  ) : null}
+                  <BuildProgressMeter build={build} compact />
                   {Array.isArray(build.warnings_json) && build.warnings_json.length ? (
                     <div className="mt-2 text-xs text-amber-700">{build.warnings_json.join(', ')}</div>
                   ) : null}

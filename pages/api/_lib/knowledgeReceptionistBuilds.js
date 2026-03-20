@@ -44,6 +44,7 @@ const PLANNER_RUNTIME_SOFT_MS = 2500;
 const PLANNER_RUNTIME_HARD_MS = 6000;
 const STAGE_A_SIMULATED_FAILURE_AFTER_BATCHES = Number.parseInt(String(process.env.KNOWLEDGE_STAGE_A_FAIL_AFTER_PERSIST_BATCHES || ""), 10) || 0;
 const KNOWLEDGE_BUILD_JOB_MAX_BUILDS_PER_RUN = readPositiveIntEnv("KNOWLEDGE_BUILD_JOB_MAX_BUILDS_PER_RUN", 1);
+const KNOWLEDGE_BUILD_JOB_MAX_AUTO_RESUME_AGE_MINUTES = readPositiveIntEnv("KNOWLEDGE_BUILD_JOB_MAX_AUTO_RESUME_AGE_MINUTES", 360);
 
 const buildAssetCache = new Map();
 
@@ -3236,12 +3237,23 @@ function batchStageProgress(batchStatsByStage, stage) {
   };
 }
 
+function rowStageProgress(rowStatsByStage, stage) {
+  const stats = asObject(rowStatsByStage?.[stage]);
+  const completed = toNumber(stats.completed_rows) + toNumber(stats.fallback_rows);
+  return {
+    total: toNumber(stats.total_rows),
+    completed,
+    completedOnly: toNumber(stats.completed_rows),
+    fallback: toNumber(stats.fallback_rows)
+  };
+}
+
 function ratioPercent(done, total) {
   if (total <= 0) return 0;
   return Math.max(0, Math.min(100, Math.round((done / total) * 100)));
 }
 
-function buildKnowledgeProgress(buildRow, batchStatsByStage = {}) {
+function buildKnowledgeProgress(buildRow, batchStatsByStage = {}, rowStatsByStage = {}, persistedArtifactStats = {}) {
   const buildStatus = normalizeText(buildRow?.status).toLowerCase();
   const intakeStatus = normalizeText(buildRow?.intake_status).toLowerCase();
   const crawlSummary = asObject(buildRow?.crawl_summary_json);
@@ -3254,99 +3266,210 @@ function buildKnowledgeProgress(buildRow, batchStatsByStage = {}) {
   const summaryBatches = batchStageProgress(batchStatsByStage, "source_summary");
   const topicBatches = batchStageProgress(batchStatsByStage, "topic_inventory");
   const artifactBatches = batchStageProgress(batchStatsByStage, "source_artifact");
+  const summaryRows = rowStageProgress(rowStatsByStage, "source_summary");
+  const artifactRows = rowStageProgress(rowStatsByStage, "source_artifact");
   const cards = toNumber(buildRow?.artifact_counts_json?.cards);
   const facts = toNumber(buildRow?.artifact_counts_json?.facts);
+  const persistedCards = toNumber(persistedArtifactStats.cards);
+  const persistedFacts = toNumber(persistedArtifactStats.facts);
+  const persistedCardVectors = toNumber(persistedArtifactStats.card_vectors);
+  const persistedFactVectors = toNumber(persistedArtifactStats.fact_vectors);
   const totalIncludedSources = toNumber(crawlSummary.total_included_sources);
   const totalPersistedSources = toNumber(persistenceCheckpoint.total_persisted_sources);
-  const totalSummarySources = toNumber(sourceSummaryStage.total_sources || totalIncludedSources);
-  const completedSummarySources = toNumber(sourceSummaryStage.completed_sources);
-  const totalArtifactSources = toNumber(sourceArtifactStage.total_sources || totalIncludedSources);
-  const completedArtifactSources = toNumber(sourceArtifactStage.completed_sources);
+  const totalSummarySources = Math.max(
+    toNumber(sourceSummaryStage.total_sources),
+    toNumber(summaryRows.total),
+    totalIncludedSources
+  );
+  const completedSummarySources = Math.max(
+    toNumber(sourceSummaryStage.completed_sources),
+    toNumber(summaryRows.completed)
+  );
+  const totalArtifactSources = Math.max(
+    toNumber(sourceArtifactStage.total_sources),
+    toNumber(artifactRows.total),
+    totalIncludedSources
+  );
+  const completedArtifactSources = Math.max(
+    toNumber(sourceArtifactStage.completed_sources),
+    toNumber(artifactRows.completed)
+  );
   const totalTopicWindows = toNumber(topicInventoryStage.window_count || topicBatches.total);
-  const completedTopicWindows = totalTopicWindows > 0 ? topicBatches.completed : 0;
+  const completedTopicWindows = totalTopicWindows > 0
+    ? Math.max(
+        topicBatches.completed,
+        normalizeText(topicInventoryStage.reused_existing).toLowerCase() === "true" || topicInventoryStage.reused_existing
+          ? totalTopicWindows
+          : 0
+      )
+    : 0;
+  const consolidatedCards = toNumber(analysisCheckpoint?.artifact_consolidation_stage?.card_count);
+  const consolidatedFacts = toNumber(analysisCheckpoint?.artifact_consolidation_stage?.fact_count);
+  const embeddedCards = toNumber(artifactEmbeddingStage.card_vector_count);
+  const embeddedFacts = toNumber(artifactEmbeddingStage.fact_vector_count);
+  const summaryDone = totalSummarySources > 0 && completedSummarySources >= totalSummarySources;
+  const topicDone = totalTopicWindows > 0
+    ? completedTopicWindows >= totalTopicWindows
+    : toNumber(topicInventoryStage.topic_count) > 0;
+  const artifactDone = totalArtifactSources > 0 && completedArtifactSources >= totalArtifactSources;
+  const embeddingDone = embeddedCards > 0 || embeddedFacts > 0;
+  const finalPersistCountsReady = (cards > 0 || facts > 0 || persistedCards > 0 || persistedFacts > 0 || persistedCardVectors > 0 || persistedFactVectors > 0);
+  const stageDefinitions = [
+    { key: "discovering", label: "Discover" },
+    { key: "persisting", label: "Persist" },
+    { key: "source_summary", label: "Summaries" },
+    { key: "topic_inventory", label: "Topics" },
+    { key: "source_artifact", label: "Artifacts" },
+    { key: "embedding", label: "Embed" },
+    { key: "finalizing", label: "Finalize" }
+  ];
+  const stageIndexByKey = new Map(stageDefinitions.map((stage, index) => [stage.key, index]));
+  const withStageMeta = (progress) => {
+    const phaseKey = normalizeText(progress?.phase).toLowerCase();
+    const currentIndex = stageIndexByKey.has(phaseKey)
+      ? stageIndexByKey.get(phaseKey)
+      : progress?.percent >= 100
+        ? stageDefinitions.length - 1
+        : Math.max(0, Math.min(stageDefinitions.length - 1, Math.ceil((toNumber(progress?.percent) / 100) * stageDefinitions.length) - 1));
+    const stages = stageDefinitions.map((stage, index) => {
+      let status = "pending";
+      if (progress?.percent >= 100) {
+        status = "done";
+      } else if (index < currentIndex) {
+        status = "done";
+      } else if (index === currentIndex && progress?.active) {
+        status = "active";
+      } else if (index === currentIndex && toNumber(progress?.percent) > 0) {
+        status = "done";
+      }
+      return {
+        ...stage,
+        status
+      };
+    });
+    return {
+      ...progress,
+      step: Math.min(stageDefinitions.length, currentIndex + 1),
+      stepTotal: stageDefinitions.length,
+      stages
+    };
+  };
 
   if (buildStatus === "published") {
-    return {
+    return withStageMeta({
       phase: "published",
       label: "Published",
       summary: `Live with ${cards} cards and ${facts} facts.`,
       percent: 100,
-      active: false
-    };
+      active: false,
+      details: [
+        `${cards} cards`,
+        `${facts} facts`
+      ]
+    });
   }
 
   if (buildStatus === "ready_to_publish") {
-    return {
+    return withStageMeta({
       phase: "ready_to_publish",
       label: "Ready To Publish",
       summary: `${cards} cards and ${facts} facts are ready.`,
       percent: 100,
-      active: false
-    };
+      active: false,
+      details: [
+        `${cards} cards`,
+        `${facts} facts`
+      ]
+    });
   }
 
   if (buildStatus === "qa_blocked") {
-    return {
+    return withStageMeta({
       phase: "qa_blocked",
       label: "Needs Review",
       summary: `${cards} cards and ${facts} facts built. Review warnings before publishing.`,
       percent: 100,
-      active: false
-    };
+      active: false,
+      details: [
+        `${cards} cards`,
+        `${facts} facts`
+      ]
+    });
   }
 
   if (buildStatus === "failed") {
     const intakeErrors = Array.isArray(buildRow?.intake_errors_json) ? buildRow.intake_errors_json : [];
     const warnings = Array.isArray(buildRow?.warnings_json) ? buildRow.warnings_json : [];
-    return {
+    return withStageMeta({
       phase: "failed",
       label: "Failed",
       summary: normalizeText(intakeErrors[0] || warnings[0] || "The build stopped before completion."),
-      percent: 0,
-      active: false
-    };
+      percent: Math.max(
+        embeddingDone ? 96 : 0,
+        artifactDone ? 88 : 0,
+        topicDone ? 66 : 0,
+        summaryDone ? 48 : 0,
+        totalPersistedSources > 0 ? 18 : 0
+      ),
+      active: false,
+      details: [
+        totalIncludedSources > 0 ? `${totalIncludedSources} sources discovered` : "",
+        totalPersistedSources > 0 ? `${totalPersistedSources} persisted` : "",
+        consolidatedCards > 0 || consolidatedFacts > 0 ? `${consolidatedCards} cards and ${consolidatedFacts} facts prepared` : ""
+      ].filter(Boolean)
+    });
   }
 
   if (buildStatus === "queued") {
-    return {
+    return withStageMeta({
       phase: "queued",
       label: "Queued",
       summary: "Waiting for the background build runner.",
       percent: 0,
-      active: true
-    };
+      active: true,
+      details: []
+    });
   }
 
   if (intakeStatus === "discovering" || normalizeText(crawlSummary.stage_status).toLowerCase() === "discovering") {
     const discovered = toNumber(crawlSummary.total_discovered_sources);
     const included = totalIncludedSources;
-    return {
+    return withStageMeta({
       phase: "discovering",
       label: "Discovering Sources",
       summary: included > 0
         ? `${included} included source${included === 1 ? "" : "s"} discovered so far.`
         : `${discovered || 0} source${discovered === 1 ? "" : "s"} examined so far.`,
       percent: Math.max(5, Math.round(ratioPercent(discovered, Math.max(discovered, included, 1)) * 0.2)),
-      active: true
-    };
+      active: true,
+      details: [
+        `${included || 0} included`,
+        `${toNumber(crawlSummary.total_skipped_sources)} skipped`,
+        `${toNumber(crawlSummary.total_failed_sources)} failed`
+      ]
+    });
   }
 
   if (intakeStatus === "raw_source_persisting" || (totalIncludedSources > 0 && totalPersistedSources < totalIncludedSources)) {
-    return {
+    return withStageMeta({
       phase: "persisting",
       label: "Persisting Raw Sources",
       summary: `${totalPersistedSources} of ${totalIncludedSources || "?"} sources stored for compile.`,
       percent: Math.max(20, Math.min(40, 20 + Math.round(ratioPercent(totalPersistedSources, totalIncludedSources || 1) * 0.2))),
       active: true
-    };
+      ,
+      details: [
+        `${totalPersistedSources} persisted`,
+        `${Math.max(0, totalIncludedSources - totalPersistedSources)} remaining`
+      ]
+    });
   }
 
-  if ((summaryBatches.total > 0 && (totalSummarySources === 0 || completedSummarySources < totalSummarySources))
-    || (totalSummarySources > 0 && completedSummarySources < totalSummarySources)) {
+  if (!summaryDone) {
     const summaryPercent = totalSummarySources > 0
       ? ratioPercent(completedSummarySources, totalSummarySources)
       : ratioPercent(summaryBatches.completed, summaryBatches.total || 1);
-    return {
+    return withStageMeta({
       phase: "source_summary",
       label: "Summarizing Sources",
       summary: totalSummarySources > 0
@@ -3354,16 +3477,20 @@ function buildKnowledgeProgress(buildRow, batchStatsByStage = {}) {
         : `${summaryBatches.completed} of ${summaryBatches.total} summary batches completed.`,
       percent: Math.max(40, Math.min(65, 40 + Math.round(summaryPercent * 0.25))),
       active: true,
-      batches: summaryBatches
-    };
+      batches: summaryBatches,
+      details: [
+        `${summaryRows.completedOnly} completed`,
+        `${summaryRows.fallback} fallback`,
+        summaryBatches.running > 0 ? `${summaryBatches.running} batches running` : ""
+      ].filter(Boolean)
+    });
   }
 
-  if ((topicBatches.total > 0 && (totalTopicWindows === 0 || completedTopicWindows < totalTopicWindows))
-    || (totalTopicWindows > 0 && completedTopicWindows < totalTopicWindows)) {
+  if (!topicDone) {
     const topicPercent = totalTopicWindows > 0
       ? ratioPercent(completedTopicWindows, totalTopicWindows)
       : ratioPercent(topicBatches.completed, topicBatches.total || 1);
-    return {
+    return withStageMeta({
       phase: "topic_inventory",
       label: "Building Topic Inventory",
       summary: totalTopicWindows > 0
@@ -3371,16 +3498,20 @@ function buildKnowledgeProgress(buildRow, batchStatsByStage = {}) {
         : `${topicBatches.completed} of ${topicBatches.total} topic windows completed.`,
       percent: Math.max(65, Math.min(75, 65 + Math.round(topicPercent * 0.1))),
       active: true,
-      batches: topicBatches
-    };
+      batches: topicBatches,
+      details: [
+        topicBatches.running > 0 ? `${topicBatches.running} windows running` : "",
+        `${toNumber(topicInventoryStage.topic_count)} topics so far`,
+        `${toNumber(topicInventoryStage.subtopic_count)} subtopics so far`
+      ].filter(Boolean)
+    });
   }
 
-  if ((artifactBatches.total > 0 && (totalArtifactSources === 0 || completedArtifactSources < totalArtifactSources))
-    || (totalArtifactSources > 0 && completedArtifactSources < totalArtifactSources)) {
+  if (!artifactDone) {
     const artifactPercent = totalArtifactSources > 0
       ? ratioPercent(completedArtifactSources, totalArtifactSources)
       : ratioPercent(artifactBatches.completed, artifactBatches.total || 1);
-    return {
+    return withStageMeta({
       phase: "source_artifact",
       label: "Extracting Cards And Facts",
       summary: totalArtifactSources > 0
@@ -3388,27 +3519,63 @@ function buildKnowledgeProgress(buildRow, batchStatsByStage = {}) {
         : `${artifactBatches.completed} of ${artifactBatches.total} artifact batches completed.`,
       percent: Math.max(75, Math.min(90, 75 + Math.round(artifactPercent * 0.15))),
       active: true,
-      batches: artifactBatches
-    };
+      batches: artifactBatches,
+      details: [
+        `${artifactRows.completedOnly} completed`,
+        `${artifactRows.fallback} fallback`,
+        artifactBatches.running > 0 ? `${artifactBatches.running} batches running` : ""
+      ].filter(Boolean)
+    });
   }
 
-  if (normalizeText(artifactEmbeddingStage.stage).toLowerCase() === "artifact_embedding") {
-    return {
+  if (!embeddingDone) {
+    return withStageMeta({
       phase: "embedding",
       label: "Embedding Artifacts",
-      summary: `${toNumber(artifactEmbeddingStage.card_vector_count)} card vectors and ${toNumber(artifactEmbeddingStage.fact_vector_count)} fact vectors created.`,
-      percent: 95,
-      active: true
-    };
+      summary: `${consolidatedCards} cards and ${consolidatedFacts} facts are being prepared for vector search.`,
+      percent: 94,
+      active: true,
+      details: [
+        `${consolidatedCards} cards prepared`,
+        `${consolidatedFacts} facts prepared`
+      ]
+    });
   }
 
-  return {
+  if (buildStatus === "running" && !["published", "ready_to_publish", "qa_blocked"].includes(buildStatus)) {
+    const finalCards = cards || persistedCards || consolidatedCards;
+    const finalFacts = facts || persistedFacts || consolidatedFacts;
+    return withStageMeta({
+      phase: "finalizing",
+      label: "Finalizing Build",
+      summary: finalPersistCountsReady
+        ? `${persistedCards || finalCards} cards, ${persistedFacts || finalFacts} facts, ${persistedCardVectors || embeddedCards} card vectors, and ${persistedFactVectors || embeddedFacts} fact vectors written.`
+        : `${embeddedCards} card vectors and ${embeddedFacts} fact vectors created. Validating the runtime bundle now.`,
+      percent: finalPersistCountsReady ? 98 : 96,
+      active: true,
+      details: [
+        `${persistedCards || finalCards} cards`,
+        `${persistedFacts || finalFacts} facts`,
+        `${persistedCardVectors || embeddedCards} card vectors`,
+        `${persistedFactVectors || embeddedFacts} fact vectors`
+      ]
+    });
+  }
+
+  return withStageMeta({
     phase: "running",
     label: "Running",
     summary: "Build work is in progress.",
-    percent: 10,
-    active: true
-  };
+    percent: Math.max(
+      embeddingDone ? 96 : 0,
+      artifactDone ? 88 : 0,
+      topicDone ? 66 : 0,
+      summaryDone ? 48 : 0,
+      totalPersistedSources > 0 ? 18 : 10
+    ),
+    active: true,
+    details: []
+  });
 }
 
 async function loadKnowledgeBuildBatchStats(db, tenantKey) {
@@ -3433,6 +3600,92 @@ async function loadKnowledgeBuildBatchStats(db, tenantKey) {
     if (!buildId || !stage) continue;
     if (!byBuild.has(buildId)) byBuild.set(buildId, {});
     byBuild.get(buildId)[stage] = row;
+  }
+  return byBuild;
+}
+
+async function loadKnowledgeBuildRowStats(db, tenantKey) {
+  const result = await db.query(
+    `SELECT build_id,
+            stage,
+            COUNT(*)::int AS total_rows,
+            COUNT(*) FILTER (WHERE status = 'completed')::int AS completed_rows,
+            COUNT(*) FILTER (WHERE status = 'fallback')::int AS fallback_rows
+     FROM (
+       SELECT build_id, status, 'source_summary'::text AS stage
+       FROM knowledge_build_source_summaries
+       WHERE tenant_key = $1
+       UNION ALL
+       SELECT build_id, status, 'source_artifact'::text AS stage
+       FROM knowledge_build_source_artifacts
+       WHERE tenant_key = $1
+     ) stage_rows
+     GROUP BY build_id, stage`,
+    [tenantKey]
+  );
+
+  const byBuild = new Map();
+  for (const row of result.rows || []) {
+    const buildId = normalizeText(row.build_id);
+    const stage = normalizeText(row.stage);
+    if (!buildId || !stage) continue;
+    if (!byBuild.has(buildId)) byBuild.set(buildId, {});
+    byBuild.get(buildId)[stage] = row;
+  }
+  return byBuild;
+}
+
+async function loadKnowledgeBuildPersistedArtifactStats(db, tenantKey) {
+  const result = await db.query(
+    `SELECT build_id,
+            SUM(cards_count)::int AS cards,
+            SUM(facts_count)::int AS facts,
+            SUM(card_vectors_count)::int AS card_vectors,
+            SUM(fact_vectors_count)::int AS fact_vectors
+     FROM (
+       SELECT build_id,
+              COUNT(*)::int AS cards_count,
+              0::int AS facts_count,
+              0::int AS card_vectors_count,
+              0::int AS fact_vectors_count
+       FROM knowledge_build_cards
+       WHERE tenant_key = $1
+       GROUP BY build_id
+       UNION ALL
+       SELECT build_id,
+              0::int AS cards_count,
+              COUNT(*)::int AS facts_count,
+              0::int AS card_vectors_count,
+              0::int AS fact_vectors_count
+       FROM knowledge_build_facts
+       WHERE tenant_key = $1
+       GROUP BY build_id
+       UNION ALL
+       SELECT build_id,
+              0::int AS cards_count,
+              0::int AS facts_count,
+              COUNT(*)::int AS card_vectors_count,
+              0::int AS fact_vectors_count
+       FROM knowledge_build_card_vectors
+       WHERE tenant_key = $1
+       GROUP BY build_id
+       UNION ALL
+       SELECT build_id,
+              0::int AS cards_count,
+              0::int AS facts_count,
+              0::int AS card_vectors_count,
+              COUNT(*)::int AS fact_vectors_count
+       FROM knowledge_build_fact_vectors
+       WHERE tenant_key = $1
+       GROUP BY build_id
+     ) persisted
+     GROUP BY build_id`,
+    [tenantKey]
+  );
+
+  const byBuild = new Map();
+  for (const row of result.rows || []) {
+    byBuild.set(normalizeText(row.build_id), row);
   }
   return byBuild;
 }
@@ -3515,7 +3768,7 @@ async function withKnowledgeBuildExecutionLock(db, tenantKey, buildId, work) {
 
 export async function listKnowledgeReceptionistBuilds(db, tenantKey) {
   await assertSliceTablesReady(db);
-  const [buildsRes, pointerRes, assignments, bootstrapProfile, batchStatsByBuild] = await Promise.all([
+  const [buildsRes, pointerRes, assignments, bootstrapProfile, batchStatsByBuild, rowStatsByBuild, persistedArtifactStatsByBuild] = await Promise.all([
     db.query(
       `SELECT kb.build_id,
               kb.status,
@@ -3555,12 +3808,19 @@ export async function listKnowledgeReceptionistBuilds(db, tenantKey) {
     ),
     loadTenantDomainAssignments(db, tenantKey),
     loadTenantBootstrapProfile(db, tenantKey),
-    loadKnowledgeBuildBatchStats(db, tenantKey)
+    loadKnowledgeBuildBatchStats(db, tenantKey),
+    loadKnowledgeBuildRowStats(db, tenantKey),
+    loadKnowledgeBuildPersistedArtifactStats(db, tenantKey)
   ]);
 
   const builds = (buildsRes.rows || []).map((row) => ({
     ...row,
-    progress: buildKnowledgeProgress(row, batchStatsByBuild.get(normalizeText(row.build_id)) || {})
+    progress: buildKnowledgeProgress(
+      row,
+      batchStatsByBuild.get(normalizeText(row.build_id)) || {},
+      rowStatsByBuild.get(normalizeText(row.build_id)) || {},
+      persistedArtifactStatsByBuild.get(normalizeText(row.build_id)) || {}
+    )
   }));
 
   return {
@@ -3592,6 +3852,10 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
     where.push(`build_id = $${params.length}`);
   }
   where.push(`status IN ('queued', 'running')`);
+  if (!buildId && KNOWLEDGE_BUILD_JOB_MAX_AUTO_RESUME_AGE_MINUTES > 0) {
+    params.push(KNOWLEDGE_BUILD_JOB_MAX_AUTO_RESUME_AGE_MINUTES);
+    where.push(`updated_at >= NOW() - ($${params.length}::int * INTERVAL '1 minute')`);
+  }
   params.push(maxBuilds);
 
   const result = await db.query(
