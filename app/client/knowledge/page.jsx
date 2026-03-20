@@ -47,6 +47,24 @@ function formatLabel(value) {
     .join(' ');
 }
 
+function isBuildActive(build) {
+  const status = String(build?.status || '').trim().toLowerCase();
+  return status === 'queued' || status === 'running';
+}
+
+function buildBadgeTone(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'published' || normalized === 'ready_to_publish') return 'ok';
+  if (normalized === 'failed' || normalized === 'qa_blocked') return 'bad';
+  return 'warn';
+}
+
+function renderBuildProgress(build) {
+  const progress = build?.progress || null;
+  if (!progress) return 'No progress details yet.';
+  return `${progress.label}: ${progress.summary}`;
+}
+
 function ensureSentence(value) {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -188,11 +206,15 @@ export default function KnowledgePage() {
       setCallOutcomeSchema(outcomeData?.activeSchema || outcomeData?.schemas?.[0] || null);
       setUploadedDocuments(Array.isArray(documentData?.documents) ? documentData.documents : []);
       setBuildForm((current) => ({
-        websiteUrl: current.websiteUrl || buildData?.bootstrapWebsiteUrl || builds[0]?.metadata_json?.website_url || ''
+        websiteUrl: current.websiteUrl || buildData?.bootstrapWebsiteUrl || builds[0]?.website_root_url || ''
       }));
-      setStatus({ message: 'Knowledge workspace loaded.', tone: 'ok' });
+      if (!silent) {
+        setStatus({ message: 'Knowledge workspace loaded.', tone: 'ok' });
+      }
     } catch {
-      setStatus({ message: 'Could not load the knowledge workspace.', tone: 'bad' });
+      if (!silent) {
+        setStatus({ message: 'Could not load the knowledge workspace.', tone: 'bad' });
+      }
     } finally {
       setLoading(false);
     }
@@ -201,6 +223,16 @@ export default function KnowledgePage() {
   useEffect(() => {
     loadWorkspace();
   }, []);
+
+  useEffect(() => {
+    if (!buildState.builds.some((build) => isBuildActive(build))) {
+      return undefined;
+    }
+    const intervalId = window.setInterval(() => {
+      loadWorkspace({ silent: true });
+    }, 15000);
+    return () => window.clearInterval(intervalId);
+  }, [buildState.builds]);
 
   const savePromptProfile = async () => {
     setSavingPromptProfile(true);
@@ -238,7 +270,7 @@ export default function KnowledgePage() {
 
   const createBuild = async () => {
     setBuildBusy(true);
-    setStatus({ message: 'Creating build...', tone: 'warn' });
+    setStatus({ message: 'Queueing build...', tone: 'warn' });
     try {
       const data = await fetchJson('/api/v1/knowledge/builds', {
         method: 'POST',
@@ -252,8 +284,20 @@ export default function KnowledgePage() {
         setStatus({ message: data?.message || 'Build failed.', tone: 'bad' });
         return;
       }
+      const buildId = data.build?.build_id || '';
+      if (buildId) {
+        void fetch(`/api/v1/knowledge/builds/${encodeURIComponent(buildId)}/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        }).catch(() => {});
+      }
       await loadWorkspace({ silent: true });
-      setStatus({ message: `Build ${data.build?.build_id || 'created'} completed.`, tone: 'ok' });
+      const finalStatus = String(data.status || '').trim().toLowerCase();
+      setStatus({
+        message: `Build ${buildId || 'created'} ${finalStatus === 'running' ? 'is already running' : 'queued'}. This page will update automatically.`,
+        tone: 'ok'
+      });
     } catch {
       setStatus({ message: 'Build failed.', tone: 'bad' });
     } finally {
@@ -502,9 +546,14 @@ export default function KnowledgePage() {
             <div className="mt-2 text-sm text-slate-600">
               This build will include {approvedUploadedDocuments.length} approved uploaded document{approvedUploadedDocuments.length === 1 ? '' : 's'}.
             </div>
+            {buildState.builds.some((build) => isBuildActive(build)) ? (
+              <div className="mt-2 text-sm text-slate-600">
+                Build status auto-refreshes every 15 seconds while work is active.
+              </div>
+            ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
               <Button onClick={createBuild} disabled={buildBusy}>
-                {buildBusy ? 'Building...' : 'Create Build'}
+                {buildBusy ? 'Queueing...' : 'Create Build'}
               </Button>
             </div>
             {latestBuild ? (
@@ -512,6 +561,15 @@ export default function KnowledgePage() {
                 <div className="font-semibold text-slate-900">Latest Build</div>
                 <div>ID: {latestBuild.build_id}</div>
                 <div>Status: {latestBuild.status}</div>
+                <div>{renderBuildProgress(latestBuild)}</div>
+                {typeof latestBuild.progress?.percent === 'number' ? (
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className="h-full rounded-full bg-slate-900 transition-all"
+                      style={{ width: `${Math.max(4, latestBuild.progress.percent)}%` }}
+                    />
+                  </div>
+                ) : null}
                 <div>Warnings: {Array.isArray(latestBuild.warnings_json) ? latestBuild.warnings_json.length : 0}</div>
               </div>
             ) : null}
@@ -623,7 +681,7 @@ export default function KnowledgePage() {
           </section>
 
           <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Published Builds</h2>
+            <h2 className="mt-0 text-lg font-semibold">Build History</h2>
             <div className="grid gap-2">
               {buildState.builds.length ? buildState.builds.map((build) => (
                 <div key={build.build_id} className="rounded-lg border border-slate-200 p-3">
@@ -632,22 +690,33 @@ export default function KnowledgePage() {
                       <div className="font-semibold text-slate-900">{build.version || build.build_id}</div>
                       <div className="text-xs text-slate-500">{build.build_id}</div>
                     </div>
-                    <span className={`badge ${build.status === 'published' ? 'ok' : 'warn'}`}>{build.status}</span>
+                    <span className={`badge ${buildBadgeTone(build.status)}`}>{build.status}</span>
                   </div>
                   <div className="mt-2 text-sm text-slate-600">
                     Cards: {build.artifact_counts_json?.cards || 0} · Facts: {build.artifact_counts_json?.facts || 0}
                   </div>
+                  <div className="mt-1 text-sm text-slate-600">{renderBuildProgress(build)}</div>
+                  {typeof build.progress?.percent === 'number' && isBuildActive(build) ? (
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className="h-full rounded-full bg-slate-900 transition-all"
+                        style={{ width: `${Math.max(4, build.progress.percent)}%` }}
+                      />
+                    </div>
+                  ) : null}
                   {Array.isArray(build.warnings_json) && build.warnings_json.length ? (
                     <div className="mt-2 text-xs text-amber-700">{build.warnings_json.join(', ')}</div>
                   ) : null}
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => publishBuild(build.build_id)}
-                      disabled={publishingBuildId === build.build_id}
-                    >
-                      {publishingBuildId === build.build_id ? 'Publishing...' : 'Publish'}
-                    </Button>
+                    {build.status === 'ready_to_publish' ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => publishBuild(build.build_id)}
+                        disabled={publishingBuildId === build.build_id}
+                      >
+                        {publishingBuildId === build.build_id ? 'Publishing...' : 'Publish'}
+                      </Button>
+                    ) : null}
                     {buildState.activeBuild?.previous_build_id === build.build_id || build.status === 'published' ? (
                       <Button
                         variant="outline"

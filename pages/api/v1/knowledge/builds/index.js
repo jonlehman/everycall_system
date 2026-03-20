@@ -2,7 +2,7 @@ import { getPool } from "../../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../../_lib/auth.js";
 import { requireTenantBillingAccess } from "../../../_lib/billing.js";
 import {
-  createKnowledgeBuild,
+  enqueueKnowledgeBuild,
   listKnowledgeReceptionistBuilds
 } from "../../../_lib/knowledgeReceptionistBuilds.js";
 
@@ -49,13 +49,13 @@ export default async function handler(req, res) {
 
     if (req.method === "POST") {
       const body = typeof req.body === "object" && req.body ? req.body : {};
-      const buildResult = await createKnowledgeBuild(pool, tenantKey, {
+      const buildResult = await enqueueKnowledgeBuild(pool, tenantKey, {
         websiteUrl: body.websiteUrl || body.website_url,
         assignments: normalizeAssignments(body.assignments),
         uploadedDocumentIds: normalizeIdArray(body.uploadedDocumentIds || body.uploaded_document_ids),
         setupInterviewSessionIds: normalizeIdArray(body.setupInterviewSessionIds || body.setup_interview_session_ids)
       });
-      return res.status(200).json({ ok: true, ...buildResult });
+      return res.status(202).json({ ok: true, ...buildResult });
     }
 
     res.setHeader("Allow", "GET, POST");

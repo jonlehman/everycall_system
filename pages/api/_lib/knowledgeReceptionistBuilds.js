@@ -43,6 +43,7 @@ const RETRIEVAL_CORE_HARD_MS = 1000;
 const PLANNER_RUNTIME_SOFT_MS = 2500;
 const PLANNER_RUNTIME_HARD_MS = 6000;
 const STAGE_A_SIMULATED_FAILURE_AFTER_BATCHES = Number.parseInt(String(process.env.KNOWLEDGE_STAGE_A_FAIL_AFTER_PERSIST_BATCHES || ""), 10) || 0;
+const KNOWLEDGE_BUILD_JOB_MAX_BUILDS_PER_RUN = readPositiveIntEnv("KNOWLEDGE_BUILD_JOB_MAX_BUILDS_PER_RUN", 1);
 
 const buildAssetCache = new Map();
 
@@ -1639,7 +1640,8 @@ function buildSourceInputFingerprint({ websiteUrl, uploadedDocumentIds, setupInt
   };
 }
 
-async function findResumableBuildState(db, tenantKey, inputFingerprint) {
+async function findResumableBuildState(db, tenantKey, inputFingerprint, preferredBuildId = "") {
+  const preferred = normalizeText(preferredBuildId);
   const res = await db.query(
     `SELECT kb.build_id,
             kb.version,
@@ -1662,10 +1664,11 @@ async function findResumableBuildState(db, tenantKey, inputFingerprint) {
      INNER JOIN source_intake_sessions sis
        ON sis.build_id = kb.build_id
      WHERE kb.tenant_key = $1
-       AND kb.status IN ('running', 'failed')
-     ORDER BY kb.created_at DESC
-     LIMIT 10`,
-    [tenantKey]
+       AND kb.status IN ('queued', 'running', 'failed')
+     ORDER BY CASE WHEN kb.build_id = $2 THEN 0 ELSE 1 END,
+              kb.created_at DESC
+     LIMIT 20`,
+    [tenantKey, preferred]
   );
   for (const row of res.rows || []) {
     const metadata = row.metadata_json && typeof row.metadata_json === "object" && !Array.isArray(row.metadata_json)
@@ -1678,7 +1681,8 @@ async function findResumableBuildState(db, tenantKey, inputFingerprint) {
     });
     const hasPersistedState = Number(row.intake_item_count || 0) > 0
       || Number(row.persistence_checkpoint_json?.total_persisted_sources || 0) > 0;
-    if (!hasPersistedState) continue;
+    const buildStatus = normalizeText(row.build_status).toLowerCase();
+    if (!hasPersistedState && !["queued", "running"].includes(buildStatus)) continue;
     if (rowFingerprint.website_root_url !== inputFingerprint.website_root_url) continue;
     if (!sameNormalizedIdArray(rowFingerprint.uploaded_document_ids, inputFingerprint.uploaded_document_ids)) continue;
     if (!sameNormalizedIdArray(rowFingerprint.setup_interview_session_ids, inputFingerprint.setup_interview_session_ids)) continue;
@@ -3216,16 +3220,330 @@ async function updateBuildAfterValidation(db, buildId, counts, validationSummary
   return nextStatus;
 }
 
+function toNumber(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function batchStageProgress(batchStatsByStage, stage) {
+  const stats = asObject(batchStatsByStage?.[stage]);
+  const completed = toNumber(stats.completed_batches) + toNumber(stats.fallback_batches);
+  return {
+    total: toNumber(stats.total_batches),
+    completed,
+    running: toNumber(stats.running_batches),
+    failed: toNumber(stats.failed_batches)
+  };
+}
+
+function ratioPercent(done, total) {
+  if (total <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+}
+
+function buildKnowledgeProgress(buildRow, batchStatsByStage = {}) {
+  const buildStatus = normalizeText(buildRow?.status).toLowerCase();
+  const intakeStatus = normalizeText(buildRow?.intake_status).toLowerCase();
+  const crawlSummary = asObject(buildRow?.crawl_summary_json);
+  const persistenceCheckpoint = asObject(buildRow?.persistence_checkpoint_json);
+  const analysisCheckpoint = asObject(buildRow?.analysis_checkpoint_json);
+  const sourceSummaryStage = asObject(analysisCheckpoint.source_summary_stage);
+  const topicInventoryStage = asObject(analysisCheckpoint.topic_inventory_stage);
+  const sourceArtifactStage = asObject(analysisCheckpoint.source_artifact_stage);
+  const artifactEmbeddingStage = asObject(analysisCheckpoint.artifact_embedding_stage);
+  const summaryBatches = batchStageProgress(batchStatsByStage, "source_summary");
+  const topicBatches = batchStageProgress(batchStatsByStage, "topic_inventory");
+  const artifactBatches = batchStageProgress(batchStatsByStage, "source_artifact");
+  const cards = toNumber(buildRow?.artifact_counts_json?.cards);
+  const facts = toNumber(buildRow?.artifact_counts_json?.facts);
+  const totalIncludedSources = toNumber(crawlSummary.total_included_sources);
+  const totalPersistedSources = toNumber(persistenceCheckpoint.total_persisted_sources);
+  const totalSummarySources = toNumber(sourceSummaryStage.total_sources || totalIncludedSources);
+  const completedSummarySources = toNumber(sourceSummaryStage.completed_sources);
+  const totalArtifactSources = toNumber(sourceArtifactStage.total_sources || totalIncludedSources);
+  const completedArtifactSources = toNumber(sourceArtifactStage.completed_sources);
+  const totalTopicWindows = toNumber(topicInventoryStage.window_count || topicBatches.total);
+  const completedTopicWindows = totalTopicWindows > 0 ? topicBatches.completed : 0;
+
+  if (buildStatus === "published") {
+    return {
+      phase: "published",
+      label: "Published",
+      summary: `Live with ${cards} cards and ${facts} facts.`,
+      percent: 100,
+      active: false
+    };
+  }
+
+  if (buildStatus === "ready_to_publish") {
+    return {
+      phase: "ready_to_publish",
+      label: "Ready To Publish",
+      summary: `${cards} cards and ${facts} facts are ready.`,
+      percent: 100,
+      active: false
+    };
+  }
+
+  if (buildStatus === "qa_blocked") {
+    return {
+      phase: "qa_blocked",
+      label: "Needs Review",
+      summary: `${cards} cards and ${facts} facts built. Review warnings before publishing.`,
+      percent: 100,
+      active: false
+    };
+  }
+
+  if (buildStatus === "failed") {
+    const intakeErrors = Array.isArray(buildRow?.intake_errors_json) ? buildRow.intake_errors_json : [];
+    const warnings = Array.isArray(buildRow?.warnings_json) ? buildRow.warnings_json : [];
+    return {
+      phase: "failed",
+      label: "Failed",
+      summary: normalizeText(intakeErrors[0] || warnings[0] || "The build stopped before completion."),
+      percent: 0,
+      active: false
+    };
+  }
+
+  if (buildStatus === "queued") {
+    return {
+      phase: "queued",
+      label: "Queued",
+      summary: "Waiting for the background build runner.",
+      percent: 0,
+      active: true
+    };
+  }
+
+  if (intakeStatus === "discovering" || normalizeText(crawlSummary.stage_status).toLowerCase() === "discovering") {
+    const discovered = toNumber(crawlSummary.total_discovered_sources);
+    const included = totalIncludedSources;
+    return {
+      phase: "discovering",
+      label: "Discovering Sources",
+      summary: included > 0
+        ? `${included} included source${included === 1 ? "" : "s"} discovered so far.`
+        : `${discovered || 0} source${discovered === 1 ? "" : "s"} examined so far.`,
+      percent: Math.max(5, Math.round(ratioPercent(discovered, Math.max(discovered, included, 1)) * 0.2)),
+      active: true
+    };
+  }
+
+  if (intakeStatus === "raw_source_persisting" || (totalIncludedSources > 0 && totalPersistedSources < totalIncludedSources)) {
+    return {
+      phase: "persisting",
+      label: "Persisting Raw Sources",
+      summary: `${totalPersistedSources} of ${totalIncludedSources || "?"} sources stored for compile.`,
+      percent: Math.max(20, Math.min(40, 20 + Math.round(ratioPercent(totalPersistedSources, totalIncludedSources || 1) * 0.2))),
+      active: true
+    };
+  }
+
+  if ((summaryBatches.total > 0 && (totalSummarySources === 0 || completedSummarySources < totalSummarySources))
+    || (totalSummarySources > 0 && completedSummarySources < totalSummarySources)) {
+    const summaryPercent = totalSummarySources > 0
+      ? ratioPercent(completedSummarySources, totalSummarySources)
+      : ratioPercent(summaryBatches.completed, summaryBatches.total || 1);
+    return {
+      phase: "source_summary",
+      label: "Summarizing Sources",
+      summary: totalSummarySources > 0
+        ? `${completedSummarySources} of ${totalSummarySources} sources summarized.`
+        : `${summaryBatches.completed} of ${summaryBatches.total} summary batches completed.`,
+      percent: Math.max(40, Math.min(65, 40 + Math.round(summaryPercent * 0.25))),
+      active: true,
+      batches: summaryBatches
+    };
+  }
+
+  if ((topicBatches.total > 0 && (totalTopicWindows === 0 || completedTopicWindows < totalTopicWindows))
+    || (totalTopicWindows > 0 && completedTopicWindows < totalTopicWindows)) {
+    const topicPercent = totalTopicWindows > 0
+      ? ratioPercent(completedTopicWindows, totalTopicWindows)
+      : ratioPercent(topicBatches.completed, topicBatches.total || 1);
+    return {
+      phase: "topic_inventory",
+      label: "Building Topic Inventory",
+      summary: totalTopicWindows > 0
+        ? `${completedTopicWindows} of ${totalTopicWindows} topic windows completed.`
+        : `${topicBatches.completed} of ${topicBatches.total} topic windows completed.`,
+      percent: Math.max(65, Math.min(75, 65 + Math.round(topicPercent * 0.1))),
+      active: true,
+      batches: topicBatches
+    };
+  }
+
+  if ((artifactBatches.total > 0 && (totalArtifactSources === 0 || completedArtifactSources < totalArtifactSources))
+    || (totalArtifactSources > 0 && completedArtifactSources < totalArtifactSources)) {
+    const artifactPercent = totalArtifactSources > 0
+      ? ratioPercent(completedArtifactSources, totalArtifactSources)
+      : ratioPercent(artifactBatches.completed, artifactBatches.total || 1);
+    return {
+      phase: "source_artifact",
+      label: "Extracting Cards And Facts",
+      summary: totalArtifactSources > 0
+        ? `${completedArtifactSources} of ${totalArtifactSources} sources compiled into artifacts.`
+        : `${artifactBatches.completed} of ${artifactBatches.total} artifact batches completed.`,
+      percent: Math.max(75, Math.min(90, 75 + Math.round(artifactPercent * 0.15))),
+      active: true,
+      batches: artifactBatches
+    };
+  }
+
+  if (normalizeText(artifactEmbeddingStage.stage).toLowerCase() === "artifact_embedding") {
+    return {
+      phase: "embedding",
+      label: "Embedding Artifacts",
+      summary: `${toNumber(artifactEmbeddingStage.card_vector_count)} card vectors and ${toNumber(artifactEmbeddingStage.fact_vector_count)} fact vectors created.`,
+      percent: 95,
+      active: true
+    };
+  }
+
+  return {
+    phase: "running",
+    label: "Running",
+    summary: "Build work is in progress.",
+    percent: 10,
+    active: true
+  };
+}
+
+async function loadKnowledgeBuildBatchStats(db, tenantKey) {
+  const result = await db.query(
+    `SELECT build_id,
+            stage,
+            COUNT(*)::int AS total_batches,
+            COUNT(*) FILTER (WHERE status = 'completed')::int AS completed_batches,
+            COUNT(*) FILTER (WHERE status = 'fallback')::int AS fallback_batches,
+            COUNT(*) FILTER (WHERE status = 'running')::int AS running_batches,
+            COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_batches
+     FROM knowledge_build_analysis_batches
+     WHERE tenant_key = $1
+     GROUP BY build_id, stage`,
+    [tenantKey]
+  );
+
+  const byBuild = new Map();
+  for (const row of result.rows || []) {
+    const buildId = normalizeText(row.build_id);
+    const stage = normalizeText(row.stage);
+    if (!buildId || !stage) continue;
+    if (!byBuild.has(buildId)) byBuild.set(buildId, {});
+    byBuild.get(buildId)[stage] = row;
+  }
+  return byBuild;
+}
+
+async function loadKnowledgeBuildRow(db, buildId) {
+  const result = await db.query(
+    `SELECT *
+     FROM knowledge_builds
+     WHERE build_id = $1
+     LIMIT 1`,
+    [buildId]
+  );
+  return result.rows[0] || null;
+}
+
+async function loadKnowledgeBuildExecutionInput(db, tenantKey, buildId) {
+  const result = await db.query(
+    `SELECT kb.build_id,
+            kb.tenant_key,
+            kb.status,
+            kb.domain_assignments_json,
+            sis.website_root_url,
+            sis.metadata_json
+     FROM knowledge_builds kb
+     INNER JOIN source_intake_sessions sis
+       ON sis.build_id = kb.build_id
+     WHERE kb.tenant_key = $1
+       AND kb.build_id = $2
+     LIMIT 1`,
+    [tenantKey, buildId]
+  );
+  if (!result.rowCount) {
+    throw new Error("build_not_found");
+  }
+  const row = result.rows[0];
+  const metadata = asObject(row.metadata_json);
+  return {
+    buildId: normalizeText(row.build_id),
+    buildStatus: normalizeText(row.status).toLowerCase(),
+    websiteUrl: normalizeWebsiteUrl(row.website_root_url),
+    uploadedDocumentIds: normalizeIdArray(metadata.uploaded_document_ids),
+    setupInterviewSessionIds: normalizeIdArray(metadata.setup_interview_session_ids),
+    assignments: Array.isArray(row.domain_assignments_json)
+      ? row.domain_assignments_json
+          .map((item) => ({
+            domainId: normalizeText(item?.domain_id),
+            subdomainId: normalizeText(item?.subdomain_id) || null
+          }))
+          .filter((item) => item.domainId)
+      : []
+  };
+}
+
+async function withKnowledgeBuildExecutionLock(db, tenantKey, buildId, work) {
+  const canBorrowClient = typeof db?.connect === "function" && typeof db?.release !== "function";
+  const client = canBorrowClient ? await db.connect() : db;
+  const ownsClient = canBorrowClient;
+  try {
+    const lockRes = await client.query(
+      `SELECT pg_try_advisory_lock(hashtext($1), hashtext($2)) AS locked`,
+      [normalizeText(tenantKey), normalizeText(buildId)]
+    );
+    if (!lockRes.rows[0]?.locked) {
+      return { locked: false, result: null };
+    }
+    try {
+      return { locked: true, result: await work(client) };
+    } finally {
+      await client.query(
+        `SELECT pg_advisory_unlock(hashtext($1), hashtext($2))`,
+        [normalizeText(tenantKey), normalizeText(buildId)]
+      ).catch(() => {});
+    }
+  } finally {
+    if (ownsClient && typeof client?.release === "function") {
+      client.release();
+    }
+  }
+}
+
 export async function listKnowledgeReceptionistBuilds(db, tenantKey) {
   await assertSliceTablesReady(db);
-  const [buildsRes, pointerRes, assignments, bootstrapProfile] = await Promise.all([
+  const [buildsRes, pointerRes, assignments, bootstrapProfile, batchStatsByBuild] = await Promise.all([
     db.query(
-      `SELECT build_id, status, version, domain_assignments_json, source_channels_json, artifact_counts_json,
-              quality_summary_json, warnings_json, validation_summary_json, published_at, supersedes_build_id,
-              created_at, updated_at
-       FROM knowledge_builds
-       WHERE tenant_key = $1
-       ORDER BY created_at DESC`,
+      `SELECT kb.build_id,
+              kb.status,
+              kb.version,
+              kb.domain_assignments_json,
+              kb.source_channels_json,
+              kb.artifact_counts_json,
+              kb.quality_summary_json,
+              kb.warnings_json,
+              kb.validation_summary_json,
+              kb.analysis_checkpoint_json,
+              kb.published_at,
+              kb.supersedes_build_id,
+              kb.created_at,
+              kb.updated_at,
+              sis.source_intake_session_id,
+              sis.status AS intake_status,
+              sis.website_root_url,
+              sis.crawl_summary_json,
+              sis.persistence_checkpoint_json,
+              sis.warnings_json AS intake_warnings_json,
+              sis.errors_json AS intake_errors_json,
+              sis.metadata_json AS intake_metadata_json
+       FROM knowledge_builds kb
+       LEFT JOIN source_intake_sessions sis
+         ON sis.build_id = kb.build_id
+       WHERE kb.tenant_key = $1
+       ORDER BY kb.created_at DESC`,
       [tenantKey]
     ),
     db.query(
@@ -3236,13 +3554,19 @@ export async function listKnowledgeReceptionistBuilds(db, tenantKey) {
       [tenantKey]
     ),
     loadTenantDomainAssignments(db, tenantKey),
-    loadTenantBootstrapProfile(db, tenantKey)
+    loadTenantBootstrapProfile(db, tenantKey),
+    loadKnowledgeBuildBatchStats(db, tenantKey)
   ]);
+
+  const builds = (buildsRes.rows || []).map((row) => ({
+    ...row,
+    progress: buildKnowledgeProgress(row, batchStatsByBuild.get(normalizeText(row.build_id)) || {})
+  }));
 
   return {
     activeBuild: pointerRes.rows[0] || null,
     assignments,
-    builds: buildsRes.rows || [],
+    builds,
     bootstrapWebsiteUrl: normalizeWebsiteUrl(bootstrapProfile?.website_url || "")
   };
 }
@@ -3251,10 +3575,103 @@ function normalizeIdArray(value) {
   return uniqueValues(Array.isArray(value) ? value : []);
 }
 
+export async function runKnowledgeBuildJobs(db, options = {}) {
+  await assertSliceTablesReady(db);
+  const tenantKey = normalizeText(options.tenantKey);
+  const buildId = normalizeText(options.buildId);
+  const maxBuilds = Math.max(1, Number(options.maxBuilds || KNOWLEDGE_BUILD_JOB_MAX_BUILDS_PER_RUN || 1));
+  const params = [];
+  const where = [];
+
+  if (tenantKey) {
+    params.push(tenantKey);
+    where.push(`tenant_key = $${params.length}`);
+  }
+  if (buildId) {
+    params.push(buildId);
+    where.push(`build_id = $${params.length}`);
+  }
+  where.push(`status IN ('queued', 'running')`);
+  params.push(maxBuilds);
+
+  const result = await db.query(
+    `SELECT build_id, tenant_key, status, created_at, updated_at
+     FROM knowledge_builds
+     WHERE ${where.join(" AND ")}
+     ORDER BY CASE WHEN status = 'queued' THEN 0 ELSE 1 END,
+              updated_at ASC,
+              created_at ASC
+     LIMIT $${params.length}`,
+    params
+  );
+
+  const runs = [];
+  for (const row of result.rows || []) {
+    const lockedResult = await withKnowledgeBuildExecutionLock(db, row.tenant_key, row.build_id, async (client) => {
+      const executionInput = await loadKnowledgeBuildExecutionInput(client, row.tenant_key, row.build_id);
+      try {
+        const buildResult = await createKnowledgeBuild(client, row.tenant_key, {
+          buildId: executionInput.buildId,
+          websiteUrl: executionInput.websiteUrl,
+          assignments: executionInput.assignments,
+          uploadedDocumentIds: executionInput.uploadedDocumentIds,
+          setupInterviewSessionIds: executionInput.setupInterviewSessionIds
+        });
+        return {
+          buildId: executionInput.buildId,
+          tenantKey: row.tenant_key,
+          action: "processed",
+          status: buildResult.status
+        };
+      } catch (err) {
+        return {
+          buildId: executionInput.buildId,
+          tenantKey: row.tenant_key,
+          action: "failed",
+          status: "failed",
+          error: normalizeText(err?.message || "build_failed")
+        };
+      }
+    });
+
+    if (!lockedResult.locked) {
+      runs.push({
+        buildId: normalizeText(row.build_id),
+        tenantKey: normalizeText(row.tenant_key),
+        action: "skipped_locked",
+        status: normalizeText(row.status).toLowerCase()
+      });
+      continue;
+    }
+    runs.push(lockedResult.result || {
+      buildId: normalizeText(row.build_id),
+      tenantKey: normalizeText(row.tenant_key),
+      action: "processed",
+      status: "unknown"
+    });
+  }
+
+  return {
+    requestedMaxBuilds: maxBuilds,
+    consideredBuilds: (result.rows || []).length,
+    runs
+  };
+}
+
+export async function enqueueKnowledgeBuild(db, tenantKey, input = {}) {
+  return createKnowledgeBuild(db, tenantKey, {
+    ...input,
+    enqueueOnly: true
+  });
+}
+
 export async function createKnowledgeBuild(db, tenantKey, input = {}) {
   await assertSliceTablesReady(db);
   await syncCanonicalKnowledgePacks(db);
 
+  const enqueueOnly = input.enqueueOnly === true
+    || String(input.enqueueOnly || input.enqueue_only || "").toLowerCase() === "true";
+  const preferredBuildId = normalizeText(input.buildId || input.build_id);
   let websiteUrl = normalizeWebsiteUrl(input.websiteUrl || input.website_url);
   const uploadedDocumentIds = normalizeIdArray(input.uploadedDocumentIds || input.uploaded_document_ids);
   const setupInterviewSessionIds = normalizeIdArray(input.setupInterviewSessionIds || input.setup_interview_session_ids);
@@ -3273,7 +3690,13 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
     uploadedDocumentIds,
     setupInterviewSessionIds
   });
-  const resumableState = forceRescrape ? null : await findResumableBuildState(db, tenantKey, inputFingerprint);
+  const resumableState = forceRescrape ? null : await findResumableBuildState(db, tenantKey, inputFingerprint, preferredBuildId);
+  if (preferredBuildId && !resumableState) {
+    throw new Error("build_not_found");
+  }
+  if (preferredBuildId && normalizeText(resumableState?.build_id) !== preferredBuildId) {
+    throw new Error("build_not_found");
+  }
   if (!resumableState) {
     await assertBuildRateLimit(db, tenantKey);
   }
@@ -3317,12 +3740,13 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
            created_by_type, created_by_id
          )
          VALUES (
-           $1, $2, 'running', $3, $4::jsonb, $5, $6::jsonb, '{}'::jsonb, '{}'::jsonb, '[]'::jsonb,
+           $1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, '{}'::jsonb, '{}'::jsonb, '[]'::jsonb,
            '{}'::jsonb, 'tenant', NULL
          )`,
         [
           buildId,
           tenantKey,
+          enqueueOnly ? "queued" : "running",
           version,
           JSON.stringify(effectiveAssignments.map((item) => ({ domain_id: item.domainId, subdomain_id: item.subdomainId }))),
           intakeSessionId,
@@ -3335,13 +3759,14 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
            source_channels_json, metadata_json, started_at
          )
          VALUES (
-           $1, $2, $3, $4, 'discovering', $5, $6::jsonb, $7::jsonb, NOW()
+           $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, NOW()
          )`,
         [
           intakeSessionId,
           tenantKey,
           buildId,
           runtimeEntryMode,
+          enqueueOnly ? "queued" : "discovering",
           websiteUrl || null,
           JSON.stringify(sourceChannels),
           JSON.stringify({ uploaded_document_ids: uploadedDocumentIds, setup_interview_session_ids: setupInterviewSessionIds })
@@ -3356,6 +3781,36 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
     primaryDomainId: primaryAssignment.domainId,
     primarySubdomainId: primaryAssignment.subdomainId
   };
+
+  if (enqueueOnly) {
+    if (resumableState) {
+      const queuedStatus = normalizeText(resumableState.build_status).toLowerCase() === "running" ? "running" : "queued";
+      await db.query(
+        `UPDATE knowledge_builds
+         SET status = $2,
+             warnings_json = CASE WHEN $2 = 'queued' THEN '[]'::jsonb ELSE warnings_json END,
+             updated_at = NOW()
+         WHERE build_id = $1`,
+        [buildId, queuedStatus]
+      );
+      await db.query(
+        `UPDATE source_intake_sessions
+         SET status = $2,
+             errors_json = '[]'::jsonb,
+             completed_at = CASE WHEN $2 = 'queued' THEN NULL ELSE completed_at END,
+             updated_at = NOW()
+         WHERE source_intake_session_id = $1`,
+        [intakeSessionId, queuedStatus === "running" ? "running" : "queued"]
+      );
+    }
+    const queuedBuild = await loadKnowledgeBuildRow(db, buildId);
+    return {
+      build: queuedBuild,
+      status: normalizeText(queuedBuild?.status || (resumableState ? resumableState.build_status : "queued")).toLowerCase() || "queued",
+      resumed: Boolean(resumableState),
+      queued: true
+    };
+  }
 
   try {
     const existingSourceSummary = await loadExistingSourceIntakeSummary(db, rawBuildInfo, intakeSessionId);

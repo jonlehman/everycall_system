@@ -5,6 +5,10 @@
   "buildCommand": "corepack pnpm build",
   "crons": [
     {
+      "path": "/api/cron/knowledge-builds",
+      "schedule": "*/1 * * * *"
+    },
+    {
       "path": "/api/cron/billing-lifecycle",
       "schedule": "15 8 * * *"
     }
