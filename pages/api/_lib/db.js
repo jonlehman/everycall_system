@@ -73,6 +73,8 @@ export async function ensureTables(pool) {
       sms_opt_in_status TEXT NOT NULL DEFAULT 'not_requested',
       sms_opt_in_requested_at TIMESTAMPTZ,
       sms_opt_in_confirmed_at TIMESTAMPTZ,
+      lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       password_hash TEXT,
       role TEXT NOT NULL DEFAULT 'owner',
       status TEXT NOT NULL DEFAULT 'active',
@@ -85,6 +87,8 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS sms_opt_in_status TEXT NOT NULL DEFAULT 'not_requested';`);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS sms_opt_in_requested_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS sms_opt_in_confirmed_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS calls (
@@ -212,9 +216,17 @@ export async function ensureTables(pool) {
       tenant_key TEXT PRIMARY KEY,
       timezone TEXT DEFAULT 'America/Los_Angeles',
       notes TEXT,
+      lead_alerts_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      lead_alert_email_include_transcript BOOLEAN NOT NULL DEFAULT TRUE,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alerts_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_email_include_transcript BOOLEAN NOT NULL DEFAULT TRUE;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_intake (
@@ -478,6 +490,24 @@ export async function ensureTables(pool) {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS lead_notification_deliveries (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      call_sid TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      destination TEXT NOT NULL,
+      event_type TEXT NOT NULL DEFAULT 'new_lead',
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempted_at TIMESTAMPTZ,
+      delivered_at TIMESTAMPTZ,
+      last_error_code TEXT,
+      last_error_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS provisioning_jobs (
       id BIGSERIAL PRIMARY KEY,
       tenant_key TEXT NOT NULL,
@@ -544,6 +574,8 @@ export async function ensureTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS billing_lifecycle_events_tenant_created_idx ON billing_lifecycle_events (tenant_key, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS notification_channel_health_tenant_channel_idx ON notification_channel_health (tenant_key, channel, updated_at DESC);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS notification_channel_health_unique_destination_idx ON notification_channel_health (tenant_key, channel, destination);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS lead_notification_deliveries_tenant_call_idx ON lead_notification_deliveries (tenant_key, call_sid, updated_at DESC);`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS lead_notification_deliveries_unique_destination_idx ON lead_notification_deliveries (tenant_key, call_sid, channel, destination, event_type);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS provisioning_jobs_tenant_updated_idx ON provisioning_jobs (tenant_key, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS provisioning_jobs_stage_status_idx ON provisioning_jobs (stage, status, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS incidents_tenant_created_idx ON incidents (tenant_key, created_at DESC);`);

@@ -18,6 +18,10 @@ export default function SettingsPage() {
   const [tenant, setTenant] = useState({ name: '-', plan: '-', data_region: '-' });
   const [timezone, setTimezone] = useState('America/Los_Angeles');
   const [notes, setNotes] = useState('');
+  const [leadAlertsEnabled, setLeadAlertsEnabled] = useState(false);
+  const [leadAlertSmsEnabled, setLeadAlertSmsEnabled] = useState(false);
+  const [leadAlertEmailEnabled, setLeadAlertEmailEnabled] = useState(false);
+  const [leadAlertEmailIncludeTranscript, setLeadAlertEmailIncludeTranscript] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState({ message: 'Loading account settings...', tone: 'warn' });
@@ -36,6 +40,14 @@ export default function SettingsPage() {
         setTenant(data.tenant || { name: '-', plan: '-', data_region: '-' });
         setTimezone(data.settings?.timezone || 'America/Los_Angeles');
         setNotes(data.settings?.notes || '');
+        setLeadAlertsEnabled(Boolean(data.settings?.lead_alerts_enabled));
+        setLeadAlertSmsEnabled(Boolean(data.settings?.lead_alert_sms_enabled));
+        setLeadAlertEmailEnabled(Boolean(data.settings?.lead_alert_email_enabled));
+        setLeadAlertEmailIncludeTranscript(
+          data.settings?.lead_alert_email_include_transcript === undefined
+            ? true
+            : Boolean(data.settings?.lead_alert_email_include_transcript)
+        );
         setStatus({ message: 'Account settings loaded.', tone: 'ok' });
         setLoading(false);
       })
@@ -55,7 +67,14 @@ export default function SettingsPage() {
     const resp = await fetch('/api/v1/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ timezone, notes })
+      body: JSON.stringify({
+        timezone,
+        notes,
+        leadAlertsEnabled,
+        leadAlertSmsEnabled,
+        leadAlertEmailEnabled,
+        leadAlertEmailIncludeTranscript
+      })
     });
     setSaving(false);
     if (!resp.ok) {
@@ -110,12 +129,72 @@ export default function SettingsPage() {
               <Button variant="outline" type="button" onClick={loadSettings} disabled={saving}>Reload</Button>
             </div>
           </div>
+
+          <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+            <h2 className="mt-0 text-lg font-semibold">New Lead Notifications</h2>
+            <div className="grid gap-3 text-sm">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={leadAlertsEnabled}
+                  onChange={(event) => setLeadAlertsEnabled(event.target.checked)}
+                />
+                <div>
+                  <div className="font-medium text-slate-900">Enable new lead notifications</div>
+                  <div className="text-slate-500">Turn on outbound alerts when a new call lead is captured.</div>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={leadAlertSmsEnabled}
+                  onChange={(event) => setLeadAlertSmsEnabled(event.target.checked)}
+                  disabled={!leadAlertsEnabled}
+                />
+                <div>
+                  <div className="font-medium text-slate-900">Send SMS summaries</div>
+                  <div className="text-slate-500">Text recipients a short lead summary with contact details.</div>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={leadAlertEmailEnabled}
+                  onChange={(event) => setLeadAlertEmailEnabled(event.target.checked)}
+                  disabled={!leadAlertsEnabled}
+                />
+                <div>
+                  <div className="font-medium text-slate-900">Send email notifications</div>
+                  <div className="text-slate-500">Email recipients the lead summary plus additional context from the call.</div>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={leadAlertEmailIncludeTranscript}
+                  onChange={(event) => setLeadAlertEmailIncludeTranscript(event.target.checked)}
+                  disabled={!leadAlertsEnabled || !leadAlertEmailEnabled}
+                />
+                <div>
+                  <div className="font-medium text-slate-900">Include transcript in email</div>
+                  <div className="text-slate-500">Attach the full transcript to the lead email for follow-up review.</div>
+                </div>
+              </label>
+            </div>
+            <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              Choose who receives these alerts on the Team page. SMS still requires each recipient to opt in by text.
+            </div>
+          </div>
         </div>
 
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <h2 className="mt-0 text-lg font-semibold">Help</h2>
           <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
             <li>Use timezone and notes to keep routing and handoff behavior consistent.</li>
+            <li>Lead alerts only send to team users you enable as recipients.</li>
             <li>If region or plan needs to change, contact support.</li>
             <li>Save changes before leaving this page.</li>
           </ul>

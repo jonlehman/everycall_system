@@ -93,6 +93,25 @@ export default function TeamPage() {
     loadUsers();
   };
 
+  const updateLeadAlerts = async (id, { leadAlertSmsEnabled, leadAlertEmailEnabled }) => {
+    const resp = await fetch('/api/v1/tenant/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'update_lead_alerts',
+        id,
+        leadAlertSmsEnabled,
+        leadAlertEmailEnabled
+      })
+    });
+    if (!resp.ok) {
+      setStatus({ message: 'Lead alert update failed.', tone: 'bad' });
+      return;
+    }
+    setStatus({ message: 'Lead alert settings updated.', tone: 'ok' });
+    loadUsers();
+  };
+
   const deleteUser = async (id) => {
     if (!window.confirm('Delete this user?')) return;
     const resp = await fetch(`/api/v1/tenant/users?id=${id}`, { method: 'DELETE' });
@@ -145,7 +164,9 @@ export default function TeamPage() {
     phone: user.phone_number || '',
     role: user.role,
     status: user.status,
-    smsOptIn: user.sms_opt_in_status || 'not_requested'
+    smsOptIn: user.sms_opt_in_status || 'not_requested',
+    leadAlertSmsEnabled: Boolean(user.lead_alert_sms_enabled),
+    leadAlertEmailEnabled: Boolean(user.lead_alert_email_enabled)
   })), [users]);
 
   const columns = [
@@ -171,6 +192,28 @@ export default function TeamPage() {
       )
     },
     {
+      field: 'leadAlertEmailEnabled',
+      headerName: 'Lead Email',
+      flex: 0.65,
+      minWidth: 120,
+      renderCell: (params) => (
+        <span className={`badge ${params.value ? 'ok' : 'bad'}`}>
+          {params.value ? 'enabled' : 'off'}
+        </span>
+      )
+    },
+    {
+      field: 'leadAlertSmsEnabled',
+      headerName: 'Lead SMS',
+      flex: 0.65,
+      minWidth: 120,
+      renderCell: (params) => (
+        <span className={`badge ${params.value ? 'ok' : 'bad'}`}>
+          {params.value ? 'enabled' : 'off'}
+        </span>
+      )
+    },
+    {
       field: 'status',
       headerName: 'Status',
       flex: 0.6,
@@ -186,7 +229,7 @@ export default function TeamPage() {
       filterable: false,
       align: 'right',
       headerAlign: 'right',
-      minWidth: 260,
+      minWidth: 420,
       renderCell: (params) => (
         <div className="flex w-full justify-end gap-1.5">
           <button
@@ -205,6 +248,25 @@ export default function TeamPage() {
             disabled={!params.row.phone || params.row.smsOptIn === 'opted_in'}
           >
             {params.row.smsOptIn === 'opted_in' ? 'SMS Enabled' : 'Request SMS'}
+          </button>
+          <button
+            className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted"
+            onClick={() => updateLeadAlerts(params.row.id, {
+              leadAlertSmsEnabled: params.row.leadAlertSmsEnabled,
+              leadAlertEmailEnabled: !params.row.leadAlertEmailEnabled
+            })}
+          >
+            {params.row.leadAlertEmailEnabled ? 'Lead Email Off' : 'Lead Email On'}
+          </button>
+          <button
+            className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+            onClick={() => updateLeadAlerts(params.row.id, {
+              leadAlertSmsEnabled: !params.row.leadAlertSmsEnabled,
+              leadAlertEmailEnabled: params.row.leadAlertEmailEnabled
+            })}
+            disabled={!params.row.phone}
+          >
+            {params.row.leadAlertSmsEnabled ? 'Lead SMS Off' : 'Lead SMS On'}
           </button>
           {params.row.status === 'invited' ? (
             <button className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted" onClick={() => resendInvite(params.row.id)}>Resend</button>
@@ -310,7 +372,8 @@ export default function TeamPage() {
           <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
             <li>Invite only trusted users who need access to calls and settings.</li>
             <li>Use role and status to control who can make changes.</li>
-            <li>SMS alerts require opt-in by replying YES to a request text.</li>
+            <li>Lead SMS requires both a mobile number and SMS opt-in by replying YES.</li>
+            <li>Lead email and lead SMS switches decide who receives new lead notifications.</li>
           </ul>
         </div>
       </div>

@@ -1,8 +1,7 @@
 import { ensureTables, getPool } from "../_lib/db.js";
 import { getSession, requireSession, resolveTenantKey } from "../_lib/auth.js";
-import { buildCallSummarySms, getSharedSmsNumber } from "../_lib/alerts.js";
-import { sendTelnyxSms } from "../_lib/telnyx.js";
 import { requireTenantBillingAccess } from "../_lib/billing.js";
+import { sendLeadNotifications } from "../_lib/leadNotifications.js";
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
 const openAiModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
@@ -269,31 +268,14 @@ export default async function handler(req, res) {
           );
         }
 
-        const fromNumber = await getSharedSmsNumber(pool);
-        if (fromNumber) {
-          const tenantRow = await pool.query(
-            `SELECT name FROM tenants WHERE tenant_key = $1 LIMIT 1`,
-            [tenantKey]
-          );
-          const tenantName = tenantRow.rows[0]?.name || tenantKey;
-          const messageText = buildCallSummarySms({
-            tenantName,
-            caller: extracted?.caller_name || extracted?.caller || null,
-            callbackNumber: extracted?.callback_number || extracted?.callback || null,
-            timeRequested: extracted?.preferred_time || extracted?.time_requested || null
+        try {
+          await sendLeadNotifications(pool, { tenantKey, callSid: callId });
+        } catch (notificationErr) {
+          console.error("lead_notifications_failed", {
+            tenantKey,
+            callId,
+            message: notificationErr?.message || "unknown"
           });
-          const recipients = await pool.query(
-            `SELECT phone_number
-             FROM tenant_users
-             WHERE tenant_key = $1
-               AND status = 'active'
-               AND phone_number IS NOT NULL
-               AND sms_opt_in_status = 'opted_in'`,
-            [tenantKey]
-          );
-          for (const user of recipients.rows) {
-            await sendTelnyxSms({ from: fromNumber, to: user.phone_number, text: messageText });
-          }
         }
 
         return res.status(200).json({ ok: true });

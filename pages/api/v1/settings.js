@@ -29,7 +29,15 @@ export default async function handler(req, res) {
         [tenantKey]
       );
       const settings = await pool.query(
-        `SELECT tenant_key, timezone, notes FROM tenant_settings WHERE tenant_key = $1`,
+        `SELECT tenant_key,
+                timezone,
+                notes,
+                lead_alerts_enabled,
+                lead_alert_sms_enabled,
+                lead_alert_email_enabled,
+                lead_alert_email_include_transcript
+         FROM tenant_settings
+         WHERE tenant_key = $1`,
         [tenantKey]
       );
       return res.status(200).json({
@@ -43,16 +51,45 @@ export default async function handler(req, res) {
       const body = typeof req.body === "object" && req.body ? req.body : {};
       const timezone = String(body.timezone || "America/Los_Angeles");
       const notes = String(body.notes || "");
+      const leadAlertsEnabled = Boolean(body.leadAlertsEnabled);
+      const leadAlertSmsEnabled = Boolean(body.leadAlertSmsEnabled);
+      const leadAlertEmailEnabled = Boolean(body.leadAlertEmailEnabled);
+      const leadAlertEmailIncludeTranscript = body.leadAlertEmailIncludeTranscript === undefined
+        ? true
+        : Boolean(body.leadAlertEmailIncludeTranscript);
       if (!timezone.trim()) {
         return fail(400, "invalid_timezone", "Timezone is required.");
       }
 
       await pool.query(
-        `INSERT INTO tenant_settings (tenant_key, timezone, notes)
-         VALUES ($1, $2, $3)
+        `INSERT INTO tenant_settings (
+           tenant_key,
+           timezone,
+           notes,
+           lead_alerts_enabled,
+           lead_alert_sms_enabled,
+           lead_alert_email_enabled,
+           lead_alert_email_include_transcript
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (tenant_key)
-         DO UPDATE SET timezone = EXCLUDED.timezone, notes = EXCLUDED.notes, updated_at = NOW()`,
-        [tenantKey, timezone, notes]
+         DO UPDATE SET
+           timezone = EXCLUDED.timezone,
+           notes = EXCLUDED.notes,
+           lead_alerts_enabled = EXCLUDED.lead_alerts_enabled,
+           lead_alert_sms_enabled = EXCLUDED.lead_alert_sms_enabled,
+           lead_alert_email_enabled = EXCLUDED.lead_alert_email_enabled,
+           lead_alert_email_include_transcript = EXCLUDED.lead_alert_email_include_transcript,
+           updated_at = NOW()`,
+        [
+          tenantKey,
+          timezone,
+          notes,
+          leadAlertsEnabled,
+          leadAlertSmsEnabled,
+          leadAlertEmailEnabled,
+          leadAlertEmailIncludeTranscript
+        ]
       );
 
       return res.status(200).json({ ok: true });

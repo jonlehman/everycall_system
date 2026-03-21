@@ -63,9 +63,9 @@ async function updateChannelHealth(pool, {
        updated_at
      )
      VALUES (
-       $1, $2, $3, $4, $5,
-       CASE WHEN $4 = 'functioning' THEN $5 ELSE NULL END,
-       CASE WHEN $4 = 'non_functioning' THEN $5 ELSE NULL END,
+       $1, $2, $3, $4, $5::timestamptz,
+       CASE WHEN $4 = 'functioning' THEN $5::timestamptz ELSE NULL END,
+       CASE WHEN $4 = 'non_functioning' THEN $5::timestamptz ELSE NULL END,
        $6, $7, NOW()
      )
      ON CONFLICT (tenant_key, channel, destination)

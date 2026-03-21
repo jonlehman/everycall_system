@@ -82,7 +82,8 @@ export default async function handler(req, res) {
 
     if (req.method === "GET") {
       const rows = await pool.query(
-        `SELECT id, name, email, role, status, phone_number, sms_opt_in_status, sms_opt_in_requested_at, sms_opt_in_confirmed_at
+        `SELECT id, name, email, role, status, phone_number, sms_opt_in_status, sms_opt_in_requested_at, sms_opt_in_confirmed_at,
+                lead_alert_sms_enabled, lead_alert_email_enabled
          FROM tenant_users
          WHERE tenant_key = $1
          ORDER BY id ASC`,
@@ -150,6 +151,22 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
+      if (body.action === "update_lead_alerts") {
+        const id = Number(body.id || 0);
+        if (!id) {
+          return fail(400, "missing_fields", "User id is required.");
+        }
+        await pool.query(
+          `UPDATE tenant_users
+           SET lead_alert_sms_enabled = $2,
+               lead_alert_email_enabled = $3,
+               updated_at = NOW()
+           WHERE tenant_key = $1 AND id = $4`,
+          [tenantKey, Boolean(body.leadAlertSmsEnabled), Boolean(body.leadAlertEmailEnabled), id]
+        );
+        return res.status(200).json({ ok: true });
+      }
+
       if (body.action === "sms_opt_in_request") {
         const id = Number(body.id || 0);
         if (!id) {
@@ -173,7 +190,7 @@ export default async function handler(req, res) {
         if (!fromNumber) {
           return fail(500, "sms_number_missing", "Shared SMS number is not configured.");
         }
-        const text = "EveryCall alerts: Reply YES to opt in for appointment alerts. Reply STOP to opt out.";
+        const text = "EveryCall alerts: Reply YES to opt in for new lead text alerts. Reply STOP to opt out.";
         await sendTelnyxSms({ from: fromNumber, to: user.phone_number, text });
         await pool.query(
           `UPDATE tenant_users
@@ -189,6 +206,8 @@ export default async function handler(req, res) {
       const name = String(body.name || "").trim();
       const email = String(body.email || "").trim();
       const phoneNumber = normalizePhoneNumber(body.phoneNumber);
+      const leadAlertSmsEnabled = Boolean(body.leadAlertSmsEnabled);
+      const leadAlertEmailEnabled = Boolean(body.leadAlertEmailEnabled);
       if (!name || !email) {
         return fail(400, "missing_fields", "Name and email are required.");
       }
@@ -201,15 +220,26 @@ export default async function handler(req, res) {
         return fail(400, "invalid_status", "Invalid user status.");
       }
       await pool.query(
-        `INSERT INTO tenant_users (tenant_key, name, email, phone_number, role, status)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO tenant_users (
+           tenant_key,
+           name,
+           email,
+           phone_number,
+           role,
+           status,
+           lead_alert_sms_enabled,
+           lead_alert_email_enabled
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (email)
          DO UPDATE SET tenant_key = EXCLUDED.tenant_key,
                        name = EXCLUDED.name,
                        phone_number = EXCLUDED.phone_number,
                        role = EXCLUDED.role,
-                       status = EXCLUDED.status`,
-        [tenantKey, name, email, phoneNumber || null, role, status]
+                       status = EXCLUDED.status,
+                       lead_alert_sms_enabled = EXCLUDED.lead_alert_sms_enabled,
+                       lead_alert_email_enabled = EXCLUDED.lead_alert_email_enabled`,
+        [tenantKey, name, email, phoneNumber || null, role, status, leadAlertSmsEnabled, leadAlertEmailEnabled]
       );
       try {
         await sendInviteEmail({ tenantKey, name, email, role });

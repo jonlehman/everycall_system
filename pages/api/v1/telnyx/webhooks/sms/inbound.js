@@ -67,7 +67,7 @@ export default async function handler(req, res) {
           await sendTelnyxSms({
             from: fromNumber,
             to: from,
-            text: "You're opted in for EveryCall alerts. Reply STOP to opt out."
+            text: "You're opted in for EveryCall new lead alerts. Reply STOP to opt out."
           });
         }
       } else {
@@ -76,7 +76,7 @@ export default async function handler(req, res) {
           await sendTelnyxSms({
             from: fromNumber,
             to: from,
-            text: "You are opted out of EveryCall alerts. Reply YES to opt back in."
+            text: "You are opted out of EveryCall new lead alerts. Reply YES to opt back in."
           });
         }
       }
