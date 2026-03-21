@@ -2078,7 +2078,7 @@ async function replaceTopicRows(db, buildInfo, topicRows) {
 
 async function runSourceSummaryStage(db, buildInfo, sourceRecords, buildModel, warnings) {
   const existing = await loadExistingSourceSummaries(db, buildInfo);
-  const pendingRecords = sourceRecords.filter((record) => !isCompletedStatus(existing.get(record.sourceRefId)?.status));
+  const pendingRecords = sourceRecords.filter((record) => !isUsableStatus(existing.get(record.sourceRefId)?.status));
   const summaryPromptItems = pendingRecords.map((record) => {
     const promptItem = buildSummaryBatchPromptItem(record);
     return {
@@ -2295,7 +2295,7 @@ async function runTopicInventoryStage(db, buildInfo, sourceRecords, sourceSummar
 
 async function runSourceArtifactStage(db, buildInfo, sourceRecords, topicRows, warnings, buildModel) {
   const existing = await loadExistingSourceArtifacts(db, buildInfo);
-  const pendingRecords = sourceRecords.filter((record) => !isCompletedStatus(existing.get(record.sourceRefId)?.status));
+  const pendingRecords = sourceRecords.filter((record) => !isUsableStatus(existing.get(record.sourceRefId)?.status));
   const topicInventoryPrompt = topicInventoryToPromptShape(topicRows);
   const artifactPromptItems = pendingRecords.map((record) => {
     const promptItem = buildArtifactBatchPromptItem(record);

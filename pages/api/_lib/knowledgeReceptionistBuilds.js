@@ -3233,7 +3233,8 @@ function batchStageProgress(batchStatsByStage, stage) {
     total: toNumber(stats.total_batches),
     completed,
     running: toNumber(stats.running_batches),
-    failed: toNumber(stats.failed_batches)
+    failed: toNumber(stats.failed_batches),
+    latestRunningAt: normalizeText(stats.latest_running_at)
   };
 }
 
@@ -3251,6 +3252,18 @@ function rowStageProgress(rowStatsByStage, stage) {
 function ratioPercent(done, total) {
   if (total <= 0) return 0;
   return Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+}
+
+function timestampMs(value) {
+  const parsed = Date.parse(normalizeText(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function latestRunningStage(stageEntries = []) {
+  return stageEntries
+    .filter((entry) => entry?.stats?.running > 0 && timestampMs(entry?.stats?.latestRunningAt) > 0)
+    .sort((left, right) => timestampMs(right.stats.latestRunningAt) - timestampMs(left.stats.latestRunningAt))[0]?.key
+    || "";
 }
 
 function buildKnowledgeProgress(buildRow, batchStatsByStage = {}, rowStatsByStage = {}, persistedArtifactStats = {}) {
@@ -3314,6 +3327,13 @@ function buildKnowledgeProgress(buildRow, batchStatsByStage = {}, rowStatsByStag
   const artifactDone = totalArtifactSources > 0 && completedArtifactSources >= totalArtifactSources;
   const embeddingDone = embeddedCards > 0 || embeddedFacts > 0;
   const finalPersistCountsReady = (cards > 0 || facts > 0 || persistedCards > 0 || persistedFacts > 0 || persistedCardVectors > 0 || persistedFactVectors > 0);
+  const liveAnalysisStage = !finalPersistCountsReady && !embeddingDone
+    ? latestRunningStage([
+        { key: "source_summary", stats: summaryBatches },
+        { key: "topic_inventory", stats: topicBatches },
+        { key: "source_artifact", stats: artifactBatches }
+      ])
+    : "";
   const stageDefinitions = [
     { key: "discovering", label: "Discover" },
     { key: "persisting", label: "Persist" },
@@ -3528,6 +3548,69 @@ function buildKnowledgeProgress(buildRow, batchStatsByStage = {}, rowStatsByStag
     });
   }
 
+  if (liveAnalysisStage === "source_summary") {
+    const summaryPercent = totalSummarySources > 0
+      ? ratioPercent(completedSummarySources, totalSummarySources)
+      : ratioPercent(summaryBatches.completed, summaryBatches.total || 1);
+    return withStageMeta({
+      phase: "source_summary",
+      label: "Summarizing Sources",
+      summary: totalSummarySources > 0
+        ? `${completedSummarySources} of ${totalSummarySources} sources summarized.`
+        : `${summaryBatches.completed} of ${summaryBatches.total} summary batches completed.`,
+      percent: Math.max(40, Math.min(65, 40 + Math.round(summaryPercent * 0.25))),
+      active: true,
+      batches: summaryBatches,
+      details: [
+        `${summaryRows.completedOnly} completed`,
+        `${summaryRows.fallback} fallback`,
+        `${summaryBatches.running} batches running`
+      ].filter(Boolean)
+    });
+  }
+
+  if (liveAnalysisStage === "topic_inventory") {
+    const topicPercent = totalTopicWindows > 0
+      ? ratioPercent(completedTopicWindows, totalTopicWindows)
+      : ratioPercent(topicBatches.completed, topicBatches.total || 1);
+    return withStageMeta({
+      phase: "topic_inventory",
+      label: "Building Topic Inventory",
+      summary: totalTopicWindows > 0
+        ? `${completedTopicWindows} of ${totalTopicWindows} topic windows completed.`
+        : `${topicBatches.completed} of ${topicBatches.total} topic windows completed.`,
+      percent: Math.max(65, Math.min(75, 65 + Math.round(topicPercent * 0.1))),
+      active: true,
+      batches: topicBatches,
+      details: [
+        `${topicBatches.running} windows running`,
+        `${toNumber(topicInventoryStage.topic_count)} topics so far`,
+        `${toNumber(topicInventoryStage.subtopic_count)} subtopics so far`
+      ].filter(Boolean)
+    });
+  }
+
+  if (liveAnalysisStage === "source_artifact") {
+    const artifactPercent = totalArtifactSources > 0
+      ? ratioPercent(completedArtifactSources, totalArtifactSources)
+      : ratioPercent(artifactBatches.completed, artifactBatches.total || 1);
+    return withStageMeta({
+      phase: "source_artifact",
+      label: "Extracting Cards And Facts",
+      summary: totalArtifactSources > 0
+        ? `${completedArtifactSources} of ${totalArtifactSources} sources compiled into artifacts.`
+        : `${artifactBatches.completed} of ${artifactBatches.total} artifact batches completed.`,
+      percent: Math.max(75, Math.min(90, 75 + Math.round(artifactPercent * 0.15))),
+      active: true,
+      batches: artifactBatches,
+      details: [
+        `${artifactRows.completedOnly} completed`,
+        `${artifactRows.fallback} fallback`,
+        `${artifactBatches.running} batches running`
+      ].filter(Boolean)
+    });
+  }
+
   if (!embeddingDone) {
     return withStageMeta({
       phase: "embedding",
@@ -3586,7 +3669,8 @@ async function loadKnowledgeBuildBatchStats(db, tenantKey) {
             COUNT(*) FILTER (WHERE status = 'completed')::int AS completed_batches,
             COUNT(*) FILTER (WHERE status = 'fallback')::int AS fallback_batches,
             COUNT(*) FILTER (WHERE status = 'running')::int AS running_batches,
-            COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_batches
+            COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_batches,
+            MAX(updated_at) FILTER (WHERE status = 'running') AS latest_running_at
      FROM knowledge_build_analysis_batches
      WHERE tenant_key = $1
      GROUP BY build_id, stage`,
