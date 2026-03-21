@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import { Button } from '../../../components/ui/button';
 import ClientPage from '../_components/ClientPage';
+import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
 export default function TeamPage() {
   const [users, setUsers] = useState([]);
@@ -150,7 +151,13 @@ export default function TeamPage() {
   const columns = [
     { field: 'name', headerName: 'Name', flex: 1, minWidth: 140 },
     { field: 'email', headerName: 'Email', flex: 1.2, minWidth: 200 },
-    { field: 'phone', headerName: 'Phone', flex: 0.9, minWidth: 150 },
+    {
+      field: 'phone',
+      headerName: 'Phone',
+      flex: 0.9,
+      minWidth: 150,
+      renderCell: (params) => formatPhoneDisplay(params.value) || ''
+    },
     { field: 'role', headerName: 'Role', flex: 0.6, minWidth: 120 },
     {
       field: 'smsOptIn',
@@ -185,7 +192,7 @@ export default function TeamPage() {
           <button
             className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted"
             onClick={() => {
-              const phone = window.prompt('Enter mobile number (E.164 recommended):', params.row.phone || '');
+              const phone = window.prompt('Enter mobile number (E.164 recommended):', formatPhoneDisplay(params.row.phone) || '');
               if (!phone) return;
               updatePhone(params.row.id, phone);
             }}

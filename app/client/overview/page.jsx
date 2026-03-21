@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import Link from 'next/link';
 import { buttonVariants } from '../../../components/ui/button';
+import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 import { cn } from '../../../lib/utils';
 import ClientPage from '../_components/ClientPage';
 
@@ -38,7 +39,7 @@ export default function OverviewPage() {
   const rows = recentCalls.map((call, idx) => ({
     id: call.call_sid || idx,
     time: new Date(call.created_at).toLocaleTimeString(),
-    caller: call.from_number || '-',
+    caller: formatPhoneDisplay(call.from_number) || '-',
     status: call.urgency === 'high' ? 'Urgent' : call.status || 'Handled',
     statusTone: call.urgency === 'high' ? 'warn' : call.status === 'error' ? 'bad' : 'ok',
     summary: call.summary || '-'

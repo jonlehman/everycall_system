@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '../../../../components/ui/button';
+import { formatPhoneDisplay } from '../../../../lib/phoneDisplay';
 
 const FIELD_SECTIONS = [
   {
@@ -193,7 +194,7 @@ function UserCard({ user }) {
       <div className="font-medium text-slate-900">{user.name || user.email}</div>
       <div className="text-slate-500">{user.email}</div>
       <div className="mt-1 text-xs text-slate-500">
-        {user.role || 'user'} · {user.status || 'active'}{user.phone_number ? ` · ${user.phone_number}` : ''}
+        {user.role || 'user'} · {user.status || 'active'}{user.phone_number ? ` · ${formatPhoneDisplay(user.phone_number)}` : ''}
       </div>
     </div>
   );
@@ -319,7 +320,7 @@ export default function TenantManagePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      setStatus(data?.ok ? `Provisioned ${data.phoneNumber}.` : (data?.message || data?.error || 'Provisioning failed.'));
+      setStatus(data?.ok ? `Provisioned ${formatPhoneDisplay(data.phoneNumber)}.` : (data?.message || data?.error || 'Provisioning failed.'));
       await loadTenant();
     } catch (error) {
       setStatus(error?.message || 'Provisioning failed.');
@@ -330,7 +331,7 @@ export default function TenantManagePage() {
 
   const deprovisionVoiceNumber = async () => {
     if (!tenant?.telnyx_voice_number) return;
-    const confirmed = window.confirm(`Delete voice number ${tenant.telnyx_voice_number}?`);
+    const confirmed = window.confirm(`Delete voice number ${formatPhoneDisplay(tenant.telnyx_voice_number)}?`);
     if (!confirmed) return;
     setDeprovisionBusy(true);
     setStatus('Deprovisioning voice number...');

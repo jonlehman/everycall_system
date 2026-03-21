@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { DataGrid } from '@mui/x-data-grid';
 import { buttonVariants } from '../../../components/ui/button';
+import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 import { cn } from '../../../lib/utils';
 
 export default function TenantsPage() {
@@ -25,7 +26,7 @@ export default function TenantsPage() {
     id: t.tenant_key || idx,
     tenant: t.name,
     users: t.user_count || 0,
-    phone: t.primary_number || '-',
+    phone: t.primary_number || '',
     status: t.status,
     region: t.data_region,
     key: t.tenant_key
@@ -34,7 +35,13 @@ export default function TenantsPage() {
   const columns = [
     { field: 'tenant', headerName: 'Tenant', flex: 1.2, minWidth: 180 },
     { field: 'users', headerName: 'Users', flex: 0.4, minWidth: 90 },
-    { field: 'phone', headerName: 'Phone', flex: 0.8, minWidth: 140 },
+    {
+      field: 'phone',
+      headerName: 'Phone',
+      flex: 0.8,
+      minWidth: 140,
+      renderCell: (params) => formatPhoneDisplay(params.value) || '-'
+    },
     {
       field: 'status',
       headerName: 'Status',

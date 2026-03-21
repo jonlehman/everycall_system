@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import { Button } from '../../../components/ui/button';
+import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
 function formatMoney(value) {
   if (typeof value !== 'number' || Number.isNaN(value)) return 'Unknown';
@@ -132,7 +133,7 @@ export default function AdminPhoneNumbersPage() {
       submitting: true,
       error: ''
     }));
-    setStatus(`Assigning ${assignDialog.phoneNumber}...`);
+    setStatus(`Assigning ${formatPhoneDisplay(assignDialog.phoneNumber)}...`);
     try {
       const data = await fetchJson('/api/v1/admin/phone-numbers/assign', {
         method: 'POST',
@@ -156,8 +157,8 @@ export default function AdminPhoneNumbersPage() {
       await loadReport({ preserveStatus: true });
       setStatus(
         data.routingUpdated
-          ? `Assigned ${data.phoneNumber} to ${assignedTenant?.tenantName || data.tenantKey} after updating Telnyx routing.`
-          : `Assigned ${data.phoneNumber} to ${assignedTenant?.tenantName || data.tenantKey}.`
+          ? `Assigned ${formatPhoneDisplay(data.phoneNumber)} to ${assignedTenant?.tenantName || data.tenantKey} after updating Telnyx routing.`
+          : `Assigned ${formatPhoneDisplay(data.phoneNumber)} to ${assignedTenant?.tenantName || data.tenantKey}.`
       );
     } catch {
       setAssignDialog((current) => ({
@@ -170,7 +171,13 @@ export default function AdminPhoneNumbersPage() {
   };
 
   const columns = [
-    { field: 'phoneNumber', headerName: 'Phone Number', flex: 0.9, minWidth: 160 },
+    {
+      field: 'phoneNumber',
+      headerName: 'Phone Number',
+      flex: 0.9,
+      minWidth: 160,
+      renderCell: (params) => formatPhoneDisplay(params.value) || ''
+    },
     { field: 'assignmentStatus', headerName: 'Assignment', flex: 0.8, minWidth: 140 },
     { field: 'telnyxStatus', headerName: 'Provider Status', flex: 0.8, minWidth: 140 },
     { field: 'tenant', headerName: 'Tenant', flex: 1, minWidth: 180 },
@@ -269,7 +276,7 @@ export default function AdminPhoneNumbersPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="m-0 text-lg font-semibold tracking-tight">Assign Phone Number</h2>
-                <div className="mt-1 text-sm text-slate-500">{assignDialog.phoneNumber}</div>
+                <div className="mt-1 text-sm text-slate-500">{formatPhoneDisplay(assignDialog.phoneNumber)}</div>
               </div>
               <Button variant="ghost" size="sm" onClick={closeAssignDialog} disabled={assignDialog.submitting}>Close</Button>
             </div>
