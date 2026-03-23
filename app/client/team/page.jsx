@@ -6,16 +6,23 @@ import { Button } from '../../../components/ui/button';
 import ClientPage from '../_components/ClientPage';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
+const EMPTY_FORM = {
+  name: '',
+  email: '',
+  phoneNumber: '',
+  role: 'member',
+  status: 'active',
+  leadAlertEmailEnabled: false,
+  leadAlertSmsEnabled: false
+};
+
 export default function TeamPage() {
   const [users, setUsers] = useState([]);
-  const [showInvite, setShowInvite] = useState(false);
-  const [inviteName, setInviteName] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [invitePhone, setInvitePhone] = useState('');
-  const [inviteRole, setInviteRole] = useState('member');
-  const [inviteStatus, setInviteStatus] = useState('active');
+  const [formMode, setFormMode] = useState(null);
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [formState, setFormState] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
-  const [savingInvite, setSavingInvite] = useState(false);
+  const [savingForm, setSavingForm] = useState(false);
   const [status, setStatus] = useState({ message: 'Loading team users...', tone: 'warn' });
 
   const loadUsers = () => {
@@ -42,18 +49,34 @@ export default function TeamPage() {
     loadUsers();
   }, []);
 
-  const updateStatus = async (id, nextStatus) => {
-    const resp = await fetch('/api/v1/tenant/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'status', id, status: nextStatus })
+  const closeForm = () => {
+    setFormMode(null);
+    setEditingUserId(null);
+    setFormState(EMPTY_FORM);
+  };
+
+  const openCreateForm = () => {
+    setFormMode('create');
+    setEditingUserId(null);
+    setFormState(EMPTY_FORM);
+  };
+
+  const openEditForm = (row) => {
+    setFormMode('edit');
+    setEditingUserId(row.id);
+    setFormState({
+      name: row.name || '',
+      email: row.email || '',
+      phoneNumber: row.phone || '',
+      role: row.role || 'member',
+      status: row.status || 'active',
+      leadAlertEmailEnabled: Boolean(row.leadAlertEmailEnabled),
+      leadAlertSmsEnabled: Boolean(row.leadAlertSmsEnabled)
     });
-    if (!resp.ok) {
-      setStatus({ message: 'Status update failed.', tone: 'bad' });
-      return;
-    }
-    setStatus({ message: 'User status updated.', tone: 'ok' });
-    loadUsers();
+  };
+
+  const updateFormField = (field, value) => {
+    setFormState((current) => ({ ...current, [field]: value }));
   };
 
   const resendInvite = async (id) => {
@@ -65,20 +88,6 @@ export default function TeamPage() {
     setStatus(resp.ok ? { message: 'Invite resent.', tone: 'ok' } : { message: 'Invite resend failed.', tone: 'bad' });
   };
 
-  const updatePhone = async (id, phoneNumber) => {
-    const resp = await fetch('/api/v1/tenant/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'update_phone', id, phoneNumber })
-    });
-    if (!resp.ok) {
-      setStatus({ message: 'Phone update failed.', tone: 'bad' });
-      return;
-    }
-    setStatus({ message: 'Phone number updated.', tone: 'ok' });
-    loadUsers();
-  };
-
   const requestSmsOptIn = async (id) => {
     const resp = await fetch('/api/v1/tenant/users', {
       method: 'POST',
@@ -86,29 +95,11 @@ export default function TeamPage() {
       body: JSON.stringify({ action: 'sms_opt_in_request', id })
     });
     if (!resp.ok) {
-      setStatus({ message: 'SMS opt-in request failed.', tone: 'bad' });
+      const body = await resp.json().catch(() => null);
+      setStatus({ message: body?.message || 'SMS opt-in request failed.', tone: 'bad' });
       return;
     }
     setStatus({ message: 'SMS opt-in request sent.', tone: 'ok' });
-    loadUsers();
-  };
-
-  const updateLeadAlerts = async (id, { leadAlertSmsEnabled, leadAlertEmailEnabled }) => {
-    const resp = await fetch('/api/v1/tenant/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'update_lead_alerts',
-        id,
-        leadAlertSmsEnabled,
-        leadAlertEmailEnabled
-      })
-    });
-    if (!resp.ok) {
-      setStatus({ message: 'Lead alert update failed.', tone: 'bad' });
-      return;
-    }
-    setStatus({ message: 'Lead alert settings updated.', tone: 'ok' });
     loadUsers();
   };
 
@@ -120,40 +111,48 @@ export default function TeamPage() {
       return;
     }
     setStatus({ message: 'User deleted.', tone: 'ok' });
+    if (editingUserId === id) closeForm();
     loadUsers();
   };
 
-  const handleInvite = async (event) => {
+  const saveUser = async (event) => {
     event.preventDefault();
-    if (!inviteName.trim() || !inviteEmail.trim()) {
-      setStatus({ message: 'Name and email are required for invite.', tone: 'bad' });
+    if (!formState.name.trim() || !formState.email.trim()) {
+      setStatus({ message: 'Name and email are required.', tone: 'bad' });
       return;
     }
-    setSavingInvite(true);
-    setStatus({ message: 'Sending invite...', tone: 'warn' });
+
+    const payload = {
+      name: formState.name.trim(),
+      email: formState.email.trim(),
+      phoneNumber: formState.phoneNumber.trim(),
+      role: formState.role,
+      status: formState.status,
+      leadAlertEmailEnabled: Boolean(formState.leadAlertEmailEnabled),
+      leadAlertSmsEnabled: Boolean(formState.leadAlertSmsEnabled)
+    };
+
+    setSavingForm(true);
+    setStatus({ message: formMode === 'edit' ? 'Saving user...' : 'Creating user...', tone: 'warn' });
     const resp = await fetch('/api/v1/tenant/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: inviteName.trim(),
-        email: inviteEmail.trim(),
-        phoneNumber: invitePhone.trim(),
-        role: inviteRole,
-        status: inviteStatus
-      })
+      body: JSON.stringify(
+        formMode === 'edit'
+          ? { action: 'update_user', id: editingUserId, ...payload }
+          : payload
+      )
     });
-    setSavingInvite(false);
+    setSavingForm(false);
+
     if (!resp.ok) {
-      setStatus({ message: 'Invite failed.', tone: 'bad' });
+      const body = await resp.json().catch(() => null);
+      setStatus({ message: body?.message || (formMode === 'edit' ? 'Save failed.' : 'Create failed.'), tone: 'bad' });
       return;
     }
-    setInviteName('');
-    setInviteEmail('');
-    setInvitePhone('');
-    setInviteRole('member');
-    setInviteStatus('active');
-    setShowInvite(false);
-    setStatus({ message: 'Invite sent.', tone: 'ok' });
+
+    setStatus({ message: formMode === 'edit' ? 'User updated.' : 'User created.', tone: 'ok' });
+    closeForm();
     loadUsers();
   };
 
@@ -170,21 +169,21 @@ export default function TeamPage() {
   })), [users]);
 
   const columns = [
-    { field: 'name', headerName: 'Name', flex: 1, minWidth: 140 },
-    { field: 'email', headerName: 'Email', flex: 1.2, minWidth: 200 },
+    { field: 'name', headerName: 'Name', flex: 1, minWidth: 150 },
+    { field: 'email', headerName: 'Email', flex: 1.2, minWidth: 220 },
     {
       field: 'phone',
       headerName: 'Phone',
-      flex: 0.9,
+      flex: 0.8,
       minWidth: 150,
       renderCell: (params) => formatPhoneDisplay(params.value) || ''
     },
-    { field: 'role', headerName: 'Role', flex: 0.6, minWidth: 120 },
+    { field: 'role', headerName: 'Role', flex: 0.6, minWidth: 110 },
     {
       field: 'smsOptIn',
       headerName: 'SMS Opt-In',
       flex: 0.7,
-      minWidth: 140,
+      minWidth: 130,
       renderCell: (params) => (
         <span className={`badge ${params.value === 'opted_in' ? 'ok' : params.value === 'pending' ? 'warn' : 'bad'}`}>
           {params.value}
@@ -195,7 +194,7 @@ export default function TeamPage() {
       field: 'leadAlertEmailEnabled',
       headerName: 'Lead Email',
       flex: 0.65,
-      minWidth: 120,
+      minWidth: 115,
       renderCell: (params) => (
         <span className={`badge ${params.value ? 'ok' : 'bad'}`}>
           {params.value ? 'enabled' : 'off'}
@@ -206,7 +205,7 @@ export default function TeamPage() {
       field: 'leadAlertSmsEnabled',
       headerName: 'Lead SMS',
       flex: 0.65,
-      minWidth: 120,
+      minWidth: 115,
       renderCell: (params) => (
         <span className={`badge ${params.value ? 'ok' : 'bad'}`}>
           {params.value ? 'enabled' : 'off'}
@@ -217,9 +216,11 @@ export default function TeamPage() {
       field: 'status',
       headerName: 'Status',
       flex: 0.6,
-      minWidth: 120,
+      minWidth: 115,
       renderCell: (params) => (
-        <span className={`badge ${params.value === 'active' ? 'ok' : params.value === 'invited' ? 'warn' : 'bad'}`}>{params.value}</span>
+        <span className={`badge ${params.value === 'active' ? 'ok' : params.value === 'invited' ? 'warn' : 'bad'}`}>
+          {params.value}
+        </span>
       )
     },
     {
@@ -229,18 +230,14 @@ export default function TeamPage() {
       filterable: false,
       align: 'right',
       headerAlign: 'right',
-      minWidth: 420,
+      minWidth: 280,
       renderCell: (params) => (
         <div className="flex w-full justify-end gap-1.5">
           <button
             className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted"
-            onClick={() => {
-              const phone = window.prompt('Enter mobile number (E.164 recommended):', formatPhoneDisplay(params.row.phone) || '');
-              if (!phone) return;
-              updatePhone(params.row.id, phone);
-            }}
+            onClick={() => openEditForm(params.row)}
           >
-            Set Phone
+            Edit
           </button>
           <button
             className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
@@ -249,35 +246,20 @@ export default function TeamPage() {
           >
             {params.row.smsOptIn === 'opted_in' ? 'SMS Enabled' : 'Request SMS'}
           </button>
-          <button
-            className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted"
-            onClick={() => updateLeadAlerts(params.row.id, {
-              leadAlertSmsEnabled: params.row.leadAlertSmsEnabled,
-              leadAlertEmailEnabled: !params.row.leadAlertEmailEnabled
-            })}
-          >
-            {params.row.leadAlertEmailEnabled ? 'Lead Email Off' : 'Lead Email On'}
-          </button>
-          <button
-            className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
-            onClick={() => updateLeadAlerts(params.row.id, {
-              leadAlertSmsEnabled: !params.row.leadAlertSmsEnabled,
-              leadAlertEmailEnabled: params.row.leadAlertEmailEnabled
-            })}
-            disabled={!params.row.phone}
-          >
-            {params.row.leadAlertSmsEnabled ? 'Lead SMS Off' : 'Lead SMS On'}
-          </button>
           {params.row.status === 'invited' ? (
-            <button className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted" onClick={() => resendInvite(params.row.id)}>Resend</button>
+            <button
+              className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted"
+              onClick={() => resendInvite(params.row.id)}
+            >
+              Resend
+            </button>
           ) : null}
           <button
             className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted"
-            onClick={() => updateStatus(params.row.id, params.row.status === 'active' ? 'disabled' : 'active')}
+            onClick={() => deleteUser(params.row.id)}
           >
-            {params.row.status === 'active' ? 'Deactivate' : 'Activate'}
+            Delete
           </button>
-          <button className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted" onClick={() => deleteUser(params.row.id)}>Delete</button>
         </div>
       )
     }
@@ -286,59 +268,105 @@ export default function TeamPage() {
   return (
     <ClientPage
       title="Team Users"
-      subtitle="Invite teammates and manage account access in one place."
+      subtitle="Invite teammates, edit their details, and control who receives lead alerts."
       status={status}
       primaryAction={{
-        label: showInvite ? 'Close Invite Form' : 'Invite User',
+        label: formMode === 'create' ? 'Close User Form' : 'Add User',
         brand: true,
-        onClick: () => setShowInvite((prev) => !prev)
+        onClick: () => (formMode === 'create' ? closeForm() : openCreateForm())
       }}
     >
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[7fr_3fr]">
         <div className="grid gap-3">
-          {showInvite ? (
+          {formMode ? (
             <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-              <h2 className="mt-0 text-lg font-semibold">Invite Team Member</h2>
-              <form className="grid gap-3" onSubmit={handleInvite}>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="mt-0 text-lg font-semibold">
+                  {formMode === 'edit' ? 'Edit Team User' : 'Add Team User'}
+                </h2>
+                <Button variant="outline" type="button" onClick={closeForm} disabled={savingForm}>
+                  Close
+                </Button>
+              </div>
+              <form className="grid gap-3" onSubmit={saveUser}>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label>Name</label>
-                    <input value={inviteName} onChange={(event) => setInviteName(event.target.value)} placeholder="Jane Smith" />
+                    <input
+                      value={formState.name}
+                      onChange={(event) => updateFormField('name', event.target.value)}
+                      placeholder="Jane Smith"
+                    />
                   </div>
                   <div>
                     <label>Email</label>
-                    <input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="jane@company.com" />
+                    <input
+                      value={formState.email}
+                      onChange={(event) => updateFormField('email', event.target.value)}
+                      placeholder="jane@company.com"
+                    />
                   </div>
                 </div>
+
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label>Mobile Phone</label>
-                    <input value={invitePhone} onChange={(event) => setInvitePhone(event.target.value)} placeholder="+1XXXXXXXXXX" />
+                    <input
+                      value={formState.phoneNumber}
+                      onChange={(event) => updateFormField('phoneNumber', event.target.value)}
+                      placeholder="+1XXXXXXXXXX"
+                    />
+                    <div className="mt-1 text-xs text-slate-500">
+                      Changing the phone number resets SMS opt-in for that user.
+                    </div>
                   </div>
-                  <div></div>
-                </div>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label>Role</label>
-                    <select value={inviteRole} onChange={(event) => setInviteRole(event.target.value)}>
+                    <select value={formState.role} onChange={(event) => updateFormField('role', event.target.value)}>
                       <option value="admin">Admin</option>
                       <option value="member">Member</option>
                       <option value="owner">Owner</option>
                       <option value="viewer">Viewer</option>
                     </select>
                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label>Status</label>
-                    <select value={inviteStatus} onChange={(event) => setInviteStatus(event.target.value)}>
+                    <select value={formState.status} onChange={(event) => updateFormField('status', event.target.value)}>
                       <option value="active">Active</option>
                       <option value="invited">Invited</option>
                       <option value="suspended">Suspended</option>
+                      <option value="disabled">Disabled</option>
                     </select>
                   </div>
+                  <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={formState.leadAlertEmailEnabled}
+                        onChange={(event) => updateFormField('leadAlertEmailEnabled', event.target.checked)}
+                      />
+                      <span>Receive lead email alerts</span>
+                    </label>
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={formState.leadAlertSmsEnabled}
+                        onChange={(event) => updateFormField('leadAlertSmsEnabled', event.target.checked)}
+                      />
+                      <span>Receive lead SMS alerts</span>
+                    </label>
+                  </div>
                 </div>
+
                 <div className="flex gap-2">
-                  <Button type="submit" disabled={savingInvite}>
-                    {savingInvite ? 'Sending...' : 'Send Invite'}
+                  <Button type="submit" disabled={savingForm}>
+                    {savingForm ? (formMode === 'edit' ? 'Saving...' : 'Creating...') : (formMode === 'edit' ? 'Save Changes' : 'Create User')}
+                  </Button>
+                  <Button variant="outline" type="button" onClick={closeForm} disabled={savingForm}>
+                    Cancel
                   </Button>
                 </div>
               </form>
@@ -370,10 +398,10 @@ export default function TeamPage() {
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <h2 className="mt-0 text-lg font-semibold">Help</h2>
           <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
-            <li>Invite only trusted users who need access to calls and settings.</li>
-            <li>Use role and status to control who can make changes.</li>
+            <li>Use Edit to update name, email, phone, role, status, and alert preferences.</li>
             <li>Lead SMS requires both a mobile number and SMS opt-in by replying YES.</li>
-            <li>Lead email and lead SMS switches decide who receives new lead notifications.</li>
+            <li>Lead email and lead SMS flags control who receives new lead notifications.</li>
+            <li>Use Resend for invited users when they need a fresh invite email.</li>
           </ul>
         </div>
       </div>

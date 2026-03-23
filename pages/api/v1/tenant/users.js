@@ -21,6 +21,24 @@ const mailtrapClient = mailtrapToken ? new MailtrapClient({ token: mailtrapToken
 const ALLOWED_ROLES = new Set(["admin", "member", "owner", "viewer"]);
 const ALLOWED_STATUSES = new Set(["active", "invited", "suspended", "disabled"]);
 
+async function findEmailConflict(pool, email, excludedId = null) {
+  if (!email) return false;
+  const values = excludedId
+    ? [email, excludedId]
+    : [email];
+  const where = excludedId
+    ? `email = $1 AND id <> $2`
+    : `email = $1`;
+  const result = await pool.query(
+    `SELECT id
+     FROM tenant_users
+     WHERE ${where}
+     LIMIT 1`,
+    values
+  );
+  return result.rowCount > 0;
+}
+
 async function createInviteToken({ email, tenantKey }) {
   const token = crypto.randomBytes(24).toString("hex");
   const pool = getPool();
@@ -151,6 +169,76 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
+      if (body.action === "update_user") {
+        const id = Number(body.id || 0);
+        const name = String(body.name || "").trim();
+        const email = String(body.email || "").trim().toLowerCase();
+        const role = String(body.role || "member");
+        const status = String(body.status || "active");
+        const phoneNumber = normalizePhoneNumber(body.phoneNumber);
+        const leadAlertSmsEnabled = Boolean(body.leadAlertSmsEnabled);
+        const leadAlertEmailEnabled = Boolean(body.leadAlertEmailEnabled);
+
+        if (!id || !name || !email) {
+          return fail(400, "missing_fields", "User id, name, and email are required.");
+        }
+        if (!ALLOWED_ROLES.has(role)) {
+          return fail(400, "invalid_role", "Invalid user role.");
+        }
+        if (!ALLOWED_STATUSES.has(status)) {
+          return fail(400, "invalid_status", "Invalid user status.");
+        }
+
+        const existingResult = await pool.query(
+          `SELECT id, email, phone_number
+           FROM tenant_users
+           WHERE tenant_key = $1 AND id = $2
+           LIMIT 1`,
+          [tenantKey, id]
+        );
+        if (!existingResult.rowCount) {
+          return fail(404, "not_found", "User not found.");
+        }
+
+        if (await findEmailConflict(pool, email, id)) {
+          return fail(409, "email_exists", "That email address is already in use.");
+        }
+
+        const existing = existingResult.rows[0];
+        const existingPhone = normalizePhoneNumber(existing.phone_number);
+        const nextPhone = phoneNumber || "";
+        const phoneChanged = existingPhone !== nextPhone;
+
+        await pool.query(
+          `UPDATE tenant_users
+           SET name = $3,
+               email = $4,
+               phone_number = $5,
+               role = $6,
+               status = $7,
+               lead_alert_sms_enabled = $8,
+               lead_alert_email_enabled = $9,
+               sms_opt_in_status = CASE WHEN $10 THEN 'not_requested' ELSE sms_opt_in_status END,
+               sms_opt_in_requested_at = CASE WHEN $10 THEN NULL ELSE sms_opt_in_requested_at END,
+               sms_opt_in_confirmed_at = CASE WHEN $10 THEN NULL ELSE sms_opt_in_confirmed_at END,
+               updated_at = NOW()
+           WHERE tenant_key = $1 AND id = $2`,
+          [
+            tenantKey,
+            id,
+            name,
+            email,
+            phoneNumber || null,
+            role,
+            status,
+            leadAlertSmsEnabled,
+            leadAlertEmailEnabled,
+            phoneChanged
+          ]
+        );
+        return res.status(200).json({ ok: true });
+      }
+
       if (body.action === "update_lead_alerts") {
         const id = Number(body.id || 0);
         if (!id) {
@@ -204,7 +292,7 @@ export default async function handler(req, res) {
       }
 
       const name = String(body.name || "").trim();
-      const email = String(body.email || "").trim();
+      const email = String(body.email || "").trim().toLowerCase();
       const phoneNumber = normalizePhoneNumber(body.phoneNumber);
       const leadAlertSmsEnabled = Boolean(body.leadAlertSmsEnabled);
       const leadAlertEmailEnabled = Boolean(body.leadAlertEmailEnabled);
@@ -218,6 +306,9 @@ export default async function handler(req, res) {
       }
       if (!ALLOWED_STATUSES.has(status)) {
         return fail(400, "invalid_status", "Invalid user status.");
+      }
+      if (await findEmailConflict(pool, email)) {
+        return fail(409, "email_exists", "That email address is already in use.");
       }
       await pool.query(
         `INSERT INTO tenant_users (
