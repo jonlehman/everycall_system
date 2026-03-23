@@ -13,7 +13,9 @@ const EMPTY_FORM = {
   role: 'member',
   status: 'active',
   leadAlertEmailEnabled: false,
-  leadAlertSmsEnabled: false
+  leadAlertSmsEnabled: false,
+  smsConsentConfirmed: false,
+  smsOptInStatus: 'not_requested'
 };
 
 export default function TeamPage() {
@@ -71,7 +73,9 @@ export default function TeamPage() {
       role: row.role || 'member',
       status: row.status || 'active',
       leadAlertEmailEnabled: Boolean(row.leadAlertEmailEnabled),
-      leadAlertSmsEnabled: Boolean(row.leadAlertSmsEnabled)
+      leadAlertSmsEnabled: Boolean(row.leadAlertSmsEnabled),
+      smsConsentConfirmed: false,
+      smsOptInStatus: row.smsOptIn || 'not_requested'
     });
   };
 
@@ -92,7 +96,7 @@ export default function TeamPage() {
     const resp = await fetch('/api/v1/tenant/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'sms_opt_in_request', id })
+      body: JSON.stringify({ action: 'sms_opt_in_request', id, consentConfirmed: true })
     });
     if (!resp.ok) {
       const body = await resp.json().catch(() => null);
@@ -100,6 +104,7 @@ export default function TeamPage() {
       return;
     }
     setStatus({ message: 'SMS opt-in request sent.', tone: 'ok' });
+    setFormState((current) => ({ ...current, smsOptInStatus: 'pending' }));
     loadUsers();
   };
 
@@ -241,10 +246,9 @@ export default function TeamPage() {
           </button>
           <button
             className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
-            onClick={() => requestSmsOptIn(params.row.id)}
-            disabled={!params.row.phone || params.row.smsOptIn === 'opted_in'}
+            onClick={() => openEditForm(params.row)}
           >
-            {params.row.smsOptIn === 'opted_in' ? 'SMS Enabled' : 'Request SMS'}
+            {params.row.smsOptIn === 'opted_in' ? 'SMS Enabled' : 'Open SMS Setup'}
           </button>
           {params.row.status === 'invited' ? (
             <button
@@ -361,6 +365,48 @@ export default function TeamPage() {
                   </div>
                 </div>
 
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm font-semibold text-slate-900">SMS Opt-In Workflow</div>
+                  <div className="mt-2 text-sm leading-6 text-slate-600">
+                    Current SMS status: <span className="font-medium text-slate-900">{formState.smsOptInStatus}</span>
+                  </div>
+                  <div className="mt-3 text-sm leading-6 text-slate-700">
+                    By providing a phone number and sending an SMS opt-in request, the subscriber agrees to receive SMS
+                    new lead alerts from EveryCall. Message frequency may vary. Message and data rates may apply. Reply
+                    STOP to opt out. Reply HELP for help. Consent is not a condition of purchase. Mobile information
+                    will not be shared with third parties or affiliates for marketing or promotional purposes.
+                  </div>
+                  <div className="mt-2 text-sm leading-6 text-slate-700">
+                    <a className="text-sky-700 underline" href="/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>
+                    {' '}|{' '}
+                    <a className="text-sky-700 underline" href="/terms" target="_blank" rel="noreferrer">SMS Terms</a>
+                  </div>
+                  <label className="mt-3 flex items-start gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={formState.smsConsentConfirmed}
+                      onChange={(event) => updateFormField('smsConsentConfirmed', event.target.checked)}
+                    />
+                    <span>I confirm this subscriber has reviewed and agreed to the SMS disclosure above.</span>
+                  </label>
+                  {formMode === 'edit' ? (
+                    <div className="mt-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => requestSmsOptIn(editingUserId)}
+                        disabled={!formState.phoneNumber.trim() || formState.smsOptInStatus === 'opted_in' || !formState.smsConsentConfirmed}
+                      >
+                        {formState.smsOptInStatus === 'opted_in' ? 'SMS Already Enabled' : 'Send SMS Opt-In Request'}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-xs text-slate-500">
+                      Save the user first, then reopen the form to send the SMS opt-in request.
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex gap-2">
                   <Button type="submit" disabled={savingForm}>
                     {savingForm ? (formMode === 'edit' ? 'Saving...' : 'Creating...') : (formMode === 'edit' ? 'Save Changes' : 'Create User')}
@@ -400,6 +446,7 @@ export default function TeamPage() {
           <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
             <li>Use Edit to update name, email, phone, role, status, and alert preferences.</li>
             <li>Lead SMS requires both a mobile number and SMS opt-in by replying YES.</li>
+            <li>The SMS opt-in disclosure, privacy policy, and SMS terms are shown in the edit form.</li>
             <li>Lead email and lead SMS flags control who receives new lead notifications.</li>
             <li>Use Resend for invited users when they need a fresh invite email.</li>
           </ul>

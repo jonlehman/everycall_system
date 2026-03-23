@@ -6,6 +6,19 @@ export const config = {
   api: { bodyParser: false }
 };
 
+const DEFAULT_APP_BASE_URL = "https://app.everycall.io";
+
+function getAppBaseUrl() {
+  return String(process.env.APP_BASE_URL || DEFAULT_APP_BASE_URL).trim().replace(/\/+$/, "") || DEFAULT_APP_BASE_URL;
+}
+
+function getHelpMessage() {
+  return `EveryCall: For help with SMS new lead alerts, contact support@everycall.io or visit ${getAppBaseUrl()}/terms. Reply STOP to opt out.`;
+}
+
+const OPT_IN_CONFIRMATION_MESSAGE = "EveryCall: Thanks for subscribing to SMS new lead alerts. Message frequency may vary. Msg&data rates may apply. Consent is not a condition of purchase. Reply HELP for help. Reply STOP to opt out.";
+const OPT_OUT_CONFIRMATION_MESSAGE = "EveryCall: You are unsubscribed from SMS new lead alerts and will receive no further messages. Reply YES to opt back in.";
+
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") {
@@ -48,37 +61,40 @@ export default async function handler(req, res) {
     const messageId = data.id || null;
 
     const normalizedText = String(text || "").trim().toLowerCase();
-    const isYes = normalizedText === "yes" || normalizedText === "y";
+    const isYes = ["yes", "y", "start", "unstop"].includes(normalizedText);
     const isStop = ["stop", "unsubscribe", "cancel", "end", "quit"].includes(normalizedText);
-    if (from && (isYes || isStop)) {
-      const nextStatus = isYes ? "opted_in" : "opted_out";
-      const timestampField = isYes ? "sms_opt_in_confirmed_at" : "sms_opt_in_requested_at";
-      await pool.query(
-        `UPDATE tenant_users
-         SET sms_opt_in_status = $1,
-             ${timestampField} = NOW(),
-             updated_at = NOW()
-         WHERE phone_number = $2`,
-        [nextStatus, from]
-      );
+    const isHelp = ["help", "info", "support"].includes(normalizedText);
+    if (from && (isYes || isStop || isHelp)) {
       if (isYes) {
-        const fromNumber = await getSharedSmsNumber(pool);
-        if (fromNumber) {
-          await sendTelnyxSms({
-            from: fromNumber,
-            to: from,
-            text: "You're opted in for EveryCall new lead alerts. Reply STOP to opt out."
-          });
-        }
-      } else {
-        const fromNumber = await getSharedSmsNumber(pool);
-        if (fromNumber) {
-          await sendTelnyxSms({
-            from: fromNumber,
-            to: from,
-            text: "You are opted out of EveryCall new lead alerts. Reply YES to opt back in."
-          });
-        }
+        await pool.query(
+          `UPDATE tenant_users
+           SET sms_opt_in_status = 'opted_in',
+               sms_opt_in_confirmed_at = NOW(),
+               updated_at = NOW()
+           WHERE phone_number = $1`,
+          [from]
+        );
+      } else if (isStop) {
+        await pool.query(
+          `UPDATE tenant_users
+           SET sms_opt_in_status = 'opted_out',
+               sms_opt_in_confirmed_at = NULL,
+               updated_at = NOW()
+           WHERE phone_number = $1`,
+          [from]
+        );
+      }
+      const fromNumber = await getSharedSmsNumber(pool);
+      if (fromNumber) {
+        await sendTelnyxSms({
+          from: fromNumber,
+          to: from,
+          text: isHelp
+            ? getHelpMessage()
+            : isYes
+              ? OPT_IN_CONFIRMATION_MESSAGE
+              : OPT_OUT_CONFIRMATION_MESSAGE
+        });
       }
     }
 

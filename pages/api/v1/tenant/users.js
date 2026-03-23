@@ -162,7 +162,11 @@ export default async function handler(req, res) {
         }
         await pool.query(
           `UPDATE tenant_users
-           SET phone_number = $2, updated_at = NOW()
+           SET phone_number = $2,
+               sms_opt_in_status = 'not_requested',
+               sms_opt_in_requested_at = NULL,
+               sms_opt_in_confirmed_at = NULL,
+               updated_at = NOW()
            WHERE tenant_key = $1 AND id = $3`,
           [tenantKey, phoneNumber, id]
         );
@@ -260,6 +264,9 @@ export default async function handler(req, res) {
         if (!id) {
           return fail(400, "missing_fields", "User id is required.");
         }
+        if (!Boolean(body.consentConfirmed)) {
+          return fail(400, "consent_required", "SMS opt-in consent confirmation is required.");
+        }
         const row = await pool.query(
           `SELECT id, name, phone_number, sms_opt_in_status
            FROM tenant_users
@@ -278,12 +285,13 @@ export default async function handler(req, res) {
         if (!fromNumber) {
           return fail(500, "sms_number_missing", "Shared SMS number is not configured.");
         }
-        const text = "EveryCall alerts: Reply YES to opt in for new lead text alerts. Reply STOP to opt out.";
+        const text = "EveryCall: Reply YES to confirm SMS new lead alerts. Message frequency may vary. Msg&data rates may apply. Consent is not a condition of purchase. Reply HELP for help. Reply STOP to opt out.";
         await sendTelnyxSms({ from: fromNumber, to: user.phone_number, text });
         await pool.query(
           `UPDATE tenant_users
            SET sms_opt_in_status = 'pending',
                sms_opt_in_requested_at = NOW(),
+               sms_opt_in_confirmed_at = NULL,
                updated_at = NOW()
            WHERE tenant_key = $1 AND id = $2`,
           [tenantKey, id]
