@@ -72,6 +72,7 @@ const FIELD_SECTIONS = [
 ];
 
 const EDITABLE_FIELDS = FIELD_SECTIONS.flatMap((section) => section.fields);
+const PRIMARY_USER_FIELDS = ['name', 'email', 'phoneNumber'];
 
 function fetchJson(url, options) {
   return fetch(url, options).then(async (resp) => {
@@ -128,9 +129,17 @@ function buildPayloadFromDraft(tenantKey, draft) {
   return payload;
 }
 
-function countChangedFields(draft, saved) {
-  return EDITABLE_FIELDS.reduce((count, field) => {
-    return count + ((draft?.[field.key] ?? '') === (saved?.[field.key] ?? '') ? 0 : 1);
+function buildPrimaryUserDraft(user) {
+  return {
+    name: user?.name || '',
+    email: user?.email || '',
+    phoneNumber: user?.phone_number || ''
+  };
+}
+
+function countChangedFields(draft, saved, keys) {
+  return keys.reduce((count, key) => {
+    return count + ((draft?.[key] ?? '') === (saved?.[key] ?? '') ? 0 : 1);
   }, 0);
 }
 
@@ -179,12 +188,20 @@ function SelectInput({ value, options, ...props }) {
   );
 }
 
-function SnapshotRow({ label, value }) {
+function SummaryCard({ label, value, detail, tone = 'slate' }) {
+  const toneClasses = {
+    slate: 'border-slate-200 bg-slate-50',
+    emerald: 'border-emerald-200 bg-emerald-50',
+    amber: 'border-amber-200 bg-amber-50',
+    sky: 'border-sky-200 bg-sky-50',
+    rose: 'border-rose-200 bg-rose-50'
+  };
   return (
-    <>
-      <div className="text-slate-500">{label}</div>
-      <div className="font-medium text-slate-900">{value || '-'}</div>
-    </>
+    <div className={`rounded-xl border p-4 shadow-sm ${toneClasses[tone] || toneClasses.slate}`}>
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-2 text-lg font-semibold text-slate-900">{value || '-'}</div>
+      {detail ? <div className="mt-1 text-sm text-slate-600">{detail}</div> : null}
+    </div>
   );
 }
 
@@ -204,6 +221,7 @@ export default function TenantManagePage() {
   const params = useParams();
   const router = useRouter();
   const tenantKey = String(params.tenantKey || '');
+
   const [tenant, setTenant] = useState(null);
   const [draft, setDraft] = useState(null);
   const [users, setUsers] = useState([]);
@@ -219,14 +237,34 @@ export default function TenantManagePage() {
   const [passwordDraft, setPasswordDraft] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [passwordBusy, setPasswordBusy] = useState(false);
+  const [primaryUserDraft, setPrimaryUserDraft] = useState(buildPrimaryUserDraft(null));
+  const [primaryUserSaving, setPrimaryUserSaving] = useState(false);
 
-  const savedDraft = useMemo(() => (tenant ? buildDraftFromTenant(tenant) : null), [tenant]);
-  const changedCount = useMemo(() => countChangedFields(draft, savedDraft), [draft, savedDraft]);
-  const hasUnsavedChanges = changedCount > 0;
   const primaryUser = useMemo(() => {
     if (!users.length) return null;
     return users.find((user) => user.role === 'owner') || users[0];
   }, [users]);
+
+  const savedDraft = useMemo(() => (tenant ? buildDraftFromTenant(tenant) : null), [tenant]);
+  const changedCount = useMemo(
+    () => countChangedFields(draft, savedDraft, EDITABLE_FIELDS.map((field) => field.key)),
+    [draft, savedDraft]
+  );
+  const hasUnsavedChanges = changedCount > 0;
+
+  const savedPrimaryUserDraft = useMemo(
+    () => buildPrimaryUserDraft(primaryUser),
+    [primaryUser?.id, primaryUser?.name, primaryUser?.email, primaryUser?.phone_number]
+  );
+  const primaryUserChangedCount = useMemo(
+    () => countChangedFields(primaryUserDraft, savedPrimaryUserDraft, PRIMARY_USER_FIELDS),
+    [primaryUserDraft, savedPrimaryUserDraft]
+  );
+  const hasPrimaryUserChanges = primaryUserChangedCount > 0;
+
+  useEffect(() => {
+    setPrimaryUserDraft(buildPrimaryUserDraft(primaryUser));
+  }, [primaryUser?.id, primaryUser?.name, primaryUser?.email, primaryUser?.phone_number]);
 
   const loadTenant = async () => {
     if (!tenantKey) return;
@@ -262,10 +300,19 @@ export default function TenantManagePage() {
     setDraft((current) => ({ ...(current || {}), [key]: value }));
   };
 
+  const updatePrimaryUserField = (key, value) => {
+    setPrimaryUserDraft((current) => ({ ...current, [key]: value }));
+  };
+
   const resetToSaved = () => {
     if (!tenant) return;
     setDraft(buildDraftFromTenant(tenant));
-    setStatus('Reverted unsaved changes.');
+    setStatus('Reverted unsaved tenant field changes.');
+  };
+
+  const resetPrimaryUserDraft = () => {
+    setPrimaryUserDraft(buildPrimaryUserDraft(primaryUser));
+    setStatus('Reverted unsaved owner changes.');
   };
 
   const saveTenant = async () => {
@@ -286,6 +333,41 @@ export default function TenantManagePage() {
       setStatus(error?.message || 'Save failed.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const savePrimaryUserProfile = async () => {
+    if (!primaryUser) {
+      setStatus('No tenant user exists for this tenant.');
+      return;
+    }
+    if (!primaryUserDraft.name.trim() || !primaryUserDraft.email.trim()) {
+      setStatus('Primary user name and email are required.');
+      return;
+    }
+
+    setPrimaryUserSaving(true);
+    setStatus('Saving primary user profile...');
+    try {
+      const data = await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/primary-user-profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(primaryUserDraft)
+      });
+      const updatedUser = data?.user || null;
+      if (updatedUser) {
+        setUsers((current) => current.map((user) => (
+          user.id === updatedUser.id
+            ? { ...user, ...updatedUser }
+            : user
+        )));
+        setPrimaryUserDraft(buildPrimaryUserDraft(updatedUser));
+      }
+      setStatus('Primary user profile updated.');
+    } catch (error) {
+      setStatus(error?.message || 'Primary user update failed.');
+    } finally {
+      setPrimaryUserSaving(false);
     }
   };
 
@@ -381,27 +463,28 @@ export default function TenantManagePage() {
     }
   };
 
+  const unsavedNotes = [];
+  if (hasPrimaryUserChanges) {
+    unsavedNotes.push(`${primaryUserChangedCount} primary user change${primaryUserChangedCount === 1 ? '' : 's'}`);
+  }
+  if (hasUnsavedChanges) {
+    unsavedNotes.push(`${changedCount} advanced tenant field${changedCount === 1 ? '' : 's'}`);
+  }
+
+  const primaryUserLabel = primaryUser?.role === 'owner' ? 'Owner' : 'Primary User';
+  const readinessHasBlockers = Boolean((readiness?.blockers || []).length);
+
   return (
     <section className="grid gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="m-0 text-2xl font-semibold tracking-tight">{tenant?.name || tenantKey}</h1>
-          <div className="text-sm text-slate-500">Manage tenant record, billing lifecycle fields, provisioning metadata, and readiness context.</div>
+          <div className="text-sm text-slate-500">Manage the owner contact, voice setup, readiness, and lower-level tenant record fields.</div>
           <div className="mt-1 text-xs text-slate-500">Tenant key: <code>{tenantKey}</code></div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link className="btn" href="/admin/tenants">Back</Link>
-          <Button variant="outline" onClick={loadTenant} disabled={loading || saving}>Reload</Button>
-          <Button variant="outline" onClick={resetToSaved} disabled={!hasUnsavedChanges || saving}>Reset To Saved</Button>
-          <Button onClick={saveTenant} disabled={saving || !draft || !hasUnsavedChanges}>
-            {saving ? 'Saving...' : 'Save Tenant'}
-          </Button>
-          <Button variant="outline" onClick={provisionVoiceNumber} disabled={provisionBusy}>
-            {provisionBusy ? 'Provisioning...' : 'Provision Voice Number'}
-          </Button>
-          <Button variant="outline" onClick={deprovisionVoiceNumber} disabled={deprovisionBusy || !tenant?.telnyx_voice_number}>
-            {deprovisionBusy ? 'Deprovisioning...' : 'Deprovision Voice Number'}
-          </Button>
+          <Button variant="outline" onClick={loadTenant} disabled={loading || saving || primaryUserSaving}>Reload</Button>
           <Button variant="destructive" onClick={deleteTenant} disabled={deleteBusy}>
             {deleteBusy ? 'Deleting...' : 'Delete Tenant'}
           </Button>
@@ -411,120 +494,102 @@ export default function TenantManagePage() {
       <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <div className="text-sm text-slate-700">{status}</div>
         <div className="mt-1 text-xs text-slate-500">
-          {hasUnsavedChanges ? `${changedCount} unsaved field${changedCount === 1 ? '' : 's'}.` : 'No unsaved changes.'}
+          {unsavedNotes.length ? `Unsaved: ${unsavedNotes.join(' · ')}.` : 'No unsaved changes.'}
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-        <div className="grid gap-4">
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2 className="m-0 text-lg font-semibold">Editable Tenant Fields</h2>
-                <div className="text-sm text-slate-500">
-                  This form saves directly to the admin tenant record. It covers the tenant-owned fields currently stored on the <code>tenants</code> table.
-                </div>
-              </div>
-              <Button onClick={saveTenant} disabled={saving || !draft || !hasUnsavedChanges}>
-                {saving ? 'Saving...' : 'Save Tenant'}
-              </Button>
-            </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard
+          label="Account"
+          value={`${tenant?.status || 'unknown'} / ${tenant?.billing_status || 'unknown'}`}
+          detail={`Plan ${tenant?.plan || '-'} · App ${tenant?.app_access_status || '-'}`}
+          tone={tenant?.status === 'active' ? 'emerald' : 'amber'}
+        />
+        <SummaryCard
+          label={primaryUserLabel}
+          value={primaryUser?.name || primaryUser?.email || 'No tenant user'}
+          detail={primaryUser?.email ? `${primaryUser.email}${primaryUser?.phone_number ? ` · ${formatPhoneDisplay(primaryUser.phone_number)}` : ''}` : 'No contact configured'}
+          tone="sky"
+        />
+        <SummaryCard
+          label="Voice Number"
+          value={tenant?.telnyx_voice_number ? formatPhoneDisplay(tenant.telnyx_voice_number) : 'Unassigned'}
+          detail={`${tenant?.telnyx_voice_status || 'not provisioned'} · Primary ${formatPhoneDisplay(tenant?.primary_number) || '-'}`}
+          tone={tenant?.telnyx_voice_number ? 'emerald' : 'amber'}
+        />
+        <SummaryCard
+          label="Knowledge"
+          value={readiness?.status || 'not_started'}
+          detail={`Active build ${activeBuild?.active_build_id || 'none'} · ${builds.length} build${builds.length === 1 ? '' : 's'}`}
+          tone={readinessHasBlockers ? 'amber' : 'emerald'}
+        />
+      </div>
 
-            <div className="mt-4 grid gap-4">
-              {FIELD_SECTIONS.map((section) => (
-                <section key={section.id} className="rounded-xl border border-slate-200 p-4">
-                  <div className="mb-3">
-                    <h3 className="m-0 text-base font-semibold text-slate-900">{section.title}</h3>
-                    <div className="text-sm text-slate-500">{section.description}</div>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {section.fields.map((field) => (
-                      <Field key={field.key} label={field.label} hint={field.hint}>
-                        {field.type === 'textarea' ? (
-                          <TextArea
-                            value={draft?.[field.key] || ''}
-                            onChange={(event) => updateField(field.key, event.target.value)}
-                            placeholder={field.placeholder || ''}
-                          />
-                        ) : field.type === 'select' ? (
-                          <SelectInput
-                            value={draft?.[field.key] || ''}
-                            options={field.options}
-                            onChange={(event) => updateField(field.key, event.target.value)}
-                          />
-                        ) : (
-                          <TextInput
-                            type={field.type === 'datetime' ? 'datetime-local' : field.type}
-                            value={draft?.[field.key] || ''}
-                            onChange={(event) => updateField(field.key, event.target.value)}
-                            placeholder={field.placeholder || ''}
-                            required={field.required}
-                            step={field.type === 'number' ? '1' : undefined}
-                          />
-                        )}
-                      </Field>
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button variant="outline" onClick={resetToSaved} disabled={!hasUnsavedChanges || saving}>Reset To Saved</Button>
-              <Button onClick={saveTenant} disabled={saving || !draft || !hasUnsavedChanges}>
-                {saving ? 'Saving...' : 'Save Tenant'}
-              </Button>
-            </div>
-          </section>
-        </div>
-
-        <div className="grid gap-4">
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <h2 className="m-0 text-lg font-semibold">Tenant Snapshot</h2>
-            <div className="mt-3 grid grid-cols-[140px_1fr] gap-2 text-sm">
-              <SnapshotRow label="Tenant key" value={tenant?.tenant_key || tenantKey} />
-              <SnapshotRow label="Created" value={formatDateTimeDisplay(tenant?.created_at)} />
-              <SnapshotRow label="Updated" value={formatDateTimeDisplay(tenant?.updated_at)} />
-              <SnapshotRow label="Users" value={String(users.length)} />
-              <SnapshotRow label="Active build" value={activeBuild?.active_build_id || 'none'} />
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <h2 className="m-0 text-lg font-semibold">Readiness</h2>
-            <div className={`mt-3 inline-flex rounded-full px-2 py-1 text-xs font-medium ${(readiness?.blockers || []).length ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'}`}>
-              {readiness?.status || 'not_started'}
-            </div>
-            {(readiness?.blockers || []).length ? (
-              <ul className="mt-3 list-disc pl-5 text-sm text-slate-600">
-                {(readiness?.blockers || []).map((blocker) => <li key={blocker}>{blocker}</li>)}
-              </ul>
-            ) : (
-              <div className="mt-3 text-sm text-emerald-700">This tenant is ready on the new subsystem.</div>
-            )}
-          </section>
-
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <h2 className="m-0 text-lg font-semibold">Tenant Users</h2>
-            <div className="mt-3 grid gap-2">
-              {users.length ? users.map((user) => <UserCard key={user.id || user.email} user={user} />) : (
-                <div className="text-sm text-slate-500">No tenant users found.</div>
-              )}
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <h2 className="m-0 text-lg font-semibold">Primary User Access</h2>
-            <div className="mt-2 text-sm text-slate-500">
-              Set a new password for the tenant’s main login account. This targets the owner user when present, otherwise the first tenant user.
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(340px,1fr)]">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="m-0 text-lg font-semibold">{primaryUserLabel} And Access</h2>
+              <div className="text-sm text-slate-500">Update the main tenant contact first. Password reset stays separate from profile edits.</div>
             </div>
             {primaryUser ? (
-              <div className="mt-3 grid gap-3">
+              <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                {primaryUser.role || 'user'} · {primaryUser.status || 'active'}
+              </div>
+            ) : null}
+          </div>
+
+          {primaryUser ? (
+            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)]">
+              <div className="grid gap-3">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
                   <div className="font-medium text-slate-900">{primaryUser.name || primaryUser.email}</div>
                   <div className="text-slate-500">{primaryUser.email}</div>
                   <div className="mt-1 text-xs text-slate-500">
-                    {primaryUser.role || 'user'} · {primaryUser.status || 'active'}
+                    {primaryUser.phone_number ? formatPhoneDisplay(primaryUser.phone_number) : 'No mobile phone on file'}
+                  </div>
+                </div>
+
+                <Field label="Name" hint="Displayed as the tenant owner or main contact in admin reporting and the client workspace.">
+                  <TextInput
+                    value={primaryUserDraft.name}
+                    onChange={(event) => updatePrimaryUserField('name', event.target.value)}
+                    placeholder="Owner name"
+                  />
+                </Field>
+
+                <Field label="Email" hint="Primary login email for the main tenant user account. Must remain unique across tenant users.">
+                  <TextInput
+                    type="email"
+                    value={primaryUserDraft.email}
+                    onChange={(event) => updatePrimaryUserField('email', event.target.value)}
+                    placeholder="owner@company.com"
+                  />
+                </Field>
+
+                <Field label="Mobile Phone" hint="Used for SMS opt-in and lead notifications. Changing it resets SMS opt-in status.">
+                  <TextInput
+                    value={primaryUserDraft.phoneNumber}
+                    onChange={(event) => updatePrimaryUserField('phoneNumber', event.target.value)}
+                    placeholder="+1XXXXXXXXXX"
+                  />
+                </Field>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={savePrimaryUserProfile} disabled={primaryUserSaving || !hasPrimaryUserChanges}>
+                    {primaryUserSaving ? 'Saving...' : `Save ${primaryUserLabel}`}
+                  </Button>
+                  <Button variant="outline" onClick={resetPrimaryUserDraft} disabled={primaryUserSaving || !hasPrimaryUserChanges}>
+                    Reset
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div>
+                  <h3 className="m-0 text-base font-semibold text-slate-900">Reset {primaryUserLabel} Password</h3>
+                  <div className="mt-1 text-sm text-slate-500">
+                    This targets the same primary tenant login account shown on the left.
                   </div>
                 </div>
                 <Field label="New Password" hint="Admin-only direct password set for the tenant’s main user account. Minimum 8 characters.">
@@ -545,7 +610,7 @@ export default function TenantManagePage() {
                 </Field>
                 <div className="flex flex-wrap gap-2">
                   <Button onClick={setPrimaryUserPassword} disabled={passwordBusy || !passwordDraft || !passwordConfirm}>
-                    {passwordBusy ? 'Updating...' : 'Set Primary User Password'}
+                    {passwordBusy ? 'Updating...' : 'Set Password'}
                   </Button>
                   <Button
                     variant="outline"
@@ -560,14 +625,48 @@ export default function TenantManagePage() {
                   </Button>
                 </div>
               </div>
-            ) : (
-              <div className="mt-3 text-sm text-slate-500">No tenant users found, so there is no primary login account to update.</div>
-            )}
+            </div>
+          ) : (
+            <div className="mt-3 text-sm text-slate-500">No tenant users found, so there is no owner or primary login account to edit.</div>
+          )}
+        </section>
+
+        <div className="grid gap-4">
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <h2 className="m-0 text-lg font-semibold">Voice Number</h2>
+            <div className="mt-3 grid grid-cols-[140px_1fr] gap-2 text-sm">
+              <div className="text-slate-500">Assigned number</div>
+              <div className="font-medium text-slate-900">{formatPhoneDisplay(tenant?.telnyx_voice_number) || 'None'}</div>
+              <div className="text-slate-500">Primary number</div>
+              <div className="font-medium text-slate-900">{formatPhoneDisplay(tenant?.primary_number) || '-'}</div>
+              <div className="text-slate-500">Status</div>
+              <div className="font-medium text-slate-900">{tenant?.telnyx_voice_status || '-'}</div>
+              <div className="text-slate-500">Purchased</div>
+              <div className="font-medium text-slate-900">{formatDateTimeDisplay(tenant?.telnyx_voice_purchased_at)}</div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button variant="outline" onClick={provisionVoiceNumber} disabled={provisionBusy}>
+                {provisionBusy ? 'Provisioning...' : 'Provision Voice Number'}
+              </Button>
+              <Button variant="outline" onClick={deprovisionVoiceNumber} disabled={deprovisionBusy || !tenant?.telnyx_voice_number}>
+                {deprovisionBusy ? 'Deprovisioning...' : 'Deprovision Voice Number'}
+              </Button>
+            </div>
           </section>
 
           <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <h2 className="m-0 text-lg font-semibold">Knowledge Builds</h2>
-            <div className="mt-3 grid gap-2">
+            <h2 className="m-0 text-lg font-semibold">Readiness And Builds</h2>
+            <div className={`mt-3 inline-flex rounded-full px-2 py-1 text-xs font-medium ${readinessHasBlockers ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'}`}>
+              {readiness?.status || 'not_started'}
+            </div>
+            {readinessHasBlockers ? (
+              <ul className="mt-3 list-disc pl-5 text-sm text-slate-600">
+                {(readiness?.blockers || []).map((blocker) => <li key={blocker}>{blocker}</li>)}
+              </ul>
+            ) : (
+              <div className="mt-3 text-sm text-emerald-700">This tenant is ready on the new subsystem.</div>
+            )}
+            <div className="mt-4 grid gap-2">
               {builds.length ? builds.map((build) => (
                 <div key={build.build_id} className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
                   <div className="flex items-center justify-between gap-2">
@@ -590,6 +689,86 @@ export default function TenantManagePage() {
           </section>
         </div>
       </div>
+
+      <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="m-0 text-lg font-semibold">Tenant Team</h2>
+            <div className="text-sm text-slate-500">Read-only view of all tenant users. The main contact above is the first owner user when present.</div>
+          </div>
+          <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+            {users.length} user{users.length === 1 ? '' : 's'}
+          </div>
+        </div>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {users.length ? users.map((user) => <UserCard key={user.id || user.email} user={user} />) : (
+            <div className="text-sm text-slate-500">No tenant users found.</div>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="m-0 text-lg font-semibold">Advanced Tenant Record</h2>
+            <div className="text-sm text-slate-500">
+              Lower-level fields for billing, provisioning, lifecycle, and other tenant metadata stored directly on the <code>tenants</code> table.
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Created {formatDateTimeDisplay(tenant?.created_at)} · Updated {formatDateTimeDisplay(tenant?.updated_at)}
+            </div>
+          </div>
+          <Button onClick={saveTenant} disabled={saving || !draft || !hasUnsavedChanges}>
+            {saving ? 'Saving...' : 'Save Advanced Fields'}
+          </Button>
+        </div>
+
+        <div className="mt-4 grid gap-4">
+          {FIELD_SECTIONS.map((section) => (
+            <section key={section.id} className="rounded-xl border border-slate-200 p-4">
+              <div className="mb-3">
+                <h3 className="m-0 text-base font-semibold text-slate-900">{section.title}</h3>
+                <div className="text-sm text-slate-500">{section.description}</div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {section.fields.map((field) => (
+                  <Field key={field.key} label={field.label} hint={field.hint}>
+                    {field.type === 'textarea' ? (
+                      <TextArea
+                        value={draft?.[field.key] || ''}
+                        onChange={(event) => updateField(field.key, event.target.value)}
+                        placeholder={field.placeholder || ''}
+                      />
+                    ) : field.type === 'select' ? (
+                      <SelectInput
+                        value={draft?.[field.key] || ''}
+                        options={field.options}
+                        onChange={(event) => updateField(field.key, event.target.value)}
+                      />
+                    ) : (
+                      <TextInput
+                        type={field.type === 'datetime' ? 'datetime-local' : field.type}
+                        value={draft?.[field.key] || ''}
+                        onChange={(event) => updateField(field.key, event.target.value)}
+                        placeholder={field.placeholder || ''}
+                        required={field.required}
+                        step={field.type === 'number' ? '1' : undefined}
+                      />
+                    )}
+                  </Field>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button variant="outline" onClick={resetToSaved} disabled={!hasUnsavedChanges || saving}>Reset To Saved</Button>
+          <Button onClick={saveTenant} disabled={saving || !draft || !hasUnsavedChanges}>
+            {saving ? 'Saving...' : 'Save Advanced Fields'}
+          </Button>
+        </div>
+      </section>
     </section>
   );
 }
