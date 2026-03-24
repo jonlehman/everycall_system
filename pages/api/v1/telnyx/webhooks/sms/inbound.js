@@ -13,11 +13,11 @@ function getAppBaseUrl() {
 }
 
 function getHelpMessage() {
-  return `Creative Dynamic: For help with EveryCall SMS new lead alerts, contact support@everycall.io or visit ${getAppBaseUrl()}/terms. Reply STOP to opt out.`;
+  return `EveryCall by Creative Dynamic: For help with SMS new lead alerts, contact support@everycall.io or visit ${getAppBaseUrl()}/terms. Reply STOP to opt out.`;
 }
 
-const OPT_IN_CONFIRMATION_MESSAGE = "Creative Dynamic: Thanks for subscribing to SMS new lead alerts from the EveryCall platform. Message frequency may vary. Msg&data rates may apply. Consent is not a condition of purchase. Reply HELP for help. Reply STOP to opt out.";
-const OPT_OUT_CONFIRMATION_MESSAGE = "Creative Dynamic: You are unsubscribed from SMS new lead alerts and will receive no further messages. Reply YES to opt back in.";
+const OPT_IN_CONFIRMATION_MESSAGE = "EveryCall by Creative Dynamic: Thanks for subscribing to SMS new lead alerts. Message frequency may vary. Msg&data rates may apply. Consent is not a condition of purchase. Reply HELP for help. Reply STOP to opt out.";
+const OPT_OUT_CONFIRMATION_MESSAGE = "EveryCall by Creative Dynamic: You are unsubscribed from SMS new lead alerts and will receive no further messages. Reply YES to opt back in.";
 
 export default async function handler(req, res) {
   try {

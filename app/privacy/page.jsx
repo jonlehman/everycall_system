@@ -1,6 +1,6 @@
 export const metadata = {
   title: 'Privacy Policy',
-  description: 'Creative Dynamic privacy policy for the EveryCall platform'
+  description: 'Privacy policy for EveryCall by Creative Dynamic'
 };
 
 export default function PrivacyPage() {
@@ -9,7 +9,7 @@ export default function PrivacyPage() {
       <h1 className="text-3xl font-semibold tracking-tight">Privacy Policy</h1>
       <p className="mt-4 text-sm leading-6 text-slate-600">
         This Privacy Policy describes how Creative Dynamic collects, uses, and protects information provided through
-        the EveryCall platform. EveryCall is a product operated by Creative Dynamic.
+        EveryCall by Creative Dynamic.
       </p>
 
       <section className="mt-8 space-y-4 text-sm leading-6 text-slate-700">
