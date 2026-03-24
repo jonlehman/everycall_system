@@ -2,8 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-
-const setupPaths = ['/client/setup', '/client/knowledge', '/client/team', '/client/routing', '/client/settings'];
+import { clientPrimaryNavItems, pathMatches } from './navigation';
 
 function NavIcon({ kind }) {
   if (kind === 'dashboard') {
@@ -23,6 +22,24 @@ function NavIcon({ kind }) {
       </svg>
     );
   }
+  if (kind === 'team') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="9" cy="9" r="3" />
+        <circle cx="17" cy="10" r="2.4" />
+        <path d="M4.5 19c.3-2.6 2.5-4.5 5.2-4.5h1.1c2.7 0 4.9 1.9 5.2 4.5" />
+        <path d="M14.7 18.8c.3-1.8 1.8-3.1 3.7-3.1h.4c.5 0 1 .1 1.4.3" />
+      </svg>
+    );
+  }
+  if (kind === 'account') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="8" r="3.2" />
+        <path d="M5 19c0-3.2 3.1-5.5 7-5.5s7 2.3 7 5.5" />
+      </svg>
+    );
+  }
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="3.2" />
@@ -31,25 +48,9 @@ function NavIcon({ kind }) {
   );
 }
 
-const navItems = [
-  { href: '/client/overview', label: 'Dashboard', icon: 'dashboard' },
-  { href: '/client/calls', label: 'Calls', icon: 'calls' },
-  { href: '/client/setup', label: 'Setup', icon: 'setup' },
-  { href: '/client/billing', label: 'Billing', icon: 'setup' }
-];
-
-const setupSubItems = [
-  { href: '/client/knowledge', label: 'Knowledge', icon: 'KN' },
-  { href: '/client/team', label: 'Team Users', icon: 'TM' },
-  { href: '/client/routing', label: 'Call Routing', icon: 'RT' },
-  { href: '/client/settings', label: 'Account Settings', icon: 'AC' }
-];
-
 export default function Sidebar({ collapsed = false, onToggle }) {
   const pathname = usePathname();
-  const showSetup = setupPaths.some((p) => pathname.startsWith(p));
-
-  const linkClass = (path) => `nav-btn${pathname.startsWith(path) ? ' active' : ''}`;
+  const linkClass = (item) => `nav-btn${pathMatches(pathname, item) ? ' active' : ''}`;
 
   return (
     <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
@@ -61,26 +62,13 @@ export default function Sidebar({ collapsed = false, onToggle }) {
       </div>
 
       <div className="nav-group">
-        {!collapsed ? <div className="nav-label">Operations</div> : null}
-        {navItems.map((item) => (
-          <Link key={item.href} className={linkClass(item.href)} href={item.href} title={collapsed ? item.label : undefined}>
+        {!collapsed ? <div className="nav-label">Workspace</div> : null}
+        {clientPrimaryNavItems.map((item) => (
+          <Link key={item.href} className={linkClass(item)} href={item.href} title={collapsed ? item.label : undefined}>
             <span className="nav-icon"><NavIcon kind={item.icon} /></span>
             {!collapsed ? <span>{item.label}</span> : null}
           </Link>
         ))}
-      </div>
-
-      <hr className="my-3 border-0 border-t border-slate-300/30" />
-      <div className="nav-group">
-        {!collapsed && showSetup ? (
-          <div className="sub-menu ml-2 mt-2 grid gap-1.5">
-            {setupSubItems.map((item) => (
-              <Link key={item.href} className={`${linkClass(item.href)} text-xs`} href={item.href}>
-                {item.label}
-              </Link>
-            ))}
-          </div>
-        ) : null}
       </div>
     </aside>
   );

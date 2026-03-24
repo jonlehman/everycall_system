@@ -78,6 +78,23 @@ export default function CallsPage() {
   const [lastSavedAt, setLastSavedAt] = useState('');
   const searchInputRef = useRef(null);
 
+  const applyQuickView = (view) => {
+    if (view === 'all') {
+      setStatusFilter('all');
+      setUrgencyFilter('all');
+      return;
+    }
+    if (view === 'new') {
+      setStatusFilter('new');
+      setUrgencyFilter('all');
+      return;
+    }
+    if (view === 'high') {
+      setStatusFilter('all');
+      setUrgencyFilter('high');
+    }
+  };
+
   const loadCalls = async ({ showLoading = true } = {}) => {
     if (showLoading) setLoading(true);
     setLoadError('');
@@ -324,8 +341,8 @@ export default function CallsPage() {
 
   return (
     <ClientPage
-      title="Call Inbox"
-      subtitle="Review the call log and update call status, urgency, summary, and notes inline."
+      title="Calls"
+      subtitle="Review new leads, follow-up work, and full call history in one place."
       status={status}
       primaryAction={{ label: 'Refresh Data', brand: true, onClick: refreshData }}
     >
@@ -334,6 +351,11 @@ export default function CallsPage() {
           <div className={`mb-3 flex ${isMobile ? 'flex-col' : 'flex-row items-start justify-between'} gap-3`}>
             <h2 className="mb-2 mt-0 text-lg font-semibold">Calls</h2>
             <div className={`${isMobile ? 'w-full' : ''}`}>
+              <div className="mb-3 flex flex-wrap gap-2">
+                <Button variant="outline" type="button" onClick={() => applyQuickView('new')}>New</Button>
+                <Button variant="outline" type="button" onClick={() => applyQuickView('high')}>High Urgency</Button>
+                <Button variant="outline" type="button" onClick={() => applyQuickView('all')}>All Calls</Button>
+              </div>
               <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div className="grid gap-2">
                   <div>

@@ -98,7 +98,7 @@ export default function Header() {
             {billing.trialDaysRemaining === 1 ? '1 day left' : `${billing.trialDaysRemaining ?? 0} days left`}
           </div>
           {billing.canManage ? (
-            <Link className="mt-1 inline-block text-xs underline" href="/client/billing">
+            <Link className="mt-1 inline-block text-xs underline" href="/client/account/billing">
               Add billing
             </Link>
           ) : null}
@@ -113,20 +113,20 @@ export default function Header() {
           <div className="text-sm font-semibold">
             {billing.status === 'deactivated' ? 'Contact support to reactivate' : 'Activate billing to unlock'}
           </div>
-          <Link className="mt-1 inline-block text-xs underline" href="/client/billing">
+          <Link className="mt-1 inline-block text-xs underline" href="/client/account/billing">
             Open billing
           </Link>
         </div>
       ) : null}
 
       <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-sm">
-        <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">Knowledge Readiness</div>
+        <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">Go-Live Readiness</div>
         <div className={`rounded-full px-3 py-1 text-sm font-semibold ${ready ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'}`}>
           {ready ? 'Ready' : 'Needs Setup'}
         </div>
         {!ready && readiness.blockers.length ? (
           <div className="mt-1 text-xs text-slate-500">
-            {readiness.blockers[0]}. <Link className="underline" href="/client/setup">Review checklist</Link>.
+            {readiness.blockers[0]}. <Link className="underline" href="/client/receptionist/go-live">Review go-live</Link>.
           </div>
         ) : null}
       </div>
@@ -165,12 +165,8 @@ export default function Header() {
               }
             }}
           >
-            <div className="px-2 py-1 text-xs uppercase tracking-wide text-slate-500">Workspace</div>
-            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/knowledge">Knowledge</Link>
-            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/setup">Setup Checklist</Link>
-            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/team">Team Users</Link>
-            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/routing">Routing</Link>
-            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/settings">Account Settings</Link>
+            <div className="px-2 py-1 text-xs uppercase tracking-wide text-slate-500">Session</div>
+            <Link className="mb-1 block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100" href="/client/account/general">Open account</Link>
             <div className="my-1 border-t border-slate-200" />
             <button
               className="block w-full rounded-md px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"

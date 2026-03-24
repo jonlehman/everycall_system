@@ -235,7 +235,7 @@ export default function TeamPage() {
       filterable: false,
       align: 'right',
       headerAlign: 'right',
-      minWidth: 280,
+      minWidth: 190,
       renderCell: (params) => (
         <div className="flex w-full justify-end gap-1.5">
           <button
@@ -243,12 +243,6 @@ export default function TeamPage() {
             onClick={() => openEditForm(params.row)}
           >
             Edit
-          </button>
-          <button
-            className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
-            onClick={() => openEditForm(params.row)}
-          >
-            {params.row.smsOptIn === 'opted_in' ? 'SMS Enabled' : 'Open SMS Setup'}
           </button>
           {params.row.status === 'invited' ? (
             <button
@@ -271,7 +265,7 @@ export default function TeamPage() {
 
   return (
     <ClientPage
-      title="Team Users"
+      title="Team"
       subtitle="Invite teammates, edit their details, and control who receives lead alerts."
       status={status}
       primaryAction={{
@@ -445,7 +439,7 @@ export default function TeamPage() {
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <h2 className="mt-0 text-lg font-semibold">Help</h2>
           <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
-            <li>Use Edit to update name, email, phone, role, status, and alert preferences.</li>
+            <li>Use Edit to update name, email, phone, role, status, SMS setup, and alert preferences.</li>
             <li>Lead SMS requires both a mobile number and SMS opt-in by replying YES.</li>
             <li>The SMS opt-in disclosure, privacy policy, and SMS terms are shown in the edit form.</li>
             <li>Lead email and lead SMS flags control who receives new lead notifications.</li>
