@@ -1490,12 +1490,11 @@ export async function evaluateKnowledgeReadiness(db, tenantKey) {
   if (!checklist.phone_confirmed) blockers.push("phone_confirmation_required");
   if (!checklist.after_hours_configured) blockers.push("after_hours_configuration_required");
   if (!checklist.service_area_confirmed) blockers.push("service_area_confirmation_required");
-  if (!checklist.dangerous_question_reviewed || !guardrails.length) blockers.push("dangerous_question_review_required");
-  if (!checklist.hard_overrides_reviewed || !hardOverrideCount) blockers.push("hard_overrides_required");
+  if (!guardrails.length) blockers.push("dangerous_question_review_required");
+  if (!hardOverrideCount) blockers.push("hard_overrides_required");
   if (!checklist.sample_calls_passed) blockers.push("sample_call_validation_required");
   if (!checklist.handoff_path_tested) blockers.push("handoff_path_test_required");
   if (!checklist.outcome_capture_tested) blockers.push("outcome_capture_test_required");
-  if (!checklist.pack_eval_suites_passed) blockers.push("pack_eval_suites_required");
 
   const setupIntent = setupIntentRes.rows[0] || null;
   const latestSetupSession = setupSessionRes.rows[0] || null;

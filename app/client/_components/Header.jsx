@@ -120,7 +120,7 @@ export default function Header() {
       ) : null}
 
       <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-sm">
-        <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">Go-Live Readiness</div>
+        <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">Launch Readiness</div>
         <div className={`rounded-full px-3 py-1 text-sm font-semibold ${ready ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'}`}>
           {ready ? 'Ready' : 'Needs Setup'}
         </div>
