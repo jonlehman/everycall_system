@@ -23,6 +23,11 @@ export default function AdminLoginPage() {
     window.location.href = '/admin/overview';
   };
 
+  const submitAdminLogin = async (event) => {
+    event.preventDefault();
+    await login();
+  };
+
   return (
     <div className="auth-wrap">
       <section className="hero">
@@ -32,20 +37,22 @@ export default function AdminLoginPage() {
 
       <section className="card" style={{ marginTop: 14 }}>
         <h2>Admin Console Login</h2>
-        <label>Admin Email</label>
-        <input placeholder="admin@everycall.io" value={email} onChange={(event) => setEmail(event.target.value)} />
-        <label>Password</label>
-        <input type="password" placeholder="••••••••" value={password} onChange={(event) => setPassword(event.target.value)} />
-        <div className="toolbar" style={{ marginTop: 12 }}>
-          <button className="btn brand" type="button" onClick={login}>
-            Sign In to Admin Console
-          </button>
-          <span className="muted">{status}</span>
-        </div>
-        <div style={{ marginTop: 8, display: 'flex', gap: 12 }}>
-          <a className="link" href="/forgot-password?role=admin">Forgot password?</a>
-          <a className="link" href="/login">Client sign in</a>
-        </div>
+        <form onSubmit={submitAdminLogin}>
+          <label>Admin Email</label>
+          <input placeholder="admin@everycall.io" value={email} onChange={(event) => setEmail(event.target.value)} />
+          <label>Password</label>
+          <input type="password" placeholder="••••••••" value={password} onChange={(event) => setPassword(event.target.value)} />
+          <div className="toolbar" style={{ marginTop: 12 }}>
+            <button className="btn brand" type="submit">
+              Sign In to Admin Console
+            </button>
+            <span className="muted">{status}</span>
+          </div>
+          <div style={{ marginTop: 8, display: 'flex', gap: 12 }}>
+            <a className="link" href="/forgot-password?role=admin">Forgot password?</a>
+            <a className="link" href="/login">Client sign in</a>
+          </div>
+        </form>
       </section>
     </div>
   );

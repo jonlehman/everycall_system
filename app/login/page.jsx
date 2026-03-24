@@ -24,6 +24,20 @@ export default function LoginPage() {
     onSuccess(data);
   };
 
+  const submitClientLogin = async (event) => {
+    event.preventDefault();
+    await login({
+      email: clientEmail,
+      password: clientPassword,
+      role: 'tenant',
+      setStatus: setClientStatus,
+      onSuccess: (data) => {
+        const tenantKey = data?.tenantKey || 'default';
+        window.location.href = `/client/overview?tenantKey=${encodeURIComponent(tenantKey)}`;
+      }
+    });
+  };
+
   return (
     <div className="auth-wrap">
       <section className="hero">
@@ -35,32 +49,21 @@ export default function LoginPage() {
         <section className="card">
           <h2>Client Workspace Login</h2>
           <p className="muted">For owners, dispatchers, and staff inside a single client account.</p>
-          <label>Email</label>
-          <input placeholder="you@company.com" value={clientEmail} onChange={(event) => setClientEmail(event.target.value)} />
-          <label>Password</label>
-          <input type="password" placeholder="••••••••" value={clientPassword} onChange={(event) => setClientPassword(event.target.value)} />
-          <div className="toolbar" style={{ marginTop: 12 }}>
-            <button
-              className="btn brand"
-              type="button"
-              onClick={() => login({
-                email: clientEmail,
-                password: clientPassword,
-                role: 'tenant',
-                setStatus: setClientStatus,
-                onSuccess: (data) => {
-                  const tenantKey = data?.tenantKey || 'default';
-                  window.location.href = `/client/overview?tenantKey=${encodeURIComponent(tenantKey)}`;
-                }
-              })}
-            >
-              Sign In to Client App
-            </button>
-            <span className="muted">{clientStatus}</span>
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <a className="link" href="/forgot-password">Forgot password?</a>
-          </div>
+          <form onSubmit={submitClientLogin}>
+            <label>Email</label>
+            <input placeholder="you@company.com" value={clientEmail} onChange={(event) => setClientEmail(event.target.value)} />
+            <label>Password</label>
+            <input type="password" placeholder="••••••••" value={clientPassword} onChange={(event) => setClientPassword(event.target.value)} />
+            <div className="toolbar" style={{ marginTop: 12 }}>
+              <button className="btn brand" type="submit">
+                Sign In to Client App
+              </button>
+              <span className="muted">{clientStatus}</span>
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <a className="link" href="/forgot-password">Forgot password?</a>
+            </div>
+          </form>
         </section>
       </div>
     </div>
