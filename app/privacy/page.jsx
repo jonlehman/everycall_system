@@ -1,6 +1,6 @@
 export const metadata = {
   title: 'Privacy Policy',
-  description: 'EveryCall privacy policy'
+  description: 'Creative Dynamic privacy policy for the EveryCall platform'
 };
 
 export default function PrivacyPage() {
@@ -8,8 +8,8 @@ export default function PrivacyPage() {
     <main className="mx-auto max-w-3xl px-6 py-12 text-slate-900">
       <h1 className="text-3xl font-semibold tracking-tight">Privacy Policy</h1>
       <p className="mt-4 text-sm leading-6 text-slate-600">
-        This Privacy Policy describes how Creative Dynamic Co dba EveryCall collects, uses, and protects information
-        provided through the EveryCall platform.
+        This Privacy Policy describes how Creative Dynamic collects, uses, and protects information provided through
+        the EveryCall platform. EveryCall is a product operated by Creative Dynamic.
       </p>
 
       <section className="mt-8 space-y-4 text-sm leading-6 text-slate-700">
@@ -21,8 +21,8 @@ export default function PrivacyPage() {
 
         <h2 className="text-lg font-semibold text-slate-900">How We Use Information</h2>
         <p>
-          We use this information to operate the service, send account and lead notifications, provide customer support,
-          improve platform reliability, and maintain security and compliance.
+          We use this information to operate the EveryCall platform, send account and lead notifications, provide
+          customer support, improve platform reliability, and maintain security and compliance.
         </p>
 
         <h2 className="text-lg font-semibold text-slate-900">SMS Privacy Commitment</h2>

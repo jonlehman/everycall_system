@@ -285,7 +285,7 @@ export default async function handler(req, res) {
         if (!fromNumber) {
           return fail(500, "sms_number_missing", "Shared SMS number is not configured.");
         }
-        const text = "EveryCall: Reply YES to confirm SMS new lead alerts. Message frequency may vary. Msg&data rates may apply. Consent is not a condition of purchase. Reply HELP for help. Reply STOP to opt out.";
+        const text = "Creative Dynamic: Reply YES to confirm SMS new lead alerts from the EveryCall platform. Message frequency may vary. Msg&data rates may apply. Consent is not a condition of purchase. Reply HELP for help. Reply STOP to opt out.";
         await sendTelnyxSms({ from: fromNumber, to: user.phone_number, text });
         await pool.query(
           `UPDATE tenant_users

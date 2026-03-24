@@ -372,9 +372,10 @@ export default function TeamPage() {
                   </div>
                   <div className="mt-3 text-sm leading-6 text-slate-700">
                     By providing a phone number and sending an SMS opt-in request, the subscriber agrees to receive SMS
-                    new lead alerts from EveryCall. Message frequency may vary. Message and data rates may apply. Reply
-                    STOP to opt out. Reply HELP for help. Consent is not a condition of purchase. Mobile information
-                    will not be shared with third parties or affiliates for marketing or promotional purposes.
+                    new lead alerts from Creative Dynamic through the EveryCall platform. Message frequency may vary.
+                    Message and data rates may apply. Reply STOP to opt out. Reply HELP for help. Consent is not a
+                    condition of purchase. Mobile information will not be shared with third parties or affiliates for
+                    marketing or promotional purposes.
                   </div>
                   <div className="mt-2 text-sm leading-6 text-slate-700">
                     <a className="text-sky-700 underline" href="/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>
