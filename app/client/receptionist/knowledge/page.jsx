@@ -168,7 +168,6 @@ export default function ReceptionistKnowledgePage() {
   const [buildBusy, setBuildBusy] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [publishingBuildId, setPublishingBuildId] = useState('');
-  const [rollingBackBuildId, setRollingBackBuildId] = useState('');
 
   const [documentForm, setDocumentForm] = useState({
     title: '',
@@ -371,28 +370,6 @@ export default function ReceptionistKnowledgePage() {
       setStatus({ message: `Could not publish build ${buildId}.`, tone: 'bad' });
     } finally {
       setPublishingBuildId('');
-    }
-  };
-
-  const rollbackBuild = async (buildId) => {
-    setRollingBackBuildId(buildId);
-    setStatus({ message: `Rolling back to build ${buildId}...`, tone: 'warn' });
-    try {
-      const data = await fetchJson(`/api/v1/knowledge/builds/${encodeURIComponent(buildId)}/rollback`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
-      if (!data?.ok) {
-        setStatus({ message: data?.message || `Could not roll back to build ${buildId}.`, tone: 'bad' });
-        return;
-      }
-      await loadWorkspace({ silent: true });
-      setStatus({ message: `Build ${buildId} is now active.`, tone: 'ok' });
-    } catch {
-      setStatus({ message: `Could not roll back to build ${buildId}.`, tone: 'bad' });
-    } finally {
-      setRollingBackBuildId('');
     }
   };
 
@@ -615,15 +592,6 @@ export default function ReceptionistKnowledgePage() {
                         disabled={publishingBuildId === build.build_id}
                       >
                         {publishingBuildId === build.build_id ? 'Publishing...' : 'Publish'}
-                      </Button>
-                    ) : null}
-                    {buildState.activeBuild?.previous_build_id === build.build_id || build.status === 'published' ? (
-                      <Button
-                        variant="outline"
-                        onClick={() => rollbackBuild(build.build_id)}
-                        disabled={rollingBackBuildId === build.build_id}
-                      >
-                        {rollingBackBuildId === build.build_id ? 'Rolling back...' : 'Rollback'}
                       </Button>
                     ) : null}
                   </div>
