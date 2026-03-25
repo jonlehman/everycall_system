@@ -33,7 +33,7 @@ export default function LoginPage() {
       setStatus: setClientStatus,
       onSuccess: (data) => {
         const tenantKey = data?.tenantKey || 'default';
-        window.location.href = `/client/overview?tenantKey=${encodeURIComponent(tenantKey)}`;
+        window.location.href = `/client/calls?tenantKey=${encodeURIComponent(tenantKey)}`;
       }
     });
   };

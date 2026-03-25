@@ -92,7 +92,7 @@ export default function Header() {
     <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/70 bg-white/80 shadow-sm backdrop-blur-md">
       <div className="flex h-16 items-center justify-between px-4 md:px-6">
         <div className="flex items-center gap-8">
-          <Link href="/client/dashboard" className="text-xl font-bold tracking-[-0.02em] text-slate-900">
+          <Link href="/client/calls" className="text-xl font-bold tracking-[-0.02em] text-slate-900">
             EveryCall
           </Link>
           {showTrialBadge ? (

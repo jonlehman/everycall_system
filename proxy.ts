@@ -30,7 +30,7 @@ export async function proxy(req: Request) {
     if (me.role === 'admin') {
       return NextResponse.redirect(new URL('/admin/overview', url.origin));
     }
-    const clientUrl = new URL('/client/overview', url.origin);
+    const clientUrl = new URL('/client/calls', url.origin);
     if (me.role === 'tenant') {
       const billing = await getBillingState(url, cookieHeader);
       const locked = billing?.billing?.appAccessStatus === 'billing_locked' || billing?.billing?.status === 'deactivated';

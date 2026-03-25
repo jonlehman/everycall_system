@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import { useMediaQuery } from '@mui/material';
-import { Button } from '../../../components/ui/button';
+import Link from 'next/link';
+import { Button, buttonVariants } from '../../../components/ui/button';
 import ClientPage from '../_components/ClientPage';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
+import { cn } from '../../../lib/utils';
 
 function formatLabel(value) {
   return String(value || '').replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -367,6 +369,15 @@ export default function CallsPage() {
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Current Focus</div>
           <div className="mt-2 text-sm font-semibold text-slate-900">{activeSelectionLabel}</div>
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Link className={cn(buttonVariants({ variant: 'outline' }))} href="/client/receptionist/go-live">
+          Open Launch Readiness
+        </Link>
+        <Link className={cn(buttonVariants({ variant: 'outline' }))} href="/client/team">
+          Open Team
+        </Link>
       </div>
 
       <section className="workspace-panel-soft p-5">

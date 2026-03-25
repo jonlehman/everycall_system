@@ -1,15 +1,9 @@
 export const clientPrimaryNavItems = [
   {
-    href: '/client/dashboard',
-    label: 'Dashboard',
-    icon: 'dashboard',
-    matchPrefixes: ['/client/dashboard', '/client/overview']
-  },
-  {
     href: '/client/calls',
     label: 'Calls',
     icon: 'calls',
-    matchPrefixes: ['/client/calls']
+    matchPrefixes: ['/client/calls', '/client/dashboard', '/client/overview']
   },
   {
     href: '/client/receptionist/basics',
