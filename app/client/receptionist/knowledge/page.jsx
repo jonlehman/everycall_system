@@ -589,9 +589,6 @@ export default function ReceptionistKnowledgePage() {
         title="Test Customer Questions"
         description="Ask a caller-style question to see an approximate answer based on the current published build."
       >
-        <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
-          This is only an estimate of what the live AI might say. It does not have the full context of a real call already in progress.
-        </div>
         <label className="mt-2.5">Test Question</label>
         <input value={previewQuery} onChange={(event) => setPreviewQuery(event.target.value)} placeholder="Do you handle after-hours emergencies?" />
         <div className="mt-3">
@@ -602,6 +599,7 @@ export default function ReceptionistKnowledgePage() {
             <div className="rounded-lg border border-slate-200 bg-white p-4">
               <div className="text-sm font-semibold text-slate-900">Likely Answer</div>
               <div className="mt-2 text-sm leading-6 text-slate-700">{previewAnswer}</div>
+              <div className="mt-3 text-xs text-slate-500">Preview only. Live answers may vary based on call context.</div>
             </div>
           </div>
         ) : null}
