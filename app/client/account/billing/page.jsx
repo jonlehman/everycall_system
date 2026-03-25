@@ -205,7 +205,7 @@ export default function AccountBillingPage() {
           </div>
         </div>
 
-        <GuidePanel title="Billing Guide" eyebrow="Guide">
+        <GuidePanel title="Billing Guide" eyebrow="How it works" icon="payments">
           <div>Billing controls subscription status, trial timing, and whether the workspace remains fully accessible.</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">What happens next</div>

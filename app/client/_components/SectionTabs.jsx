@@ -13,8 +13,7 @@ export default function SectionTabs({ items = [] }) {
   }
 
   return (
-    <div className="border-b border-slate-200 px-1">
-      <div className="flex flex-wrap gap-5">
+    <div className="flex h-full items-end gap-8 overflow-x-auto">
         {items.map((item) => {
           const active = pathMatches(pathname, item);
           return (
@@ -22,17 +21,16 @@ export default function SectionTabs({ items = [] }) {
               key={item.href}
               href={item.href}
               className={cn(
-                'inline-flex items-center border-b-2 px-1 pb-3 pt-1 text-sm font-medium transition-colors',
+                'inline-flex h-full items-center whitespace-nowrap border-b-2 px-1 text-sm transition-colors',
                 active
-                  ? 'border-primary text-slate-900'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
+                  ? 'border-primary font-semibold text-primary'
+                  : 'border-transparent font-medium text-slate-500 hover:text-slate-800'
               )}
             >
               {item.label}
             </Link>
           );
         })}
-      </div>
     </div>
   );
 }

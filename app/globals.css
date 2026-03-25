@@ -4,24 +4,24 @@
 
 @layer base {
   :root {
-    --background: 222 40% 97%;
-    --foreground: 217 49% 16%;
+    --background: 225 100% 99%;
+    --foreground: 217 39% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 217 49% 16%;
-    --primary: 221 83% 53%;
+    --card-foreground: 217 39% 12%;
+    --primary: 218 100% 39%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 45% 95%;
-    --secondary-foreground: 218 34% 25%;
-    --muted: 220 38% 96%;
-    --muted-foreground: 217 18% 47%;
-    --accent: 219 100% 96%;
-    --accent-foreground: 217 49% 16%;
+    --secondary: 220 16% 38%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 220 100% 97%;
+    --muted-foreground: 225 11% 35%;
+    --accent: 220 100% 97%;
+    --accent-foreground: 217 39% 12%;
     --destructive: 0 80% 56%;
     --destructive-foreground: 0 0% 100%;
-    --border: 217 34% 89%;
-    --input: 217 34% 89%;
-    --ring: 221 83% 53%;
-    --radius: 1rem;
+    --border: 229 19% 84%;
+    --input: 229 19% 84%;
+    --ring: 218 100% 39%;
+    --radius: 0.5rem;
   }
 
   * {
@@ -30,6 +30,40 @@
 
   body {
     @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    line-height: 1;
+  }
+
+  label {
+    @apply block text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500;
+    margin-bottom: 0.5rem;
+  }
+
+  input[type='text'],
+  input[type='date'],
+  input[type='email'],
+  input[type='password'],
+  textarea,
+  select {
+    @apply w-full rounded-md border-0 bg-white px-4 py-3 text-sm text-slate-900 shadow-none ring-1 ring-slate-300/50 transition-shadow;
+  }
+
+  input[type='text']:focus,
+  input[type='date']:focus,
+  input[type='email']:focus,
+  input[type='password']:focus,
+  textarea:focus,
+  select:focus {
+    @apply outline-none ring-2 ring-primary/20;
+  }
+
+  textarea {
+    min-height: 7rem;
+    resize: vertical;
   }
 
   input[type='checkbox'] {
@@ -56,17 +90,17 @@
 
 @layer components {
   .workspace-panel {
-    @apply rounded-[28px] border border-border bg-card shadow-sm;
-    box-shadow: 0 18px 40px rgba(17, 35, 63, 0.06);
+    @apply rounded-xl border border-slate-200/60 bg-white shadow-sm;
+    box-shadow: 0 8px 24px rgba(18, 28, 42, 0.06);
   }
 
   .workspace-panel-soft {
-    @apply rounded-[30px] border border-[#dfe7f5] bg-[#f7f9fe];
-    box-shadow: 0 18px 40px rgba(17, 35, 63, 0.06);
+    @apply rounded-xl border border-slate-200/40 bg-[#eff4ff];
+    box-shadow: 0 8px 24px rgba(18, 28, 42, 0.05);
   }
 
   .workspace-metric {
-    @apply rounded-[24px] border border-border bg-card p-4 shadow-sm;
-    box-shadow: 0 14px 30px rgba(17, 35, 63, 0.05);
+    @apply rounded-xl border border-slate-200/60 bg-white p-4 shadow-sm;
+    box-shadow: 0 8px 24px rgba(18, 28, 42, 0.06);
   }
 }

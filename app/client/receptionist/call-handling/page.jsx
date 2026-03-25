@@ -120,6 +120,7 @@ export default function CallHandlingPage() {
       title="Call Handling"
       subtitle="Control business hours, fallback routing, greeting copy, and the voice callers hear."
       status={status}
+      statusChip={{ tone: 'ok', label: 'Routing Systems Online' }}
       primaryAction={{ label: saving ? 'Saving...' : 'Save', brand: true, onClick: saveState, disabled: saving }}
     >
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[7fr_3fr]">
@@ -146,7 +147,7 @@ export default function CallHandlingPage() {
               </div>
               <div>
                 <label>Business Hours</label>
-                <textarea value={businessHours} onChange={(event) => setBusinessHours(event.target.value)} />
+                <input value={businessHours} onChange={(event) => setBusinessHours(event.target.value)} />
               </div>
               <div>
                 <label>After Hours Protocol</label>
@@ -189,13 +190,10 @@ export default function CallHandlingPage() {
           </StepSection>
         </div>
 
-        <GuidePanel title="Call Handling Guide" eyebrow="Guide">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4f73a8]">What belongs here</div>
-            <p className="mb-0 mt-2">
-              Use this page for routing logic, business hours, after-hours behavior, greeting text, and caller voice settings.
-            </p>
-          </div>
+        <GuidePanel title="Call Handling Guide" eyebrow="What belongs here?" icon="architecture">
+          <p className="mb-0">
+            This workspace defines the logical flow of incoming voice traffic. Use it to configure how EveryCall routes callers during different operating states.
+          </p>
 
           <div className="grid gap-3">
             <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
@@ -209,8 +207,8 @@ export default function CallHandlingPage() {
           </div>
 
           <div className="rounded-2xl border border-[#d6e4ff] bg-[#f5f8ff] p-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4f73a8]">Tip</div>
-            <div className="mt-2 text-sm text-slate-600">Save routing and voice together so the live receptionist behavior stays consistent.</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#004ac6]">Pro Tip</div>
+            <div className="mt-2 text-sm italic text-slate-600">Keep greetings under 15 seconds so callers quickly understand what happens next.</div>
           </div>
         </GuidePanel>
       </div>

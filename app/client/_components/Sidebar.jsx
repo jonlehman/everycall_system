@@ -4,71 +4,106 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { clientPrimaryNavItems, pathMatches } from './navigation';
 
-function NavIcon({ kind }) {
-  if (kind === 'dashboard') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4 19h16" />
-        <rect x="5" y="11" width="3.5" height="6" rx="1" />
-        <rect x="10.25" y="8" width="3.5" height="9" rx="1" />
-        <rect x="15.5" y="5" width="3.5" height="12" rx="1" />
-      </svg>
-    );
-  }
-  if (kind === 'calls') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M7.5 4.5c.8-.8 2.1-.8 2.9 0l1.6 1.6c.8.8.8 2.1 0 2.9l-1.2 1.2a14.5 14.5 0 0 0 3 3 14.5 14.5 0 0 0 3 3l1.2-1.2c.8-.8 2.1-.8 2.9 0l1.6 1.6c.8.8.8 2.1 0 2.9l-.9.9c-1.1 1.1-2.7 1.6-4.2 1.2-2.9-.8-6-2.8-8.8-5.6S4.7 9.2 3.9 6.3C3.5 4.8 4 3.2 5.1 2.1z" />
-      </svg>
-    );
-  }
-  if (kind === 'team') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="9" cy="9" r="3" />
-        <circle cx="17" cy="10" r="2.4" />
-        <path d="M4.5 19c.3-2.6 2.5-4.5 5.2-4.5h1.1c2.7 0 4.9 1.9 5.2 4.5" />
-        <path d="M14.7 18.8c.3-1.8 1.8-3.1 3.7-3.1h.4c.5 0 1 .1 1.4.3" />
-      </svg>
-    );
-  }
-  if (kind === 'account') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="8" r="3.2" />
-        <path d="M5 19c0-3.2 3.1-5.5 7-5.5s7 2.3 7 5.5" />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.8 1.8 0 0 1-1.3 3.1h-.2a1 1 0 0 0-.9.6 1.8 1.8 0 0 1-3.4-.5 1 1 0 0 0-.9-.7h-2a1 1 0 0 0-.9.7 1.8 1.8 0 0 1-3.4.5 1 1 0 0 0-.9-.6h-.2a1.8 1.8 0 0 1-1.3-3.1l.1-.1A1 1 0 0 0 4.6 15a1 1 0 0 0-.8-.6h-.1a1.8 1.8 0 0 1 0-3.6h.1a1 1 0 0 0 .8-.6 1 1 0 0 0-.2-1.1l-.1-.1a1.8 1.8 0 0 1 1.3-3.1h.2a1 1 0 0 0 .9-.6 1.8 1.8 0 0 1 3.4.5 1 1 0 0 0 .9.7h2a1 1 0 0 0 .9-.7 1.8 1.8 0 0 1 3.4-.5 1 1 0 0 0 .9.6h.2a1.8 1.8 0 0 1 1.3 3.1l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .8.6h.1a1.8 1.8 0 0 1 0 3.6h-.1a1 1 0 0 0-.8.6z" />
-    </svg>
-  );
+function iconName(kind) {
+  if (kind === 'dashboard') return 'dashboard';
+  if (kind === 'calls') return 'phone_in_talk';
+  if (kind === 'team') return 'groups';
+  if (kind === 'account') return 'settings';
+  return 'person_4';
 }
 
 export default function Sidebar({ collapsed = false, onToggle }) {
   const pathname = usePathname();
-  const linkClass = (item) => `nav-btn${pathMatches(pathname, item) ? ' active' : ''}`;
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/v1/auth/logout', { method: 'POST' });
+    } finally {
+      window.location.href = '/login';
+    }
+  };
 
   return (
-    <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
-      <div className="sidebar-top">
-        <div className="logo">{collapsed ? 'EC' : <>Every<span>Call</span></>}</div>
-        <button className="nav-btn collapse-toggle" type="button" onClick={onToggle} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-          {collapsed ? '→' : '←'}
-        </button>
+    <aside
+      className={`hidden border-r border-slate-200/70 bg-[#eff4ff] px-4 py-6 md:fixed md:left-0 md:top-16 md:flex md:h-[calc(100vh-64px)] md:flex-col ${
+        collapsed ? 'md:w-24' : 'md:w-64'
+      }`}
+    >
+      <div className={`mb-6 ${collapsed ? 'px-0 text-center' : 'px-2'}`}>
+        {collapsed ? (
+          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md bg-white text-sm font-bold text-[#004ac6] shadow-sm">
+            EC
+          </div>
+        ) : (
+          <>
+            <h2 className="text-lg font-bold tracking-[-0.02em] text-slate-900">Client Workspace</h2>
+            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Operational Console</p>
+          </>
+        )}
       </div>
 
-      <div className="nav-group">
-        {!collapsed ? <div className="nav-label">Workspace</div> : null}
-        {clientPrimaryNavItems.map((item) => (
-          <Link key={item.href} className={linkClass(item)} href={item.href} title={collapsed ? item.label : undefined}>
-            <span className="nav-icon"><NavIcon kind={item.icon} /></span>
-            {!collapsed ? <span>{item.label}</span> : null}
-          </Link>
-        ))}
+      <nav className="flex flex-1 flex-col gap-1">
+        {clientPrimaryNavItems.map((item) => {
+          const active = pathMatches(pathname, item);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              title={collapsed ? item.label : undefined}
+              className={`group flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-all ${
+                active
+                  ? 'border-l-4 border-[#004ac6] bg-white font-semibold text-[#004ac6] shadow-sm'
+                  : 'font-medium text-slate-600 hover:translate-x-1 hover:bg-[#dfe9fc] hover:text-slate-900'
+              } ${collapsed ? 'justify-center border-l-0 px-2' : ''}`}
+            >
+              <span
+                className="material-symbols-outlined text-[20px]"
+                style={active ? { fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24" } : undefined}
+              >
+                {iconName(item.icon)}
+              </span>
+              {!collapsed ? <span>{item.label}</span> : null}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="mt-auto border-t border-slate-200/70 pt-5">
+        {!collapsed ? (
+          <button
+            className="mb-4 w-full rounded-md border border-[#004ac6]/20 bg-[#004ac6]/5 py-2.5 text-sm font-bold text-[#004ac6] transition-colors hover:bg-[#004ac6]/10"
+            type="button"
+            onClick={onToggle}
+          >
+            Collapse Sidebar
+          </button>
+        ) : (
+          <button
+            className="mb-4 flex h-10 w-full items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            type="button"
+            onClick={onToggle}
+            aria-label="Expand sidebar"
+          >
+            <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+          </button>
+        )}
+
+        {!collapsed ? (
+          <>
+            <a className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-[#dfe9fc]" href="mailto:support@everycall.io">
+              <span className="material-symbols-outlined text-[20px]">contact_support</span>
+              Support
+            </a>
+            <button
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium text-slate-600 hover:bg-[#dfe9fc]"
+              type="button"
+              onClick={handleLogout}
+            >
+              <span className="material-symbols-outlined text-[20px]">logout</span>
+              Sign Out
+            </button>
+          </>
+        ) : null}
       </div>
     </aside>
   );

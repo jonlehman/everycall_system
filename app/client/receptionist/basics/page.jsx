@@ -80,6 +80,7 @@ export default function ReceptionistBasicsPage() {
       title="Receptionist Basics"
       subtitle="Set the business-facing identity and opening copy for your call receptionist."
       status={status}
+      statusChip={{ tone: 'ok', label: 'Receptionist Identity Active' }}
       primaryAction={{ label: saving ? 'Saving...' : 'Save', brand: true, onClick: saveProfile, disabled: saving || loading }}
     >
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[7fr_3fr]">
@@ -142,13 +143,10 @@ export default function ReceptionistBasicsPage() {
           </StepSection>
         </div>
 
-        <GuidePanel title="Basics Guide" eyebrow="Guide">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4f73a8]">What belongs here</div>
-            <p className="mb-0 mt-2">
-              Use Basics for the name, business framing, and opening copy the receptionist uses when answering calls.
-            </p>
-          </div>
+        <GuidePanel title="Basics Guide" eyebrow="What belongs here?" icon="person_4">
+          <p className="mb-0">
+            Use Basics for the name, business framing, and opening copy the receptionist uses when answering calls.
+          </p>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Use Call Handling for</div>
             <div className="mt-1 text-sm text-slate-600">Business hours, routing behavior, emergency logic, after-hours behavior, and voice selection.</div>

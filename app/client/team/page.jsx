@@ -437,7 +437,7 @@ export default function TeamPage() {
           </div>
         </div>
 
-        <GuidePanel title="Team Guide" eyebrow="Guide">
+        <GuidePanel title="Team Guide" eyebrow="How it works" icon="groups">
           <div>Use Team to manage users, alert recipients, invitation state, and SMS opt-in status.</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Lead SMS requirements</div>
