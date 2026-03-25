@@ -144,22 +144,6 @@ function buildRepresentativeAnswer(answerPacket) {
   return parts.join(' ').trim() || 'No representative answer is available for this preview yet.';
 }
 
-function PreviewList({ title, items, emptyText = 'None.', formatter = (item) => item }) {
-  const values = Array.isArray(items) ? items.filter(Boolean) : [];
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="text-sm font-semibold text-slate-900">{title}</div>
-      {values.length ? (
-        <ul className="mt-2 list-disc pl-5 text-sm text-slate-700">
-          {values.map((item, index) => <li key={`${title}-${index}`}>{formatter(item)}</li>)}
-        </ul>
-      ) : (
-        <div className="mt-2 text-sm text-slate-500">{emptyText}</div>
-      )}
-    </div>
-  );
-}
-
 export default function ReceptionistKnowledgePage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState({ message: 'Loading knowledge tools...', tone: 'warn' });
@@ -375,7 +359,8 @@ export default function ReceptionistKnowledgePage() {
 
   const runRuntimePreview = async () => {
     setPreviewBusy(true);
-    setStatus({ message: 'Running runtime preview...', tone: 'warn' });
+    setPreview(null);
+    setStatus({ message: 'Generating answer estimate...', tone: 'warn' });
     try {
       const data = await fetchJson('/api/v1/knowledge/runtime-preview', {
         method: 'POST',
@@ -385,13 +370,13 @@ export default function ReceptionistKnowledgePage() {
         })
       });
       if (!data?.ok) {
-        setStatus({ message: data?.message || 'Runtime preview failed.', tone: 'bad' });
+        setStatus({ message: data?.message || 'Could not generate an answer estimate.', tone: 'bad' });
         return;
       }
       setPreview(data);
-      setStatus({ message: 'Runtime preview ready.', tone: 'ok' });
+      setStatus({ message: 'Answer estimate ready.', tone: 'ok' });
     } catch {
-      setStatus({ message: 'Runtime preview failed.', tone: 'bad' });
+      setStatus({ message: 'Could not generate an answer estimate.', tone: 'bad' });
     } finally {
       setPreviewBusy(false);
     }
@@ -399,13 +384,8 @@ export default function ReceptionistKnowledgePage() {
 
   const latestBuild = buildState.builds[0] || null;
   const approvedUploadedDocuments = uploadedDocuments.filter((document) => String(document?.status || '').trim() === 'approved');
-  const previewPlanner = preview?.planner || null;
   const previewAnswerPacket = preview?.answerPacket || null;
-  const previewRuntimeBundle = preview?.runtimeBundle || null;
   const representativeAnswer = buildRepresentativeAnswer(previewAnswerPacket);
-  const forcedSupportModeActive = Boolean(
-    previewAnswerPacket?.metadata?.forced_support_mode || previewRuntimeBundle?.forced_support_mode
-  );
   const latestBuildStatus = String(latestBuild?.status || '').trim().toLowerCase();
   const statusChip = buildState.builds.some((build) => isBuildActive(build))
     ? { tone: 'warn', label: 'Build In Progress' }
@@ -419,7 +399,7 @@ export default function ReceptionistKnowledgePage() {
     <SectionPage
       tabs={receptionistNavItems}
       title="Knowledge"
-      subtitle="Manage builds, uploaded documents, published versions, and answer preview."
+      subtitle="Manage builds, uploaded documents, published versions, and simple question testing."
       status={status}
       statusChip={statusChip}
       primaryAction={{ label: loading ? 'Loading...' : 'Reload', brand: true, onClick: () => loadWorkspace(), disabled: loading }}
@@ -559,8 +539,8 @@ export default function ReceptionistKnowledgePage() {
               <div className="mt-1 text-sm text-slate-600">The currently published build is what callers actually hear when the receptionist answers knowledge questions.</div>
             </div>
             <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-              <div className="font-semibold text-slate-900">Runtime preview</div>
-              <div className="mt-1 text-sm text-slate-600">Use preview to test caller-style questions before publishing changes into production.</div>
+              <div className="font-semibold text-slate-900">Customer question test</div>
+              <div className="mt-1 text-sm text-slate-600">Use this to sanity-check likely answers from the current published build before callers hear them live.</div>
             </div>
           </GuidePanel>
 
@@ -606,149 +586,25 @@ export default function ReceptionistKnowledgePage() {
 
       <StepSection
         step="04"
-        title="Runtime Preview"
-        description="Ask a caller-style question to see the representative answer packet the phone AI would likely speak from."
+        title="Test Customer Questions"
+        description="Ask a caller-style question to see an approximate answer based on the current published build."
       >
-            <label className="mt-2.5">Representative Query</label>
-            <input value={previewQuery} onChange={(event) => setPreviewQuery(event.target.value)} placeholder="Do you handle after-hours emergencies?" />
-            <div className="mt-3">
-              <Button onClick={runRuntimePreview} disabled={previewBusy || !previewQuery.trim()}>{previewBusy ? 'Running...' : 'Run Preview'}</Button>
+        <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+          This is only an estimate of what the live AI might say. It does not have the full context of a real call already in progress.
+        </div>
+        <label className="mt-2.5">Test Question</label>
+        <input value={previewQuery} onChange={(event) => setPreviewQuery(event.target.value)} placeholder="Do you handle after-hours emergencies?" />
+        <div className="mt-3">
+          <Button onClick={runRuntimePreview} disabled={previewBusy || !previewQuery.trim()}>{previewBusy ? 'Testing...' : 'Test Answer'}</Button>
+        </div>
+        {preview ? (
+          <div className="mt-3 grid gap-3">
+            <div className="rounded-lg border border-slate-200 bg-white p-4">
+              <div className="text-sm font-semibold text-slate-900">Likely Answer</div>
+              <div className="mt-2 text-sm leading-6 text-slate-700">{representativeAnswer}</div>
             </div>
-            {preview ? (
-              <div className="mt-3 grid gap-3">
-                {forcedSupportModeActive ? (
-                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                    Forced-support experiment is active. Retrieved coverage is being promoted as <strong>Strong</strong> and
-                    bundle confidence is forced to <strong>0.99</strong> for this preview.
-                  </div>
-                ) : null}
-                <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <div className="text-sm font-semibold text-slate-900">Representative Answer</div>
-                  <div className="mt-2 text-sm leading-6 text-slate-700">{representativeAnswer}</div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
-                  <ArtifactStat label="Runtime Mode" value={formatLabel(previewRuntimeBundle?.runtime_mode || '-')} />
-                  <ArtifactStat label="Selected Cards" value={previewRuntimeBundle?.selected_cards?.length || 0} />
-                  <ArtifactStat label="Used Facts" value={previewRuntimeBundle?.selected_answer_facts?.length || 0} />
-                  <ArtifactStat label="Confidence Score" value={previewRuntimeBundle?.confidence_score ?? '-'} />
-                  <ArtifactStat label="Prompt Tokens" value={preview.tokenCounts?.prompt_payload_tokens || 0} />
-                  <ArtifactStat label="Bundle Tokens" value={preview.tokenCounts?.runtime_bundle_tokens || 0} />
-                </div>
-
-                <div className="grid gap-3">
-                  <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <div className="text-sm font-semibold text-slate-900">Coverage Support</div>
-                    {Array.isArray(previewAnswerPacket?.coverage) && previewAnswerPacket.coverage.length ? (
-                      <div className="mt-2 grid gap-2">
-                        {previewAnswerPacket.coverage.map((item) => (
-                          <div key={item.requested_coverage_item_text} className="rounded-md border border-slate-200 bg-white p-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="font-medium text-slate-900">{item.requested_coverage_item_text}</div>
-                              <span className={`badge ${item.support_strength === 'strong' ? 'ok' : item.support_strength === 'partial' ? 'warn' : 'bad'}`}>
-                                {formatLabel(item.support_strength)}
-                              </span>
-                            </div>
-                            <div className="mt-2 text-xs text-slate-500">
-                              Cards: {(item.used_card_ids || []).length} · Facts: {(item.used_fact_ids || []).length}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="mt-2 text-sm text-slate-500">No coverage items were returned.</div>
-                    )}
-                  </div>
-
-                  <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <div className="text-sm font-semibold text-slate-900">Selected Cards</div>
-                    {Array.isArray(previewRuntimeBundle?.selected_cards) && previewRuntimeBundle.selected_cards.length ? (
-                      <div className="mt-2 grid gap-2">
-                        {previewRuntimeBundle.selected_cards.map((card) => (
-                          <div key={card.knowledge_card_id} className="rounded-md border border-slate-200 bg-white p-3">
-                            <div className="font-medium text-slate-900">{card.canonical_name}</div>
-                            <div className="mt-1 text-sm text-slate-700">{card.speakable_summary}</div>
-                            {Array.isArray(card.selected_facts) && card.selected_facts.length ? (
-                              <ul className="mt-2 list-disc pl-5 text-sm text-slate-600">
-                                {card.selected_facts.map((fact) => (
-                                  <li key={fact.fact_id}>{fact.claim}</li>
-                                ))}
-                              </ul>
-                            ) : null}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="mt-2 text-sm text-slate-500">No cards selected.</div>
-                    )}
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <PreviewList
-                      title="Direct Answer Points"
-                      items={previewAnswerPacket?.direct_answer_points}
-                      emptyText="No direct answer points were assembled."
-                    />
-                    <PreviewList
-                      title="Qualifiers"
-                      items={previewAnswerPacket?.qualifiers}
-                    />
-                    <PreviewList
-                      title="Limits or Exclusions"
-                      items={previewAnswerPacket?.limits_or_exclusions}
-                    />
-                    <PreviewList
-                      title="Next Step Options"
-                      items={previewAnswerPacket?.next_step_options}
-                    />
-                  </div>
-
-                  <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <div className="text-sm font-semibold text-slate-900">Used Facts</div>
-                    {Array.isArray(previewRuntimeBundle?.selected_answer_facts) && previewRuntimeBundle.selected_answer_facts.length ? (
-                      <ul className="mt-2 list-disc pl-5 text-sm text-slate-700">
-                        {previewRuntimeBundle.selected_answer_facts.map((fact) => (
-                          <li key={fact.fact_id}>
-                            {fact.claim}
-                            {fact.fact_role ? <span className="text-slate-500"> ({formatLabel(fact.fact_role)})</span> : null}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="mt-2 text-sm text-slate-500">No facts selected.</div>
-                    )}
-                  </div>
-                </div>
-
-                <details className="rounded-lg border border-slate-200 bg-white p-3">
-                  <summary className="cursor-pointer text-sm font-semibold text-slate-900">Advanced Details</summary>
-                  <div className="mt-3 grid gap-3">
-                    <PreviewList
-                      title="Planner Coverage Items"
-                      items={previewPlanner?.coverage_items}
-                      emptyText="No planner coverage items returned."
-                    />
-                    <PreviewList
-                      title="Planner Next-Step Suggestions"
-                      items={previewPlanner?.next_step_suggestions}
-                      emptyText="No planner next-step suggestions returned."
-                    />
-                    <div className="rounded-lg border border-slate-200 bg-white p-3">
-                      <div className="text-sm font-semibold text-slate-900">Structured Answer Packet</div>
-                      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs leading-5 text-slate-700">
-                        {JSON.stringify(previewAnswerPacket, null, 2)}
-                      </pre>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-white p-3">
-                      <div className="text-sm font-semibold text-slate-900">Runtime Bundle</div>
-                      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs leading-5 text-slate-700">
-                        {JSON.stringify(previewRuntimeBundle, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
-                </details>
-              </div>
-            ) : null}
+          </div>
+        ) : null}
       </StepSection>
     </SectionPage>
   );
