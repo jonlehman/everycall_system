@@ -182,8 +182,6 @@ export default function ReceptionistKnowledgePage() {
   const [previewQuery, setPreviewQuery] = useState('');
 
   const [buildState, setBuildState] = useState({ activeBuild: null, builds: [], assignments: [] });
-  const [overrides, setOverrides] = useState([]);
-  const [guardrails, setGuardrails] = useState([]);
   const [uploadedDocuments, setUploadedDocuments] = useState([]);
   const [preview, setPreview] = useState(null);
 
@@ -195,13 +193,9 @@ export default function ReceptionistKnowledgePage() {
     try {
       const [
         buildData,
-        overrideData,
-        guardrailData,
         documentData
       ] = await Promise.all([
         fetchJson('/api/v1/knowledge/builds'),
-        fetchJson('/api/v1/knowledge/overrides'),
-        fetchJson('/api/v1/knowledge/guardrails'),
         fetchJson('/api/v1/knowledge/uploaded-documents')
       ]);
 
@@ -211,8 +205,6 @@ export default function ReceptionistKnowledgePage() {
         builds,
         assignments: buildData?.assignments || []
       });
-      setOverrides(Array.isArray(overrideData?.overrides) ? overrideData.overrides : []);
-      setGuardrails(Array.isArray(guardrailData?.guardrails) ? guardrailData.guardrails : []);
       setUploadedDocuments(Array.isArray(documentData?.documents) ? documentData.documents : []);
       setBuildForm((current) => ({
         websiteUrl: current.websiteUrl || buildData?.bootstrapWebsiteUrl || builds[0]?.website_root_url || ''
@@ -455,11 +447,9 @@ export default function ReceptionistKnowledgePage() {
       statusChip={statusChip}
       primaryAction={{ label: loading ? 'Loading...' : 'Reload', brand: true, onClick: () => loadWorkspace(), disabled: loading }}
     >
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <ArtifactStat label="Builds" value={buildState.builds.length} />
         <ArtifactStat label="Uploaded Docs" value={uploadedDocuments.length} />
-        <ArtifactStat label="Overrides" value={overrides.length} />
-        <ArtifactStat label="Guardrails" value={guardrails.length} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.12fr_0.88fr]">
