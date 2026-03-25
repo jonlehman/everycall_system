@@ -31,4 +31,25 @@
   body {
     @apply bg-background text-foreground antialiased;
   }
+
+  input[type='checkbox'] {
+    @apply h-4 w-4 shrink-0 appearance-none rounded border border-slate-300 bg-white align-top;
+    margin-top: 0.125rem;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 0.625rem 0.625rem;
+  }
+
+  input[type='checkbox']:checked {
+    @apply border-sky-600 bg-sky-600;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8.5 6.5 11.5 12.5 4.5' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+
+  input[type='checkbox']:focus-visible {
+    @apply outline-none ring-2 ring-sky-500 ring-offset-2 ring-offset-white;
+  }
+
+  input[type='checkbox']:disabled {
+    @apply cursor-not-allowed border-slate-200 bg-slate-100 opacity-70;
+  }
 }
