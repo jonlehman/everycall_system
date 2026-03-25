@@ -114,24 +114,15 @@ export function IntakePageClient({ qaMode = false } = {}) {
 
           <div className="intake-guide">
             <div className="intake-guide-card">
-              <div className="intake-guide-step">01</div>
               <div>
                 <h2>Account Owner</h2>
                 <p>Add the primary business owner and initial password so the account can be activated immediately.</p>
               </div>
             </div>
             <div className="intake-guide-card">
-              <div className="intake-guide-step">02</div>
               <div>
                 <h2>Business Context</h2>
                 <p>Give EveryCall the shortest useful description of what the business does until a stronger website build is published.</p>
-              </div>
-            </div>
-            <div className="intake-guide-card intake-guide-card-accent">
-              <div className="intake-guide-step">03</div>
-              <div>
-                <h2>Next Workspace</h2>
-                <p>After creation, you will land in the Knowledge Workspace to review sources and build the first live version.</p>
               </div>
             </div>
           </div>
@@ -213,6 +204,11 @@ export function IntakePageClient({ qaMode = false } = {}) {
                   placeholder="Describe the business in one or two short sentences."
                 />
                 <div className="intake-muted">This becomes the initial business context for Sarah until a stronger website build is published.</div>
+              </div>
+
+              <div className="intake-next-step">
+                <h3>Next Workspace</h3>
+                <p>After creation, you will land in the Knowledge Workspace to review sources and build the first live version.</p>
               </div>
             </section>
 
