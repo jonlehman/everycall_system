@@ -490,7 +490,6 @@ export default function ReceptionistKnowledgePage() {
                 <div className="mt-1">Status: {formatLabel(latestBuild.status)}</div>
                 <div className="mt-1">{renderBuildProgress(latestBuild)}</div>
                 <BuildProgressMeter build={latestBuild} />
-                <div className="mt-2">Warnings: {Array.isArray(latestBuild.warnings_json) ? latestBuild.warnings_json.length : 0}</div>
               </div>
             ) : null}
           </StepSection>
@@ -608,9 +607,6 @@ export default function ReceptionistKnowledgePage() {
                   </div>
                   <div className="mt-1 text-sm text-slate-600">{renderBuildProgress(build)}</div>
                   <BuildProgressMeter build={build} compact />
-                  {Array.isArray(build.warnings_json) && build.warnings_json.length ? (
-                    <div className="mt-2 text-xs text-amber-700">{build.warnings_json.join(', ')}</div>
-                  ) : null}
                   <div className="mt-3 flex flex-wrap gap-2">
                     {build.status === 'ready_to_publish' ? (
                       <Button
