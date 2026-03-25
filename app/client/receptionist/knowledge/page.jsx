@@ -385,7 +385,7 @@ export default function ReceptionistKnowledgePage() {
   const latestBuild = buildState.builds[0] || null;
   const approvedUploadedDocuments = uploadedDocuments.filter((document) => String(document?.status || '').trim() === 'approved');
   const previewAnswerPacket = preview?.answerPacket || null;
-  const representativeAnswer = buildRepresentativeAnswer(previewAnswerPacket);
+  const previewAnswer = preview?.spokenAnswerEstimate || buildRepresentativeAnswer(previewAnswerPacket);
   const latestBuildStatus = String(latestBuild?.status || '').trim().toLowerCase();
   const statusChip = buildState.builds.some((build) => isBuildActive(build))
     ? { tone: 'warn', label: 'Build In Progress' }
@@ -601,7 +601,7 @@ export default function ReceptionistKnowledgePage() {
           <div className="mt-3 grid gap-3">
             <div className="rounded-lg border border-slate-200 bg-white p-4">
               <div className="text-sm font-semibold text-slate-900">Likely Answer</div>
-              <div className="mt-2 text-sm leading-6 text-slate-700">{representativeAnswer}</div>
+              <div className="mt-2 text-sm leading-6 text-slate-700">{previewAnswer}</div>
             </div>
           </div>
         ) : null}

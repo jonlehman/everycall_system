@@ -576,7 +576,7 @@ export default function TenantManagePage() {
   const previewPlanner = preview?.planner || null;
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewRuntimeBundle = preview?.runtimeBundle || null;
-  const representativeAnswer = buildRepresentativeAnswer(previewAnswerPacket);
+  const representativeAnswer = preview?.spokenAnswerEstimate || buildRepresentativeAnswer(previewAnswerPacket);
 
   return (
     <section className="grid gap-4">
@@ -819,7 +819,7 @@ export default function TenantManagePage() {
             {preview ? (
               <div className="mt-4 grid gap-3">
                 <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <div className="text-sm font-semibold text-slate-900">Representative Answer</div>
+                  <div className="text-sm font-semibold text-slate-900">Likely Spoken Answer</div>
                   <div className="mt-2 text-sm leading-6 text-slate-700">{representativeAnswer}</div>
                 </div>
 
