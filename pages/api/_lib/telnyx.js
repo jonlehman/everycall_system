@@ -205,3 +205,24 @@ export async function updatePhoneNumberRouting({ phoneNumberId, connectionId }) 
   });
   return normalizeOwnedPhoneNumberRecord(data?.data || null);
 }
+
+export async function updatePhoneNumberVoiceSettings({ phoneNumberId, callerIdName }) {
+  if (!phoneNumberId) throw new Error("phone_number_id_required");
+  const normalizedCallerIdName = String(callerIdName || "").trim();
+  const payload = {
+    caller_id_name_enabled: Boolean(normalizedCallerIdName),
+    cnam_listing: normalizedCallerIdName
+      ? {
+          cnam_listing_enabled: true,
+          cnam_listing_details: normalizedCallerIdName
+        }
+      : {
+          cnam_listing_enabled: false
+        }
+  };
+  const data = await telnyxRequest(`/v2/phone_numbers/${encodeURIComponent(String(phoneNumberId))}/voice`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+  return data?.data || null;
+}

@@ -16,10 +16,19 @@ const TIMEZONES = [
   'Pacific/Honolulu'
 ];
 
+function normalizeCallerIdName(value) {
+  return String(value || '')
+    .replace(/[^a-z0-9 ]+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 15);
+}
+
 export default function AccountGeneralPage() {
-  const [tenant, setTenant] = useState({ name: '-', plan: '-', data_region: '-' });
+  const [tenant, setTenant] = useState({ name: '-', plan: '-', data_region: '-', telnyx_voice_number: '', telnyx_voice_number_id: '' });
   const [timezone, setTimezone] = useState('America/Los_Angeles');
   const [notes, setNotes] = useState('');
+  const [callerIdName, setCallerIdName] = useState('');
   const [leadAlertsEnabled, setLeadAlertsEnabled] = useState(false);
   const [leadAlertSmsEnabled, setLeadAlertSmsEnabled] = useState(false);
   const [leadAlertEmailEnabled, setLeadAlertEmailEnabled] = useState(false);
@@ -39,9 +48,12 @@ export default function AccountGeneralPage() {
           setLoading(false);
           return;
         }
-        setTenant(data.tenant || { name: '-', plan: '-', data_region: '-' });
+        const nextTenant = data.tenant || { name: '-', plan: '-', data_region: '-', telnyx_voice_number: '', telnyx_voice_number_id: '' };
+        setTenant(nextTenant);
         setTimezone(data.settings?.timezone || 'America/Los_Angeles');
         setNotes(data.settings?.notes || '');
+        const hasStoredCallerIdName = Boolean(data.settings) && Object.prototype.hasOwnProperty.call(data.settings, 'caller_id_name');
+        setCallerIdName(hasStoredCallerIdName ? (data.settings?.caller_id_name || '') : normalizeCallerIdName(nextTenant?.name || ''));
         setLeadAlertsEnabled(Boolean(data.settings?.lead_alerts_enabled));
         setLeadAlertSmsEnabled(Boolean(data.settings?.lead_alert_sms_enabled));
         setLeadAlertEmailEnabled(Boolean(data.settings?.lead_alert_email_enabled));
@@ -72,6 +84,7 @@ export default function AccountGeneralPage() {
       body: JSON.stringify({
         timezone,
         notes,
+        callerIdName,
         leadAlertsEnabled,
         leadAlertSmsEnabled,
         leadAlertEmailEnabled,
@@ -81,6 +94,18 @@ export default function AccountGeneralPage() {
     setSaving(false);
     if (!resp.ok) {
       setStatus({ message: 'Save failed. Please try again.', tone: 'bad' });
+      return;
+    }
+    const data = await resp.json().catch(() => null);
+    if (data?.callerIdName !== undefined) {
+      setCallerIdName(data.callerIdName || '');
+    }
+    if (data?.providerSync?.ok === false) {
+      setStatus({ message: data.providerSync.message || 'General settings saved, but caller ID sync failed.', tone: 'warn' });
+      return;
+    }
+    if (data?.providerSync?.pending) {
+      setStatus({ message: data.providerSync.message || 'General settings saved.', tone: 'ok' });
       return;
     }
     setStatus({ message: 'General settings saved.', tone: 'ok' });
@@ -102,6 +127,7 @@ export default function AccountGeneralPage() {
               <div>Tenant</div><div>{tenant.name || '-'}</div>
               <div>Plan</div><div>{tenant.plan || '-'}</div>
               <div>Data Region</div><div>{tenant.data_region || '-'}</div>
+              <div>Voice Number</div><div>{tenant.telnyx_voice_number || 'Not assigned yet'}</div>
             </div>
           </div>
 
@@ -125,6 +151,29 @@ export default function AccountGeneralPage() {
                 />
               </div>
             </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+            <h2 className="mt-0 text-lg font-semibold">Phone Number Identity</h2>
+            <div className="grid gap-3">
+              <div>
+                <label>Caller ID Name</label>
+                <input
+                  value={callerIdName}
+                  onChange={(event) => setCallerIdName(normalizeCallerIdName(event.target.value))}
+                  placeholder="Business name"
+                  maxLength={15}
+                />
+                <div className="mt-1 text-sm text-slate-500">
+                  Prefilled from your business name. Up to 15 letters, numbers, and spaces because of carrier CNAM limits.
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                {tenant.telnyx_voice_number
+                  ? 'When supported by the receiving carrier, this name is applied to your assigned voice number.'
+                  : 'You can save this now. It will be applied automatically after a voice number is assigned.'}
+              </div>
+            </div>
             <div className="mt-3 flex gap-2">
               <Button type="button" onClick={saveSettings} disabled={saving || loading}>
                 {saving ? 'Saving...' : 'Save General'}
@@ -136,6 +185,10 @@ export default function AccountGeneralPage() {
 
         <GuidePanel title="Account Guide" eyebrow="How it works" icon="settings">
           <div>Timezone, internal notes, plan details, and other account-level defaults belong here.</div>
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">Caller ID Name</div>
+            <div className="mt-1 text-sm text-slate-600">Use a short business name so your voice number has a cleaner caller identity where CNAM is supported.</div>
+          </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Use Notifications for</div>
             <div className="mt-1 text-sm text-slate-600">Lead alert delivery settings and transcript preferences.</div>

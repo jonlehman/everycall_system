@@ -1,6 +1,6 @@
 import { ensureTables, getPool } from "../../../../../_lib/db.js";
 import { getAdminActor, requireSession } from "../../../../../_lib/auth.js";
-import { findAvailableVoiceNumber, orderVoiceNumber } from "../../../../../_lib/telnyx.js";
+import { findAvailableVoiceNumber, getOwnedPhoneNumber, orderVoiceNumber, updatePhoneNumberVoiceSettings } from "../../../../../_lib/telnyx.js";
 import { getVoiceProvisioningAreaCode, parseProvisioningError, truncateText } from "../../../../../_lib/voiceProvisioning.js";
 
 export default async function handler(req, res) {
@@ -96,12 +96,15 @@ export default async function handler(req, res) {
 
       const connectionId = process.env.TELNYX_VOICE_CONNECTION_ID || "";
       const voiceOrder = await orderVoiceNumber({ phoneNumber: availableNumber.phoneNumber, connectionId });
+      const ownedRecord = await getOwnedPhoneNumber({ phoneNumber: availableNumber.phoneNumber });
+      const phoneNumberId = ownedRecord?.phoneNumberId || null;
       await pool.query(
         `UPDATE tenants
          SET telnyx_voice_number = $2,
-             telnyx_voice_order_id = $3,
-             telnyx_voice_monthly_cost_cents = $4,
-             telnyx_voice_upfront_cost_cents = $5,
+             telnyx_voice_number_id = $3,
+             telnyx_voice_order_id = $4,
+             telnyx_voice_monthly_cost_cents = $5,
+             telnyx_voice_upfront_cost_cents = $6,
              telnyx_voice_purchased_at = NOW(),
              telnyx_voice_status = 'active',
              updated_at = NOW()
@@ -109,11 +112,37 @@ export default async function handler(req, res) {
         [
           tenantKey,
           availableNumber.phoneNumber,
+          phoneNumberId,
           voiceOrder?.data?.id || null,
           Number.isFinite(Number(availableNumber.monthlyCost)) ? Math.round(Number(availableNumber.monthlyCost) * 100) : null,
           Number.isFinite(Number(availableNumber.upfrontCost)) ? Math.round(Number(availableNumber.upfrontCost) * 100) : null
         ]
       );
+      let callerIdApplied = false;
+      try {
+        const settingsResult = await pool.query(
+          `SELECT caller_id_name
+           FROM tenant_settings
+           WHERE tenant_key = $1
+           LIMIT 1`,
+          [tenantKey]
+        );
+        const callerIdName = String(settingsResult.rows[0]?.caller_id_name || "").trim();
+        if (phoneNumberId && callerIdName) {
+          await updatePhoneNumberVoiceSettings({ phoneNumberId, callerIdName });
+          callerIdApplied = true;
+        }
+      } catch (syncErr) {
+        await pool.query(
+          `INSERT INTO audit_log (tenant_key, actor, action, details)
+           VALUES ($1, $2, 'admin.voice_number_caller_id_sync_failed', $3)`,
+          [
+            tenantKey,
+            `admin:${admin.id}`,
+            truncateText(`provider=telnyx message=${syncErr instanceof Error ? syncErr.message : "unknown"}`, 800)
+          ]
+        );
+      }
       if (jobId) {
         await pool.query(
           `UPDATE provisioning_jobs
@@ -132,14 +161,20 @@ export default async function handler(req, res) {
       await pool.query(
         `INSERT INTO audit_log (tenant_key, actor, action, details)
          VALUES ($1, $2, 'admin.voice_number_provisioned', $3)`,
-        [tenantKey, `admin:${admin.id}`, `provider=telnyx phone=${availableNumber.phoneNumber} order_id=${voiceOrder?.data?.id || ""}`]
+        [
+          tenantKey,
+          `admin:${admin.id}`,
+          `provider=telnyx phone=${availableNumber.phoneNumber} phone_number_id=${phoneNumberId || ""} order_id=${voiceOrder?.data?.id || ""} caller_id_applied=${callerIdApplied ? "true" : "false"}`
+        ]
       );
 
       return res.status(200).json({
         ok: true,
         tenantKey,
         phoneNumber: availableNumber.phoneNumber,
-        orderId: voiceOrder?.data?.id || null
+        phoneNumberId,
+        orderId: voiceOrder?.data?.id || null,
+        callerIdApplied
       });
     } catch (err) {
       const { errorCode, errorMessage } = parseProvisioningError(err);

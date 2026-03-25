@@ -1,9 +1,18 @@
 import { ensureTables, getPool } from "../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess } from "../_lib/billing.js";
+import { getOwnedPhoneNumber, updatePhoneNumberVoiceSettings } from "../_lib/telnyx.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
+}
+
+function normalizeCallerIdName(value) {
+  return String(value || "")
+    .replace(/[^a-z0-9 ]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 15);
 }
 
 export default async function handler(req, res) {
@@ -25,13 +34,16 @@ export default async function handler(req, res) {
 
     if (req.method === "GET") {
       const tenant = await pool.query(
-        `SELECT tenant_key, name, plan, data_region, status FROM tenants WHERE tenant_key = $1`,
+        `SELECT tenant_key, name, plan, data_region, status, telnyx_voice_number, telnyx_voice_number_id
+         FROM tenants
+         WHERE tenant_key = $1`,
         [tenantKey]
       );
       const settings = await pool.query(
         `SELECT tenant_key,
                 timezone,
                 notes,
+                caller_id_name,
                 lead_alerts_enabled,
                 lead_alert_sms_enabled,
                 lead_alert_email_enabled,
@@ -57,25 +69,37 @@ export default async function handler(req, res) {
       const leadAlertEmailIncludeTranscript = body.leadAlertEmailIncludeTranscript === undefined
         ? true
         : Boolean(body.leadAlertEmailIncludeTranscript);
+      const callerIdName = normalizeCallerIdName(body.callerIdName);
       if (!timezone.trim()) {
         return fail(400, "invalid_timezone", "Timezone is required.");
       }
+
+      const tenant = await pool.query(
+        `SELECT tenant_key, name, telnyx_voice_number, telnyx_voice_number_id
+         FROM tenants
+         WHERE tenant_key = $1
+         LIMIT 1`,
+        [tenantKey]
+      );
+      const tenantRow = tenant.rows[0] || null;
 
       await pool.query(
         `INSERT INTO tenant_settings (
            tenant_key,
            timezone,
            notes,
+           caller_id_name,
            lead_alerts_enabled,
            lead_alert_sms_enabled,
            lead_alert_email_enabled,
            lead_alert_email_include_transcript
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (tenant_key)
          DO UPDATE SET
            timezone = EXCLUDED.timezone,
            notes = EXCLUDED.notes,
+           caller_id_name = EXCLUDED.caller_id_name,
            lead_alerts_enabled = EXCLUDED.lead_alerts_enabled,
            lead_alert_sms_enabled = EXCLUDED.lead_alert_sms_enabled,
            lead_alert_email_enabled = EXCLUDED.lead_alert_email_enabled,
@@ -85,6 +109,7 @@ export default async function handler(req, res) {
           tenantKey,
           timezone,
           notes,
+          callerIdName,
           leadAlertsEnabled,
           leadAlertSmsEnabled,
           leadAlertEmailEnabled,
@@ -92,7 +117,43 @@ export default async function handler(req, res) {
         ]
       );
 
-      return res.status(200).json({ ok: true });
+      let providerSync = null;
+      try {
+        let phoneNumberId = String(tenantRow?.telnyx_voice_number_id || "").trim();
+        const telnyxVoiceNumber = String(tenantRow?.telnyx_voice_number || "").trim();
+
+        if (!phoneNumberId && telnyxVoiceNumber) {
+          const ownedRecord = await getOwnedPhoneNumber({ phoneNumber: telnyxVoiceNumber });
+          if (ownedRecord?.phoneNumberId) {
+            phoneNumberId = String(ownedRecord.phoneNumberId).trim();
+            await pool.query(
+              `UPDATE tenants
+               SET telnyx_voice_number_id = $2,
+                   updated_at = NOW()
+               WHERE tenant_key = $1`,
+              [tenantKey, phoneNumberId]
+            );
+          }
+        }
+
+        if (phoneNumberId) {
+          await updatePhoneNumberVoiceSettings({ phoneNumberId, callerIdName });
+          providerSync = { ok: true, phoneNumberId };
+        } else {
+          providerSync = {
+            ok: true,
+            pending: true,
+            message: "Caller ID name saved. It will be applied when a voice number is assigned."
+          };
+        }
+      } catch (err) {
+        providerSync = {
+          ok: false,
+          message: err?.message || "Caller ID name was saved locally, but the carrier update failed."
+        };
+      }
+
+      return res.status(200).json({ ok: true, callerIdName, providerSync });
     }
 
     res.setHeader("Allow", "GET, POST");

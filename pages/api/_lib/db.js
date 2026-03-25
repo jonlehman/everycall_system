@@ -216,6 +216,7 @@ export async function ensureTables(pool) {
       tenant_key TEXT PRIMARY KEY,
       timezone TEXT DEFAULT 'America/Los_Angeles',
       notes TEXT,
+      caller_id_name TEXT,
       lead_alerts_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
@@ -223,6 +224,7 @@ export async function ensureTables(pool) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS caller_id_name TEXT;`);
   await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alerts_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);

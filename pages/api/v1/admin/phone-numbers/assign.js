@@ -3,7 +3,8 @@ import { getAdminActor, requireSession } from "../../../_lib/auth.js";
 import {
   getOwnedPhoneNumber,
   getPhoneNumberDetails,
-  updatePhoneNumberRouting
+  updatePhoneNumberRouting,
+  updatePhoneNumberVoiceSettings
 } from "../../../_lib/telnyx.js";
 import { normalizePhoneNumber } from "../../../_lib/phone.js";
 import { parseProvisioningError, truncateText } from "../../../_lib/voiceProvisioning.js";
@@ -35,6 +36,7 @@ export default async function handler(req, res) {
   let phoneNumber = "";
   let telnyxPhoneNumber = null;
   let routingUpdated = false;
+  let callerIdApplied = false;
 
   try {
     const pool = getPool();
@@ -222,12 +224,38 @@ export default async function handler(req, res) {
       client.release();
     }
 
+    try {
+      const settingsResult = await pool.query(
+        `SELECT caller_id_name
+         FROM tenant_settings
+         WHERE tenant_key = $1
+         LIMIT 1`,
+        [tenantKey]
+      );
+      const callerIdName = normalizeText(settingsResult.rows[0]?.caller_id_name);
+      if (telnyxPhoneNumber?.phoneNumberId && callerIdName) {
+        await updatePhoneNumberVoiceSettings({ phoneNumberId: telnyxPhoneNumber.phoneNumberId, callerIdName });
+        callerIdApplied = true;
+      }
+    } catch (syncErr) {
+      await pool.query(
+        `INSERT INTO audit_log (tenant_key, actor, action, details)
+         VALUES ($1, $2, 'admin.voice_number_caller_id_sync_failed', $3)`,
+        [
+          tenantKey,
+          `admin:${admin.id}`,
+          truncateText(`provider=telnyx message=${syncErr instanceof Error ? syncErr.message : "unknown"}`, 800)
+        ]
+      );
+    }
+
     return res.status(200).json({
       ok: true,
       tenantKey,
       phoneNumber,
       phoneNumberId: telnyxPhoneNumber.phoneNumberId || null,
-      routingUpdated
+      routingUpdated,
+      callerIdApplied
     });
   } catch (err) {
     const status = Number.isInteger(err?.status) ? err.status : 500;
