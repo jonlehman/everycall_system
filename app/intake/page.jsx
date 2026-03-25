@@ -74,7 +74,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
     }
 
     setBusy(true);
-    setStatus({ message: 'Creating tenant...', tone: 'warn' });
+    setStatus({ message: 'Creating account...', tone: 'warn' });
     try {
       const data = await fetchJson('/api/v1/tenants/onboard', {
         method: 'POST',
@@ -90,13 +90,13 @@ export function IntakePageClient({ qaMode = false } = {}) {
         })
       });
       if (!data?.ok) {
-        setStatus({ message: data?.message || 'Could not create tenant.', tone: 'bad' });
+        setStatus({ message: data?.message || 'Could not create account.', tone: 'bad' });
         return;
       }
       setActivation(data);
-      setStatus({ message: 'Tenant created. Redirecting to the Knowledge Workspace...', tone: 'ok' });
+      setStatus({ message: 'Account created. Redirecting to the Knowledge Workspace...', tone: 'ok' });
     } catch {
-      setStatus({ message: 'Could not create tenant.', tone: 'bad' });
+      setStatus({ message: 'Could not create account.', tone: 'bad' });
     } finally {
       setBusy(false);
     }
@@ -105,94 +105,143 @@ export function IntakePageClient({ qaMode = false } = {}) {
   return (
     <div className="intake-shell">
       <div className="intake-page">
-        <section className="intake-hero">
-          <p className="intake-eyebrow">EveryCall Intake</p>
-          <h1>Set up a new tenant</h1>
-          <p>Create the account, give Sarah the basic business context, and continue to the Knowledge Workspace.</p>
+        <section className="intake-side">
+          <div className="intake-hero">
+            <p className="intake-eyebrow">EveryCall Intake</p>
+            <h1>Create a new account</h1>
+            <p>Set up the business owner login, capture the basic company context, and continue directly into the Knowledge Workspace.</p>
+          </div>
+
+          <div className="intake-guide">
+            <div className="intake-guide-card">
+              <div className="intake-guide-step">01</div>
+              <div>
+                <h2>Account Owner</h2>
+                <p>Add the primary business owner and initial password so the account can be activated immediately.</p>
+              </div>
+            </div>
+            <div className="intake-guide-card">
+              <div className="intake-guide-step">02</div>
+              <div>
+                <h2>Business Context</h2>
+                <p>Give EveryCall the shortest useful description of what the business does until a stronger website build is published.</p>
+              </div>
+            </div>
+            <div className="intake-guide-card intake-guide-card-accent">
+              <div className="intake-guide-step">03</div>
+              <div>
+                <h2>Next Workspace</h2>
+                <p>After creation, you will land in the Knowledge Workspace to review sources and build the first live version.</p>
+              </div>
+            </div>
+          </div>
         </section>
 
-        <form className="intake-card" onSubmit={submit}>
-          <div className={`intake-status ${status.tone || 'normal'}`}>
-            {status.message || 'Enter the minimum needed to create the tenant and seed the receptionist.'}
-          </div>
-
-          <div className="intake-stack">
-            <h2 className="intake-section-title">Account</h2>
-          </div>
-
-          <div className="intake-grid">
-            <div className="intake-stack">
-              <label>Business Name</label>
-              <input value={form.businessName} onChange={(event) => setFormValue('businessName', event.target.value)} />
+        <div className="intake-main">
+          <form className="intake-card" onSubmit={submit}>
+            <div className={`intake-status ${status.tone || 'normal'}`}>
+              {status.message || 'Enter the minimum needed to create the account and seed the receptionist.'}
             </div>
-            <div className="intake-stack">
-              <label>Business Category</label>
-              <select value={form.businessCategory} onChange={(event) => setFormValue('businessCategory', event.target.value)}>
-                {BUSINESS_CATEGORIES.map((category) => (
-                  <option key={category.value} value={category.value}>{category.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="intake-stack">
-              <label>Owner Name</label>
-              <input value={form.ownerName} onChange={(event) => setFormValue('ownerName', event.target.value)} />
-            </div>
-            <div className="intake-stack">
-              <label>Owner Email</label>
-              <input value={form.ownerEmail} onChange={(event) => setFormValue('ownerEmail', event.target.value)} />
-            </div>
-            <div className="intake-stack">
-              <label>Password</label>
-              <input type="password" value={form.password} onChange={(event) => setFormValue('password', event.target.value)} />
-            </div>
-            <div className="intake-stack">
-              <label>Confirm Password</label>
-              <input type="password" value={form.confirmPassword} onChange={(event) => setFormValue('confirmPassword', event.target.value)} />
-            </div>
-          </div>
 
-          <div className="intake-stack" style={{ marginTop: 18 }}>
-            <h2 className="intake-section-title">Business Context</h2>
-          </div>
+            <section className="intake-section">
+              <div className="intake-section-header">
+                <div className="intake-section-step">01</div>
+                <div>
+                  <h2 className="intake-section-title">Account Setup</h2>
+                  <p className="intake-section-copy">Create the business record and the first owner login.</p>
+                </div>
+              </div>
 
-          <div className="intake-grid">
-            <div className="intake-stack intake-full">
-              <label>Website URL (Optional)</label>
-              <input
-                value={form.website}
-                onChange={(event) => setFormValue('website', event.target.value)}
-                placeholder="https://example.com"
-              />
-              <div className="intake-muted">If available, this will prefill the first website build in the Knowledge Workspace.</div>
-            </div>
-          </div>
+              <div className="intake-grid">
+                <div className="intake-stack">
+                  <label>Business Name</label>
+                  <input value={form.businessName} onChange={(event) => setFormValue('businessName', event.target.value)} />
+                </div>
+                <div className="intake-stack">
+                  <label>Business Category</label>
+                  <select value={form.businessCategory} onChange={(event) => setFormValue('businessCategory', event.target.value)}>
+                    {BUSINESS_CATEGORIES.map((category) => (
+                      <option key={category.value} value={category.value}>{category.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="intake-stack">
+                  <label>Owner Name</label>
+                  <input value={form.ownerName} onChange={(event) => setFormValue('ownerName', event.target.value)} />
+                </div>
+                <div className="intake-stack">
+                  <label>Owner Email</label>
+                  <input value={form.ownerEmail} onChange={(event) => setFormValue('ownerEmail', event.target.value)} />
+                </div>
+                <div className="intake-stack">
+                  <label>Password</label>
+                  <input type="password" value={form.password} onChange={(event) => setFormValue('password', event.target.value)} />
+                </div>
+                <div className="intake-stack">
+                  <label>Confirm Password</label>
+                  <input type="password" value={form.confirmPassword} onChange={(event) => setFormValue('confirmPassword', event.target.value)} />
+                </div>
+              </div>
+            </section>
 
-          <div className="intake-stack" style={{ marginTop: 14 }}>
-            <label>What does the business do?</label>
-            <textarea
-              value={form.companyDescription}
-              onChange={(event) => setFormValue('companyDescription', event.target.value)}
-              placeholder="Describe the business in one or two short sentences."
-            />
-            <div className="intake-muted">This becomes the initial business context for Sarah until a stronger website build is published.</div>
-          </div>
+            <section className="intake-section">
+              <div className="intake-section-header">
+                <div className="intake-section-step">02</div>
+                <div>
+                  <h2 className="intake-section-title">Business Context</h2>
+                  <p className="intake-section-copy">Add the minimum context needed for the first knowledge build.</p>
+                </div>
+              </div>
 
-          <div className="intake-actions" style={{ marginTop: 18 }}>
-            <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Creating...' : 'Create Tenant'}</button>
-          </div>
-        </form>
+              <div className="intake-grid">
+                <div className="intake-stack intake-full">
+                  <label>Website URL (Optional)</label>
+                  <input
+                    value={form.website}
+                    onChange={(event) => setFormValue('website', event.target.value)}
+                    placeholder="https://example.com"
+                  />
+                  <div className="intake-muted">If available, this preloads the first website source in the Knowledge Workspace.</div>
+                </div>
+              </div>
 
-        {activation ? (
-          <section className="intake-card">
-            <h2>Tenant Created</h2>
-            <p><strong>Tenant key:</strong> {activation.tenantKey || 'created'}</p>
-            <p><strong>Prompt profile:</strong> {activation.promptProfile?.business_name || form.businessName}</p>
-            <p><strong>Next step:</strong> Continue to the Knowledge Workspace and create the first build when you are ready.</p>
+              <div className="intake-stack intake-context-block">
+                <label>What does the business do?</label>
+                <textarea
+                  value={form.companyDescription}
+                  onChange={(event) => setFormValue('companyDescription', event.target.value)}
+                  placeholder="Describe the business in one or two short sentences."
+                />
+                <div className="intake-muted">This becomes the initial business context for Sarah until a stronger website build is published.</div>
+              </div>
+            </section>
+
             <div className="intake-actions">
-              <a className="btn primary" href={nextHref}>Continue to Knowledge Workspace</a>
+              <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Creating...' : 'Create Account'}</button>
             </div>
-          </section>
-        ) : null}
+          </form>
+
+          {activation ? (
+            <section className="intake-card intake-success-card">
+              <p className="intake-eyebrow">Account Created</p>
+              <h2 className="intake-success-title">Workspace ready</h2>
+              <div className="intake-success-grid">
+                <div>
+                  <span className="intake-success-label">Tenant key</span>
+                  <div>{activation.tenantKey || 'created'}</div>
+                </div>
+                <div>
+                  <span className="intake-success-label">Prompt profile</span>
+                  <div>{activation.promptProfile?.business_name || form.businessName}</div>
+                </div>
+              </div>
+              <p className="intake-success-copy">Continue to the Knowledge Workspace and create the first build when you are ready.</p>
+              <div className="intake-actions">
+                <a className="btn primary" href={nextHref}>Continue to Knowledge Workspace</a>
+              </div>
+            </section>
+          ) : null}
+        </div>
       </div>
     </div>
   );

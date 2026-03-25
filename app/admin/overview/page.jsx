@@ -78,7 +78,7 @@ export default function AdminOverviewPage() {
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <h2 className="mt-0 text-lg font-semibold">Quick Actions</h2>
           <div className="flex flex-wrap gap-2">
-            <a className={cn(buttonVariants({ variant: 'outline' }))} href="/intake">Create Tenant</a>
+            <a className={cn(buttonVariants({ variant: 'outline' }))} href="/intake">Create Account</a>
             <a className={cn(buttonVariants({ variant: 'default' }))} href="/dashboard">Open Call Dashboard</a>
           </div>
         </div>
