@@ -111,21 +111,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
             <h1>Create a new account</h1>
             <p>Set up the business owner login, capture the basic company context, and continue directly into the Knowledge Workspace.</p>
           </div>
-
-          <div className="intake-guide">
-            <div className="intake-guide-card">
-              <div>
-                <h2>Account Owner</h2>
-                <p>Add the primary business owner and initial password so the account can be activated immediately.</p>
-              </div>
-            </div>
-            <div className="intake-guide-card">
-              <div>
-                <h2>Business Context</h2>
-                <p>Give EveryCall the shortest useful description of what the business does until a stronger website build is published.</p>
-              </div>
-            </div>
-          </div>
         </section>
 
         <div className="intake-main">
@@ -206,9 +191,15 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 <div className="intake-muted">This becomes the initial business context for Sarah until a stronger website build is published.</div>
               </div>
 
-              <div className="intake-next-step">
-                <h3>Next Workspace</h3>
-                <p>After creation, you will land in the Knowledge Workspace to review sources and build the first live version.</p>
+            </section>
+
+            <section className="intake-section">
+              <div className="intake-section-header">
+                <div className="intake-section-step">03</div>
+                <div>
+                  <h2 className="intake-section-title">Next Workspace</h2>
+                  <p className="intake-section-copy">After creation, you will land in the Knowledge Workspace to review sources and build the first live version.</p>
+                </div>
               </div>
             </section>
 
