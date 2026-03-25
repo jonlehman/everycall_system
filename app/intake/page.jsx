@@ -197,7 +197,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
               <div className="intake-section-header">
                 <div className="intake-section-step">03</div>
                 <div>
-                  <h2 className="intake-section-title">Next Workspace</h2>
+                  <h2 className="intake-section-title">Next: Knowledge Workspace Setup</h2>
                   <p className="intake-section-copy">After creation, you will land in the Knowledge Workspace to review sources and build the first live version.</p>
                 </div>
               </div>
