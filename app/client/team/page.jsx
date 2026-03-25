@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import { Button } from '../../../components/ui/button';
+import GuidePanel from '../_components/GuidePanel';
 import ClientPage from '../_components/ClientPage';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
@@ -436,16 +437,17 @@ export default function TeamPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <h2 className="mt-0 text-lg font-semibold">Help</h2>
-          <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
-            <li>Use Edit to update name, email, phone, role, status, SMS setup, and alert preferences.</li>
-            <li>Lead SMS requires both a mobile number and SMS opt-in by replying YES.</li>
-            <li>The SMS opt-in disclosure, privacy policy, and SMS terms are shown in the edit form.</li>
-            <li>Lead email and lead SMS flags control who receives new lead notifications.</li>
-            <li>Use Resend for invited users when they need a fresh invite email.</li>
-          </ul>
-        </div>
+        <GuidePanel title="Team Guide" eyebrow="Guide">
+          <div>Use Team to manage users, alert recipients, invitation state, and SMS opt-in status.</div>
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">Lead SMS requirements</div>
+            <div className="mt-1 text-sm text-slate-600">A user needs a mobile number and a confirmed SMS opt-in by replying YES before SMS alerts can be enabled.</div>
+          </div>
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">Use Edit for</div>
+            <div className="mt-1 text-sm text-slate-600">Name, email, phone, role, status, SMS setup, and lead alert preferences.</div>
+          </div>
+        </GuidePanel>
       </div>
     </ClientPage>
   );

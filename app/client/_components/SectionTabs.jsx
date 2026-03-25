@@ -13,8 +13,8 @@ export default function SectionTabs({ items = [] }) {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-2 shadow-sm">
-      <div className="flex flex-wrap gap-2">
+    <div className="border-b border-slate-200 px-1">
+      <div className="flex flex-wrap gap-5">
         {items.map((item) => {
           const active = pathMatches(pathname, item);
           return (
@@ -22,10 +22,10 @@ export default function SectionTabs({ items = [] }) {
               key={item.href}
               href={item.href}
               className={cn(
-                'inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                'inline-flex items-center border-b-2 px-1 pb-3 pt-1 text-sm font-medium transition-colors',
                 active
-                  ? 'bg-slate-900 text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  ? 'border-primary text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
               )}
             >
               {item.label}

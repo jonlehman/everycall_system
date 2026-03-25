@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
+import GuidePanel from '../../_components/GuidePanel';
 import SectionPage from '../../_components/SectionPage';
 import { accountNavItems } from '../../_components/navigation';
 
@@ -145,15 +146,17 @@ export default function AccountNotificationsPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <h2 className="mt-0 text-lg font-semibold">How it works</h2>
-          <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
-            <li>These switches control tenant-wide notification behavior.</li>
-            <li>Choose actual recipients on the Team page.</li>
-            <li>SMS still requires each recipient to opt in by replying YES.</li>
-            <li>Email can optionally include the full transcript.</li>
-          </ul>
-        </div>
+        <GuidePanel title="Notifications Guide" eyebrow="Guide">
+          <div>These switches control tenant-wide lead notification behavior for the whole account.</div>
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">Choose recipients on Team</div>
+            <div className="mt-1 text-sm text-slate-600">The Team page controls who actually receives email or SMS lead alerts.</div>
+          </div>
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">SMS and transcript rules</div>
+            <div className="mt-1 text-sm text-slate-600">SMS still requires recipient opt-in by replying YES, and email can optionally include the full transcript.</div>
+          </div>
+        </GuidePanel>
       </div>
     </SectionPage>
   );

@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import SectionPage from '../../_components/SectionPage';
+import GuidePanel from '../../_components/GuidePanel';
 import { receptionistNavItems } from '../../_components/navigation';
+import StepSection from '../../_components/StepSection';
 
 function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
@@ -118,58 +120,99 @@ export default function CallHandlingPage() {
       title="Call Handling"
       subtitle="Control business hours, fallback routing, greeting copy, and the voice callers hear."
       status={status}
-      primaryAction={{ label: saving ? 'Saving...' : 'Save Call Handling', brand: true, onClick: saveState, disabled: saving }}
+      primaryAction={{ label: saving ? 'Saving...' : 'Save', brand: true, onClick: saveState, disabled: saving }}
     >
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[7fr_3fr]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[7fr_3fr]">
         <div className="grid gap-3">
-          <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Routing</h2>
-            <label>Primary Queue</label>
-            <select value={primaryQueue} onChange={(event) => setPrimaryQueue(event.target.value)}>
-              <option>Dispatch Team</option>
-              <option>Owner Only</option>
-            </select>
-            <label className="mt-2.5">Emergency Behavior</label>
-            <select value={emergencyBehavior} onChange={(event) => setEmergencyBehavior(event.target.value)}>
-              <option>Immediate Transfer</option>
-              <option>Priority Queue</option>
-            </select>
-            <label className="mt-2.5">After Hours</label>
-            <select value={afterHours} onChange={(event) => setAfterHours(event.target.value)}>
-              <option>Collect details and dispatch callback</option>
-              <option>Forward to on-call</option>
-            </select>
-            <label className="mt-2.5">Business Hours</label>
-            <textarea value={businessHours} onChange={(event) => setBusinessHours(event.target.value)} />
-          </section>
-
-          <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Greeting And Voice</h2>
-            <label>Greeting</label>
-            <textarea value={greetingText} onChange={(event) => setGreetingText(event.target.value)} />
-            <label className="mt-2.5">Voice</label>
-            <select value={voiceType} onChange={(event) => setVoiceType(event.target.value)}>
-              {voiceOptions.map((voice) => (
-                <option key={voice} value={voice}>{voice}</option>
-              ))}
-            </select>
-            <div className="mt-3 flex items-center gap-2">
-              <Button variant="outline" type="button" onClick={playSample}>Play Voice Sample</Button>
-              <span className="text-sm text-slate-500">{sampleStatus}</span>
+          <StepSection
+            step="01"
+            title="Call Routing"
+            description="Define who gets the handoff, how emergencies are treated, and what callers should expect outside business hours."
+          >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label>Primary Queue</label>
+                <select value={primaryQueue} onChange={(event) => setPrimaryQueue(event.target.value)}>
+                  <option>Dispatch Team</option>
+                  <option>Owner Only</option>
+                </select>
+              </div>
+              <div>
+                <label>Emergency Behavior</label>
+                <select value={emergencyBehavior} onChange={(event) => setEmergencyBehavior(event.target.value)}>
+                  <option>Immediate Transfer</option>
+                  <option>Priority Queue</option>
+                </select>
+              </div>
+              <div>
+                <label>Business Hours</label>
+                <textarea value={businessHours} onChange={(event) => setBusinessHours(event.target.value)} />
+              </div>
+              <div>
+                <label>After Hours Protocol</label>
+                <select value={afterHours} onChange={(event) => setAfterHours(event.target.value)}>
+                  <option>Collect details and dispatch callback</option>
+                  <option>Forward to on-call</option>
+                </select>
+              </div>
             </div>
-            <audio ref={sampleAudioRef} preload="none" />
-          </section>
+          </StepSection>
+
+          <StepSection
+            step="02"
+            title="Greeting & Voice"
+            description="Set the copy callers hear first and choose the voice profile used for live responses."
+          >
+            <div className="grid gap-3">
+              <div>
+                <label>Welcome Message</label>
+                <textarea value={greetingText} onChange={(event) => setGreetingText(event.target.value)} />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto] md:items-end">
+                <div>
+                  <label>Voice Selection</label>
+                  <select value={voiceType} onChange={(event) => setVoiceType(event.target.value)}>
+                    {voiceOptions.map((voice) => (
+                      <option key={voice} value={voice}>{voice}</option>
+                    ))}
+                  </select>
+                </div>
+                <Button variant="outline" type="button" onClick={playSample}>
+                  Play Voice Sample
+                </Button>
+              </div>
+
+              {sampleStatus ? <div className="text-sm text-slate-500">{sampleStatus}</div> : null}
+              <audio ref={sampleAudioRef} preload="none" />
+            </div>
+          </StepSection>
         </div>
 
-        <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <h2 className="mt-0 text-lg font-semibold">What belongs here</h2>
-          <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
-            <li>Who gets the call next when the agent needs to hand off.</li>
-            <li>What to do after hours or when the situation is urgent.</li>
-            <li>The greeting text and voice profile callers hear.</li>
-            <li>Save routing and voice together so live behavior stays consistent.</li>
-          </ul>
-        </section>
+        <GuidePanel title="Call Handling Guide" eyebrow="Guide">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4f73a8]">What belongs here</div>
+            <p className="mb-0 mt-2">
+              Use this page for routing logic, business hours, after-hours behavior, greeting text, and caller voice settings.
+            </p>
+          </div>
+
+          <div className="grid gap-3">
+            <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+              <div className="font-semibold text-slate-900">Call Routing</div>
+              <div className="mt-1 text-sm text-slate-600">Choose the primary handoff path and how urgent or after-hours calls should behave.</div>
+            </div>
+            <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+              <div className="font-semibold text-slate-900">Greeting & Voice</div>
+              <div className="mt-1 text-sm text-slate-600">Set the first line callers hear and the voice profile used during the conversation.</div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[#d6e4ff] bg-[#f5f8ff] p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4f73a8]">Tip</div>
+            <div className="mt-2 text-sm text-slate-600">Save routing and voice together so the live receptionist behavior stays consistent.</div>
+          </div>
+        </GuidePanel>
       </div>
     </SectionPage>
   );

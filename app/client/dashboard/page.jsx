@@ -81,10 +81,10 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wider text-slate-500">Calls Today</div><div className="mt-1 text-3xl font-bold">{stats.callsToday}</div></div>
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wider text-slate-500">Missed</div><div className="mt-1 text-3xl font-bold">{stats.missed}</div></div>
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wider text-slate-500">Urgent</div><div className="mt-1 text-3xl font-bold">{stats.urgent}</div></div>
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wider text-slate-500">Callbacks Due</div><div className="mt-1 text-3xl font-bold">{stats.callbacksDue}</div></div>
+        <div className="workspace-metric"><div className="text-xs uppercase tracking-[0.16em] text-slate-500">Calls Today</div><div className="mt-1 text-3xl font-bold tracking-tight">{stats.callsToday}</div></div>
+        <div className="workspace-metric"><div className="text-xs uppercase tracking-[0.16em] text-slate-500">Missed</div><div className="mt-1 text-3xl font-bold tracking-tight">{stats.missed}</div></div>
+        <div className="workspace-metric"><div className="text-xs uppercase tracking-[0.16em] text-slate-500">Urgent</div><div className="mt-1 text-3xl font-bold tracking-tight">{stats.urgent}</div></div>
+        <div className="workspace-metric"><div className="text-xs uppercase tracking-[0.16em] text-slate-500">Callbacks Due</div><div className="mt-1 text-3xl font-bold tracking-tight">{stats.callbacksDue}</div></div>
       </div>
 
       <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_.8fr]">

@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
+import GuidePanel from '../../_components/GuidePanel';
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
+import StepSection from '../../_components/StepSection';
 
 function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
@@ -78,68 +80,80 @@ export default function ReceptionistBasicsPage() {
       title="Receptionist Basics"
       subtitle="Set the business-facing identity and opening copy for your call receptionist."
       status={status}
-      primaryAction={{ label: saving ? 'Saving...' : 'Save Basics', brand: true, onClick: saveProfile, disabled: saving || loading }}
+      primaryAction={{ label: saving ? 'Saving...' : 'Save', brand: true, onClick: saveProfile, disabled: saving || loading }}
     >
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[7fr_3fr]">
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <h2 className="mt-0 text-lg font-semibold">Presentation</h2>
-          <div className="text-sm text-slate-600">
-            These are the tenant-controlled identity fields the phone agent speaks from. Routing rules and advanced tool policy stay elsewhere.
-          </div>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[7fr_3fr]">
+        <div className="grid gap-3">
+          <StepSection
+            step="01"
+            title="Identity"
+            description="Define the business identity the receptionist speaks from when answering calls."
+          >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label>Assistant Name</label>
+                <input
+                  value={form.assistantName}
+                  onChange={(event) => setForm((current) => ({ ...current, assistantName: event.target.value }))}
+                  placeholder="EveryCall"
+                />
+              </div>
+              <div>
+                <label>Business Name</label>
+                <input
+                  value={form.businessName}
+                  onChange={(event) => setForm((current) => ({ ...current, businessName: event.target.value }))}
+                  placeholder="Harts Services"
+                />
+              </div>
+            </div>
 
-          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div>
-              <label>Assistant Name</label>
-              <input
-                value={form.assistantName}
-                onChange={(event) => setForm((current) => ({ ...current, assistantName: event.target.value }))}
-                placeholder="EveryCall"
+            <div className="mt-3">
+              <label>Company Description</label>
+              <textarea
+                value={form.companyDescription}
+                onChange={(event) => setForm((current) => ({ ...current, companyDescription: event.target.value }))}
+                style={{ minHeight: 120 }}
+                placeholder="Briefly describe the business, service area, and what callers usually need help with."
               />
             </div>
-            <div>
-              <label>Business Name</label>
-              <input
-                value={form.businessName}
-                onChange={(event) => setForm((current) => ({ ...current, businessName: event.target.value }))}
-                placeholder="Harts Services"
-              />
+          </StepSection>
+
+          <StepSection
+            step="02"
+            title="Opening Line"
+            description="Set the first sentence callers hear before the receptionist begins gathering details."
+          >
+            <label>Opening Line</label>
+            <textarea
+              value={form.openingLine}
+              onChange={(event) => setForm((current) => ({ ...current, openingLine: event.target.value }))}
+              placeholder="Thanks for calling..."
+            />
+
+            <div className="mt-3 flex gap-2">
+              <Button onClick={saveProfile} disabled={saving || loading}>
+                {saving ? 'Saving...' : 'Save'}
+              </Button>
+              <Button variant="outline" onClick={loadProfile} disabled={saving}>
+                Reload
+              </Button>
             </div>
-          </div>
-
-          <label className="mt-2.5">Company Description</label>
-          <textarea
-            value={form.companyDescription}
-            onChange={(event) => setForm((current) => ({ ...current, companyDescription: event.target.value }))}
-            style={{ minHeight: 120 }}
-            placeholder="Briefly describe the business, service area, and what callers usually need help with."
-          />
-
-          <label className="mt-2.5">Opening Line</label>
-          <textarea
-            value={form.openingLine}
-            onChange={(event) => setForm((current) => ({ ...current, openingLine: event.target.value }))}
-            placeholder="Thanks for calling..."
-          />
-
-          <div className="mt-3 flex gap-2">
-            <Button onClick={saveProfile} disabled={saving || loading}>
-              {saving ? 'Saving...' : 'Save Basics'}
-            </Button>
-            <Button variant="outline" onClick={loadProfile} disabled={saving}>
-              Reload
-            </Button>
-          </div>
+          </StepSection>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <h2 className="mt-0 text-lg font-semibold">What belongs here</h2>
-          <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
-            <li>Assistant name and business name spoken to callers.</li>
-            <li>Business description used to frame answers and lead collection.</li>
-            <li>The main greeting line the caller hears first.</li>
-            <li>Use Call Handling for routing, hours, and voice.</li>
-          </ul>
-        </div>
+        <GuidePanel title="Basics Guide" eyebrow="Guide">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4f73a8]">What belongs here</div>
+            <p className="mb-0 mt-2">
+              Use Basics for the name, business framing, and opening copy the receptionist uses when answering calls.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">Use Call Handling for</div>
+            <div className="mt-1 text-sm text-slate-600">Business hours, routing behavior, emergency logic, after-hours behavior, and voice selection.</div>
+          </div>
+        </GuidePanel>
       </div>
     </SectionPage>
   );

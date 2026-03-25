@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
+import GuidePanel from '../../_components/GuidePanel';
 import SectionPage from '../../_components/SectionPage';
 import { accountNavItems } from '../../_components/navigation';
 
@@ -133,15 +134,17 @@ export default function AccountGeneralPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <h2 className="mt-0 text-lg font-semibold">What belongs here</h2>
-          <ul className="mt-2 list-disc pl-5 text-sm text-slate-500">
-            <li>Timezone and internal notes for the tenant.</li>
-            <li>Account snapshot details like plan and data region.</li>
-            <li>Use Notifications for lead alert delivery settings.</li>
-            <li>Use Billing for payment status and subscription access.</li>
-          </ul>
-        </div>
+        <GuidePanel title="Account Guide" eyebrow="Guide">
+          <div>Timezone, internal notes, plan details, and other account-level defaults belong here.</div>
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">Use Notifications for</div>
+            <div className="mt-1 text-sm text-slate-600">Lead alert delivery settings and transcript preferences.</div>
+          </div>
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">Use Billing for</div>
+            <div className="mt-1 text-sm text-slate-600">Payment status, trial timing, and subscription access.</div>
+          </div>
+        </GuidePanel>
       </div>
     </SectionPage>
   );

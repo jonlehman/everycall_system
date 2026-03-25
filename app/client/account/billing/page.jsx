@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
+import GuidePanel from '../../_components/GuidePanel';
 import SectionPage from '../../_components/SectionPage';
 import { accountNavItems } from '../../_components/navigation';
 
@@ -204,20 +205,23 @@ export default function AccountBillingPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-          <h2 className="mt-0 text-lg font-semibold">What happens next</h2>
-          <ul className="mt-3 list-disc pl-5 text-sm text-slate-600">
-            <li>Trial runs for 30 days with no card required.</li>
-            <li>We send reminders 5 days, 2 days, and the day trial ends.</li>
-            <li>After trial ends, calls and lead capture continue for 30 days but app access is billing-locked.</li>
-            <li>At the end of that extra 30-day window, the number is released and the account is deactivated.</li>
-          </ul>
+        <GuidePanel title="Billing Guide" eyebrow="Guide">
+          <div>Billing controls subscription status, trial timing, and whether the workspace remains fully accessible.</div>
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">What happens next</div>
+            <ul className="mb-0 mt-2 list-disc pl-5 text-sm text-slate-600">
+              <li>Trial runs for 30 days with no card required.</li>
+              <li>We send reminders 5 days, 2 days, and the day trial ends.</li>
+              <li>After trial ends, calls and lead capture continue for 30 days but app access is billing-locked.</li>
+              <li>At the end of that extra 30-day window, the number is released and the account is deactivated.</li>
+            </ul>
+          </div>
           {locked ? (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               New leads will continue to be captured, but full app access remains locked until billing is active.
             </div>
           ) : null}
-        </div>
+        </GuidePanel>
       </div>
     </SectionPage>
   );

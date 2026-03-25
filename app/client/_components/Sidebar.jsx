@@ -55,9 +55,9 @@ export default function Sidebar({ collapsed = false, onToggle }) {
   return (
     <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
       <div className="sidebar-top">
-        <div className="logo">{collapsed ? 'ec' : <>every<span>call</span></>}</div>
+        <div className="logo">{collapsed ? 'EC' : <>Every<span>Call</span></>}</div>
         <button className="nav-btn collapse-toggle" type="button" onClick={onToggle} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-          {collapsed ? '>>' : '<<'}
+          {collapsed ? '→' : '←'}
         </button>
       </div>
 
