@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
+import GuidePanel from '../../_components/GuidePanel';
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
+import StepSection from '../../_components/StepSection';
 
 function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
@@ -24,9 +26,9 @@ function fileToBase64(file) {
 
 function ArtifactStat({ label, value }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="text-2xl font-bold text-slate-900">{value}</div>
+    <div className="workspace-metric">
+      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">{label}</div>
+      <div className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-slate-900">{value}</div>
     </div>
   );
 }
@@ -62,7 +64,7 @@ function renderBuildProgress(build) {
 function progressStageTone(status) {
   const normalized = String(status || '').trim().toLowerCase();
   if (normalized === 'done') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
-  if (normalized === 'active') return 'border-slate-900 bg-slate-900 text-white';
+  if (normalized === 'active') return 'border-primary/20 bg-primary text-white';
   return 'border-slate-200 bg-white text-slate-500';
 }
 
@@ -435,6 +437,14 @@ export default function ReceptionistKnowledgePage() {
   const forcedSupportModeActive = Boolean(
     previewAnswerPacket?.metadata?.forced_support_mode || previewRuntimeBundle?.forced_support_mode
   );
+  const latestBuildStatus = String(latestBuild?.status || '').trim().toLowerCase();
+  const statusChip = buildState.builds.some((build) => isBuildActive(build))
+    ? { tone: 'warn', label: 'Build In Progress' }
+    : latestBuildStatus === 'published'
+      ? { tone: 'ok', label: 'Published Build Active' }
+      : latestBuildStatus === 'ready_to_publish'
+        ? { tone: 'warn', label: 'Ready to Publish' }
+        : { tone: 'warn', label: 'Knowledge Needs Review' };
 
   return (
     <SectionPage
@@ -442,6 +452,7 @@ export default function ReceptionistKnowledgePage() {
       title="Knowledge"
       subtitle="Manage builds, uploaded documents, published versions, and answer preview."
       status={status}
+      statusChip={statusChip}
       primaryAction={{ label: loading ? 'Loading...' : 'Reload', brand: true, onClick: () => loadWorkspace(), disabled: loading }}
     >
       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
@@ -451,10 +462,13 @@ export default function ReceptionistKnowledgePage() {
         <ArtifactStat label="Guardrails" value={guardrails.length} />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.12fr_0.88fr]">
         <div className="grid gap-3">
-          <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Build Pipeline</h2>
+          <StepSection
+            step="01"
+            title="Build Pipeline"
+            description="Point the build at the right website and include approved documents before you create a new knowledge version."
+          >
             <label>Website URL</label>
             <input
               value={buildForm.websiteUrl}
@@ -474,28 +488,28 @@ export default function ReceptionistKnowledgePage() {
                 Build status auto-refreshes every 15 seconds while work is active.
               </div>
             ) : null}
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-wrap gap-2">
               <Button onClick={createBuild} disabled={buildBusy}>
                 {buildBusy ? 'Queueing...' : 'Create Build'}
               </Button>
             </div>
             {latestBuild ? (
-              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                <div className="font-semibold text-slate-900">Latest Build</div>
-                <div>ID: {latestBuild.build_id}</div>
-                <div>Status: {latestBuild.status}</div>
-                <div>{renderBuildProgress(latestBuild)}</div>
+              <div className="mt-4 rounded-xl border border-slate-200/50 bg-white p-4 text-sm text-slate-700">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Latest Build</div>
+                <div className="mt-2 font-semibold text-slate-900">{latestBuild.build_id}</div>
+                <div className="mt-1">Status: {formatLabel(latestBuild.status)}</div>
+                <div className="mt-1">{renderBuildProgress(latestBuild)}</div>
                 <BuildProgressMeter build={latestBuild} />
-                <div>Warnings: {Array.isArray(latestBuild.warnings_json) ? latestBuild.warnings_json.length : 0}</div>
+                <div className="mt-2">Warnings: {Array.isArray(latestBuild.warnings_json) ? latestBuild.warnings_json.length : 0}</div>
               </div>
             ) : null}
-          </section>
+          </StepSection>
 
-          <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Uploaded Documents</h2>
-            <div className="text-sm text-slate-600">
-              Upload first-party pricing, policy, and process documents here. They are pulled into the next build automatically.
-            </div>
+          <StepSection
+            step="02"
+            title="Uploaded Documents"
+            description="Add first-party pricing, policy, and operational material so the next build has stronger source coverage."
+          >
 
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
@@ -549,7 +563,7 @@ export default function ReceptionistKnowledgePage() {
 
             <div className="mt-4 grid gap-2">
               {uploadedDocuments.length ? uploadedDocuments.map((document) => (
-                <div key={document.uploaded_document_id} className="rounded-lg border border-slate-200 p-3">
+                <div key={document.uploaded_document_id} className="rounded-lg border border-slate-200 bg-white p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <div className="font-semibold text-slate-900">{document.title}</div>
@@ -568,15 +582,30 @@ export default function ReceptionistKnowledgePage() {
                 <div className="text-sm text-slate-500">No uploaded documents yet.</div>
               )}
             </div>
-          </section>
+          </StepSection>
         </div>
 
         <div className="grid gap-3">
-          <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Build History</h2>
+          <GuidePanel title="Knowledge Guide" eyebrow="How it works" icon="architecture">
+            <div>Knowledge follows a simple cycle: add sources, build a new version, review the result, then publish it live.</div>
+            <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+              <div className="font-semibold text-slate-900">Published build</div>
+              <div className="mt-1 text-sm text-slate-600">The currently published build is what callers actually hear when the receptionist answers knowledge questions.</div>
+            </div>
+            <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+              <div className="font-semibold text-slate-900">Runtime preview</div>
+              <div className="mt-1 text-sm text-slate-600">Use preview to test caller-style questions before publishing changes into production.</div>
+            </div>
+          </GuidePanel>
+
+          <StepSection
+            step="03"
+            title="Build History"
+            description="Publish a ready build or roll back to a previous version when you need to restore the prior runtime."
+          >
             <div className="grid gap-2">
               {buildState.builds.length ? buildState.builds.map((build) => (
-                <div key={build.build_id} className="rounded-lg border border-slate-200 p-3">
+                <div key={build.build_id} className="rounded-lg border border-slate-200 bg-white p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <div className="font-semibold text-slate-900">{build.version || build.build_id}</div>
@@ -617,13 +646,15 @@ export default function ReceptionistKnowledgePage() {
                 <div className="text-sm text-slate-500">No builds yet.</div>
               )}
             </div>
-          </section>
+          </StepSection>
+        </div>
+      </div>
 
-          <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Runtime Preview</h2>
-            <div className="text-sm text-slate-600">
-              Ask a caller-style question to see the representative answer packet the phone AI would likely speak from.
-            </div>
+      <StepSection
+        step="04"
+        title="Runtime Preview"
+        description="Ask a caller-style question to see the representative answer packet the phone AI would likely speak from."
+      >
             <label className="mt-2.5">Representative Query</label>
             <input value={previewQuery} onChange={(event) => setPreviewQuery(event.target.value)} placeholder="Do you handle after-hours emergencies?" />
             <div className="mt-3">
@@ -637,7 +668,7 @@ export default function ReceptionistKnowledgePage() {
                     bundle confidence is forced to <strong>0.99</strong> for this preview.
                   </div>
                 ) : null}
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
                   <div className="text-sm font-semibold text-slate-900">Representative Answer</div>
                   <div className="mt-2 text-sm leading-6 text-slate-700">{representativeAnswer}</div>
                 </div>
@@ -652,7 +683,7 @@ export default function ReceptionistKnowledgePage() {
                 </div>
 
                 <div className="grid gap-3">
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
                     <div className="text-sm font-semibold text-slate-900">Coverage Support</div>
                     {Array.isArray(previewAnswerPacket?.coverage) && previewAnswerPacket.coverage.length ? (
                       <div className="mt-2 grid gap-2">
@@ -675,7 +706,7 @@ export default function ReceptionistKnowledgePage() {
                     )}
                   </div>
 
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
                     <div className="text-sm font-semibold text-slate-900">Selected Cards</div>
                     {Array.isArray(previewRuntimeBundle?.selected_cards) && previewRuntimeBundle.selected_cards.length ? (
                       <div className="mt-2 grid gap-2">
@@ -718,7 +749,7 @@ export default function ReceptionistKnowledgePage() {
                     />
                   </div>
 
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
                     <div className="text-sm font-semibold text-slate-900">Used Facts</div>
                     {Array.isArray(previewRuntimeBundle?.selected_answer_facts) && previewRuntimeBundle.selected_answer_facts.length ? (
                       <ul className="mt-2 list-disc pl-5 text-sm text-slate-700">
@@ -735,7 +766,7 @@ export default function ReceptionistKnowledgePage() {
                   </div>
                 </div>
 
-                <details className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <details className="rounded-lg border border-slate-200 bg-white p-3">
                   <summary className="cursor-pointer text-sm font-semibold text-slate-900">Advanced Details</summary>
                   <div className="mt-3 grid gap-3">
                     <PreviewList
@@ -764,9 +795,7 @@ export default function ReceptionistKnowledgePage() {
                 </details>
               </div>
             ) : null}
-          </section>
-        </div>
-      </div>
+      </StepSection>
     </SectionPage>
   );
 }

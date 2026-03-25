@@ -339,6 +339,10 @@ export default function CallsPage() {
     || detailDraft.requestedTime !== (detailMeta.requested_time || '')
   );
 
+  const newCount = rows.filter((row) => row.status === 'new').length;
+  const urgentCount = rows.filter((row) => row.urgency === 'high' || row.urgency === 'critical').length;
+  const activeSelectionLabel = detailMeta ? (formatPhoneDisplay(detailMeta.from_number) || detailMeta.call_sid) : 'No call selected';
+
   return (
     <ClientPage
       title="Calls"
@@ -346,90 +350,120 @@ export default function CallsPage() {
       status={status}
       primaryAction={{ label: 'Refresh Data', brand: true, onClick: refreshData }}
     >
-      <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-[1.2fr_.8fr]'} min-w-0`}>
-        <div className="min-w-0 rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className={`mb-3 flex ${isMobile ? 'flex-col' : 'flex-row items-start justify-between'} gap-3`}>
-            <h2 className="mb-2 mt-0 text-lg font-semibold">Calls</h2>
-            <div className={`${isMobile ? 'w-full' : ''}`}>
-              <div className="mb-3 flex flex-wrap gap-2">
-                <Button variant="outline" type="button" onClick={() => applyQuickView('new')}>New</Button>
-                <Button variant="outline" type="button" onClick={() => applyQuickView('high')}>High Urgency</Button>
-                <Button variant="outline" type="button" onClick={() => applyQuickView('all')}>All Calls</Button>
-              </div>
-              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                <div className="grid gap-2">
-                  <div>
-                    <input
-                      ref={searchInputRef}
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Number"
-                      aria-label="Number"
-                    />
-                  </div>
-                  <div>
-                    <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Call Status">
-                      <option value="all">Call Status (All)</option>
-                      <option value="new">New</option>
-                      <option value="contacted">Contacted</option>
-                      <option value="scheduled">Scheduled</option>
-                      <option value="in_progress">In Progress</option>
-                      <option value="completed">Completed</option>
-                      <option value="unable_to_reach">Unable to Reach</option>
-                      <option value="canceled">Canceled</option>
-                      <option value="spam">Spam / Wrong Number</option>
-                    </select>
-                  </div>
-                  <div>
-                    <select value={urgencyFilter} onChange={(event) => setUrgencyFilter(event.target.value)} aria-label="Urgency Level">
-                      <option value="all">Urgency (All)</option>
-                      <option value="critical">Critical</option>
-                      <option value="high">High</option>
-                      <option value="normal">Normal</option>
-                      <option value="low">Low</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">From</span>
-                      <input
-                        type="date"
-                        value={dateFrom}
-                        onChange={(event) => setDateFrom(event.target.value)}
-                        aria-label="Date From"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">To</span>
-                      <input
-                        type="date"
-                        value={dateTo}
-                        onChange={(event) => setDateTo(event.target.value)}
-                        aria-label="Date To"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Button
-                      variant="outline"
-                      type="button"
-                      onClick={() => {
-                        setStatusFilter('all');
-                        setUrgencyFilter('all');
-                        setDateFrom('');
-                        setDateTo('');
-                        setSearch('');
-                      }}
-                    >
-                      Reset Filters
-                    </Button>
-                  </div>
-                </div>
-              </div>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-4">
+        <div className="workspace-metric">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Calls in View</div>
+          <div className="mt-1 text-3xl font-semibold tracking-[-0.02em] text-slate-900">{filteredRows.length}</div>
+        </div>
+        <div className="workspace-metric">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">New</div>
+          <div className="mt-1 text-3xl font-semibold tracking-[-0.02em] text-slate-900">{newCount}</div>
+        </div>
+        <div className="workspace-metric">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Urgent</div>
+          <div className="mt-1 text-3xl font-semibold tracking-[-0.02em] text-slate-900">{urgentCount}</div>
+        </div>
+        <div className="workspace-metric">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Current Focus</div>
+          <div className="mt-2 text-sm font-semibold text-slate-900">{activeSelectionLabel}</div>
+        </div>
+      </div>
+
+      <section className="workspace-panel-soft p-5">
+        <div className={`flex ${isMobile ? 'flex-col' : 'items-start justify-between'} gap-4`}>
+          <div>
+            <h2 className="m-0 text-xl font-semibold tracking-[-0.02em] text-slate-900">Queue Views</h2>
+            <p className="m-0 mt-1 text-sm text-slate-500">Use quick views and filters to focus the call queue before you open details.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" type="button" onClick={() => applyQuickView('new')}>New</Button>
+            <Button variant="outline" type="button" onClick={() => applyQuickView('high')}>High Urgency</Button>
+            <Button variant="outline" type="button" onClick={() => applyQuickView('all')}>All Calls</Button>
+          </div>
+        </div>
+
+        <div className={`mt-4 grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          <div className="grid gap-3">
+            <div>
+              <label>Search Number</label>
+              <input
+                ref={searchInputRef}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by caller number"
+                aria-label="Number"
+              />
+            </div>
+            <div>
+              <label>Call Status</label>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Call Status">
+                <option value="all">All statuses</option>
+                <option value="new">New</option>
+                <option value="contacted">Contacted</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="unable_to_reach">Unable to Reach</option>
+                <option value="canceled">Canceled</option>
+                <option value="spam">Spam / Wrong Number</option>
+              </select>
+            </div>
+            <div>
+              <label>Urgency</label>
+              <select value={urgencyFilter} onChange={(event) => setUrgencyFilter(event.target.value)} aria-label="Urgency Level">
+                <option value="all">All urgency levels</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="normal">Normal</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            <div>
+              <label>Date From</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(event) => setDateFrom(event.target.value)}
+                aria-label="Date From"
+              />
+            </div>
+            <div>
+              <label>Date To</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(event) => setDateTo(event.target.value)}
+                aria-label="Date To"
+              />
+            </div>
+            <div className="pt-1">
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => {
+                  setStatusFilter('all');
+                  setUrgencyFilter('all');
+                  setDateFrom('');
+                  setDateTo('');
+                  setSearch('');
+                }}
+              >
+                Reset Filters
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-[1.15fr_.85fr]'} min-w-0`}>
+        <div className="workspace-panel min-w-0 overflow-hidden p-4">
+          <div className={`mb-4 flex ${isMobile ? 'flex-col' : 'items-start justify-between'} gap-3`}>
+            <div>
+              <h2 className="m-0 text-xl font-semibold tracking-[-0.02em] text-slate-900">Call Queue</h2>
+              <p className="m-0 mt-1 text-sm text-slate-500">Open a row to review caller details, update follow-up status, and capture notes.</p>
             </div>
           </div>
           <div style={{ height: rows.length ? 'auto' : 300 }}>
@@ -449,22 +483,31 @@ export default function CallsPage() {
               sx={{
                 border: 'none',
                 '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.35', whiteSpace: 'normal' },
-                '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
-                '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600, letterSpacing: '0.01em' },
-                '& .is-selected-call-row': { backgroundColor: '#f0f9ff' },
-                '& .MuiDataGrid-row:hover': { backgroundColor: '#f8fafc' }
+                '& .MuiDataGrid-columnHeaders': { backgroundColor: '#eff4ff', borderBottom: '1px solid rgba(195,198,215,0.55)' },
+                '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 700, letterSpacing: '0.01em', fontSize: '0.75rem', textTransform: 'uppercase' },
+                '& .is-selected-call-row': { backgroundColor: '#eef3ff' },
+                '& .MuiDataGrid-row:hover': { backgroundColor: '#f6f8ff' }
               }}
             />
           </div>
         </div>
-        <div className="min-w-0 rounded-xl border border-border bg-card p-3 shadow-sm">
-          <h2 className="mt-0 text-lg font-semibold">Call Details</h2>
+
+        <div className="workspace-panel min-w-0 p-4">
+          <div className="mb-4">
+            <h2 className="m-0 text-xl font-semibold tracking-[-0.02em] text-slate-900">Call Details</h2>
+            <p className="m-0 mt-1 text-sm text-slate-500">Review intake information, adjust follow-up fields, and keep notes with the call.</p>
+          </div>
           {!detailMeta ? (
-            <div className="text-sm text-slate-500">{detailStatus}</div>
+            <div className="rounded-xl border border-slate-200/50 bg-[#eff4ff] p-4 text-sm text-slate-500">{detailStatus}</div>
           ) : (
             <>
-              <div className="mb-2 text-sm text-slate-500">{new Date(detailMeta.created_at).toLocaleString()}</div>
-              <div className={`grid gap-2 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+              <div className="mb-3 rounded-xl border border-slate-200/50 bg-[#eff4ff] p-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Selected Call</div>
+                <div className="mt-2 text-sm font-semibold text-slate-900">{formatPhoneDisplay(detailMeta.from_number) || detailMeta.call_sid}</div>
+                <div className="mt-1 text-sm text-slate-500">{new Date(detailMeta.created_at).toLocaleString()}</div>
+              </div>
+
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
                   <label>Number</label>
                   <input value={formatPhoneDisplay(detailMeta.from_number) || ''} readOnly />
@@ -486,11 +529,12 @@ export default function CallsPage() {
                   </select>
                 </div>
               </div>
-              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-sm font-semibold text-slate-700">Caller Details</div>
-                <div className={`mt-2 grid gap-2 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+
+              <div className="mt-4 rounded-xl border border-slate-200/40 bg-[#eff4ff] p-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Caller Details</div>
+                <div className={`mt-3 grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">First Name</div>
+                    <label>First Name</label>
                     <input
                       value={detailDraft.firstName}
                       onChange={(event) => setDetailDraft((prev) => ({ ...prev, firstName: event.target.value }))}
@@ -498,7 +542,7 @@ export default function CallsPage() {
                     />
                   </div>
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Last Name</div>
+                    <label>Last Name</label>
                     <input
                       value={detailDraft.lastName}
                       onChange={(event) => setDetailDraft((prev) => ({ ...prev, lastName: event.target.value }))}
@@ -506,7 +550,7 @@ export default function CallsPage() {
                     />
                   </div>
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Callback Number</div>
+                    <label>Callback Number</label>
                     <input
                       value={detailDraft.callbackNumber}
                       onChange={(event) => setDetailDraft((prev) => ({ ...prev, callbackNumber: event.target.value }))}
@@ -514,7 +558,7 @@ export default function CallsPage() {
                     />
                   </div>
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Service Required</div>
+                    <label>Service Required</label>
                     <input
                       value={detailDraft.serviceRequired}
                       onChange={(event) => setDetailDraft((prev) => ({ ...prev, serviceRequired: event.target.value }))}
@@ -522,7 +566,7 @@ export default function CallsPage() {
                     />
                   </div>
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Requested Date</div>
+                    <label>Requested Date</label>
                     <input
                       type="date"
                       value={detailDraft.requestedDate}
@@ -530,7 +574,7 @@ export default function CallsPage() {
                     />
                   </div>
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Requested Time</div>
+                    <label>Requested Time</label>
                     <input
                       value={detailDraft.requestedTime}
                       onChange={(event) => setDetailDraft((prev) => ({ ...prev, requestedTime: event.target.value }))}
@@ -538,7 +582,7 @@ export default function CallsPage() {
                     />
                   </div>
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Address Line 1</div>
+                    <label>Address Line 1</label>
                     <input
                       value={detailDraft.addressLine1}
                       onChange={(event) => setDetailDraft((prev) => ({ ...prev, addressLine1: event.target.value }))}
@@ -546,7 +590,7 @@ export default function CallsPage() {
                     />
                   </div>
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Address Line 2</div>
+                    <label>Address Line 2</label>
                     <input
                       value={detailDraft.addressLine2}
                       onChange={(event) => setDetailDraft((prev) => ({ ...prev, addressLine2: event.target.value }))}
@@ -554,7 +598,7 @@ export default function CallsPage() {
                     />
                   </div>
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">City</div>
+                    <label>City</label>
                     <input
                       value={detailDraft.city}
                       onChange={(event) => setDetailDraft((prev) => ({ ...prev, city: event.target.value }))}
@@ -562,7 +606,7 @@ export default function CallsPage() {
                     />
                   </div>
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">State</div>
+                    <label>State</label>
                     <input
                       value={detailDraft.state}
                       onChange={(event) => setDetailDraft((prev) => ({ ...prev, state: event.target.value }))}
@@ -570,7 +614,7 @@ export default function CallsPage() {
                     />
                   </div>
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Zip</div>
+                    <label>Zip</label>
                     <input
                       value={detailDraft.postalCode}
                       onChange={(event) => setDetailDraft((prev) => ({ ...prev, postalCode: event.target.value }))}
@@ -579,7 +623,8 @@ export default function CallsPage() {
                   </div>
                 </div>
               </div>
-              <div className={`mt-2 grid gap-2 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+
+              <div className={`mt-4 grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
                   <label>Urgency</label>
                   <select
@@ -597,7 +642,8 @@ export default function CallsPage() {
                   <input value={new Date(detailMeta.created_at).toLocaleString()} readOnly />
                 </div>
               </div>
-              <div className="mt-3">
+
+              <div className="mt-4">
                 <label>AI Summary</label>
                 <textarea
                   value={detailDraft.summary}
@@ -605,7 +651,8 @@ export default function CallsPage() {
                   style={{ minHeight: isMobile ? 64 : 70 }}
                 />
               </div>
-              <div className="mt-3">
+
+              <div className="mt-4">
                 <label>Internal Notes</label>
                 <textarea
                   value={detailDraft.notes}
@@ -614,16 +661,18 @@ export default function CallsPage() {
                   placeholder="Write follow-up details, context, or callback notes."
                 />
               </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 <Button type="button" onClick={() => saveDetail('all')} disabled={!hasUnsavedChanges}>
                   Save Changes
                 </Button>
                 <span className="text-sm text-slate-500">{saveStatus || (hasUnsavedChanges ? 'Unsaved changes' : 'No changes')}</span>
                 {lastSavedAt ? <span className="text-sm text-slate-500">Last saved {lastSavedAt}</span> : null}
               </div>
-              <div className="mt-3">
-                <div className="mb-1 text-sm text-slate-500">Transcript</div>
-                <pre className="rounded-md bg-slate-900 p-3 font-mono text-xs text-slate-100" style={{ whiteSpace: 'pre-wrap' }}>
+
+              <div className="mt-4 rounded-xl border border-slate-200/40 bg-[#eff4ff] p-4">
+                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Transcript</div>
+                <pre className="rounded-md border border-slate-200 bg-white p-3 text-sm leading-6 text-slate-700" style={{ whiteSpace: 'pre-wrap' }}>
                   {detailTranscript ? formatTranscript(detailTranscript) : 'No transcript available yet.'}
                 </pre>
               </div>
