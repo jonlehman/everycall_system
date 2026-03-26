@@ -382,6 +382,11 @@ export default function ReceptionistKnowledgePage() {
   const approvedUploadedDocuments = uploadedDocuments.filter((document) => String(document?.status || '').trim() === 'approved');
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewAnswer = preview?.spokenAnswerEstimate || buildRepresentativeAnswer(previewAnswerPacket);
+  const previewAnswerDisplay = previewBusy
+    ? 'Generating answer estimate...'
+    : (preview
+        ? previewAnswer
+        : 'Your answer preview will appear here after you test a customer question.');
   const latestBuildStatus = String(latestBuild?.status || '').trim().toLowerCase();
   const statusChip = buildState.builds.some((build) => isBuildActive(build))
     ? { tone: 'warn', label: 'Build In Progress' }
@@ -612,15 +617,15 @@ export default function ReceptionistKnowledgePage() {
         <div className="mt-3">
           <Button onClick={runRuntimePreview} disabled={previewBusy || !previewQuery.trim()}>{previewBusy ? 'Testing...' : 'Test Answer'}</Button>
         </div>
-        {preview ? (
-          <div className="mt-3 grid gap-3">
-            <div className="flex h-48 flex-col rounded-lg border border-slate-200 bg-white p-4">
-              <div className="text-sm font-semibold text-slate-900">Likely Answer</div>
-              <div className="mt-2 flex-1 overflow-y-auto pr-2 text-sm leading-6 text-slate-700">{previewAnswer}</div>
-              <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">Preview only. Live answers may vary based on call context.</div>
+        <div className="mt-3 grid gap-3">
+          <div className="flex h-48 flex-col rounded-lg border border-slate-200 bg-white p-4">
+            <div className="text-sm font-semibold text-slate-900">Likely Answer</div>
+            <div className={`mt-2 flex-1 overflow-y-auto pr-2 text-sm leading-6 ${preview ? 'text-slate-700' : 'text-slate-500'}`}>
+              {previewAnswerDisplay}
             </div>
+            <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">Preview only. Live answers may vary based on call context.</div>
           </div>
-        ) : null}
+        </div>
       </StepSection>
     </SectionPage>
   );
