@@ -163,14 +163,10 @@ export default function LaunchReadinessPage() {
           <div className="mt-2">
             <span className={statusBadgeClass(readiness?.status)}>{formatStatusLabel(readiness?.status)}</span>
           </div>
-          <div className="mt-2 text-sm text-slate-600">
-            {launchFlagSet ? 'Ready flag is set for this tenant.' : 'Ready flag is not set yet.'}
-          </div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <div className="text-xs uppercase tracking-wide text-slate-500">Client Checklist</div>
           <div className="mt-1 text-2xl font-bold text-slate-900">{clientCompletionCount}/{CLIENT_CHECKLIST_FIELDS.length}</div>
-          <div className="text-sm text-slate-600">Business confirmations and launch testing completed.</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <div className="text-xs uppercase tracking-wide text-slate-500">Knowledge Runtime</div>
@@ -179,7 +175,6 @@ export default function LaunchReadinessPage() {
               {latestBuildPublished && liveBuildSelected ? 'live build ready' : 'needs attention'}
             </span>
           </div>
-          <div className="mt-2 text-sm text-slate-600">The latest published build should match the live runtime.</div>
         </div>
       </div>
 
