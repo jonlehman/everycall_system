@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button } from '../../../../components/ui/button';
 import GuidePanel from '../../_components/GuidePanel';
 import SectionPage from '../../_components/SectionPage';
 import { accountNavItems } from '../../_components/navigation';
@@ -132,7 +131,7 @@ export default function AccountGeneralPage() {
           </div>
 
           <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Operational Defaults</h2>
+            <h2 className="mt-0 text-lg font-semibold">Business Timezone</h2>
             <div className="grid gap-3">
               <div>
                 <label>Timezone</label>
@@ -142,60 +141,23 @@ export default function AccountGeneralPage() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label>Internal Notes</label>
-                <textarea
-                  value={notes}
-                  onChange={(event) => setNotes(event.target.value)}
-                  placeholder="Compliance notes, handoff preferences, or team instructions."
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Phone Number Identity</h2>
-            <div className="grid gap-3">
-              <div>
-                <label>Caller ID Name</label>
-                <input
-                  value={callerIdName}
-                  onChange={(event) => setCallerIdName(normalizeCallerIdName(event.target.value))}
-                  placeholder="Business name"
-                  maxLength={15}
-                />
-                <div className="mt-1 text-sm text-slate-500">
-                  Prefilled from your business name. Up to 15 letters, numbers, and spaces because of carrier CNAM limits.
-                </div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                {tenant.telnyx_voice_number
-                  ? 'When supported by the receiving carrier, this name is applied to your assigned voice number.'
-                  : 'You can save this now. It will be applied automatically after a voice number is assigned.'}
-              </div>
-            </div>
-            <div className="mt-3 flex gap-2">
-              <Button type="button" onClick={saveSettings} disabled={saving || loading}>
-                {saving ? 'Saving...' : 'Save General'}
-              </Button>
-              <Button variant="outline" type="button" onClick={loadSettings} disabled={saving}>Reload</Button>
             </div>
           </div>
         </div>
 
         <GuidePanel title="Account Guide" eyebrow="How it works" icon="settings">
-          <div>Timezone, internal notes, plan details, and other account-level defaults belong here.</div>
+          <div>Use this page for account-level details like your plan, assigned sales receptionist number, and business timezone.</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="font-semibold text-slate-900">Caller ID Name</div>
-            <div className="mt-1 text-sm text-slate-600">Use a short business name so your voice number has a cleaner caller identity where CNAM is supported.</div>
+            <div className="font-semibold text-slate-900">Account Snapshot</div>
+            <div className="mt-1 text-sm text-slate-600">Review your tenant name, plan, region, and assigned sales receptionist number here.</div>
+          </div>
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">Business Timezone</div>
+            <div className="mt-1 text-sm text-slate-600">Set the local timezone the system should use for account-level scheduling and display defaults.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Use Notifications for</div>
             <div className="mt-1 text-sm text-slate-600">Lead alert delivery settings and transcript preferences.</div>
-          </div>
-          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="font-semibold text-slate-900">Use Billing for</div>
-            <div className="mt-1 text-sm text-slate-600">Payment status, trial timing, and subscription access.</div>
           </div>
         </GuidePanel>
       </div>
