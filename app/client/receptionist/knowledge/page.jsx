@@ -448,7 +448,6 @@ export default function ReceptionistKnowledgePage() {
                       className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
                       value={documentForm.title}
                       onChange={(event) => setDocumentForm((current) => ({ ...current, title: event.target.value }))}
-                      placeholder="Large-opening door quoting rules"
                     />
                   </div>
                   <div>
@@ -509,7 +508,6 @@ export default function ReceptionistKnowledgePage() {
                     className="min-h-[140px] w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
                     value={documentForm.bodyText}
                     onChange={(event) => setDocumentForm((current) => ({ ...current, bodyText: event.target.value }))}
-                    placeholder="Example: For large sliding door system installation, a custom quote is required."
                   />
                 </div>
 
@@ -599,7 +597,7 @@ export default function ReceptionistKnowledgePage() {
                   </div>
                 </div>
               )) : (
-                <div className="text-sm text-slate-500">No builds yet.</div>
+                <div className="text-sm text-slate-500">Publish a knowledge build so the sales receptionist can answer questions about your business.</div>
               )}
             </div>
           </StepSection>
