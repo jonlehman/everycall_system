@@ -399,7 +399,7 @@ export default function ReceptionistKnowledgePage() {
           <StepSection
             step="01"
             title="Create Build"
-            description="Set the website URL, upload any supporting documents, then create a new build."
+            description="A build is the knowledge set your sales receptionist uses to answer caller questions."
             contentClassName="border-0 bg-transparent p-0"
           >
             <div className="space-y-4">
