@@ -101,7 +101,6 @@ export default function ReceptionistNotificationsPage() {
       subtitle="Control tenant-wide new lead notification behavior. Individual recipients are still managed on Team."
       status={status}
       headerAside={<SalesReceptionistNumberBadge />}
-      primaryAction={{ label: saving ? 'Saving...' : 'Save Notifications', brand: true, onClick: saveSettings, disabled: saving || loading }}
     >
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[7fr_3fr]">
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
