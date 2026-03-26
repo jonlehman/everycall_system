@@ -214,7 +214,7 @@ export default function ReceptionistBasicsPage() {
                 <textarea
                   value={form.companyDescription}
                   onChange={(event) => setForm((current) => ({ ...current, companyDescription: event.target.value }))}
-                  style={{ minHeight: 120 }}
+                  style={{ minHeight: 72 }}
                   placeholder="Briefly describe the business, service area, and what callers usually need help with."
                 />
               </div>
@@ -232,6 +232,7 @@ export default function ReceptionistBasicsPage() {
               <textarea
                 value={form.openingLine}
                 onChange={(event) => setForm((current) => ({ ...current, openingLine: event.target.value }))}
+                style={{ minHeight: 72 }}
                 placeholder="Thanks for calling..."
               />
             </StepSection>
