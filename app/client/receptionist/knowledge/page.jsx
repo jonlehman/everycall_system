@@ -403,7 +403,7 @@ export default function ReceptionistKnowledgePage() {
             contentClassName="border-0 bg-transparent p-0"
           >
             <div className="space-y-4">
-              <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-6 shadow-sm">
+              <div className="rounded-lg border border-[#E2E8F0] bg-[#eff4ff] p-6 shadow-sm">
                 <div className="mb-4">
                   <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website</h4>
                   <p className="mt-1 text-sm text-slate-500">Train the sales receptionist with up to 500 pages from your website.</p>
@@ -422,7 +422,7 @@ export default function ReceptionistKnowledgePage() {
                 ) : null}
               </div>
 
-              <div className="space-y-6 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-6 shadow-sm">
+              <div className="space-y-6 rounded-lg border border-[#E2E8F0] bg-[#eff4ff] p-6 shadow-sm">
                 <div className="mb-4">
                   <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Documents</h4>
                   <p className="mt-1 text-sm text-slate-500">
@@ -481,7 +481,7 @@ export default function ReceptionistKnowledgePage() {
                 <div>
                   <div className="flex items-center py-1.5">
                     <div className="h-px flex-1 bg-slate-200" />
-                    <span className="mx-4 shrink-0 bg-[#F8FAFC] px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">OR</span>
+                    <span className="mx-4 shrink-0 bg-[#eff4ff] px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">OR</span>
                     <div className="h-px flex-1 bg-slate-200" />
                   </div>
                 </div>
