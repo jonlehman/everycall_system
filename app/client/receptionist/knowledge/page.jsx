@@ -413,8 +413,8 @@ export default function ReceptionistKnowledgePage() {
         <div className="grid gap-3">
           <StepSection
             step="01"
-            title="Build Pipeline"
-            description="Point the build at the right website and include approved documents before you create a new knowledge version."
+            title="Build Inputs"
+            description="Each knowledge build combines the website crawl and any approved uploaded documents into one published version."
           >
             <label>Website URL</label>
             <input
@@ -427,8 +427,25 @@ export default function ReceptionistKnowledgePage() {
                 Pre-filled from tenant setup. You can change it before creating the first build.
               </div>
             ) : null}
-            <div className="mt-2 text-sm text-slate-600">
-              This build will include {approvedUploadedDocuments.length} approved uploaded document{approvedUploadedDocuments.length === 1 ? '' : 's'}.
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Website Crawl</div>
+                <div className="mt-2 text-sm font-semibold text-slate-900">
+                  {buildForm.websiteUrl.trim() || 'No website selected yet'}
+                </div>
+                <div className="mt-1 text-sm text-slate-600">
+                  The crawler pulls source pages from this website into the build.
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Uploaded Documents</div>
+                <div className="mt-2 text-sm font-semibold text-slate-900">
+                  {approvedUploadedDocuments.length} approved document{approvedUploadedDocuments.length === 1 ? '' : 's'} included
+                </div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Approved uploaded documents are bundled into the next build together with the website crawl.
+                </div>
+              </div>
             </div>
             {buildState.builds.some((build) => isBuildActive(build)) ? (
               <div className="mt-2 text-sm text-slate-600">
@@ -437,7 +454,7 @@ export default function ReceptionistKnowledgePage() {
             ) : null}
             <div className="mt-4 flex flex-wrap gap-2">
               <Button onClick={createBuild} disabled={buildBusy}>
-                {buildBusy ? 'Queueing...' : 'Create Build'}
+                {buildBusy ? 'Queueing...' : 'Create Build From Current Sources'}
               </Button>
             </div>
             {latestBuild ? (
@@ -453,8 +470,8 @@ export default function ReceptionistKnowledgePage() {
 
           <StepSection
             step="02"
-            title="Uploaded Documents"
-            description="Add first-party pricing, policy, and operational material so the next build has stronger source coverage."
+            title="Manage Uploaded Documents"
+            description="Add first-party material here. Approved documents become part of the next build when you create a new version."
           >
 
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -533,10 +550,10 @@ export default function ReceptionistKnowledgePage() {
 
         <div className="grid gap-3">
           <GuidePanel title="Knowledge Guide" eyebrow="How it works" icon="architecture">
-            <div>Knowledge follows a simple cycle: add sources, build a new version, review the result, then publish it live.</div>
+            <div>Knowledge follows a simple cycle: update the website source and uploaded documents, create one combined build, review it, then publish it live.</div>
             <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
               <div className="font-semibold text-slate-900">Published build</div>
-              <div className="mt-1 text-sm text-slate-600">The currently published build is what callers actually hear when the receptionist answers knowledge questions.</div>
+              <div className="mt-1 text-sm text-slate-600">The currently published build is the combined website-plus-documents version that callers actually hear.</div>
             </div>
             <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
               <div className="font-semibold text-slate-900">Customer question test</div>
@@ -547,7 +564,7 @@ export default function ReceptionistKnowledgePage() {
           <StepSection
             step="03"
             title="Build History"
-            description="Publish a ready build or roll back to a previous version when you need to restore the prior runtime."
+            description="Review combined build versions here and publish a ready version when you want it live for callers."
           >
             <div className="grid gap-2">
               {buildState.builds.length ? buildState.builds.map((build) => (
