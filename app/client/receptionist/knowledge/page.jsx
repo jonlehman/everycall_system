@@ -722,7 +722,12 @@ export default function ReceptionistKnowledgePage() {
           </div>
         </div>
 
-        <GuidePanel title="Knowledge Guide" eyebrow={`Step ${activeStep}`} icon="architecture">
+        <GuidePanel
+          title="Knowledge Guide"
+          eyebrow={`Step ${activeStep}`}
+          icon="architecture"
+          className="self-start xl:sticky xl:top-32 xl:max-h-[calc(100vh-9rem)] xl:overflow-y-auto"
+        >
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">{activeGuide.title}</div>
             <div className="mt-1 text-sm text-slate-600">{activeGuide.body}</div>
