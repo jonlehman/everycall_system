@@ -175,7 +175,7 @@ export default function ReceptionistBasicsPage() {
   return (
     <SectionPage
       tabs={receptionistNavItems}
-      title="Receptionist Basics"
+      title="Basics"
       subtitle="Set the business identity, greeting, routing, and voice used by your sales receptionist."
       status={status}
       statusChip={{ tone: 'ok', label: 'Sales Receptionist Active' }}
