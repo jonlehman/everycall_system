@@ -107,54 +107,62 @@ export default function ReceptionistNotificationsPage() {
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <h2 className="mt-0 text-lg font-semibold">New Lead Notifications</h2>
           <div className="grid gap-3 text-sm">
-            <label className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                checked={leadAlertsEnabled}
-                onChange={(event) => setLeadAlertsEnabled(event.target.checked)}
-              />
-              <div>
-                <div className="font-medium text-slate-900">Enable new lead notifications</div>
-                <div className="text-slate-500">Turn on outbound alerts when a new call lead is captured.</div>
+            <label className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={leadAlertsEnabled}
+                  onChange={(event) => setLeadAlertsEnabled(event.target.checked)}
+                />
+                <div className="font-normal normal-case tracking-normal">
+                  <div className="font-medium normal-case tracking-normal text-slate-900">Enable new lead notifications</div>
+                  <div className="mt-1 text-sm font-normal normal-case tracking-normal text-slate-600">Turn on outbound alerts when a new call lead is captured.</div>
+                </div>
               </div>
             </label>
 
-            <label className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                checked={leadAlertSmsEnabled}
-                onChange={(event) => setLeadAlertSmsEnabled(event.target.checked)}
-                disabled={!leadAlertsEnabled}
-              />
-              <div>
-                <div className="font-medium text-slate-900">Send SMS summaries</div>
-                <div className="text-slate-500">Text recipients a short lead summary with contact details.</div>
+            <label className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={leadAlertSmsEnabled}
+                  onChange={(event) => setLeadAlertSmsEnabled(event.target.checked)}
+                  disabled={!leadAlertsEnabled}
+                />
+                <div className="font-normal normal-case tracking-normal">
+                  <div className="font-medium normal-case tracking-normal text-slate-900">Send SMS summaries</div>
+                  <div className="mt-1 text-sm font-normal normal-case tracking-normal text-slate-600">Text recipients a short lead summary with contact details.</div>
+                </div>
               </div>
             </label>
 
-            <label className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                checked={leadAlertEmailEnabled}
-                onChange={(event) => setLeadAlertEmailEnabled(event.target.checked)}
-                disabled={!leadAlertsEnabled}
-              />
-              <div>
-                <div className="font-medium text-slate-900">Send email notifications</div>
-                <div className="text-slate-500">Email recipients the lead summary plus additional context from the call.</div>
+            <label className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={leadAlertEmailEnabled}
+                  onChange={(event) => setLeadAlertEmailEnabled(event.target.checked)}
+                  disabled={!leadAlertsEnabled}
+                />
+                <div className="font-normal normal-case tracking-normal">
+                  <div className="font-medium normal-case tracking-normal text-slate-900">Send email notifications</div>
+                  <div className="mt-1 text-sm font-normal normal-case tracking-normal text-slate-600">Email recipients the lead summary plus additional context from the call.</div>
+                </div>
               </div>
             </label>
 
-            <label className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                checked={leadAlertEmailIncludeTranscript}
-                onChange={(event) => setLeadAlertEmailIncludeTranscript(event.target.checked)}
-                disabled={!leadAlertsEnabled || !leadAlertEmailEnabled}
-              />
-              <div>
-                <div className="font-medium text-slate-900">Include transcript in email</div>
-                <div className="text-slate-500">Attach the full transcript to the lead email for follow-up review.</div>
+            <label className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={leadAlertEmailIncludeTranscript}
+                  onChange={(event) => setLeadAlertEmailIncludeTranscript(event.target.checked)}
+                  disabled={!leadAlertsEnabled || !leadAlertEmailEnabled}
+                />
+                <div className="font-normal normal-case tracking-normal">
+                  <div className="font-medium normal-case tracking-normal text-slate-900">Include transcript in email</div>
+                  <div className="mt-1 text-sm font-normal normal-case tracking-normal text-slate-600">Attach the full transcript to the lead email for follow-up review.</div>
+                </div>
               </div>
             </label>
           </div>
