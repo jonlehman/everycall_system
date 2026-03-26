@@ -19,6 +19,7 @@ import {
 } from "../../_lib/knowledgeReceptionistPacks.js";
 import { saveSetupInterviewIntent } from "../../_lib/knowledgeReceptionistSetupInterview.js";
 import { saveTenantBootstrapProfile } from "../../_lib/tenantBootstrapProfiles.js";
+import { normalizeCallerIdName, provisionTenantVoiceNumber } from "../../_lib/voiceProvisioning.js";
 
 function slugify(input) {
   return String(input || "")
@@ -252,9 +253,9 @@ export default async function handler(req, res) {
       );
 
       await client.query(
-        `INSERT INTO tenant_settings (tenant_key, timezone, notes)
-         VALUES ($1, $2, $3)`,
-        [tenantKey, "America/Los_Angeles", payload.companyDescription]
+        `INSERT INTO tenant_settings (tenant_key, timezone, notes, caller_id_name)
+         VALUES ($1, $2, $3, $4)`,
+        [tenantKey, "America/Los_Angeles", payload.companyDescription, normalizeCallerIdName(payload.businessName)]
       );
 
       await ensureTenantBillingAccount(client, tenantKey);
@@ -324,6 +325,17 @@ export default async function handler(req, res) {
         setSessionCookie(res, sessionId);
       }
 
+      const voiceProvisioning = await provisionTenantVoiceNumber({
+        pool,
+        tenantKey,
+        callerIdName: payload.businessName,
+        actor: ownerUserId ? `tenant:${ownerUserId}` : "system:onboard",
+        stage: "number_setup",
+        runningStatusDetail: "Provisioning a voice number during onboarding.",
+        successAuditAction: "onboarding.voice_number_provisioned",
+        failureAuditAction: "onboarding.voice_number_provision_failed"
+      });
+
       return res.status(200).json({
         ok: true,
         tenantKey,
@@ -335,7 +347,8 @@ export default async function handler(req, res) {
         runtimeProfile,
         callOutcomeSchema,
         readiness,
-        setupInterviewIntent
+        setupInterviewIntent,
+        voiceProvisioning
       });
     } catch (err) {
       await client.query("ROLLBACK");

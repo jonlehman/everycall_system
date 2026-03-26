@@ -43,14 +43,15 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const [busy, setBusy] = useState(false);
   const [activation, setActivation] = useState(null);
   const nextHref = '/client/knowledge';
+  const provisioningFailed = activation?.voiceProvisioning?.ok === false;
 
   useEffect(() => {
-    if (!activation?.ok) return undefined;
+    if (!activation?.ok || provisioningFailed) return undefined;
     const timer = window.setTimeout(() => {
       window.location.assign(nextHref);
     }, 1200);
     return () => window.clearTimeout(timer);
-  }, [activation]);
+  }, [activation, provisioningFailed]);
 
   const setFormValue = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
@@ -74,7 +75,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
     }
 
     setBusy(true);
-    setStatus({ message: 'Creating account...', tone: 'warn' });
+    setStatus({ message: 'Creating account and provisioning phone number...', tone: 'warn' });
     try {
       const data = await fetchJson('/api/v1/tenants/onboard', {
         method: 'POST',
@@ -94,7 +95,19 @@ export function IntakePageClient({ qaMode = false } = {}) {
         return;
       }
       setActivation(data);
-      setStatus({ message: 'Account created. Redirecting to the Knowledge Workspace...', tone: 'ok' });
+      if (data?.voiceProvisioning?.ok === false) {
+        setStatus({
+          message: `Account created, but phone number provisioning needs follow-up: ${data.voiceProvisioning.errorMessage || 'unknown error'}`,
+          tone: 'warn'
+        });
+      } else if (data?.voiceProvisioning?.phoneNumber) {
+        setStatus({
+          message: `Account created and ${data.voiceProvisioning.phoneNumber} was provisioned. Redirecting to the Knowledge Workspace...`,
+          tone: 'ok'
+        });
+      } else {
+        setStatus({ message: 'Account created. Redirecting to the Knowledge Workspace...', tone: 'ok' });
+      }
     } catch {
       setStatus({ message: 'Could not create account.', tone: 'bad' });
     } finally {
@@ -221,8 +234,20 @@ export function IntakePageClient({ qaMode = false } = {}) {
                   <span className="intake-success-label">Prompt profile</span>
                   <div>{activation.promptProfile?.business_name || form.businessName}</div>
                 </div>
+                <div>
+                  <span className="intake-success-label">Voice number</span>
+                  <div>{activation.voiceProvisioning?.phoneNumber || 'Provisioning pending'}</div>
+                </div>
+                <div>
+                  <span className="intake-success-label">Provisioning</span>
+                  <div>{activation.voiceProvisioning?.ok === false ? 'Needs follow-up' : 'Complete'}</div>
+                </div>
               </div>
-              <p className="intake-success-copy">Continue to the Knowledge Workspace and create the first build when you are ready.</p>
+              <p className="intake-success-copy">
+                {provisioningFailed
+                  ? `The account was created, but voice number provisioning needs follow-up before the receptionist can go live. ${activation.voiceProvisioning?.errorMessage || ''}`.trim()
+                  : 'Continue to the Knowledge Workspace and create the first build when you are ready.'}
+              </p>
               <div className="intake-actions">
                 <a className="btn primary" href={nextHref}>Continue to Knowledge Workspace</a>
               </div>
