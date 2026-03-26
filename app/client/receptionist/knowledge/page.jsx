@@ -394,7 +394,7 @@ export default function ReceptionistKnowledgePage() {
       statusChip={statusChip}
       primaryAction={{ label: loading ? 'Loading...' : 'Reload', brand: true, onClick: () => loadWorkspace(), disabled: loading }}
     >
-      <div className="mt-[72px] grid grid-cols-1 gap-4 xl:grid-cols-[1.12fr_0.88fr]">
+      <div className="mt-[36px] grid grid-cols-1 gap-4 xl:grid-cols-[1.12fr_0.88fr]">
         <div className="grid gap-3">
           <StepSection
             step="01"
