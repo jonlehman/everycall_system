@@ -643,6 +643,7 @@ export default function ReceptionistKnowledgePage() {
 
           <div onClickCapture={() => setActiveGuideKey('buildHistory')} onFocusCapture={() => setActiveGuideKey('buildHistory')}>
             <StepSection
+              className="mt-24"
               step="02"
               title="Build History"
               description="Review previous builds here and publish a ready version when you want it live for callers."
