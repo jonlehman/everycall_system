@@ -1,9 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { Button, buttonVariants } from '../../../../components/ui/button';
-import { cn } from '../../../../lib/utils';
+import { Button } from '../../../../components/ui/button';
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
 
@@ -77,26 +75,18 @@ export default function LaunchReadinessPage() {
   const [status, setStatus] = useState({ message: 'Loading launch readiness...', tone: 'warn' });
   const [readiness, setReadiness] = useState(null);
   const [checklist, setChecklist] = useState({});
-  const [buildState, setBuildState] = useState({ activeBuild: null, builds: [] });
 
   const loadReadiness = async () => {
     setLoading(true);
     setStatus({ message: 'Loading launch readiness...', tone: 'warn' });
     try {
-      const [readinessData, buildData] = await Promise.all([
-        fetchJson('/api/v1/knowledge/readiness'),
-        fetchJson('/api/v1/knowledge/builds')
-      ]);
+      const readinessData = await fetchJson('/api/v1/knowledge/readiness');
       if (!readinessData?.ok) {
         setStatus({ message: readinessData?.message || 'Could not load launch readiness.', tone: 'bad' });
         return;
       }
       setReadiness(readinessData.readiness || null);
       setChecklist(readinessData.readiness?.checklist || {});
-      setBuildState({
-        activeBuild: buildData?.activeBuild || null,
-        builds: buildData?.builds || []
-      });
       setStatus({ message: 'Launch readiness loaded.', tone: 'ok' });
     } catch {
       setStatus({ message: 'Could not load launch readiness.', tone: 'bad' });
@@ -138,7 +128,6 @@ export default function LaunchReadinessPage() {
 
   const computedInputs = readiness?.computed_inputs || {};
   const readinessStatus = String(readiness?.status || '').trim().toLowerCase();
-  const latestBuild = buildState.builds[0] || null;
   const clientCompletionCount = useMemo(
     () => CLIENT_CHECKLIST_FIELDS.filter(({ key }) => Boolean(checklist?.[key])).length,
     [checklist]
@@ -178,64 +167,45 @@ export default function LaunchReadinessPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <h2 className="mt-0 text-lg font-semibold">Client Checklist</h2>
-          <div className="text-sm text-slate-600">
-            These are the client-side confirmations that still matter to the actual readiness engine.
-          </div>
-          <div className="mt-3 grid gap-2">
-            {CLIENT_CHECKLIST_FIELDS.map(({ key, label, hint }) => (
-              <label key={key} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
-                <div className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(checklist?.[key])}
-                    onChange={(event) => setChecklist((current) => ({ ...current, [key]: event.target.checked }))}
-                  />
-                  <div className="font-normal normal-case tracking-normal">
-                    <div className="font-medium normal-case tracking-normal text-slate-900">{label}</div>
-                    <div className="mt-1 text-sm font-normal normal-case tracking-normal text-slate-600">{hint}</div>
-                  </div>
-                </div>
-              </label>
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button onClick={() => saveChecklist()} disabled={saving}>{saving ? 'Saving...' : 'Save Checklist'}</Button>
-            <Button variant="outline" onClick={() => saveChecklist(true)} disabled={saving || !canMarkReady}>
-              Mark Ready
-            </Button>
-            {launchFlagSet ? (
-              <Button variant="outline" onClick={() => saveChecklist(false)} disabled={saving}>
-                Clear Ready Flag
-              </Button>
-            ) : null}
-          </div>
-          {!canMarkReady && !launchFlagSet ? (
-            <div className="mt-2 text-sm text-slate-500">
-              Mark Ready becomes available after all launch requirements are complete.
-            </div>
-          ) : null}
-        </section>
-
-        <div className="grid gap-3">
-          <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Knowledge Runtime</h2>
-            <div className="grid gap-2 text-sm text-slate-600">
-              <div>Latest build status: <span className="font-medium text-slate-900">{latestBuild?.status || 'none'}</span></div>
-              <div>Latest build published: <span className="font-medium text-slate-900">{latestBuildPublished ? 'Yes' : 'No'}</span></div>
-              <div>Active build selected: <span className="font-medium text-slate-900">{computedInputs.active_build_id ? 'Yes' : 'No'}</span></div>
-              <div>Latest build matches live runtime: <span className="font-medium text-slate-900">{liveBuildSelected ? 'Yes' : 'No'}</span></div>
-            </div>
-            <div className="mt-3">
-              <Link className={cn(buttonVariants({ variant: 'outline' }))} href="/client/receptionist/knowledge">
-                Open Knowledge
-              </Link>
-            </div>
-          </section>
+      <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
+        <h2 className="mt-0 text-lg font-semibold">Client Checklist</h2>
+        <div className="text-sm text-slate-600">
+          These are the client-side confirmations that still matter to the actual readiness engine.
         </div>
-      </div>
+        <div className="mt-3 grid gap-2">
+          {CLIENT_CHECKLIST_FIELDS.map(({ key, label, hint }) => (
+            <label key={key} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={Boolean(checklist?.[key])}
+                  onChange={(event) => setChecklist((current) => ({ ...current, [key]: event.target.checked }))}
+                />
+                <div className="font-normal normal-case tracking-normal">
+                  <div className="font-medium normal-case tracking-normal text-slate-900">{label}</div>
+                  <div className="mt-1 text-sm font-normal normal-case tracking-normal text-slate-600">{hint}</div>
+                </div>
+              </div>
+            </label>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button onClick={() => saveChecklist()} disabled={saving}>{saving ? 'Saving...' : 'Save Checklist'}</Button>
+          <Button variant="outline" onClick={() => saveChecklist(true)} disabled={saving || !canMarkReady}>
+            Mark Ready
+          </Button>
+          {launchFlagSet ? (
+            <Button variant="outline" onClick={() => saveChecklist(false)} disabled={saving}>
+              Clear Ready Flag
+            </Button>
+          ) : null}
+        </div>
+        {!canMarkReady && !launchFlagSet ? (
+          <div className="mt-2 text-sm text-slate-500">
+            Mark Ready becomes available after all launch requirements are complete.
+          </div>
+        ) : null}
+      </section>
     </SectionPage>
   );
 }
