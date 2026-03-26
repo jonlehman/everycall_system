@@ -411,7 +411,7 @@ export default function LaunchReadinessPage() {
                   />
                   <div>
                     <div className="font-medium text-slate-900">{label}</div>
-                    <div className="mt-1 text-xs leading-5 text-slate-500">{hint}</div>
+                    <div className="mt-1 text-sm leading-6 text-slate-600">{hint}</div>
                   </div>
                 </div>
               </label>
