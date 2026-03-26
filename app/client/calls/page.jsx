@@ -373,7 +373,7 @@ export default function CallsPage() {
 
       <div className="flex flex-wrap gap-2">
         <Link className={cn(buttonVariants({ variant: 'outline' }))} href="/client/receptionist/go-live">
-          Open Launch Readiness
+          Open Go Live Checklist
         </Link>
         <Link className={cn(buttonVariants({ variant: 'outline' }))} href="/client/team">
           Open Team

@@ -367,7 +367,7 @@ export default function LaunchReadinessPage() {
   return (
     <SectionPage
       tabs={receptionistNavItems}
-      title="Launch Readiness"
+      title="Go Live Checklist"
       subtitle="See what is ready, what is still blocking launch, and where each missing item needs to be fixed."
       status={status}
       primaryAction={{ label: loading ? 'Loading...' : 'Reload', brand: true, onClick: loadReadiness, disabled: loading }}
