@@ -436,7 +436,7 @@ export default function ReceptionistKnowledgePage() {
                 <div>
                   <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload Documents</h4>
                   <p className="mt-2 text-xs text-slate-500">
-                    Approved uploaded documents are included in the next build with the website content.
+                    Information in uploaded documents takes precedence over conflicting information on the website.
                   </p>
                 </div>
 
