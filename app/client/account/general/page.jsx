@@ -127,7 +127,7 @@ export default function AccountGeneralPage() {
               <div>Tenant</div><div>{tenant.name || '-'}</div>
               <div>Plan</div><div>{tenant.plan || '-'}</div>
               <div>Data Region</div><div>{tenant.data_region || '-'}</div>
-              <div>Voice Number</div><div>{tenant.telnyx_voice_number || 'Not assigned yet'}</div>
+              <div>Sales Receptionist Number</div><div>{tenant.telnyx_voice_number || 'Not assigned yet'}</div>
             </div>
           </div>
 

@@ -18,11 +18,6 @@ const CLIENT_CHECKLIST_FIELDS = [
     hint: 'Confirm the business address callers should reference.'
   },
   {
-    key: 'phone_confirmed',
-    label: 'Main business phone confirmed',
-    hint: 'Confirm the primary callback number is correct.'
-  },
-  {
     key: 'after_hours_configured',
     label: 'After-hours plan confirmed',
     hint: 'Confirm the after-hours routing and callback plan.'
