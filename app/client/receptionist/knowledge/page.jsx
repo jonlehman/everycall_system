@@ -414,103 +414,139 @@ export default function ReceptionistKnowledgePage() {
             step="01"
             title="Create Build"
             description="Set the website URL, upload any supporting documents, then create a new build."
+            contentClassName="border-0 bg-transparent p-0"
           >
-            <label>Website URL</label>
-            <input
-              value={buildForm.websiteUrl}
-              onChange={(event) => setBuildForm({ websiteUrl: event.target.value })}
-              placeholder="https://example.com"
-            />
-            {!latestBuild && buildForm.websiteUrl ? (
-              <div className="mt-2 text-sm text-slate-600">
-                Pre-filled from tenant setup. You can change it before creating the first build.
-              </div>
-            ) : null}
-            <label className="mt-3">Upload Documents</label>
-            <div className="mt-1 text-sm text-slate-600">
-              Approved uploaded documents are included in the next build with the website content.
-            </div>
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <label>Document Title</label>
+            <div className="space-y-4">
+              <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-6 shadow-sm">
+                <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Website URL</label>
                 <input
-                  value={documentForm.title}
-                  onChange={(event) => setDocumentForm((current) => ({ ...current, title: event.target.value }))}
-                  placeholder="Large-opening door quoting rules"
+                  className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                  value={buildForm.websiteUrl}
+                  onChange={(event) => setBuildForm({ websiteUrl: event.target.value })}
+                  placeholder="https://example.com"
                 />
-              </div>
-              <div>
-                <label>Document Class</label>
-                <select
-                  value={documentForm.documentClass}
-                  onChange={(event) => setDocumentForm((current) => ({ ...current, documentClass: event.target.value }))}
-                >
-                  <option value="operational">Operational</option>
-                  <option value="policy">Policy</option>
-                  <option value="reference">Reference</option>
-                  <option value="marketing">Marketing</option>
-                  <option value="unclassified">Unclassified</option>
-                </select>
-              </div>
-            </div>
-
-            <label className="mt-2.5">Upload File</label>
-            <input
-              type="file"
-              accept=".txt,.md,.pdf,.doc,.docx"
-              onChange={handleDocumentFileChange}
-              disabled={readingDocumentFile || savingDocument}
-            />
-            <div className="mt-1 text-sm text-slate-600">
-              Optional. Use this for PDFs or Word docs. You can also paste plain text below.
-              {documentForm.filename ? ` Attached: ${documentForm.filename}.` : ''}
-            </div>
-
-            <label className="mt-2.5">Document Text</label>
-            <textarea
-              value={documentForm.bodyText}
-              onChange={(event) => setDocumentForm((current) => ({ ...current, bodyText: event.target.value }))}
-              style={{ minHeight: 140 }}
-              placeholder="Example: For large sliding door system installation, a custom quote is required."
-            />
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button onClick={saveUploadedDocument} disabled={savingDocument || readingDocumentFile}>
-                {savingDocument ? 'Saving...' : (readingDocumentFile ? 'Reading File...' : 'Save Uploaded Document')}
-              </Button>
-            </div>
-
-            <div className="mt-4 grid gap-2">
-              {uploadedDocuments.length ? uploadedDocuments.map((document) => (
-                <div key={document.uploaded_document_id} className="rounded-lg border border-slate-200 bg-white p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="font-semibold text-slate-900">{document.title}</div>
-                      <div className="text-xs text-slate-500">{document.uploaded_document_id}</div>
-                    </div>
-                    <span className={`badge ${document.status === 'approved' ? 'ok' : 'warn'}`}>{document.status}</span>
+                {!latestBuild && buildForm.websiteUrl ? (
+                  <div className="mt-2 text-xs text-slate-500">
+                    Pre-filled from tenant setup. You can change it before creating the first build.
                   </div>
-                  <div className="mt-2 text-sm text-slate-600">
-                    {formatLabel(document.document_class)} · {formatLabel(document.source_authority)}
-                  </div>
-                  {document.filename ? (
-                    <div className="mt-1 text-xs text-slate-500">File: {document.filename}</div>
-                  ) : null}
+                ) : null}
+              </div>
+
+              <div className="space-y-6 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-6 shadow-sm">
+                <div>
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload Documents</h4>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Approved uploaded documents are included in the next build with the website content.
+                  </p>
                 </div>
-              )) : (
-                <div className="text-sm text-slate-500">No uploaded documents yet.</div>
-              )}
-            </div>
 
-            {buildState.builds.some((build) => isBuildActive(build)) ? (
-              <div className="mt-4 text-sm text-slate-600">
-                Build status auto-refreshes every 15 seconds while work is active.
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Title</label>
+                    <input
+                      className="w-full rounded border-[#E2E8F0] bg-white text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                      value={documentForm.title}
+                      onChange={(event) => setDocumentForm((current) => ({ ...current, title: event.target.value }))}
+                      placeholder="Large-opening door quoting rules"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Class</label>
+                    <select
+                      className="w-full rounded border-[#E2E8F0] bg-white text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                      value={documentForm.documentClass}
+                      onChange={(event) => setDocumentForm((current) => ({ ...current, documentClass: event.target.value }))}
+                    >
+                      <option value="operational">Operational</option>
+                      <option value="policy">Policy</option>
+                      <option value="reference">Reference</option>
+                      <option value="marketing">Marketing</option>
+                      <option value="unclassified">Unclassified</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload File</label>
+                  <div className="flex w-full items-center overflow-hidden rounded border border-[#E2E8F0] bg-white">
+                    <label className="cursor-pointer border-r border-[#E2E8F0] bg-slate-100 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200">
+                      Browse...
+                      <input
+                        className="hidden"
+                        type="file"
+                        accept=".txt,.md,.pdf,.doc,.docx"
+                        onChange={handleDocumentFileChange}
+                        disabled={readingDocumentFile || savingDocument}
+                      />
+                    </label>
+                    <span className="px-4 text-xs text-slate-500">
+                      {documentForm.filename || 'No file selected.'}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[10px] italic text-slate-500">
+                    Optional. Use this for PDFs or Word docs. You can also paste plain text below.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Text</label>
+                  <textarea
+                    className="min-h-[140px] w-full rounded border-[#E2E8F0] bg-white text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                    value={documentForm.bodyText}
+                    onChange={(event) => setDocumentForm((current) => ({ ...current, bodyText: event.target.value }))}
+                    placeholder="Example: For large sliding door system installation, a custom quote is required."
+                  />
+                </div>
+
+                <div>
+                  <Button
+                    variant="outline"
+                    className="border-[#2563EB] bg-transparent px-6 py-3 text-xs font-bold uppercase tracking-widest text-[#2563EB] shadow-sm hover:bg-blue-50"
+                    onClick={saveUploadedDocument}
+                    disabled={savingDocument || readingDocumentFile}
+                  >
+                    {savingDocument ? 'Saving...' : (readingDocumentFile ? 'Reading File...' : 'Save Document')}
+                  </Button>
+
+                  <div className="mt-4 grid gap-2">
+                    {uploadedDocuments.length ? uploadedDocuments.map((document) => (
+                      <div key={document.uploaded_document_id} className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <div className="font-semibold text-slate-900">{document.title}</div>
+                            <div className="text-xs text-slate-500">{document.uploaded_document_id}</div>
+                          </div>
+                          <span className={`badge ${document.status === 'approved' ? 'ok' : 'warn'}`}>{document.status}</span>
+                        </div>
+                        <div className="mt-2 text-sm text-slate-600">
+                          {formatLabel(document.document_class)} · {formatLabel(document.source_authority)}
+                        </div>
+                        {document.filename ? (
+                          <div className="mt-1 text-xs text-slate-500">File: {document.filename}</div>
+                        ) : null}
+                      </div>
+                    )) : (
+                      <p className="mt-4 text-[10px] text-slate-500">No uploaded documents yet.</p>
+                    )}
+                  </div>
+                </div>
               </div>
-            ) : null}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button onClick={createBuild} disabled={buildBusy}>
-                {buildBusy ? 'Queueing...' : 'Create Build'}
-              </Button>
+
+              {buildState.builds.some((build) => isBuildActive(build)) ? (
+                <div className="text-sm text-slate-600">
+                  Build status auto-refreshes every 15 seconds while work is active.
+                </div>
+              ) : null}
+
+              <div className="pt-2">
+                <Button
+                  className="h-auto w-full rounded px-10 py-3 text-xs font-bold uppercase tracking-[0.18em] md:w-auto"
+                  onClick={createBuild}
+                  disabled={buildBusy}
+                >
+                  {buildBusy ? 'Queueing...' : 'Create Build'}
+                </Button>
+              </div>
             </div>
           </StepSection>
         </div>
