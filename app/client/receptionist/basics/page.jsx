@@ -219,29 +219,9 @@ export default function ReceptionistBasicsPage() {
           text: greetingText
         })
       });
-      const samplePath = resp.headers.get('X-EveryCall-Voice-Sample-Path');
-      const sampleModel = resp.headers.get('X-EveryCall-Voice-Sample-Model');
-      const sampleVoice = resp.headers.get('X-EveryCall-Voice-Sample-Voice');
-      const sampleFormat = resp.headers.get('X-EveryCall-Voice-Sample-Format');
       if (!resp.ok) {
-        const errorText = await resp.text().catch(() => '');
-        if (typeof window !== 'undefined') {
-          const errorLines = ['Voice sample failed.'];
-          if (errorText) errorLines.push(`Server response: ${errorText.slice(0, 240)}`);
-          window.alert(errorLines.join('\n'));
-        }
         setSampleStatus('Sample failed.');
         return;
-      }
-      if (typeof window !== 'undefined') {
-        const diagnosticLines = [
-          'Voice sample diagnostics:',
-          `Path: ${samplePath || 'unknown'}`,
-          `Model: ${sampleModel || 'unknown'}`,
-          `Voice: ${sampleVoice || form.voiceType}`,
-          `Format: ${sampleFormat || 'unknown'}`
-        ];
-        window.alert(diagnosticLines.join('\n'));
       }
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
