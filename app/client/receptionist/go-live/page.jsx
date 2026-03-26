@@ -198,9 +198,9 @@ export default function LaunchReadinessPage() {
                     checked={Boolean(checklist?.[key])}
                     onChange={(event) => setChecklist((current) => ({ ...current, [key]: event.target.checked }))}
                   />
-                  <div>
-                    <div className="font-medium text-slate-900">{label}</div>
-                    <div className="mt-1 text-sm text-slate-600">{hint}</div>
+                  <div className="font-normal normal-case tracking-normal">
+                    <div className="font-medium normal-case tracking-normal text-slate-900">{label}</div>
+                    <div className="mt-1 text-sm font-normal normal-case tracking-normal text-slate-600">{hint}</div>
                   </div>
                 </div>
               </label>
