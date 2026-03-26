@@ -417,8 +417,12 @@ export default function ReceptionistKnowledgePage() {
             contentClassName="border-0 bg-transparent p-0"
           >
             <div className="space-y-4">
-              <div className="rounded-lg border border-[#E2E8F0] bg-[#eff4ff] p-6 shadow-sm">
-                <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Website URL</label>
+              <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-6 shadow-sm">
+                <div className="mb-4">
+                  <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website</h4>
+                  <p className="mt-1 text-sm text-slate-500">Train the sales receptionist with up to 500 pages from your website.</p>
+                </div>
+                <label className="sr-only">Website URL</label>
                 <input
                   className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
                   value={buildForm.websiteUrl}
@@ -432,14 +436,11 @@ export default function ReceptionistKnowledgePage() {
                 ) : null}
               </div>
 
-              <div className="space-y-6 rounded-lg border border-[#E2E8F0] bg-[#eff4ff] p-6 shadow-sm">
-                <div>
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload Documents</h4>
-                  <p className="mt-2 text-xs text-slate-500">
+              <div className="space-y-6 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-6 shadow-sm">
+                <div className="mb-4">
+                  <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Documents</h4>
+                  <p className="mt-1 text-sm text-slate-500">
                     Information in uploaded documents takes precedence over conflicting information on the website.
-                  </p>
-                  <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Choose one upload method for each document
                   </p>
                 </div>
 
@@ -494,7 +495,7 @@ export default function ReceptionistKnowledgePage() {
                 <div>
                   <div className="flex items-center py-1.5">
                     <div className="h-px flex-1 bg-slate-200" />
-                    <span className="mx-4 shrink-0 bg-[#eff4ff] px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">OR</span>
+                    <span className="mx-4 shrink-0 bg-[#F8FAFC] px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">OR</span>
                     <div className="h-px flex-1 bg-slate-200" />
                   </div>
                 </div>
