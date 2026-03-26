@@ -23,15 +23,6 @@ function fileToBase64(file) {
   });
 }
 
-function ArtifactStat({ label, value }) {
-  return (
-    <div className="workspace-metric">
-      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-slate-900">{value}</div>
-    </div>
-  );
-}
-
 function formatLabel(value) {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -403,12 +394,7 @@ export default function ReceptionistKnowledgePage() {
       statusChip={statusChip}
       primaryAction={{ label: loading ? 'Loading...' : 'Reload', brand: true, onClick: () => loadWorkspace(), disabled: loading }}
     >
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <ArtifactStat label="Builds" value={buildState.builds.length} />
-        <ArtifactStat label="Uploaded Docs" value={uploadedDocuments.length} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.12fr_0.88fr]">
+      <div className="mt-[72px] grid grid-cols-1 gap-4 xl:grid-cols-[1.12fr_0.88fr]">
         <div className="grid gap-3">
           <StepSection
             step="01"
