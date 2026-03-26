@@ -1,11 +1,16 @@
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { requireTenantBillingAccess } from "../../_lib/billing.js";
-import { loadPromptRuntimeContext } from "../../_lib/promptBlueprints.js";
 
 const DEFAULT_SAMPLE_TEXT = "Hi, thanks for calling. This is the Everycall assistant. How can I help you today?";
 const MAX_SAMPLE_TEXT_LENGTH = 600;
-const MAX_TTS_INSTRUCTIONS_LENGTH = 2000;
+const SAMPLE_TTS_INSTRUCTIONS = [
+  "Speak as a live business phone receptionist answering an incoming call.",
+  "Sound natural, warm, conversational, and confident.",
+  "Do not sound like a narrator, announcer, or commercial voiceover.",
+  "Begin like you just picked up the phone.",
+  "Read the provided text exactly as written."
+].join(" ");
 const REALTIME_VOICES = new Set([
   "alloy",
   "ash",
@@ -21,40 +26,6 @@ const REALTIME_VOICES = new Set([
 
 function normalizeText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function buildTtsInstructions(promptRuntime, sampleText = "") {
-  const renderedSections = Array.isArray(promptRuntime?.rendered?.renderedSections)
-    ? promptRuntime.rendered.renderedSections
-    : [];
-  const byId = new Map(renderedSections.map((section) => [normalizeText(section?.section_id), normalizeText(section?.text)]));
-  const styleSections = [
-    byId.get("personality_tone"),
-    byId.get("conversational_attunement"),
-    byId.get("wording_preferences"),
-    byId.get("closing")
-  ].filter(Boolean);
-
-  const styleLines = styleSections
-    .flatMap((sectionText) => sectionText.split("\n"))
-    .map((line) => normalizeText(line.replace(/^#+\s*/, "").replace(/^-+\s*/, "")))
-    .filter((line) => line && !/:$/.test(line));
-
-  const assistantName = normalizeText(promptRuntime?.tenantProfile?.assistant_name);
-  const businessName = normalizeText(promptRuntime?.tenantProfile?.business_name);
-  const prelude = [
-    assistantName && businessName
-      ? `Speak as ${assistantName}, the live phone receptionist for ${businessName}.`
-      : "Speak as a live business phone receptionist.",
-    "Deliver this as if you are answering an incoming phone call and greeting the caller in real time.",
-    "Sound like the first live spoken turn on a business phone call, not a voiceover, narrator, or commercial read.",
-    "Begin naturally, warmly, and confidently, like you just picked up the phone.",
-    "Read the provided text exactly as written.",
-    "Match the live receptionist's warmth, pacing, personality, and prosody."
-  ].filter(Boolean);
-
-  const combined = [...prelude, ...styleLines].join(" ");
-  return normalizeText(combined).slice(0, MAX_TTS_INSTRUCTIONS_LENGTH) || `Read this exactly as written: ${normalizeText(sampleText)}`;
 }
 
 async function requestSpeech({ apiKey, voice, sampleText, instructions }) {
@@ -107,24 +78,14 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "missing_openai_key" });
     }
 
-    let ttsInstructions = "";
-    if (tenantKey) {
-      try {
-        const promptRuntime = await loadPromptRuntimeContext(pool, tenantKey);
-        ttsInstructions = buildTtsInstructions(promptRuntime, sampleText);
-      } catch {
-        ttsInstructions = "";
-      }
-    }
-
     let resp = await requestSpeech({
       apiKey,
       voice,
       sampleText,
-      instructions: ttsInstructions
+      instructions: SAMPLE_TTS_INSTRUCTIONS
     });
 
-    if (!resp.ok && ttsInstructions) {
+    if (!resp.ok) {
       resp = await requestSpeech({
         apiKey,
         voice,
