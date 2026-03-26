@@ -3,11 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import { useMediaQuery } from '@mui/material';
-import Link from 'next/link';
-import { Button, buttonVariants } from '../../../components/ui/button';
+import { Button } from '../../../components/ui/button';
 import ClientPage from '../_components/ClientPage';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
-import { cn } from '../../../lib/utils';
 
 function formatLabel(value) {
   return String(value || '').replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -341,10 +339,6 @@ export default function CallsPage() {
     || detailDraft.requestedTime !== (detailMeta.requested_time || '')
   );
 
-  const newCount = rows.filter((row) => row.status === 'new').length;
-  const urgentCount = rows.filter((row) => row.urgency === 'high' || row.urgency === 'critical').length;
-  const activeSelectionLabel = detailMeta ? (formatPhoneDisplay(detailMeta.from_number) || detailMeta.call_sid) : 'No call selected';
-
   return (
     <ClientPage
       title="Calls"
@@ -352,34 +346,6 @@ export default function CallsPage() {
       status={status}
       primaryAction={{ label: 'Refresh Data', brand: true, onClick: refreshData }}
     >
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-4">
-        <div className="workspace-metric">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Calls in View</div>
-          <div className="mt-1 text-3xl font-semibold tracking-[-0.02em] text-slate-900">{filteredRows.length}</div>
-        </div>
-        <div className="workspace-metric">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">New</div>
-          <div className="mt-1 text-3xl font-semibold tracking-[-0.02em] text-slate-900">{newCount}</div>
-        </div>
-        <div className="workspace-metric">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Urgent</div>
-          <div className="mt-1 text-3xl font-semibold tracking-[-0.02em] text-slate-900">{urgentCount}</div>
-        </div>
-        <div className="workspace-metric">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Current Focus</div>
-          <div className="mt-2 text-sm font-semibold text-slate-900">{activeSelectionLabel}</div>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Link className={cn(buttonVariants({ variant: 'outline' }))} href="/client/receptionist/go-live">
-          Open Go Live Checklist
-        </Link>
-        <Link className={cn(buttonVariants({ variant: 'outline' }))} href="/client/team">
-          Open Team
-        </Link>
-      </div>
-
       <section className="workspace-panel-soft p-5">
         <div className={`flex ${isMobile ? 'flex-col' : 'items-start justify-between'} gap-4`}>
           <div>

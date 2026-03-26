@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { clientPrimaryNavItems, pathMatches } from './navigation';
@@ -14,6 +15,25 @@ function iconName(kind) {
 
 export default function Sidebar({ collapsed = false, onToggle }) {
   const pathname = usePathname();
+  const [receptionistReady, setReceptionistReady] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/v1/knowledge/readiness')
+      .then((resp) => (resp.ok ? resp.json() : null))
+      .then((data) => {
+        if (!mounted) return;
+        const status = String(data?.readiness?.status || '').trim().toLowerCase();
+        setReceptionistReady(status === 'ready_for_go_live' || status === 'live');
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setReceptionistReady(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -45,6 +65,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
       <nav className="flex flex-1 flex-col gap-1">
         {clientPrimaryNavItems.map((item) => {
           const active = pathMatches(pathname, item);
+          const showReceptionistDot = !collapsed && item.icon === 'receptionist';
           return (
             <Link
               key={item.href}
@@ -62,7 +83,17 @@ export default function Sidebar({ collapsed = false, onToggle }) {
               >
                 {iconName(item.icon)}
               </span>
-              {!collapsed ? <span>{item.label}</span> : null}
+              {!collapsed ? (
+                <>
+                  <span>{item.label}</span>
+                  {showReceptionistDot ? (
+                    <span
+                      className={`ml-auto h-2 w-2 rounded-full ${receptionistReady ? 'bg-[#006229]' : 'bg-amber-500'}`}
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </>
+              ) : null}
             </Link>
           );
         })}
