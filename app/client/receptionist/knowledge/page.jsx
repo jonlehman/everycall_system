@@ -11,6 +11,10 @@ function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
 }
 
+function isInteractiveGuideTarget(target) {
+  return target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, button, a, label, [role="button"]'));
+}
+
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -463,7 +467,10 @@ export default function ReceptionistKnowledgePage() {
     >
       <div className="mt-[36px] grid grid-cols-1 gap-4 xl:grid-cols-[7fr_3fr]">
         <div className="grid gap-3">
-          <div onClickCapture={() => setActiveGuideKey('website')} onFocusCapture={() => setActiveGuideKey('website')}>
+          <div onClick={(event) => {
+            if (isInteractiveGuideTarget(event.target)) return;
+            setActiveGuideKey('website');
+          }}>
             <StepSection
               step="01"
               title="Create Build"
@@ -485,6 +492,7 @@ export default function ReceptionistKnowledgePage() {
                     className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
                     value={buildForm.websiteUrl}
                     onChange={(event) => setBuildForm({ websiteUrl: event.target.value })}
+                    onFocus={() => setActiveGuideKey('website')}
                     placeholder="https://example.com"
                   />
                   {!latestBuild && buildForm.websiteUrl ? (
@@ -641,7 +649,10 @@ export default function ReceptionistKnowledgePage() {
             </StepSection>
           </div>
 
-          <div onClickCapture={() => setActiveGuideKey('buildHistory')} onFocusCapture={() => setActiveGuideKey('buildHistory')}>
+          <div onClick={(event) => {
+            if (isInteractiveGuideTarget(event.target)) return;
+            setActiveGuideKey('buildHistory');
+          }}>
             <StepSection
               className="mt-24"
               step="02"
@@ -682,7 +693,10 @@ export default function ReceptionistKnowledgePage() {
             </StepSection>
           </div>
 
-          <div onClickCapture={() => setActiveGuideKey('testQuestion')} onFocusCapture={() => setActiveGuideKey('testQuestion')}>
+          <div onClick={(event) => {
+            if (isInteractiveGuideTarget(event.target)) return;
+            setActiveGuideKey('testQuestion');
+          }}>
             <StepSection
               className="mt-24"
               step="03"

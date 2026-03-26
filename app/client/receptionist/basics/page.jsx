@@ -11,6 +11,10 @@ function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
 }
 
+function isInteractiveGuideTarget(target) {
+  return target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, button, a, label, [role="button"]'));
+}
+
 const voiceOptions = [
   { value: 'alloy', label: 'Alloy', description: 'Balanced' },
   { value: 'ash', label: 'Ash', description: 'Clear' },
@@ -235,7 +239,10 @@ export default function ReceptionistBasicsPage() {
     >
       <div className="grid grid-cols-1 gap-4 pb-[288px] xl:grid-cols-[7fr_3fr]">
         <div className="grid gap-3">
-          <div onClickCapture={() => setActiveGuideKey('assistantName')} onFocusCapture={() => setActiveGuideKey('assistantName')}>
+          <div onClick={(event) => {
+            if (isInteractiveGuideTarget(event.target)) return;
+            setActiveGuideKey('assistantName');
+          }}>
             <StepSection
               step="01"
               title="Identity"
@@ -285,7 +292,10 @@ export default function ReceptionistBasicsPage() {
             </StepSection>
           </div>
 
-          <div className="mt-12" onClickCapture={() => setActiveGuideKey('greeting')} onFocusCapture={() => setActiveGuideKey('greeting')}>
+          <div className="mt-12" onClick={(event) => {
+            if (isInteractiveGuideTarget(event.target)) return;
+            setActiveGuideKey('greeting');
+          }}>
             <StepSection
               step="02"
               title="Greeting"
@@ -303,7 +313,10 @@ export default function ReceptionistBasicsPage() {
             </StepSection>
           </div>
 
-          <div className="mt-12" onClickCapture={() => setActiveGuideKey('primaryQueue')} onFocusCapture={() => setActiveGuideKey('primaryQueue')}>
+          <div className="mt-12" onClick={(event) => {
+            if (isInteractiveGuideTarget(event.target)) return;
+            setActiveGuideKey('primaryQueue');
+          }}>
             <StepSection
               step="03"
               title="Call Routing"
@@ -348,7 +361,10 @@ export default function ReceptionistBasicsPage() {
             </StepSection>
           </div>
 
-          <div className="mt-12" onClickCapture={() => setActiveGuideKey('voiceSelection')} onFocusCapture={() => setActiveGuideKey('voiceSelection')}>
+          <div className="mt-12" onClick={(event) => {
+            if (isInteractiveGuideTarget(event.target)) return;
+            setActiveGuideKey('voiceSelection');
+          }}>
             <StepSection
               step="04"
               title="Voice Selection"
