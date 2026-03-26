@@ -3,6 +3,7 @@ import { ensureTables, getPool } from "../../_lib/db.js";
 import { requireTenantBillingAccess } from "../../_lib/billing.js";
 
 const DEFAULT_SAMPLE_TEXT = "Hi, thanks for calling. This is the Everycall assistant. How can I help you today?";
+const MAX_SAMPLE_TEXT_LENGTH = 600;
 const REALTIME_VOICES = new Set([
   "alloy",
   "ash",
@@ -30,15 +31,20 @@ export default async function handler(req, res) {
       if (!access) return;
     }
 
-    if (req.method !== "GET") {
-      res.setHeader("Allow", "GET");
+    if (req.method !== "GET" && req.method !== "POST") {
+      res.setHeader("Allow", "GET, POST");
       return res.status(405).json({ error: "method_not_allowed" });
     }
 
-    const voice = String(req.query?.voice || "alloy").toLowerCase();
+    const body = typeof req.body === "object" && req.body ? req.body : {};
+    const voice = String(req.method === "POST" ? body.voice : req.query?.voice || "alloy").toLowerCase();
     if (!REALTIME_VOICES.has(voice)) {
       return res.status(400).json({ error: "invalid_voice" });
     }
+    const sampleText = String(req.method === "POST" ? body.text : req.query?.text || DEFAULT_SAMPLE_TEXT)
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, MAX_SAMPLE_TEXT_LENGTH) || DEFAULT_SAMPLE_TEXT;
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
@@ -55,7 +61,7 @@ export default async function handler(req, res) {
         model: "gpt-4o-mini-tts",
         voice,
         format: "mp3",
-        input: DEFAULT_SAMPLE_TEXT
+        input: sampleText
       })
     });
 

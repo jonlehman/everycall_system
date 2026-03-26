@@ -204,9 +204,21 @@ export default function ReceptionistBasicsPage() {
   };
 
   const playSample = async () => {
+    const greetingText = String(form.openingLine || '').trim();
+    if (!greetingText) {
+      setSampleStatus('Add a greeting first.');
+      return;
+    }
     setSampleStatus('Loading sample...');
     try {
-      const resp = await fetch(`/api/v1/voice/sample?voice=${encodeURIComponent(form.voiceType)}`);
+      const resp = await fetch('/api/v1/voice/sample', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voice: form.voiceType,
+          text: greetingText
+        })
+      });
       if (!resp.ok) {
         setSampleStatus('Sample failed.');
         return;
