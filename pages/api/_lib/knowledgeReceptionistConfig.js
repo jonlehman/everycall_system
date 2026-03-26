@@ -1406,7 +1406,7 @@ async function loadReadinessRow(db, tenantKey) {
 
 export async function evaluateKnowledgeReadiness(db, tenantKey) {
   await assertConfigTablesReady(db);
-  const [row, assignments, businessState, overrides, guardrails, buildRes, pointerRes, setupIntentRes, setupSessionRes, outcomeSchemaRes, runtimeProfile] = await Promise.all([
+  const [row, assignments, businessState, overrides, guardrails, buildRes, pointerRes, outcomeSchemaRes, runtimeProfile] = await Promise.all([
     loadReadinessRow(db, tenantKey),
     loadTenantDomainAssignments(db, tenantKey),
     loadBusinessCallIntentState(db, tenantKey),
@@ -1424,22 +1424,6 @@ export async function evaluateKnowledgeReadiness(db, tenantKey) {
       `SELECT active_build_id
        FROM tenant_active_knowledge_builds
        WHERE tenant_key = $1
-       LIMIT 1`,
-      [tenantKey]
-    ),
-    db.query(
-      `SELECT setup_interview_intent_id, status, completion_criteria_json
-       FROM setup_interview_intents
-       WHERE tenant_key = $1
-       ORDER BY updated_at DESC
-       LIMIT 1`,
-      [tenantKey]
-    ),
-    db.query(
-      `SELECT completion_status
-       FROM setup_interview_sessions
-       WHERE tenant_key = $1
-       ORDER BY updated_at DESC
        LIMIT 1`,
       [tenantKey]
     ),
@@ -1464,45 +1448,14 @@ export async function evaluateKnowledgeReadiness(db, tenantKey) {
     ? latestBuild.validation_summary_json.blockers
     : [];
   const hardOverrideCount = overrides.filter((item) => ["hard_fact", "temporary_notice", "approved_answer"].includes(normalizeText(item.override_type))).length;
-
-  if (!assignments.length) blockers.push("domain_assignment_required");
-  if (!activeIntent) blockers.push("business_call_intent_required");
-  if (!Array.isArray(activeIntent?.conversation_stage_playbook_json) || !activeIntent?.conversation_stage_playbook_json?.length) {
-    blockers.push("business_call_stage_playbook_required");
-  }
-  if (!asObject(activeIntent?.disclosure_strategy_json || activeIntent?.disclosure_strategy)?.mode) {
-    blockers.push("disclosure_strategy_required");
-  }
-  if (!Array.isArray(activeIntent?.preferred_outcomes_json) || !activeIntent.preferred_outcomes_json.length) {
-    blockers.push("preferred_outcomes_required");
-  }
-  if (!latestBuild) blockers.push("published_build_required");
-  if (latestBuild && normalizeText(latestBuild.status) !== "published") blockers.push("latest_build_must_be_published");
-  if (latestBuild && normalizeText(latestBuild.status) === "published" && !activeBuildId) {
-    blockers.push("active_build_pointer_required");
-  }
-  if (latestBuild && activeBuildId && activeBuildId !== latestBuild.build_id) blockers.push("active_build_must_match_latest_published_build");
-  if (!normalizeText(outcomeSchemaRes.rows[0]?.call_outcome_schema_id)) blockers.push("call_outcome_schema_required");
-  if (!normalizeText(runtimeProfile?.greeting_text)) blockers.push("runtime_profile_required");
-  if (latestBuildBlockers.length) blockers.push("latest_build_has_validation_blockers");
   if (!checklist.hours_confirmed) blockers.push("hours_confirmation_required");
   if (!checklist.address_confirmed) blockers.push("address_confirmation_required");
   if (!checklist.phone_confirmed) blockers.push("phone_confirmation_required");
   if (!checklist.after_hours_configured) blockers.push("after_hours_configuration_required");
   if (!checklist.service_area_confirmed) blockers.push("service_area_confirmation_required");
-  if (!guardrails.length) blockers.push("dangerous_question_review_required");
-  if (!hardOverrideCount) blockers.push("hard_overrides_required");
   if (!checklist.sample_calls_passed) blockers.push("sample_call_validation_required");
   if (!checklist.handoff_path_tested) blockers.push("handoff_path_test_required");
   if (!checklist.outcome_capture_tested) blockers.push("outcome_capture_test_required");
-
-  const setupIntent = setupIntentRes.rows[0] || null;
-  const latestSetupSession = setupSessionRes.rows[0] || null;
-  if (setupIntent && normalizeText(setupIntent.status) !== "rejected" && normalizeText(setupIntent.status) !== "expired") {
-    if (normalizeText(latestSetupSession?.completion_status) !== "completed") {
-      blockers.push("setup_interview_completion_required");
-    }
-  }
 
   let status = "not_started";
   if (blockers.length === 0) {

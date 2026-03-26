@@ -100,13 +100,12 @@ export default function LaunchReadinessPage() {
     loadReadiness();
   }, []);
 
-  const saveChecklist = async (requestedGoLive = undefined) => {
+  const saveChecklist = async () => {
     setSaving(true);
     setStatus({ message: 'Saving launch readiness...', tone: 'warn' });
     try {
       const payload = {
-        checklist,
-        ...(requestedGoLive === undefined ? {} : { requestedGoLive })
+        checklist
       };
       const data = await fetchJson('/api/v1/knowledge/readiness', {
         method: 'POST',
@@ -133,11 +132,9 @@ export default function LaunchReadinessPage() {
     () => CLIENT_CHECKLIST_FIELDS.filter(({ key }) => Boolean(checklist?.[key])).length,
     [checklist]
   );
-  const launchFlagSet = Boolean(readiness?.requested_go_live);
   const liveBuildSelected = Boolean(computedInputs.active_build_id)
     && computedInputs.active_build_id === computedInputs.latest_build_id;
   const latestBuildPublished = computedInputs.latest_build_status === 'published';
-  const canMarkReady = readinessStatus === 'ready_for_go_live' && !launchFlagSet;
 
   return (
     <SectionPage
@@ -192,20 +189,7 @@ export default function LaunchReadinessPage() {
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button onClick={() => saveChecklist()} disabled={saving}>{saving ? 'Saving...' : 'Save Checklist'}</Button>
-          <Button variant="outline" onClick={() => saveChecklist(true)} disabled={saving || !canMarkReady}>
-            Mark Ready
-          </Button>
-          {launchFlagSet ? (
-            <Button variant="outline" onClick={() => saveChecklist(false)} disabled={saving}>
-              Clear Ready Flag
-            </Button>
-          ) : null}
         </div>
-        {!canMarkReady && !launchFlagSet ? (
-          <div className="mt-2 text-sm text-slate-500">
-            Mark Ready becomes available after all launch requirements are complete.
-          </div>
-        ) : null}
       </section>
     </SectionPage>
   );
