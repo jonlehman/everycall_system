@@ -51,6 +51,12 @@ function renderBuildProgress(build) {
   return `${progress.label}: ${progress.summary}`;
 }
 
+function buildDisplayLabel(build, index) {
+  const version = String(build?.version || '').trim();
+  if (version) return version;
+  return `Build ${index + 1}`;
+}
+
 function progressStageTone(status) {
   const normalized = String(status || '').trim().toLowerCase();
   if (normalized === 'done') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
@@ -556,12 +562,11 @@ export default function ReceptionistKnowledgePage() {
             description="Review previous builds here and publish a ready version when you want it live for callers."
           >
             <div className="grid gap-2">
-              {buildState.builds.length ? buildState.builds.map((build) => (
+              {buildState.builds.length ? buildState.builds.map((build, index) => (
                 <div key={build.build_id} className="rounded-lg border border-slate-200 bg-white p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <div className="font-semibold text-slate-900">{build.version || build.build_id}</div>
-                      <div className="text-xs text-slate-500">{build.build_id}</div>
+                      <div className="font-semibold text-slate-900">{buildDisplayLabel(build, index)}</div>
                     </div>
                     <span className={`badge ${buildBadgeTone(build.status)}`}>{build.status}</span>
                   </div>
