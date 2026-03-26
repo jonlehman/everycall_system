@@ -438,6 +438,9 @@ export default function ReceptionistKnowledgePage() {
                   <p className="mt-2 text-xs text-slate-500">
                     Information in uploaded documents takes precedence over conflicting information on the website.
                   </p>
+                  <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Choose one upload method for each document
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -467,7 +470,7 @@ export default function ReceptionistKnowledgePage() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload File</label>
+                  <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload File (Option A)</label>
                   <div className="flex w-full items-center overflow-hidden rounded border border-[#E2E8F0] bg-white">
                     <label className="cursor-pointer border-r border-[#E2E8F0] bg-slate-100 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200">
                       Browse...
@@ -484,12 +487,20 @@ export default function ReceptionistKnowledgePage() {
                     </span>
                   </div>
                   <p className="mt-2 text-[10px] italic text-slate-500">
-                    Optional. Use this for PDFs or Word docs. You can also paste plain text below.
+                    Use this for PDFs, Word docs, markdown, or plain text files.
                   </p>
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Text</label>
+                  <div className="flex items-center py-1.5">
+                    <div className="h-px flex-1 bg-slate-200" />
+                    <span className="mx-4 shrink-0 bg-[#eff4ff] px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">OR</span>
+                    <div className="h-px flex-1 bg-slate-200" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Text (Option B)</label>
                   <textarea
                     className="min-h-[140px] w-full rounded border-[#E2E8F0] bg-white text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
                     value={documentForm.bodyText}
