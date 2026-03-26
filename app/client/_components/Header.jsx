@@ -131,7 +131,7 @@ export default function Header() {
             className={`hidden items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] md:flex ${ready ? 'text-emerald-700' : 'text-amber-700'}`}
           >
             <span className={`h-2 w-2 rounded-full ${ready ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-            {ready ? 'Launch Ready' : 'Needs Setup'}
+            {ready ? 'Active' : 'Needs Setup'}
           </Link>
 
           <a

@@ -50,7 +50,7 @@ function fetchJson(url, options) {
 
 function formatStatusLabel(value) {
   const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'ready_for_go_live') return 'Ready to Launch';
+  if (normalized === 'ready_for_go_live') return 'Active';
   if (normalized === 'live') return 'Launch Confirmed';
   if (normalized === 'in_progress') return 'In Progress';
   if (normalized === 'not_started') return 'Not Started';
@@ -157,7 +157,7 @@ export default function LaunchReadinessPage() {
           <div className="text-xs uppercase tracking-wide text-slate-500">Knowledge Runtime</div>
           <div className="mt-2">
             <span className={latestBuildPublished && liveBuildSelected ? 'badge ok' : 'badge warn'}>
-              {latestBuildPublished && liveBuildSelected ? 'live build ready' : 'needs attention'}
+              {latestBuildPublished && liveBuildSelected ? 'live build published' : 'needs attention'}
             </span>
           </div>
         </div>
