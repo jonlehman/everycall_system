@@ -10,6 +10,7 @@ import { receptionistNavItems } from '../../_components/navigation';
 export default function ReceptionistNotificationsPage() {
   const [timezone, setTimezone] = useState('America/Los_Angeles');
   const [notes, setNotes] = useState('');
+  const [callerIdName, setCallerIdName] = useState('');
   const [leadAlertsEnabled, setLeadAlertsEnabled] = useState(false);
   const [leadAlertSmsEnabled, setLeadAlertSmsEnabled] = useState(false);
   const [leadAlertEmailEnabled, setLeadAlertEmailEnabled] = useState(false);
@@ -31,6 +32,7 @@ export default function ReceptionistNotificationsPage() {
         }
         setTimezone(data.settings?.timezone || 'America/Los_Angeles');
         setNotes(data.settings?.notes || '');
+        setCallerIdName(data.settings?.caller_id_name || '');
         setLeadAlertsEnabled(Boolean(data.settings?.lead_alerts_enabled));
         setLeadAlertSmsEnabled(Boolean(data.settings?.lead_alert_sms_enabled));
         setLeadAlertEmailEnabled(Boolean(data.settings?.lead_alert_email_enabled));
@@ -39,6 +41,11 @@ export default function ReceptionistNotificationsPage() {
             ? true
             : Boolean(data.settings?.lead_alert_email_include_transcript)
         );
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('everycall:notifications-updated', {
+            detail: { settings: data.settings || null }
+          }));
+        }
         setStatus({ message: 'Notification settings loaded.', tone: 'ok' });
         setLoading(false);
       })
@@ -61,6 +68,7 @@ export default function ReceptionistNotificationsPage() {
       body: JSON.stringify({
         timezone,
         notes,
+        callerIdName,
         leadAlertsEnabled,
         leadAlertSmsEnabled,
         leadAlertEmailEnabled,
@@ -71,6 +79,17 @@ export default function ReceptionistNotificationsPage() {
     if (!resp.ok) {
       setStatus({ message: 'Save failed. Please try again.', tone: 'bad' });
       return;
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('everycall:notifications-updated', {
+        detail: {
+          settings: {
+            lead_alerts_enabled: leadAlertsEnabled,
+            lead_alert_sms_enabled: leadAlertSmsEnabled,
+            lead_alert_email_enabled: leadAlertEmailEnabled
+          }
+        }
+      }));
     }
     setStatus({ message: 'Notification settings saved.', tone: 'ok' });
   };

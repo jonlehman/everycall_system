@@ -15,13 +15,18 @@ function iconName(kind) {
 
 export default function Sidebar({ collapsed = false, onToggle }) {
   const pathname = usePathname();
-  const [receptionistReady, setReceptionistReady] = useState(false);
+  const [goLiveReady, setGoLiveReady] = useState(false);
+  const [notificationsReady, setNotificationsReady] = useState(false);
 
   useEffect(() => {
     let mounted = true;
     const applyReadiness = (payload) => {
       const status = String(payload?.status || '').trim().toLowerCase();
-      setReceptionistReady(status === 'ready_for_go_live' || status === 'live');
+      setGoLiveReady(status === 'ready_for_go_live' || status === 'live');
+    };
+    const applyNotifications = (payload) => {
+      const settings = payload?.settings || payload || {};
+      setNotificationsReady(Boolean(settings?.lead_alerts_enabled) && Boolean(settings?.lead_alert_sms_enabled) && Boolean(settings?.lead_alert_email_enabled));
     };
     const loadReadiness = () => {
       fetch('/api/v1/knowledge/readiness', { cache: 'no-store' })
@@ -32,18 +37,37 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         })
         .catch(() => {
           if (!mounted) return;
-          setReceptionistReady(false);
+          setGoLiveReady(false);
+        });
+    };
+    const loadNotifications = () => {
+      fetch('/api/v1/settings', { cache: 'no-store' })
+        .then((resp) => (resp.ok ? resp.json() : null))
+        .then((data) => {
+          if (!mounted) return;
+          applyNotifications(data?.settings ? data : null);
+        })
+        .catch(() => {
+          if (!mounted) return;
+          setNotificationsReady(false);
         });
     };
     const handleReadinessUpdated = (event) => {
       if (!mounted) return;
       applyReadiness(event?.detail || null);
     };
+    const handleNotificationsUpdated = (event) => {
+      if (!mounted) return;
+      applyNotifications(event?.detail || null);
+    };
     loadReadiness();
+    loadNotifications();
     window.addEventListener('everycall:readiness-updated', handleReadinessUpdated);
+    window.addEventListener('everycall:notifications-updated', handleNotificationsUpdated);
     return () => {
       mounted = false;
       window.removeEventListener('everycall:readiness-updated', handleReadinessUpdated);
+      window.removeEventListener('everycall:notifications-updated', handleNotificationsUpdated);
     };
   }, []);
 
@@ -78,6 +102,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         {clientPrimaryNavItems.map((item) => {
           const active = pathMatches(pathname, item);
           const showReceptionistDot = !collapsed && item.icon === 'receptionist';
+          const receptionistReady = goLiveReady && notificationsReady;
           return (
             <Link
               key={item.href}

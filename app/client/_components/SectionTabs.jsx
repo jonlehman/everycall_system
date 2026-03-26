@@ -8,15 +8,21 @@ import { pathMatches } from './navigation';
 
 export default function SectionTabs({ items = [] }) {
   const pathname = usePathname();
-  const [receptionistReady, setReceptionistReady] = useState(false);
+  const [goLiveReady, setGoLiveReady] = useState(false);
+  const [notificationsReady, setNotificationsReady] = useState(false);
   const hasGoLiveTab = Array.isArray(items) && items.some((item) => item?.href === '/client/receptionist/go-live');
+  const hasNotificationsTab = Array.isArray(items) && items.some((item) => item?.href === '/client/receptionist/notifications');
 
   useEffect(() => {
-    if (!hasGoLiveTab) return undefined;
+    if (!hasGoLiveTab && !hasNotificationsTab) return undefined;
     let mounted = true;
     const applyReadiness = (payload) => {
       const status = String(payload?.status || '').trim().toLowerCase();
-      setReceptionistReady(status === 'ready_for_go_live' || status === 'live');
+      setGoLiveReady(status === 'ready_for_go_live' || status === 'live');
+    };
+    const applyNotifications = (payload) => {
+      const settings = payload?.settings || payload || {};
+      setNotificationsReady(Boolean(settings?.lead_alerts_enabled) && Boolean(settings?.lead_alert_sms_enabled) && Boolean(settings?.lead_alert_email_enabled));
     };
     const loadReadiness = () => {
       fetch('/api/v1/knowledge/readiness', { cache: 'no-store' })
@@ -27,20 +33,39 @@ export default function SectionTabs({ items = [] }) {
         })
         .catch(() => {
           if (!mounted) return;
-          setReceptionistReady(false);
+          setGoLiveReady(false);
+        });
+    };
+    const loadNotifications = () => {
+      fetch('/api/v1/settings', { cache: 'no-store' })
+        .then((resp) => (resp.ok ? resp.json() : null))
+        .then((data) => {
+          if (!mounted) return;
+          applyNotifications(data?.settings ? data : null);
+        })
+        .catch(() => {
+          if (!mounted) return;
+          setNotificationsReady(false);
         });
     };
     const handleReadinessUpdated = (event) => {
       if (!mounted) return;
       applyReadiness(event?.detail || null);
     };
-    loadReadiness();
+    const handleNotificationsUpdated = (event) => {
+      if (!mounted) return;
+      applyNotifications(event?.detail || null);
+    };
+    if (hasGoLiveTab) loadReadiness();
+    if (hasNotificationsTab) loadNotifications();
     window.addEventListener('everycall:readiness-updated', handleReadinessUpdated);
+    window.addEventListener('everycall:notifications-updated', handleNotificationsUpdated);
     return () => {
       mounted = false;
       window.removeEventListener('everycall:readiness-updated', handleReadinessUpdated);
+      window.removeEventListener('everycall:notifications-updated', handleNotificationsUpdated);
     };
-  }, [hasGoLiveTab]);
+  }, [hasGoLiveTab, hasNotificationsTab]);
 
   if (!Array.isArray(items) || !items.length) {
     return null;
@@ -62,9 +87,15 @@ export default function SectionTabs({ items = [] }) {
               )}
             >
               <span>{item.label}</span>
+              {item.href === '/client/receptionist/notifications' ? (
+                <span
+                  className={`ml-2 h-2 w-2 rounded-full ${notificationsReady ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                  aria-hidden="true"
+                />
+              ) : null}
               {item.href === '/client/receptionist/go-live' ? (
                 <span
-                  className={`ml-2 h-2 w-2 rounded-full ${receptionistReady ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                  className={`ml-2 h-2 w-2 rounded-full ${goLiveReady ? 'bg-emerald-500' : 'bg-amber-500'}`}
                   aria-hidden="true"
                 />
               ) : null}
