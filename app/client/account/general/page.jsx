@@ -134,8 +134,7 @@ export default function AccountGeneralPage() {
             <h2 className="mt-0 text-lg font-semibold">Business Timezone</h2>
             <div className="grid gap-3">
               <div>
-                <label>Timezone</label>
-                <select value={timezone} onChange={(event) => setTimezone(event.target.value)}>
+                <select aria-label="Timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)}>
                   {TIMEZONES.map((value) => (
                     <option key={value} value={value}>{value}</option>
                   ))}
