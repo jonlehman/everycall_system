@@ -46,6 +46,9 @@ function buildTtsInstructions(promptRuntime, sampleText = "") {
     assistantName && businessName
       ? `Speak as ${assistantName}, the live phone receptionist for ${businessName}.`
       : "Speak as a live business phone receptionist.",
+    "Deliver this as if you are answering an incoming phone call and greeting the caller in real time.",
+    "Sound like the first live spoken turn on a business phone call, not a voiceover, narrator, or commercial read.",
+    "Begin naturally, warmly, and confidently, like you just picked up the phone.",
     "Read the provided text exactly as written.",
     "Match the live receptionist's warmth, pacing, personality, and prosody."
   ].filter(Boolean);
