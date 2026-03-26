@@ -24,26 +24,66 @@ const voiceOptions = [
   { value: 'cedar', label: 'Cedar', description: 'Best Quality' }
 ];
 
-const guideByStep = {
-  '01': {
-    title: 'Identity',
-    body: 'Set the assistant and business names callers hear so the sales receptionist always speaks in the right voice for your company.',
+const guideByContext = {
+  assistantName: {
+    step: '01',
+    title: 'Assistant Name',
+    body: 'This is the name the sales receptionist uses for itself when speaking to callers.',
+    tip: 'Keep it short and easy to understand on the phone.'
+  },
+  businessName: {
+    step: '01',
+    title: 'Business Name',
+    body: 'This is the company name callers should hear during the conversation.',
     tip: 'Use the exact business name your callers already recognize.'
   },
-  '02': {
+  companyDescription: {
+    step: '01',
+    title: 'Company Description',
+    body: 'This helps the sales receptionist understand what the business does, who it serves, and the kinds of calls it should expect.',
+    tip: 'Keep it factual and concise so the receptionist stays grounded in the right context.'
+  },
+  businessHours: {
+    step: '01',
+    title: 'Business Hours',
+    body: 'These hours tell the sales receptionist when the business is considered open versus after hours.',
+    tip: 'Match this to the real schedule your team can support.'
+  },
+  greeting: {
+    step: '02',
     title: 'Greeting',
-    body: 'Set the first sentence callers hear before the receptionist begins gathering details.',
+    body: 'This is the first line callers hear before the receptionist starts collecting information.',
     tip: 'Keep the greeting short so callers quickly know they reached the right business.'
   },
-  '03': {
-    title: 'Call Routing',
-    body: 'Set business hours, emergency behavior, and after-hours handling so callers are routed the right way during each operating state.',
-    tip: 'Match these settings to what your team can actually support after hours.'
+  primaryQueue: {
+    step: '03',
+    title: 'Primary Queue',
+    body: 'This sets the normal handoff path when a live transfer or follow-up should go to your main team.',
+    tip: 'Choose the team or destination that should own most incoming calls.'
   },
-  '04': {
+  emergencyBehavior: {
+    step: '03',
+    title: 'Emergency Behavior',
+    body: 'This tells the receptionist how to treat urgent calls that need faster handling than a normal lead.',
+    tip: 'Use the most reliable path your business can actually support in urgent situations.'
+  },
+  afterHours: {
+    step: '03',
+    title: 'After Hours Protocol',
+    body: 'This controls what the receptionist should do when callers reach you outside normal business hours.',
+    tip: 'Set an after-hours path that matches your real callback or on-call process.'
+  },
+  voiceSelection: {
+    step: '04',
     title: 'Voice Selection',
-    body: 'Choose the live voice callers hear during the conversation and test it before saving.',
+    body: 'This chooses the live voice the sales receptionist uses during calls.',
     tip: 'Pick the voice that best matches your business tone and pace.'
+  },
+  voiceSample: {
+    step: '04',
+    title: 'Voice Sample',
+    body: 'Play a short sample to hear the currently selected voice before saving it to the live runtime profile.',
+    tip: 'Test the voice before saving so the live experience matches your expectations.'
   }
 };
 
@@ -52,7 +92,7 @@ export default function ReceptionistBasicsPage() {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState({ message: 'Loading sales receptionist basics...', tone: 'warn' });
   const [sampleStatus, setSampleStatus] = useState('');
-  const [activeStep, setActiveStep] = useState('01');
+  const [activeGuideKey, setActiveGuideKey] = useState('assistantName');
   const [form, setForm] = useState({
     assistantName: '',
     businessName: '',
@@ -180,7 +220,8 @@ export default function ReceptionistBasicsPage() {
     }
   };
 
-  const activeGuide = guideByStep[activeStep] || guideByStep['01'];
+  const activeGuide = guideByContext[activeGuideKey] || guideByContext.assistantName;
+  const activeStep = activeGuide.step || '01';
   const activeCardClassName = 'ring-2 ring-[#2563EB]/20 shadow-[0_0_0_1px_rgba(37,99,235,0.05)]';
 
   return (
@@ -194,7 +235,7 @@ export default function ReceptionistBasicsPage() {
     >
       <div className="grid grid-cols-1 gap-4 pb-[288px] xl:grid-cols-[7fr_3fr]">
         <div className="grid gap-3">
-          <div onClick={() => setActiveStep('01')} onFocusCapture={() => setActiveStep('01')}>
+          <div onClickCapture={() => setActiveGuideKey('assistantName')} onFocusCapture={() => setActiveGuideKey('assistantName')}>
             <StepSection
               step="01"
               title="Identity"
@@ -207,6 +248,7 @@ export default function ReceptionistBasicsPage() {
                   <input
                     value={form.assistantName}
                     onChange={(event) => setForm((current) => ({ ...current, assistantName: event.target.value }))}
+                    onFocus={() => setActiveGuideKey('assistantName')}
                     placeholder="EveryCall"
                   />
                 </div>
@@ -215,6 +257,7 @@ export default function ReceptionistBasicsPage() {
                   <input
                     value={form.businessName}
                     onChange={(event) => setForm((current) => ({ ...current, businessName: event.target.value }))}
+                    onFocus={() => setActiveGuideKey('businessName')}
                     placeholder="Harts Services"
                   />
                 </div>
@@ -225,14 +268,24 @@ export default function ReceptionistBasicsPage() {
                 <textarea
                   value={form.companyDescription}
                   onChange={(event) => setForm((current) => ({ ...current, companyDescription: event.target.value }))}
+                  onFocus={() => setActiveGuideKey('companyDescription')}
                   style={{ minHeight: 72 }}
                   placeholder="Briefly describe the business, service area, and what callers usually need help with."
+                />
+              </div>
+
+              <div className="mt-3">
+                <label>Business Hours</label>
+                <input
+                  value={form.businessHours}
+                  onChange={(event) => setForm((current) => ({ ...current, businessHours: event.target.value }))}
+                  onFocus={() => setActiveGuideKey('businessHours')}
                 />
               </div>
             </StepSection>
           </div>
 
-          <div onClick={() => setActiveStep('02')} onFocusCapture={() => setActiveStep('02')}>
+          <div onClickCapture={() => setActiveGuideKey('greeting')} onFocusCapture={() => setActiveGuideKey('greeting')}>
             <StepSection
               step="02"
               title="Greeting"
@@ -243,13 +296,14 @@ export default function ReceptionistBasicsPage() {
               <textarea
                 value={form.openingLine}
                 onChange={(event) => setForm((current) => ({ ...current, openingLine: event.target.value }))}
+                onFocus={() => setActiveGuideKey('greeting')}
                 style={{ minHeight: 72 }}
                 placeholder="Thanks for calling..."
               />
             </StepSection>
           </div>
 
-          <div onClick={() => setActiveStep('03')} onFocusCapture={() => setActiveStep('03')}>
+          <div onClickCapture={() => setActiveGuideKey('primaryQueue')} onFocusCapture={() => setActiveGuideKey('primaryQueue')}>
             <StepSection
               step="03"
               title="Call Routing"
@@ -259,25 +313,33 @@ export default function ReceptionistBasicsPage() {
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div>
                   <label>Primary Queue</label>
-                  <select value={form.primaryQueue} onChange={(event) => setForm((current) => ({ ...current, primaryQueue: event.target.value }))}>
+                  <select
+                    value={form.primaryQueue}
+                    onChange={(event) => setForm((current) => ({ ...current, primaryQueue: event.target.value }))}
+                    onFocus={() => setActiveGuideKey('primaryQueue')}
+                  >
                     <option>Dispatch Team</option>
                     <option>Owner Only</option>
                   </select>
                 </div>
                 <div>
                   <label>Emergency Behavior</label>
-                  <select value={form.emergencyBehavior} onChange={(event) => setForm((current) => ({ ...current, emergencyBehavior: event.target.value }))}>
+                  <select
+                    value={form.emergencyBehavior}
+                    onChange={(event) => setForm((current) => ({ ...current, emergencyBehavior: event.target.value }))}
+                    onFocus={() => setActiveGuideKey('emergencyBehavior')}
+                  >
                     <option>Immediate Transfer</option>
                     <option>Priority Queue</option>
                   </select>
                 </div>
                 <div>
-                  <label>Business Hours</label>
-                  <input value={form.businessHours} onChange={(event) => setForm((current) => ({ ...current, businessHours: event.target.value }))} />
-                </div>
-                <div>
                   <label>After Hours Protocol</label>
-                  <select value={form.afterHours} onChange={(event) => setForm((current) => ({ ...current, afterHours: event.target.value }))}>
+                  <select
+                    value={form.afterHours}
+                    onChange={(event) => setForm((current) => ({ ...current, afterHours: event.target.value }))}
+                    onFocus={() => setActiveGuideKey('afterHours')}
+                  >
                     <option>Collect details and dispatch callback</option>
                     <option>Forward to on-call</option>
                   </select>
@@ -286,7 +348,7 @@ export default function ReceptionistBasicsPage() {
             </StepSection>
           </div>
 
-          <div onClick={() => setActiveStep('04')} onFocusCapture={() => setActiveStep('04')}>
+          <div onClickCapture={() => setActiveGuideKey('voiceSelection')} onFocusCapture={() => setActiveGuideKey('voiceSelection')}>
             <StepSection
               step="04"
               title="Voice Selection"
@@ -296,13 +358,17 @@ export default function ReceptionistBasicsPage() {
               <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto] md:items-end">
                 <div>
                   <label>Voice Selection</label>
-                  <select value={form.voiceType} onChange={(event) => setForm((current) => ({ ...current, voiceType: event.target.value }))}>
+                  <select
+                    value={form.voiceType}
+                    onChange={(event) => setForm((current) => ({ ...current, voiceType: event.target.value }))}
+                    onFocus={() => setActiveGuideKey('voiceSelection')}
+                  >
                     {voiceOptions.map((voice) => (
                       <option key={voice.value} value={voice.value}>{voice.label} ({voice.description})</option>
                     ))}
                   </select>
                 </div>
-                <Button variant="outline" type="button" onClick={playSample}>
+                <Button variant="outline" type="button" onClick={playSample} onFocus={() => setActiveGuideKey('voiceSample')}>
                   Play Voice Sample
                 </Button>
               </div>
