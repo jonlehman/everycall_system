@@ -9,7 +9,7 @@ function toneClass(tone) {
   return 'rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700';
 }
 
-export default function ClientPage({ title, subtitle = '', status = null, primaryAction = null, children }) {
+export default function ClientPage({ title, subtitle = '', status = null, primaryAction = null, headerAside = null, children }) {
   const renderPrimaryAction = () => {
     if (!primaryAction) return null;
     if (primaryAction.onClick) {
@@ -42,6 +42,7 @@ export default function ClientPage({ title, subtitle = '', status = null, primar
           {subtitle ? <p className="m-0 mt-2 max-w-3xl text-sm leading-6 text-slate-500">{subtitle}</p> : null}
         </div>
         <div className="flex gap-2">
+          {headerAside}
           {renderPrimaryAction()}
         </div>
       </div>

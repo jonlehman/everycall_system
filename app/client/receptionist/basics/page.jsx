@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import GuidePanel from '../../_components/GuidePanel';
+import SalesReceptionistNumberBadge from '../../_components/SalesReceptionistNumberBadge';
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
 import StepSection from '../../_components/StepSection';
@@ -235,7 +236,7 @@ export default function ReceptionistBasicsPage() {
       subtitle="Set the business identity, greeting, routing, and voice used by your sales receptionist."
       status={status}
       statusChip={{ tone: 'ok', label: 'Sales Receptionist Active' }}
-      primaryAction={{ label: saving ? 'Saving...' : 'Save', brand: true, onClick: saveBasics, disabled: saving || loading }}
+      headerAside={<SalesReceptionistNumberBadge />}
     >
       <div className="grid grid-cols-1 gap-4 pb-[288px] xl:grid-cols-[7fr_3fr]">
         <div className="grid gap-3">

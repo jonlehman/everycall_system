@@ -1,9 +1,9 @@
 import ClientPage from './ClientPage';
 import SectionTabs from './SectionTabs';
 
-export default function SectionPage({ tabs = [], title, subtitle = '', status = null, primaryAction = null, statusChip = null, children }) {
+export default function SectionPage({ tabs = [], title, subtitle = '', status = null, primaryAction = null, headerAside = null, statusChip = null, children }) {
   return (
-    <ClientPage title={title} subtitle={subtitle} status={status} primaryAction={primaryAction}>
+    <ClientPage title={title} subtitle={subtitle} status={status} primaryAction={primaryAction} headerAside={headerAside}>
       {tabs.length ? (
         <div className="-mx-4 sticky top-16 z-40 mb-2 border-b border-slate-200/70 bg-white px-4 md:-mx-8 md:px-8">
           <div className="flex h-14 items-center justify-between gap-4">

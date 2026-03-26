@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
+import SalesReceptionistNumberBadge from '../../_components/SalesReceptionistNumberBadge';
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
 
@@ -144,7 +145,7 @@ export default function LaunchReadinessPage() {
       title="Go Live Checklist"
       subtitle="Complete the client checklist and confirm the live knowledge build before launch."
       status={status}
-      primaryAction={{ label: loading ? 'Loading...' : 'Reload', brand: true, onClick: loadReadiness, disabled: loading }}
+      headerAside={<SalesReceptionistNumberBadge />}
     >
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import GuidePanel from '../../_components/GuidePanel';
+import SalesReceptionistNumberBadge from '../../_components/SalesReceptionistNumberBadge';
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
 import StepSection from '../../_components/StepSection';
@@ -463,7 +464,7 @@ export default function ReceptionistKnowledgePage() {
       subtitle="Manage builds, uploaded documents, published versions, and simple question testing."
       status={status}
       statusChip={statusChip}
-      primaryAction={{ label: loading ? 'Loading...' : 'Reload', brand: true, onClick: () => loadWorkspace(), disabled: loading }}
+      headerAside={<SalesReceptionistNumberBadge />}
     >
       <div className="mt-[36px] grid grid-cols-1 gap-4 xl:grid-cols-[7fr_3fr]">
         <div className="grid gap-3">
