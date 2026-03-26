@@ -73,6 +73,11 @@ const FIELD_SECTIONS = [
 
 const EDITABLE_FIELDS = FIELD_SECTIONS.flatMap((section) => section.fields);
 const PRIMARY_USER_FIELDS = ['name', 'email', 'phoneNumber'];
+const GUARDRAIL_TYPE_OPTIONS = ['dangerous_question', 'escalation', 'compliance'];
+const GUARDRAIL_MODE_OPTIONS = ['clarify', 'handoff', 'emergency_redirect'];
+const RISK_LEVEL_OPTIONS = ['low', 'medium', 'high'];
+const ARTIFACT_STATUS_OPTIONS = ['approved_live', 'draft'];
+const OVERRIDE_TYPE_OPTIONS = ['approved_answer', 'hard_fact', 'temporary_notice'];
 
 function fetchJson(url, options) {
   return fetch(url, options).then(async (resp) => {
@@ -82,6 +87,17 @@ function fetchJson(url, options) {
     }
     return data;
   });
+}
+
+function joinListForEditor(value) {
+  return (Array.isArray(value) ? value : []).filter(Boolean).join('\n');
+}
+
+function splitEditorList(value) {
+  return String(value || '')
+    .split(/\n|,/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function formatDateTimeLocal(value) {
@@ -134,6 +150,33 @@ function buildPrimaryUserDraft(user) {
     name: user?.name || '',
     email: user?.email || '',
     phoneNumber: user?.phone_number || ''
+  };
+}
+
+function buildGuardrailDraft(guardrail = null) {
+  return {
+    knowledgeGuardrailId: guardrail?.knowledge_guardrail_id || '',
+    guardrailType: guardrail?.guardrail_type || 'dangerous_question',
+    triggerPatternsText: joinListForEditor(guardrail?.trigger_patterns_json),
+    riskLevel: guardrail?.risk_level || 'high',
+    mode: guardrail?.mode || 'clarify',
+    approvedResponsePattern: guardrail?.approved_response_pattern || '',
+    requiredNextStep: guardrail?.required_next_step || '',
+    optionalCaptureFieldsText: joinListForEditor(guardrail?.optional_capture_fields_json),
+    escalationInstruction: guardrail?.escalation_instruction || '',
+    enabled: guardrail ? guardrail.enabled !== false : true,
+    status: guardrail?.status || 'approved_live'
+  };
+}
+
+function buildOverrideDraft(override = null) {
+  return {
+    knowledgeOverrideId: override?.knowledge_override_id || '',
+    overrideType: override?.override_type || 'approved_answer',
+    title: override?.title || '',
+    body: override?.body || '',
+    priority: Number.isFinite(Number(override?.priority)) ? String(override.priority) : '100',
+    status: override?.status || 'approved_live'
   };
 }
 
@@ -311,6 +354,12 @@ export default function TenantManagePage() {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewQuery, setPreviewQuery] = useState('');
   const [preview, setPreview] = useState(null);
+  const [guardrails, setGuardrails] = useState([]);
+  const [overrides, setOverrides] = useState([]);
+  const [guardrailDraft, setGuardrailDraft] = useState(buildGuardrailDraft(null));
+  const [overrideDraft, setOverrideDraft] = useState(buildOverrideDraft(null));
+  const [guardrailSaving, setGuardrailSaving] = useState(false);
+  const [overrideSaving, setOverrideSaving] = useState(false);
 
   const primaryUser = useMemo(() => {
     if (!users.length) return null;
@@ -341,6 +390,8 @@ export default function TenantManagePage() {
   useEffect(() => {
     setPreview(null);
     setPreviewQuery('');
+    setGuardrailDraft(buildGuardrailDraft(null));
+    setOverrideDraft(buildOverrideDraft(null));
   }, [tenantKey]);
 
   const loadTenant = async () => {
@@ -354,6 +405,10 @@ export default function TenantManagePage() {
         fetchJson(`/api/v1/knowledge/builds?tenantKey=${encodeURIComponent(tenantKey)}`),
         fetchJson(`/api/v1/knowledge/readiness?tenantKey=${encodeURIComponent(tenantKey)}`)
       ]);
+      const [guardrailData, overrideData] = await Promise.all([
+        fetchJson(`/api/v1/knowledge/guardrails?tenantKey=${encodeURIComponent(tenantKey)}`).catch(() => ({ guardrails: [] })),
+        fetchJson(`/api/v1/knowledge/overrides?tenantKey=${encodeURIComponent(tenantKey)}`).catch(() => ({ overrides: [] }))
+      ]);
       const nextTenant = tenantData?.tenant || null;
       setTenant(nextTenant);
       setDraft(nextTenant ? buildDraftFromTenant(nextTenant) : null);
@@ -361,6 +416,8 @@ export default function TenantManagePage() {
       setBuilds(Array.isArray(buildData?.builds) ? buildData.builds : []);
       setActiveBuild(buildData?.activeBuild || null);
       setReadiness(readinessData?.readiness || null);
+      setGuardrails(Array.isArray(guardrailData?.guardrails) ? guardrailData.guardrails : []);
+      setOverrides(Array.isArray(overrideData?.overrides) ? overrideData.overrides : []);
       setStatus(nextTenant ? 'Tenant loaded.' : 'Tenant not found.');
     } catch (error) {
       setStatus(error?.message || 'Failed to load tenant.');
@@ -560,6 +617,67 @@ export default function TenantManagePage() {
       setStatus(error?.message || 'Runtime preview failed.');
     } finally {
       setPreviewBusy(false);
+    }
+  };
+
+  const saveGuardrail = async () => {
+    setGuardrailSaving(true);
+    setStatus('Saving safety rule...');
+    try {
+      const data = await fetchJson(`/api/v1/knowledge/guardrails?tenantKey=${encodeURIComponent(tenantKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          knowledgeGuardrailId: guardrailDraft.knowledgeGuardrailId || undefined,
+          guardrailType: guardrailDraft.guardrailType,
+          triggerPatterns: splitEditorList(guardrailDraft.triggerPatternsText),
+          riskLevel: guardrailDraft.riskLevel,
+          mode: guardrailDraft.mode,
+          approvedResponsePattern: guardrailDraft.approvedResponsePattern,
+          requiredNextStep: guardrailDraft.requiredNextStep || undefined,
+          optionalCaptureFields: splitEditorList(guardrailDraft.optionalCaptureFieldsText),
+          escalationInstruction: guardrailDraft.escalationInstruction || undefined,
+          enabled: guardrailDraft.enabled,
+          status: guardrailDraft.status
+        })
+      });
+      const savedGuardrail = data?.guardrail || null;
+      const refreshed = await fetchJson(`/api/v1/knowledge/guardrails?tenantKey=${encodeURIComponent(tenantKey)}`).catch(() => null);
+      setGuardrails(Array.isArray(refreshed?.guardrails) ? refreshed.guardrails : []);
+      setGuardrailDraft(buildGuardrailDraft(savedGuardrail));
+      setStatus('Safety rule saved.');
+    } catch (error) {
+      setStatus(error?.message || 'Safety rule save failed.');
+    } finally {
+      setGuardrailSaving(false);
+    }
+  };
+
+  const saveOverride = async () => {
+    setOverrideSaving(true);
+    setStatus('Saving approved answer...');
+    try {
+      const data = await fetchJson(`/api/v1/knowledge/overrides?tenantKey=${encodeURIComponent(tenantKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          knowledgeOverrideId: overrideDraft.knowledgeOverrideId || undefined,
+          overrideType: overrideDraft.overrideType,
+          title: overrideDraft.title,
+          body: overrideDraft.body,
+          priority: Number(overrideDraft.priority || 100),
+          status: overrideDraft.status
+        })
+      });
+      const savedOverride = data?.override || null;
+      const refreshed = await fetchJson(`/api/v1/knowledge/overrides?tenantKey=${encodeURIComponent(tenantKey)}`).catch(() => null);
+      setOverrides(Array.isArray(refreshed?.overrides) ? refreshed.overrides : []);
+      setOverrideDraft(buildOverrideDraft(savedOverride));
+      setStatus('Approved answer saved.');
+    } catch (error) {
+      setStatus(error?.message || 'Approved answer save failed.');
+    } finally {
+      setOverrideSaving(false);
     }
   };
 
@@ -789,6 +907,240 @@ export default function TenantManagePage() {
               )) : (
                 <div className="text-sm text-slate-500">No builds yet.</div>
               )}
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="m-0 text-lg font-semibold">Safety Rules</h2>
+                <div className="mt-1 text-sm text-slate-500">
+                  These are the tenant guardrails counted by the `Safety rules configured` system check.
+                </div>
+              </div>
+              <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                {guardrails.length} rule{guardrails.length === 1 ? '' : 's'}
+              </div>
+            </div>
+            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+              <div className="grid gap-2">
+                {guardrails.length ? guardrails.map((guardrail) => (
+                  <div key={guardrail.knowledge_guardrail_id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-slate-900">{formatLabel(guardrail.guardrail_type)}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {formatLabel(guardrail.mode)} · {formatLabel(guardrail.risk_level)} · {guardrail.enabled === false ? 'Disabled' : 'Enabled'}
+                        </div>
+                      </div>
+                      <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${guardrail.status === 'approved_live' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}>
+                        {guardrail.status}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-sm text-slate-600">
+                      {guardrail.approved_response_pattern || 'No approved response pattern yet.'}
+                    </div>
+                    {Array.isArray(guardrail.trigger_patterns_json) && guardrail.trigger_patterns_json.length ? (
+                      <div className="mt-2 text-xs text-slate-500">
+                        Triggers: {guardrail.trigger_patterns_json.slice(0, 3).join(', ')}
+                      </div>
+                    ) : null}
+                    <div className="mt-3">
+                      <Button variant="outline" onClick={() => setGuardrailDraft(buildGuardrailDraft(guardrail))}>
+                        Edit Rule
+                      </Button>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="text-sm text-slate-500">No safety rules configured yet.</div>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="m-0 text-base font-semibold text-slate-900">{guardrailDraft.knowledgeGuardrailId ? 'Edit Safety Rule' : 'New Safety Rule'}</h3>
+                  <Button variant="outline" onClick={() => setGuardrailDraft(buildGuardrailDraft(null))} disabled={guardrailSaving}>
+                    New Rule
+                  </Button>
+                </div>
+                <div className="mt-3 grid gap-3">
+                  <Field label="Rule Type">
+                    <SelectInput
+                      value={guardrailDraft.guardrailType}
+                      options={GUARDRAIL_TYPE_OPTIONS}
+                      onChange={(event) => setGuardrailDraft((current) => ({ ...current, guardrailType: event.target.value }))}
+                    />
+                  </Field>
+                  <Field label="Trigger Patterns" hint="One phrase per line. These are matched against caller requests.">
+                    <TextArea
+                      value={guardrailDraft.triggerPatternsText}
+                      onChange={(event) => setGuardrailDraft((current) => ({ ...current, triggerPatternsText: event.target.value }))}
+                      placeholder={'emergency\nsuicidal\nmedical advice'}
+                    />
+                  </Field>
+                  <Field label="Risk Level">
+                    <SelectInput
+                      value={guardrailDraft.riskLevel}
+                      options={RISK_LEVEL_OPTIONS}
+                      onChange={(event) => setGuardrailDraft((current) => ({ ...current, riskLevel: event.target.value }))}
+                    />
+                  </Field>
+                  <Field label="Mode">
+                    <SelectInput
+                      value={guardrailDraft.mode}
+                      options={GUARDRAIL_MODE_OPTIONS}
+                      onChange={(event) => setGuardrailDraft((current) => ({ ...current, mode: event.target.value }))}
+                    />
+                  </Field>
+                  <Field label="Approved Response Pattern">
+                    <TextArea
+                      value={guardrailDraft.approvedResponsePattern}
+                      onChange={(event) => setGuardrailDraft((current) => ({ ...current, approvedResponsePattern: event.target.value }))}
+                      placeholder="Please respond with the approved bounded answer only."
+                    />
+                  </Field>
+                  <Field label="Required Next Step">
+                    <TextInput
+                      value={guardrailDraft.requiredNextStep}
+                      onChange={(event) => setGuardrailDraft((current) => ({ ...current, requiredNextStep: event.target.value }))}
+                      placeholder="Escalate to office"
+                    />
+                  </Field>
+                  <Field label="Escalation Instruction">
+                    <TextArea
+                      value={guardrailDraft.escalationInstruction}
+                      onChange={(event) => setGuardrailDraft((current) => ({ ...current, escalationInstruction: event.target.value }))}
+                      placeholder="If the caller asks for medical, legal, or dangerous technical advice, do not answer directly."
+                    />
+                  </Field>
+                  <Field label="Optional Capture Fields" hint="One field per line.">
+                    <TextArea
+                      value={guardrailDraft.optionalCaptureFieldsText}
+                      onChange={(event) => setGuardrailDraft((current) => ({ ...current, optionalCaptureFieldsText: event.target.value }))}
+                      placeholder={'caller_name\ncallback_number'}
+                    />
+                  </Field>
+                  <Field label="Status">
+                    <SelectInput
+                      value={guardrailDraft.status}
+                      options={ARTIFACT_STATUS_OPTIONS}
+                      onChange={(event) => setGuardrailDraft((current) => ({ ...current, status: event.target.value }))}
+                    />
+                  </Field>
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(guardrailDraft.enabled)}
+                      onChange={(event) => setGuardrailDraft((current) => ({ ...current, enabled: event.target.checked }))}
+                    />
+                    Enabled
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={saveGuardrail} disabled={guardrailSaving}>
+                      {guardrailSaving ? 'Saving...' : 'Save Safety Rule'}
+                    </Button>
+                    <Button variant="outline" onClick={() => setGuardrailDraft(buildGuardrailDraft(null))} disabled={guardrailSaving}>
+                      Reset
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="m-0 text-lg font-semibold">Approved Answers And Notices</h2>
+                <div className="mt-1 text-sm text-slate-500">
+                  These tenant overrides count toward the `Approved answers configured` system check when they are saved as approved live.
+                </div>
+              </div>
+              <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                {overrides.length} item{overrides.length === 1 ? '' : 's'}
+              </div>
+            </div>
+            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+              <div className="grid gap-2">
+                {overrides.length ? overrides.map((override) => (
+                  <div key={override.knowledge_override_id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-slate-900">{override.title || formatLabel(override.override_type)}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {formatLabel(override.override_type)} · Priority {override.priority ?? 100}
+                        </div>
+                      </div>
+                      <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${override.status === 'approved_live' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}>
+                        {override.status}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-sm text-slate-600 whitespace-pre-wrap">{override.body || 'No answer text yet.'}</div>
+                    <div className="mt-3">
+                      <Button variant="outline" onClick={() => setOverrideDraft(buildOverrideDraft(override))}>
+                        Edit Answer
+                      </Button>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="text-sm text-slate-500">No approved answers or notices configured yet.</div>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="m-0 text-base font-semibold text-slate-900">{overrideDraft.knowledgeOverrideId ? 'Edit Answer / Notice' : 'New Answer / Notice'}</h3>
+                  <Button variant="outline" onClick={() => setOverrideDraft(buildOverrideDraft(null))} disabled={overrideSaving}>
+                    New Item
+                  </Button>
+                </div>
+                <div className="mt-3 grid gap-3">
+                  <Field label="Type">
+                    <SelectInput
+                      value={overrideDraft.overrideType}
+                      options={OVERRIDE_TYPE_OPTIONS}
+                      onChange={(event) => setOverrideDraft((current) => ({ ...current, overrideType: event.target.value }))}
+                    />
+                  </Field>
+                  <Field label="Title">
+                    <TextInput
+                      value={overrideDraft.title}
+                      onChange={(event) => setOverrideDraft((current) => ({ ...current, title: event.target.value }))}
+                      placeholder="Emergency pricing note"
+                    />
+                  </Field>
+                  <Field label="Answer / Notice Text">
+                    <TextArea
+                      value={overrideDraft.body}
+                      onChange={(event) => setOverrideDraft((current) => ({ ...current, body: event.target.value }))}
+                      placeholder="Provide the approved bounded answer or notice here."
+                    />
+                  </Field>
+                  <Field label="Priority">
+                    <TextInput
+                      type="number"
+                      step="1"
+                      value={overrideDraft.priority}
+                      onChange={(event) => setOverrideDraft((current) => ({ ...current, priority: event.target.value }))}
+                    />
+                  </Field>
+                  <Field label="Status">
+                    <SelectInput
+                      value={overrideDraft.status}
+                      options={ARTIFACT_STATUS_OPTIONS}
+                      onChange={(event) => setOverrideDraft((current) => ({ ...current, status: event.target.value }))}
+                    />
+                  </Field>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={saveOverride} disabled={overrideSaving}>
+                      {overrideSaving ? 'Saving...' : 'Save Answer'}
+                    </Button>
+                    <Button variant="outline" onClick={() => setOverrideDraft(buildOverrideDraft(null))} disabled={overrideSaving}>
+                      Reset
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 
