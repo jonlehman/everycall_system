@@ -11,7 +11,18 @@ function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
 }
 
-const voiceOptions = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'];
+const voiceOptions = [
+  { value: 'alloy', label: 'Alloy', description: 'Balanced' },
+  { value: 'ash', label: 'Ash', description: 'Clear' },
+  { value: 'ballad', label: 'Ballad', description: 'Warm' },
+  { value: 'coral', label: 'Coral', description: 'Expressive' },
+  { value: 'echo', label: 'Echo', description: 'Conversational' },
+  { value: 'sage', label: 'Sage', description: 'Calm' },
+  { value: 'shimmer', label: 'Shimmer', description: 'Bright' },
+  { value: 'verse', label: 'Verse', description: 'Animated' },
+  { value: 'marin', label: 'Marin', description: 'Best Quality' },
+  { value: 'cedar', label: 'Cedar', description: 'Best Quality' }
+];
 
 const guideByStep = {
   '01': {
@@ -181,7 +192,7 @@ export default function ReceptionistBasicsPage() {
       statusChip={{ tone: 'ok', label: 'Sales Receptionist Active' }}
       primaryAction={{ label: saving ? 'Saving...' : 'Save', brand: true, onClick: saveBasics, disabled: saving || loading }}
     >
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[7fr_3fr]">
+      <div className="grid grid-cols-1 gap-4 pb-[288px] xl:grid-cols-[7fr_3fr]">
         <div className="grid gap-3">
           <div onClick={() => setActiveStep('01')} onFocusCapture={() => setActiveStep('01')}>
             <StepSection
@@ -287,7 +298,7 @@ export default function ReceptionistBasicsPage() {
                   <label>Voice Selection</label>
                   <select value={form.voiceType} onChange={(event) => setForm((current) => ({ ...current, voiceType: event.target.value }))}>
                     {voiceOptions.map((voice) => (
-                      <option key={voice} value={voice}>{voice}</option>
+                      <option key={voice.value} value={voice.value}>{voice.label} ({voice.description})</option>
                     ))}
                   </select>
                 </div>

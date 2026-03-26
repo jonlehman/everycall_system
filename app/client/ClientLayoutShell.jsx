@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import AppFooter from '../_components/AppFooter';
 import Sidebar from './_components/Sidebar';
 import Header from './_components/Header';
 import { clientPrimaryNavItems, pathMatches } from './_components/navigation';
@@ -55,6 +56,7 @@ export default function ClientLayoutShell({ children }) {
       <main className={`min-h-screen pt-0 transition-[padding-left] duration-200 ${sidebarCollapsed ? 'md:pl-24' : 'md:pl-64'} md:pt-16`}>
         <div className="min-h-[calc(100vh-64px)] bg-[#f8f9ff]">
           {children}
+          <AppFooter />
         </div>
       </main>
     </div>
