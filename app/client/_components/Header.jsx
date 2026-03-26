@@ -143,7 +143,7 @@ export default function Header() {
           </a>
 
           <Link
-            href="/client/account/notifications"
+            href="/client/receptionist/notifications"
             className="flex h-9 w-9 items-center justify-center rounded text-slate-700 transition-colors hover:bg-[#eff4ff]"
             aria-label="Open notifications"
           >

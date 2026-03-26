@@ -155,8 +155,8 @@ export default function AccountGeneralPage() {
             <div className="mt-1 text-sm text-slate-600">Set the local timezone the system should use for account-level scheduling and display defaults.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="font-semibold text-slate-900">Use Notifications for</div>
-            <div className="mt-1 text-sm text-slate-600">Lead alert delivery settings and transcript preferences.</div>
+            <div className="font-semibold text-slate-900">Lead Alert Settings</div>
+            <div className="mt-1 text-sm text-slate-600">Lead alert delivery settings now live in the Sales Receptionist section.</div>
           </div>
         </GuidePanel>
       </div>
