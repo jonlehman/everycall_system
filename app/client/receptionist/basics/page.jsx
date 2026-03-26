@@ -285,7 +285,7 @@ export default function ReceptionistBasicsPage() {
             </StepSection>
           </div>
 
-          <div onClickCapture={() => setActiveGuideKey('greeting')} onFocusCapture={() => setActiveGuideKey('greeting')}>
+          <div className="mt-12" onClickCapture={() => setActiveGuideKey('greeting')} onFocusCapture={() => setActiveGuideKey('greeting')}>
             <StepSection
               step="02"
               title="Greeting"
@@ -303,7 +303,7 @@ export default function ReceptionistBasicsPage() {
             </StepSection>
           </div>
 
-          <div onClickCapture={() => setActiveGuideKey('primaryQueue')} onFocusCapture={() => setActiveGuideKey('primaryQueue')}>
+          <div className="mt-12" onClickCapture={() => setActiveGuideKey('primaryQueue')} onFocusCapture={() => setActiveGuideKey('primaryQueue')}>
             <StepSection
               step="03"
               title="Call Routing"
@@ -348,7 +348,7 @@ export default function ReceptionistBasicsPage() {
             </StepSection>
           </div>
 
-          <div onClickCapture={() => setActiveGuideKey('voiceSelection')} onFocusCapture={() => setActiveGuideKey('voiceSelection')}>
+          <div className="mt-12" onClickCapture={() => setActiveGuideKey('voiceSelection')} onFocusCapture={() => setActiveGuideKey('voiceSelection')}>
             <StepSection
               step="04"
               title="Voice Selection"
