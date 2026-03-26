@@ -219,32 +219,28 @@ export default function ReceptionistBasicsPage() {
           text: greetingText
         })
       });
-      const instructionsAttempted = resp.headers.get('X-EveryCall-TTS-Instructions-Attempted') === 'true';
-      const instructionsUsed = resp.headers.get('X-EveryCall-TTS-Instructions-Used') === 'true';
-      const fallbackUsed = resp.headers.get('X-EveryCall-TTS-Fallback-Used') === 'true';
-      const firstStatus = resp.headers.get('X-EveryCall-TTS-First-Status');
-      const firstError = resp.headers.get('X-EveryCall-TTS-First-Error');
+      const samplePath = resp.headers.get('X-EveryCall-Voice-Sample-Path');
+      const sampleModel = resp.headers.get('X-EveryCall-Voice-Sample-Model');
+      const sampleVoice = resp.headers.get('X-EveryCall-Voice-Sample-Voice');
+      const sampleFormat = resp.headers.get('X-EveryCall-Voice-Sample-Format');
       if (!resp.ok) {
         const errorText = await resp.text().catch(() => '');
         if (typeof window !== 'undefined') {
           const errorLines = ['Voice sample failed.'];
-          if (firstStatus) errorLines.push(`First response status: ${firstStatus}`);
-          if (firstError) errorLines.push(`First response detail: ${firstError}`);
           if (errorText) errorLines.push(`Server response: ${errorText.slice(0, 240)}`);
           window.alert(errorLines.join('\n'));
         }
         setSampleStatus('Sample failed.');
         return;
       }
-      if (typeof window !== 'undefined' && instructionsAttempted) {
+      if (typeof window !== 'undefined') {
         const diagnosticLines = [
           'Voice sample diagnostics:',
-          `Instructions attempted: ${instructionsAttempted ? 'yes' : 'no'}`,
-          `Instructions used: ${instructionsUsed ? 'yes' : 'no'}`,
-          `Fallback used: ${fallbackUsed ? 'yes' : 'no'}`
+          `Path: ${samplePath || 'unknown'}`,
+          `Model: ${sampleModel || 'unknown'}`,
+          `Voice: ${sampleVoice || form.voiceType}`,
+          `Format: ${sampleFormat || 'unknown'}`
         ];
-        if (firstStatus) diagnosticLines.push(`First response status: ${firstStatus}`);
-        if (firstError) diagnosticLines.push(`First response detail: ${firstError}`);
         window.alert(diagnosticLines.join('\n'));
       }
       const blob = await resp.blob();

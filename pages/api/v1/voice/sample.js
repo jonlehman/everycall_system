@@ -1,18 +1,18 @@
+import crypto from "node:crypto";
+import WebSocket from "ws";
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
-import { ensureTables, getPool } from "../../_lib/db.js";
 import { requireTenantBillingAccess } from "../../_lib/billing.js";
+import { ensureTables, getPool } from "../../_lib/db.js";
+import { buildGatewayPromptResponse } from "../../_lib/gatewayPromptResponse.js";
+import {
+  assembleKnowledgeGatewayPrompt,
+  buildFieldSchemaFromOutcomeSchema
+} from "../../_lib/knowledgeReceptionistPrompt.js";
 
 const DEFAULT_SAMPLE_TEXT = "Hi, thanks for calling. This is the Everycall assistant. How can I help you today?";
 const MAX_SAMPLE_TEXT_LENGTH = 600;
-const SAMPLE_TTS_INSTRUCTIONS = [
-  "Speak like a real person at the front desk answering the phone.",
-  "Sound casual, natural, warm, and lightly upbeat.",
-  "Keep it conversational and unpolished in a good way, like a normal business phone greeting.",
-  "Do not sound like a presenter, announcer, narrator, or commercial voiceover.",
-  "Talk to one caller, not to an audience.",
-  "Begin like you just picked up the phone and are greeting the caller in real time.",
-  "Read the provided text exactly as written."
-].join(" ");
+const PREVIEW_TIMEOUT_MS = 20000;
+const PREVIEW_SAMPLE_RATE_HZ = 24000;
 const REALTIME_VOICES = new Set([
   "alloy",
   "ash",
@@ -34,20 +34,199 @@ function normalizeHeaderValue(value, maxLength = 180) {
   return normalizeText(value).replace(/[^\x20-\x7E]/g, "").slice(0, maxLength);
 }
 
-async function requestSpeech({ apiKey, voice, sampleText, instructions }) {
-  return fetch("https://api.openai.com/v1/audio/speech", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini-tts",
+function createPreviewCallId() {
+  return `preview_${Date.now()}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+}
+
+function createRealtimePreviewInstructions(sampleText) {
+  return [
+    "This is a voice preview for the business greeting.",
+    "Answer the phone by speaking exactly the greeting text below and nothing else.",
+    "Do not add extra words, explanations, or filler.",
+    "Sound like a real person answering the business phone.",
+    `Greeting text: ${sampleText}`
+  ].join(" ");
+}
+
+function createWavHeader(dataLength, sampleRate, channelCount = 1, bitsPerSample = 16) {
+  const blockAlign = channelCount * (bitsPerSample / 8);
+  const byteRate = sampleRate * blockAlign;
+  const buffer = Buffer.alloc(44);
+  buffer.write("RIFF", 0);
+  buffer.writeUInt32LE(36 + dataLength, 4);
+  buffer.write("WAVE", 8);
+  buffer.write("fmt ", 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(channelCount, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(byteRate, 28);
+  buffer.writeUInt16LE(blockAlign, 32);
+  buffer.writeUInt16LE(bitsPerSample, 34);
+  buffer.write("data", 36);
+  buffer.writeUInt32LE(dataLength, 40);
+  return buffer;
+}
+
+function encodePcm16Wav(pcmBuffer, sampleRate = PREVIEW_SAMPLE_RATE_HZ) {
+  return Buffer.concat([createWavHeader(pcmBuffer.length, sampleRate), pcmBuffer]);
+}
+
+function buildPreviewPromptPayload(gatewayPrompt, tenantKey, callSid, voice) {
+  const promptPayload = buildGatewayPromptResponse(
+    gatewayPrompt,
+    buildFieldSchemaFromOutcomeSchema,
+    { tenantKey, callSid }
+  );
+  return {
+    ...promptPayload,
+    session_config: {
+      ...(promptPayload.session_config || {}),
       voice,
-      format: "mp3",
-      input: sampleText,
-      ...(instructions ? { instructions } : {})
-    })
+      output_audio_format: "pcm16"
+    }
+  };
+}
+
+async function requestRealtimePreview({ apiKey, promptPayload, sampleText }) {
+  return new Promise((resolve, reject) => {
+    const model = String(promptPayload?.session_config?.model || "gpt-realtime-1.5").trim() || "gpt-realtime-1.5";
+    const voice = String(promptPayload?.session_config?.voice || "marin").trim() || "marin";
+    const instructions = normalizeText(promptPayload?.system_prompt);
+    const ws = new WebSocket(`wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "OpenAI-Beta": "realtime=v1"
+      }
+    });
+
+    const audioChunks = [];
+    let settled = false;
+    let firstServerError = "";
+
+    const timeout = setTimeout(() => {
+      fail(new Error("realtime_preview_timeout"));
+    }, PREVIEW_TIMEOUT_MS);
+
+    function cleanup() {
+      clearTimeout(timeout);
+      ws.removeAllListeners();
+      try {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+      } catch {}
+    }
+
+    function fail(error) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    }
+
+    function succeed() {
+      if (settled) return;
+      settled = true;
+      const pcmBuffer = Buffer.concat(audioChunks);
+      cleanup();
+      resolve({
+        audioBuffer: encodePcm16Wav(pcmBuffer),
+        model,
+        voice,
+        path: "realtime",
+        format: "wav"
+      });
+    }
+
+    ws.on("open", () => {
+      ws.send(JSON.stringify({
+        type: "session.update",
+        session: {
+          modalities: ["audio", "text"],
+          instructions,
+          tools: Array.isArray(promptPayload.tool_definitions) ? promptPayload.tool_definitions : [],
+          output_audio_format: "pcm16",
+          voice,
+          max_response_output_tokens: promptPayload?.session_config?.max_output_tokens ?? 4096
+        }
+      }));
+    });
+
+    ws.on("message", (data) => {
+      let event = {};
+      try {
+        event = JSON.parse(data.toString());
+      } catch {
+        return;
+      }
+
+      const type = String(event?.type || "");
+      if (type === "session.updated") {
+        ws.send(JSON.stringify({
+          type: "response.create",
+          response: {
+            modalities: ["audio", "text"],
+            instructions: createRealtimePreviewInstructions(sampleText)
+          }
+        }));
+        return;
+      }
+
+      if (type === "error") {
+        const message = normalizeText(event?.error?.message || event?.message || "realtime_preview_error");
+        firstServerError = firstServerError || message;
+        fail(new Error(message));
+        return;
+      }
+
+      if (type === "response.output_audio.delta" || type === "response.audio.delta" || type === "output_audio.delta") {
+        const audioBase64 = event?.delta || event?.audio?.delta || event?.audio?.data || event?.data || "";
+        if (audioBase64) {
+          audioChunks.push(Buffer.from(audioBase64, "base64"));
+        }
+        return;
+      }
+
+      if (type === "response.done") {
+        const responseStatus = normalizeText(event?.response?.status || event?.status);
+        const statusDetailsType = normalizeText(event?.response?.status_details?.type || event?.status_details?.type);
+        if (responseStatus === "failed" || statusDetailsType === "failed") {
+          const detail = normalizeText(
+            event?.response?.status_details?.error?.message
+            || event?.response?.status_details?.reason
+            || firstServerError
+            || "realtime_preview_failed"
+          );
+          fail(new Error(detail));
+          return;
+        }
+        if (audioChunks.length > 0) {
+          succeed();
+          return;
+        }
+      }
+
+      if (type === "response.output_audio.done" || type === "response.audio.done") {
+        if (audioChunks.length > 0) {
+          succeed();
+        }
+      }
+    });
+
+    ws.on("error", (error) => {
+      fail(error instanceof Error ? error : new Error("realtime_preview_socket_error"));
+    });
+
+    ws.on("close", () => {
+      if (!settled) {
+        if (audioChunks.length > 0) {
+          succeed();
+          return;
+        }
+        fail(new Error(firstServerError || "realtime_preview_closed_without_audio"));
+      }
+    });
   });
 }
 
@@ -58,8 +237,10 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "database_unavailable" });
     }
     await ensureTables(pool);
+
     const session = await requireSession(req, res);
     if (!session) return;
+
     const body = typeof req.body === "object" && req.body ? req.body : {};
     const tenantKey = resolveTenantKey(session, String(req.query?.tenantKey || body?.tenantKey || ""));
     if (session.role === "tenant") {
@@ -72,10 +253,11 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: "method_not_allowed" });
     }
 
-    const voice = String(req.method === "POST" ? body.voice : req.query?.voice || "alloy").toLowerCase();
+    const voice = String(req.method === "POST" ? body.voice : req.query?.voice || "marin").toLowerCase();
     if (!REALTIME_VOICES.has(voice)) {
       return res.status(400).json({ error: "invalid_voice" });
     }
+
     const sampleText = normalizeText(req.method === "POST" ? body.text : req.query?.text || DEFAULT_SAMPLE_TEXT)
       .slice(0, MAX_SAMPLE_TEXT_LENGTH) || DEFAULT_SAMPLE_TEXT;
 
@@ -84,51 +266,33 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "missing_openai_key" });
     }
 
-    let firstAttemptStatus = 0;
-    let firstAttemptUsedInstructions = true;
-    let fallbackUsed = false;
-    let firstAttemptError = "";
-    let resp = await requestSpeech({
-      apiKey,
-      voice,
-      sampleText,
-      instructions: SAMPLE_TTS_INSTRUCTIONS
+    const callSid = createPreviewCallId();
+    const gatewayPrompt = await assembleKnowledgeGatewayPrompt(pool, tenantKey, {
+      callSid,
+      runtimeEntryMode: "customer_call"
     });
-    firstAttemptStatus = resp.status;
+    const promptPayload = buildPreviewPromptPayload(gatewayPrompt, tenantKey, callSid, voice);
+    const preview = await requestRealtimePreview({
+      apiKey,
+      promptPayload,
+      sampleText
+    });
 
-    if (!resp.ok) {
-      firstAttemptError = normalizeHeaderValue(await resp.text());
-      fallbackUsed = true;
-      firstAttemptUsedInstructions = false;
-      resp = await requestSpeech({
-        apiKey,
-        voice,
-        sampleText,
-        instructions: ""
-      });
-    }
-
-    if (!resp.ok) {
-      const errorText = await resp.text();
-      return res.status(502).json({ error: "tts_failed", detail: errorText });
-    }
-
-    const buffer = Buffer.from(await resp.arrayBuffer());
-    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Type", "audio/wav");
     res.setHeader("Cache-Control", "no-store");
     res.setHeader(
       "Access-Control-Expose-Headers",
-      "X-EveryCall-TTS-Instructions-Attempted, X-EveryCall-TTS-Instructions-Used, X-EveryCall-TTS-Fallback-Used, X-EveryCall-TTS-First-Status, X-EveryCall-TTS-First-Error"
+      "X-EveryCall-Voice-Sample-Path, X-EveryCall-Voice-Sample-Model, X-EveryCall-Voice-Sample-Voice, X-EveryCall-Voice-Sample-Format"
     );
-    res.setHeader("X-EveryCall-TTS-Instructions-Attempted", "true");
-    res.setHeader("X-EveryCall-TTS-Instructions-Used", firstAttemptUsedInstructions ? "true" : "false");
-    res.setHeader("X-EveryCall-TTS-Fallback-Used", fallbackUsed ? "true" : "false");
-    res.setHeader("X-EveryCall-TTS-First-Status", String(firstAttemptStatus || 0));
-    if (firstAttemptError) {
-      res.setHeader("X-EveryCall-TTS-First-Error", firstAttemptError);
-    }
-    res.status(200).send(buffer);
+    res.setHeader("X-EveryCall-Voice-Sample-Path", preview.path);
+    res.setHeader("X-EveryCall-Voice-Sample-Model", normalizeHeaderValue(preview.model));
+    res.setHeader("X-EveryCall-Voice-Sample-Voice", normalizeHeaderValue(preview.voice));
+    res.setHeader("X-EveryCall-Voice-Sample-Format", preview.format);
+    res.status(200).send(preview.audioBuffer);
   } catch (err) {
-    return res.status(500).json({ error: "sample_error", message: err?.message || "unknown" });
+    return res.status(500).json({
+      error: "sample_error",
+      message: err?.message || "unknown"
+    });
   }
 }
