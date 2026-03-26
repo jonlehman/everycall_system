@@ -5,10 +5,12 @@ import { requireTenantBillingAccess } from "../../_lib/billing.js";
 const DEFAULT_SAMPLE_TEXT = "Hi, thanks for calling. This is the Everycall assistant. How can I help you today?";
 const MAX_SAMPLE_TEXT_LENGTH = 600;
 const SAMPLE_TTS_INSTRUCTIONS = [
-  "Speak as a live business phone receptionist answering an incoming call.",
-  "Sound natural, warm, conversational, and confident.",
-  "Do not sound like a narrator, announcer, or commercial voiceover.",
-  "Begin like you just picked up the phone.",
+  "Speak like a real person at the front desk answering the phone.",
+  "Sound casual, natural, warm, and lightly upbeat.",
+  "Keep it conversational and unpolished in a good way, like a normal business phone greeting.",
+  "Do not sound like a presenter, announcer, narrator, or commercial voiceover.",
+  "Talk to one caller, not to an audience.",
+  "Begin like you just picked up the phone and are greeting the caller in real time.",
   "Read the provided text exactly as written."
 ].join(" ");
 const REALTIME_VOICES = new Set([
