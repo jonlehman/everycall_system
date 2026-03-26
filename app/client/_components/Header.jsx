@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
 export default function Header() {
   const [billing, setBilling] = useState({
@@ -17,6 +18,7 @@ export default function Header() {
     status: 'not_started',
     blockers: []
   });
+  const [salesReceptionistNumber, setSalesReceptionistNumber] = useState('');
   const [open, setOpen] = useState(false);
   const timerRef = useRef(null);
 
@@ -58,8 +60,9 @@ export default function Header() {
     let mounted = true;
     Promise.all([
       fetch('/api/v1/knowledge/readiness').then((resp) => (resp.ok ? resp.json() : null)).catch(() => null),
-      fetch('/api/v1/billing').then((resp) => (resp.ok ? resp.json() : null)).catch(() => null)
-    ]).then(([readinessData, billingData]) => {
+      fetch('/api/v1/billing').then((resp) => (resp.ok ? resp.json() : null)).catch(() => null),
+      fetch('/api/v1/settings').then((resp) => (resp.ok ? resp.json() : null)).catch(() => null)
+    ]).then(([readinessData, billingData, settingsData]) => {
       if (!mounted) return;
       setReadiness({
         loading: false,
@@ -74,10 +77,12 @@ export default function Header() {
         stripeSubscriptionId: billingData?.billing?.stripeSubscriptionId || null,
         canManage: Boolean(billingData?.viewer?.canManage)
       });
+      setSalesReceptionistNumber(String(settingsData?.tenant?.telnyx_voice_number || '').trim());
     }).catch(() => {
       if (!mounted) return;
       setReadiness((current) => ({ ...current, loading: false }));
       setBilling((current) => ({ ...current, loading: false }));
+      setSalesReceptionistNumber('');
     });
     return () => { mounted = false; };
   }, []);
@@ -87,6 +92,7 @@ export default function Header() {
   const ready = readiness.status === 'ready_for_go_live' || readiness.status === 'live';
   const trialLabel = billing.trialDaysRemaining === 1 ? 'Trial: 1 Day Left' : `Trial: ${billing.trialDaysRemaining ?? 0} Days Left`;
   const accountActionLabel = showTrialBadge || showBillingBadge ? 'Upgrade Plan' : (billing.canManage ? 'Billing' : 'Account');
+  const formattedSalesReceptionistNumber = formatPhoneDisplay(salesReceptionistNumber) || '';
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/70 bg-white/80 shadow-sm backdrop-blur-md">
@@ -109,6 +115,13 @@ export default function Header() {
               </Link>
             </div>
           ) : null}
+          <Link
+            href="/client/account/general"
+            className="hidden items-center gap-2 rounded-md border border-slate-200 bg-[#eff4ff] px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-[#dfe9fc] lg:flex"
+          >
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Sales Receptionist Number</span>
+            <span className="font-semibold text-slate-900">{formattedSalesReceptionistNumber || 'Provisioning pending'}</span>
+          </Link>
         </div>
 
         <div className="flex items-center gap-2 md:gap-4">
