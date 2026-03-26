@@ -113,6 +113,9 @@ export default function LaunchReadinessPage() {
       }
       setReadiness(data.readiness || null);
       setChecklist(data.readiness?.checklist || {});
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('everycall:readiness-updated', { detail: data.readiness || null }));
+      }
       setStatus({ message: 'Launch readiness saved.', tone: 'ok' });
     } catch {
       setStatus({ message: 'Could not save launch readiness.', tone: 'bad' });

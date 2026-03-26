@@ -14,19 +14,31 @@ export default function SectionTabs({ items = [] }) {
   useEffect(() => {
     if (!hasGoLiveTab) return undefined;
     let mounted = true;
-    fetch('/api/v1/knowledge/readiness')
-      .then((resp) => (resp.ok ? resp.json() : null))
-      .then((data) => {
-        if (!mounted) return;
-        const status = String(data?.readiness?.status || '').trim().toLowerCase();
-        setReceptionistReady(status === 'ready_for_go_live' || status === 'live');
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setReceptionistReady(false);
-      });
+    const applyReadiness = (payload) => {
+      const status = String(payload?.status || '').trim().toLowerCase();
+      setReceptionistReady(status === 'ready_for_go_live' || status === 'live');
+    };
+    const loadReadiness = () => {
+      fetch('/api/v1/knowledge/readiness', { cache: 'no-store' })
+        .then((resp) => (resp.ok ? resp.json() : null))
+        .then((data) => {
+          if (!mounted) return;
+          applyReadiness(data?.readiness);
+        })
+        .catch(() => {
+          if (!mounted) return;
+          setReceptionistReady(false);
+        });
+    };
+    const handleReadinessUpdated = (event) => {
+      if (!mounted) return;
+      applyReadiness(event?.detail || null);
+    };
+    loadReadiness();
+    window.addEventListener('everycall:readiness-updated', handleReadinessUpdated);
     return () => {
       mounted = false;
+      window.removeEventListener('everycall:readiness-updated', handleReadinessUpdated);
     };
   }, [hasGoLiveTab]);
 
@@ -52,7 +64,7 @@ export default function SectionTabs({ items = [] }) {
               <span>{item.label}</span>
               {item.href === '/client/receptionist/go-live' ? (
                 <span
-                  className={`ml-2 h-2 w-2 rounded-full ${receptionistReady ? 'bg-[#006229]' : 'bg-amber-500'}`}
+                  className={`ml-2 h-2 w-2 rounded-full ${receptionistReady ? 'bg-emerald-500' : 'bg-amber-500'}`}
                   aria-hidden="true"
                 />
               ) : null}

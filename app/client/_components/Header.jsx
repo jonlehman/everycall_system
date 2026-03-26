@@ -56,30 +56,44 @@ export default function Header() {
 
   useEffect(() => {
     let mounted = true;
-    Promise.all([
-      fetch('/api/v1/knowledge/readiness').then((resp) => (resp.ok ? resp.json() : null)).catch(() => null),
-      fetch('/api/v1/billing').then((resp) => (resp.ok ? resp.json() : null)).catch(() => null)
-    ]).then(([readinessData, billingData]) => {
-      if (!mounted) return;
+    const applyReadiness = (payload) => {
       setReadiness({
         loading: false,
-        status: readinessData?.readiness?.status || 'not_started',
-        blockers: Array.isArray(readinessData?.readiness?.blockers) ? readinessData.readiness.blockers : []
+        status: payload?.status || 'not_started',
+        blockers: Array.isArray(payload?.blockers) ? payload.blockers : []
       });
-      setBilling({
-        loading: false,
-        status: billingData?.billing?.status || null,
-        trialDaysRemaining: typeof billingData?.billing?.trialDaysRemaining === 'number' ? billingData.billing.trialDaysRemaining : null,
-        appAccessStatus: billingData?.billing?.appAccessStatus || null,
-        stripeSubscriptionId: billingData?.billing?.stripeSubscriptionId || null,
-        canManage: Boolean(billingData?.viewer?.canManage)
+    };
+    const loadHeaderState = () => {
+      Promise.all([
+        fetch('/api/v1/knowledge/readiness', { cache: 'no-store' }).then((resp) => (resp.ok ? resp.json() : null)).catch(() => null),
+        fetch('/api/v1/billing').then((resp) => (resp.ok ? resp.json() : null)).catch(() => null)
+      ]).then(([readinessData, billingData]) => {
+        if (!mounted) return;
+        applyReadiness(readinessData?.readiness);
+        setBilling({
+          loading: false,
+          status: billingData?.billing?.status || null,
+          trialDaysRemaining: typeof billingData?.billing?.trialDaysRemaining === 'number' ? billingData.billing.trialDaysRemaining : null,
+          appAccessStatus: billingData?.billing?.appAccessStatus || null,
+          stripeSubscriptionId: billingData?.billing?.stripeSubscriptionId || null,
+          canManage: Boolean(billingData?.viewer?.canManage)
+        });
+      }).catch(() => {
+        if (!mounted) return;
+        setReadiness((current) => ({ ...current, loading: false }));
+        setBilling((current) => ({ ...current, loading: false }));
       });
-    }).catch(() => {
+    };
+    const handleReadinessUpdated = (event) => {
       if (!mounted) return;
-      setReadiness((current) => ({ ...current, loading: false }));
-      setBilling((current) => ({ ...current, loading: false }));
-    });
-    return () => { mounted = false; };
+      applyReadiness(event?.detail || null);
+    };
+    loadHeaderState();
+    window.addEventListener('everycall:readiness-updated', handleReadinessUpdated);
+    return () => {
+      mounted = false;
+      window.removeEventListener('everycall:readiness-updated', handleReadinessUpdated);
+    };
   }, []);
 
   const showTrialBadge = !billing.loading && billing.status === 'trialing' && !billing.stripeSubscriptionId;
@@ -114,9 +128,9 @@ export default function Header() {
         <div className="flex items-center gap-2 md:gap-4">
           <Link
             href="/client/receptionist/go-live"
-            className="hidden items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-[#006229] md:flex"
+            className={`hidden items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] md:flex ${ready ? 'text-emerald-700' : 'text-amber-700'}`}
           >
-            <span className={`h-2 w-2 rounded-full ${ready ? 'bg-[#006229]' : 'bg-amber-500'}`} />
+            <span className={`h-2 w-2 rounded-full ${ready ? 'bg-emerald-500' : 'bg-amber-500'}`} />
             {ready ? 'Launch Ready' : 'Needs Setup'}
           </Link>
 
