@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
+import GuidePanel from '../../_components/GuidePanel';
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
 import StepSection from '../../_components/StepSection';
@@ -140,6 +141,57 @@ function buildRepresentativeAnswer(answerPacket) {
   return parts.join(' ').trim() || 'No representative answer is available for this preview yet.';
 }
 
+const guideByContext = {
+  website: {
+    step: '01',
+    title: 'Website',
+    body: 'Set the main website URL the next build should crawl. That site content becomes part of the knowledge set your sales receptionist uses live.',
+    tip: 'Use the main public site, not a deep page, so the build can discover the right content.'
+  },
+  documentsMeta: {
+    step: '01',
+    title: 'Document Details',
+    body: 'Name the document and choose its class before saving it. Approved uploaded documents are bundled into future builds alongside website content.',
+    tip: 'Use clear titles so your team can recognize each saved document later.'
+  },
+  documentsFile: {
+    step: '01',
+    title: 'Upload File',
+    body: 'Use file upload when the source already exists as a PDF, Word document, or text file that should feed the next build.',
+    tip: 'Use this for formal documents such as pricing sheets, policies, and reference material.'
+  },
+  documentsText: {
+    step: '01',
+    title: 'Document Text',
+    body: 'Paste short source text directly when you do not need to upload a file. This is useful for rules, scripts, and internal notes.',
+    tip: 'Paste only the exact text you want the receptionist to prioritize.'
+  },
+  createBuild: {
+    step: '01',
+    title: 'Create Build',
+    body: 'Create Build packages the current website URL and approved uploaded documents into a single knowledge version.',
+    tip: 'After changing the website or documents, create a new build so those updates can be published.'
+  },
+  buildHistory: {
+    step: '02',
+    title: 'Build History',
+    body: 'Each build is a saved knowledge version. Publish the version you want the sales receptionist to use for live caller questions.',
+    tip: 'Only a published build can answer customer questions during live calls.'
+  },
+  testQuestion: {
+    step: '03',
+    title: 'Test Customer Questions',
+    body: 'Ask caller-style questions against the current published build to check how the sales receptionist is likely to answer.',
+    tip: 'Use the same wording real callers would use on the phone.'
+  },
+  likelyAnswer: {
+    step: '03',
+    title: 'Likely Answer',
+    body: 'This preview shows an estimated answer based on the current published build. It helps you sanity-check the knowledge before sending live calls to it.',
+    tip: 'If the answer looks wrong, update the sources or publish a newer build and test again.'
+  }
+};
+
 export default function ReceptionistKnowledgePage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState({ message: 'Loading knowledge tools...', tone: 'warn' });
@@ -148,6 +200,7 @@ export default function ReceptionistKnowledgePage() {
   const [buildBusy, setBuildBusy] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [publishingBuildId, setPublishingBuildId] = useState('');
+  const [activeGuideKey, setActiveGuideKey] = useState('website');
 
   const [documentForm, setDocumentForm] = useState({
     title: '',
@@ -395,6 +448,9 @@ export default function ReceptionistKnowledgePage() {
       : latestBuildStatus === 'ready_to_publish'
         ? { tone: 'warn', label: 'Ready to Publish' }
         : { tone: 'warn', label: 'Knowledge Needs Review' };
+  const activeGuide = guideByContext[activeGuideKey] || guideByContext.website;
+  const activeStep = activeGuide.step || '01';
+  const activeCardClassName = 'ring-2 ring-[#2563EB]/20 shadow-[0_0_0_1px_rgba(37,99,235,0.05)]';
 
   return (
     <SectionPage
@@ -405,226 +461,278 @@ export default function ReceptionistKnowledgePage() {
       statusChip={statusChip}
       primaryAction={{ label: loading ? 'Loading...' : 'Reload', brand: true, onClick: () => loadWorkspace(), disabled: loading }}
     >
-      <div className="mt-[36px] grid grid-cols-1 gap-4 xl:grid-cols-[1.12fr_0.88fr]">
+      <div className="mt-[36px] grid grid-cols-1 gap-4 xl:grid-cols-[7fr_3fr]">
         <div className="grid gap-3">
-          <StepSection
-            step="01"
-            title="Create Build"
-            description="A build is the knowledge set your sales receptionist uses to answer caller questions."
-            contentClassName="border-0 bg-transparent p-0"
-          >
-            <div className="space-y-4">
-              <div className="rounded-lg border border-[#E2E8F0] bg-[#eff4ff] p-6 shadow-sm">
-                <div className="mb-4">
-                  <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website</h4>
-                  <p className="mt-1 text-sm text-slate-500">Train the sales receptionist with up to 500 pages from your website.</p>
-                </div>
-                <label className="sr-only">Website URL</label>
-                <input
-                  className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
-                  value={buildForm.websiteUrl}
-                  onChange={(event) => setBuildForm({ websiteUrl: event.target.value })}
-                  placeholder="https://example.com"
-                />
-                {!latestBuild && buildForm.websiteUrl ? (
-                  <div className="mt-2 text-xs text-slate-500">
-                    Pre-filled from tenant setup. You can change it before creating the first build.
+          <div onClickCapture={() => setActiveGuideKey('website')} onFocusCapture={() => setActiveGuideKey('website')}>
+            <StepSection
+              step="01"
+              title="Create Build"
+              description="A build is the knowledge set your sales receptionist uses to answer caller questions."
+              contentClassName={`border-0 bg-transparent p-0 ${activeStep === '01' ? activeCardClassName : ''}`}
+            >
+              <div className="space-y-4">
+                <div
+                  className="rounded-lg border border-[#E2E8F0] bg-[#eff4ff] p-6 shadow-sm"
+                  onClick={() => setActiveGuideKey('website')}
+                  onFocusCapture={() => setActiveGuideKey('website')}
+                >
+                  <div className="mb-4">
+                    <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website</h4>
+                    <p className="mt-1 text-sm text-slate-500">Train the sales receptionist with up to 500 pages from your website.</p>
                   </div>
-                ) : null}
-              </div>
-
-              <div className="space-y-6 rounded-lg border border-[#E2E8F0] bg-[#eff4ff] p-6 shadow-sm">
-                <div className="mb-2">
-                  <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Documents</h4>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Information in uploaded documents takes precedence over conflicting information on the website.
-                  </p>
+                  <label className="sr-only">Website URL</label>
+                  <input
+                    className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                    value={buildForm.websiteUrl}
+                    onChange={(event) => setBuildForm({ websiteUrl: event.target.value })}
+                    placeholder="https://example.com"
+                  />
+                  {!latestBuild && buildForm.websiteUrl ? (
+                    <div className="mt-2 text-xs text-slate-500">
+                      Pre-filled from tenant setup. You can change it before creating the first build.
+                    </div>
+                  ) : null}
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div
+                  className="space-y-6 rounded-lg border border-[#E2E8F0] bg-[#eff4ff] p-6 shadow-sm"
+                  onClick={() => setActiveGuideKey('documentsMeta')}
+                  onFocusCapture={() => setActiveGuideKey('documentsMeta')}
+                >
+                  <div className="mb-2">
+                    <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Documents</h4>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Information in uploaded documents takes precedence over conflicting information on the website.
+                    </p>
+                  </div>
+
+                  <div
+                    className="grid grid-cols-1 gap-4 md:grid-cols-2"
+                    onClick={() => setActiveGuideKey('documentsMeta')}
+                    onFocusCapture={() => setActiveGuideKey('documentsMeta')}
+                  >
+                    <div>
+                      <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Title</label>
+                      <input
+                        className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                        value={documentForm.title}
+                        onChange={(event) => setDocumentForm((current) => ({ ...current, title: event.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Class</label>
+                      <select
+                        className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                        value={documentForm.documentClass}
+                        onChange={(event) => setDocumentForm((current) => ({ ...current, documentClass: event.target.value }))}
+                      >
+                        <option value="operational">Operational</option>
+                        <option value="policy">Policy</option>
+                        <option value="reference">Reference</option>
+                        <option value="marketing">Marketing</option>
+                        <option value="unclassified">Unclassified</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div
+                    className="space-y-3 pt-4"
+                    onClick={() => setActiveGuideKey('documentsFile')}
+                    onFocusCapture={() => setActiveGuideKey('documentsFile')}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="rounded bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#2563EB]">Option A</span>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload File</div>
+                    </div>
+                    <div className="flex w-full items-center overflow-hidden rounded border border-[#E2E8F0] bg-white">
+                      <label className="cursor-pointer border-r border-[#E2E8F0] bg-slate-100 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200">
+                        Browse...
+                        <input
+                          className="hidden"
+                          type="file"
+                          accept=".txt,.md,.pdf,.doc,.docx"
+                          onChange={handleDocumentFileChange}
+                          disabled={readingDocumentFile || savingDocument}
+                        />
+                      </label>
+                      <span className="px-4 text-xs text-slate-500">
+                        {documentForm.filename || 'No file selected.'}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[10px] italic text-slate-500">
+                      Use this for PDFs or Word docs.
+                    </p>
+                  </div>
+
                   <div>
-                    <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Title</label>
-                    <input
-                      className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
-                      value={documentForm.title}
-                      onChange={(event) => setDocumentForm((current) => ({ ...current, title: event.target.value }))}
+                    <div className="flex items-center py-1.5">
+                      <div className="h-px flex-1 bg-slate-200" />
+                      <span className="mx-4 shrink-0 bg-[#eff4ff] px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">OR</span>
+                      <div className="h-px flex-1 bg-slate-200" />
+                    </div>
+                  </div>
+
+                  <div
+                    className="space-y-3"
+                    onClick={() => setActiveGuideKey('documentsText')}
+                    onFocusCapture={() => setActiveGuideKey('documentsText')}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="rounded bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#2563EB]">Option B</span>
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Text</label>
+                    </div>
+                    <textarea
+                      className="min-h-[140px] w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                      value={documentForm.bodyText}
+                      onChange={(event) => setDocumentForm((current) => ({ ...current, bodyText: event.target.value }))}
                     />
                   </div>
-                  <div>
-                    <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Class</label>
-                    <select
-                      className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
-                      value={documentForm.documentClass}
-                      onChange={(event) => setDocumentForm((current) => ({ ...current, documentClass: event.target.value }))}
+
+                  <div onClick={() => setActiveGuideKey('documentsMeta')} onFocusCapture={() => setActiveGuideKey('documentsMeta')}>
+                    <Button
+                      variant="outline"
+                      className="border-[#2563EB] bg-transparent px-6 py-3 text-xs font-bold uppercase tracking-widest text-[#2563EB] shadow-sm hover:bg-blue-50"
+                      onClick={saveUploadedDocument}
+                      disabled={savingDocument || readingDocumentFile}
                     >
-                      <option value="operational">Operational</option>
-                      <option value="policy">Policy</option>
-                      <option value="reference">Reference</option>
-                      <option value="marketing">Marketing</option>
-                      <option value="unclassified">Unclassified</option>
-                    </select>
-                  </div>
-                </div>
+                      {savingDocument ? 'Saving...' : (readingDocumentFile ? 'Reading File...' : 'Save Document')}
+                    </Button>
 
-                <div className="space-y-3 pt-4">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#2563EB]">Option A</span>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload File</div>
-                  </div>
-                  <div className="flex w-full items-center overflow-hidden rounded border border-[#E2E8F0] bg-white">
-                    <label className="cursor-pointer border-r border-[#E2E8F0] bg-slate-100 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200">
-                      Browse...
-                      <input
-                        className="hidden"
-                        type="file"
-                        accept=".txt,.md,.pdf,.doc,.docx"
-                        onChange={handleDocumentFileChange}
-                        disabled={readingDocumentFile || savingDocument}
-                      />
-                    </label>
-                    <span className="px-4 text-xs text-slate-500">
-                      {documentForm.filename || 'No file selected.'}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-[10px] italic text-slate-500">
-                    Use this for PDFs or Word docs.
-                  </p>
-                </div>
-
-                <div>
-                  <div className="flex items-center py-1.5">
-                    <div className="h-px flex-1 bg-slate-200" />
-                    <span className="mx-4 shrink-0 bg-[#eff4ff] px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">OR</span>
-                    <div className="h-px flex-1 bg-slate-200" />
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#2563EB]">Option B</span>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Text</label>
-                  </div>
-                  <textarea
-                    className="min-h-[140px] w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
-                    value={documentForm.bodyText}
-                    onChange={(event) => setDocumentForm((current) => ({ ...current, bodyText: event.target.value }))}
-                  />
-                </div>
-
-                <div>
-                  <Button
-                    variant="outline"
-                    className="border-[#2563EB] bg-transparent px-6 py-3 text-xs font-bold uppercase tracking-widest text-[#2563EB] shadow-sm hover:bg-blue-50"
-                    onClick={saveUploadedDocument}
-                    disabled={savingDocument || readingDocumentFile}
-                  >
-                    {savingDocument ? 'Saving...' : (readingDocumentFile ? 'Reading File...' : 'Save Document')}
-                  </Button>
-
-                  <div className="mt-4 grid gap-2">
-                    {uploadedDocuments.length ? uploadedDocuments.map((document) => (
-                      <div key={document.uploaded_document_id} className="rounded-lg border border-slate-200 bg-white p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <div className="font-semibold text-slate-900">{document.title}</div>
-                            <div className="text-xs text-slate-500">{document.uploaded_document_id}</div>
+                    <div className="mt-4 grid gap-2">
+                      {uploadedDocuments.length ? uploadedDocuments.map((document) => (
+                        <div key={document.uploaded_document_id} className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <div className="font-semibold text-slate-900">{document.title}</div>
+                              <div className="text-xs text-slate-500">{document.uploaded_document_id}</div>
+                            </div>
+                            <span className={`badge ${document.status === 'approved' ? 'ok' : 'warn'}`}>{document.status}</span>
                           </div>
-                          <span className={`badge ${document.status === 'approved' ? 'ok' : 'warn'}`}>{document.status}</span>
+                          <div className="mt-2 text-sm text-slate-600">
+                            {formatLabel(document.document_class)} · {formatLabel(document.source_authority)}
+                          </div>
+                          {document.filename ? (
+                            <div className="mt-1 text-xs text-slate-500">File: {document.filename}</div>
+                          ) : null}
                         </div>
-                        <div className="mt-2 text-sm text-slate-600">
-                          {formatLabel(document.document_class)} · {formatLabel(document.source_authority)}
-                        </div>
-                        {document.filename ? (
-                          <div className="mt-1 text-xs text-slate-500">File: {document.filename}</div>
-                        ) : null}
-                      </div>
-                    )) : (
-                      <p className="mt-4 text-[10px] text-slate-500">No uploaded documents yet.</p>
-                    )}
+                      )) : (
+                        <p className="mt-4 text-[10px] text-slate-500">No uploaded documents yet.</p>
+                      )}
+                    </div>
                   </div>
+                </div>
+
+                {buildState.builds.some((build) => isBuildActive(build)) ? (
+                  <div className="text-sm text-slate-600">
+                    Build status auto-refreshes every 15 seconds while work is active.
+                  </div>
+                ) : null}
+
+                <div className="pt-2" onClick={() => setActiveGuideKey('createBuild')} onFocusCapture={() => setActiveGuideKey('createBuild')}>
+                  <Button
+                    className="h-auto w-full rounded px-10 py-3 text-xs font-bold uppercase tracking-[0.18em] md:w-auto"
+                    onClick={createBuild}
+                    disabled={buildBusy}
+                  >
+                    {buildBusy ? 'Queueing...' : 'Create Build'}
+                  </Button>
                 </div>
               </div>
+            </StepSection>
+          </div>
 
-              {buildState.builds.some((build) => isBuildActive(build)) ? (
-                <div className="text-sm text-slate-600">
-                  Build status auto-refreshes every 15 seconds while work is active.
-                </div>
-              ) : null}
+          <div onClickCapture={() => setActiveGuideKey('buildHistory')} onFocusCapture={() => setActiveGuideKey('buildHistory')}>
+            <StepSection
+              step="02"
+              title="Build History"
+              description="Review previous builds here and publish a ready version when you want it live for callers."
+              contentClassName={activeStep === '02' ? activeCardClassName : ''}
+            >
+              <div className="grid gap-2">
+                {buildState.builds.length ? buildState.builds.map((build, index) => (
+                  <div key={build.build_id} className="rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="font-semibold text-slate-900">{buildDisplayLabel(build, index)}</div>
+                      </div>
+                      <span className={`badge ${buildBadgeTone(build.status)}`}>{build.status}</span>
+                    </div>
+                    <div className="mt-2 text-sm text-slate-600">
+                      Cards: {build.artifact_counts_json?.cards || 0} · Facts: {build.artifact_counts_json?.facts || 0}
+                    </div>
+                    <div className="mt-1 text-sm text-slate-600">{renderBuildProgress(build)}</div>
+                    <BuildProgressMeter build={build} compact />
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {build.status === 'ready_to_publish' ? (
+                        <Button
+                          variant="outline"
+                          onClick={() => publishBuild(build.build_id)}
+                          disabled={publishingBuildId === build.build_id}
+                        >
+                          {publishingBuildId === build.build_id ? 'Publishing...' : 'Publish'}
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                )) : (
+                  <div className="text-sm text-slate-500">Publish a knowledge build so the sales receptionist can answer questions about your business.</div>
+                )}
+              </div>
+            </StepSection>
+          </div>
 
-              <div className="pt-2">
+          <div onClickCapture={() => setActiveGuideKey('testQuestion')} onFocusCapture={() => setActiveGuideKey('testQuestion')}>
+            <StepSection
+              className="mt-24"
+              step="03"
+              title="Test Customer Questions"
+              description="Ask a caller-style question to see an approximate answer based on the current published build."
+              contentClassName={activeStep === '03' ? activeCardClassName : ''}
+            >
+              <label className="mt-2.5">Test Question</label>
+              <input
+                value={previewQuery}
+                onChange={(event) => setPreviewQuery(event.target.value)}
+                onFocus={() => setActiveGuideKey('testQuestion')}
+                placeholder="Do you handle after-hours emergencies?"
+              />
+              <div className="mt-3">
                 <Button
-                  className="h-auto w-full rounded px-10 py-3 text-xs font-bold uppercase tracking-[0.18em] md:w-auto"
-                  onClick={createBuild}
-                  disabled={buildBusy}
+                  onClick={runRuntimePreview}
+                  onFocus={() => setActiveGuideKey('testQuestion')}
+                  disabled={previewBusy || !previewQuery.trim()}
                 >
-                  {buildBusy ? 'Queueing...' : 'Create Build'}
+                  {previewBusy ? 'Testing...' : 'Test Answer'}
                 </Button>
               </div>
-            </div>
-          </StepSection>
-        </div>
-
-        <div className="grid gap-3">
-          <StepSection
-            step="02"
-            title="Build History"
-            description="Review previous builds here and publish a ready version when you want it live for callers."
-          >
-            <div className="grid gap-2">
-              {buildState.builds.length ? buildState.builds.map((build, index) => (
-                <div key={build.build_id} className="rounded-lg border border-slate-200 bg-white p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="font-semibold text-slate-900">{buildDisplayLabel(build, index)}</div>
-                    </div>
-                    <span className={`badge ${buildBadgeTone(build.status)}`}>{build.status}</span>
+              <div className="mt-3 grid gap-3">
+                <div
+                  className="flex h-48 flex-col rounded-lg border border-slate-200 bg-white p-4"
+                  onClick={() => setActiveGuideKey('likelyAnswer')}
+                  onFocusCapture={() => setActiveGuideKey('likelyAnswer')}
+                >
+                  <div className="text-sm font-semibold text-slate-900">Likely Answer</div>
+                  <div className={`mt-2 flex-1 overflow-y-auto pr-2 text-sm leading-6 ${preview ? 'text-slate-700' : 'text-slate-500'}`}>
+                    {previewAnswerDisplay}
                   </div>
-                  <div className="mt-2 text-sm text-slate-600">
-                    Cards: {build.artifact_counts_json?.cards || 0} · Facts: {build.artifact_counts_json?.facts || 0}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-600">{renderBuildProgress(build)}</div>
-                  <BuildProgressMeter build={build} compact />
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {build.status === 'ready_to_publish' ? (
-                      <Button
-                        variant="outline"
-                        onClick={() => publishBuild(build.build_id)}
-                        disabled={publishingBuildId === build.build_id}
-                      >
-                        {publishingBuildId === build.build_id ? 'Publishing...' : 'Publish'}
-                      </Button>
-                    ) : null}
-                  </div>
+                  <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">Preview only. Live answers may vary based on call context.</div>
                 </div>
-              )) : (
-                <div className="text-sm text-slate-500">Publish a knowledge build so the sales receptionist can answer questions about your business.</div>
-              )}
-            </div>
-          </StepSection>
-        </div>
-      </div>
-
-      <StepSection
-        className="mt-24"
-        step="03"
-        title="Test Customer Questions"
-        description="Ask a caller-style question to see an approximate answer based on the current published build."
-      >
-        <label className="mt-2.5">Test Question</label>
-        <input value={previewQuery} onChange={(event) => setPreviewQuery(event.target.value)} placeholder="Do you handle after-hours emergencies?" />
-        <div className="mt-3">
-          <Button onClick={runRuntimePreview} disabled={previewBusy || !previewQuery.trim()}>{previewBusy ? 'Testing...' : 'Test Answer'}</Button>
-        </div>
-        <div className="mt-3 grid gap-3">
-          <div className="flex h-48 flex-col rounded-lg border border-slate-200 bg-white p-4">
-            <div className="text-sm font-semibold text-slate-900">Likely Answer</div>
-            <div className={`mt-2 flex-1 overflow-y-auto pr-2 text-sm leading-6 ${preview ? 'text-slate-700' : 'text-slate-500'}`}>
-              {previewAnswerDisplay}
-            </div>
-            <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">Preview only. Live answers may vary based on call context.</div>
+              </div>
+            </StepSection>
           </div>
         </div>
-      </StepSection>
+
+        <GuidePanel title="Knowledge Guide" eyebrow={`Step ${activeStep}`} icon="architecture">
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">{activeGuide.title}</div>
+            <div className="mt-1 text-sm text-slate-600">{activeGuide.body}</div>
+          </div>
+          <div className="rounded-2xl border border-[#d6e4ff] bg-[#f5f8ff] p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#004ac6]">Tip</div>
+            <div className="mt-2 text-sm italic text-slate-600">{activeGuide.tip}</div>
+          </div>
+        </GuidePanel>
+      </div>
     </SectionPage>
   );
 }
