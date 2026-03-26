@@ -417,7 +417,7 @@ export default function ReceptionistKnowledgePage() {
             contentClassName="border-0 bg-transparent p-0"
           >
             <div className="space-y-4">
-              <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-6 shadow-sm">
+              <div className="rounded-lg border border-[#E2E8F0] bg-[#eff4ff] p-6 shadow-sm">
                 <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Website URL</label>
                 <input
                   className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
@@ -432,7 +432,7 @@ export default function ReceptionistKnowledgePage() {
                 ) : null}
               </div>
 
-              <div className="space-y-6 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-6 shadow-sm">
+              <div className="space-y-6 rounded-lg border border-[#E2E8F0] bg-[#eff4ff] p-6 shadow-sm">
                 <div>
                   <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload Documents</h4>
                   <p className="mt-2 text-xs text-slate-500">
@@ -593,6 +593,7 @@ export default function ReceptionistKnowledgePage() {
       </div>
 
       <StepSection
+        className="mt-24"
         step="03"
         title="Test Customer Questions"
         description="Ask a caller-style question to see an approximate answer based on the current published build."
