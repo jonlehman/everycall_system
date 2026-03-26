@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
-import GuidePanel from '../../_components/GuidePanel';
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
 import StepSection from '../../_components/StepSection';
@@ -413,8 +412,8 @@ export default function ReceptionistKnowledgePage() {
         <div className="grid gap-3">
           <StepSection
             step="01"
-            title="Build Inputs"
-            description="Each knowledge build combines the website crawl and any approved uploaded documents into one published version."
+            title="Create Build"
+            description="Set the website URL, upload any supporting documents, then create a new build."
           >
             <label>Website URL</label>
             <input
@@ -427,53 +426,10 @@ export default function ReceptionistKnowledgePage() {
                 Pre-filled from tenant setup. You can change it before creating the first build.
               </div>
             ) : null}
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Website Crawl</div>
-                <div className="mt-2 text-sm font-semibold text-slate-900">
-                  {buildForm.websiteUrl.trim() || 'No website selected yet'}
-                </div>
-                <div className="mt-1 text-sm text-slate-600">
-                  The crawler pulls source pages from this website into the build.
-                </div>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Uploaded Documents</div>
-                <div className="mt-2 text-sm font-semibold text-slate-900">
-                  {approvedUploadedDocuments.length} approved document{approvedUploadedDocuments.length === 1 ? '' : 's'} included
-                </div>
-                <div className="mt-1 text-sm text-slate-600">
-                  Approved uploaded documents are bundled into the next build together with the website crawl.
-                </div>
-              </div>
+            <label className="mt-3">Upload Documents</label>
+            <div className="mt-1 text-sm text-slate-600">
+              Approved uploaded documents are included in the next build with the website content.
             </div>
-            {buildState.builds.some((build) => isBuildActive(build)) ? (
-              <div className="mt-2 text-sm text-slate-600">
-                Build status auto-refreshes every 15 seconds while work is active.
-              </div>
-            ) : null}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button onClick={createBuild} disabled={buildBusy}>
-                {buildBusy ? 'Queueing...' : 'Create Build From Current Sources'}
-              </Button>
-            </div>
-            {latestBuild ? (
-              <div className="mt-4 rounded-xl border border-slate-200/50 bg-white p-4 text-sm text-slate-700">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Latest Build</div>
-                <div className="mt-2 font-semibold text-slate-900">{latestBuild.build_id}</div>
-                <div className="mt-1">Status: {formatLabel(latestBuild.status)}</div>
-                <div className="mt-1">{renderBuildProgress(latestBuild)}</div>
-                <BuildProgressMeter build={latestBuild} />
-              </div>
-            ) : null}
-          </StepSection>
-
-          <StepSection
-            step="02"
-            title="Manage Uploaded Documents"
-            description="Add first-party material here. Approved documents become part of the next build when you create a new version."
-          >
-
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
                 <label>Document Title</label>
@@ -545,26 +501,25 @@ export default function ReceptionistKnowledgePage() {
                 <div className="text-sm text-slate-500">No uploaded documents yet.</div>
               )}
             </div>
+
+            {buildState.builds.some((build) => isBuildActive(build)) ? (
+              <div className="mt-4 text-sm text-slate-600">
+                Build status auto-refreshes every 15 seconds while work is active.
+              </div>
+            ) : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button onClick={createBuild} disabled={buildBusy}>
+                {buildBusy ? 'Queueing...' : 'Create Build'}
+              </Button>
+            </div>
           </StepSection>
         </div>
 
         <div className="grid gap-3">
-          <GuidePanel title="Knowledge Guide" eyebrow="How it works" icon="architecture">
-            <div>Knowledge follows a simple cycle: update the website source and uploaded documents, create one combined build, review it, then publish it live.</div>
-            <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-              <div className="font-semibold text-slate-900">Published build</div>
-              <div className="mt-1 text-sm text-slate-600">The currently published build is the combined website-plus-documents version that callers actually hear.</div>
-            </div>
-            <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-              <div className="font-semibold text-slate-900">Customer question test</div>
-              <div className="mt-1 text-sm text-slate-600">Use this to sanity-check likely answers from the current published build before callers hear them live.</div>
-            </div>
-          </GuidePanel>
-
           <StepSection
-            step="03"
+            step="02"
             title="Build History"
-            description="Review combined build versions here and publish a ready version when you want it live for callers."
+            description="Review previous builds here and publish a ready version when you want it live for callers."
           >
             <div className="grid gap-2">
               {buildState.builds.length ? buildState.builds.map((build) => (
@@ -602,7 +557,7 @@ export default function ReceptionistKnowledgePage() {
       </div>
 
       <StepSection
-        step="04"
+        step="03"
         title="Test Customer Questions"
         description="Ask a caller-style question to see an approximate answer based on the current published build."
       >
