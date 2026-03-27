@@ -351,206 +351,208 @@ export default function CallsPage() {
       status={status}
       primaryAction={{ label: 'Refresh Data', brand: true, onClick: refreshData }}
     >
-      <section className="relative overflow-hidden rounded-xl border border-[#c3c6d7]/10 bg-[#eff4ff] p-6">
-        <div className={`flex ${isMobile ? 'flex-col' : 'items-start justify-between'} gap-4`}>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#004ac6]">filter_list</span>
-              <h2 className="m-0 font-semibold tracking-[-0.02em] text-slate-900">Queue Views</h2>
-            </div>
-            <p className="m-0 mt-1 text-sm font-medium text-slate-500">Use quick views and filters to focus the call queue before you open details.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" type="button" className="bg-white/80" onClick={() => applyQuickView('new')}>New</Button>
-            <Button variant="outline" type="button" className="bg-white/80" onClick={() => applyQuickView('high')}>High Urgency</Button>
-            <Button variant="outline" type="button" className="bg-white/80" onClick={() => applyQuickView('all')}>All Calls</Button>
-          </div>
-        </div>
-
-        <div className={`mt-6 grid gap-6 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-3'}`}>
-          <div className="space-y-1.5">
-            <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Search Number</label>
-            <div className="relative">
-              <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg text-slate-400">search</span>
-              <input
-                ref={searchInputRef}
-                className="w-full rounded-md border-none bg-white py-2 pl-10 pr-4 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="+1 (555) 000-0000"
-                aria-label="Number"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Call Status</label>
-            <select
-              className="w-full appearance-none rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-              aria-label="Call Status"
-            >
-              <option value="all">All Statuses</option>
-              <option value="new">New</option>
-              <option value="contacted">Contacted</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-              <option value="unable_to_reach">Unable to Reach</option>
-              <option value="canceled">Canceled</option>
-              <option value="spam">Spam / Wrong Number</option>
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Urgency</label>
-            <select
-              className="w-full appearance-none rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
-              value={urgencyFilter}
-              onChange={(event) => setUrgencyFilter(event.target.value)}
-              aria-label="Urgency Level"
-            >
-              <option value="all">All Priorities</option>
-              <option value="critical">Critical</option>
-              <option value="high">High</option>
-              <option value="normal">Normal</option>
-              <option value="low">Low</option>
-            </select>
-          </div>
-
-          <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:col-span-2 md:grid-cols-2'}`}>
-            <div className="space-y-1.5">
-              <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Date From</label>
-              <input
-                className="w-full rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
-                type="date"
-                value={dateFrom}
-                onChange={(event) => setDateFrom(event.target.value)}
-                aria-label="Date From"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Date To</label>
-              <input
-                className="w-full rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
-                type="date"
-                value={dateTo}
-                onChange={(event) => setDateTo(event.target.value)}
-                aria-label="Date To"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-end">
-            <button
-              type="button"
-              className="flex w-full items-center justify-center gap-1 rounded-md px-4 py-2 text-sm font-bold text-[#004ac6] transition-all hover:bg-white/50"
-              onClick={() => {
-                setStatusFilter('all');
-                setUrgencyFilter('all');
-                setDateFrom('');
-                setDateTo('');
-                setSearch('');
-              }}
-            >
-              <span className="material-symbols-outlined text-lg">restart_alt</span>
-              Reset Filters
-            </button>
-          </div>
-        </div>
-      </section>
-
       <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-[minmax(0,1.15fr)_minmax(0,.85fr)]'} min-w-0`}>
-        <section className="overflow-hidden rounded-xl border border-[#c3c6d7]/10 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left">
-              <thead>
-                <tr className="border-b border-[#c3c6d7]/10 bg-[#eff4ff]">
-                  <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Time</th>
-                  <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Number</th>
-                  <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">AI Summary</th>
-                  <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Status</th>
-                  <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Urgency</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#c3c6d7]/5">
-                {pagedRows.length ? pagedRows.map((row) => {
-                  const whenParts = formatQueueWhenParts(row.createdAt);
-                  const selected = selectedCallSid === row.sid;
-                  return (
-                    <tr
-                      key={row.id}
-                      className={`cursor-pointer transition-colors ${selected ? 'bg-[#004ac6]/5 hover:bg-[#004ac6]/10' : 'hover:bg-[#eff4ff]'}`}
-                      onClick={() => loadDetail(row.sid)}
-                    >
-                      <td className="px-6 py-5">
-                        <p className="m-0 text-sm font-semibold text-slate-900">{whenParts.primary}</p>
-                        <p className="m-0 text-xs text-slate-500">{whenParts.secondary}</p>
-                      </td>
-                      <td className="px-6 py-5">
-                        <p className={`m-0 text-sm font-bold ${selected ? 'text-[#004ac6]' : 'text-slate-900'}`}>{row.from}</p>
-                      </td>
-                      <td className="px-6 py-5">
-                        <p
-                          className="m-0 max-w-xs overflow-hidden text-sm text-slate-500"
-                          title={row.summary || ''}
-                          style={{
-                            display: '-webkit-box',
-                            WebkitLineClamp: 1,
-                            WebkitBoxOrient: 'vertical'
-                          }}
-                        >
-                          {row.summary || '-'}
-                        </p>
-                      </td>
-                      <td className="px-6 py-5">
-                        <span className={`rounded-full px-2.5 py-1 text-[0.65rem] font-extrabold uppercase tracking-wider ${queueStatusClass(row.status)}`}>
-                          {formatLabel(row.status)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5">
-                        <div className="flex items-center gap-2">
-                          <div className={`h-2 w-2 rounded-full ${queueUrgencyDotClass(row.urgency)}`} />
-                          <span className={`text-sm ${queueUrgencyTextClass(row.urgency)}`}>{formatLabel(row.urgency)}</span>
-                        </div>
+        <div className="min-w-0 space-y-4">
+          <section className="relative overflow-hidden rounded-xl border border-[#c3c6d7]/10 bg-[#eff4ff] p-6">
+            <div className={`flex ${isMobile ? 'flex-col' : 'items-start justify-between'} gap-4`}>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#004ac6]">filter_list</span>
+                  <h2 className="m-0 font-semibold tracking-[-0.02em] text-slate-900">Queue Views</h2>
+                </div>
+                <p className="m-0 mt-1 text-sm font-medium text-slate-500">Use quick views and filters to focus the call queue before you open details.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" type="button" className="bg-white/80" onClick={() => applyQuickView('new')}>New</Button>
+                <Button variant="outline" type="button" className="bg-white/80" onClick={() => applyQuickView('high')}>High Urgency</Button>
+                <Button variant="outline" type="button" className="bg-white/80" onClick={() => applyQuickView('all')}>All Calls</Button>
+              </div>
+            </div>
+
+            <div className={`mt-6 grid gap-6 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-3'}`}>
+              <div className="space-y-1.5">
+                <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Search Number</label>
+                <div className="relative">
+                  <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg text-slate-400">search</span>
+                  <input
+                    ref={searchInputRef}
+                    className="w-full rounded-md border-none bg-white py-2 pl-10 pr-4 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="+1 (555) 000-0000"
+                    aria-label="Number"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Call Status</label>
+                <select
+                  className="w-full appearance-none rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                  aria-label="Call Status"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="new">New</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="scheduled">Scheduled</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="unable_to_reach">Unable to Reach</option>
+                  <option value="canceled">Canceled</option>
+                  <option value="spam">Spam / Wrong Number</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Urgency</label>
+                <select
+                  className="w-full appearance-none rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                  value={urgencyFilter}
+                  onChange={(event) => setUrgencyFilter(event.target.value)}
+                  aria-label="Urgency Level"
+                >
+                  <option value="all">All Priorities</option>
+                  <option value="critical">Critical</option>
+                  <option value="high">High</option>
+                  <option value="normal">Normal</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+
+              <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:col-span-2 md:grid-cols-2'}`}>
+                <div className="space-y-1.5">
+                  <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Date From</label>
+                  <input
+                    className="w-full rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                    type="date"
+                    value={dateFrom}
+                    onChange={(event) => setDateFrom(event.target.value)}
+                    aria-label="Date From"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Date To</label>
+                  <input
+                    className="w-full rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                    type="date"
+                    value={dateTo}
+                    onChange={(event) => setDateTo(event.target.value)}
+                    aria-label="Date To"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-center gap-1 rounded-md px-4 py-2 text-sm font-bold text-[#004ac6] transition-all hover:bg-white/50"
+                  onClick={() => {
+                    setStatusFilter('all');
+                    setUrgencyFilter('all');
+                    setDateFrom('');
+                    setDateTo('');
+                    setSearch('');
+                  }}
+                >
+                  <span className="material-symbols-outlined text-lg">restart_alt</span>
+                  Reset Filters
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="overflow-hidden rounded-xl border border-[#c3c6d7]/10 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-[#c3c6d7]/10 bg-[#eff4ff]">
+                    <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Time</th>
+                    <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Number</th>
+                    <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">AI Summary</th>
+                    <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Status</th>
+                    <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Urgency</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#c3c6d7]/5">
+                  {pagedRows.length ? pagedRows.map((row) => {
+                    const whenParts = formatQueueWhenParts(row.createdAt);
+                    const selected = selectedCallSid === row.sid;
+                    return (
+                      <tr
+                        key={row.id}
+                        className={`cursor-pointer transition-colors ${selected ? 'bg-[#004ac6]/5 hover:bg-[#004ac6]/10' : 'hover:bg-[#eff4ff]'}`}
+                        onClick={() => loadDetail(row.sid)}
+                      >
+                        <td className="px-6 py-5">
+                          <p className="m-0 text-sm font-semibold text-slate-900">{whenParts.primary}</p>
+                          <p className="m-0 text-xs text-slate-500">{whenParts.secondary}</p>
+                        </td>
+                        <td className="px-6 py-5">
+                          <p className={`m-0 text-sm font-bold ${selected ? 'text-[#004ac6]' : 'text-slate-900'}`}>{row.from}</p>
+                        </td>
+                        <td className="px-6 py-5">
+                          <p
+                            className="m-0 max-w-xs overflow-hidden text-sm text-slate-500"
+                            title={row.summary || ''}
+                            style={{
+                              display: '-webkit-box',
+                              WebkitLineClamp: 1,
+                              WebkitBoxOrient: 'vertical'
+                            }}
+                          >
+                            {row.summary || '-'}
+                          </p>
+                        </td>
+                        <td className="px-6 py-5">
+                          <span className={`rounded-full px-2.5 py-1 text-[0.65rem] font-extrabold uppercase tracking-wider ${queueStatusClass(row.status)}`}>
+                            {formatLabel(row.status)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-5">
+                          <div className="flex items-center gap-2">
+                            <div className={`h-2 w-2 rounded-full ${queueUrgencyDotClass(row.urgency)}`} />
+                            <span className={`text-sm ${queueUrgencyTextClass(row.urgency)}`}>{formatLabel(row.urgency)}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }) : (
+                    <tr>
+                      <td className="px-6 py-8 text-sm text-slate-500" colSpan={5}>
+                        {loading ? 'Loading calls...' : 'No calls match the current filters.'}
                       </td>
                     </tr>
-                  );
-                }) : (
-                  <tr>
-                    <td className="px-6 py-8 text-sm text-slate-500" colSpan={5}>
-                      {loading ? 'Loading calls...' : 'No calls match the current filters.'}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex items-center justify-between border-t border-[#c3c6d7]/10 bg-[#eff4ff]/30 px-6 py-4">
-            <p className="m-0 text-xs font-semibold text-slate-500">
-              Showing {pageStart}-{pageEnd} of {filteredRows.length} calls
-            </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="rounded p-1 transition-colors hover:bg-[#eff4ff] disabled:opacity-40"
-                onClick={() => setQueuePage((current) => Math.max(0, current - 1))}
-                disabled={safeQueuePage === 0}
-              >
-                <span className="material-symbols-outlined text-slate-500">chevron_left</span>
-              </button>
-              <button
-                type="button"
-                className="rounded p-1 transition-colors hover:bg-[#eff4ff] disabled:opacity-40"
-                onClick={() => setQueuePage((current) => Math.min(pageCount - 1, current + 1))}
-                disabled={safeQueuePage >= pageCount - 1}
-              >
-                <span className="material-symbols-outlined text-slate-500">chevron_right</span>
-              </button>
+                  )}
+                </tbody>
+              </table>
             </div>
-          </div>
-        </section>
+            <div className="flex items-center justify-between border-t border-[#c3c6d7]/10 bg-[#eff4ff]/30 px-6 py-4">
+              <p className="m-0 text-xs font-semibold text-slate-500">
+                Showing {pageStart}-{pageEnd} of {filteredRows.length} calls
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="rounded p-1 transition-colors hover:bg-[#eff4ff] disabled:opacity-40"
+                  onClick={() => setQueuePage((current) => Math.max(0, current - 1))}
+                  disabled={safeQueuePage === 0}
+                >
+                  <span className="material-symbols-outlined text-slate-500">chevron_left</span>
+                </button>
+                <button
+                  type="button"
+                  className="rounded p-1 transition-colors hover:bg-[#eff4ff] disabled:opacity-40"
+                  onClick={() => setQueuePage((current) => Math.min(pageCount - 1, current + 1))}
+                  disabled={safeQueuePage >= pageCount - 1}
+                >
+                  <span className="material-symbols-outlined text-slate-500">chevron_right</span>
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
 
         <aside className="min-w-0">
           <div className="rounded-xl border border-[#c3c6d7]/10 bg-white p-6 shadow-xl xl:sticky xl:top-24">
