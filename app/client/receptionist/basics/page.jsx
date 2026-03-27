@@ -250,8 +250,8 @@ export default function ReceptionistBasicsPage() {
       statusChip={{ tone: 'ok', label: 'Sales Receptionist Active' }}
       headerAside={<SalesReceptionistNumberBadge />}
     >
-      <div className="grid grid-cols-1 gap-4 pb-[288px] xl:grid-cols-[7fr_3fr]">
-        <div className="grid gap-3">
+      <div className="grid grid-cols-1 items-start gap-4 pb-[288px] xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+        <div className="grid min-w-0 gap-3">
           <div onClick={(event) => {
             if (isInteractiveGuideTarget(event.target)) return;
             setActiveGuideKey('assistantName');

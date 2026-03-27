@@ -474,8 +474,8 @@ export default function ReceptionistKnowledgePage() {
       statusChip={statusChip}
       headerAside={<SalesReceptionistNumberBadge />}
     >
-      <div className="mt-[36px] grid grid-cols-1 gap-4 xl:grid-cols-[7fr_3fr]">
-        <div className="grid gap-3">
+      <div className="mt-[36px] grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+        <div className="grid min-w-0 gap-3">
           <div onClick={(event) => {
             if (isInteractiveGuideTarget(event.target)) return;
             setActiveGuideKey('website');

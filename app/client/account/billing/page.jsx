@@ -120,8 +120,8 @@ export default function AccountBillingPage() {
           }
         : null}
     >
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_.8fr]">
-        <div className="grid gap-3">
+      <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,.8fr)]">
+        <div className="grid min-w-0 gap-3">
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <h2 className="mt-0 text-lg font-semibold">Status</h2>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">

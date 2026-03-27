@@ -4,7 +4,7 @@ export default function GuidePanel({ title, eyebrow = 'Guide', icon = 'architect
   return (
     <aside
       className={cn(
-        'rounded-xl border border-slate-200/50 bg-[#e6eeff] p-6 text-slate-700',
+        'min-w-0 rounded-xl border border-slate-200/50 bg-[#e6eeff] p-6 text-slate-700',
         className
       )}
     >

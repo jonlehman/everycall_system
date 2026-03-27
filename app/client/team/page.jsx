@@ -283,8 +283,8 @@ export default function TeamPage() {
         onClick: () => (formMode === 'create' ? closeForm() : openCreateForm())
       }}
     >
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[7fr_3fr]">
-        <div className="grid gap-3">
+      <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+        <div className="grid min-w-0 gap-3">
           {formMode ? (
             <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(18,28,42,0.04)]">
               <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-8 py-6">
@@ -477,7 +477,7 @@ export default function TeamPage() {
             </section>
           ) : null}
 
-          <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <div className="min-w-0 rounded-xl border border-border bg-card p-3 shadow-sm">
             <h2 className="mt-0 text-lg font-semibold">Team Directory</h2>
             <div style={{ height: rows.length ? 'auto' : 300 }}>
               <DataGrid

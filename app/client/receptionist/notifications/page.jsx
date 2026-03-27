@@ -102,8 +102,8 @@ export default function ReceptionistNotificationsPage() {
       status={status}
       headerAside={<SalesReceptionistNumberBadge />}
     >
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[7fr_3fr]">
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+      <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+        <div className="min-w-0 rounded-xl border border-border bg-card p-3 shadow-sm">
           <h2 className="mt-0 text-lg font-semibold">New Lead Notifications</h2>
           <div className="grid gap-3 text-sm">
             <label className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">

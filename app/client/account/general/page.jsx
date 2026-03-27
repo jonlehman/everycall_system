@@ -118,8 +118,8 @@ export default function AccountGeneralPage() {
       status={status}
       primaryAction={{ label: saving ? 'Saving...' : 'Save General', brand: true, onClick: saveSettings, disabled: saving || loading }}
     >
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[7fr_3fr]">
-        <div className="grid gap-3">
+      <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+        <div className="grid min-w-0 gap-3">
           <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
             <h2 className="mt-0 text-lg font-semibold">Account Snapshot</h2>
             <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-[180px_1fr]">

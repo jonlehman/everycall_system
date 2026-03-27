@@ -435,7 +435,7 @@ export default function CallsPage() {
         </div>
       </section>
 
-      <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-[1.15fr_.85fr]'} min-w-0`}>
+      <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-[minmax(0,1.15fr)_minmax(0,.85fr)]'} min-w-0`}>
         <div className="workspace-panel min-w-0 overflow-hidden p-4">
           <div className={`mb-4 flex ${isMobile ? 'flex-col' : 'items-start justify-between'} gap-3`}>
             <div>
