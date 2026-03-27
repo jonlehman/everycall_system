@@ -1,26 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DataGrid } from '@mui/x-data-grid';
 import { useMediaQuery } from '@mui/material';
 import { Button } from '../../../components/ui/button';
 import ClientPage from '../_components/ClientPage';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
+const PAGE_SIZE = 10;
+
 function formatLabel(value) {
   return String(value || '').replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function statusTone(value) {
-  if (value === 'error') return 'bad';
-  if (value === 'missed') return 'warn';
-  return 'ok';
-}
-
-function urgencyTone(value) {
-  if (value === 'critical') return 'bad';
-  if (value === 'high') return 'warn';
-  return 'ok';
 }
 
 function formatTranscript(text) {
@@ -43,6 +32,54 @@ function formatTranscript(text) {
   return formatted.join('\n');
 }
 
+function isSameCalendarDay(a, b) {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
+}
+
+function formatQueueWhenParts(value) {
+  const date = new Date(value);
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const timeText = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  if (isSameCalendarDay(date, now)) {
+    return { primary: timeText, secondary: 'Today' };
+  }
+  if (isSameCalendarDay(date, yesterday)) {
+    return { primary: 'Yesterday', secondary: timeText };
+  }
+  return {
+    primary: date.toLocaleDateString([], { month: 'short', day: 'numeric' }),
+    secondary: timeText
+  };
+}
+
+function queueStatusClass(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['completed', 'contacted', 'scheduled'].includes(normalized)) return 'bg-emerald-100 text-emerald-700';
+  if (['new', 'in_progress'].includes(normalized)) return 'bg-blue-100 text-blue-700';
+  if (['unable_to_reach', 'missed'].includes(normalized)) return 'bg-amber-100 text-amber-700';
+  return 'bg-slate-100 text-slate-600';
+}
+
+function queueUrgencyDotClass(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'critical') return 'bg-red-500 animate-pulse';
+  if (normalized === 'high') return 'bg-amber-500';
+  if (normalized === 'low') return 'bg-slate-300';
+  return 'bg-slate-400';
+}
+
+function queueUrgencyTextClass(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'critical') return 'text-slate-900 font-semibold';
+  if (normalized === 'high') return 'text-slate-900 font-semibold';
+  return 'text-slate-500 font-medium';
+}
+
 export default function CallsPage() {
   const isMobile = useMediaQuery('(max-width: 980px)');
   const [calls, setCalls] = useState([]);
@@ -58,6 +95,7 @@ export default function CallsPage() {
   const [loadError, setLoadError] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [queuePage, setQueuePage] = useState(0);
   const [detailDraft, setDetailDraft] = useState({
     status: 'new',
     urgency: 'normal',
@@ -77,6 +115,7 @@ export default function CallsPage() {
   });
   const [lastSavedAt, setLastSavedAt] = useState('');
   const searchInputRef = useRef(null);
+  const transcriptRef = useRef(null);
 
   const applyQuickView = (view) => {
     if (view === 'all') {
@@ -137,6 +176,10 @@ export default function CallsPage() {
   useEffect(() => {
     loadCalls();
   }, []);
+
+  useEffect(() => {
+    setQueuePage(0);
+  }, [statusFilter, urgencyFilter, search, dateFrom, dateTo]);
 
   const loadDetail = async (callSid) => {
     if (!callSid) return;
@@ -271,55 +314,17 @@ export default function CallsPage() {
     return true;
   });
 
-  const columns = [
-    { field: 'when', headerName: 'Time', flex: 0.75, minWidth: 140 },
-    { field: 'from', headerName: 'Number', flex: 0.65, minWidth: 120 },
-    {
-      field: 'summary',
-      headerName: 'AI Summary',
-      flex: 1.25,
-      minWidth: 210,
-      renderCell: (params) => (
-        <span
-          title={params.value || ''}
-          style={{
-            overflow: 'hidden',
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            lineHeight: '1.25rem',
-            maxHeight: '2.5rem'
-          }}
-        >
-          {params.value || '-'}
-        </span>
-      )
-    },
-    {
-      field: 'status',
-      headerName: 'Status',
-      flex: 0.52,
-      minWidth: 104,
-      renderCell: (params) => (
-        <span className={`badge ${statusTone(params.value)}`}>{formatLabel(params.value)}</span>
-      )
-    },
-    {
-      field: 'urgency',
-      headerName: 'Urgency',
-      flex: 0.5,
-      minWidth: 98,
-      renderCell: (params) => (
-        <span className={`badge ${urgencyTone(params.value)}`}>{formatLabel(params.value)}</span>
-      )
-    }
-  ];
-
   const status = loadError
     ? { tone: 'bad', message: loadError }
     : loading
       ? { tone: 'warn', message: 'Loading calls...' }
       : { tone: 'ok', message: `${filteredRows.length} call(s) in view.` };
+
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const safeQueuePage = Math.min(queuePage, pageCount - 1);
+  const pagedRows = filteredRows.slice(safeQueuePage * PAGE_SIZE, (safeQueuePage + 1) * PAGE_SIZE);
+  const pageStart = filteredRows.length ? safeQueuePage * PAGE_SIZE + 1 : 0;
+  const pageEnd = filteredRows.length ? Math.min(filteredRows.length, (safeQueuePage + 1) * PAGE_SIZE) : 0;
 
   const hasUnsavedChanges = Boolean(detailMeta) && (
     detailDraft.status !== (detailMeta.status || 'new')
@@ -346,316 +351,432 @@ export default function CallsPage() {
       status={status}
       primaryAction={{ label: 'Refresh Data', brand: true, onClick: refreshData }}
     >
-      <section className="workspace-panel-soft p-5">
+      <section className="relative overflow-hidden rounded-xl border border-[#c3c6d7]/10 bg-[#eff4ff] p-6">
         <div className={`flex ${isMobile ? 'flex-col' : 'items-start justify-between'} gap-4`}>
           <div>
-            <h2 className="m-0 text-xl font-semibold tracking-[-0.02em] text-slate-900">Queue Views</h2>
-            <p className="m-0 mt-1 text-sm text-slate-500">Use quick views and filters to focus the call queue before you open details.</p>
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[#004ac6]">filter_list</span>
+              <h2 className="m-0 font-semibold tracking-[-0.02em] text-slate-900">Queue Views</h2>
+            </div>
+            <p className="m-0 mt-1 text-sm font-medium text-slate-500">Use quick views and filters to focus the call queue before you open details.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" type="button" onClick={() => applyQuickView('new')}>New</Button>
-            <Button variant="outline" type="button" onClick={() => applyQuickView('high')}>High Urgency</Button>
-            <Button variant="outline" type="button" onClick={() => applyQuickView('all')}>All Calls</Button>
+            <Button variant="outline" type="button" className="bg-white/80" onClick={() => applyQuickView('new')}>New</Button>
+            <Button variant="outline" type="button" className="bg-white/80" onClick={() => applyQuickView('high')}>High Urgency</Button>
+            <Button variant="outline" type="button" className="bg-white/80" onClick={() => applyQuickView('all')}>All Calls</Button>
           </div>
         </div>
 
-        <div className={`mt-4 grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
-          <div className="grid gap-3">
-            <div>
-              <label>Search Number</label>
+        <div className={`mt-6 grid gap-6 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-3'}`}>
+          <div className="space-y-1.5">
+            <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Search Number</label>
+            <div className="relative">
+              <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg text-slate-400">search</span>
               <input
                 ref={searchInputRef}
+                className="w-full rounded-md border-none bg-white py-2 pl-10 pr-4 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by caller number"
+                placeholder="+1 (555) 000-0000"
                 aria-label="Number"
               />
             </div>
-            <div>
-              <label>Call Status</label>
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Call Status">
-                <option value="all">All statuses</option>
-                <option value="new">New</option>
-                <option value="contacted">Contacted</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Completed</option>
-                <option value="unable_to_reach">Unable to Reach</option>
-                <option value="canceled">Canceled</option>
-                <option value="spam">Spam / Wrong Number</option>
-              </select>
-            </div>
-            <div>
-              <label>Urgency</label>
-              <select value={urgencyFilter} onChange={(event) => setUrgencyFilter(event.target.value)} aria-label="Urgency Level">
-                <option value="all">All urgency levels</option>
-                <option value="critical">Critical</option>
-                <option value="high">High</option>
-                <option value="normal">Normal</option>
-                <option value="low">Low</option>
-              </select>
-            </div>
           </div>
 
-          <div className="grid gap-3">
-            <div>
-              <label>Date From</label>
+          <div className="space-y-1.5">
+            <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Call Status</label>
+            <select
+              className="w-full appearance-none rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              aria-label="Call Status"
+            >
+              <option value="all">All Statuses</option>
+              <option value="new">New</option>
+              <option value="contacted">Contacted</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="in_progress">In Progress</option>
+              <option value="completed">Completed</option>
+              <option value="unable_to_reach">Unable to Reach</option>
+              <option value="canceled">Canceled</option>
+              <option value="spam">Spam / Wrong Number</option>
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Urgency</label>
+            <select
+              className="w-full appearance-none rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+              value={urgencyFilter}
+              onChange={(event) => setUrgencyFilter(event.target.value)}
+              aria-label="Urgency Level"
+            >
+              <option value="all">All Priorities</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="normal">Normal</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+
+          <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:col-span-2 md:grid-cols-2'}`}>
+            <div className="space-y-1.5">
+              <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Date From</label>
               <input
+                className="w-full rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                 type="date"
                 value={dateFrom}
                 onChange={(event) => setDateFrom(event.target.value)}
                 aria-label="Date From"
               />
             </div>
-            <div>
-              <label>Date To</label>
+            <div className="space-y-1.5">
+              <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Date To</label>
               <input
+                className="w-full rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                 type="date"
                 value={dateTo}
                 onChange={(event) => setDateTo(event.target.value)}
                 aria-label="Date To"
               />
             </div>
-            <div className="pt-1">
-              <Button
-                variant="outline"
-                type="button"
-                onClick={() => {
-                  setStatusFilter('all');
-                  setUrgencyFilter('all');
-                  setDateFrom('');
-                  setDateTo('');
-                  setSearch('');
-                }}
-              >
-                Reset Filters
-              </Button>
-            </div>
+          </div>
+
+          <div className="flex items-end">
+            <button
+              type="button"
+              className="flex w-full items-center justify-center gap-1 rounded-md px-4 py-2 text-sm font-bold text-[#004ac6] transition-all hover:bg-white/50"
+              onClick={() => {
+                setStatusFilter('all');
+                setUrgencyFilter('all');
+                setDateFrom('');
+                setDateTo('');
+                setSearch('');
+              }}
+            >
+              <span className="material-symbols-outlined text-lg">restart_alt</span>
+              Reset Filters
+            </button>
           </div>
         </div>
       </section>
 
       <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-[minmax(0,1.15fr)_minmax(0,.85fr)]'} min-w-0`}>
-        <div className="workspace-panel min-w-0 overflow-hidden p-4">
-          <div className={`mb-4 flex ${isMobile ? 'flex-col' : 'items-start justify-between'} gap-3`}>
-            <div>
-              <h2 className="m-0 text-xl font-semibold tracking-[-0.02em] text-slate-900">Call Queue</h2>
-              <p className="m-0 mt-1 text-sm text-slate-500">Open a row to review caller details, update follow-up status, and capture notes.</p>
+        <section className="overflow-hidden rounded-xl border border-[#c3c6d7]/10 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="border-b border-[#c3c6d7]/10 bg-[#eff4ff]">
+                  <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Time</th>
+                  <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Number</th>
+                  <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">AI Summary</th>
+                  <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Status</th>
+                  <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Urgency</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#c3c6d7]/5">
+                {pagedRows.length ? pagedRows.map((row) => {
+                  const whenParts = formatQueueWhenParts(row.createdAt);
+                  const selected = selectedCallSid === row.sid;
+                  return (
+                    <tr
+                      key={row.id}
+                      className={`cursor-pointer transition-colors ${selected ? 'bg-[#004ac6]/5 hover:bg-[#004ac6]/10' : 'hover:bg-[#eff4ff]'}`}
+                      onClick={() => loadDetail(row.sid)}
+                    >
+                      <td className="px-6 py-5">
+                        <p className="m-0 text-sm font-semibold text-slate-900">{whenParts.primary}</p>
+                        <p className="m-0 text-xs text-slate-500">{whenParts.secondary}</p>
+                      </td>
+                      <td className="px-6 py-5">
+                        <p className={`m-0 text-sm font-bold ${selected ? 'text-[#004ac6]' : 'text-slate-900'}`}>{row.from}</p>
+                      </td>
+                      <td className="px-6 py-5">
+                        <p
+                          className="m-0 max-w-xs overflow-hidden text-sm text-slate-500"
+                          title={row.summary || ''}
+                          style={{
+                            display: '-webkit-box',
+                            WebkitLineClamp: 1,
+                            WebkitBoxOrient: 'vertical'
+                          }}
+                        >
+                          {row.summary || '-'}
+                        </p>
+                      </td>
+                      <td className="px-6 py-5">
+                        <span className={`rounded-full px-2.5 py-1 text-[0.65rem] font-extrabold uppercase tracking-wider ${queueStatusClass(row.status)}`}>
+                          {formatLabel(row.status)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-2">
+                          <div className={`h-2 w-2 rounded-full ${queueUrgencyDotClass(row.urgency)}`} />
+                          <span className={`text-sm ${queueUrgencyTextClass(row.urgency)}`}>{formatLabel(row.urgency)}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }) : (
+                  <tr>
+                    <td className="px-6 py-8 text-sm text-slate-500" colSpan={5}>
+                      {loading ? 'Loading calls...' : 'No calls match the current filters.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-between border-t border-[#c3c6d7]/10 bg-[#eff4ff]/30 px-6 py-4">
+            <p className="m-0 text-xs font-semibold text-slate-500">
+              Showing {pageStart}-{pageEnd} of {filteredRows.length} calls
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="rounded p-1 transition-colors hover:bg-[#eff4ff] disabled:opacity-40"
+                onClick={() => setQueuePage((current) => Math.max(0, current - 1))}
+                disabled={safeQueuePage === 0}
+              >
+                <span className="material-symbols-outlined text-slate-500">chevron_left</span>
+              </button>
+              <button
+                type="button"
+                className="rounded p-1 transition-colors hover:bg-[#eff4ff] disabled:opacity-40"
+                onClick={() => setQueuePage((current) => Math.min(pageCount - 1, current + 1))}
+                disabled={safeQueuePage >= pageCount - 1}
+              >
+                <span className="material-symbols-outlined text-slate-500">chevron_right</span>
+              </button>
             </div>
           </div>
-          <div style={{ height: rows.length ? 'auto' : 300 }}>
-            <DataGrid
-              rows={filteredRows}
-              columns={columns}
-              autoHeight
-              disableRowSelectionOnClick
-              getRowHeight={() => 56}
-              pageSizeOptions={[10, 25, 50]}
-              initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
-              localeText={{ noRowsLabel: 'No calls yet.' }}
-              onRowClick={(params) => {
-                loadDetail(params.row.sid);
-              }}
-              getRowClassName={(params) => (selectedCallSid === params.row.sid ? 'is-selected-call-row' : '')}
-              sx={{
-                border: 'none',
-                '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.35', whiteSpace: 'normal' },
-                '& .MuiDataGrid-columnHeaders': { backgroundColor: '#eff4ff', borderBottom: '1px solid rgba(195,198,215,0.55)' },
-                '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 700, letterSpacing: '0.01em', fontSize: '0.75rem', textTransform: 'uppercase' },
-                '& .is-selected-call-row': { backgroundColor: '#eef3ff' },
-                '& .MuiDataGrid-row:hover': { backgroundColor: '#f6f8ff' }
-              }}
-            />
-          </div>
-        </div>
+        </section>
 
-        <div className="workspace-panel min-w-0 p-4">
-          <div className="mb-4">
-            <h2 className="m-0 text-xl font-semibold tracking-[-0.02em] text-slate-900">Call Details</h2>
-            <p className="m-0 mt-1 text-sm text-slate-500">Review intake information, adjust follow-up fields, and keep notes with the call.</p>
-          </div>
+        <aside className="min-w-0">
+          <div className="rounded-xl border border-[#c3c6d7]/10 bg-white p-6 shadow-xl xl:sticky xl:top-24">
+            <div className="mb-8 flex items-center justify-between">
+              <div>
+                <h2 className="m-0 text-xl font-bold tracking-tight text-slate-900">Call Details</h2>
+                <p className="m-0 mt-1 text-xs font-medium text-slate-500">Review intake information and notes.</p>
+              </div>
+              <div className="rounded-lg bg-[#004ac6]/10 p-2">
+                <span className="material-symbols-outlined text-[#004ac6]">contact_page</span>
+              </div>
+            </div>
+
           {!detailMeta ? (
-            <div className="rounded-xl border border-slate-200/50 bg-[#eff4ff] p-4 text-sm text-slate-500">{detailStatus}</div>
+            <div className="rounded-xl border border-[#c3c6d7]/10 bg-[#eff4ff] p-4 text-sm text-slate-500">{detailStatus}</div>
           ) : (
             <>
-              <div className="mb-3 rounded-xl border border-slate-200/50 bg-[#eff4ff] p-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Selected Call</div>
-                <div className="mt-2 text-sm font-semibold text-slate-900">{formatPhoneDisplay(detailMeta.from_number) || detailMeta.call_sid}</div>
-                <div className="mt-1 text-sm text-slate-500">{new Date(detailMeta.created_at).toLocaleString()}</div>
-              </div>
-
-              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                <div>
-                  <label>Number</label>
-                  <input value={formatPhoneDisplay(detailMeta.from_number) || ''} readOnly />
+              <div className="space-y-6">
+                <div className="rounded-lg border-l-4 border-[#004ac6] bg-[#eff4ff]/50 p-4">
+                  <label className="mb-2 block text-[0.65rem] font-extrabold uppercase tracking-widest text-[#004ac6]">AI Summary</label>
+                  <textarea
+                    className="min-h-[110px] w-full resize-none border-none bg-transparent p-0 text-sm leading-relaxed text-slate-900 outline-none ring-0 placeholder:text-slate-400 focus:ring-0"
+                    value={detailDraft.summary}
+                    onChange={(event) => setDetailDraft((prev) => ({ ...prev, summary: event.target.value }))}
+                    placeholder="Add or refine the AI summary for this call."
+                  />
                 </div>
-                <div>
-                  <label>Status</label>
-                  <select
-                    value={detailDraft.status}
-                    onChange={(event) => setDetailDraft((prev) => ({ ...prev, status: event.target.value }))}
-                  >
-                    <option value="new">New</option>
-                    <option value="contacted">Contacted</option>
-                    <option value="scheduled">Scheduled</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                    <option value="unable_to_reach">Unable to Reach</option>
-                    <option value="canceled">Canceled</option>
-                    <option value="spam">Spam / Wrong Number</option>
-                  </select>
+
+                <div className="grid gap-4">
+                  <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Number</label>
+                      <input
+                        className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none"
+                        value={formatPhoneDisplay(detailMeta.from_number) || ''}
+                        readOnly
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Call Time</label>
+                      <input
+                        className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none"
+                        value={new Date(detailMeta.created_at).toLocaleString()}
+                        readOnly
+                      />
+                    </div>
+                  </div>
+
+                  <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Status Update</label>
+                      <select
+                        className="w-full appearance-none rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                        value={detailDraft.status}
+                        onChange={(event) => setDetailDraft((prev) => ({ ...prev, status: event.target.value }))}
+                      >
+                        <option value="new">New</option>
+                        <option value="contacted">Contacted</option>
+                        <option value="scheduled">Scheduled</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="unable_to_reach">Unable to Reach</option>
+                        <option value="canceled">Canceled</option>
+                        <option value="spam">Spam / Wrong Number</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Urgency</label>
+                      <select
+                        className="w-full appearance-none rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                        value={detailDraft.urgency}
+                        onChange={(event) => setDetailDraft((prev) => ({ ...prev, urgency: event.target.value }))}
+                      >
+                        <option value="critical">Critical</option>
+                        <option value="high">High</option>
+                        <option value="normal">Normal</option>
+                        <option value="low">Low</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">First Name</label>
+                      <input
+                        className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                        value={detailDraft.firstName}
+                        onChange={(event) => setDetailDraft((prev) => ({ ...prev, firstName: event.target.value }))}
+                        placeholder="First name"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Last Name</label>
+                      <input
+                        className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                        value={detailDraft.lastName}
+                        onChange={(event) => setDetailDraft((prev) => ({ ...prev, lastName: event.target.value }))}
+                        placeholder="Last name"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Callback Number</label>
+                      <input
+                        className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                        value={detailDraft.callbackNumber}
+                        onChange={(event) => setDetailDraft((prev) => ({ ...prev, callbackNumber: event.target.value }))}
+                        placeholder="Callback number"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Service Required</label>
+                      <input
+                        className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                        value={detailDraft.serviceRequired}
+                        onChange={(event) => setDetailDraft((prev) => ({ ...prev, serviceRequired: event.target.value }))}
+                        placeholder="Service required"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Requested Date</label>
+                      <input
+                        className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                        type="date"
+                        value={detailDraft.requestedDate}
+                        onChange={(event) => setDetailDraft((prev) => ({ ...prev, requestedDate: event.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Requested Time</label>
+                      <input
+                        className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                        value={detailDraft.requestedTime}
+                        onChange={(event) => setDetailDraft((prev) => ({ ...prev, requestedTime: event.target.value }))}
+                        placeholder="Requested time"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Address Line 1</label>
+                      <input
+                        className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                        value={detailDraft.addressLine1}
+                        onChange={(event) => setDetailDraft((prev) => ({ ...prev, addressLine1: event.target.value }))}
+                        placeholder="Address line 1"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Address Line 2</label>
+                      <input
+                        className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                        value={detailDraft.addressLine2}
+                        onChange={(event) => setDetailDraft((prev) => ({ ...prev, addressLine2: event.target.value }))}
+                        placeholder="Address line 2"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">City</label>
+                      <input
+                        className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                        value={detailDraft.city}
+                        onChange={(event) => setDetailDraft((prev) => ({ ...prev, city: event.target.value }))}
+                        placeholder="City"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">State</label>
+                      <input
+                        className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                        value={detailDraft.state}
+                        onChange={(event) => setDetailDraft((prev) => ({ ...prev, state: event.target.value }))}
+                        placeholder="State"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Zip</label>
+                      <input
+                        className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                        value={detailDraft.postalCode}
+                        onChange={(event) => setDetailDraft((prev) => ({ ...prev, postalCode: event.target.value }))}
+                        placeholder="Zip"
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              <div className="mt-4 rounded-xl border border-slate-200/40 bg-[#eff4ff] p-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Caller Details</div>
-                <div className={`mt-3 grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                  <div>
-                    <label>First Name</label>
-                    <input
-                      value={detailDraft.firstName}
-                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, firstName: event.target.value }))}
-                      placeholder="First name"
-                    />
+                <div className="space-y-1.5">
+                  <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Internal Notes</label>
+                  <textarea
+                    className="w-full resize-none rounded-md border-none bg-[#eff4ff]/30 px-4 py-3 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                    value={detailDraft.notes}
+                    onChange={(event) => setDetailDraft((prev) => ({ ...prev, notes: event.target.value }))}
+                    style={{ minHeight: isMobile ? 96 : 120 }}
+                    placeholder="Add private team notes here..."
+                  />
+                </div>
+
+                <div className="border-t border-[#c3c6d7]/10 pt-4">
+                  <div className="flex flex-col gap-3">
+                    <Button type="button" className="w-full" onClick={() => saveDetail('all')} disabled={!hasUnsavedChanges}>
+                      Save Call Log
+                    </Button>
+                    <Button
+                      variant="outline"
+                      type="button"
+                      className="w-full border-[#004ac6]/20 text-[#004ac6] hover:bg-[#004ac6]/5"
+                      onClick={() => transcriptRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    >
+                      View Full Transcript
+                    </Button>
                   </div>
-                  <div>
-                    <label>Last Name</label>
-                    <input
-                      value={detailDraft.lastName}
-                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, lastName: event.target.value }))}
-                      placeholder="Last name"
-                    />
-                  </div>
-                  <div>
-                    <label>Callback Number</label>
-                    <input
-                      value={detailDraft.callbackNumber}
-                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, callbackNumber: event.target.value }))}
-                      placeholder="Callback number"
-                    />
-                  </div>
-                  <div>
-                    <label>Service Required</label>
-                    <input
-                      value={detailDraft.serviceRequired}
-                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, serviceRequired: event.target.value }))}
-                      placeholder="Service required"
-                    />
-                  </div>
-                  <div>
-                    <label>Requested Date</label>
-                    <input
-                      type="date"
-                      value={detailDraft.requestedDate}
-                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, requestedDate: event.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label>Requested Time</label>
-                    <input
-                      value={detailDraft.requestedTime}
-                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, requestedTime: event.target.value }))}
-                      placeholder="Requested time"
-                    />
-                  </div>
-                  <div>
-                    <label>Address Line 1</label>
-                    <input
-                      value={detailDraft.addressLine1}
-                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, addressLine1: event.target.value }))}
-                      placeholder="Address line 1"
-                    />
-                  </div>
-                  <div>
-                    <label>Address Line 2</label>
-                    <input
-                      value={detailDraft.addressLine2}
-                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, addressLine2: event.target.value }))}
-                      placeholder="Address line 2"
-                    />
-                  </div>
-                  <div>
-                    <label>City</label>
-                    <input
-                      value={detailDraft.city}
-                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, city: event.target.value }))}
-                      placeholder="City"
-                    />
-                  </div>
-                  <div>
-                    <label>State</label>
-                    <input
-                      value={detailDraft.state}
-                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, state: event.target.value }))}
-                      placeholder="State"
-                    />
-                  </div>
-                  <div>
-                    <label>Zip</label>
-                    <input
-                      value={detailDraft.postalCode}
-                      onChange={(event) => setDetailDraft((prev) => ({ ...prev, postalCode: event.target.value }))}
-                      placeholder="Zip"
-                    />
+                  <div className="mt-3 text-xs text-slate-500">
+                    {saveStatus || (hasUnsavedChanges ? 'Unsaved changes' : 'No changes')}
+                    {lastSavedAt ? ` • Last saved ${lastSavedAt}` : ''}
                   </div>
                 </div>
-              </div>
 
-              <div className={`mt-4 grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                <div>
-                  <label>Urgency</label>
-                  <select
-                    value={detailDraft.urgency}
-                    onChange={(event) => setDetailDraft((prev) => ({ ...prev, urgency: event.target.value }))}
-                  >
-                    <option value="critical">Critical</option>
-                    <option value="high">High</option>
-                    <option value="normal">Normal</option>
-                    <option value="low">Low</option>
-                  </select>
+                <div ref={transcriptRef} className="rounded-xl border border-[#c3c6d7]/10 bg-[#eff4ff] p-4">
+                  <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Transcript</div>
+                  <pre className="rounded-md border border-slate-200 bg-white p-3 text-sm leading-6 text-slate-700" style={{ whiteSpace: 'pre-wrap' }}>
+                    {detailTranscript ? formatTranscript(detailTranscript) : 'No transcript available yet.'}
+                  </pre>
                 </div>
-                <div>
-                  <label>Call Time</label>
-                  <input value={new Date(detailMeta.created_at).toLocaleString()} readOnly />
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <label>AI Summary</label>
-                <textarea
-                  value={detailDraft.summary}
-                  onChange={(event) => setDetailDraft((prev) => ({ ...prev, summary: event.target.value }))}
-                  style={{ minHeight: isMobile ? 64 : 70 }}
-                />
-              </div>
-
-              <div className="mt-4">
-                <label>Internal Notes</label>
-                <textarea
-                  value={detailDraft.notes}
-                  onChange={(event) => setDetailDraft((prev) => ({ ...prev, notes: event.target.value }))}
-                  style={{ minHeight: isMobile ? 96 : 120 }}
-                  placeholder="Write follow-up details, context, or callback notes."
-                />
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <Button type="button" onClick={() => saveDetail('all')} disabled={!hasUnsavedChanges}>
-                  Save Changes
-                </Button>
-                <span className="text-sm text-slate-500">{saveStatus || (hasUnsavedChanges ? 'Unsaved changes' : 'No changes')}</span>
-                {lastSavedAt ? <span className="text-sm text-slate-500">Last saved {lastSavedAt}</span> : null}
-              </div>
-
-              <div className="mt-4 rounded-xl border border-slate-200/40 bg-[#eff4ff] p-4">
-                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Transcript</div>
-                <pre className="rounded-md border border-slate-200 bg-white p-3 text-sm leading-6 text-slate-700" style={{ whiteSpace: 'pre-wrap' }}>
-                  {detailTranscript ? formatTranscript(detailTranscript) : 'No transcript available yet.'}
-                </pre>
               </div>
             </>
           )}
-        </div>
+          </div>
+        </aside>
       </div>
     </ClientPage>
   );
