@@ -174,6 +174,14 @@ export default function TeamPage() {
     leadAlertEmailEnabled: Boolean(user.lead_alert_email_enabled)
   })), [users]);
 
+  const fieldLabelClass = 'mb-1.5 ml-1 block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500';
+  const fieldControlClass = 'w-full rounded-xl border border-slate-200/70 bg-[#eff4ff] px-3 py-3 text-sm font-medium text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition focus:border-sky-300 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-100';
+  const smsStatusClass = formState.smsOptInStatus === 'opted_in'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    : formState.smsOptInStatus === 'pending'
+      ? 'border-amber-200 bg-amber-50 text-amber-700'
+      : 'border-slate-200 bg-slate-100 text-slate-600';
+
   const columns = [
     { field: 'name', headerName: 'Name', flex: 1, minWidth: 150 },
     { field: 'email', headerName: 'Email', flex: 1.2, minWidth: 220 },
@@ -278,141 +286,195 @@ export default function TeamPage() {
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[7fr_3fr]">
         <div className="grid gap-3">
           {formMode ? (
-            <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="mt-0 text-lg font-semibold">
-                  {formMode === 'edit' ? 'Edit Team User' : 'Add Team User'}
-                </h2>
-                <Button variant="outline" type="button" onClick={closeForm} disabled={savingForm}>
-                  Close
-                </Button>
+            <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(18,28,42,0.04)]">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-8 py-6">
+                <div className="space-y-1">
+                  <h2 className="mt-0 font-['Space_Grotesk'] text-lg font-bold text-slate-900">
+                    {formMode === 'edit' ? 'Edit Team User' : 'Add Team User'}
+                  </h2>
+                  <div className="text-sm text-slate-500">
+                    Update access, alerts, and SMS permission settings for this teammate.
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-blue-700">
+                    Active Workspace
+                  </span>
+                  <Button variant="outline" type="button" onClick={closeForm} disabled={savingForm}>
+                    Close
+                  </Button>
+                </div>
               </div>
-              <form className="grid gap-3" onSubmit={saveUser}>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div>
-                    <label>Name</label>
+
+              <form className="space-y-8 p-8" onSubmit={saveUser}>
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className={fieldLabelClass}>Name</label>
                     <input
+                      className={fieldControlClass}
+                      type="text"
                       value={formState.name}
                       onChange={(event) => updateFormField('name', event.target.value)}
                       placeholder="Jane Smith"
                     />
                   </div>
-                  <div>
-                    <label>Email</label>
+
+                  <div className="space-y-2">
+                    <label className={fieldLabelClass}>Email</label>
                     <input
+                      className={fieldControlClass}
+                      type="email"
                       value={formState.email}
                       onChange={(event) => updateFormField('email', event.target.value)}
                       placeholder="jane@company.com"
                     />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div>
-                    <label>Mobile Phone</label>
+                  <div className="space-y-2">
+                    <label className={fieldLabelClass}>Mobile Phone</label>
                     <input
+                      className={fieldControlClass}
+                      type="tel"
                       value={formState.phoneNumber}
                       onChange={(event) => updateFormField('phoneNumber', event.target.value)}
                       placeholder="+1XXXXXXXXXX"
                     />
-                    <div className="mt-1 text-xs text-slate-500">
+                    <div className="ml-1 text-xs text-slate-500">
                       Changing the phone number resets SMS opt-in for that user.
                     </div>
                   </div>
-                  <div>
-                    <label>Role</label>
-                    <select value={formState.role} onChange={(event) => updateFormField('role', event.target.value)}>
-                      <option value="admin">Admin</option>
-                      <option value="member">Member</option>
-                      <option value="owner">Owner</option>
-                      <option value="viewer">Viewer</option>
-                    </select>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className={fieldLabelClass}>Role</label>
+                      <select
+                        className={fieldControlClass}
+                        value={formState.role}
+                        onChange={(event) => updateFormField('role', event.target.value)}
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="member">Member</option>
+                        <option value="owner">Owner</option>
+                        <option value="viewer">Viewer</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className={fieldLabelClass}>Status</label>
+                      <select
+                        className={fieldControlClass}
+                        value={formState.status}
+                        onChange={(event) => updateFormField('status', event.target.value)}
+                      >
+                        <option value="active">Active</option>
+                        <option value="invited">Invited</option>
+                        <option value="suspended">Suspended</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div>
-                    <label>Status</label>
-                    <select value={formState.status} onChange={(event) => updateFormField('status', event.target.value)}>
-                      <option value="active">Active</option>
-                      <option value="invited">Invited</option>
-                      <option value="suspended">Suspended</option>
-                      <option value="disabled">Disabled</option>
-                    </select>
-                  </div>
-                  <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <label className="flex items-start gap-2">
+                <div className="space-y-4 border-t border-slate-100 pt-5">
+                  <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                    <span className="material-symbols-outlined text-lg text-blue-700">notifications_active</span>
+                    Notification Preferences
+                  </h3>
+                  <div className="flex flex-col gap-3">
+                    <label className="flex items-start gap-3 text-sm text-slate-600">
                       <input
                         type="checkbox"
                         checked={formState.leadAlertEmailEnabled}
                         onChange={(event) => updateFormField('leadAlertEmailEnabled', event.target.checked)}
                       />
-                      <span>Receive lead email alerts</span>
+                      <span className="normal-case font-medium tracking-normal text-slate-700">
+                        Receive lead email alerts
+                      </span>
                     </label>
-                    <label className="flex items-start gap-2">
+                    <label className="flex items-start gap-3 text-sm text-slate-600">
                       <input
                         type="checkbox"
                         checked={formState.leadAlertSmsEnabled}
                         onChange={(event) => updateFormField('leadAlertSmsEnabled', event.target.checked)}
                       />
-                      <span>Receive lead SMS alerts</span>
+                      <span className="normal-case font-medium tracking-normal text-slate-700">
+                        Receive lead SMS alerts
+                      </span>
                     </label>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-sm font-semibold text-slate-900">SMS Opt-In Workflow</div>
-                  <div className="mt-2 text-sm leading-6 text-slate-600">
-                    Current SMS status: <span className="font-medium text-slate-900">{formState.smsOptInStatus}</span>
-                  </div>
-                  <div className="mt-3 text-sm leading-6 text-slate-700">
-                    By providing a phone number and sending an SMS opt-in request, the subscriber agrees to receive SMS
-                    new lead alerts from EveryCall by Creative Dynamic. Message frequency may vary. Message and data
-                    rates may apply. Reply STOP to opt out. Reply HELP for help. Consent is not a condition of
-                    purchase. Mobile information will not be shared with third parties or affiliates for marketing or
-                    promotional purposes.
-                  </div>
-                  <div className="mt-2 text-sm leading-6 text-slate-700">
-                    <a className="text-sky-700 underline" href="/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>
-                    {' '}|{' '}
-                    <a className="text-sky-700 underline" href="/terms" target="_blank" rel="noreferrer">SMS Terms</a>
-                  </div>
-                  <label className="mt-3 flex items-start gap-2 text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={formState.smsConsentConfirmed}
-                      onChange={(event) => updateFormField('smsConsentConfirmed', event.target.checked)}
-                    />
-                    <span>I confirm this subscriber has reviewed and agreed to the SMS disclosure above.</span>
-                  </label>
-                  {formMode === 'edit' ? (
-                    <div className="mt-3">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => requestSmsOptIn(editingUserId)}
-                        disabled={!formState.phoneNumber.trim() || formState.smsOptInStatus === 'opted_in' || !formState.smsConsentConfirmed}
-                      >
-                        {formState.smsOptInStatus === 'opted_in' ? 'SMS Already Enabled' : 'Send SMS Opt-In Request'}
-                      </Button>
+                <div className="space-y-4 rounded-xl border-l-4 border-blue-200 bg-[#eff4ff] p-6">
+                  <div className="flex items-start gap-4">
+                    <span className="material-symbols-outlined mt-0.5 text-blue-700">verified_user</span>
+                    <div className="min-w-0 flex-1 space-y-4">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <h3 className="text-sm font-bold text-slate-900">SMS Opt-In Compliance Workflow</h3>
+                        <span className={`rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${smsStatusClass}`}>
+                          {formState.smsOptInStatus.replaceAll('_', ' ')}
+                        </span>
+                      </div>
+
+                      <div className="text-xs leading-6 text-slate-600">
+                        To keep lead texting compliant, the subscriber must explicitly consent before EveryCall sends SMS alerts.
+                        After you save these settings, you can send the opt-in request from this workspace.
+                      </div>
+
+                      <div className="text-xs leading-6 text-slate-600">
+                        By providing a phone number and sending an SMS opt-in request, the subscriber agrees to receive SMS
+                        new lead alerts from EveryCall by Creative Dynamic. Message frequency may vary. Message and data
+                        rates may apply. Reply STOP to opt out. Reply HELP for help. Consent is not a condition of purchase.
+                        Mobile information will not be shared with third parties or affiliates for marketing or promotional purposes.
+                      </div>
+
+                      <div className="text-xs text-slate-600">
+                        <a className="text-sky-700 underline" href="/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>
+                        {' '}|{' '}
+                        <a className="text-sky-700 underline" href="/terms" target="_blank" rel="noreferrer">SMS Terms</a>
+                      </div>
+
+                      <label className="flex items-start gap-3 text-xs text-slate-700">
+                        <input
+                          className="mt-0.5"
+                          type="checkbox"
+                          checked={formState.smsConsentConfirmed}
+                          onChange={(event) => updateFormField('smsConsentConfirmed', event.target.checked)}
+                        />
+                        <span className="normal-case font-medium tracking-normal italic text-slate-700">
+                          I confirm this subscriber has reviewed and agreed to the SMS disclosure above.
+                        </span>
+                      </label>
+
+                      {formMode === 'edit' ? (
+                        <div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => requestSmsOptIn(editingUserId)}
+                            disabled={!formState.phoneNumber.trim() || formState.smsOptInStatus === 'opted_in' || !formState.smsConsentConfirmed}
+                          >
+                            {formState.smsOptInStatus === 'opted_in' ? 'SMS Already Enabled' : 'Send SMS Opt-In Request'}
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-500">
+                          Save the user first, then reopen the form to send the SMS opt-in request.
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="mt-3 text-xs text-slate-500">
-                      Save the user first, then reopen the form to send the SMS opt-in request.
-                    </div>
-                  )}
+                  </div>
                 </div>
 
-                <div className="flex gap-2">
-                  <Button type="submit" disabled={savingForm}>
-                    {savingForm ? (formMode === 'edit' ? 'Saving...' : 'Creating...') : (formMode === 'edit' ? 'Save Changes' : 'Create User')}
-                  </Button>
+                <div className="flex justify-end gap-3 border-t border-slate-100 pt-6">
                   <Button variant="outline" type="button" onClick={closeForm} disabled={savingForm}>
                     Cancel
                   </Button>
+                  <Button type="submit" disabled={savingForm}>
+                    {savingForm ? (formMode === 'edit' ? 'Saving...' : 'Creating...') : (formMode === 'edit' ? 'Save Changes' : 'Create User')}
+                  </Button>
                 </div>
               </form>
-            </div>
+            </section>
           ) : null}
 
           <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
