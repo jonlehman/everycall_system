@@ -44,6 +44,29 @@ const INTAKE_STEPS = [
   }
 ];
 
+const FINAL_ACKNOWLEDGEMENTS = [
+  {
+    key: 'numberProvisioned',
+    text: 'I understand that a Sales Receptionist Number will be provisioned during account creation.'
+  },
+  {
+    key: 'genericCallsReady',
+    text: 'I understand the system will be ready to handle generic calls and collect leads for my business immediately.'
+  },
+  {
+    key: 'specificQuestionsBlocked',
+    text: 'I understand it will not answer business-specific questions until the website and document knowledge setup is completed, and will instead offer a follow-up.'
+  },
+  {
+    key: 'knowledgeScreenRead',
+    text: 'I understand I should read the information on the Knowledge setup screen after account creation.'
+  },
+  {
+    key: 'goLiveChecklist',
+    text: 'I understand I need to complete the Go Live Checklist before relying on the system in production.'
+  }
+];
+
 function createInitialForm(qaMode = false) {
   return {
     businessName: qaMode ? 'Knowledge Receptionist QA Tenant' : '',
@@ -100,21 +123,18 @@ function validateStep(stepIndex, form) {
   return '';
 }
 
-function renderSetupSummary(form) {
-  return [
-    { label: 'Business Name', value: form.businessName.trim() || 'Not entered yet' },
-    {
-      label: 'Category',
-      value: BUSINESS_CATEGORIES.find((category) => category.value === form.businessCategory)?.label || 'Not selected'
-    },
-    { label: 'Owner Email', value: form.ownerEmail.trim() || 'Not entered yet' },
-    { label: 'Website Source', value: form.website.trim() ? normalizeWebsiteUrl(form.website) : 'No website added yet' }
-  ];
+function createInitialAcknowledgements() {
+  return Object.fromEntries(FINAL_ACKNOWLEDGEMENTS.map((item) => [item.key, false]));
+}
+
+function allAcknowledgementsConfirmed(acknowledgements) {
+  return FINAL_ACKNOWLEDGEMENTS.every((item) => Boolean(acknowledgements?.[item.key]));
 }
 
 export function IntakePageClient({ qaMode = false } = {}) {
   const initialForm = useMemo(() => createInitialForm(Boolean(qaMode)), [qaMode]);
   const [form, setForm] = useState(initialForm);
+  const [acknowledgements, setAcknowledgements] = useState(() => createInitialAcknowledgements());
   const [currentStep, setCurrentStep] = useState(0);
   const [status, setStatus] = useState(defaultStatusForStep(0));
   const [busy, setBusy] = useState(false);
@@ -122,7 +142,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const nextHref = '/client/knowledge';
   const provisioningFailed = activation?.voiceProvisioning?.ok === false;
   const step = INTAKE_STEPS[currentStep];
-  const setupSummary = renderSetupSummary(form);
 
   useEffect(() => {
     if (!activation?.ok || provisioningFailed) return undefined;
@@ -133,6 +152,9 @@ export function IntakePageClient({ qaMode = false } = {}) {
   }, [activation, provisioningFailed]);
 
   const setFormValue = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  const setAcknowledgement = (key, value) => {
+    setAcknowledgements((current) => ({ ...current, [key]: value }));
+  };
 
   const setStepAndResetStatus = (stepIndex) => {
     setCurrentStep(stepIndex);
@@ -179,6 +201,11 @@ export function IntakePageClient({ qaMode = false } = {}) {
   };
 
   const submit = async () => {
+    if (!allAcknowledgementsConfirmed(acknowledgements)) {
+      setStatus({ message: 'Check each item on this page before creating the account.', tone: 'bad' });
+      return;
+    }
+
     const confirmed = window.confirm(
       'Create this account and provision a Sales Receptionist Number? This will create the tenant and may incur provider charges.'
     );
@@ -387,27 +414,25 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 <div className="intake-panel-header">
                   <span className="intake-panel-step">03</span>
                   <div>
-                    <h2 className="intake-panel-title">Knowledge Workspace Setup</h2>
-                    <p className="intake-panel-copy">Create the account, provision the number, and continue into the workspace where the first build is prepared.</p>
+                    <h2 className="intake-panel-title">What Comes Next</h2>
+                    <p className="intake-panel-copy">Review the setup notes below, confirm each one, and then create the account.</p>
                   </div>
                 </div>
 
-                <div className="intake-summary-grid">
-                  {setupSummary.map((item) => (
-                    <div key={item.label} className="intake-summary-card">
-                      <span className="intake-summary-label">{item.label}</span>
-                      <div className="intake-summary-value">{item.value}</div>
-                    </div>
-                  ))}
-                </div>
-
                 <div className="intake-note-card">
-                  <h3>What happens next</h3>
-                  <ul>
-                    <li>The account and owner login are created.</li>
-                    <li>A Sales Receptionist Number is provisioned during onboarding.</li>
-                    <li>You land in the Knowledge Workspace to review sources and create the first live build.</li>
-                  </ul>
+                  <h3>Confirm each item before continuing</h3>
+                  <div className="intake-checklist">
+                    {FINAL_ACKNOWLEDGEMENTS.map((item) => (
+                      <label key={item.key} className="intake-check-item">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(acknowledgements[item.key])}
+                          onChange={(event) => setAcknowledgement(item.key, event.target.checked)}
+                        />
+                        <span>{item.text}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </section>
             ) : null}
