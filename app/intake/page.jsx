@@ -70,14 +70,8 @@ function normalizeWebsiteUrl(value) {
   return `https://${trimmed}`;
 }
 
-function defaultStatusForStep(stepIndex) {
-  if (stepIndex === 0) {
-    return { message: 'Set up the business owner login and core account record.', tone: 'normal' };
-  }
-  if (stepIndex === 1) {
-    return { message: 'Add the business website if available, plus a short business description.', tone: 'normal' };
-  }
-  return { message: 'Create the account and continue directly into the Knowledge Workspace.', tone: 'normal' };
+function defaultStatusForStep() {
+  return { message: '', tone: 'normal' };
 }
 
 function validateAccountStep(form) {
@@ -282,9 +276,11 @@ export function IntakePageClient({ qaMode = false } = {}) {
           </section>
 
           <form className="intake-card" onSubmit={currentStep === INTAKE_STEPS.length - 1 ? submit : (event) => { event.preventDefault(); moveToNextStep(); }}>
-            <div className={`intake-status ${status.tone || 'normal'}`}>
-              {status.message}
-            </div>
+            {status.message ? (
+              <div className={`intake-status ${status.tone || 'normal'}`}>
+                {status.message}
+              </div>
+            ) : null}
 
             {currentStep === 0 ? (
               <section className="intake-panel">
