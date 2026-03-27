@@ -240,7 +240,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
       <aside className="intake-sidebar">
         <div className="intake-sidebar-head">
           <h2>Onboarding</h2>
-          <p>Precision Setup</p>
         </div>
         <nav className="intake-step-list" aria-label="Onboarding steps">
           {INTAKE_STEPS.map((item, index) => {
