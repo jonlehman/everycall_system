@@ -162,8 +162,8 @@ const guideByContext = {
   documentsFile: {
     step: '01',
     title: 'Upload File',
-    body: 'Use file upload when the source already exists as a PDF, Word document, or text file that should feed the next build.',
-    tip: 'Use this for formal documents such as pricing sheets, policies, and reference material.'
+    body: 'Use file upload for source documents in .doc, .docx, .pdf, or .txt format that should feed the next build.',
+    tip: 'PDF and plain-text files parse most reliably. Use this for formal documents such as pricing sheets, policies, and reference material.'
   },
   documentsText: {
     step: '01',
@@ -567,7 +567,7 @@ export default function ReceptionistKnowledgePage() {
                         <input
                           className="hidden"
                           type="file"
-                          accept=".txt,.md,.pdf,.doc,.docx"
+                          accept=".txt,.pdf,.doc,.docx"
                           onChange={handleDocumentFileChange}
                           disabled={readingDocumentFile || savingDocument}
                         />
@@ -577,7 +577,7 @@ export default function ReceptionistKnowledgePage() {
                       </span>
                     </div>
                     <p className="mt-2 text-[10px] italic text-slate-500">
-                      Use this for PDFs or Word docs.
+                      Upload a .doc, .docx, .pdf, or .txt file. PDF and text files parse most reliably today.
                     </p>
                   </div>
 
