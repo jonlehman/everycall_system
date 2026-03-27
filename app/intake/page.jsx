@@ -23,8 +23,8 @@ const INTAKE_STEPS = [
     number: '01',
     title: 'Account Setup',
     navTitle: 'Account Setup',
-    heroTitle: 'Initialize Your Account',
-    heroCopy: 'Create the business record and owner login that will control the new EveryCall workspace.'
+    heroTitle: 'Just moments away...',
+    heroCopy: '... from capturing more leads than you thought possible.'
   },
   {
     key: 'context',
