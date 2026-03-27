@@ -416,7 +416,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 </div>
 
                 <div className="intake-note-card">
-                  <h3>What happens when you press "Create Account":</h3>
+                  <h3>What happens when you press [Create Account]:</h3>
                   <div className="intake-checklist">
                     {FINAL_ACKNOWLEDGEMENTS.map((item) => (
                       <label key={item.key} className="intake-check-item">

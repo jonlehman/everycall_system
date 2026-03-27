@@ -353,6 +353,7 @@
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0;
+  text-transform: none;
   color: #121c2a;
 }
 
@@ -377,6 +378,10 @@
   gap: 12px;
   align-items: start;
   cursor: pointer;
+  font-family: inherit;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
   color: #121c2a;
 }
 
@@ -390,6 +395,10 @@
 .intake-check-item span {
   font-size: 15px;
   line-height: 1.6;
+  font-family: inherit;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
   color: #121c2a;
 }
 
