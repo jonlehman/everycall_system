@@ -117,23 +117,6 @@ export default function CallsPage() {
   const searchInputRef = useRef(null);
   const transcriptRef = useRef(null);
 
-  const applyQuickView = (view) => {
-    if (view === 'all') {
-      setStatusFilter('all');
-      setUrgencyFilter('all');
-      return;
-    }
-    if (view === 'new') {
-      setStatusFilter('new');
-      setUrgencyFilter('all');
-      return;
-    }
-    if (view === 'high') {
-      setStatusFilter('all');
-      setUrgencyFilter('high');
-    }
-  };
-
   const loadCalls = async ({ showLoading = true } = {}) => {
     if (showLoading) setLoading(true);
     setLoadError('');
@@ -290,6 +273,11 @@ export default function CallsPage() {
     sid: call.call_sid,
     from: formatPhoneDisplay(call.from_number) || '-',
     summary: call.summary || '-',
+    firstName: call.caller_first_name || '',
+    lastName: call.caller_last_name || '',
+    city: call.city || '',
+    state: call.state || '',
+    postalCode: call.postal_code || '',
     when: new Date(call.created_at).toLocaleString(),
     status: call.status,
     urgency: call.urgency || 'normal',
@@ -300,7 +288,18 @@ export default function CallsPage() {
     if (statusFilter !== 'all' && row.status !== statusFilter) return false;
     if (urgencyFilter !== 'all' && row.urgency !== urgencyFilter) return false;
     if (search.trim()) {
-      const hay = `${row.sid} ${row.from}`.toLowerCase();
+      const hay = [
+        row.sid,
+        row.from,
+        row.summary,
+        `${row.firstName} ${row.lastName}`.trim(),
+        row.city,
+        row.state,
+        row.postalCode
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
       if (!hay.includes(search.trim().toLowerCase())) return false;
     }
     if (dateFrom) {
@@ -354,24 +353,17 @@ export default function CallsPage() {
       <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-[minmax(0,1.15fr)_minmax(0,.85fr)]'} min-w-0`}>
         <div className="min-w-0 space-y-4">
           <section className="relative overflow-hidden rounded-xl border border-[#c3c6d7]/10 bg-[#eff4ff] p-6">
-            <div className={`flex ${isMobile ? 'flex-col' : 'items-start justify-between'} gap-4`}>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[#004ac6]">filter_list</span>
-                  <h2 className="m-0 font-semibold tracking-[-0.02em] text-slate-900">Queue Views</h2>
-                </div>
-                <p className="m-0 mt-1 text-sm font-medium text-slate-500">Use quick views and filters to focus the call queue before you open details.</p>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[#004ac6]">filter_list</span>
+                <h2 className="m-0 font-semibold tracking-[-0.02em] text-slate-900">Queue Views</h2>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" type="button" className="bg-white/80" onClick={() => applyQuickView('new')}>New</Button>
-                <Button variant="outline" type="button" className="bg-white/80" onClick={() => applyQuickView('high')}>High Urgency</Button>
-                <Button variant="outline" type="button" className="bg-white/80" onClick={() => applyQuickView('all')}>All Calls</Button>
-              </div>
+              <p className="m-0 mt-1 text-sm font-medium text-slate-500">Use filters to focus the call queue before you open details.</p>
             </div>
 
             <div className={`mt-6 grid gap-6 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-3'}`}>
               <div className="space-y-1.5">
-                <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Search Number</label>
+                <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Search Text</label>
                 <div className="relative">
                   <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg text-slate-400">search</span>
                   <input
@@ -379,8 +371,8 @@ export default function CallsPage() {
                     className="w-full rounded-md border-none bg-white py-2 pl-10 pr-4 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="+1 (555) 000-0000"
-                    aria-label="Number"
+                    placeholder="Number, summary, name, or location"
+                    aria-label="Search Text"
                   />
                 </div>
               </div>
