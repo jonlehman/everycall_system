@@ -41,6 +41,9 @@ export default async function handler(req, res) {
     if (message === "uploaded_document_title_and_body_required") {
       return fail(res, 400, "uploaded_document_title_and_body_required", "Uploaded documents require both a title and body text.");
     }
+    if (message === "uploaded_document_file_type_not_supported") {
+      return fail(res, 400, "uploaded_document_file_type_not_supported", "Only .pdf and .txt files are supported for file upload right now.");
+    }
     return fail(res, 500, "uploaded_document_error", message);
   }
 }

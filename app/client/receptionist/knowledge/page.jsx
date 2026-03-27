@@ -162,8 +162,8 @@ const guideByContext = {
   documentsFile: {
     step: '01',
     title: 'Upload File',
-    body: 'Use file upload for source documents in .doc, .docx, .pdf, or .txt format that should feed the next build.',
-    tip: 'PDF and plain-text files parse most reliably. Use this for formal documents such as pricing sheets, policies, and reference material.'
+    body: 'Use file upload for source documents in .pdf or .txt format that should feed the next build.',
+    tip: 'Use this for finalized PDFs or plain-text reference documents that should become part of the next build.'
   },
   documentsText: {
     step: '01',
@@ -379,6 +379,13 @@ export default function ReceptionistKnowledgePage() {
       return;
     }
 
+    const lowerName = String(file.name || '').toLowerCase();
+    if (!(lowerName.endsWith('.pdf') || lowerName.endsWith('.txt'))) {
+      setStatus({ message: 'Only .pdf and .txt files can be uploaded here right now.', tone: 'bad' });
+      event.target.value = '';
+      return;
+    }
+
     setReadingDocumentFile(true);
     try {
       const fileBase64 = await fileToBase64(file);
@@ -567,7 +574,7 @@ export default function ReceptionistKnowledgePage() {
                         <input
                           className="hidden"
                           type="file"
-                          accept=".txt,.pdf,.doc,.docx"
+                          accept=".txt,.pdf"
                           onChange={handleDocumentFileChange}
                           disabled={readingDocumentFile || savingDocument}
                         />
@@ -577,7 +584,7 @@ export default function ReceptionistKnowledgePage() {
                       </span>
                     </div>
                     <p className="mt-2 text-[10px] italic text-slate-500">
-                      Upload a .doc, .docx, .pdf, or .txt file. PDF and text files parse most reliably today.
+                      Upload a .pdf or .txt file.
                     </p>
                   </div>
 

@@ -679,6 +679,14 @@ function normalizeUploadedDocumentPayload(payload = {}) {
   };
 }
 
+function isSupportedUploadedDocumentFile({ filename = "", mimeType = "" } = {}) {
+  const lowerName = normalizeText(filename).toLowerCase();
+  const lowerMimeType = normalizeText(mimeType).toLowerCase();
+  if (lowerName.endsWith(".pdf") || lowerName.endsWith(".txt")) return true;
+  if (lowerMimeType === "application/pdf" || lowerMimeType === "text/plain") return true;
+  return false;
+}
+
 export async function listUploadedDocuments(db, tenantKey) {
   await assertConfigTablesReady(db);
   const res = await db.query(
@@ -695,6 +703,9 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
   await assertConfigTablesReady(db);
   return withTransaction(db, async (client) => {
     const normalized = normalizeUploadedDocumentPayload(payload);
+    if (normalized.fileBase64 && !isSupportedUploadedDocumentFile({ filename: normalized.filename, mimeType: normalized.mimeType })) {
+      throw new Error("uploaded_document_file_type_not_supported");
+    }
     let bodyText = normalized.bodyText;
     let mimeType = normalized.mimeType;
     let metadata = { ...normalized.metadata };
