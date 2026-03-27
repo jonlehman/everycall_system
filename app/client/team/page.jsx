@@ -183,32 +183,20 @@ export default function TeamPage() {
       : 'border-slate-200 bg-slate-100 text-slate-600';
 
   const columns = [
-    { field: 'name', headerName: 'Name', flex: 1, minWidth: 150 },
-    { field: 'email', headerName: 'Email', flex: 1.2, minWidth: 220 },
+    { field: 'name', headerName: 'Name', flex: 0.9, minWidth: 110 },
+    { field: 'email', headerName: 'Email', flex: 1.2, minWidth: 160 },
     {
       field: 'phone',
       headerName: 'Phone',
-      flex: 0.8,
-      minWidth: 150,
+      flex: 0.85,
+      minWidth: 115,
       renderCell: (params) => formatPhoneDisplay(params.value) || ''
-    },
-    { field: 'role', headerName: 'Role', flex: 0.6, minWidth: 110 },
-    {
-      field: 'smsOptIn',
-      headerName: 'SMS Opt-In',
-      flex: 0.7,
-      minWidth: 130,
-      renderCell: (params) => (
-        <span className={`badge ${params.value === 'opted_in' ? 'ok' : params.value === 'pending' ? 'warn' : 'bad'}`}>
-          {params.value}
-        </span>
-      )
     },
     {
       field: 'leadAlertEmailEnabled',
-      headerName: 'Lead Email',
-      flex: 0.65,
-      minWidth: 115,
+      headerName: 'Email Alerts',
+      flex: 0.72,
+      minWidth: 92,
       renderCell: (params) => (
         <span className={`badge ${params.value ? 'ok' : 'bad'}`}>
           {params.value ? 'enabled' : 'off'}
@@ -217,9 +205,9 @@ export default function TeamPage() {
     },
     {
       field: 'leadAlertSmsEnabled',
-      headerName: 'Lead SMS',
-      flex: 0.65,
-      minWidth: 115,
+      headerName: 'SMS Alerts',
+      flex: 0.72,
+      minWidth: 92,
       renderCell: (params) => (
         <span
           className={`badge ${
@@ -242,7 +230,7 @@ export default function TeamPage() {
       field: 'status',
       headerName: 'Status',
       flex: 0.6,
-      minWidth: 115,
+      minWidth: 84,
       renderCell: (params) => (
         <span className={`badge ${params.value === 'active' ? 'ok' : params.value === 'invited' ? 'warn' : 'bad'}`}>
           {params.value}
@@ -256,7 +244,8 @@ export default function TeamPage() {
       filterable: false,
       align: 'right',
       headerAlign: 'right',
-      minWidth: 190,
+      flex: 0.9,
+      minWidth: 132,
       renderCell: (params) => (
         <div className="flex w-full justify-end gap-1.5">
           <button
@@ -501,15 +490,32 @@ export default function TeamPage() {
                 rows={rows}
                 columns={columns}
                 autoHeight
+                getRowHeight={() => 'auto'}
                 disableRowSelectionOnClick
                 pageSizeOptions={[10, 25, 50]}
                 initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
                 localeText={{ noRowsLabel: loading ? 'Loading users...' : 'No users yet.' }}
                 sx={{
                   border: 'none',
-                  '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },
+                  '& .MuiDataGrid-cell': {
+                    alignItems: 'center',
+                    lineHeight: '1.35',
+                    whiteSpace: 'normal',
+                    py: 1
+                  },
+                  '& .MuiDataGrid-cellContent': {
+                    whiteSpace: 'normal',
+                    overflow: 'visible',
+                    textOverflow: 'clip',
+                    lineHeight: '1.35'
+                  },
                   '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
-                  '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 }
+                  '& .MuiDataGrid-columnHeaderTitle': {
+                    fontWeight: 600,
+                    whiteSpace: 'normal',
+                    lineHeight: '1.2'
+                  },
+                  '& .MuiDataGrid-virtualScroller': { overflowX: 'hidden' }
                 }}
               />
             </div>
