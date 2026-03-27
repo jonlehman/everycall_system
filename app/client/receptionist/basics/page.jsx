@@ -60,32 +60,14 @@ const guideByContext = {
     body: 'This is the first line callers hear before the receptionist starts collecting information.',
     tip: 'Keep the greeting short so callers quickly know they reached the right business.'
   },
-  primaryQueue: {
-    step: '03',
-    title: 'Primary Queue',
-    body: 'This sets the normal handoff path when a live transfer or follow-up should go to your main team.',
-    tip: 'Choose the team or destination that should own most incoming calls.'
-  },
-  emergencyBehavior: {
-    step: '03',
-    title: 'Emergency Behavior',
-    body: 'This tells the receptionist how to treat urgent calls that need faster handling than a normal lead.',
-    tip: 'Use the most reliable path your business can actually support in urgent situations.'
-  },
-  afterHours: {
-    step: '03',
-    title: 'After Hours Protocol',
-    body: 'This controls what the receptionist should do when callers reach you outside normal business hours.',
-    tip: 'Set an after-hours path that matches your real callback or on-call process.'
-  },
   voiceSelection: {
-    step: '04',
+    step: '03',
     title: 'Voice Selection',
     body: 'This chooses the live voice the sales receptionist uses during calls.',
     tip: 'Pick the voice that best matches your business tone and pace.'
   },
   voiceSample: {
-    step: '04',
+    step: '03',
     title: 'Voice Sample',
     body: 'Play a short sample to hear the currently selected voice before saving it to the live runtime profile.',
     tip: 'Test the voice before saving so the live experience matches your expectations.'
@@ -245,7 +227,7 @@ export default function ReceptionistBasicsPage() {
     <SectionPage
       tabs={receptionistNavItems}
       title="Basics"
-      subtitle="Set the business identity, greeting, routing, and voice used by your sales receptionist."
+      subtitle="Set the business identity, greeting, and voice used by your sales receptionist."
       status={status}
       statusChip={{ tone: 'ok', label: 'Sales Receptionist Active' }}
       headerAside={<SalesReceptionistNumberBadge />}
@@ -328,61 +310,13 @@ export default function ReceptionistBasicsPage() {
 
           <div className="mt-12" onClick={(event) => {
             if (isInteractiveGuideTarget(event.target)) return;
-            setActiveGuideKey('primaryQueue');
-          }}>
-            <StepSection
-              step="03"
-              title="Call Routing"
-              description="Define who gets the handoff, how emergencies are treated, and what callers should expect outside business hours."
-              contentClassName={activeStep === '03' ? activeCardClassName : ''}
-            >
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div>
-                  <label>Primary Queue</label>
-                  <select
-                    value={form.primaryQueue}
-                    onChange={(event) => setForm((current) => ({ ...current, primaryQueue: event.target.value }))}
-                    onFocus={() => setActiveGuideKey('primaryQueue')}
-                  >
-                    <option>Dispatch Team</option>
-                    <option>Owner Only</option>
-                  </select>
-                </div>
-                <div>
-                  <label>Emergency Behavior</label>
-                  <select
-                    value={form.emergencyBehavior}
-                    onChange={(event) => setForm((current) => ({ ...current, emergencyBehavior: event.target.value }))}
-                    onFocus={() => setActiveGuideKey('emergencyBehavior')}
-                  >
-                    <option>Immediate Transfer</option>
-                    <option>Priority Queue</option>
-                  </select>
-                </div>
-                <div>
-                  <label>After Hours Protocol</label>
-                  <select
-                    value={form.afterHours}
-                    onChange={(event) => setForm((current) => ({ ...current, afterHours: event.target.value }))}
-                    onFocus={() => setActiveGuideKey('afterHours')}
-                  >
-                    <option>Collect details and dispatch callback</option>
-                    <option>Forward to on-call</option>
-                  </select>
-                </div>
-              </div>
-            </StepSection>
-          </div>
-
-          <div className="mt-12" onClick={(event) => {
-            if (isInteractiveGuideTarget(event.target)) return;
             setActiveGuideKey('voiceSelection');
           }}>
             <StepSection
-              step="04"
+              step="03"
               title="Voice Selection"
               description="Choose the voice profile used for live responses and test it before saving."
-              contentClassName={activeStep === '04' ? activeCardClassName : ''}
+              contentClassName={activeStep === '03' ? activeCardClassName : ''}
             >
               <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto] md:items-end">
                 <div>

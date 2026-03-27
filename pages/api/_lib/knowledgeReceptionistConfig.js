@@ -1379,7 +1379,6 @@ function defaultChecklist(checklist) {
   return {
     hours_confirmed: Boolean(source.hours_confirmed ?? source.hoursConfirmed),
     address_confirmed: Boolean(source.address_confirmed ?? source.addressConfirmed),
-    after_hours_configured: Boolean(source.after_hours_configured ?? source.afterHoursConfigured),
     service_area_confirmed: Boolean(source.service_area_confirmed ?? source.serviceAreaConfirmed),
     calls_forwarded_to_receptionist: Boolean(source.calls_forwarded_to_receptionist ?? source.callsForwardedToReceptionist),
     dangerous_question_reviewed: Boolean(source.dangerous_question_reviewed ?? source.dangerousQuestionReviewed),
@@ -1450,7 +1449,6 @@ export async function evaluateKnowledgeReadiness(db, tenantKey) {
   const hardOverrideCount = overrides.filter((item) => ["hard_fact", "temporary_notice", "approved_answer"].includes(normalizeText(item.override_type))).length;
   if (!checklist.hours_confirmed) blockers.push("hours_confirmation_required");
   if (!checklist.address_confirmed) blockers.push("address_confirmation_required");
-  if (!checklist.after_hours_configured) blockers.push("after_hours_configuration_required");
   if (!checklist.service_area_confirmed) blockers.push("service_area_confirmation_required");
   if (!checklist.calls_forwarded_to_receptionist) blockers.push("call_forwarding_confirmation_required");
   if (!checklist.sample_calls_passed) blockers.push("sample_call_validation_required");

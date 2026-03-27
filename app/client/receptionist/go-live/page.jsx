@@ -21,11 +21,6 @@ function buildClientChecklistFields(phoneNumber) {
     hint: 'Confirm the business address callers should reference.'
   },
   {
-    key: 'after_hours_configured',
-    label: 'After-hours plan confirmed',
-    hint: 'Confirm the after-hours routing and callback plan.'
-  },
-  {
     key: 'service_area_confirmed',
     label: 'Service area confirmed',
     hint: 'Confirm the locations the business actively serves.'
