@@ -876,6 +876,95 @@ async function markCallCompleted(callSid: string) {
   }
 }
 
+function normalizeOptionalText(value: unknown) {
+  const text = String(value || "").trim();
+  return text || null;
+}
+
+async function loadCombinedTranscriptForCall(callSid: string) {
+  if (!pool) return "";
+  try {
+    const events = await pool.query(
+      `SELECT role, text
+       FROM call_events
+       WHERE call_sid = $1
+       ORDER BY created_at ASC`,
+      [callSid]
+    );
+    return (events.rows || [])
+      .map((row: { role?: string; text?: string }) => {
+        const text = String(row.text || "").trim();
+        if (!text) return "";
+        const role = String(row.role || "speaker").replace(/^[a-z]/, (char) => char.toUpperCase());
+        return `${role}: ${text}`;
+      })
+      .filter(Boolean)
+      .join("\n");
+  } catch (err) {
+    logError("call_transcript_load_failed", {
+      callSid,
+      message: err instanceof Error ? err.message : "unknown"
+    });
+    return "";
+  }
+}
+
+async function finalizeCallSummary(session: StreamSession) {
+  if (!appBaseUrl || !callSummaryToken) return;
+
+  const capturedFieldSource = session.knowledgeCallState?.captured_fields
+    && typeof session.knowledgeCallState.captured_fields === "object"
+    && !Array.isArray(session.knowledgeCallState.captured_fields)
+    ? session.knowledgeCallState.captured_fields as Record<string, unknown>
+    : {};
+  const capturedFields: Record<string, unknown> = { ...capturedFieldSource };
+
+  const transcript = await loadCombinedTranscriptForCall(session.callSid);
+  if (transcript) {
+    capturedFields.transcript = transcript;
+  }
+
+  const urgency = normalizeOptionalText(
+    capturedFields.urgency_level
+    || capturedFields.urgency
+  );
+  const disposition = normalizeOptionalText(
+    capturedFields.outcome_type
+    || session.knowledgeCallState?.outcome_in_progress
+  );
+
+  try {
+    const resp = await fetch(`${appBaseUrl}/api/v1/calls`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-everycall-internal": callSummaryToken
+      },
+      body: JSON.stringify({
+        action: "summary",
+        callSid: session.callSid,
+        ...(urgency ? { urgency } : {}),
+        ...(disposition ? { disposition } : {}),
+        extracted: capturedFields
+      })
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      logError("call_summary_finalize_failed", {
+        callSid: session.callSid,
+        status: resp.status,
+        message: text.slice(0, 200)
+      });
+    }
+  } catch (err) {
+    logError("call_summary_finalize_failed", {
+      callSid: session.callSid,
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
+}
+
 async function endCallSession(session: StreamSession | undefined, reason: string, shouldHangup: boolean) {
   if (!session || session.isShuttingDown) return;
   session.isShuttingDown = true;
@@ -908,6 +997,8 @@ async function endCallSession(session: StreamSession | undefined, reason: string
   if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
     session.openAiWs.close();
   }
+
+  await finalizeCallSummary(session);
 
   if (shouldHangup && session.callControlId) {
     try {

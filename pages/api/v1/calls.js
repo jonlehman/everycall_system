@@ -2,6 +2,7 @@ import { ensureTables, getPool } from "../_lib/db.js";
 import { getSession, requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess } from "../_lib/billing.js";
 import { sendLeadNotifications } from "../_lib/leadNotifications.js";
+import { normalizeCapturedCallFields } from "../_lib/callCapture.js";
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
 const openAiModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
@@ -190,10 +191,11 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: "missing_call_id" });
         }
         const summary = String(body.summary || "").trim();
-        const urgency = String(body.urgency || "").trim() || null;
-        const disposition = String(body.disposition || "").trim() || null;
         const extracted = body.extracted || null;
-        const transcriptFromPayload = extracted?.transcript || null;
+        const extractedFields = normalizeCapturedCallFields(extracted);
+        const transcriptFromPayload = extractedFields.transcriptCombined || null;
+        const urgency = String(body.urgency || extractedFields.urgencyLevel || "").trim() || null;
+        const disposition = String(body.disposition || extractedFields.outcomeType || "").trim() || null;
         let finalSummary = summary;
 
         if (!finalSummary || finalSummary === "Call completed.") {
@@ -207,18 +209,18 @@ export default async function handler(req, res) {
           `INSERT INTO calls (call_sid, tenant_key, status, summary, urgency, disposition)
            VALUES ($1, $2, 'new', $3, $4, $5)
            ON CONFLICT (call_sid)
-           DO UPDATE SET summary = EXCLUDED.summary,
-                         urgency = EXCLUDED.urgency,
-                         disposition = EXCLUDED.disposition`,
+           DO UPDATE SET summary = COALESCE(EXCLUDED.summary, calls.summary),
+                         urgency = COALESCE(EXCLUDED.urgency, calls.urgency),
+                         disposition = COALESCE(EXCLUDED.disposition, calls.disposition)`,
           [callId, tenantKey, finalSummary || null, urgency, disposition]
         );
 
         if (extracted) {
-          const payload = typeof extracted === "object" ? extracted : {};
           await pool.query(
             `INSERT INTO call_details (
                call_sid,
                extracted_json,
+               transcript_combined,
                caller_first_name,
                caller_last_name,
                callback_number,
@@ -233,37 +235,39 @@ export default async function handler(req, res) {
                requested_time,
                updated_at
              )
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+             VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
              ON CONFLICT (call_sid)
-             DO UPDATE SET extracted_json = EXCLUDED.extracted_json,
-                           caller_first_name = EXCLUDED.caller_first_name,
-                           caller_last_name = EXCLUDED.caller_last_name,
-                           callback_number = EXCLUDED.callback_number,
-                           service_required = EXCLUDED.service_required,
-                           urgency_level = EXCLUDED.urgency_level,
-                           address_line1 = EXCLUDED.address_line1,
-                           address_line2 = EXCLUDED.address_line2,
-                           city = EXCLUDED.city,
-                           state = EXCLUDED.state,
-                           postal_code = EXCLUDED.postal_code,
-                           requested_date = EXCLUDED.requested_date,
-                           requested_time = EXCLUDED.requested_time,
+             DO UPDATE SET extracted_json = COALESCE(call_details.extracted_json, '{}'::jsonb) || EXCLUDED.extracted_json,
+                           transcript_combined = COALESCE(EXCLUDED.transcript_combined, call_details.transcript_combined),
+                           caller_first_name = COALESCE(EXCLUDED.caller_first_name, call_details.caller_first_name),
+                           caller_last_name = COALESCE(EXCLUDED.caller_last_name, call_details.caller_last_name),
+                           callback_number = COALESCE(EXCLUDED.callback_number, call_details.callback_number),
+                           service_required = COALESCE(EXCLUDED.service_required, call_details.service_required),
+                           urgency_level = COALESCE(EXCLUDED.urgency_level, call_details.urgency_level),
+                           address_line1 = COALESCE(EXCLUDED.address_line1, call_details.address_line1),
+                           address_line2 = COALESCE(EXCLUDED.address_line2, call_details.address_line2),
+                           city = COALESCE(EXCLUDED.city, call_details.city),
+                           state = COALESCE(EXCLUDED.state, call_details.state),
+                           postal_code = COALESCE(EXCLUDED.postal_code, call_details.postal_code),
+                           requested_date = COALESCE(EXCLUDED.requested_date, call_details.requested_date),
+                           requested_time = COALESCE(EXCLUDED.requested_time, call_details.requested_time),
                            updated_at = NOW()`,
             [
               callId,
-              payload,
-              payload.first_name || null,
-              payload.last_name || null,
-              payload.callback_number || null,
-              payload.service_required || null,
-              payload.urgency || null,
-              payload.address_line1 || null,
-              payload.address_line2 || null,
-              payload.city || null,
-              payload.state || null,
-              payload.postal_code || null,
-              payload.requested_date || null,
-              payload.requested_time || null
+              extractedFields.extractedJson,
+              transcriptFromPayload,
+              extractedFields.firstName,
+              extractedFields.lastName,
+              extractedFields.callbackNumber,
+              extractedFields.serviceRequired,
+              extractedFields.urgencyLevel,
+              extractedFields.addressLine1,
+              extractedFields.addressLine2,
+              extractedFields.city,
+              extractedFields.state,
+              extractedFields.postalCode,
+              extractedFields.requestedDate,
+              extractedFields.requestedTime
             ]
           );
         }
