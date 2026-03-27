@@ -164,6 +164,13 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const submit = async (event) => {
     event.preventDefault();
 
+    const confirmed = window.confirm(
+      'Create this account and provision a Sales Receptionist Number? This will create the tenant and may incur provider charges.'
+    );
+    if (!confirmed) {
+      return;
+    }
+
     const accountError = validateAccountStep(form);
     if (accountError) {
       setCurrentStep(0);
