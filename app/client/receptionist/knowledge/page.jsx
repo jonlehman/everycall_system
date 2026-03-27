@@ -501,7 +501,7 @@ export default function ReceptionistKnowledgePage() {
                 >
                   <div className="mb-4">
                     <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website</h4>
-                    <p className="mt-1 text-sm text-slate-500">Train the sales receptionist with up to 500 pages from your website.</p>
+                    <p className="mt-1 text-sm text-slate-500">Train the sales receptionist with up to 500 pages from your website (pages selected automatically).</p>
                   </div>
                   <label className="sr-only">Website URL</label>
                   <input
