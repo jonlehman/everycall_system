@@ -367,39 +367,20 @@
   line-height: 1.55;
 }
 
-.intake-checklist {
+.intake-followup-list {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
-.intake-check-item {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 12px;
-  align-items: start;
-  cursor: pointer;
-  font-family: inherit;
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
-  color: #121c2a;
-}
-
-.intake-check-item input {
-  width: 18px;
-  height: 18px;
-  margin-top: 2px;
-  accent-color: #004ac6;
-}
-
-.intake-check-item span {
+.intake-followup-list p {
+  margin: 0;
   font-size: 15px;
   line-height: 1.6;
-  font-family: inherit;
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
   color: #121c2a;
+}
+
+.intake-followup-list strong {
+  font-weight: 700;
 }
 
 .intake-actions {

@@ -44,21 +44,6 @@ const INTAKE_STEPS = [
   }
 ];
 
-const FINAL_ACKNOWLEDGEMENTS = [
-  {
-    key: 'genericCallsReady',
-    text: 'Your Sales Receptionist can immediately answer generic questions and collect leads.'
-  },
-  {
-    key: 'specificQuestionsBlocked',
-    text: `It cannot answer business-specific questions until you build and publish the knowledge base, and will instead say "I don't know, but I can have someone call you to discuss that with you."`
-  },
-  {
-    key: 'knowledgeScreenRead',
-    text: 'After publishing the knowledge base, read the information on the Knowledge screen and complete the Go Live Checklist.'
-  }
-];
-
 function createInitialForm(qaMode = false) {
   return {
     businessName: qaMode ? 'Knowledge Receptionist QA Tenant' : '',
@@ -115,18 +100,9 @@ function validateStep(stepIndex, form) {
   return '';
 }
 
-function createInitialAcknowledgements() {
-  return Object.fromEntries(FINAL_ACKNOWLEDGEMENTS.map((item) => [item.key, false]));
-}
-
-function allAcknowledgementsConfirmed(acknowledgements) {
-  return FINAL_ACKNOWLEDGEMENTS.every((item) => Boolean(acknowledgements?.[item.key]));
-}
-
 export function IntakePageClient({ qaMode = false } = {}) {
   const initialForm = useMemo(() => createInitialForm(Boolean(qaMode)), [qaMode]);
   const [form, setForm] = useState(initialForm);
-  const [acknowledgements, setAcknowledgements] = useState(() => createInitialAcknowledgements());
   const [currentStep, setCurrentStep] = useState(0);
   const [status, setStatus] = useState(defaultStatusForStep(0));
   const [busy, setBusy] = useState(false);
@@ -134,7 +110,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const nextHref = '/client/knowledge';
   const provisioningFailed = activation?.voiceProvisioning?.ok === false;
   const step = INTAKE_STEPS[currentStep];
-  const acknowledgementsConfirmed = allAcknowledgementsConfirmed(acknowledgements);
 
   useEffect(() => {
     if (!activation?.ok || provisioningFailed) return undefined;
@@ -145,9 +120,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
   }, [activation, provisioningFailed]);
 
   const setFormValue = (field, value) => setForm((current) => ({ ...current, [field]: value }));
-  const setAcknowledgement = (key, value) => {
-    setAcknowledgements((current) => ({ ...current, [key]: value }));
-  };
 
   const setStepAndResetStatus = (stepIndex) => {
     setCurrentStep(stepIndex);
@@ -194,11 +166,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
   };
 
   const submit = async () => {
-    if (!acknowledgementsConfirmed) {
-      setStatus({ message: 'Check each item on this page before creating the account.', tone: 'bad' });
-      return;
-    }
-
     const confirmed = window.confirm(
       'Create this account and provision a Sales Receptionist Number? This will create the tenant and may incur provider charges.'
     );
@@ -413,18 +380,10 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 </div>
 
                 <div className="intake-note-card">
-                  <h3>Please confirm you have read:</h3>
-                  <div className="intake-checklist">
-                    {FINAL_ACKNOWLEDGEMENTS.map((item) => (
-                      <label key={item.key} className="intake-check-item">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(acknowledgements[item.key])}
-                          onChange={(event) => setAcknowledgement(item.key, event.target.checked)}
-                        />
-                        <span>{item.text}</span>
-                      </label>
-                    ))}
+                  <h3>Please visit:</h3>
+                  <div className="intake-followup-list">
+                    <p><strong>Knowledge</strong> to publish a build.</p>
+                    <p><strong>Go Live Checklist</strong> to complete setup.</p>
                   </div>
                 </div>
               </section>
@@ -442,7 +401,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                   Continue
                 </button>
               ) : (
-                <button type="button" className="btn primary" onClick={submit} disabled={busy || !acknowledgementsConfirmed}>
+                <button type="button" className="btn primary" onClick={submit} disabled={busy}>
                   {busy ? 'Creating...' : 'Create Account'}
                 </button>
               )}
