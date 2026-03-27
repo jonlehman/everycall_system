@@ -2,11 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
+import { formatPhoneDisplay } from '../../../../lib/phoneDisplay';
 import SalesReceptionistNumberBadge from '../../_components/SalesReceptionistNumberBadge';
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
 
-const CLIENT_CHECKLIST_FIELDS = [
+function buildClientChecklistFields(phoneNumber) {
+  const formattedPhoneNumber = formatPhoneDisplay(phoneNumber) || 'your Sales Receptionist Number';
+  return [
   {
     key: 'hours_confirmed',
     label: 'Business hours confirmed',
@@ -28,6 +31,11 @@ const CLIENT_CHECKLIST_FIELDS = [
     hint: 'Confirm the locations the business actively serves.'
   },
   {
+    key: 'calls_forwarded_to_receptionist',
+    label: 'Forward calls to Sales Receptionist Number',
+    hint: `In your business's phone system, forward missed calls to ${formattedPhoneNumber}.`
+  },
+  {
     key: 'sample_calls_passed',
     label: 'Sample calls passed',
     hint: 'Run a few test calls and confirm the receptionist responds correctly.'
@@ -43,6 +51,7 @@ const CLIENT_CHECKLIST_FIELDS = [
     hint: 'Confirm name, callback number, and notes are saving correctly.'
   }
 ];
+}
 
 function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
@@ -71,18 +80,23 @@ export default function LaunchReadinessPage() {
   const [status, setStatus] = useState({ message: 'Loading launch readiness...', tone: 'warn' });
   const [readiness, setReadiness] = useState(null);
   const [checklist, setChecklist] = useState({});
+  const [phoneNumber, setPhoneNumber] = useState('');
 
   const loadReadiness = async () => {
     setLoading(true);
     setStatus({ message: 'Loading launch readiness...', tone: 'warn' });
     try {
-      const readinessData = await fetchJson('/api/v1/knowledge/readiness');
+      const [readinessData, settingsData] = await Promise.all([
+        fetchJson('/api/v1/knowledge/readiness'),
+        fetchJson('/api/v1/settings')
+      ]);
       if (!readinessData?.ok) {
         setStatus({ message: readinessData?.message || 'Could not load launch readiness.', tone: 'bad' });
         return;
       }
       setReadiness(readinessData.readiness || null);
       setChecklist(readinessData.readiness?.checklist || {});
+      setPhoneNumber(String(settingsData?.tenant?.telnyx_voice_number || '').trim());
       setStatus({ message: 'Launch readiness loaded.', tone: 'ok' });
     } catch {
       setStatus({ message: 'Could not load launch readiness.', tone: 'bad' });
@@ -126,9 +140,10 @@ export default function LaunchReadinessPage() {
 
   const computedInputs = readiness?.computed_inputs || {};
   const readinessStatus = String(readiness?.status || '').trim().toLowerCase();
+  const clientChecklistFields = useMemo(() => buildClientChecklistFields(phoneNumber), [phoneNumber]);
   const clientCompletionCount = useMemo(
-    () => CLIENT_CHECKLIST_FIELDS.filter(({ key }) => Boolean(checklist?.[key])).length,
-    [checklist]
+    () => clientChecklistFields.filter(({ key }) => Boolean(checklist?.[key])).length,
+    [checklist, clientChecklistFields]
   );
   const liveBuildSelected = Boolean(computedInputs.active_build_id)
     && computedInputs.active_build_id === computedInputs.latest_build_id;
@@ -151,7 +166,7 @@ export default function LaunchReadinessPage() {
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <div className="text-xs uppercase tracking-wide text-slate-500">Client Checklist</div>
-          <div className="mt-1 text-2xl font-bold text-slate-900">{clientCompletionCount}/{CLIENT_CHECKLIST_FIELDS.length}</div>
+          <div className="mt-1 text-2xl font-bold text-slate-900">{clientCompletionCount}/{clientChecklistFields.length}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <div className="text-xs uppercase tracking-wide text-slate-500">Knowledge Runtime</div>
@@ -169,7 +184,7 @@ export default function LaunchReadinessPage() {
           These are the client-side confirmations that still matter to the actual readiness engine.
         </div>
         <div className="mt-3 grid gap-2">
-          {CLIENT_CHECKLIST_FIELDS.map(({ key, label, hint }) => (
+          {clientChecklistFields.map(({ key, label, hint }) => (
             <label key={key} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
               <div className="flex items-start gap-3">
                 <input
