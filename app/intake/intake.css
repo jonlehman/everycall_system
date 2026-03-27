@@ -102,6 +102,18 @@
   color: #121c2a;
 }
 
+.intake-step-link:disabled,
+.intake-step-link.locked {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.intake-step-link:disabled:hover,
+.intake-step-link.locked:hover {
+  background: transparent;
+  color: #555f6f;
+}
+
 .intake-step-link.active {
   background: #eff4ff;
   color: #004ac6;
@@ -478,6 +490,12 @@
   .intake-mobile-step.complete:not(.active) {
     background: rgba(193, 255, 197, 0.82);
     color: #005321;
+  }
+
+  .intake-mobile-step:disabled,
+  .intake-mobile-step.locked {
+    cursor: not-allowed;
+    opacity: 0.52;
   }
 }
 

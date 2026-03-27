@@ -94,6 +94,12 @@ function validateContextStep(form) {
   return '';
 }
 
+function validateStep(stepIndex, form) {
+  if (stepIndex === 0) return validateAccountStep(form);
+  if (stepIndex === 1) return validateContextStep(form);
+  return '';
+}
+
 function renderSetupSummary(form) {
   return [
     { label: 'Business Name', value: form.businessName.trim() || 'Not entered yet' },
@@ -133,15 +139,32 @@ export function IntakePageClient({ qaMode = false } = {}) {
     setStatus(defaultStatusForStep(stepIndex));
   };
 
-  const moveToNextStep = () => {
-    const accountError = validateAccountStep(form);
-    if (currentStep === 0 && accountError) {
-      setStatus({ message: accountError, tone: 'bad' });
+  const canDirectlyNavigateToStep = (targetStepIndex) => {
+    if (targetStepIndex <= currentStep) return true;
+    if (targetStepIndex !== currentStep + 1) return false;
+    return !validateStep(currentStep, form);
+  };
+
+  const handleStepNavigation = (targetStepIndex) => {
+    if (targetStepIndex <= currentStep) {
+      setStepAndResetStatus(targetStepIndex);
       return;
     }
-    const contextError = validateContextStep(form);
-    if (currentStep === 1 && contextError) {
-      setStatus({ message: contextError, tone: 'bad' });
+    if (targetStepIndex !== currentStep + 1) {
+      return;
+    }
+    const error = validateStep(currentStep, form);
+    if (error) {
+      setStatus({ message: error, tone: 'bad' });
+      return;
+    }
+    setStepAndResetStatus(targetStepIndex);
+  };
+
+  const moveToNextStep = () => {
+    const error = validateStep(currentStep, form);
+    if (error) {
+      setStatus({ message: error, tone: 'bad' });
       return;
     }
     if (currentStep < INTAKE_STEPS.length - 1) {
@@ -238,13 +261,15 @@ export function IntakePageClient({ qaMode = false } = {}) {
           {INTAKE_STEPS.map((item, index) => {
             const active = index === currentStep;
             const complete = index < currentStep || Boolean(activation?.ok);
+            const locked = index > currentStep && !canDirectlyNavigateToStep(index);
             return (
               <button
                 key={item.key}
                 type="button"
-                className={`intake-step-link ${active ? 'active' : ''} ${complete ? 'complete' : ''}`}
-                onClick={() => setStepAndResetStatus(index)}
+                className={`intake-step-link ${active ? 'active' : ''} ${complete ? 'complete' : ''} ${locked ? 'locked' : ''}`}
+                onClick={() => handleStepNavigation(index)}
                 aria-current={active ? 'step' : undefined}
+                disabled={locked}
               >
                 <span className="intake-step-number">{item.number}</span>
                 <span>{item.navTitle}</span>
@@ -257,16 +282,20 @@ export function IntakePageClient({ qaMode = false } = {}) {
       <main className="intake-main">
         <div className="intake-canvas">
           <div className="intake-mobile-steps" aria-hidden="true">
-            {INTAKE_STEPS.map((item, index) => (
-              <button
-                key={item.key}
-                type="button"
-                className={`intake-mobile-step ${index === currentStep ? 'active' : ''} ${index < currentStep || Boolean(activation?.ok) ? 'complete' : ''}`}
-                onClick={() => setStepAndResetStatus(index)}
-              >
-                {item.number}
-              </button>
-            ))}
+            {INTAKE_STEPS.map((item, index) => {
+              const locked = index > currentStep && !canDirectlyNavigateToStep(index);
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`intake-mobile-step ${index === currentStep ? 'active' : ''} ${index < currentStep || Boolean(activation?.ok) ? 'complete' : ''} ${locked ? 'locked' : ''}`}
+                  onClick={() => handleStepNavigation(index)}
+                  disabled={locked}
+                >
+                  {item.number}
+                </button>
+              );
+            })}
           </div>
 
           <section className="intake-hero">
