@@ -435,9 +435,20 @@ export default async function handler(req, res) {
 
     const limit = Math.max(1, Math.min(Number(req.query?.limit) || 30, 200));
     const rows = await pool.query(
-      `SELECT call_sid, from_number, status, urgency, summary, created_at
-       FROM calls
-       WHERE tenant_key = $1
+      `SELECT c.call_sid,
+              c.from_number,
+              c.status,
+              c.urgency,
+              c.summary,
+              c.created_at,
+              d.caller_first_name,
+              d.caller_last_name,
+              d.city,
+              d.state,
+              d.postal_code
+       FROM calls c
+       LEFT JOIN call_details d ON d.call_sid = c.call_sid
+       WHERE c.tenant_key = $1
        ORDER BY created_at DESC
        LIMIT $2`,
       [tenantKey, limit]
