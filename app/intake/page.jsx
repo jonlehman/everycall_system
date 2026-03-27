@@ -381,10 +381,10 @@ export function IntakePageClient({ qaMode = false } = {}) {
 
                 <div className="intake-note-card">
                   <h3>Please visit:</h3>
-                  <div className="intake-followup-list">
-                    <p><strong>Knowledge</strong> to publish a build.</p>
-                    <p><strong>Go Live Checklist</strong> to complete setup.</p>
-                  </div>
+                  <ul className="intake-followup-list">
+                    <li><strong>Knowledge</strong> to publish a build.</li>
+                    <li><strong>Go Live Checklist</strong> to complete setup.</li>
+                  </ul>
                 </div>
               </section>
             ) : null}
