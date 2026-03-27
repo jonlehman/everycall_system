@@ -242,6 +242,14 @@ export default function ReceptionistKnowledgePage() {
         builds,
         assignments: buildData?.assignments || []
       });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('everycall:knowledge-updated', {
+          detail: {
+            builds,
+            activeBuild: buildData?.activeBuild || null
+          }
+        }));
+      }
       setUploadedDocuments(Array.isArray(documentData?.documents) ? documentData.documents : []);
       setBuildForm((current) => ({
         websiteUrl: current.websiteUrl || buildData?.bootstrapWebsiteUrl || builds[0]?.website_root_url || ''
