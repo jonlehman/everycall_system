@@ -375,12 +375,11 @@ export function IntakePageClient({ qaMode = false } = {}) {
                   <span className="intake-panel-step">03</span>
                   <div>
                     <h2 className="intake-panel-title">What Comes Next</h2>
-                    <p className="intake-panel-copy">Review the setup notes below, confirm each one, and then create the account.</p>
                   </div>
                 </div>
 
                 <div className="intake-note-card">
-                  <h3>Please visit:</h3>
+                  <h3>Once your account is created, please visit:</h3>
                   <ul className="intake-followup-list">
                     <li><strong>Knowledge</strong> to publish a build.</li>
                     <li><strong>Go Live Checklist</strong> to complete setup.</li>
