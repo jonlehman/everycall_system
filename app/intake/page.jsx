@@ -47,23 +47,19 @@ const INTAKE_STEPS = [
 const FINAL_ACKNOWLEDGEMENTS = [
   {
     key: 'numberProvisioned',
-    text: 'I understand that a Sales Receptionist Number will be provisioned during account creation.'
+    text: 'A Sales Receptionist phone number is automatically purchased and assigned to you.'
   },
   {
     key: 'genericCallsReady',
-    text: 'I understand the system will be ready to handle generic calls and collect leads for my business immediately.'
+    text: 'Your Sales Receptionist can immediately answer generic questions and collect leads.'
   },
   {
     key: 'specificQuestionsBlocked',
-    text: 'I understand it will not answer business-specific questions until the website and document knowledge setup is completed, and will instead offer a follow-up.'
+    text: `It cannot answer business-specific questions until you build and publish the knowledge base, and will instead say "I don't know, but I can have someone call you to discuss that with you."`
   },
   {
     key: 'knowledgeScreenRead',
-    text: 'I understand I should read the information on the Knowledge setup screen after account creation.'
-  },
-  {
-    key: 'goLiveChecklist',
-    text: 'I understand I need to complete the Go Live Checklist before relying on the system in production.'
+    text: 'After publishing the knowledge base, read the information on the Knowledge screen and complete the Go Live Checklist.'
   }
 ];
 
@@ -420,7 +416,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 </div>
 
                 <div className="intake-note-card">
-                  <h3>Confirm each item before continuing</h3>
+                  <h3>What happens when you press "Create Account":</h3>
                   <div className="intake-checklist">
                     {FINAL_ACKNOWLEDGEMENTS.map((item) => (
                       <label key={item.key} className="intake-check-item">

@@ -349,10 +349,10 @@
 
 .intake-note-card h3 {
   margin: 0;
-  font-family: "Space Grotesk", sans-serif;
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
   color: #121c2a;
 }
 
@@ -388,7 +388,7 @@
 }
 
 .intake-check-item span {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.6;
   color: #121c2a;
 }
