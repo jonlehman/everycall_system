@@ -46,10 +46,6 @@ const INTAKE_STEPS = [
 
 const FINAL_ACKNOWLEDGEMENTS = [
   {
-    key: 'numberProvisioned',
-    text: 'A Sales Receptionist phone number is automatically purchased and assigned to you.'
-  },
-  {
     key: 'genericCallsReady',
     text: 'Your Sales Receptionist can immediately answer generic questions and collect leads.'
   },
@@ -417,7 +413,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 </div>
 
                 <div className="intake-note-card">
-                  <h3>What happens when you press [Create Account]:</h3>
+                  <h3>Please confirm you have read:</h3>
                   <div className="intake-checklist">
                     {FINAL_ACKNOWLEDGEMENTS.map((item) => (
                       <label key={item.key} className="intake-check-item">
