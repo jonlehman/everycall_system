@@ -178,9 +178,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
     }
   };
 
-  const submit = async (event) => {
-    event.preventDefault();
-
+  const submit = async () => {
     const confirmed = window.confirm(
       'Create this account and provision a Sales Receptionist Number? This will create the tenant and may incur provider charges.'
     );
@@ -304,7 +302,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
             <p>{step.heroCopy}</p>
           </section>
 
-          <form className="intake-card" onSubmit={currentStep === INTAKE_STEPS.length - 1 ? submit : (event) => { event.preventDefault(); moveToNextStep(); }}>
+          <form className="intake-card" onSubmit={(event) => event.preventDefault()}>
             {status.message ? (
               <div className={`intake-status ${status.tone || 'normal'}`}>
                 {status.message}
@@ -426,7 +424,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                   Continue
                 </button>
               ) : (
-                <button type="submit" className="btn primary" disabled={busy}>
+                <button type="button" className="btn primary" onClick={submit} disabled={busy}>
                   {busy ? 'Creating...' : 'Create Account'}
                 </button>
               )}
