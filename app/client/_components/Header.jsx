@@ -143,14 +143,6 @@ export default function Header() {
           </a>
 
           <Link
-            href="/client/receptionist/notifications"
-            className="flex h-9 w-9 items-center justify-center rounded text-slate-700 transition-colors hover:bg-[#eff4ff]"
-            aria-label="Open notifications"
-          >
-            <span className="material-symbols-outlined text-[20px]">notifications</span>
-          </Link>
-
-          <Link
             href="/client/account/billing"
             className="hidden rounded-md bg-[#004ac6] px-4 py-2 text-sm font-semibold text-white transition-all hover:opacity-90 md:inline-flex"
           >
