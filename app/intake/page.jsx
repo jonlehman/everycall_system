@@ -31,16 +31,16 @@ const INTAKE_STEPS = [
     number: '02',
     title: 'Business Context',
     navTitle: 'Business Context',
-    heroTitle: 'Add Core Business Context',
-    heroCopy: 'Capture the shortest useful description of the business so the receptionist starts with the right baseline.'
+    heroTitle: 'Just moments away...',
+    heroCopy: '... from capturing more leads than you thought possible.'
   },
   {
     key: 'knowledge',
     number: '03',
     title: 'Knowledge Workspace Setup',
     navTitle: 'Knowledge Workspace Setup',
-    heroTitle: 'Confirm The Next Workspace',
-    heroCopy: 'Review what happens after creation, then create the account and continue into the knowledge setup flow.'
+    heroTitle: 'Just moments away...',
+    heroCopy: '... from capturing more leads than you thought possible.'
   }
 ];
 
@@ -342,7 +342,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
                     onChange={(event) => setFormValue('website', event.target.value)}
                     placeholder="https://example.com"
                   />
-                  <div className="intake-muted">If available, this becomes the first website source in the Knowledge Workspace.</div>
                 </div>
 
                 <div className="intake-stack">
@@ -352,7 +351,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
                     onChange={(event) => setFormValue('companyDescription', event.target.value)}
                     placeholder="Describe the business in one or two short sentences."
                   />
-                  <div className="intake-muted">This becomes the initial business context until a stronger website build is published.</div>
                 </div>
               </section>
             ) : null}
