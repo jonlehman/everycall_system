@@ -443,6 +443,8 @@ export default async function handler(req, res) {
               c.created_at,
               d.caller_first_name,
               d.caller_last_name,
+              d.address_line1,
+              d.address_line2,
               d.city,
               d.state,
               d.postal_code

@@ -275,6 +275,8 @@ export default function CallsPage() {
     summary: call.summary || '-',
     firstName: call.caller_first_name || '',
     lastName: call.caller_last_name || '',
+    addressLine1: call.address_line1 || '',
+    addressLine2: call.address_line2 || '',
     city: call.city || '',
     state: call.state || '',
     postalCode: call.postal_code || '',
@@ -293,6 +295,8 @@ export default function CallsPage() {
         row.from,
         row.summary,
         `${row.firstName} ${row.lastName}`.trim(),
+        row.addressLine1,
+        row.addressLine2,
         row.city,
         row.state,
         row.postalCode
