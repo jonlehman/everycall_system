@@ -221,8 +221,20 @@ export default function TeamPage() {
       flex: 0.65,
       minWidth: 115,
       renderCell: (params) => (
-        <span className={`badge ${params.value ? 'ok' : 'bad'}`}>
-          {params.value ? 'enabled' : 'off'}
+        <span
+          className={`badge ${
+            !params.row.leadAlertSmsEnabled
+              ? 'bad'
+              : params.row.smsOptIn === 'opted_in'
+                ? 'ok'
+                : 'warn'
+          }`}
+        >
+          {!params.row.leadAlertSmsEnabled
+            ? 'off'
+            : params.row.smsOptIn === 'opted_in'
+              ? 'enabled'
+              : 'pending'}
         </span>
       )
     },
@@ -421,6 +433,11 @@ export default function TeamPage() {
                       </div>
 
                       <div className="text-xs leading-6 text-slate-600">
+                        If <span className="font-semibold text-slate-700">Receive lead SMS alerts</span> is checked before the subscriber replies YES,
+                        the lead SMS status will stay pending and no text alerts will be sent yet.
+                      </div>
+
+                      <div className="text-xs leading-6 text-slate-600">
                         By providing a phone number and sending an SMS opt-in request, the subscriber agrees to receive SMS
                         new lead alerts from EveryCall by Creative Dynamic. Message frequency may vary. Message and data
                         rates may apply. Reply STOP to opt out. Reply HELP for help. Consent is not a condition of purchase.
@@ -503,7 +520,7 @@ export default function TeamPage() {
           <div>Use Team to manage users, alert recipients, invitation state, and SMS opt-in status.</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Lead SMS requirements</div>
-            <div className="mt-1 text-sm text-slate-600">A user needs a mobile number and a confirmed SMS opt-in by replying YES before SMS alerts can be enabled.</div>
+            <div className="mt-1 text-sm text-slate-600">SMS alerts can be turned on in advance, but they stay pending and will not send until the user replies YES.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Use Edit for</div>
