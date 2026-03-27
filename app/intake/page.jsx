@@ -138,6 +138,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const nextHref = '/client/knowledge';
   const provisioningFailed = activation?.voiceProvisioning?.ok === false;
   const step = INTAKE_STEPS[currentStep];
+  const acknowledgementsConfirmed = allAcknowledgementsConfirmed(acknowledgements);
 
   useEffect(() => {
     if (!activation?.ok || provisioningFailed) return undefined;
@@ -197,7 +198,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
   };
 
   const submit = async () => {
-    if (!allAcknowledgementsConfirmed(acknowledgements)) {
+    if (!acknowledgementsConfirmed) {
       setStatus({ message: 'Check each item on this page before creating the account.', tone: 'bad' });
       return;
     }
@@ -445,7 +446,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                   Continue
                 </button>
               ) : (
-                <button type="button" className="btn primary" onClick={submit} disabled={busy}>
+                <button type="button" className="btn primary" onClick={submit} disabled={busy || !acknowledgementsConfirmed}>
                   {busy ? 'Creating...' : 'Create Account'}
                 </button>
               )}
