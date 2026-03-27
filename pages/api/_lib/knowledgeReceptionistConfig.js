@@ -249,6 +249,7 @@ async function assertConfigTablesReady(db) {
     throw new Error("knowledge_receptionist_migrations_not_applied");
   }
   await db.query(`ALTER TABLE knowledge_runtime_profiles ADD COLUMN IF NOT EXISTS company_description TEXT;`);
+  await db.query(`ALTER TABLE knowledge_runtime_profiles ALTER COLUMN greeting_text DROP NOT NULL;`);
 }
 
 function actorId(actor) {
