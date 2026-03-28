@@ -19,6 +19,7 @@ import {
 } from "../../_lib/knowledgeReceptionistPacks.js";
 import { saveSetupInterviewIntent } from "../../_lib/knowledgeReceptionistSetupInterview.js";
 import { saveTenantBootstrapProfile } from "../../_lib/tenantBootstrapProfiles.js";
+import { normalizePhoneNumber } from "../../_lib/phone.js";
 import { normalizeCallerIdName, provisionTenantVoiceNumber } from "../../_lib/voiceProvisioning.js";
 
 function slugify(input) {
@@ -42,12 +43,21 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function isValidPhoneNumber(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return false;
+  const digits = normalized.replace(/[^\d]/g, "");
+  return digits.length >= 10 && digits.length <= 15;
+}
+
 function parsePayload(body) {
   const businessName = normalizeText(body.businessName);
   const businessCategory = normalizeText(body.businessCategory || body.business_category || body.industry)
     || "professional_services";
   const ownerName = normalizeText(body.ownerName);
   const ownerEmail = normalizeText(body.ownerEmail).toLowerCase();
+  const ownerPhone = normalizePhoneNumber(body.ownerPhone || body.owner_phone);
+  const businessPhone = normalizePhoneNumber(body.businessPhone || body.business_phone);
   const password = String(body.password || "");
   const website = normalizeText(body.website);
   const companyDescription = normalizeText(body.companyDescription || body.company_description);
@@ -58,6 +68,8 @@ function parsePayload(body) {
     businessCategory,
     ownerName,
     ownerEmail,
+    ownerPhone,
+    businessPhone,
     password,
     website,
     companyDescription,
@@ -73,8 +85,11 @@ function validatePayload(payload) {
   if (!payload.businessCategory) fieldErrors.businessCategory = "Business category is required.";
   if (!payload.ownerName) fieldErrors.ownerName = "Owner name is required.";
   if (!payload.ownerEmail) fieldErrors.ownerEmail = "Owner email is required.";
+  if (!payload.businessPhone) fieldErrors.businessPhone = "Business phone is required.";
   if (!payload.password || payload.password.length < 8) fieldErrors.password = "Password must be at least 8 characters.";
   if (!payload.companyDescription) fieldErrors.companyDescription = "A short business description is required.";
+  if (payload.ownerPhone && !isValidPhoneNumber(payload.ownerPhone)) fieldErrors.ownerPhone = "Enter a valid owner phone number.";
+  if (payload.businessPhone && !isValidPhoneNumber(payload.businessPhone)) fieldErrors.businessPhone = "Enter a valid business phone number.";
   if (!inferKnowledgeAssignmentsForIndustry(payload.businessCategory).length) {
     fieldErrors.businessCategory = "Choose the business category that fits best.";
   }
@@ -205,7 +220,7 @@ export default async function handler(req, res) {
           await client.query(
             `INSERT INTO tenants (tenant_key, name, status, data_region, plan, primary_number, industry)
              VALUES ($1, $2, 'active', 'US', 'Growth', $3, $4)`,
-            [tenantKey, payload.businessName, null, payload.businessCategory]
+            [tenantKey, payload.businessName, payload.businessPhone || null, payload.businessCategory]
           );
           break;
         } catch (err) {
@@ -225,12 +240,24 @@ export default async function handler(req, res) {
       if (existingOwner.rowCount) {
         throw new Error("owner_email_already_exists");
       }
+      if (payload.ownerPhone) {
+        const existingOwnerPhone = await client.query(
+          `SELECT id
+           FROM tenant_users
+           WHERE phone_number = $1
+           LIMIT 1`,
+          [payload.ownerPhone]
+        );
+        if (existingOwnerPhone.rowCount) {
+          throw new Error("owner_phone_already_exists");
+        }
+      }
 
       const userRes = await client.query(
-        `INSERT INTO tenant_users (tenant_key, name, email, password_hash, role, status)
-         VALUES ($1, $2, $3, $4, 'owner', 'active')
+        `INSERT INTO tenant_users (tenant_key, name, email, phone_number, password_hash, role, status)
+         VALUES ($1, $2, $3, $4, $5, 'owner', 'active')
          RETURNING id`,
-        [tenantKey, payload.ownerName, payload.ownerEmail, passwordHash]
+        [tenantKey, payload.ownerName, payload.ownerEmail, payload.ownerPhone || null, passwordHash]
       );
       ownerUserId = userRes.rows[0]?.id || null;
 
@@ -322,6 +349,7 @@ export default async function handler(req, res) {
       const voiceProvisioning = await provisionTenantVoiceNumber({
         pool,
         tenantKey,
+        primaryNumber: payload.businessPhone,
         callerIdName: payload.businessName,
         actor: ownerUserId ? `tenant:${ownerUserId}` : "system:onboard",
         stage: "number_setup",
@@ -354,6 +382,9 @@ export default async function handler(req, res) {
     const message = String(err?.message || "unknown");
     if (message === "owner_email_already_exists") {
       return jsonError(res, 409, "owner_email_already_exists", "That owner email is already in use.");
+    }
+    if (message === "owner_phone_already_exists") {
+      return jsonError(res, 409, "owner_phone_already_exists", "That owner phone number is already in use.");
     }
     if (message === "domain_assignment_required") {
       return jsonError(res, 400, "domain_assignment_required", "A canonical domain/subdomain assignment is required.");

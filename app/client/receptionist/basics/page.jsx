@@ -48,6 +48,12 @@ const guideByContext = {
     body: 'This helps the sales receptionist understand what the business does, who it serves, and the kinds of calls it should expect.',
     tip: 'Keep it factual and concise so the receptionist stays grounded in the right context.'
   },
+  businessPhone: {
+    step: '01',
+    title: 'Business Phone',
+    body: 'This is the business’s main public phone number, separate from the Sales Receptionist Number that EveryCall provisions.',
+    tip: 'Use the normal business line your callers already know or see on your website.'
+  },
   businessHours: {
     step: '01',
     title: 'Business Hours',
@@ -76,7 +82,7 @@ const guideByContext = {
 
 const basicsGuideOverview = {
   title: 'What This Page Does',
-  body: 'This page sets the business identity, greeting, and voice your sales receptionist uses every time it answers a call.',
+  body: 'This page sets the business identity, main business phone, greeting, and voice your sales receptionist uses every time it answers a call.',
   detail: 'These basics help callers know they reached the right business and shape how the receptionist sounds before deeper business knowledge is added on the Knowledge page.'
 };
 
@@ -90,6 +96,7 @@ export default function ReceptionistBasicsPage() {
     assistantName: '',
     businessName: '',
     companyDescription: '',
+    businessPhone: '',
     openingLine: '',
     primaryQueue: 'Dispatch Team',
     emergencyBehavior: 'Immediate Transfer',
@@ -105,10 +112,11 @@ export default function ReceptionistBasicsPage() {
     setLoading(true);
     setStatus({ message: 'Loading sales receptionist basics...', tone: 'warn' });
     try {
-      const [profileData, routingData, runtimeData] = await Promise.all([
+      const [profileData, routingData, runtimeData, settingsData] = await Promise.all([
         fetchJson('/api/v1/knowledge/prompt-profile'),
         fetchJson('/api/v1/routing'),
-        fetchJson('/api/v1/knowledge/runtime-profile')
+        fetchJson('/api/v1/knowledge/runtime-profile'),
+        fetchJson('/api/v1/settings')
       ]);
       const profile = profileData?.profile || null;
       const routing = routingData?.routing || null;
@@ -117,6 +125,7 @@ export default function ReceptionistBasicsPage() {
         assistantName: profile?.assistant_name || '',
         businessName: profile?.business_name || '',
         companyDescription: profile?.company_description || '',
+        businessPhone: settingsData?.tenant?.primary_number || '',
         openingLine: profile?.opening_line || '',
         primaryQueue: routing?.primary_queue || 'Dispatch Team',
         emergencyBehavior: routing?.emergency_behavior || 'Immediate Transfer',
@@ -143,7 +152,7 @@ export default function ReceptionistBasicsPage() {
     setSaving(true);
     setStatus({ message: 'Saving sales receptionist basics...', tone: 'warn' });
     try {
-      const [profileResp, routingResp, runtimeResp] = await Promise.all([
+      const [profileResp, routingResp, runtimeResp, settingsResp] = await Promise.all([
         fetchJson('/api/v1/knowledge/prompt-profile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -177,9 +186,16 @@ export default function ReceptionistBasicsPage() {
               }
             }
           })
+        }),
+        fetchJson('/api/v1/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            primaryNumber: form.businessPhone
+          })
         })
       ]);
-      if (!profileResp?.ok || !routingResp?.ok || !runtimeResp?.ok) {
+      if (!profileResp?.ok || !routingResp?.ok || !runtimeResp?.ok || !settingsResp?.ok) {
         setStatus({ message: 'Could not save sales receptionist basics.', tone: 'bad' });
         return;
       }
@@ -279,6 +295,17 @@ export default function ReceptionistBasicsPage() {
                   onFocus={() => setActiveGuideKey('companyDescription')}
                   style={{ minHeight: 72 }}
                   placeholder="Briefly describe the business, service area, and what callers usually need help with."
+                />
+              </div>
+
+              <div className="mt-3">
+                <label>Business Phone</label>
+                <input
+                  type="tel"
+                  value={form.businessPhone}
+                  onChange={(event) => setForm((current) => ({ ...current, businessPhone: event.target.value }))}
+                  onFocus={() => setActiveGuideKey('businessPhone')}
+                  placeholder="(555) 000-0000"
                 />
               </div>
 

@@ -50,6 +50,8 @@ function createInitialForm(qaMode = false) {
     businessCategory: 'professional_services',
     ownerName: qaMode ? 'QA Owner' : '',
     ownerEmail: qaMode ? 'qa-owner@example.com' : '',
+    ownerPhone: qaMode ? '4255550101' : '',
+    businessPhone: qaMode ? '4255550100' : '',
     password: qaMode ? 'Password123!' : '',
     confirmPassword: qaMode ? 'Password123!' : '',
     website: '',
@@ -70,19 +72,30 @@ function normalizeWebsiteUrl(value) {
   return `https://${trimmed}`;
 }
 
+function hasReasonablePhoneNumber(value) {
+  const digits = String(value || '').replace(/[^\d]/g, '');
+  return digits.length >= 10 && digits.length <= 15;
+}
+
 function defaultStatusForStep() {
   return { message: '', tone: 'normal' };
 }
 
 function validateAccountStep(form) {
-  if (!form.businessName.trim() || !form.ownerName.trim() || !form.ownerEmail.trim()) {
-    return 'Business name, owner name, and owner email are required.';
+  if (!form.businessName.trim() || !form.ownerName.trim() || !form.ownerEmail.trim() || !form.businessPhone.trim()) {
+    return 'Business name, owner name, owner email, and business phone are required.';
   }
   if (!form.password || form.password.length < 8) {
     return 'Password must be at least 8 characters.';
   }
   if (form.password !== form.confirmPassword) {
     return 'Passwords do not match.';
+  }
+  if (form.ownerPhone.trim() && !hasReasonablePhoneNumber(form.ownerPhone)) {
+    return 'Enter a valid owner phone number.';
+  }
+  if (!hasReasonablePhoneNumber(form.businessPhone)) {
+    return 'Enter a valid business phone number.';
   }
   return '';
 }
@@ -198,6 +211,8 @@ export function IntakePageClient({ qaMode = false } = {}) {
           businessCategory: form.businessCategory,
           ownerName: form.ownerName,
           ownerEmail: form.ownerEmail,
+          ownerPhone: form.ownerPhone,
+          businessPhone: form.businessPhone,
           password: form.password,
           website: normalizeWebsiteUrl(form.website),
           companyDescription: form.companyDescription
@@ -325,6 +340,14 @@ export function IntakePageClient({ qaMode = false } = {}) {
                   <div className="intake-stack">
                     <label>Owner Email</label>
                     <input type="email" value={form.ownerEmail} onChange={(event) => setFormValue('ownerEmail', event.target.value)} />
+                  </div>
+                  <div className="intake-stack">
+                    <label>Owner Phone (Optional)</label>
+                    <input type="tel" value={form.ownerPhone} onChange={(event) => setFormValue('ownerPhone', event.target.value)} />
+                  </div>
+                  <div className="intake-stack">
+                    <label>Business Phone</label>
+                    <input type="tel" value={form.businessPhone} onChange={(event) => setFormValue('businessPhone', event.target.value)} />
                   </div>
                   <div className="intake-stack">
                     <label>Password</label>

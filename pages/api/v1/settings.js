@@ -1,6 +1,7 @@
 import { ensureTables, getPool } from "../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess } from "../_lib/billing.js";
+import { normalizePhoneNumber } from "../_lib/phone.js";
 import { getOwnedPhoneNumber, updatePhoneNumberVoiceSettings } from "../_lib/telnyx.js";
 
 function getTenantKey(req) {
@@ -13,6 +14,17 @@ function normalizeCallerIdName(value) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 15);
+}
+
+function isValidPhoneNumber(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return false;
+  const digits = normalized.replace(/[^\d]/g, "");
+  return digits.length >= 10 && digits.length <= 15;
+}
+
+function hasOwn(body, key) {
+  return Object.prototype.hasOwnProperty.call(body, key);
 }
 
 export default async function handler(req, res) {
@@ -34,7 +46,7 @@ export default async function handler(req, res) {
 
     if (req.method === "GET") {
       const tenant = await pool.query(
-        `SELECT tenant_key, name, plan, data_region, status, telnyx_voice_number, telnyx_voice_number_id
+        `SELECT tenant_key, name, plan, data_region, status, primary_number, telnyx_voice_number, telnyx_voice_number_id
          FROM tenants
          WHERE tenant_key = $1`,
         [tenantKey]
@@ -61,27 +73,65 @@ export default async function handler(req, res) {
 
     if (req.method === "POST") {
       const body = typeof req.body === "object" && req.body ? req.body : {};
-      const timezone = String(body.timezone || "America/Los_Angeles");
-      const notes = String(body.notes || "");
-      const leadAlertsEnabled = Boolean(body.leadAlertsEnabled);
-      const leadAlertSmsEnabled = Boolean(body.leadAlertSmsEnabled);
-      const leadAlertEmailEnabled = Boolean(body.leadAlertEmailEnabled);
-      const leadAlertEmailIncludeTranscript = body.leadAlertEmailIncludeTranscript === undefined
-        ? true
-        : Boolean(body.leadAlertEmailIncludeTranscript);
-      const callerIdName = normalizeCallerIdName(body.callerIdName);
-      if (!timezone.trim()) {
-        return fail(400, "invalid_timezone", "Timezone is required.");
-      }
-
       const tenant = await pool.query(
-        `SELECT tenant_key, name, telnyx_voice_number, telnyx_voice_number_id
+        `SELECT tenant_key, name, primary_number, telnyx_voice_number, telnyx_voice_number_id
          FROM tenants
          WHERE tenant_key = $1
          LIMIT 1`,
         [tenantKey]
       );
       const tenantRow = tenant.rows[0] || null;
+      const settingsResult = await pool.query(
+        `SELECT timezone,
+                notes,
+                caller_id_name,
+                lead_alerts_enabled,
+                lead_alert_sms_enabled,
+                lead_alert_email_enabled,
+                lead_alert_email_include_transcript
+         FROM tenant_settings
+         WHERE tenant_key = $1
+         LIMIT 1`,
+        [tenantKey]
+      );
+      const existingSettings = settingsResult.rows[0] || null;
+      const storedCallerIdName = existingSettings
+        ? String(existingSettings.caller_id_name || "")
+        : normalizeCallerIdName(tenantRow?.name || "");
+
+      const timezone = hasOwn(body, "timezone")
+        ? String(body.timezone || "").trim()
+        : String(existingSettings?.timezone || "America/Los_Angeles");
+      const notes = hasOwn(body, "notes")
+        ? String(body.notes || "")
+        : String(existingSettings?.notes || "");
+      const leadAlertsEnabled = hasOwn(body, "leadAlertsEnabled")
+        ? Boolean(body.leadAlertsEnabled)
+        : Boolean(existingSettings?.lead_alerts_enabled);
+      const leadAlertSmsEnabled = hasOwn(body, "leadAlertSmsEnabled")
+        ? Boolean(body.leadAlertSmsEnabled)
+        : Boolean(existingSettings?.lead_alert_sms_enabled);
+      const leadAlertEmailEnabled = hasOwn(body, "leadAlertEmailEnabled")
+        ? Boolean(body.leadAlertEmailEnabled)
+        : Boolean(existingSettings?.lead_alert_email_enabled);
+      const leadAlertEmailIncludeTranscript = hasOwn(body, "leadAlertEmailIncludeTranscript")
+        ? Boolean(body.leadAlertEmailIncludeTranscript)
+        : (existingSettings?.lead_alert_email_include_transcript === undefined
+          ? true
+          : Boolean(existingSettings?.lead_alert_email_include_transcript));
+      const callerIdName = hasOwn(body, "callerIdName")
+        ? normalizeCallerIdName(body.callerIdName)
+        : storedCallerIdName;
+      const primaryNumber = hasOwn(body, "primaryNumber")
+        ? normalizePhoneNumber(body.primaryNumber)
+        : normalizePhoneNumber(tenantRow?.primary_number || "");
+
+      if (!timezone.trim()) {
+        return fail(400, "invalid_timezone", "Timezone is required.");
+      }
+      if (hasOwn(body, "primaryNumber") && primaryNumber && !isValidPhoneNumber(primaryNumber)) {
+        return fail(400, "invalid_primary_number", "Enter a valid business phone number.");
+      }
 
       await pool.query(
         `INSERT INTO tenant_settings (
@@ -116,6 +166,16 @@ export default async function handler(req, res) {
           leadAlertEmailIncludeTranscript
         ]
       );
+
+      if (hasOwn(body, "primaryNumber")) {
+        await pool.query(
+          `UPDATE tenants
+           SET primary_number = $2,
+               updated_at = NOW()
+           WHERE tenant_key = $1`,
+          [tenantKey, primaryNumber || null]
+        );
+      }
 
       let providerSync = null;
       try {
