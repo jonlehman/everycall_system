@@ -197,6 +197,12 @@ const guideByContext = {
   }
 };
 
+const knowledgeGuideOverview = {
+  title: 'What This Page Does',
+  body: 'This page turns your website and uploaded documents into the published knowledge build your sales receptionist uses during live calls.',
+  detail: 'Before a build is published, the sales receptionist can answer only generic questions from the business description. If a caller asks for specific business details it does not know yet, it will apologize and offer to have someone call them back.'
+};
+
 export default function ReceptionistKnowledgePage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState({ message: 'Loading knowledge tools...', tone: 'warn' });
@@ -759,6 +765,11 @@ export default function ReceptionistKnowledgePage() {
           icon="architecture"
           className="self-start xl:sticky xl:top-32 xl:max-h-[calc(100vh-9rem)] xl:overflow-y-auto"
         >
+          <div className="rounded-2xl border border-[#d6e4ff] bg-[#f5f8ff] p-3">
+            <div className="font-semibold text-slate-900">{knowledgeGuideOverview.title}</div>
+            <div className="mt-1 text-sm text-slate-600">{knowledgeGuideOverview.body}</div>
+            <div className="mt-2 text-sm text-slate-600">{knowledgeGuideOverview.detail}</div>
+          </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">{activeGuide.title}</div>
             <div className="mt-1 text-sm text-slate-600">{activeGuide.body}</div>
