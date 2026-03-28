@@ -15,7 +15,7 @@ const pollIntervalMs = Math.max(1000, Number(process.env.WORKER_POLL_INTERVAL_MS
 const claimLimit = Math.max(1, Number(process.env.WORKER_CLAIM_LIMIT || 10));
 
 if (!databaseUrl) {
-  throw new Error("DATABASE_URL missing");
+  throw new Error("DATABASE_URL missing. Configure the worker service with a database connection string or inherit it from the gateway service in render.yaml.");
 }
 
 const pool = new pg.Pool({ connectionString: databaseUrl });

@@ -40,11 +40,20 @@ services:
     autoDeploy: true
     envVars:
       - key: DATABASE_URL
-        sync: false
+        fromService:
+          name: everycall-call-gateway
+          type: web
+          envVarKey: DATABASE_URL
       - key: APP_BASE_URL
-        sync: false
+        fromService:
+          name: everycall-call-gateway
+          type: web
+          envVarKey: APP_BASE_URL
       - key: TELNYX_API_KEY
-        sync: false
+        fromService:
+          name: everycall-call-gateway
+          type: web
+          envVarKey: TELNYX_API_KEY
       - key: MAILTRAP_TOKEN
         sync: false
       - key: MAILTRAP_SENDER_EMAIL
