@@ -5,6 +5,7 @@ export * from "./knowledgePlannerEngine.js";
 export * from "./openAiStructured.js";
 export * from "./knowledgePolicySelection.js";
 export * from "./promptBlueprints.js";
+export * from "./callTranscript.js";
 
 export const inboundWebhookSchema = z.object({
   CallSid: z.string().min(1),

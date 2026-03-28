@@ -3,7 +3,7 @@ import { getSession, requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess } from "../_lib/billing.js";
 import { sendLeadNotifications } from "../_lib/leadNotifications.js";
 import { normalizeCapturedCallFields } from "../_lib/callCapture.js";
-import { buildTranscriptFromEvents, sanitizeTranscriptText } from "../../../lib/callTranscript.js";
+import { buildTranscriptFromEvents, sanitizeTranscriptText } from "@everycall/contracts/callTranscript";
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
 const openAiModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";

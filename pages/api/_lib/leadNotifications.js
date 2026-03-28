@@ -1,8 +1,8 @@
 import { MailtrapClient } from "mailtrap";
+import { addTranscriptSpacing, buildTranscriptFromEvents, sanitizeTranscriptText } from "@everycall/contracts/callTranscript";
 import { getSharedSmsNumber } from "./alerts.js";
 import { sendTelnyxSms } from "./telnyx.js";
 import { formatPhoneDisplay } from "../../../lib/phoneDisplay.js";
-import { addTranscriptSpacing, buildTranscriptFromEvents, sanitizeTranscriptText } from "../../../lib/callTranscript.js";
 
 const mailtrapToken = String(process.env.MAILTRAP_TOKEN || "").trim();
 const mailtrapSender = {

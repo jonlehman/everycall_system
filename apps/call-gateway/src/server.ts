@@ -4,12 +4,12 @@ import path from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
 import { readCallGatewayEnv } from "@everycall/config";
 import type { CallState } from "@everycall/contracts";
+import { buildTranscriptFromEvents } from "@everycall/contracts/callTranscript";
 import { logError, logInfo } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
 import pg from "pg";
 import fs from "node:fs";
 import * as AjvModule from "ajv";
-import { buildTranscriptFromEvents } from "../../../lib/callTranscript.js";
 import {
   applyCapturedFieldsToCallState,
   buildGatewaySessionInstructions,

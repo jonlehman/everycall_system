@@ -14,6 +14,7 @@
     "baseUrl": ".",
     "paths": {
       "@everycall/contracts": ["packages/contracts/src/index.ts"],
+      "@everycall/contracts/callTranscript": ["packages/contracts/src/callTranscript.ts"],
       "@everycall/config": ["packages/config/src/index.ts"],
       "@everycall/observability": ["packages/observability/src/index.ts"],
       "@everycall/tenancy": ["packages/tenancy/src/index.ts"],

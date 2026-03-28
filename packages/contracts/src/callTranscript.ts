@@ -1,13 +1,13 @@
-function normalizeText(value) {
+function normalizeText(value: unknown) {
   return String(value || "").trim();
 }
 
-function normalizeSpeaker(value) {
+function normalizeSpeaker(value: unknown) {
   const text = normalizeText(value) || "Speaker";
   return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
 }
 
-function isStructuredSystemLine(line, eventType = "") {
+function isStructuredSystemLine(line: string, eventType = "") {
   const normalizedLine = normalizeText(line);
   const normalizedEventType = normalizeText(eventType).toLowerCase();
   if (!normalizedLine) return false;
@@ -24,21 +24,27 @@ function isStructuredSystemLine(line, eventType = "") {
   }
 }
 
-export function buildTranscriptFromEvents(rows) {
-  const lines = [];
+export type TranscriptEventRow = {
+  role?: string | null;
+  text?: string | null;
+  event_type?: string | null;
+};
+
+export function buildTranscriptFromEvents(rows: TranscriptEventRow[]) {
+  const lines: string[] = [];
   for (const row of rows || []) {
     const text = normalizeText(row?.text);
     if (!text) continue;
     const line = /^(Assistant|Caller|Agent|System):\s*/i.test(text)
       ? text
       : `${normalizeSpeaker(row?.role)}: ${text}`;
-    if (isStructuredSystemLine(line, row?.event_type)) continue;
+    if (isStructuredSystemLine(line, String(row?.event_type || ""))) continue;
     lines.push(line);
   }
   return lines.join("\n");
 }
 
-export function sanitizeTranscriptText(text) {
+export function sanitizeTranscriptText(text: string) {
   return String(text || "")
     .split(/\r?\n/)
     .map((line) => normalizeText(line))
@@ -47,7 +53,7 @@ export function sanitizeTranscriptText(text) {
     .join("\n");
 }
 
-export function addTranscriptSpacing(text) {
+export function addTranscriptSpacing(text: string) {
   const cleaned = sanitizeTranscriptText(text);
   if (!cleaned) return "";
   return cleaned

@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { addTranscriptSpacing } from '@everycall/contracts/callTranscript';
 import { useMediaQuery } from '@mui/material';
 import { Button } from '../../../components/ui/button';
 import ClientPage from '../_components/ClientPage';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
-import { addTranscriptSpacing } from '../../../lib/callTranscript';
 
 const PAGE_SIZE = 10;
 
