@@ -85,6 +85,7 @@ function validatePayload(payload) {
   if (!payload.businessCategory) fieldErrors.businessCategory = "Business category is required.";
   if (!payload.ownerName) fieldErrors.ownerName = "Owner name is required.";
   if (!payload.ownerEmail) fieldErrors.ownerEmail = "Owner email is required.";
+  if (!payload.ownerPhone) fieldErrors.ownerPhone = "Owner phone is required.";
   if (!payload.businessPhone) fieldErrors.businessPhone = "Business phone is required.";
   if (!payload.password || payload.password.length < 8) fieldErrors.password = "Password must be at least 8 characters.";
   if (!payload.companyDescription) fieldErrors.companyDescription = "A short business description is required.";
@@ -254,8 +255,17 @@ export default async function handler(req, res) {
       }
 
       const userRes = await client.query(
-        `INSERT INTO tenant_users (tenant_key, name, email, phone_number, password_hash, role, status)
-         VALUES ($1, $2, $3, $4, $5, 'owner', 'active')
+        `INSERT INTO tenant_users (
+           tenant_key,
+           name,
+           email,
+           phone_number,
+           password_hash,
+           role,
+           status,
+           lead_alert_sms_enabled
+         )
+         VALUES ($1, $2, $3, $4, $5, 'owner', 'active', TRUE)
          RETURNING id`,
         [tenantKey, payload.ownerName, payload.ownerEmail, payload.ownerPhone || null, passwordHash]
       );

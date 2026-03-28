@@ -82,8 +82,8 @@ function defaultStatusForStep() {
 }
 
 function validateAccountStep(form) {
-  if (!form.businessName.trim() || !form.ownerName.trim() || !form.ownerEmail.trim() || !form.businessPhone.trim()) {
-    return 'Business name, owner name, owner email, and business phone are required.';
+  if (!form.businessName.trim() || !form.ownerName.trim() || !form.ownerEmail.trim() || !form.ownerPhone.trim() || !form.businessPhone.trim()) {
+    return 'Business name, owner name, owner email, owner phone, and business phone are required.';
   }
   if (!form.password || form.password.length < 8) {
     return 'Password must be at least 8 characters.';
@@ -342,7 +342,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                     <input type="email" value={form.ownerEmail} onChange={(event) => setFormValue('ownerEmail', event.target.value)} />
                   </div>
                   <div className="intake-stack">
-                    <label>Owner Phone (Optional)</label>
+                    <label>Owner Phone</label>
                     <input type="tel" value={form.ownerPhone} onChange={(event) => setFormValue('ownerPhone', event.target.value)} />
                   </div>
                   <div className="intake-stack">
