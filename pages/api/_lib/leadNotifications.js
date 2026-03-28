@@ -1,6 +1,7 @@
 import { MailtrapClient } from "mailtrap";
 import { addTranscriptSpacing, buildTranscriptFromEvents, sanitizeTranscriptText } from "@everycall/contracts/callTranscript";
 import { getSharedSmsNumber } from "./alerts.js";
+import { updateNotificationChannelHealth } from "./notificationHealth.js";
 import { sendTelnyxSms } from "./telnyx.js";
 import { formatPhoneDisplay } from "../../../lib/phoneDisplay.js";
 
@@ -44,53 +45,6 @@ function buildAddress(callRow) {
 
 function buildRequestedTime(callRow) {
   return [normalizeText(callRow.requested_date), normalizeText(callRow.requested_time)].filter(Boolean).join(" ");
-}
-
-async function updateChannelHealth(pool, {
-  tenantKey,
-  channel,
-  destination,
-  status,
-  errorCode = null,
-  errorMessage = null
-}) {
-  const attemptedAt = new Date().toISOString();
-  await pool.query(
-    `INSERT INTO notification_channel_health (
-       tenant_key,
-       channel,
-       destination,
-       status,
-       last_attempted_at,
-       last_succeeded_at,
-       last_failed_at,
-       last_error_code,
-       last_error_message,
-       updated_at
-     )
-     VALUES (
-       $1, $2, $3, $4, $5::timestamptz,
-       CASE WHEN $4 = 'functioning' THEN $5::timestamptz ELSE NULL END,
-       CASE WHEN $4 = 'non_functioning' THEN $5::timestamptz ELSE NULL END,
-       $6, $7, NOW()
-     )
-     ON CONFLICT (tenant_key, channel, destination)
-     DO UPDATE SET
-       status = EXCLUDED.status,
-       last_attempted_at = EXCLUDED.last_attempted_at,
-       last_succeeded_at = CASE
-         WHEN EXCLUDED.status = 'functioning' THEN EXCLUDED.last_attempted_at
-         ELSE notification_channel_health.last_succeeded_at
-       END,
-       last_failed_at = CASE
-         WHEN EXCLUDED.status = 'non_functioning' THEN EXCLUDED.last_attempted_at
-         ELSE notification_channel_health.last_failed_at
-       END,
-       last_error_code = EXCLUDED.last_error_code,
-       last_error_message = EXCLUDED.last_error_message,
-       updated_at = NOW()`,
-    [tenantKey, channel, destination, status, attemptedAt, errorCode, errorMessage]
-  );
 }
 
 async function beginLeadDelivery(pool, {
@@ -137,6 +91,7 @@ async function markLeadDelivery(pool, {
   destination,
   eventType = "new_lead",
   status,
+  providerReference = null,
   errorCode = null,
   errorMessage = null
 }) {
@@ -145,15 +100,16 @@ async function markLeadDelivery(pool, {
      SET status = $6,
          attempted_at = COALESCE(attempted_at, NOW()),
          delivered_at = CASE WHEN $6 = 'delivered' THEN NOW() ELSE delivered_at END,
-         last_error_code = $7,
-         last_error_message = $8,
+         provider_reference = COALESCE($7, provider_reference),
+         last_error_code = $8,
+         last_error_message = $9,
          updated_at = NOW()
      WHERE tenant_key = $1
        AND call_sid = $2
        AND channel = $3
        AND destination = $4
        AND event_type = $5`,
-    [tenantKey, callSid, channel, destination, eventType, status, errorCode, errorMessage]
+    [tenantKey, callSid, channel, destination, eventType, status, providerReference, errorCode, errorMessage]
   );
 }
 
@@ -218,7 +174,7 @@ function buildLeadEmail({ tenantName, appBaseUrl, callSid, callRow, transcript, 
 
 async function sendEmail(pool, { tenantKey, destination, subject, text }) {
   if (!destination) {
-    await updateChannelHealth(pool, {
+    await updateNotificationChannelHealth(pool, {
       tenantKey,
       channel: "email",
       destination: "",
@@ -229,7 +185,7 @@ async function sendEmail(pool, { tenantKey, destination, subject, text }) {
     throw new Error("missing_destination");
   }
   if (!mailtrapClient) {
-    await updateChannelHealth(pool, {
+    await updateNotificationChannelHealth(pool, {
       tenantKey,
       channel: "email",
       destination,
@@ -239,14 +195,26 @@ async function sendEmail(pool, { tenantKey, destination, subject, text }) {
     });
     throw new Error("mail_provider_missing");
   }
-  await mailtrapClient.send({
-    from: mailtrapSender,
-    to: [{ email: destination }],
-    subject,
-    text,
-    category: "Lead Alert"
-  });
-  await updateChannelHealth(pool, {
+  try {
+    await mailtrapClient.send({
+      from: mailtrapSender,
+      to: [{ email: destination }],
+      subject,
+      text,
+      category: "Lead Alert"
+    });
+  } catch (err) {
+    await updateNotificationChannelHealth(pool, {
+      tenantKey,
+      channel: "email",
+      destination,
+      status: "non_functioning",
+      errorCode: "send_failed",
+      errorMessage: err instanceof Error ? err.message : "unknown"
+    });
+    throw err;
+  }
+  await updateNotificationChannelHealth(pool, {
     tenantKey,
     channel: "email",
     destination,
@@ -256,7 +224,7 @@ async function sendEmail(pool, { tenantKey, destination, subject, text }) {
 
 async function sendSms(pool, { tenantKey, destination, text }) {
   if (!destination) {
-    await updateChannelHealth(pool, {
+    await updateNotificationChannelHealth(pool, {
       tenantKey,
       channel: "sms",
       destination: "",
@@ -268,7 +236,7 @@ async function sendSms(pool, { tenantKey, destination, text }) {
   }
   const from = await getSharedSmsNumber(pool);
   if (!from) {
-    await updateChannelHealth(pool, {
+    await updateNotificationChannelHealth(pool, {
       tenantKey,
       channel: "sms",
       destination,
@@ -278,13 +246,27 @@ async function sendSms(pool, { tenantKey, destination, text }) {
     });
     throw new Error("shared_sms_missing");
   }
-  await sendTelnyxSms({ from, to: destination, text });
-  await updateChannelHealth(pool, {
+  let response;
+  try {
+    response = await sendTelnyxSms({ from, to: destination, text });
+  } catch (err) {
+    await updateNotificationChannelHealth(pool, {
+      tenantKey,
+      channel: "sms",
+      destination,
+      status: "non_functioning",
+      errorCode: "send_failed",
+      errorMessage: err instanceof Error ? err.message : "unknown"
+    });
+    throw err;
+  }
+  await updateNotificationChannelHealth(pool, {
     tenantKey,
     channel: "sms",
     destination,
     status: "functioning"
   });
+  return response;
 }
 
 async function loadLeadNotificationContext(pool, tenantKey, callSid) {
@@ -388,8 +370,10 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
   const results = {
     smsAttempted: 0,
     smsDelivered: 0,
+    smsFailed: 0,
     emailAttempted: 0,
-    emailDelivered: 0
+    emailDelivered: 0,
+    emailFailed: 0
   };
 
   for (const recipient of smsRecipients) {
@@ -404,16 +388,18 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
     if (!shouldSend) continue;
     results.smsAttempted += 1;
     try {
-      await sendSms(pool, { tenantKey, destination, text: smsText });
+      const sendResult = await sendSms(pool, { tenantKey, destination, text: smsText });
       await markLeadDelivery(pool, {
         tenantKey,
         callSid,
         channel: "sms",
         destination,
-        status: "delivered"
+        status: "delivered",
+        providerReference: String(sendResult?.data?.id || sendResult?.id || "").trim() || null
       });
       results.smsDelivered += 1;
     } catch (err) {
+      results.smsFailed += 1;
       await markLeadDelivery(pool, {
         tenantKey,
         callSid,
@@ -453,6 +439,7 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
       });
       results.emailDelivered += 1;
     } catch (err) {
+      results.emailFailed += 1;
       await markLeadDelivery(pool, {
         tenantKey,
         callSid,
@@ -463,6 +450,12 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
         errorMessage: err instanceof Error ? err.message : "unknown"
       });
     }
+  }
+
+  if (results.smsFailed || results.emailFailed) {
+    throw new Error(
+      `lead_notification_delivery_failed:sms=${results.smsFailed}:email=${results.emailFailed}`
+    );
   }
 
   return { ok: true, ...results };

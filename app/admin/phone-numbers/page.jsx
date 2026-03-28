@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
-import { Button } from '../../../components/ui/button';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
 function formatMoney(value) {
@@ -17,15 +16,6 @@ function fetchJson(url, options) {
 export default function AdminPhoneNumbersPage() {
   const [report, setReport] = useState({ rows: [], summary: null, sourceStatus: 'loading' });
   const [status, setStatus] = useState('Loading...');
-  const [assignDialog, setAssignDialog] = useState({
-    open: false,
-    phoneNumber: '',
-    tenants: [],
-    selectedTenantKey: '',
-    loading: false,
-    submitting: false,
-    error: ''
-  });
 
   const loadReport = async ({ mounted = true, preserveStatus = false } = {}) => {
     try {
@@ -71,105 +61,6 @@ export default function AdminPhoneNumbersPage() {
     costStatus: row.costStatus || 'unknown'
   }));
 
-  const closeAssignDialog = () => {
-    setAssignDialog({
-      open: false,
-      phoneNumber: '',
-      tenants: [],
-      selectedTenantKey: '',
-      loading: false,
-      submitting: false,
-      error: ''
-    });
-  };
-
-  const openAssignDialog = async (phoneNumber) => {
-    setAssignDialog({
-      open: true,
-      phoneNumber,
-      tenants: [],
-      selectedTenantKey: '',
-      loading: true,
-      submitting: false,
-      error: ''
-    });
-    try {
-      const data = await fetchJson('/api/v1/admin/phone-numbers/eligible-tenants');
-      if (!data?.ok) {
-        setAssignDialog((current) => ({
-          ...current,
-          loading: false,
-          error: data?.message || 'Could not load eligible tenants.'
-        }));
-        return;
-      }
-      const tenants = Array.isArray(data.tenants) ? data.tenants : [];
-      setAssignDialog((current) => ({
-        ...current,
-        loading: false,
-        tenants,
-        selectedTenantKey: tenants[0]?.tenantKey || '',
-        error: tenants.length ? '' : 'No tenants are currently eligible for assignment.'
-      }));
-    } catch {
-      setAssignDialog((current) => ({
-        ...current,
-        loading: false,
-        error: 'Could not load eligible tenants.'
-      }));
-    }
-  };
-
-  const submitAssignment = async () => {
-    if (!assignDialog.phoneNumber || !assignDialog.selectedTenantKey) {
-      setAssignDialog((current) => ({
-        ...current,
-        error: 'Choose a tenant before assigning this number.'
-      }));
-      return;
-    }
-    setAssignDialog((current) => ({
-      ...current,
-      submitting: true,
-      error: ''
-    }));
-    setStatus(`Assigning ${formatPhoneDisplay(assignDialog.phoneNumber)}...`);
-    try {
-      const data = await fetchJson('/api/v1/admin/phone-numbers/assign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phoneNumber: assignDialog.phoneNumber,
-          tenantKey: assignDialog.selectedTenantKey
-        })
-      });
-      if (!data?.ok) {
-        setAssignDialog((current) => ({
-          ...current,
-          submitting: false,
-          error: data?.message || 'Assignment failed.'
-        }));
-        setStatus(data?.message || 'Assignment failed.');
-        return;
-      }
-      const assignedTenant = assignDialog.tenants.find((tenant) => tenant.tenantKey === assignDialog.selectedTenantKey);
-      closeAssignDialog();
-      await loadReport({ preserveStatus: true });
-      setStatus(
-        data.routingUpdated
-          ? `Assigned ${formatPhoneDisplay(data.phoneNumber)} to ${assignedTenant?.tenantName || data.tenantKey} after updating Telnyx routing.`
-          : `Assigned ${formatPhoneDisplay(data.phoneNumber)} to ${assignedTenant?.tenantName || data.tenantKey}.`
-      );
-    } catch {
-      setAssignDialog((current) => ({
-        ...current,
-        submitting: false,
-        error: 'Assignment failed.'
-      }));
-      setStatus('Assignment failed.');
-    }
-  };
-
   const columns = [
     {
       field: 'phoneNumber',
@@ -196,29 +87,6 @@ export default function AdminPhoneNumbersPage() {
         <span className={`badge ${params.value === 'tracked' ? 'ok' : 'warn'}`}>{params.value}</span>
       )
     },
-    {
-      field: 'actions',
-      headerName: 'Actions',
-      sortable: false,
-      filterable: false,
-      align: 'right',
-      headerAlign: 'right',
-      minWidth: 120,
-      renderCell: (params) => (
-        params.row.assignmentStatus === 'unassigned' ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={(event) => {
-              event.stopPropagation();
-              openAssignDialog(params.row.phoneNumber);
-            }}
-          >
-            Assign
-          </Button>
-        ) : null
-      )
-    }
   ];
 
   return (
@@ -251,7 +119,7 @@ export default function AdminPhoneNumbersPage() {
 
       <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <div className="mb-3 text-sm text-slate-500">
-          Numbers provisioned in Telnyx but not assigned to a tenant show up as <code>unassigned</code>. Number cost is only tracked for numbers provisioned after cost capture was added, so older numbers may show <code>Unknown</code>.
+          Numbers provisioned in Telnyx but not assigned to a tenant show up as <code>unassigned</code>. They are now inventory-only and cannot be reassigned through admin. Number cost is only tracked for numbers provisioned after cost capture was added, so older numbers may show <code>Unknown</code>.
         </div>
         <DataGrid
           rows={rows}
@@ -269,69 +137,6 @@ export default function AdminPhoneNumbersPage() {
           }}
         />
       </div>
-
-      {assignDialog.open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-          <div className="w-full max-w-lg rounded-xl border border-border bg-card p-4 shadow-xl">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="m-0 text-lg font-semibold tracking-tight">Assign Phone Number</h2>
-                <div className="mt-1 text-sm text-slate-500">{formatPhoneDisplay(assignDialog.phoneNumber)}</div>
-              </div>
-              <Button variant="ghost" size="sm" onClick={closeAssignDialog} disabled={assignDialog.submitting}>Close</Button>
-            </div>
-
-            <div className="mt-4 grid gap-3">
-              <label className="grid gap-1 text-sm">
-                <span className="font-medium text-slate-900">Eligible Tenant</span>
-                <select
-                  value={assignDialog.selectedTenantKey}
-                  onChange={(event) => setAssignDialog((current) => ({ ...current, selectedTenantKey: event.target.value }))}
-                  disabled={assignDialog.loading || assignDialog.submitting || !assignDialog.tenants.length}
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  {assignDialog.tenants.map((tenant) => (
-                    <option key={tenant.tenantKey} value={tenant.tenantKey}>
-                      {tenant.tenantName} ({tenant.tenantKey})
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {assignDialog.loading ? (
-                <div className="text-sm text-slate-500">Loading eligible tenants...</div>
-              ) : null}
-
-              {assignDialog.error ? (
-                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  {assignDialog.error}
-                </div>
-              ) : null}
-
-              {assignDialog.selectedTenantKey ? (
-                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                  {(() => {
-                    const tenant = assignDialog.tenants.find((item) => item.tenantKey === assignDialog.selectedTenantKey);
-                    return tenant
-                      ? `${tenant.tenantName} (${tenant.tenantKey})${tenant.ownerEmail ? ` · ${tenant.ownerEmail}` : ''}`
-                      : 'No tenant selected.';
-                  })()}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="mt-4 flex justify-end gap-2">
-              <Button variant="outline" onClick={closeAssignDialog} disabled={assignDialog.submitting}>Cancel</Button>
-              <Button
-                onClick={submitAssignment}
-                disabled={assignDialog.loading || assignDialog.submitting || !assignDialog.selectedTenantKey}
-              >
-                {assignDialog.submitting ? 'Assigning...' : 'Assign Number'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }

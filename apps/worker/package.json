@@ -1,0 +1,14 @@
+{
+  "name": "@everycall/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@everycall/observability": "workspace:*"
+  },
+  "scripts": {
+    "dev": "node src/worker.js",
+    "build": "node -e \"process.exit(0)\"",
+    "typecheck": "node -e \"process.exit(0)\""
+  }
+}

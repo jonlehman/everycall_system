@@ -1393,14 +1393,9 @@ function defaultChecklist(checklist) {
     address_confirmed: Boolean(source.address_confirmed ?? source.addressConfirmed),
     service_area_confirmed: Boolean(source.service_area_confirmed ?? source.serviceAreaConfirmed),
     calls_forwarded_to_receptionist: Boolean(source.calls_forwarded_to_receptionist ?? source.callsForwardedToReceptionist),
-    dangerous_question_reviewed: Boolean(source.dangerous_question_reviewed ?? source.dangerousQuestionReviewed),
-    hard_overrides_reviewed: Boolean(source.hard_overrides_reviewed ?? source.hardOverridesReviewed),
-    temporary_notices_checked: Boolean(source.temporary_notices_checked ?? source.temporaryNoticesChecked),
-    approved_answer_snippets_reviewed: Boolean(source.approved_answer_snippets_reviewed ?? source.approvedAnswerSnippetsReviewed),
     sample_calls_passed: Boolean(source.sample_calls_passed ?? source.sampleCallsPassed),
     handoff_path_tested: Boolean(source.handoff_path_tested ?? source.handoffPathTested),
-    outcome_capture_tested: Boolean(source.outcome_capture_tested ?? source.outcomeCaptureTested),
-    pack_eval_suites_passed: Boolean(source.pack_eval_suites_passed ?? source.packEvalSuitesPassed)
+    outcome_capture_tested: Boolean(source.outcome_capture_tested ?? source.outcomeCaptureTested)
   };
 }
 
@@ -1500,6 +1495,37 @@ export async function evaluateKnowledgeReadiness(db, tenantKey) {
     blockers,
     computed_inputs: computedInputs
   };
+}
+
+export async function assessTenantInboundCallReadiness(db, tenantKey) {
+  const readiness = await evaluateKnowledgeReadiness(db, tenantKey);
+  const status = normalizeText(readiness?.status).toLowerCase();
+  const computedInputs = asObject(readiness?.computed_inputs);
+  const latestBuildStatus = normalizeText(computedInputs.latest_build_status).toLowerCase();
+  const activeBuildId = normalizeText(computedInputs.active_build_id);
+  const latestBuildId = normalizeText(computedInputs.latest_build_id);
+  const checklistReady = status === "ready_for_go_live" || status === "live";
+  const knowledgeRuntimeReady = latestBuildStatus === "published"
+    && activeBuildId
+    && latestBuildId
+    && activeBuildId === latestBuildId;
+
+  return {
+    readiness,
+    checklist_ready: checklistReady,
+    knowledge_runtime_ready: knowledgeRuntimeReady,
+    call_launch_ready: checklistReady && knowledgeRuntimeReady
+  };
+}
+
+export async function assertTenantReadyForInboundCalls(db, tenantKey) {
+  const result = await assessTenantInboundCallReadiness(db, tenantKey);
+  if (result.call_launch_ready) {
+    return result;
+  }
+  const err = new Error("tenant_not_ready_for_calls");
+  err.readiness = result;
+  throw err;
 }
 
 export async function readKnowledgeReadiness(db, tenantKey) {

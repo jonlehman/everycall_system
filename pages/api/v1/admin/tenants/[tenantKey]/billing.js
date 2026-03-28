@@ -58,6 +58,15 @@ export default async function handler(req, res) {
       [tenantKey]
     );
 
+    const smsFailovers = await pool.query(
+      `SELECT destination, provider_event_id, provider_message_id, reason, created_at
+       FROM sms_failover_events
+       WHERE tenant_key = $1
+       ORDER BY created_at DESC
+       LIMIT 20`,
+      [tenantKey]
+    );
+
     return res.status(200).json({
       ok: true,
       tenantKey,
@@ -90,6 +99,7 @@ export default async function handler(req, res) {
           : null
       },
       channelHealth: channelHealth.rows,
+      smsFailovers: smsFailovers.rows,
       lifecycleEvents: lifecycle.rows,
       webhookEvents: webhooks.rows
     });

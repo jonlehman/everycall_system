@@ -39,6 +39,24 @@ async function findEmailConflict(pool, email, excludedId = null) {
   return result.rowCount > 0;
 }
 
+async function findPhoneConflict(pool, phoneNumber, excludedId = null) {
+  if (!phoneNumber) return false;
+  const values = excludedId
+    ? [phoneNumber, excludedId]
+    : [phoneNumber];
+  const where = excludedId
+    ? `phone_number = $1 AND id <> $2`
+    : `phone_number = $1`;
+  const result = await pool.query(
+    `SELECT id, tenant_key
+     FROM tenant_users
+     WHERE ${where}
+     LIMIT 1`,
+    values
+  );
+  return result.rows[0] || null;
+}
+
 async function createInviteToken({ email, tenantKey }) {
   const token = crypto.randomBytes(24).toString("hex");
   const pool = getPool();
@@ -160,6 +178,9 @@ export default async function handler(req, res) {
         if (!id || !phoneNumber) {
           return fail(400, "missing_fields", "User id and valid phone number are required.");
         }
+        if (await findPhoneConflict(pool, phoneNumber, id)) {
+          return fail(409, "phone_exists", "That phone number is already assigned to another team user.");
+        }
         await pool.query(
           `UPDATE tenant_users
            SET phone_number = $2,
@@ -206,6 +227,9 @@ export default async function handler(req, res) {
 
         if (await findEmailConflict(pool, email, id)) {
           return fail(409, "email_exists", "That email address is already in use.");
+        }
+        if (phoneNumber && await findPhoneConflict(pool, phoneNumber, id)) {
+          return fail(409, "phone_exists", "That phone number is already assigned to another team user.");
         }
 
         const existing = existingResult.rows[0];
@@ -318,6 +342,9 @@ export default async function handler(req, res) {
       if (await findEmailConflict(pool, email)) {
         return fail(409, "email_exists", "That email address is already in use.");
       }
+      if (phoneNumber && await findPhoneConflict(pool, phoneNumber)) {
+        return fail(409, "phone_exists", "That phone number is already assigned to another team user.");
+      }
       await pool.query(
         `INSERT INTO tenant_users (
            tenant_key,
@@ -364,6 +391,12 @@ export default async function handler(req, res) {
     res.setHeader("Allow", "GET, POST, DELETE");
     return fail(405, "method_not_allowed", "Method not allowed.");
   } catch (err) {
+    if (err?.code === "23505" && String(err?.constraint || "").includes("tenant_users_phone_number_unique")) {
+      return fail(409, "phone_exists", "That phone number is already assigned to another team user.");
+    }
+    if (err?.code === "23505" && String(err?.constraint || "").includes("tenant_users_email_unique")) {
+      return fail(409, "email_exists", "That email address is already in use.");
+    }
     return fail(500, "tenant_users_error", err?.message || "unknown");
   }
 }

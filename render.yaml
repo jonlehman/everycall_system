@@ -33,3 +33,25 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false
+  - type: worker
+    name: everycall-worker
+    env: docker
+    dockerfilePath: apps/worker/Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+      - key: TELNYX_API_KEY
+        sync: false
+      - key: MAILTRAP_TOKEN
+        sync: false
+      - key: MAILTRAP_SENDER_EMAIL
+        sync: false
+      - key: MAILTRAP_SENDER_NAME
+        sync: false
+      - key: WORKER_POLL_INTERVAL_MS
+        value: "3000"
+      - key: WORKER_CLAIM_LIMIT
+        value: "10"

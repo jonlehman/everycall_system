@@ -1,9 +1,9 @@
 import { ensureTables, getPool } from "../_lib/db.js";
 import { getSession, requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess } from "../_lib/billing.js";
-import { sendLeadNotifications } from "../_lib/leadNotifications.js";
 import { normalizeCapturedCallFields } from "../_lib/callCapture.js";
 import { buildTranscriptFromEvents, sanitizeTranscriptText } from "@everycall/contracts/callTranscript";
+import { ASYNC_JOB_TYPES, enqueueAsyncJob } from "../../../lib/asyncJobs.js";
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
 const openAiModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
@@ -297,9 +297,18 @@ export default async function handler(req, res) {
         }
 
         try {
-          await sendLeadNotifications(pool, { tenantKey: effectiveTenantKey, callSid: callId });
+          await enqueueAsyncJob(pool, {
+            jobType: ASYNC_JOB_TYPES.leadNotificationSend,
+            tenantKey: effectiveTenantKey,
+            dedupeKey: `lead_notification:${callId}`,
+            payload: {
+              tenantKey: effectiveTenantKey,
+              callSid: callId
+            },
+            maxAttempts: 6
+          });
         } catch (notificationErr) {
-          console.error("lead_notifications_failed", {
+          console.error("lead_notification_enqueue_failed", {
             tenantKey: effectiveTenantKey,
             callId,
             message: notificationErr?.message || "unknown"

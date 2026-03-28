@@ -160,17 +160,11 @@ function initialReadinessChecklist(payload) {
   return {
     hours_confirmed: false,
     address_confirmed: false,
-    phone_confirmed: false,
-    after_hours_configured: false,
     service_area_confirmed: false,
-    dangerous_question_reviewed: false,
-    hard_overrides_reviewed: false,
-    temporary_notices_checked: false,
-    approved_answer_snippets_reviewed: false,
+    calls_forwarded_to_receptionist: false,
     sample_calls_passed: false,
     handoff_path_tested: false,
-    outcome_capture_tested: false,
-    pack_eval_suites_passed: false
+    outcome_capture_tested: false
   };
 }
 

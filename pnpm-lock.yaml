@@ -122,6 +122,12 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
+  apps/worker:
+    dependencies:
+      '@everycall/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
+
   packages/config:
     dependencies:
       zod:

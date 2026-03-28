@@ -22,20 +22,6 @@ const FIELD_SECTIONS = [
     ]
   },
   {
-    id: 'voice',
-    title: 'Voice Provisioning',
-    description: 'Voice-number provisioning and carrier metadata currently stored on the tenant record.',
-    fields: [
-      { key: 'telnyx_voice_number', label: 'Voice number', type: 'text', hint: 'Assigned inbound voice number.' },
-      { key: 'telnyx_voice_number_id', label: 'Voice number ID', type: 'text', hint: 'Provider-side phone number identifier.' },
-      { key: 'telnyx_voice_order_id', label: 'Voice order ID', type: 'text', hint: 'Provider-side purchase/order record.' },
-      { key: 'telnyx_voice_status', label: 'Voice status', type: 'text', hint: 'Provisioning state reported or tracked for voice service.' },
-      { key: 'telnyx_voice_monthly_cost_cents', label: 'Monthly cost (cents)', type: 'number', hint: 'Stored recurring cost for the assigned number.' },
-      { key: 'telnyx_voice_upfront_cost_cents', label: 'Upfront cost (cents)', type: 'number', hint: 'Stored one-time acquisition cost.' },
-      { key: 'telnyx_voice_purchased_at', label: 'Voice purchased at', type: 'datetime', hint: 'Timestamp when the number was purchased or recorded as purchased.' }
-    ]
-  },
-  {
     id: 'forwarding',
     title: 'Forwarding',
     description: 'Forwarding readiness and lifecycle timestamps.',
@@ -340,6 +326,7 @@ export default function TenantManagePage() {
   const [builds, setBuilds] = useState([]);
   const [activeBuild, setActiveBuild] = useState(null);
   const [readiness, setReadiness] = useState(null);
+  const [notificationReview, setNotificationReview] = useState({ channelHealth: [], smsFailovers: [] });
   const [status, setStatus] = useState('Loading tenant...');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -399,11 +386,12 @@ export default function TenantManagePage() {
     setLoading(true);
     setStatus('Loading tenant...');
     try {
-      const [tenantData, usersData, buildData, readinessData] = await Promise.all([
+      const [tenantData, usersData, buildData, readinessData, billingData] = await Promise.all([
         fetchJson(`/api/v1/tenants?tenantKey=${encodeURIComponent(tenantKey)}`),
         fetchJson(`/api/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`),
         fetchJson(`/api/v1/knowledge/builds?tenantKey=${encodeURIComponent(tenantKey)}`),
-        fetchJson(`/api/v1/knowledge/readiness?tenantKey=${encodeURIComponent(tenantKey)}`)
+        fetchJson(`/api/v1/knowledge/readiness?tenantKey=${encodeURIComponent(tenantKey)}`),
+        fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/billing`).catch(() => ({ channelHealth: [], smsFailovers: [] }))
       ]);
       const [guardrailData, overrideData] = await Promise.all([
         fetchJson(`/api/v1/knowledge/guardrails?tenantKey=${encodeURIComponent(tenantKey)}`).catch(() => ({ guardrails: [] })),
@@ -416,6 +404,10 @@ export default function TenantManagePage() {
       setBuilds(Array.isArray(buildData?.builds) ? buildData.builds : []);
       setActiveBuild(buildData?.activeBuild || null);
       setReadiness(readinessData?.readiness || null);
+      setNotificationReview({
+        channelHealth: Array.isArray(billingData?.channelHealth) ? billingData.channelHealth : [],
+        smsFailovers: Array.isArray(billingData?.smsFailovers) ? billingData.smsFailovers : []
+      });
       setGuardrails(Array.isArray(guardrailData?.guardrails) ? guardrailData.guardrails : []);
       setOverrides(Array.isArray(overrideData?.overrides) ? overrideData.overrides : []);
       setStatus(nextTenant ? 'Tenant loaded.' : 'Tenant not found.');
@@ -874,6 +866,29 @@ export default function TenantManagePage() {
                 {deprovisionBusy ? 'Deprovisioning...' : 'Deprovision Voice Number'}
               </Button>
             </div>
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <h2 className="m-0 text-lg font-semibold">Recent SMS Delivery Failures</h2>
+            <div className="mt-1 text-sm text-slate-500">
+              Failover callbacks from Telnyx are stored here for admin review.
+            </div>
+            {notificationReview.smsFailovers.length ? (
+              <div className="mt-3 grid gap-2">
+                {notificationReview.smsFailovers.map((event, index) => (
+                  <div key={`${event.provider_event_id || event.provider_message_id || index}`} className="rounded-lg border border-slate-200 p-3 text-sm">
+                    <div className="font-medium text-slate-900">{formatPhoneDisplay(event.destination) || event.destination || 'Unknown destination'}</div>
+                    <div className="mt-1 text-slate-600">{event.reason || 'SMS delivery failed.'}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {formatDateTimeDisplay(event.created_at)}
+                      {event.provider_message_id ? ` · Message ${event.provider_message_id}` : ''}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 text-sm text-slate-500">No recent SMS delivery failures recorded.</div>
+            )}
           </section>
 
           <section className="rounded-xl border border-border bg-card p-4 shadow-sm">

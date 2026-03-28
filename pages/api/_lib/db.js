@@ -89,6 +89,15 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS sms_opt_in_confirmed_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
+  const duplicateUserPhones = await pool.query(
+    `SELECT phone_number
+     FROM tenant_users
+     WHERE phone_number IS NOT NULL
+       AND TRIM(phone_number) <> ''
+     GROUP BY phone_number
+     HAVING COUNT(*) > 1
+     LIMIT 1`
+  );
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS calls (
@@ -500,6 +509,7 @@ export async function ensureTables(pool) {
       destination TEXT NOT NULL,
       event_type TEXT NOT NULL DEFAULT 'new_lead',
       status TEXT NOT NULL DEFAULT 'pending',
+      provider_reference TEXT,
       attempted_at TIMESTAMPTZ,
       delivered_at TIMESTAMPTZ,
       last_error_code TEXT,
@@ -508,6 +518,7 @@ export async function ensureTables(pool) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE lead_notification_deliveries ADD COLUMN IF NOT EXISTS provider_reference TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS provisioning_jobs (
@@ -532,6 +543,54 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE provisioning_jobs ADD COLUMN IF NOT EXISTS error_message TEXT;`);
   await pool.query(`ALTER TABLE provisioning_jobs ADD COLUMN IF NOT EXISTS attempted_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE provisioning_jobs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS async_jobs (
+      id BIGSERIAL PRIMARY KEY,
+      job_type TEXT NOT NULL,
+      tenant_key TEXT,
+      dedupe_key TEXT,
+      payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 5,
+      available_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      locked_at TIMESTAMPTZ,
+      locked_by TEXT,
+      completed_at TIMESTAMPTZ,
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE async_jobs ADD COLUMN IF NOT EXISTS dedupe_key TEXT;`);
+  await pool.query(`ALTER TABLE async_jobs ADD COLUMN IF NOT EXISTS payload_json JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE async_jobs ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';`);
+  await pool.query(`ALTER TABLE async_jobs ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE async_jobs ADD COLUMN IF NOT EXISTS max_attempts INTEGER NOT NULL DEFAULT 5;`);
+  await pool.query(`ALTER TABLE async_jobs ADD COLUMN IF NOT EXISTS available_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`ALTER TABLE async_jobs ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE async_jobs ADD COLUMN IF NOT EXISTS locked_by TEXT;`);
+  await pool.query(`ALTER TABLE async_jobs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE async_jobs ADD COLUMN IF NOT EXISTS last_error TEXT;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sms_failover_events (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT,
+      destination TEXT,
+      provider_event_id TEXT,
+      provider_message_id TEXT,
+      reason TEXT,
+      payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE sms_failover_events ADD COLUMN IF NOT EXISTS destination TEXT;`);
+  await pool.query(`ALTER TABLE sms_failover_events ADD COLUMN IF NOT EXISTS provider_event_id TEXT;`);
+  await pool.query(`ALTER TABLE sms_failover_events ADD COLUMN IF NOT EXISTS provider_message_id TEXT;`);
+  await pool.query(`ALTER TABLE sms_failover_events ADD COLUMN IF NOT EXISTS reason TEXT;`);
+  await pool.query(`ALTER TABLE sms_failover_events ADD COLUMN IF NOT EXISTS payload_json JSONB NOT NULL DEFAULT '{}'::jsonb;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS incidents (
@@ -578,10 +637,18 @@ export async function ensureTables(pool) {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS notification_channel_health_unique_destination_idx ON notification_channel_health (tenant_key, channel, destination);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS lead_notification_deliveries_tenant_call_idx ON lead_notification_deliveries (tenant_key, call_sid, updated_at DESC);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS lead_notification_deliveries_unique_destination_idx ON lead_notification_deliveries (tenant_key, call_sid, channel, destination, event_type);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS lead_notification_deliveries_provider_reference_idx ON lead_notification_deliveries (provider_reference);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS provisioning_jobs_tenant_updated_idx ON provisioning_jobs (tenant_key, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS provisioning_jobs_stage_status_idx ON provisioning_jobs (stage, status, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS async_jobs_status_available_idx ON async_jobs (status, available_at ASC, id ASC);`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS async_jobs_job_type_dedupe_idx ON async_jobs (job_type, dedupe_key) WHERE dedupe_key IS NOT NULL;`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS sms_failover_events_tenant_created_idx ON sms_failover_events (tenant_key, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS sms_failover_events_destination_created_idx ON sms_failover_events (destination, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS incidents_tenant_created_idx ON incidents (tenant_key, created_at DESC);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS tenant_users_email_unique ON tenant_users (email);`);
+  if (!duplicateUserPhones.rowCount) {
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS tenant_users_phone_number_unique ON tenant_users (phone_number) WHERE phone_number IS NOT NULL AND TRIM(phone_number) <> '';`);
+  }
 
   tablesReady = true;
 }

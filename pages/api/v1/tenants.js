@@ -8,10 +8,6 @@ const EDITABLE_TEXT_FIELDS = [
   "plan",
   "primary_number",
   "industry",
-  "telnyx_voice_number",
-  "telnyx_voice_number_id",
-  "telnyx_voice_order_id",
-  "telnyx_voice_status",
   "forwarding_setup_status",
   "billing_status",
   "plan_code",
@@ -21,12 +17,9 @@ const EDITABLE_TEXT_FIELDS = [
 ];
 
 const EDITABLE_INTEGER_FIELDS = [
-  "telnyx_voice_monthly_cost_cents",
-  "telnyx_voice_upfront_cost_cents"
 ];
 
 const EDITABLE_TIMESTAMP_FIELDS = [
-  "telnyx_voice_purchased_at",
   "forwarding_acknowledged_at",
   "forwarding_configured_at",
   "trial_started_at",
@@ -37,11 +30,22 @@ const EDITABLE_TIMESTAMP_FIELDS = [
   "billing_status_updated_at"
 ];
 
+const READONLY_SELECT_FIELDS = [
+  "telnyx_voice_number",
+  "telnyx_voice_number_id",
+  "telnyx_voice_order_id",
+  "telnyx_voice_status",
+  "telnyx_voice_monthly_cost_cents",
+  "telnyx_voice_upfront_cost_cents",
+  "telnyx_voice_purchased_at"
+];
+
 const TENANT_SELECT_FIELDS = [
   "tenant_key",
   ...EDITABLE_TEXT_FIELDS,
   ...EDITABLE_INTEGER_FIELDS,
   ...EDITABLE_TIMESTAMP_FIELDS,
+  ...READONLY_SELECT_FIELDS,
   "created_at",
   "updated_at"
 ];
