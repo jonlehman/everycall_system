@@ -761,7 +761,7 @@ export default function ReceptionistKnowledgePage() {
 
         <GuidePanel
           title="Knowledge Guide"
-          eyebrow={`Step ${activeStep}`}
+          eyebrow=""
           icon="architecture"
           className="self-start xl:sticky xl:top-32 xl:max-h-[calc(100vh-9rem)] xl:overflow-y-auto"
         >
@@ -770,6 +770,7 @@ export default function ReceptionistKnowledgePage() {
             <div className="mt-1 text-sm text-slate-600">{knowledgeGuideOverview.body}</div>
             <div className="mt-2 text-sm text-slate-600">{knowledgeGuideOverview.detail}</div>
           </div>
+          <div className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-slate-500">{`Step ${activeStep}`}</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">{activeGuide.title}</div>
             <div className="mt-1 text-sm text-slate-600">{activeGuide.body}</div>
