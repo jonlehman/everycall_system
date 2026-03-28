@@ -943,6 +943,7 @@ async function finalizeCallSummary(session: StreamSession) {
       body: JSON.stringify({
         action: "summary",
         callSid: session.callSid,
+        tenantKey: session.tenantKey,
         ...(urgency ? { urgency } : {}),
         ...(disposition ? { disposition } : {}),
         extracted: capturedFields

@@ -104,11 +104,12 @@ export default async function handler(req, res) {
       ? await getSession(req)
       : await requireSession(req, res);
     if (!session && req.method !== "POST") return;
-    const tenantKey = session ? resolveTenantKey(session, getTenantKey(req)) : getTenantKey(req);
-    if (session) {
-      const access = await requireTenantBillingAccess(res, pool, session, tenantKey);
+    const sessionTenantKey = session ? resolveTenantKey(session, getTenantKey(req)) : null;
+    if (session && sessionTenantKey) {
+      const access = await requireTenantBillingAccess(res, pool, session, sessionTenantKey);
       if (!access) return;
     }
+    const tenantKey = sessionTenantKey || getTenantKey(req);
     const callSid = req.query?.callSid;
     const mode = String(req.query?.mode || "");
 
@@ -190,6 +191,22 @@ export default async function handler(req, res) {
         if (!callId) {
           return res.status(400).json({ error: "missing_call_id" });
         }
+        let effectiveTenantKey = sessionTenantKey
+          || String(body.tenantKey || body.tenant_key || "").trim()
+          || null;
+        if (!effectiveTenantKey) {
+          const callTenant = await pool.query(
+            `SELECT tenant_key
+             FROM calls
+             WHERE call_sid = $1
+             LIMIT 1`,
+            [callId]
+          );
+          effectiveTenantKey = String(callTenant.rows[0]?.tenant_key || "").trim() || null;
+        }
+        if (!effectiveTenantKey) {
+          return res.status(400).json({ error: "missing_tenant_key" });
+        }
         const summary = String(body.summary || "").trim();
         const extracted = body.extracted || null;
         const extractedFields = normalizeCapturedCallFields(extracted);
@@ -212,7 +229,7 @@ export default async function handler(req, res) {
            DO UPDATE SET summary = COALESCE(EXCLUDED.summary, calls.summary),
                          urgency = COALESCE(EXCLUDED.urgency, calls.urgency),
                          disposition = COALESCE(EXCLUDED.disposition, calls.disposition)`,
-          [callId, tenantKey, finalSummary || null, urgency, disposition]
+          [callId, effectiveTenantKey, finalSummary || null, urgency, disposition]
         );
 
         if (extracted) {
@@ -273,10 +290,10 @@ export default async function handler(req, res) {
         }
 
         try {
-          await sendLeadNotifications(pool, { tenantKey, callSid: callId });
+          await sendLeadNotifications(pool, { tenantKey: effectiveTenantKey, callSid: callId });
         } catch (notificationErr) {
           console.error("lead_notifications_failed", {
-            tenantKey,
+            tenantKey: effectiveTenantKey,
             callId,
             message: notificationErr?.message || "unknown"
           });
