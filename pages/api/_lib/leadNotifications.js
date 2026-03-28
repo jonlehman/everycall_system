@@ -195,7 +195,6 @@ function buildLeadEmail({ tenantName, appBaseUrl, callSid, callRow, transcript, 
     callRow.created_at
       ? `Received at: ${new Date(callRow.created_at).toLocaleString("en-US", { timeZone: timezone || "America/Los_Angeles" })} ${timezone || ""}`.trim()
       : null,
-    `Call ID: ${callSid}`,
     appBaseUrl ? `Open EveryCall: ${appBaseUrl.replace(/\/$/, "")}/client/calls` : null
   ].filter(Boolean);
   const lines = [
