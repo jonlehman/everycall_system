@@ -5,6 +5,7 @@ import { useMediaQuery } from '@mui/material';
 import { Button } from '../../../components/ui/button';
 import ClientPage from '../_components/ClientPage';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
+import { addTranscriptSpacing } from '../../../lib/callTranscript';
 
 const PAGE_SIZE = 10;
 
@@ -13,23 +14,7 @@ function formatLabel(value) {
 }
 
 function formatTranscript(text) {
-  const lines = String(text || '').split('\n');
-  const formatted = [];
-  let lastSpeaker = null;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const match = trimmed.match(/^(Assistant|Caller|Agent|System):\s*/i);
-    const speaker = match ? match[1].toLowerCase() : null;
-    if (speaker && lastSpeaker && speaker !== lastSpeaker) {
-      formatted.push('');
-    }
-    formatted.push(trimmed);
-    if (speaker) lastSpeaker = speaker;
-  }
-
-  return formatted.join('\n');
+  return addTranscriptSpacing(text);
 }
 
 function isSameCalendarDay(a, b) {

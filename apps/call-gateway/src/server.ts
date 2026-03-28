@@ -9,6 +9,7 @@ import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
 import pg from "pg";
 import fs from "node:fs";
 import * as AjvModule from "ajv";
+import { buildTranscriptFromEvents } from "../../../lib/callTranscript.js";
 import {
   applyCapturedFieldsToCallState,
   buildGatewaySessionInstructions,
@@ -885,21 +886,13 @@ async function loadCombinedTranscriptForCall(callSid: string) {
   if (!pool) return "";
   try {
     const events = await pool.query(
-      `SELECT role, text
+      `SELECT role, text, event_type
        FROM call_events
        WHERE call_sid = $1
        ORDER BY created_at ASC`,
       [callSid]
     );
-    return (events.rows || [])
-      .map((row: { role?: string; text?: string }) => {
-        const text = String(row.text || "").trim();
-        if (!text) return "";
-        const role = String(row.role || "speaker").replace(/^[a-z]/, (char) => char.toUpperCase());
-        return `${role}: ${text}`;
-      })
-      .filter(Boolean)
-      .join("\n");
+    return buildTranscriptFromEvents(events.rows || []);
   } catch (err) {
     logError("call_transcript_load_failed", {
       callSid,

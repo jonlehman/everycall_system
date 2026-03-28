@@ -2,6 +2,7 @@ import { MailtrapClient } from "mailtrap";
 import { getSharedSmsNumber } from "./alerts.js";
 import { sendTelnyxSms } from "./telnyx.js";
 import { formatPhoneDisplay } from "../../../lib/phoneDisplay.js";
+import { addTranscriptSpacing, buildTranscriptFromEvents, sanitizeTranscriptText } from "../../../lib/callTranscript.js";
 
 const mailtrapToken = String(process.env.MAILTRAP_TOKEN || "").trim();
 const mailtrapSender = {
@@ -157,20 +158,18 @@ async function markLeadDelivery(pool, {
 }
 
 async function loadCombinedTranscript(pool, callSid, callRow) {
-  const existing = normalizeText(callRow.transcript_combined) || normalizeText(callRow.transcript);
+  const existing = sanitizeTranscriptText(callRow.transcript_combined || "")
+    || sanitizeTranscriptText(callRow.transcript || "");
   if (existing) return existing;
   const events = await pool.query(
-    `SELECT role, text
+    `SELECT role, text, event_type
      FROM call_events
      WHERE call_sid = $1
      ORDER BY created_at ASC`,
     [callSid]
   );
   if (!events.rowCount) return "";
-  return events.rows
-    .map((row) => `${String(row.role || "Speaker").replace(/^[a-z]/, (char) => char.toUpperCase())}: ${normalizeText(row.text)}`)
-    .filter(Boolean)
-    .join("\n");
+  return buildTranscriptFromEvents(events.rows);
 }
 
 function buildLeadSms({ tenantName, callRow }) {
@@ -185,9 +184,7 @@ function buildLeadSms({ tenantName, callRow }) {
 }
 
 function buildLeadEmail({ tenantName, appBaseUrl, callSid, callRow, transcript, includeTranscript, timezone }) {
-  const lines = [
-    `New lead for ${tenantName}`,
-    "",
+  const detailLines = [
     callRow.summary ? `Summary: ${callRow.summary}` : null,
     buildCallerName(callRow) ? `Caller: ${buildCallerName(callRow)}` : null,
     callRow.callback_number ? `Callback: ${formatDisplayPhone(callRow.callback_number)}` : null,
@@ -201,11 +198,17 @@ function buildLeadEmail({ tenantName, appBaseUrl, callSid, callRow, transcript, 
     `Call ID: ${callSid}`,
     appBaseUrl ? `Open EveryCall: ${appBaseUrl.replace(/\/$/, "")}/client/calls` : null
   ].filter(Boolean);
+  const lines = [
+    `New lead for ${tenantName}`,
+    "",
+    detailLines.join("\n\n")
+  ].filter(Boolean);
 
   if (includeTranscript) {
     lines.push("");
     lines.push("Transcript:");
-    lines.push(transcript || "Transcript unavailable.");
+    lines.push("");
+    lines.push(addTranscriptSpacing(transcript) || "Transcript unavailable.");
   }
 
   return {

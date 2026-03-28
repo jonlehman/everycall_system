@@ -3,6 +3,7 @@ import { getSession, requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess } from "../_lib/billing.js";
 import { sendLeadNotifications } from "../_lib/leadNotifications.js";
 import { normalizeCapturedCallFields } from "../_lib/callCapture.js";
+import { buildTranscriptFromEvents, sanitizeTranscriptText } from "../../../lib/callTranscript.js";
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
 const openAiModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
@@ -117,22 +118,28 @@ export default async function handler(req, res) {
       const resolveCombined = async (row) => {
         if (!row?.call_sid) return { callSid: null, createdAt: null, transcript: "" };
         if (row.transcript_combined) {
-          return { callSid: row.call_sid, createdAt: row.created_at, transcript: row.transcript_combined };
+          return {
+            callSid: row.call_sid,
+            createdAt: row.created_at,
+            transcript: sanitizeTranscriptText(row.transcript_combined)
+          };
         }
         const events = await pool.query(
-          `SELECT role, text
+          `SELECT role, text, event_type
            FROM call_events
            WHERE call_sid = $1
            ORDER BY created_at ASC`,
           [row.call_sid]
         );
         if (events.rows.length) {
-          const combined = events.rows
-            .map((evt) => `${(evt.role || "Speaker").replace(/^[a-z]/, (c) => c.toUpperCase())}: ${evt.text || ""}`)
-            .join("\n");
+          const combined = buildTranscriptFromEvents(events.rows);
           return { callSid: row.call_sid, createdAt: row.created_at, transcript: combined };
         }
-        return { callSid: row.call_sid, createdAt: row.created_at, transcript: row.transcript || "" };
+        return {
+          callSid: row.call_sid,
+          createdAt: row.created_at,
+          transcript: sanitizeTranscriptText(row.transcript || "")
+        };
       };
 
       if (callSid) {
@@ -210,7 +217,7 @@ export default async function handler(req, res) {
         const summary = String(body.summary || "").trim();
         const extracted = body.extracted || null;
         const extractedFields = normalizeCapturedCallFields(extracted);
-        const transcriptFromPayload = extractedFields.transcriptCombined || null;
+        const transcriptFromPayload = sanitizeTranscriptText(extractedFields.transcriptCombined || "") || null;
         const urgency = String(body.urgency || extractedFields.urgencyLevel || "").trim() || null;
         const disposition = String(body.disposition || extractedFields.outcomeType || "").trim() || null;
         let finalSummary = summary;
