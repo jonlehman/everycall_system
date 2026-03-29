@@ -125,14 +125,14 @@ export default function AdminUsagePage() {
           columns={[
             { field: 'tenantName', headerName: 'Tenant', flex: 1.2, minWidth: 180 },
             { field: 'tenantKey', headerName: 'Tenant Key', flex: 1, minWidth: 180 },
-            { field: 'callCount', headerName: 'Calls', flex: 0.5, minWidth: 90, valueFormatter: ({ value }) => formatInt(value) },
-            { field: 'durationSeconds', headerName: 'Minutes', flex: 0.6, minWidth: 110, valueFormatter: ({ value }) => formatDurationMinutes(value) },
-            { field: 'billableMinutes', headerName: 'Billable Min', flex: 0.6, minWidth: 120, valueFormatter: ({ value }) => formatInt(value) },
-            { field: 'aiEstimatedCost', headerName: 'AI Cost', flex: 0.75, minWidth: 130, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
-            { field: 'telephonyEstimatedCost', headerName: 'Telephony', flex: 0.75, minWidth: 130, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
-            { field: 'notificationEstimatedCost', headerName: 'Notifications', flex: 0.75, minWidth: 130, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
-            { field: 'numberEstimatedCost', headerName: 'Number Rental', flex: 0.75, minWidth: 130, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
-            { field: 'estimatedCost', headerName: 'Total Cost', flex: 0.8, minWidth: 140, valueFormatter: ({ value }) => formatUsdFromMicros(value) }
+            { field: 'callCount', headerName: 'Calls', flex: 0.5, minWidth: 90, valueFormatter: (value) => formatInt(value) },
+            { field: 'durationSeconds', headerName: 'Minutes', flex: 0.6, minWidth: 110, valueFormatter: (value) => formatDurationMinutes(value) },
+            { field: 'billableMinutes', headerName: 'Billable Min', flex: 0.6, minWidth: 120, valueFormatter: (value) => formatInt(value) },
+            { field: 'aiEstimatedCost', headerName: 'AI Cost', flex: 0.75, minWidth: 130, valueFormatter: (value) => formatUsdFromMicros(value) },
+            { field: 'telephonyEstimatedCost', headerName: 'Telephony', flex: 0.75, minWidth: 130, valueFormatter: (value) => formatUsdFromMicros(value) },
+            { field: 'notificationEstimatedCost', headerName: 'Notifications', flex: 0.75, minWidth: 130, valueFormatter: (value) => formatUsdFromMicros(value) },
+            { field: 'numberEstimatedCost', headerName: 'Number Rental', flex: 0.75, minWidth: 130, valueFormatter: (value) => formatUsdFromMicros(value) },
+            { field: 'estimatedCost', headerName: 'Total Cost', flex: 0.8, minWidth: 140, valueFormatter: (value) => formatUsdFromMicros(value) }
           ]}
           autoHeight
           disableRowSelectionOnClick
@@ -157,13 +157,13 @@ export default function AdminUsagePage() {
             { field: 'tenantName', headerName: 'Tenant', flex: 1, minWidth: 180 },
             { field: 'callSid', headerName: 'Call SID', flex: 1.1, minWidth: 180 },
             { field: 'model', headerName: 'Model', flex: 0.9, minWidth: 160 },
-            { field: 'durationSeconds', headerName: 'Minutes', flex: 0.55, minWidth: 100, valueFormatter: ({ value }) => formatDurationMinutes(value) },
-            { field: 'billableMinutes', headerName: 'Billable Min', flex: 0.55, minWidth: 120, valueFormatter: ({ value }) => formatInt(value) },
-            { field: 'responseCount', headerName: 'Responses', flex: 0.5, minWidth: 110, valueFormatter: ({ value }) => formatInt(value) },
-            { field: 'aiEstimatedCost', headerName: 'AI Cost', flex: 0.7, minWidth: 120, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
-            { field: 'telephonyEstimatedCost', headerName: 'Telephony', flex: 0.7, minWidth: 120, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
-            { field: 'notificationEstimatedCost', headerName: 'Notifications', flex: 0.7, minWidth: 130, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
-            { field: 'estimatedCost', headerName: 'Total Cost', flex: 0.8, minWidth: 140, valueFormatter: ({ value }) => formatUsdFromMicros(value) }
+            { field: 'durationSeconds', headerName: 'Minutes', flex: 0.55, minWidth: 100, valueFormatter: (value) => formatDurationMinutes(value) },
+            { field: 'billableMinutes', headerName: 'Billable Min', flex: 0.55, minWidth: 120, valueFormatter: (value) => formatInt(value) },
+            { field: 'responseCount', headerName: 'Responses', flex: 0.5, minWidth: 110, valueFormatter: (value) => formatInt(value) },
+            { field: 'aiEstimatedCost', headerName: 'AI Cost', flex: 0.7, minWidth: 120, valueFormatter: (value) => formatUsdFromMicros(value) },
+            { field: 'telephonyEstimatedCost', headerName: 'Telephony', flex: 0.7, minWidth: 120, valueFormatter: (value) => formatUsdFromMicros(value) },
+            { field: 'notificationEstimatedCost', headerName: 'Notifications', flex: 0.7, minWidth: 130, valueFormatter: (value) => formatUsdFromMicros(value) },
+            { field: 'estimatedCost', headerName: 'Total Cost', flex: 0.8, minWidth: 140, valueFormatter: (value) => formatUsdFromMicros(value) }
           ]}
           autoHeight
           disableRowSelectionOnClick
