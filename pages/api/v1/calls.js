@@ -3,6 +3,7 @@ import { getSession, requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess } from "../_lib/billing.js";
 import { normalizeCapturedCallFields } from "../_lib/callCapture.js";
 import { buildTranscriptFromEvents, sanitizeTranscriptText } from "@everycall/contracts/callTranscript";
+import { evaluateLeadDecision } from "../_lib/leadQualification.js";
 import { ASYNC_JOB_TYPES, enqueueAsyncJob } from "../../../lib/asyncJobs.js";
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
@@ -172,7 +173,9 @@ export default async function handler(req, res) {
 
     if (callSid) {
       const detail = await pool.query(
-        `SELECT c.call_sid, c.status, c.from_number, c.to_number, c.summary, c.urgency, c.disposition, c.created_at,
+        `SELECT c.call_sid, c.status, c.from_number, c.to_number, c.summary, c.urgency, c.disposition,
+                c.lead_outcome_type, c.lead_is_valid, c.lead_is_billable, c.lead_decision_reason, c.lead_duplicate_of_call_sid,
+                c.created_at,
                 d.transcript, d.transcript_combined, d.extracted_json, d.routing_json, d.state_json,
                 d.caller_first_name, d.caller_last_name, d.callback_number, d.service_required, d.urgency_level,
                 d.address_line1, d.address_line2, d.city, d.state, d.postal_code, d.requested_date, d.requested_time
@@ -296,26 +299,56 @@ export default async function handler(req, res) {
           );
         }
 
-        try {
-          await enqueueAsyncJob(pool, {
-            jobType: ASYNC_JOB_TYPES.leadNotificationSend,
-            tenantKey: effectiveTenantKey,
-            dedupeKey: `lead_notification:${callId}`,
-            payload: {
-              tenantKey: effectiveTenantKey,
-              callSid: callId
-            },
-            maxAttempts: 6
-          });
-        } catch (notificationErr) {
-          console.error("lead_notification_enqueue_failed", {
-            tenantKey: effectiveTenantKey,
+        const leadDecision = await evaluateLeadDecision(pool, {
+          tenantKey: effectiveTenantKey,
+          callSid: callId,
+          disposition,
+          summary: finalSummary,
+          extractedFields
+        });
+
+        await pool.query(
+          `UPDATE calls
+           SET lead_outcome_type = COALESCE($3, lead_outcome_type),
+               lead_is_valid = $4,
+               lead_is_billable = $5,
+               lead_decision_reason = $6,
+               lead_duplicate_of_call_sid = $7
+           WHERE call_sid = $1
+             AND tenant_key = $2`,
+          [
             callId,
-            message: notificationErr?.message || "unknown"
-          });
+            effectiveTenantKey,
+            leadDecision.outcomeType || null,
+            Boolean(leadDecision.isValidLead),
+            Boolean(leadDecision.isBillableLead),
+            leadDecision.decisionReason || null,
+            leadDecision.duplicateOfCallSid || null
+          ]
+        );
+
+        if (leadDecision.isValidLead) {
+          try {
+            await enqueueAsyncJob(pool, {
+              jobType: ASYNC_JOB_TYPES.leadNotificationSend,
+              tenantKey: effectiveTenantKey,
+              dedupeKey: `lead_notification:${callId}`,
+              payload: {
+                tenantKey: effectiveTenantKey,
+                callSid: callId
+              },
+              maxAttempts: 6
+            });
+          } catch (notificationErr) {
+            console.error("lead_notification_enqueue_failed", {
+              tenantKey: effectiveTenantKey,
+              callId,
+              message: notificationErr?.message || "unknown"
+            });
+          }
         }
 
-        return res.status(200).json({ ok: true });
+        return res.status(200).json({ ok: true, leadDecision });
       }
 
       if (body.action === "backfill_summaries") {
@@ -473,6 +506,11 @@ export default async function handler(req, res) {
               c.status,
               c.urgency,
               c.summary,
+              c.disposition,
+              c.lead_outcome_type,
+              c.lead_is_valid,
+              c.lead_is_billable,
+              c.lead_decision_reason,
               c.created_at,
               d.caller_first_name,
               d.caller_last_name,

@@ -327,6 +327,7 @@ async function loadLeadNotificationContext(pool, tenantKey, callSid) {
     ),
     pool.query(
       `SELECT c.call_sid, c.summary, c.urgency, c.disposition, c.created_at,
+              c.lead_outcome_type, c.lead_is_valid, c.lead_is_billable, c.lead_decision_reason,
               d.caller_first_name, d.caller_last_name, d.callback_number, d.service_required,
               d.address_line1, d.address_line2, d.city, d.state, d.postal_code,
               d.requested_date, d.requested_time, d.transcript_combined, d.transcript
@@ -370,6 +371,10 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
   }
   if (!context.callRow) {
     return { ok: false, error: "call_not_found" };
+  }
+  if (!context.callRow.lead_is_valid) {
+    await updateCallNotificationEstimatedCost(pool, { callSid });
+    return { ok: true, skipped: "non_lead_call" };
   }
   if (["spam", "canceled"].includes(normalizeText(context.callRow.disposition).toLowerCase())) {
     await updateCallNotificationEstimatedCost(pool, { callSid });

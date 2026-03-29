@@ -110,6 +110,11 @@ export async function ensureTables(pool) {
       summary TEXT,
       urgency TEXT,
       disposition TEXT,
+      lead_outcome_type TEXT,
+      lead_is_valid BOOLEAN NOT NULL DEFAULT FALSE,
+      lead_is_billable BOOLEAN NOT NULL DEFAULT FALSE,
+      lead_decision_reason TEXT,
+      lead_duplicate_of_call_sid TEXT,
       ai_model TEXT,
       ai_input_tokens BIGINT,
       ai_output_tokens BIGINT,
@@ -139,6 +144,11 @@ export async function ensureTables(pool) {
 
   await pool.query(`ALTER TABLE calls ALTER COLUMN status SET DEFAULT 'new';`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_model TEXT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS lead_outcome_type TEXT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS lead_is_valid BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS lead_is_billable BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS lead_decision_reason TEXT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS lead_duplicate_of_call_sid TEXT;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_input_tokens BIGINT;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_output_tokens BIGINT;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_cached_input_tokens BIGINT;`);
