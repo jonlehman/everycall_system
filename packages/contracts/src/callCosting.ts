@@ -12,6 +12,8 @@ export type AiUsageCostInput = {
   inputTokens?: number | null | undefined;
   outputTokens?: number | null | undefined;
   cachedInputTokens?: number | null | undefined;
+  cachedInputTextTokens?: number | null | undefined;
+  cachedInputAudioTokens?: number | null | undefined;
   inputTextTokens?: number | null | undefined;
   inputAudioTokens?: number | null | undefined;
   outputTextTokens?: number | null | undefined;
@@ -49,22 +51,67 @@ function estimateTokenCostMicros(tokens: number, ratePer1MUsd: number) {
   return Math.round((toNonNegativeInt(tokens) * usdToMicros(ratePer1MUsd)) / 1_000_000);
 }
 
+function allocateCachedTokens(totalTokens: number, cachedTokens: number, primaryTokens: number, secondaryTokens: number) {
+  const boundedCached = Math.min(toNonNegativeInt(cachedTokens), Math.max(0, totalTokens));
+  const primary = Math.max(0, toNonNegativeInt(primaryTokens));
+  const secondary = Math.max(0, toNonNegativeInt(secondaryTokens));
+  const total = primary + secondary;
+  if (boundedCached <= 0 || total <= 0) {
+    return { cachedPrimary: 0, cachedSecondary: 0 };
+  }
+  let cachedPrimary = Math.min(primary, Math.round((boundedCached * primary) / total));
+  let cachedSecondary = Math.min(secondary, boundedCached - cachedPrimary);
+  let remaining = boundedCached - cachedPrimary - cachedSecondary;
+  if (remaining > 0) {
+    const primaryCapacity = Math.max(0, primary - cachedPrimary);
+    const secondaryCapacity = Math.max(0, secondary - cachedSecondary);
+    const primaryExtra = Math.min(primaryCapacity, remaining);
+    cachedPrimary += primaryExtra;
+    remaining -= primaryExtra;
+    if (remaining > 0) {
+      const secondaryExtra = Math.min(secondaryCapacity, remaining);
+      cachedSecondary += secondaryExtra;
+    }
+  }
+  return { cachedPrimary, cachedSecondary };
+}
+
 export function estimateAiCostMicrosUsd(usage: AiUsageCostInput, rates: AiUsageRateCard) {
   const cachedInputTokens = toNonNegativeInt(usage.cachedInputTokens);
+  const cachedInputTextTokens = toNonNegativeInt(usage.cachedInputTextTokens);
+  const cachedInputAudioTokens = toNonNegativeInt(usage.cachedInputAudioTokens);
   const inputTextTokens = toNonNegativeInt(usage.inputTextTokens);
   const inputAudioTokens = toNonNegativeInt(usage.inputAudioTokens);
   const outputTextTokens = toNonNegativeInt(usage.outputTextTokens);
   const outputAudioTokens = toNonNegativeInt(usage.outputAudioTokens);
   const hasDetailedBreakdown = cachedInputTokens > 0
+    || cachedInputTextTokens > 0
+    || cachedInputAudioTokens > 0
     || inputTextTokens > 0
     || inputAudioTokens > 0
     || outputTextTokens > 0
     || outputAudioTokens > 0;
 
   if (hasDetailedBreakdown) {
-    return estimateTokenCostMicros(inputTextTokens, rates.textInputRatePer1MUsd)
-      + estimateTokenCostMicros(cachedInputTokens, rates.cachedInputRatePer1MUsd)
-      + estimateTokenCostMicros(inputAudioTokens, rates.audioInputRatePer1MUsd)
+    let cachedText = Math.min(inputTextTokens, cachedInputTextTokens);
+    let cachedAudio = Math.min(inputAudioTokens, cachedInputAudioTokens);
+    const explicitCachedTotal = cachedText + cachedAudio;
+    const unresolvedCached = Math.max(0, cachedInputTokens - explicitCachedTotal);
+    if (unresolvedCached > 0) {
+      const allocation = allocateCachedTokens(
+        inputTextTokens + inputAudioTokens - explicitCachedTotal,
+        unresolvedCached,
+        inputTextTokens - cachedText,
+        inputAudioTokens - cachedAudio
+      );
+      cachedText += allocation.cachedPrimary;
+      cachedAudio += allocation.cachedSecondary;
+    }
+    const uncachedText = Math.max(0, inputTextTokens - cachedText);
+    const uncachedAudio = Math.max(0, inputAudioTokens - cachedAudio);
+    return estimateTokenCostMicros(uncachedText, rates.textInputRatePer1MUsd)
+      + estimateTokenCostMicros(cachedText + cachedAudio, rates.cachedInputRatePer1MUsd)
+      + estimateTokenCostMicros(uncachedAudio, rates.audioInputRatePer1MUsd)
       + estimateTokenCostMicros(outputTextTokens, rates.textOutputRatePer1MUsd)
       + estimateTokenCostMicros(outputAudioTokens, rates.audioOutputRatePer1MUsd);
   }

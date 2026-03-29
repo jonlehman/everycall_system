@@ -98,6 +98,8 @@ type UsageTotals = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cachedInputTextTokens: number;
+  cachedInputAudioTokens: number;
   inputTextTokens: number;
   inputAudioTokens: number;
   outputTextTokens: number;
@@ -252,6 +254,8 @@ function emptyUsageTotals(): UsageTotals {
     inputTokens: 0,
     outputTokens: 0,
     cachedInputTokens: 0,
+    cachedInputTextTokens: 0,
+    cachedInputAudioTokens: 0,
     inputTextTokens: 0,
     inputAudioTokens: 0,
     outputTextTokens: 0,
@@ -271,6 +275,8 @@ function collectUsage(payloadMsg: any) {
   const inputTokens = toInt(usage?.input_tokens ?? usage?.prompt_tokens);
   const outputTokens = toInt(usage?.output_tokens ?? usage?.completion_tokens);
   const cachedInputTokens = toInt(usage?.input_token_details?.cached_tokens);
+  const cachedInputTextTokens = toInt(usage?.input_token_details?.cached_tokens_details?.text_tokens);
+  const cachedInputAudioTokens = toInt(usage?.input_token_details?.cached_tokens_details?.audio_tokens);
   const inputTextTokens = toInt(usage?.input_token_details?.text_tokens);
   const inputAudioTokens = toInt(usage?.input_token_details?.audio_tokens);
   const outputTextTokens = toInt(usage?.output_token_details?.text_tokens);
@@ -279,6 +285,8 @@ function collectUsage(payloadMsg: any) {
     inputTokens,
     outputTokens,
     cachedInputTokens,
+    cachedInputTextTokens,
+    cachedInputAudioTokens,
     inputTextTokens,
     inputAudioTokens,
     outputTextTokens,
@@ -290,6 +298,8 @@ function estimateUsageCostMicrosUsd(usage: {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens?: number | null;
+  cachedInputTextTokens?: number | null;
+  cachedInputAudioTokens?: number | null;
   inputTextTokens?: number | null;
   inputAudioTokens?: number | null;
   outputTextTokens?: number | null;
@@ -299,6 +309,8 @@ function estimateUsageCostMicrosUsd(usage: {
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     cachedInputTokens: usage.cachedInputTokens,
+    cachedInputTextTokens: usage.cachedInputTextTokens,
+    cachedInputAudioTokens: usage.cachedInputAudioTokens,
     inputTextTokens: usage.inputTextTokens,
     inputAudioTokens: usage.inputAudioTokens,
     outputTextTokens: usage.outputTextTokens,
@@ -322,17 +334,19 @@ async function persistCallUsage(session: StreamSession) {
            ai_input_tokens = $3,
            ai_output_tokens = $4,
            ai_cached_input_tokens = $5,
-           ai_input_text_tokens = $6,
-           ai_input_audio_tokens = $7,
-           ai_output_text_tokens = $8,
-           ai_output_audio_tokens = $9,
-           ai_input_rate_micros_usd = $10,
-           ai_output_rate_micros_usd = $11,
-           ai_estimated_cost_micros_usd = $12,
-           ai_response_count = $13,
+           ai_cached_input_text_tokens = $6,
+           ai_cached_input_audio_tokens = $7,
+           ai_input_text_tokens = $8,
+           ai_input_audio_tokens = $9,
+           ai_output_text_tokens = $10,
+           ai_output_audio_tokens = $11,
+           ai_input_rate_micros_usd = $12,
+           ai_output_rate_micros_usd = $13,
+           ai_estimated_cost_micros_usd = $14,
+           ai_response_count = $15,
            total_estimated_cost_micros_usd = COALESCE(telephony_estimated_cost_micros_usd, 0)
              + COALESCE(notification_estimated_cost_micros_usd, 0)
-             + $12
+             + $14
        WHERE call_sid = $1`,
       [
         session.callSid,
@@ -340,6 +354,8 @@ async function persistCallUsage(session: StreamSession) {
         usage.inputTokens,
         usage.outputTokens,
         usage.cachedInputTokens,
+        usage.cachedInputTextTokens,
+        usage.cachedInputAudioTokens,
         usage.inputTextTokens,
         usage.inputAudioTokens,
         usage.outputTextTokens,
@@ -1717,6 +1733,8 @@ function connectOpenAiRealtime(session: StreamSession) {
       totals.inputTokens += usage.inputTokens;
       totals.outputTokens += usage.outputTokens;
       totals.cachedInputTokens += usage.cachedInputTokens;
+      totals.cachedInputTextTokens += usage.cachedInputTextTokens;
+      totals.cachedInputAudioTokens += usage.cachedInputAudioTokens;
       totals.inputTextTokens += usage.inputTextTokens;
       totals.inputAudioTokens += usage.inputAudioTokens;
       totals.outputTextTokens += usage.outputTextTokens;

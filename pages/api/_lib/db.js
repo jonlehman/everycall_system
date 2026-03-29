@@ -114,6 +114,8 @@ export async function ensureTables(pool) {
       ai_input_tokens BIGINT,
       ai_output_tokens BIGINT,
       ai_cached_input_tokens BIGINT,
+      ai_cached_input_text_tokens BIGINT,
+      ai_cached_input_audio_tokens BIGINT,
       ai_input_text_tokens BIGINT,
       ai_input_audio_tokens BIGINT,
       ai_output_text_tokens BIGINT,
@@ -140,6 +142,8 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_input_tokens BIGINT;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_output_tokens BIGINT;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_cached_input_tokens BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_cached_input_text_tokens BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_cached_input_audio_tokens BIGINT;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_input_text_tokens BIGINT;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_input_audio_tokens BIGINT;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_output_text_tokens BIGINT;`);
