@@ -327,25 +327,23 @@ export default async function handler(req, res) {
           ]
         );
 
-        if (leadDecision.isValidLead) {
-          try {
-            await enqueueAsyncJob(pool, {
-              jobType: ASYNC_JOB_TYPES.leadNotificationSend,
+        try {
+          await enqueueAsyncJob(pool, {
+            jobType: ASYNC_JOB_TYPES.leadNotificationSend,
+            tenantKey: effectiveTenantKey,
+            dedupeKey: `lead_notification:${callId}`,
+            payload: {
               tenantKey: effectiveTenantKey,
-              dedupeKey: `lead_notification:${callId}`,
-              payload: {
-                tenantKey: effectiveTenantKey,
-                callSid: callId
-              },
-              maxAttempts: 6
-            });
-          } catch (notificationErr) {
-            console.error("lead_notification_enqueue_failed", {
-              tenantKey: effectiveTenantKey,
-              callId,
-              message: notificationErr?.message || "unknown"
-            });
-          }
+              callSid: callId
+            },
+            maxAttempts: 6
+          });
+        } catch (notificationErr) {
+          console.error("lead_notification_enqueue_failed", {
+            tenantKey: effectiveTenantKey,
+            callId,
+            message: notificationErr?.message || "unknown"
+          });
         }
 
         return res.status(200).json({ ok: true, leadDecision });

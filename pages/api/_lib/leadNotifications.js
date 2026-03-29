@@ -34,6 +34,16 @@ function formatDisplayPhone(value) {
   return formatted || normalizeText(value);
 }
 
+function formatOutcomeLabel(value) {
+  const normalized = normalizeText(value);
+  if (!normalized) return "Unclassified";
+  return normalized
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function buildCallerName(callRow) {
   const first = normalizeText(callRow.caller_first_name);
   const last = normalizeText(callRow.caller_last_name);
@@ -52,6 +62,18 @@ function buildAddress(callRow) {
 
 function buildRequestedTime(callRow) {
   return [normalizeText(callRow.requested_date), normalizeText(callRow.requested_time)].filter(Boolean).join(" ");
+}
+
+function buildNotificationTitle(callRow, tenantName) {
+  return callRow.lead_is_valid
+    ? `Valid lead for ${tenantName}`
+    : `New call for ${tenantName}`;
+}
+
+function buildClassificationLine(callRow) {
+  if (callRow.lead_is_valid) return "Classification: Valid lead";
+  const outcomeLabel = formatOutcomeLabel(callRow.lead_outcome_type);
+  return `Classification: ${outcomeLabel}`;
 }
 
 async function beginLeadDelivery(pool, {
@@ -166,7 +188,8 @@ async function loadCombinedTranscript(pool, callSid, callRow) {
 
 function buildLeadSms({ tenantName, callRow }) {
   const parts = [
-    `New lead for ${tenantName}.`,
+    `${buildNotificationTitle(callRow, tenantName)}.`,
+    `${buildClassificationLine(callRow)}.`,
     buildCallerName(callRow) ? `Name: ${buildCallerName(callRow)}.` : null,
     callRow.callback_number ? `Callback: ${formatDisplayPhone(callRow.callback_number)}.` : null,
     callRow.service_required ? `Service: ${truncateText(callRow.service_required, 60)}.` : null,
@@ -177,6 +200,7 @@ function buildLeadSms({ tenantName, callRow }) {
 
 function buildLeadEmail({ tenantName, appBaseUrl, callSid, callRow, transcript, includeTranscript, timezone }) {
   const detailLines = [
+    buildClassificationLine(callRow),
     callRow.summary ? `Summary: ${callRow.summary}` : null,
     buildCallerName(callRow) ? `Caller: ${buildCallerName(callRow)}` : null,
     callRow.callback_number ? `Callback: ${formatDisplayPhone(callRow.callback_number)}` : null,
@@ -190,7 +214,7 @@ function buildLeadEmail({ tenantName, appBaseUrl, callSid, callRow, transcript, 
     appBaseUrl ? `Open EveryCall: ${appBaseUrl.replace(/\/$/, "")}/client/calls` : null
   ].filter(Boolean);
   const lines = [
-    `New lead for ${tenantName}`,
+    buildNotificationTitle(callRow, tenantName),
     "",
     detailLines.join("\n\n")
   ].filter(Boolean);
@@ -203,7 +227,7 @@ function buildLeadEmail({ tenantName, appBaseUrl, callSid, callRow, transcript, 
   }
 
   return {
-    subject: `New lead for ${tenantName}`,
+    subject: buildNotificationTitle(callRow, tenantName),
     text: lines.join("\n")
   };
 }
@@ -371,14 +395,6 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
   }
   if (!context.callRow) {
     return { ok: false, error: "call_not_found" };
-  }
-  if (!context.callRow.lead_is_valid) {
-    await updateCallNotificationEstimatedCost(pool, { callSid });
-    return { ok: true, skipped: "non_lead_call" };
-  }
-  if (["spam", "canceled"].includes(normalizeText(context.callRow.disposition).toLowerCase())) {
-    await updateCallNotificationEstimatedCost(pool, { callSid });
-    return { ok: true, skipped: "non_lead_disposition" };
   }
 
   const smsRecipients = settings.lead_alert_sms_enabled
