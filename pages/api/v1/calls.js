@@ -7,7 +7,6 @@ import { evaluateLeadDecision } from "../_lib/leadQualification.js";
 import { ASYNC_JOB_TYPES, enqueueAsyncJob } from "../../../lib/asyncJobs.js";
 import {
   buildStableEventId,
-  INTEGRATION_CONNECTOR_TYPES,
   INTEGRATION_EVENT_TYPES,
   listIntegrationConnections
 } from "../_lib/outboundIntegrations.js";
@@ -353,9 +352,8 @@ export default async function handler(req, res) {
         }
 
         try {
-          const webhookConnections = await listIntegrationConnections(pool, {
+          const integrationConnections = await listIntegrationConnections(pool, {
             tenantKey: effectiveTenantKey,
-            connectorType: INTEGRATION_CONNECTOR_TYPES.outboundWebhook,
             enabledOnly: true
           });
           const eventId = buildStableEventId({
@@ -364,11 +362,11 @@ export default async function handler(req, res) {
             eventType: INTEGRATION_EVENT_TYPES.callCompleted,
             eventVersion: 1
           });
-          for (const connection of webhookConnections) {
+          for (const connection of integrationConnections) {
             await enqueueAsyncJob(pool, {
-              jobType: ASYNC_JOB_TYPES.integrationWebhookSend,
+              jobType: ASYNC_JOB_TYPES.integrationConnectionSend,
               tenantKey: effectiveTenantKey,
-              dedupeKey: `integration_webhook:${callId}:${connection.id}:${INTEGRATION_EVENT_TYPES.callCompleted}:v1`,
+              dedupeKey: `integration_connection:${callId}:${connection.id}:${INTEGRATION_EVENT_TYPES.callCompleted}:v1`,
               payload: {
                 tenantKey: effectiveTenantKey,
                 callSid: callId,

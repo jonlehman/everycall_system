@@ -559,6 +559,7 @@ export async function ensureTables(pool) {
       status TEXT NOT NULL DEFAULT 'enabled',
       endpoint_url TEXT,
       signing_secret_ciphertext TEXT,
+      credentials_ciphertext TEXT,
       config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
       reconnect_required BOOLEAN NOT NULL DEFAULT FALSE,
       last_test_status TEXT,
@@ -573,6 +574,7 @@ export async function ensureTables(pool) {
   `);
   await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS endpoint_url TEXT;`);
   await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS signing_secret_ciphertext TEXT;`);
+  await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS credentials_ciphertext TEXT;`);
   await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS config_json JSONB NOT NULL DEFAULT '{}'::jsonb;`);
   await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS reconnect_required BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS last_test_status TEXT;`);

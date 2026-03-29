@@ -52,6 +52,32 @@ export function decryptIntegrationSecret(value) {
   return plaintext.toString("utf8");
 }
 
+export function encryptIntegrationCredentials(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const sanitized = Object.fromEntries(
+    Object.entries(value)
+      .map(([key, item]) => [String(key || "").trim(), typeof item === "string" ? item.trim() : item])
+      .filter(([key, item]) => key && item !== null && item !== undefined && item !== "")
+  );
+  if (!Object.keys(sanitized).length) {
+    return null;
+  }
+  return encryptIntegrationSecret(JSON.stringify(sanitized));
+}
+
+export function decryptIntegrationCredentials(value) {
+  const plaintext = decryptIntegrationSecret(value);
+  if (!plaintext) return {};
+  try {
+    const parsed = JSON.parse(plaintext);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    throw new Error("integration_credentials_invalid_json");
+  }
+}
+
 export function maskSecret(value) {
   const text = String(value || "").trim();
   if (!text) return "";

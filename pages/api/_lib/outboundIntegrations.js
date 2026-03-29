@@ -1,10 +1,33 @@
 import crypto from "node:crypto";
 import { buildTranscriptFromEvents, sanitizeTranscriptText } from "@everycall/contracts/callTranscript";
 import { normalizePhoneNumber } from "./phone.js";
-import { decryptIntegrationSecret, createSigningSecret } from "./integrationSecrets.js";
+import {
+  decryptIntegrationCredentials,
+  decryptIntegrationSecret,
+  createSigningSecret
+} from "./integrationSecrets.js";
 
 export const INTEGRATION_CONNECTOR_TYPES = {
-  outboundWebhook: "outbound_webhook"
+  outboundWebhook: "outbound_webhook",
+  zapierHook: "zapier_hook",
+  hubspotPrivateApp: "hubspot_private_app",
+  jobberClient: "jobber_client",
+  servicetitanBooking: "servicetitan_booking"
+};
+
+export const INTEGRATION_NATIVE_CONNECTOR_TYPES = [
+  INTEGRATION_CONNECTOR_TYPES.zapierHook,
+  INTEGRATION_CONNECTOR_TYPES.hubspotPrivateApp,
+  INTEGRATION_CONNECTOR_TYPES.jobberClient,
+  INTEGRATION_CONNECTOR_TYPES.servicetitanBooking
+];
+
+export const INTEGRATION_CONNECTOR_LABELS = {
+  [INTEGRATION_CONNECTOR_TYPES.outboundWebhook]: "Outbound Webhook",
+  [INTEGRATION_CONNECTOR_TYPES.zapierHook]: "Zapier Catch Hook",
+  [INTEGRATION_CONNECTOR_TYPES.hubspotPrivateApp]: "HubSpot",
+  [INTEGRATION_CONNECTOR_TYPES.jobberClient]: "Jobber",
+  [INTEGRATION_CONNECTOR_TYPES.servicetitanBooking]: "ServiceTitan"
 };
 
 export const INTEGRATION_EVENT_TYPES = {
@@ -24,6 +47,7 @@ export const CANONICAL_CLASSIFICATION_TYPES = [
 ];
 
 const DEFAULT_APP_BASE_URL = "https://app.everycall.io";
+const DEFAULT_JOBBER_API_VERSION = normalizeText(process.env.JOBBER_API_VERSION || "2026-01-20") || "2026-01-20";
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -63,7 +87,50 @@ export function createDeliveryId() {
   return createId("del");
 }
 
-export function getDefaultConnectionConfig() {
+export function buildDefaultServiceTitanResourcePath(tenantId) {
+  const normalizedTenantId = normalizeText(tenantId);
+  return normalizedTenantId ? `/crm/v2/tenant/${encodeURIComponent(normalizedTenantId)}/bookings` : "";
+}
+
+function getDefaultNativeFilters() {
+  return {
+    includeTypes: ["project_inquiry"],
+    includeNonBillable: false,
+    includeDuplicates: false,
+    includeTranscript: false
+  };
+}
+
+export function getDefaultConnectionConfig(connectorType = INTEGRATION_CONNECTOR_TYPES.outboundWebhook) {
+  const normalizedType = normalizeText(connectorType);
+  if (normalizedType === INTEGRATION_CONNECTOR_TYPES.zapierHook || normalizedType === INTEGRATION_CONNECTOR_TYPES.outboundWebhook) {
+    return {
+      includeTypes: [...CANONICAL_CLASSIFICATION_TYPES],
+      includeNonBillable: true,
+      includeDuplicates: true,
+      includeTranscript: false
+    };
+  }
+  if (normalizedType === INTEGRATION_CONNECTOR_TYPES.hubspotPrivateApp) {
+    return {
+      ...getDefaultNativeFilters(),
+      createNote: true
+    };
+  }
+  if (normalizedType === INTEGRATION_CONNECTOR_TYPES.jobberClient) {
+    return {
+      ...getDefaultNativeFilters(),
+      apiVersion: DEFAULT_JOBBER_API_VERSION
+    };
+  }
+  if (normalizedType === INTEGRATION_CONNECTOR_TYPES.servicetitanBooking) {
+    return {
+      ...getDefaultNativeFilters(),
+      environment: "integration",
+      tenantId: "",
+      resourcePath: ""
+    };
+  }
   return {
     includeTypes: [...CANONICAL_CLASSIFICATION_TYPES],
     includeNonBillable: true,
@@ -72,16 +139,38 @@ export function getDefaultConnectionConfig() {
   };
 }
 
-export function parseConnectionConfig(configValue) {
+export function parseConnectionConfig(configValue, connectorType = INTEGRATION_CONNECTOR_TYPES.outboundWebhook) {
   const source = asObject(configValue);
-  const defaultConfig = getDefaultConnectionConfig();
+  const defaultConfig = getDefaultConnectionConfig(connectorType);
   const normalizedTypes = asStringArray(source.includeTypes);
-  return {
+  const normalized = {
     includeTypes: normalizedTypes.length ? normalizedTypes.filter((value) => CANONICAL_CLASSIFICATION_TYPES.includes(value)) : defaultConfig.includeTypes,
     includeNonBillable: source.includeNonBillable !== false,
     includeDuplicates: source.includeDuplicates !== false,
     includeTranscript: source.includeTranscript === true
   };
+  if (connectorType === INTEGRATION_CONNECTOR_TYPES.hubspotPrivateApp) {
+    return {
+      ...normalized,
+      createNote: source.createNote !== false
+    };
+  }
+  if (connectorType === INTEGRATION_CONNECTOR_TYPES.jobberClient) {
+    return {
+      ...normalized,
+      apiVersion: normalizeText(source.apiVersion) || defaultConfig.apiVersion
+    };
+  }
+  if (connectorType === INTEGRATION_CONNECTOR_TYPES.servicetitanBooking) {
+    const tenantId = normalizeText(source.tenantId);
+    return {
+      ...normalized,
+      environment: normalizeText(source.environment).toLowerCase() === "production" ? "production" : "integration",
+      tenantId,
+      resourcePath: normalizeText(source.resourcePath) || buildDefaultServiceTitanResourcePath(tenantId)
+    };
+  }
+  return normalized;
 }
 
 export function sanitizeIntegrationConnection(row) {
@@ -94,7 +183,8 @@ export function sanitizeIntegrationConnection(row) {
     status: row.status,
     endpointUrl: row.endpoint_url,
     secretConfigured: Boolean(normalizeText(row.signing_secret_ciphertext)),
-    config: parseConnectionConfig(row.config_json),
+    credentialsConfigured: Boolean(normalizeText(row.credentials_ciphertext)),
+    config: parseConnectionConfig(row.config_json, row.connector_type),
     reconnectRequired: Boolean(row.reconnect_required),
     lastTestStatus: row.last_test_status || null,
     lastTestedAt: row.last_tested_at || null,
@@ -105,6 +195,19 @@ export function sanitizeIntegrationConnection(row) {
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null
   };
+}
+
+export function getWebhookConnectionSecret(connectionRow) {
+  const ciphertext = normalizeText(connectionRow?.signing_secret_ciphertext);
+  if (!ciphertext) {
+    throw new Error("integration_signing_secret_missing");
+  }
+  return decryptIntegrationSecret(ciphertext);
+}
+
+export function getIntegrationConnectionCredentials(connectionRow) {
+  const ciphertext = normalizeText(connectionRow?.credentials_ciphertext);
+  return ciphertext ? decryptIntegrationCredentials(ciphertext) : {};
 }
 
 export function normalizeClassificationType(outcomeType, isValidLead) {
@@ -270,8 +373,8 @@ export async function buildCallCompletedEvent(pool, {
   };
 }
 
-export function shouldDeliverConnection({ payload, config }) {
-  const normalizedConfig = parseConnectionConfig(config);
+export function shouldDeliverConnection({ payload, config, connectorType = INTEGRATION_CONNECTOR_TYPES.outboundWebhook }) {
+  const normalizedConfig = parseConnectionConfig(config, connectorType);
   const classification = asObject(payload?.classification);
   const type = normalizeText(classification.type);
   if (!type || !normalizedConfig.includeTypes.includes(type)) {
@@ -448,14 +551,6 @@ export async function listIntegrationConnections(pool, {
     values
   );
   return result.rows || [];
-}
-
-export function getWebhookConnectionSecret(connectionRow) {
-  const ciphertext = normalizeText(connectionRow?.signing_secret_ciphertext);
-  if (!ciphertext) {
-    throw new Error("integration_signing_secret_missing");
-  }
-  return decryptIntegrationSecret(ciphertext);
 }
 
 export function buildConnectionTestPayload({ tenantKey, tenantName }) {

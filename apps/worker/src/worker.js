@@ -1,15 +1,11 @@
 import pg from "pg";
 import { logError, logInfo } from "@everycall/observability";
 import { ensureTables } from "../../../pages/api/_lib/db.js";
+import { deliverIntegrationConnection } from "../../../pages/api/_lib/integrationConnectors.js";
 import { sendLeadNotifications } from "../../../pages/api/_lib/leadNotifications.js";
 import {
-  buildCallCompletedEvent,
-  buildSignedWebhookRequest,
-  getWebhookConnectionSecret,
   loadIntegrationConnection,
-  parseConnectionConfig,
   recordIntegrationDelivery,
-  shouldDeliverConnection,
   updateConnectionDeliveryHealth
 } from "../../../pages/api/_lib/outboundIntegrations.js";
 import {
@@ -47,7 +43,7 @@ async function processJob(job) {
     return;
   }
 
-  if (job.job_type === ASYNC_JOB_TYPES.integrationWebhookSend) {
+  if (job.job_type === ASYNC_JOB_TYPES.integrationWebhookSend || job.job_type === ASYNC_JOB_TYPES.integrationConnectionSend) {
     const payload = typeof job.payload_json === "object" && job.payload_json ? job.payload_json : {};
     const tenantKey = String(payload.tenantKey || job.tenant_key || "").trim();
     const callSid = String(payload.callSid || "").trim();
@@ -63,107 +59,68 @@ async function processJob(job) {
     }
 
     const attemptNumber = Number(job.attempts || 1);
-    const deliveryEvent = await buildCallCompletedEvent(pool, {
-      tenantKey,
-      callSid,
-      includeTranscript: parseConnectionConfig(connection.config_json).includeTranscript,
-      eventId
-    });
-
-    const decision = shouldDeliverConnection({
-      payload: deliveryEvent,
-      config: connection.config_json
-    });
-
-    if (connection.status !== "enabled") {
-      await recordIntegrationDelivery(pool, {
+    let delivery;
+    try {
+      delivery = await deliverIntegrationConnection(pool, {
+        connection,
         tenantKey,
-        connectionId,
         callSid,
-        eventType: deliveryEvent.event_type,
-        eventVersion: deliveryEvent.event_version,
-        eventId: deliveryEvent.event_id,
-        deliveryId: deliveryEvent.delivery_id,
-        attemptNumber,
-        status: "skipped",
-        requestUrl: connection.endpoint_url,
-        errorMessage: "connection_disabled"
+        eventId,
+        attemptNumber
       });
-      return;
-    }
-
-    if (!decision.deliver) {
+    } catch (error) {
+      const failedDeliveryId = String(error?.deliveryId || "").trim() || undefined;
+      const failedEventId = String(error?.eventId || "").trim() || eventId;
       await recordIntegrationDelivery(pool, {
         tenantKey,
         connectionId,
         callSid,
-        eventType: deliveryEvent.event_type,
-        eventVersion: deliveryEvent.event_version,
-        eventId: deliveryEvent.event_id,
-        deliveryId: deliveryEvent.delivery_id,
-        attemptNumber,
-        status: "skipped",
-        requestUrl: connection.endpoint_url,
-        errorMessage: decision.reason || "filtered_out"
-      });
-      return;
-    }
-
-    const signingSecret = getWebhookConnectionSecret(connection);
-    const request = buildSignedWebhookRequest({
-      endpointUrl: connection.endpoint_url,
-      signingSecret,
-      payload: deliveryEvent,
-      attemptNumber
-    });
-    const response = await fetch(request.endpointUrl, {
-      method: "POST",
-      headers: request.headers,
-      body: request.body
-    });
-    const responseText = await response.text().catch(() => "");
-    if (!response.ok) {
-      await recordIntegrationDelivery(pool, {
-        tenantKey,
-        connectionId,
-        callSid,
-        eventType: deliveryEvent.event_type,
-        eventVersion: deliveryEvent.event_version,
-        eventId: deliveryEvent.event_id,
-        deliveryId: deliveryEvent.delivery_id,
+        eventType: "call.completed",
+        eventVersion: 1,
+        eventId: failedEventId,
+        deliveryId: failedDeliveryId || failedEventId || `failed_${Date.now()}`,
         attemptNumber,
         status: "failed",
-        requestUrl: connection.endpoint_url,
-        responseStatus: response.status,
-        responseBodyExcerpt: responseText,
-        errorMessage: `http_${response.status}`
+        requestUrl: error?.requestUrl || connection.endpoint_url,
+        responseStatus: error?.responseStatus,
+        responseBodyExcerpt: error?.responseBodyExcerpt,
+        errorMessage: error?.message || "integration_delivery_failed"
       });
       await updateConnectionDeliveryHealth(pool, {
         connectionId,
         status: "failed",
-        errorMessage: `HTTP ${response.status}: ${responseText || "unknown"}`
+        errorMessage: error?.message || "integration_delivery_failed"
       });
-      throw new Error(`integration_http_${response.status}`);
+      throw error;
     }
-
     await recordIntegrationDelivery(pool, {
       tenantKey,
       connectionId,
       callSid,
-      eventType: deliveryEvent.event_type,
-      eventVersion: deliveryEvent.event_version,
-      eventId: deliveryEvent.event_id,
-      deliveryId: deliveryEvent.delivery_id,
+      eventType: delivery.payload.event_type,
+      eventVersion: delivery.payload.event_version,
+      eventId: delivery.payload.event_id,
+      deliveryId: delivery.payload.delivery_id,
       attemptNumber,
-      status: "delivered",
-      requestUrl: connection.endpoint_url,
-      responseStatus: response.status,
-      responseBodyExcerpt: responseText
+      status: delivery.status,
+      requestUrl: delivery.requestUrl,
+      responseStatus: delivery.responseStatus,
+      responseBodyExcerpt: delivery.responseBodyExcerpt,
+      errorMessage: delivery.errorMessage
     });
-    await updateConnectionDeliveryHealth(pool, {
-      connectionId,
-      status: "delivered"
-    });
+
+    if (delivery.status === "delivered") {
+      await updateConnectionDeliveryHealth(pool, {
+        connectionId,
+        status: "delivered"
+      });
+      return;
+    }
+
+    if (delivery.status === "skipped") {
+      return;
+    }
+
     return;
   }
 
@@ -178,7 +135,11 @@ async function runLoop() {
     try {
       jobs = await claimAsyncJobs(pool, {
         workerId,
-        jobTypes: [ASYNC_JOB_TYPES.leadNotificationSend, ASYNC_JOB_TYPES.integrationWebhookSend],
+        jobTypes: [
+          ASYNC_JOB_TYPES.leadNotificationSend,
+          ASYNC_JOB_TYPES.integrationWebhookSend,
+          ASYNC_JOB_TYPES.integrationConnectionSend
+        ],
         limit: claimLimit
       });
     } catch (err) {
