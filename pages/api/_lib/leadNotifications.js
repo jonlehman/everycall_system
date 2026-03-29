@@ -1,4 +1,5 @@
 import { MailtrapClient } from "mailtrap";
+import { estimateNotificationCostMicrosUsd } from "@everycall/contracts/callCosting";
 import { addTranscriptSpacing, buildTranscriptFromEvents, sanitizeTranscriptText } from "@everycall/contracts/callTranscript";
 import { getSharedSmsNumber } from "./alerts.js";
 import { updateNotificationChannelHealth } from "./notificationHealth.js";
@@ -11,6 +12,12 @@ const mailtrapSender = {
   name: process.env.MAILTRAP_SENDER_NAME || "EveryCall"
 };
 const mailtrapClient = mailtrapToken ? new MailtrapClient({ token: mailtrapToken }) : null;
+const leadAlertSmsCostUsd = Number.isFinite(Number(process.env.LEAD_ALERT_SMS_COST_USD))
+  ? Number(process.env.LEAD_ALERT_SMS_COST_USD)
+  : 0.007;
+const leadAlertEmailCostUsd = Number.isFinite(Number(process.env.LEAD_ALERT_EMAIL_COST_USD))
+  ? Number(process.env.LEAD_ALERT_EMAIL_COST_USD)
+  : 0;
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -110,6 +117,35 @@ async function markLeadDelivery(pool, {
        AND destination = $4
        AND event_type = $5`,
     [tenantKey, callSid, channel, destination, eventType, status, providerReference, errorCode, errorMessage]
+  );
+}
+
+async function updateCallNotificationEstimatedCost(pool, { callSid }) {
+  const counts = await pool.query(
+    `SELECT
+       COUNT(*) FILTER (WHERE channel = 'sms' AND provider_reference IS NOT NULL)::int AS sms_accepted,
+       COUNT(*) FILTER (WHERE channel = 'email' AND status = 'delivered')::int AS email_accepted
+     FROM lead_notification_deliveries
+     WHERE call_sid = $1`,
+    [callSid]
+  );
+  const row = counts.rows[0] || {};
+  const notificationCostMicrosUsd = estimateNotificationCostMicrosUsd({
+    smsAccepted: row.sms_accepted || 0,
+    emailAccepted: row.email_accepted || 0
+  }, {
+    smsCostUsd: leadAlertSmsCostUsd,
+    emailCostUsd: leadAlertEmailCostUsd
+  });
+
+  await pool.query(
+    `UPDATE calls
+     SET notification_estimated_cost_micros_usd = $2,
+         total_estimated_cost_micros_usd = COALESCE(ai_estimated_cost_micros_usd, 0)
+           + COALESCE(telephony_estimated_cost_micros_usd, 0)
+           + $2
+     WHERE call_sid = $1`,
+    [callSid, notificationCostMicrosUsd]
   );
 }
 
@@ -329,12 +365,14 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
   const context = await loadLeadNotificationContext(pool, tenantKey, callSid);
   const settings = context.settings || {};
   if (!settings.lead_alerts_enabled) {
+    await updateCallNotificationEstimatedCost(pool, { callSid });
     return { ok: true, skipped: "tenant_alerts_disabled" };
   }
   if (!context.callRow) {
     return { ok: false, error: "call_not_found" };
   }
   if (["spam", "canceled"].includes(normalizeText(context.callRow.disposition).toLowerCase())) {
+    await updateCallNotificationEstimatedCost(pool, { callSid });
     return { ok: true, skipped: "non_lead_disposition" };
   }
 
@@ -346,6 +384,7 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
     : [];
 
   if (!smsRecipients.length && !emailRecipients.length) {
+    await updateCallNotificationEstimatedCost(pool, { callSid });
     return { ok: true, skipped: "no_recipients" };
   }
 
@@ -453,10 +492,12 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
   }
 
   if (results.smsFailed || results.emailFailed) {
+    await updateCallNotificationEstimatedCost(pool, { callSid });
     throw new Error(
       `lead_notification_delivery_failed:sms=${results.smsFailed}:email=${results.emailFailed}`
     );
   }
 
+  await updateCallNotificationEstimatedCost(pool, { callSid });
   return { ok: true, ...results };
 }

@@ -13,6 +13,10 @@
     "./callTranscript": {
       "types": "./dist/callTranscript.d.ts",
       "default": "./dist/callTranscript.js"
+    },
+    "./callCosting": {
+      "types": "./dist/callCosting.d.ts",
+      "default": "./dist/callCosting.js"
     }
   },
   "scripts": {

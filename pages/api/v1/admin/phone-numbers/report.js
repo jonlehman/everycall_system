@@ -23,7 +23,13 @@ function normalizeOwnedNumber(record) {
     phoneNumber: record?.phone_number || "",
     status: record?.status || "",
     phoneNumberId: record?.id || "",
-    purchasedAt: record?.created_at || null
+    purchasedAt: record?.created_at || null,
+    monthlyCostCents: Number.isFinite(Number(record?.cost_information?.monthly_cost))
+      ? Math.round(Number(record.cost_information.monthly_cost) * 100)
+      : null,
+    upfrontCostCents: Number.isFinite(Number(record?.cost_information?.upfront_cost))
+      ? Math.round(Number(record.cost_information.upfront_cost) * 100)
+      : null
   };
 }
 
@@ -94,7 +100,7 @@ export default async function handler(req, res) {
 
     for (const record of ownedNumbers) {
       const tenant = byNumber.get(record.phoneNumber) || null;
-      const monthlyCostCents = tenant?.telnyx_voice_monthly_cost_cents ?? null;
+      const monthlyCostCents = tenant?.telnyx_voice_monthly_cost_cents ?? record.monthlyCostCents ?? null;
       const estimated30DayCostCents = estimate30DayCostCents({
         monthlyCostCents,
         purchasedAt: tenant?.telnyx_voice_purchased_at || record.purchasedAt

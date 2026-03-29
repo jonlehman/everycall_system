@@ -122,6 +122,14 @@ export async function ensureTables(pool) {
       ai_output_rate_micros_usd BIGINT,
       ai_estimated_cost_micros_usd BIGINT,
       ai_response_count INTEGER NOT NULL DEFAULT 0,
+      answered_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      duration_seconds INTEGER,
+      telephony_billable_minutes INTEGER,
+      telephony_rate_micros_usd BIGINT,
+      telephony_estimated_cost_micros_usd BIGINT,
+      notification_estimated_cost_micros_usd BIGINT,
+      total_estimated_cost_micros_usd BIGINT,
       latency_ms INTEGER,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -140,6 +148,14 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_output_rate_micros_usd BIGINT;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_estimated_cost_micros_usd BIGINT;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_response_count INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS answered_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS duration_seconds INTEGER;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS telephony_billable_minutes INTEGER;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS telephony_rate_micros_usd BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS telephony_estimated_cost_micros_usd BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS notification_estimated_cost_micros_usd BIGINT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS total_estimated_cost_micros_usd BIGINT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS call_details (

@@ -119,7 +119,7 @@ export default function AdminPhoneNumbersPage() {
 
       <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <div className="mb-3 text-sm text-slate-500">
-          Numbers provisioned in Telnyx but not assigned to a tenant show up as <code>unassigned</code>. They are now inventory-only and cannot be reassigned through admin. Number cost is only tracked for numbers provisioned after cost capture was added, so older numbers may show <code>Unknown</code>.
+          Numbers provisioned in Telnyx but not assigned to a tenant show up as <code>unassigned</code>. They are now inventory-only and cannot be reassigned through admin. Monthly cost is pulled from the tenant record when available and falls back to live Telnyx number pricing when it is missing.
         </div>
         <DataGrid
           rows={rows}

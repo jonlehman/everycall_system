@@ -12,6 +12,12 @@ function formatInt(value) {
   return new Intl.NumberFormat('en-US').format(Number(value || 0));
 }
 
+function formatDurationMinutes(seconds) {
+  const totalSeconds = Number(seconds || 0);
+  const minutes = totalSeconds / 60;
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: minutes >= 10 ? 1 : 2 }).format(minutes);
+}
+
 export default function AdminUsagePage() {
   const [report, setReport] = useState({ tenantRows: [], callRows: [], summary: null });
   const [status, setStatus] = useState('Loading...');
@@ -22,7 +28,7 @@ export default function AdminUsagePage() {
       .then((resp) => resp.ok ? resp.json() : null)
       .then((data) => {
         if (!mounted || !data?.ok) {
-          if (mounted) setStatus('Could not load AI usage report.');
+          if (mounted) setStatus('Could not load cost report.');
           return;
         }
         setReport({
@@ -30,10 +36,10 @@ export default function AdminUsagePage() {
           callRows: data.callRows || [],
           summary: data.summary || null
         });
-        setStatus('Last 30 days.');
+        setStatus('Last 30 days. Operational estimates based on recorded usage and configured rates.');
       })
       .catch(() => {
-        if (mounted) setStatus('Could not load AI usage report.');
+        if (mounted) setStatus('Could not load cost report.');
       });
     return () => { mounted = false; };
   }, []);
@@ -45,7 +51,13 @@ export default function AdminUsagePage() {
     callCount: Number(row.call_count || 0),
     inputTokens: Number(row.input_tokens || 0),
     outputTokens: Number(row.output_tokens || 0),
-    estimatedCost: Number(row.estimated_cost_micros_usd || 0)
+    durationSeconds: Number(row.duration_seconds || 0),
+    billableMinutes: Number(row.telephony_billable_minutes || 0),
+    aiEstimatedCost: Number(row.ai_estimated_cost_micros_usd || 0),
+    telephonyEstimatedCost: Number(row.telephony_estimated_cost_micros_usd || 0),
+    notificationEstimatedCost: Number(row.notification_estimated_cost_micros_usd || 0),
+    numberEstimatedCost: Number(row.number_estimated_cost_micros_usd || 0),
+    estimatedCost: Number(row.total_estimated_cost_micros_usd || 0)
   }));
 
   const callRows = (report.callRows || []).map((row) => ({
@@ -56,8 +68,13 @@ export default function AdminUsagePage() {
     model: row.ai_model || '',
     inputTokens: Number(row.ai_input_tokens || 0),
     outputTokens: Number(row.ai_output_tokens || 0),
+    durationSeconds: Number(row.duration_seconds || 0),
+    billableMinutes: Number(row.telephony_billable_minutes || 0),
     responseCount: Number(row.ai_response_count || 0),
-    estimatedCost: Number(row.ai_estimated_cost_micros_usd || 0),
+    aiEstimatedCost: Number(row.ai_estimated_cost_micros_usd || 0),
+    telephonyEstimatedCost: Number(row.telephony_estimated_cost_micros_usd || 0),
+    notificationEstimatedCost: Number(row.notification_estimated_cost_micros_usd || 0),
+    estimatedCost: Number(row.total_estimated_cost_micros_usd || 0),
     createdAt: row.created_at ? new Date(row.created_at).toLocaleString() : ''
   }));
 
@@ -65,28 +82,40 @@ export default function AdminUsagePage() {
     <section className="grid gap-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="m-0 text-2xl font-semibold tracking-tight">AI Usage</h1>
+          <h1 className="m-0 text-2xl font-semibold tracking-tight">Operational Cost</h1>
           <div className="text-sm text-slate-500">{status}</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
           <div className="text-xs uppercase tracking-wide text-slate-500">Calls</div>
           <div className="mt-1 text-3xl font-bold">{formatInt(report.summary?.totalCalls ?? 0)}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Input Tokens</div>
-          <div className="mt-1 text-3xl font-bold">{formatInt(report.summary?.totalInputTokens ?? 0)}</div>
+          <div className="text-xs uppercase tracking-wide text-slate-500">Minutes</div>
+          <div className="mt-1 text-3xl font-bold">{formatDurationMinutes(report.summary?.totalDurationSeconds ?? 0)}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Output Tokens</div>
-          <div className="mt-1 text-3xl font-bold">{formatInt(report.summary?.totalOutputTokens ?? 0)}</div>
+          <div className="text-xs uppercase tracking-wide text-slate-500">Billable Minutes</div>
+          <div className="mt-1 text-3xl font-bold">{formatInt(report.summary?.totalTelephonyBillableMinutes ?? 0)}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Estimated Cost</div>
+          <div className="text-xs uppercase tracking-wide text-slate-500">AI Cost</div>
+          <div className="mt-1 text-3xl font-bold">{formatUsdFromMicros(report.summary?.totalAiEstimatedCostMicrosUsd ?? 0)}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Telephony Cost</div>
+          <div className="mt-1 text-3xl font-bold">{formatUsdFromMicros(report.summary?.totalTelephonyEstimatedCostMicrosUsd ?? 0)}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Total Estimated Cost</div>
           <div className="mt-1 text-3xl font-bold">{formatUsdFromMicros(report.summary?.totalEstimatedCostMicrosUsd ?? 0)}</div>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-3 text-sm text-slate-600 shadow-sm">
+        Total estimated cost includes AI, telephony, notification delivery, and 30-day number-rental estimates. It is an operational estimate based on recorded usage, not invoice reconciliation.
       </div>
 
       <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
@@ -97,9 +126,13 @@ export default function AdminUsagePage() {
             { field: 'tenantName', headerName: 'Tenant', flex: 1.2, minWidth: 180 },
             { field: 'tenantKey', headerName: 'Tenant Key', flex: 1, minWidth: 180 },
             { field: 'callCount', headerName: 'Calls', flex: 0.5, minWidth: 90, valueFormatter: ({ value }) => formatInt(value) },
-            { field: 'inputTokens', headerName: 'Input Tokens', flex: 0.8, minWidth: 140, valueFormatter: ({ value }) => formatInt(value) },
-            { field: 'outputTokens', headerName: 'Output Tokens', flex: 0.8, minWidth: 140, valueFormatter: ({ value }) => formatInt(value) },
-            { field: 'estimatedCost', headerName: 'Estimated Cost', flex: 0.8, minWidth: 140, valueFormatter: ({ value }) => formatUsdFromMicros(value) }
+            { field: 'durationSeconds', headerName: 'Minutes', flex: 0.6, minWidth: 110, valueFormatter: ({ value }) => formatDurationMinutes(value) },
+            { field: 'billableMinutes', headerName: 'Billable Min', flex: 0.6, minWidth: 120, valueFormatter: ({ value }) => formatInt(value) },
+            { field: 'aiEstimatedCost', headerName: 'AI Cost', flex: 0.75, minWidth: 130, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
+            { field: 'telephonyEstimatedCost', headerName: 'Telephony', flex: 0.75, minWidth: 130, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
+            { field: 'notificationEstimatedCost', headerName: 'Notifications', flex: 0.75, minWidth: 130, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
+            { field: 'numberEstimatedCost', headerName: 'Number Rental', flex: 0.75, minWidth: 130, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
+            { field: 'estimatedCost', headerName: 'Total Cost', flex: 0.8, minWidth: 140, valueFormatter: ({ value }) => formatUsdFromMicros(value) }
           ]}
           autoHeight
           disableRowSelectionOnClick
@@ -124,10 +157,13 @@ export default function AdminUsagePage() {
             { field: 'tenantName', headerName: 'Tenant', flex: 1, minWidth: 180 },
             { field: 'callSid', headerName: 'Call SID', flex: 1.1, minWidth: 180 },
             { field: 'model', headerName: 'Model', flex: 0.9, minWidth: 160 },
+            { field: 'durationSeconds', headerName: 'Minutes', flex: 0.55, minWidth: 100, valueFormatter: ({ value }) => formatDurationMinutes(value) },
+            { field: 'billableMinutes', headerName: 'Billable Min', flex: 0.55, minWidth: 120, valueFormatter: ({ value }) => formatInt(value) },
             { field: 'responseCount', headerName: 'Responses', flex: 0.5, minWidth: 110, valueFormatter: ({ value }) => formatInt(value) },
-            { field: 'inputTokens', headerName: 'Input Tokens', flex: 0.8, minWidth: 140, valueFormatter: ({ value }) => formatInt(value) },
-            { field: 'outputTokens', headerName: 'Output Tokens', flex: 0.8, minWidth: 140, valueFormatter: ({ value }) => formatInt(value) },
-            { field: 'estimatedCost', headerName: 'Estimated Cost', flex: 0.8, minWidth: 140, valueFormatter: ({ value }) => formatUsdFromMicros(value) }
+            { field: 'aiEstimatedCost', headerName: 'AI Cost', flex: 0.7, minWidth: 120, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
+            { field: 'telephonyEstimatedCost', headerName: 'Telephony', flex: 0.7, minWidth: 120, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
+            { field: 'notificationEstimatedCost', headerName: 'Notifications', flex: 0.7, minWidth: 130, valueFormatter: ({ value }) => formatUsdFromMicros(value) },
+            { field: 'estimatedCost', headerName: 'Total Cost', flex: 0.8, minWidth: 140, valueFormatter: ({ value }) => formatUsdFromMicros(value) }
           ]}
           autoHeight
           disableRowSelectionOnClick

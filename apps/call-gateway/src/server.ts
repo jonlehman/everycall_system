@@ -4,6 +4,7 @@ import path from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
 import { readCallGatewayEnv } from "@everycall/config";
 import type { CallState } from "@everycall/contracts";
+import { estimateAiCostMicrosUsd, estimateBillableMinutes, estimateTelephonyCostMicrosUsd, usdToMicros } from "@everycall/contracts/callCosting";
 import { buildTranscriptFromEvents } from "@everycall/contracts/callTranscript";
 import { logError, logInfo } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
@@ -153,6 +154,7 @@ type StreamSession = {
   realtimeModel?: string;
   aiInputRateMicrosUsd?: number;
   aiOutputRateMicrosUsd?: number;
+  callAnsweredAt?: string | null;
   usageTotals?: UsageTotals;
   pendingToolCall?: PendingToolCall | null;
   realtimeLogPath?: string;
@@ -185,6 +187,7 @@ function createStreamSession(
     greetingSent: false,
     aiInputRateMicrosUsd: realtimeInputRateMicrosUsd,
     aiOutputRateMicrosUsd: realtimeOutputRateMicrosUsd,
+    callAnsweredAt: null,
     usageTotals: emptyUsageTotals(),
     promptPayload,
     knowledgeCallState,
@@ -235,9 +238,14 @@ function parseUsdRatePerMillion(value: string | undefined, fallback: number) {
 }
 
 const realtimeInputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_INPUT_RATE_PER_1M_USD, 4);
+const realtimeCachedInputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_CACHED_INPUT_RATE_PER_1M_USD, 0.4);
+const realtimeAudioInputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_AUDIO_INPUT_RATE_PER_1M_USD, 32);
 const realtimeOutputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_OUTPUT_RATE_PER_1M_USD, 16);
-const realtimeInputRateMicrosUsd = Math.round(realtimeInputRatePer1MUsd * 1_000_000);
-const realtimeOutputRateMicrosUsd = Math.round(realtimeOutputRatePer1MUsd * 1_000_000);
+const realtimeAudioOutputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_AUDIO_OUTPUT_RATE_PER_1M_USD, 64);
+const realtimeInputRateMicrosUsd = usdToMicros(realtimeInputRatePer1MUsd);
+const realtimeOutputRateMicrosUsd = usdToMicros(realtimeOutputRatePer1MUsd);
+const telnyxEstimatedInboundRatePerMinuteUsd = parseUsdRatePerMillion(process.env.TELNYX_ESTIMATED_INBOUND_RATE_PER_MINUTE_USD, 0.0055);
+const telnyxEstimatedInboundRateMicrosUsd = usdToMicros(telnyxEstimatedInboundRatePerMinuteUsd);
 
 function emptyUsageTotals(): UsageTotals {
   return {
@@ -278,9 +286,30 @@ function collectUsage(payloadMsg: any) {
   };
 }
 
-function estimateUsageCostMicrosUsd(inputTokens: number, outputTokens: number) {
-  return Math.round((inputTokens * realtimeInputRateMicrosUsd) / 1_000_000)
-    + Math.round((outputTokens * realtimeOutputRateMicrosUsd) / 1_000_000);
+function estimateUsageCostMicrosUsd(usage: {
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens?: number | null;
+  inputTextTokens?: number | null;
+  inputAudioTokens?: number | null;
+  outputTextTokens?: number | null;
+  outputAudioTokens?: number | null;
+}) {
+  return estimateAiCostMicrosUsd({
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cachedInputTokens: usage.cachedInputTokens,
+    inputTextTokens: usage.inputTextTokens,
+    inputAudioTokens: usage.inputAudioTokens,
+    outputTextTokens: usage.outputTextTokens,
+    outputAudioTokens: usage.outputAudioTokens
+  }, {
+    textInputRatePer1MUsd: realtimeInputRatePer1MUsd,
+    cachedInputRatePer1MUsd: realtimeCachedInputRatePer1MUsd,
+    audioInputRatePer1MUsd: realtimeAudioInputRatePer1MUsd,
+    textOutputRatePer1MUsd: realtimeOutputRatePer1MUsd,
+    audioOutputRatePer1MUsd: realtimeAudioOutputRatePer1MUsd
+  });
 }
 
 async function persistCallUsage(session: StreamSession) {
@@ -300,7 +329,10 @@ async function persistCallUsage(session: StreamSession) {
            ai_input_rate_micros_usd = $10,
            ai_output_rate_micros_usd = $11,
            ai_estimated_cost_micros_usd = $12,
-           ai_response_count = $13
+           ai_response_count = $13,
+           total_estimated_cost_micros_usd = COALESCE(telephony_estimated_cost_micros_usd, 0)
+             + COALESCE(notification_estimated_cost_micros_usd, 0)
+             + $12
        WHERE call_sid = $1`,
       [
         session.callSid,
@@ -860,17 +892,78 @@ async function telnyxCallAction(callControlId: string, action: string, payload: 
   }
 }
 
-async function markCallCompleted(callSid: string) {
+async function markCallCompleted(callSid: string, answeredAtHint: string | null = null) {
+  if (!pool) return;
+  try {
+    const callRow = await pool.query(
+      `SELECT
+         call_sid,
+         created_at,
+         answered_at,
+         completed_at,
+         ai_estimated_cost_micros_usd,
+         notification_estimated_cost_micros_usd
+       FROM calls
+       WHERE call_sid = $1
+       LIMIT 1`,
+      [callSid]
+    );
+    const row = callRow.rows[0] || null;
+    if (!row) return;
+
+    const completedAt = row.completed_at ? new Date(row.completed_at) : new Date();
+    const answeredAt = row.answered_at || answeredAtHint || null;
+    const durationSeconds = answeredAt
+      ? Math.max(0, Math.round((completedAt.getTime() - new Date(answeredAt).getTime()) / 1000))
+      : 0;
+    const telephonyBillableMinutes = estimateBillableMinutes(durationSeconds);
+    const telephonyEstimatedCostMicrosUsd = estimateTelephonyCostMicrosUsd(
+      durationSeconds,
+      telnyxEstimatedInboundRatePerMinuteUsd
+    );
+    const totalEstimatedCostMicrosUsd = Math.max(0, Number(row.ai_estimated_cost_micros_usd || 0))
+      + Math.max(0, Number(row.notification_estimated_cost_micros_usd || 0))
+      + telephonyEstimatedCostMicrosUsd;
+
+    await pool.query(
+      `UPDATE calls
+       SET status = 'completed',
+           completed_at = COALESCE(completed_at, $2),
+           duration_seconds = $3,
+           telephony_billable_minutes = $4,
+           telephony_rate_micros_usd = $5,
+           telephony_estimated_cost_micros_usd = $6,
+           total_estimated_cost_micros_usd = $7
+       WHERE call_sid = $1`,
+      [
+        callSid,
+        completedAt.toISOString(),
+        durationSeconds,
+        telephonyBillableMinutes,
+        telnyxEstimatedInboundRateMicrosUsd,
+        telephonyEstimatedCostMicrosUsd,
+        totalEstimatedCostMicrosUsd
+      ]
+    );
+  } catch (err) {
+    logError("call_status_update_failed", {
+      callSid,
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
+}
+
+async function markCallAnswered(callSid: string) {
   if (!pool) return;
   try {
     await pool.query(
       `UPDATE calls
-       SET status = 'completed'
+       SET answered_at = COALESCE(answered_at, NOW())
        WHERE call_sid = $1`,
       [callSid]
     );
   } catch (err) {
-    logError("call_status_update_failed", {
+    logError("call_answered_update_failed", {
       callSid,
       message: err instanceof Error ? err.message : "unknown"
     });
@@ -1009,7 +1102,7 @@ async function endCallSession(session: StreamSession | undefined, reason: string
     streamIdToCall.delete(session.telnyxStreamId);
   }
   streamSessions.delete(session.callControlId);
-  await markCallCompleted(session.callSid);
+  await markCallCompleted(session.callSid, session.callAnsweredAt || null);
 }
 
 async function flushFinalAudioAndEnd(session: StreamSession | undefined, reason: string, shouldHangup: boolean) {
@@ -1629,7 +1722,7 @@ function connectOpenAiRealtime(session: StreamSession) {
       totals.outputTextTokens += usage.outputTextTokens;
       totals.outputAudioTokens += usage.outputAudioTokens;
       totals.responseCount += 1;
-      totals.estimatedCostMicrosUsd += estimateUsageCostMicrosUsd(usage.inputTokens, usage.outputTokens);
+      totals.estimatedCostMicrosUsd += estimateUsageCostMicrosUsd(usage);
       session.usageTotals = totals;
       void persistCallUsage(session);
       logInfo("openai_realtime_response_done", {
@@ -1642,7 +1735,7 @@ function connectOpenAiRealtime(session: StreamSession) {
         errorCode: statusDetails?.error?.code,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
-        estimatedCostMicrosUsd: estimateUsageCostMicrosUsd(usage.inputTokens, usage.outputTokens)
+        estimatedCostMicrosUsd: estimateUsageCostMicrosUsd(usage)
       });
       logAudioPumpTraceSummary(session, "response_done");
       if (session.pendingToolSpeechWait) {
@@ -1971,6 +2064,8 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     }
 
     if (session) {
+      session.callAnsweredAt = session.callAnsweredAt || new Date().toISOString();
+      await markCallAnswered(session.callSid);
       const streamUrl = `${toWebSocketUrl(callGatewayBaseUrl || buildBaseUrl(req))}/v1/telnyx/stream`;
       try {
         logInfo("telnyx_stream_start_request", {

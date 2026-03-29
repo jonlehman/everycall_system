@@ -10,7 +10,7 @@ const items = [
   { label: 'Provisioning Jobs', href: '/admin/jobs', group: 'Platform' },
   { label: 'Test Intake', href: '/intake/test', group: 'Platform' },
   { label: 'Phone Numbers', href: '/admin/phone-numbers', group: 'Platform' },
-  { label: 'AI Usage', href: '/admin/usage', group: 'Platform' },
+  { label: 'Costs', href: '/admin/usage', group: 'Platform' },
   { label: 'Admin Users', href: '/admin/users', group: 'Controls' },
   { label: 'System Config', href: '/admin/system', group: 'Controls' },
   { label: 'Prompt Config', href: '/admin/system/prompts', group: 'Controls' },
