@@ -234,7 +234,7 @@ function logPrewarmOutcome(callSid: string, tenantKey: string, source: string, r
 
 function parseUsdRatePerMillion(value: string | undefined, fallback: number) {
   const parsed = Number(value || "");
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 const realtimeInputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_INPUT_RATE_PER_1M_USD, 4);
