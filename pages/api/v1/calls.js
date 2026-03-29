@@ -5,6 +5,12 @@ import { normalizeCapturedCallFields } from "../_lib/callCapture.js";
 import { buildTranscriptFromEvents, sanitizeTranscriptText } from "@everycall/contracts/callTranscript";
 import { evaluateLeadDecision } from "../_lib/leadQualification.js";
 import { ASYNC_JOB_TYPES, enqueueAsyncJob } from "../../../lib/asyncJobs.js";
+import {
+  buildStableEventId,
+  INTEGRATION_CONNECTOR_TYPES,
+  INTEGRATION_EVENT_TYPES,
+  listIntegrationConnections
+} from "../_lib/outboundIntegrations.js";
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
 const openAiModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
@@ -343,6 +349,40 @@ export default async function handler(req, res) {
             tenantKey: effectiveTenantKey,
             callId,
             message: notificationErr?.message || "unknown"
+          });
+        }
+
+        try {
+          const webhookConnections = await listIntegrationConnections(pool, {
+            tenantKey: effectiveTenantKey,
+            connectorType: INTEGRATION_CONNECTOR_TYPES.outboundWebhook,
+            enabledOnly: true
+          });
+          const eventId = buildStableEventId({
+            tenantKey: effectiveTenantKey,
+            callSid: callId,
+            eventType: INTEGRATION_EVENT_TYPES.callCompleted,
+            eventVersion: 1
+          });
+          for (const connection of webhookConnections) {
+            await enqueueAsyncJob(pool, {
+              jobType: ASYNC_JOB_TYPES.integrationWebhookSend,
+              tenantKey: effectiveTenantKey,
+              dedupeKey: `integration_webhook:${callId}:${connection.id}:${INTEGRATION_EVENT_TYPES.callCompleted}:v1`,
+              payload: {
+                tenantKey: effectiveTenantKey,
+                callSid: callId,
+                connectionId: connection.id,
+                eventId
+              },
+              maxAttempts: 8
+            });
+          }
+        } catch (integrationErr) {
+          console.error("integration_enqueue_failed", {
+            tenantKey: effectiveTenantKey,
+            callId,
+            message: integrationErr?.message || "unknown"
           });
         }
 

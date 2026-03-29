@@ -64,6 +64,16 @@ const GUARDRAIL_MODE_OPTIONS = ['clarify', 'handoff', 'emergency_redirect'];
 const RISK_LEVEL_OPTIONS = ['low', 'medium', 'high'];
 const ARTIFACT_STATUS_OPTIONS = ['approved_live', 'draft'];
 const OVERRIDE_TYPE_OPTIONS = ['approved_answer', 'hard_fact', 'temporary_notice'];
+const WEBHOOK_TYPE_OPTIONS = [
+  'project_inquiry',
+  'general_inquiry',
+  'existing_customer_support',
+  'vendor_or_sales',
+  'spam',
+  'wrong_number',
+  'hangup_or_incomplete',
+  'other_non_billable'
+];
 
 function fetchJson(url, options) {
   return fetch(url, options).then(async (resp) => {
@@ -163,6 +173,21 @@ function buildOverrideDraft(override = null) {
     body: override?.body || '',
     priority: Number.isFinite(Number(override?.priority)) ? String(override.priority) : '100',
     status: override?.status || 'approved_live'
+  };
+}
+
+function buildWebhookDraft(connection = null) {
+  const config = connection?.config || {};
+  return {
+    connectionId: connection?.id || '',
+    name: connection?.name || 'Outbound Webhook',
+    endpointUrl: connection?.endpointUrl || '',
+    status: connection?.status || 'enabled',
+    signingSecret: '',
+    includeTypes: Array.isArray(config.includeTypes) && config.includeTypes.length ? config.includeTypes : [...WEBHOOK_TYPE_OPTIONS],
+    includeNonBillable: config.includeNonBillable !== false,
+    includeDuplicates: config.includeDuplicates !== false,
+    includeTranscript: config.includeTranscript === true
   };
 }
 
@@ -347,6 +372,10 @@ export default function TenantManagePage() {
   const [overrideDraft, setOverrideDraft] = useState(buildOverrideDraft(null));
   const [guardrailSaving, setGuardrailSaving] = useState(false);
   const [overrideSaving, setOverrideSaving] = useState(false);
+  const [integrationReview, setIntegrationReview] = useState({ connections: [], deliveries: [] });
+  const [webhookDraft, setWebhookDraft] = useState(buildWebhookDraft(null));
+  const [webhookSaving, setWebhookSaving] = useState(false);
+  const [webhookTesting, setWebhookTesting] = useState(false);
 
   const primaryUser = useMemo(() => {
     if (!users.length) return null;
@@ -379,6 +408,7 @@ export default function TenantManagePage() {
     setPreviewQuery('');
     setGuardrailDraft(buildGuardrailDraft(null));
     setOverrideDraft(buildOverrideDraft(null));
+    setWebhookDraft(buildWebhookDraft(null));
   }, [tenantKey]);
 
   const loadTenant = async () => {
@@ -386,12 +416,13 @@ export default function TenantManagePage() {
     setLoading(true);
     setStatus('Loading tenant...');
     try {
-      const [tenantData, usersData, buildData, readinessData, billingData] = await Promise.all([
+      const [tenantData, usersData, buildData, readinessData, billingData, integrationData] = await Promise.all([
         fetchJson(`/api/v1/tenants?tenantKey=${encodeURIComponent(tenantKey)}`),
         fetchJson(`/api/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`),
         fetchJson(`/api/v1/knowledge/builds?tenantKey=${encodeURIComponent(tenantKey)}`),
         fetchJson(`/api/v1/knowledge/readiness?tenantKey=${encodeURIComponent(tenantKey)}`),
-        fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/billing`).catch(() => ({ channelHealth: [], smsFailovers: [] }))
+        fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/billing`).catch(() => ({ channelHealth: [], smsFailovers: [] })),
+        fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/integrations/webhooks`).catch(() => ({ connections: [], deliveries: [] }))
       ]);
       const [guardrailData, overrideData] = await Promise.all([
         fetchJson(`/api/v1/knowledge/guardrails?tenantKey=${encodeURIComponent(tenantKey)}`).catch(() => ({ guardrails: [] })),
@@ -407,6 +438,18 @@ export default function TenantManagePage() {
       setNotificationReview({
         channelHealth: Array.isArray(billingData?.channelHealth) ? billingData.channelHealth : [],
         smsFailovers: Array.isArray(billingData?.smsFailovers) ? billingData.smsFailovers : []
+      });
+      const nextConnections = Array.isArray(integrationData?.connections) ? integrationData.connections : [];
+      setIntegrationReview({
+        connections: nextConnections,
+        deliveries: Array.isArray(integrationData?.deliveries) ? integrationData.deliveries : []
+      });
+      setWebhookDraft((current) => {
+        if (current?.connectionId) {
+          const matching = nextConnections.find((connection) => String(connection.id) === String(current.connectionId));
+          if (matching) return buildWebhookDraft(matching);
+        }
+        return nextConnections[0] ? buildWebhookDraft(nextConnections[0]) : buildWebhookDraft(null);
       });
       setGuardrails(Array.isArray(guardrailData?.guardrails) ? guardrailData.guardrails : []);
       setOverrides(Array.isArray(overrideData?.overrides) ? overrideData.overrides : []);
@@ -428,6 +471,23 @@ export default function TenantManagePage() {
 
   const updatePrimaryUserField = (key, value) => {
     setPrimaryUserDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateWebhookField = (key, value) => {
+    setWebhookDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const toggleWebhookType = (type) => {
+    setWebhookDraft((current) => {
+      const includeTypes = Array.isArray(current.includeTypes) ? [...current.includeTypes] : [];
+      const exists = includeTypes.includes(type);
+      return {
+        ...current,
+        includeTypes: exists
+          ? includeTypes.filter((item) => item !== type)
+          : [...includeTypes, type]
+      };
+    });
   };
 
   const resetToSaved = () => {
@@ -673,6 +733,67 @@ export default function TenantManagePage() {
     }
   };
 
+  const saveWebhookConnection = async () => {
+    setWebhookSaving(true);
+    setStatus('Saving outbound webhook...');
+    try {
+      const data = await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/integrations/webhooks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          connectionId: webhookDraft.connectionId || undefined,
+          name: webhookDraft.name,
+          endpointUrl: webhookDraft.endpointUrl,
+          status: webhookDraft.status,
+          signingSecret: webhookDraft.signingSecret || undefined,
+          includeTypes: webhookDraft.includeTypes,
+          includeNonBillable: webhookDraft.includeNonBillable,
+          includeDuplicates: webhookDraft.includeDuplicates,
+          includeTranscript: webhookDraft.includeTranscript
+        })
+      });
+      const connections = Array.isArray(data?.connections) ? data.connections : [];
+      setIntegrationReview({
+        connections,
+        deliveries: Array.isArray(data?.deliveries) ? data.deliveries : []
+      });
+      setWebhookDraft(buildWebhookDraft(data?.connection || connections[0] || null));
+      if (data?.generatedSecret) {
+        setStatus(`Outbound webhook saved. Generated signing secret: ${data.generatedSecret}`);
+      } else {
+        setStatus('Outbound webhook saved.');
+      }
+    } catch (error) {
+      setStatus(error?.message || 'Outbound webhook save failed.');
+    } finally {
+      setWebhookSaving(false);
+    }
+  };
+
+  const testWebhookConnection = async () => {
+    const connectionId = webhookDraft.connectionId;
+    if (!connectionId) {
+      setStatus('Save the outbound webhook before testing it.');
+      return;
+    }
+    setWebhookTesting(true);
+    setStatus('Sending webhook test...');
+    try {
+      const data = await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/integrations/webhooks/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId })
+      });
+      await loadTenant();
+      setStatus(data?.responseStatus ? `Webhook test succeeded with HTTP ${data.responseStatus}.` : 'Webhook test succeeded.');
+    } catch (error) {
+      setStatus(error?.message || 'Webhook test failed.');
+      await loadTenant();
+    } finally {
+      setWebhookTesting(false);
+    }
+  };
+
   const unsavedNotes = [];
   if (hasPrimaryUserChanges) {
     unsavedNotes.push(`${primaryUserChangedCount} primary user change${primaryUserChangedCount === 1 ? '' : 's'}`);
@@ -889,6 +1010,165 @@ export default function TenantManagePage() {
             ) : (
               <div className="mt-3 text-sm text-slate-500">No recent SMS delivery failures recorded.</div>
             )}
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="m-0 text-lg font-semibold">Outbound Webhooks</h2>
+                <div className="mt-1 text-sm text-slate-500">
+                  Phase 1 integrations: signed `call.completed` deliveries with per-connection filters.
+                </div>
+              </div>
+              <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                {integrationReview.connections.length} connection{integrationReview.connections.length === 1 ? '' : 's'}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,1.1fr)]">
+              <div className="grid gap-2">
+                {integrationReview.connections.length ? integrationReview.connections.map((connection) => (
+                  <div key={connection.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-slate-900">{connection.name}</div>
+                        <div className="mt-1 break-all text-xs text-slate-500">{connection.endpointUrl}</div>
+                      </div>
+                      <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${connection.status === 'enabled' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
+                        {connection.status}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-500">
+                      Test: {connection.lastTestStatus || 'never'} · Last delivery: {connection.lastDeliverySucceededAt ? formatDateTimeDisplay(connection.lastDeliverySucceededAt) : 'none'}
+                    </div>
+                    <div className="mt-3">
+                      <Button variant="outline" onClick={() => setWebhookDraft(buildWebhookDraft(connection))}>
+                        Edit Webhook
+                      </Button>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="text-sm text-slate-500">No outbound webhook connections configured yet.</div>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="m-0 text-base font-semibold text-slate-900">{webhookDraft.connectionId ? 'Edit Outbound Webhook' : 'New Outbound Webhook'}</h3>
+                  <Button variant="outline" onClick={() => setWebhookDraft(buildWebhookDraft(null))} disabled={webhookSaving || webhookTesting}>
+                    New Webhook
+                  </Button>
+                </div>
+                <div className="mt-3 grid gap-3">
+                  <Field label="Connection Name">
+                    <TextInput
+                      value={webhookDraft.name}
+                      onChange={(event) => updateWebhookField('name', event.target.value)}
+                      placeholder="Primary CRM Webhook"
+                    />
+                  </Field>
+                  <Field label="Endpoint URL" hint="HTTPS endpoint that should receive signed `call.completed` events.">
+                    <TextInput
+                      value={webhookDraft.endpointUrl}
+                      onChange={(event) => updateWebhookField('endpointUrl', event.target.value)}
+                      placeholder="https://example.com/everycall/webhook"
+                    />
+                  </Field>
+                  <Field label="Signing Secret" hint={webhookDraft.connectionId ? 'Leave blank to keep the existing secret. Enter a new one to rotate it.' : 'Leave blank to auto-generate one, or enter your own secret.'}>
+                    <TextInput
+                      value={webhookDraft.signingSecret}
+                      onChange={(event) => updateWebhookField('signingSecret', event.target.value)}
+                      placeholder="Secret used for X-EveryCall-Signature"
+                    />
+                  </Field>
+                  <Field label="Status">
+                    <SelectInput
+                      value={webhookDraft.status}
+                      options={['enabled', 'disabled']}
+                      onChange={(event) => updateWebhookField('status', event.target.value)}
+                    />
+                  </Field>
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="text-sm font-semibold text-slate-900">Include Call Types</div>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {WEBHOOK_TYPE_OPTIONS.map((type) => (
+                        <label key={type} className="flex items-center gap-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={webhookDraft.includeTypes.includes(type)}
+                            onChange={() => toggleWebhookType(type)}
+                          />
+                          <span>{formatLabel(type)}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={webhookDraft.includeNonBillable}
+                      onChange={(event) => updateWebhookField('includeNonBillable', event.target.checked)}
+                    />
+                    <span>Include non-billable calls</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={webhookDraft.includeDuplicates}
+                      onChange={(event) => updateWebhookField('includeDuplicates', event.target.checked)}
+                    />
+                    <span>Include duplicate leads</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={webhookDraft.includeTranscript}
+                      onChange={(event) => updateWebhookField('includeTranscript', event.target.checked)}
+                    />
+                    <span>Include transcript artifact when available</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={saveWebhookConnection} disabled={webhookSaving}>
+                      {webhookSaving ? 'Saving...' : 'Save Webhook'}
+                    </Button>
+                    <Button variant="outline" onClick={testWebhookConnection} disabled={webhookTesting || webhookSaving || !webhookDraft.connectionId}>
+                      {webhookTesting ? 'Testing...' : 'Test Connection'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div className="text-sm font-semibold text-slate-900">Recent Deliveries</div>
+              {integrationReview.deliveries.length ? (
+                <div className="mt-2 grid gap-2">
+                  {integrationReview.deliveries.slice(0, 8).map((delivery) => (
+                    <div key={`${delivery.id}-${delivery.delivery_id}`} className="rounded-lg border border-slate-200 p-3 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-medium text-slate-900">{delivery.connection_name || `Connection ${delivery.connection_id}`}</div>
+                        <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
+                          delivery.status === 'delivered'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : delivery.status === 'skipped'
+                              ? 'bg-slate-100 text-slate-700'
+                              : 'bg-rose-100 text-rose-800'
+                        }`}>
+                          {delivery.status}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {delivery.event_type} · attempt {delivery.attempt_number} · {formatDateTimeDisplay(delivery.created_at)}
+                      </div>
+                      {delivery.call_sid ? <div className="mt-1 break-all text-xs text-slate-500">Call {delivery.call_sid}</div> : null}
+                      {delivery.error_message ? <div className="mt-2 text-xs text-rose-700">{delivery.error_message}</div> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-2 text-sm text-slate-500">No webhook deliveries recorded yet.</div>
+              )}
+            </div>
           </section>
 
           <section className="rounded-xl border border-border bg-card p-4 shadow-sm">

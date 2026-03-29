@@ -3,6 +3,16 @@ import { logError, logInfo } from "@everycall/observability";
 import { ensureTables } from "../../../pages/api/_lib/db.js";
 import { sendLeadNotifications } from "../../../pages/api/_lib/leadNotifications.js";
 import {
+  buildCallCompletedEvent,
+  buildSignedWebhookRequest,
+  getWebhookConnectionSecret,
+  loadIntegrationConnection,
+  parseConnectionConfig,
+  recordIntegrationDelivery,
+  shouldDeliverConnection,
+  updateConnectionDeliveryHealth
+} from "../../../pages/api/_lib/outboundIntegrations.js";
+import {
   ASYNC_JOB_TYPES,
   claimAsyncJobs,
   completeAsyncJob,
@@ -37,6 +47,126 @@ async function processJob(job) {
     return;
   }
 
+  if (job.job_type === ASYNC_JOB_TYPES.integrationWebhookSend) {
+    const payload = typeof job.payload_json === "object" && job.payload_json ? job.payload_json : {};
+    const tenantKey = String(payload.tenantKey || job.tenant_key || "").trim();
+    const callSid = String(payload.callSid || "").trim();
+    const connectionId = Number(payload.connectionId || 0);
+    const eventId = String(payload.eventId || "").trim();
+    if (!tenantKey || !callSid || !Number.isFinite(connectionId) || connectionId <= 0 || !eventId) {
+      throw new Error("integration_job_missing_fields");
+    }
+
+    const connection = await loadIntegrationConnection(pool, { tenantKey, connectionId });
+    if (!connection) {
+      throw new Error("integration_connection_not_found");
+    }
+
+    const attemptNumber = Number(job.attempts || 1);
+    const deliveryEvent = await buildCallCompletedEvent(pool, {
+      tenantKey,
+      callSid,
+      includeTranscript: parseConnectionConfig(connection.config_json).includeTranscript,
+      eventId
+    });
+
+    const decision = shouldDeliverConnection({
+      payload: deliveryEvent,
+      config: connection.config_json
+    });
+
+    if (connection.status !== "enabled") {
+      await recordIntegrationDelivery(pool, {
+        tenantKey,
+        connectionId,
+        callSid,
+        eventType: deliveryEvent.event_type,
+        eventVersion: deliveryEvent.event_version,
+        eventId: deliveryEvent.event_id,
+        deliveryId: deliveryEvent.delivery_id,
+        attemptNumber,
+        status: "skipped",
+        requestUrl: connection.endpoint_url,
+        errorMessage: "connection_disabled"
+      });
+      return;
+    }
+
+    if (!decision.deliver) {
+      await recordIntegrationDelivery(pool, {
+        tenantKey,
+        connectionId,
+        callSid,
+        eventType: deliveryEvent.event_type,
+        eventVersion: deliveryEvent.event_version,
+        eventId: deliveryEvent.event_id,
+        deliveryId: deliveryEvent.delivery_id,
+        attemptNumber,
+        status: "skipped",
+        requestUrl: connection.endpoint_url,
+        errorMessage: decision.reason || "filtered_out"
+      });
+      return;
+    }
+
+    const signingSecret = getWebhookConnectionSecret(connection);
+    const request = buildSignedWebhookRequest({
+      endpointUrl: connection.endpoint_url,
+      signingSecret,
+      payload: deliveryEvent,
+      attemptNumber
+    });
+    const response = await fetch(request.endpointUrl, {
+      method: "POST",
+      headers: request.headers,
+      body: request.body
+    });
+    const responseText = await response.text().catch(() => "");
+    if (!response.ok) {
+      await recordIntegrationDelivery(pool, {
+        tenantKey,
+        connectionId,
+        callSid,
+        eventType: deliveryEvent.event_type,
+        eventVersion: deliveryEvent.event_version,
+        eventId: deliveryEvent.event_id,
+        deliveryId: deliveryEvent.delivery_id,
+        attemptNumber,
+        status: "failed",
+        requestUrl: connection.endpoint_url,
+        responseStatus: response.status,
+        responseBodyExcerpt: responseText,
+        errorMessage: `http_${response.status}`
+      });
+      await updateConnectionDeliveryHealth(pool, {
+        connectionId,
+        status: "failed",
+        errorMessage: `HTTP ${response.status}: ${responseText || "unknown"}`
+      });
+      throw new Error(`integration_http_${response.status}`);
+    }
+
+    await recordIntegrationDelivery(pool, {
+      tenantKey,
+      connectionId,
+      callSid,
+      eventType: deliveryEvent.event_type,
+      eventVersion: deliveryEvent.event_version,
+      eventId: deliveryEvent.event_id,
+      deliveryId: deliveryEvent.delivery_id,
+      attemptNumber,
+      status: "delivered",
+      requestUrl: connection.endpoint_url,
+      responseStatus: response.status,
+      responseBodyExcerpt: responseText
+    });
+    await updateConnectionDeliveryHealth(pool, {
+      connectionId,
+      status: "delivered"
+    });
+    return;
+  }
+
   throw new Error(`unknown_job_type:${job.job_type}`);
 }
 
@@ -48,7 +178,7 @@ async function runLoop() {
     try {
       jobs = await claimAsyncJobs(pool, {
         workerId,
-        jobTypes: [ASYNC_JOB_TYPES.leadNotificationSend],
+        jobTypes: [ASYNC_JOB_TYPES.leadNotificationSend, ASYNC_JOB_TYPES.integrationWebhookSend],
         limit: claimLimit
       });
     } catch (err) {

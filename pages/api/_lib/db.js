@@ -551,6 +551,73 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE lead_notification_deliveries ADD COLUMN IF NOT EXISTS provider_reference TEXT;`);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS integration_connections (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      connector_type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'enabled',
+      endpoint_url TEXT,
+      signing_secret_ciphertext TEXT,
+      config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      reconnect_required BOOLEAN NOT NULL DEFAULT FALSE,
+      last_test_status TEXT,
+      last_tested_at TIMESTAMPTZ,
+      last_test_error TEXT,
+      last_delivery_succeeded_at TIMESTAMPTZ,
+      last_delivery_failed_at TIMESTAMPTZ,
+      last_delivery_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS endpoint_url TEXT;`);
+  await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS signing_secret_ciphertext TEXT;`);
+  await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS config_json JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS reconnect_required BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS last_test_status TEXT;`);
+  await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS last_tested_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS last_test_error TEXT;`);
+  await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS last_delivery_succeeded_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS last_delivery_failed_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS last_delivery_error TEXT;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS integration_deliveries (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      connection_id BIGINT NOT NULL,
+      call_sid TEXT,
+      event_type TEXT NOT NULL,
+      event_version INTEGER NOT NULL DEFAULT 1,
+      event_id TEXT NOT NULL,
+      delivery_id TEXT NOT NULL,
+      attempt_number INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL,
+      request_url TEXT,
+      response_status INTEGER,
+      response_body_excerpt TEXT,
+      error_message TEXT,
+      delivered_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS tenant_key TEXT;`);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS connection_id BIGINT;`);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS call_sid TEXT;`);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS event_type TEXT;`);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS event_version INTEGER NOT NULL DEFAULT 1;`);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS event_id TEXT;`);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS delivery_id TEXT;`);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS attempt_number INTEGER NOT NULL DEFAULT 1;`);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS status TEXT;`);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS request_url TEXT;`);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS response_status INTEGER;`);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS response_body_excerpt TEXT;`);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS error_message TEXT;`);
+  await pool.query(`ALTER TABLE integration_deliveries ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;`);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS provisioning_jobs (
       id BIGSERIAL PRIMARY KEY,
       tenant_key TEXT NOT NULL,
@@ -668,6 +735,12 @@ export async function ensureTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS lead_notification_deliveries_tenant_call_idx ON lead_notification_deliveries (tenant_key, call_sid, updated_at DESC);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS lead_notification_deliveries_unique_destination_idx ON lead_notification_deliveries (tenant_key, call_sid, channel, destination, event_type);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS lead_notification_deliveries_provider_reference_idx ON lead_notification_deliveries (provider_reference);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS integration_connections_tenant_idx ON integration_connections (tenant_key, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS integration_connections_tenant_status_idx ON integration_connections (tenant_key, status, connector_type);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS integration_deliveries_tenant_created_idx ON integration_deliveries (tenant_key, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS integration_deliveries_connection_created_idx ON integration_deliveries (connection_id, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS integration_deliveries_call_created_idx ON integration_deliveries (call_sid, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS integration_deliveries_event_idx ON integration_deliveries (event_id, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS provisioning_jobs_tenant_updated_idx ON provisioning_jobs (tenant_key, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS provisioning_jobs_stage_status_idx ON provisioning_jobs (stage, status, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS async_jobs_status_available_idx ON async_jobs (status, available_at ASC, id ASC);`);
