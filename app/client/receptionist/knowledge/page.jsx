@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Button } from '../../../../components/ui/button';
 import GuidePanel from '../../_components/GuidePanel';
 import SalesReceptionistNumberBadge from '../../_components/SalesReceptionistNumberBadge';
@@ -757,6 +758,21 @@ export default function ReceptionistKnowledgePage() {
               </div>
             </StepSection>
           </div>
+
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <h2 className="m-0 text-lg font-semibold">Next Steps</h2>
+            <p className="m-0 mt-2 text-sm text-slate-600">
+              After a build is published and your test questions look right, finish Notifications and then use the Go Live Checklist before forwarding real missed calls into the Sales Receptionist.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link href="/client/receptionist/notifications" className="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-[0_8px_20px_rgba(0,74,198,0.16)]">
+                Open Notifications
+              </Link>
+              <Link href="/client/receptionist/go-live" className="inline-flex rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm">
+                Open Go Live Checklist
+              </Link>
+            </div>
+          </section>
         </div>
 
         <GuidePanel

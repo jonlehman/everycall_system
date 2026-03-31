@@ -1,15 +1,8 @@
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { MailtrapClient } from "mailtrap";
 import { issueAuthToken, revokeAuthTokens } from "../../_lib/authTokens.js";
 import { writeAuditLog } from "../../_lib/auditLog.js";
 import { enforceRateLimit, getClientIp } from "../../_lib/rateLimit.js";
-
-const mailtrapToken = process.env.MAILTRAP_TOKEN;
-const mailtrapSender = {
-  email: process.env.MAILTRAP_SENDER_EMAIL || "hello@demomailtrap.co",
-  name: process.env.MAILTRAP_SENDER_NAME || "EveryCall"
-};
-const mailtrapClient = mailtrapToken ? new MailtrapClient({ token: mailtrapToken }) : null;
+import { sendTransactionalEmail } from "../../_lib/mail.js";
 
 export default async function handler(req, res) {
   try {
@@ -90,21 +83,18 @@ export default async function handler(req, res) {
 
     let delivered = false;
     let deliveryError = null;
-    if (mailtrapClient) {
-      const baseUrl = process.env.APP_BASE_URL || "https://app.everycall.io";
-      const resetUrl = `${baseUrl}/reset?token=${encodeURIComponent(token)}`;
-      try {
-        await mailtrapClient.send({
-          from: mailtrapSender,
-          to: [{ email }],
-          subject: "Reset your EveryCall password",
-          text: `Reset your password using this link:\n${resetUrl}\n\nThis link expires in 1 hour.`,
-          category: "Password Reset"
-        });
-        delivered = true;
-      } catch (err) {
-        deliveryError = err?.message || "mailtrap_failed";
-      }
+    const baseUrl = process.env.APP_BASE_URL || "https://app.everycall.io";
+    const resetUrl = `${baseUrl}/reset?token=${encodeURIComponent(token)}`;
+    try {
+      await sendTransactionalEmail({
+        to: email,
+        subject: "Reset your EveryCall password",
+        text: `Reset your password using this link:\n${resetUrl}\n\nThis link expires in 1 hour.`,
+        category: "Password Reset"
+      });
+      delivered = true;
+    } catch (err) {
+      deliveryError = err?.message || "mail_send_failed";
     }
 
     await writeAuditLog(pool, {

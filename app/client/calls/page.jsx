@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { addTranscriptSpacing } from '@everycall/contracts/callTranscript';
 import { useMediaQuery } from '@mui/material';
 import { Button } from '../../../components/ui/button';
+import { getLeadStatusMeta } from '../../../lib/leadBilling';
 import ClientPage from '../_components/ClientPage';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
@@ -63,6 +64,12 @@ function queueUrgencyTextClass(value) {
   if (normalized === 'critical') return 'text-slate-900 font-semibold';
   if (normalized === 'high') return 'text-slate-900 font-semibold';
   return 'text-slate-500 font-medium';
+}
+
+function leadBadgeClass(tone) {
+  if (tone === 'ok') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  if (tone === 'warn') return 'border-amber-200 bg-amber-50 text-amber-800';
+  return 'border-slate-200 bg-slate-100 text-slate-700';
 }
 
 export default function CallsPage() {
@@ -258,6 +265,10 @@ export default function CallsPage() {
     sid: call.call_sid,
     from: formatPhoneDisplay(call.from_number) || '-',
     summary: call.summary || '-',
+    leadOutcomeType: call.lead_outcome_type || '',
+    leadIsValid: Boolean(call.lead_is_valid),
+    leadIsBillable: Boolean(call.lead_is_billable),
+    leadDecisionReason: call.lead_decision_reason || '',
     firstName: call.caller_first_name || '',
     lastName: call.caller_last_name || '',
     addressLine1: call.address_line1 || '',
@@ -474,17 +485,34 @@ export default function CallsPage() {
                           <p className={`m-0 text-sm font-bold ${selected ? 'text-[#004ac6]' : 'text-slate-900'}`}>{row.from}</p>
                         </td>
                         <td className="px-6 py-5">
-                          <p
-                            className="m-0 max-w-xs overflow-hidden text-sm text-slate-500"
-                            title={row.summary || ''}
-                            style={{
-                              display: '-webkit-box',
-                              WebkitLineClamp: 1,
-                              WebkitBoxOrient: 'vertical'
-                            }}
-                          >
-                            {row.summary || '-'}
-                          </p>
+                          <div className="max-w-xs">
+                            <p
+                              className="m-0 overflow-hidden text-sm text-slate-500"
+                              title={row.summary || ''}
+                              style={{
+                                display: '-webkit-box',
+                                WebkitLineClamp: 1,
+                                WebkitBoxOrient: 'vertical'
+                              }}
+                            >
+                              {row.summary || '-'}
+                            </p>
+                            <div className="mt-2">
+                              {(() => {
+                                const leadMeta = getLeadStatusMeta({
+                                  lead_outcome_type: row.leadOutcomeType,
+                                  lead_is_valid: row.leadIsValid,
+                                  lead_is_billable: row.leadIsBillable,
+                                  lead_decision_reason: row.leadDecisionReason
+                                });
+                                return (
+                                  <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-medium ${leadBadgeClass(leadMeta.tone)}`}>
+                                    {leadMeta.label}
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                          </div>
                         </td>
                         <td className="px-6 py-5">
                           <span className={`rounded-full px-2.5 py-1 text-[0.65rem] font-extrabold uppercase tracking-wider ${queueStatusClass(row.status)}`}>
@@ -563,6 +591,28 @@ export default function CallsPage() {
                 </div>
 
                 <div className="grid gap-4">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    {(() => {
+                      const leadMeta = getLeadStatusMeta(detailMeta);
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${leadBadgeClass(leadMeta.tone)}`}>
+                              {leadMeta.label}
+                            </span>
+                            {detailMeta.lead_outcome_type ? (
+                              <span className="text-xs text-slate-500">{formatLabel(detailMeta.lead_outcome_type)}</span>
+                            ) : null}
+                          </div>
+                          <div className="text-sm text-slate-600">{leadMeta.detail}</div>
+                          {detailMeta.lead_duplicate_of_call_sid ? (
+                            <div className="text-xs text-slate-500">Duplicate of call {detailMeta.lead_duplicate_of_call_sid}</div>
+                          ) : null}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
                   <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                     <div className="space-y-1.5">
                       <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Number</label>

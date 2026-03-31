@@ -29,25 +29,45 @@ const CONNECTOR_DEFINITIONS = [
     type: CONNECTOR_TYPES.zapierHook,
     label: 'Zapier',
     description: 'Send full EveryCall call.completed events into a Zapier Catch Hook.',
-    defaultName: 'Zapier Catch Hook'
+    defaultName: 'Zapier Catch Hook',
+    setupNotes: [
+      'Create a Catch Hook Zap in Zapier first.',
+      'Paste the hook URL here and save the connector before testing it.',
+      'Start with all call types, then narrow filters once you see live traffic.'
+    ]
   },
   {
     type: CONNECTOR_TYPES.hubspotPrivateApp,
     label: 'HubSpot',
     description: 'Create or update a HubSpot contact and add an EveryCall note.',
-    defaultName: 'HubSpot'
+    defaultName: 'HubSpot',
+    setupNotes: [
+      'Create a HubSpot private app with contacts and CRM object write access.',
+      'Paste the private app token here. Leave it blank later if you are only editing filters.',
+      'Test the connection before expecting live deliveries.'
+    ]
   },
   {
     type: CONNECTOR_TYPES.jobberClient,
     label: 'Jobber',
     description: 'Create a lead client in Jobber from qualified project inquiries.',
-    defaultName: 'Jobber'
+    defaultName: 'Jobber',
+    setupNotes: [
+      'Create the Jobber app credentials and capture the refresh token first.',
+      'Enter the client id, client secret, and refresh token together on first save.',
+      'Keep filters narrow at first so only project inquiries land in Jobber.'
+    ]
   },
   {
     type: CONNECTOR_TYPES.serviceTitanBooking,
     label: 'ServiceTitan',
     description: 'Send qualified project inquiries into ServiceTitan CRM bookings.',
-    defaultName: 'ServiceTitan'
+    defaultName: 'ServiceTitan',
+    setupNotes: [
+      'Use the right environment and tenant id for the ServiceTitan account you intend to test.',
+      'Save credentials first, then run Test Connection before enabling the connector for live traffic.',
+      'Keep transcripts off unless the downstream workflow truly needs them.'
+    ]
   }
 ];
 
@@ -299,6 +319,18 @@ export default function AccountIntegrationsPage() {
                 </div>
 
                 <div className="mt-3 grid gap-3">
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
+                    <div className={SECTION_TITLE_CLASS}>Setup Notes</div>
+                    <div className="mt-2 grid gap-2 text-sm text-slate-600">
+                      {(selectedConnectorDefinition.setupNotes || []).map((note) => (
+                        <div key={`${selectedConnectorDefinition.type}-${note}`} className="flex items-start gap-2">
+                          <span className="mt-[2px] h-2 w-2 rounded-full bg-slate-400" />
+                          <span>{note}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   <label className={FIELD_LABEL_CLASS}>
                     <span className={FIELD_TITLE_CLASS}>Connection Name</span>
                     <input
@@ -561,6 +593,10 @@ export default function AccountIntegrationsPage() {
 
         <GuidePanel title="Integrations Guide" eyebrow="How it works" icon="settings_input_component">
           <div>Use this page to connect EveryCall to the systems that should receive your completed calls.</div>
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">Recommended rollout</div>
+            <div className="mt-1 text-sm text-slate-600">Save the connector, test it, confirm one live call lands correctly, then widen filters or enable transcripts only if the downstream workflow needs more detail.</div>
+          </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">What gets sent</div>
             <div className="mt-1 text-sm text-slate-600">Every completed call includes a summary, structured caller details, and a classification such as valid lead, general inquiry, or support call.</div>

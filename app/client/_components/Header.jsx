@@ -106,7 +106,7 @@ export default function Header() {
     <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/70 bg-white/80 shadow-sm backdrop-blur-md">
       <div className="flex h-16 items-center justify-between px-4 md:px-6">
         <div className="flex items-center gap-8">
-          <Link href="/client/calls" className="text-xl font-bold tracking-[-0.02em] text-slate-900">
+          <Link href="/client/dashboard" className="text-xl font-bold tracking-[-0.02em] text-slate-900">
             EveryCall
           </Link>
           {showTrialBadge ? (
@@ -134,13 +134,13 @@ export default function Header() {
             {ready ? 'Active' : 'Needs Setup'}
           </Link>
 
-          <a
-            href="mailto:support@everycall.io"
+          <Link
+            href="/client/account/support"
             className="flex h-9 w-9 items-center justify-center rounded text-slate-700 transition-colors hover:bg-[#eff4ff]"
             aria-label="Contact support"
           >
             <span className="material-symbols-outlined text-[20px]">help_outline</span>
-          </a>
+          </Link>
 
           <Link
             href="/client/account/billing"
@@ -186,6 +186,9 @@ export default function Header() {
                 </Link>
                 <Link className="mb-1 block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-[#eff4ff]" href="/client/account/billing">
                   Open billing
+                </Link>
+                <Link className="mb-1 block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-[#eff4ff]" href="/client/account/support">
+                  Support
                 </Link>
                 {!ready && readiness.blockers.length ? (
                   <Link className="mb-1 block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-[#eff4ff]" href="/client/receptionist/go-live">

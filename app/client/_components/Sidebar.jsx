@@ -183,10 +183,10 @@ export default function Sidebar({ collapsed = false, onToggle }) {
 
         {!collapsed ? (
           <>
-            <a className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-[#dfe9fc]" href="mailto:support@everycall.io">
+            <Link className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-[#dfe9fc]" href="/client/account/support">
               <span className="material-symbols-outlined text-[20px]">contact_support</span>
               Support
-            </a>
+            </Link>
             <button
               className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium text-slate-600 hover:bg-[#dfe9fc]"
               type="button"

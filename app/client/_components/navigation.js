@@ -1,9 +1,15 @@
 export const clientPrimaryNavItems = [
   {
+    href: '/client/dashboard',
+    label: 'Dashboard',
+    icon: 'dashboard',
+    matchPrefixes: ['/client/dashboard', '/client/overview']
+  },
+  {
     href: '/client/calls',
     label: 'Calls',
     icon: 'calls',
-    matchPrefixes: ['/client/calls', '/client/dashboard', '/client/overview']
+    matchPrefixes: ['/client/calls']
   },
   {
     href: '/client/receptionist/basics',
@@ -35,7 +41,8 @@ export const receptionistNavItems = [
 export const accountNavItems = [
   { href: '/client/account/general', label: 'General' },
   { href: '/client/account/integrations', label: 'Integrations' },
-  { href: '/client/account/billing', label: 'Billing' }
+  { href: '/client/account/billing', label: 'Billing' },
+  { href: '/client/account/support', label: 'Support' }
 ];
 
 export function pathMatches(pathname, item) {

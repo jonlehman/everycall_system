@@ -412,7 +412,7 @@ export async function requireTenantBillingAccess(res, pool, session, tenantKey, 
   if (state.billing_status === "deactivated" && !allowDeactivated) {
     res.status(403).json({
       error: "account_deactivated",
-      message: "Please email support@everycall.io to reactivate your account."
+      message: "Open Billing in EveryCall to restart service and reactivate your account."
     });
     return null;
   }

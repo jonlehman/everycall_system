@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Button } from '../../../../components/ui/button';
 import { formatPhoneDisplay } from '../../../../lib/phoneDisplay';
 import SalesReceptionistNumberBadge from '../../_components/SalesReceptionistNumberBadge';
@@ -197,6 +198,21 @@ export default function LaunchReadinessPage() {
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button onClick={() => saveChecklist()} disabled={saving}>{saving ? 'Saving...' : 'Save Checklist'}</Button>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+        <h2 className="m-0 text-lg font-semibold">Next Steps</h2>
+        <p className="m-0 mt-2 text-sm text-slate-600">
+          Once the checklist is green and the published build is the live runtime, keep an eye on Calls for the first live leads and use Integrations if those outcomes need to land in other systems.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link href="/client/calls" className="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-[0_8px_20px_rgba(0,74,198,0.16)]">
+            Open Calls
+          </Link>
+          <Link href="/client/account/integrations" className="inline-flex rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm">
+            Open Integrations
+          </Link>
         </div>
       </section>
     </SectionPage>

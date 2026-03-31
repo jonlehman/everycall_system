@@ -1,17 +1,10 @@
-import { MailtrapClient } from "mailtrap";
 import { estimateNotificationCostMicrosUsd } from "@everycall/contracts/callCosting";
 import { addTranscriptSpacing, buildTranscriptFromEvents, sanitizeTranscriptText } from "@everycall/contracts/callTranscript";
 import { getSharedSmsNumber } from "./alerts.js";
+import { sendTransactionalEmail } from "./mail.js";
 import { updateNotificationChannelHealth } from "./notificationHealth.js";
 import { sendTelnyxSms } from "./telnyx.js";
 import { formatPhoneDisplay } from "../../../lib/phoneDisplay.js";
-
-const mailtrapToken = String(process.env.MAILTRAP_TOKEN || "").trim();
-const mailtrapSender = {
-  email: process.env.MAILTRAP_SENDER_EMAIL || "hello@demomailtrap.co",
-  name: process.env.MAILTRAP_SENDER_NAME || "EveryCall"
-};
-const mailtrapClient = mailtrapToken ? new MailtrapClient({ token: mailtrapToken }) : null;
 const leadAlertSmsCostUsd = Number.isFinite(Number(process.env.LEAD_ALERT_SMS_COST_USD))
   ? Number(process.env.LEAD_ALERT_SMS_COST_USD)
   : 0.007;
@@ -244,21 +237,9 @@ async function sendEmail(pool, { tenantKey, destination, subject, text }) {
     });
     throw new Error("missing_destination");
   }
-  if (!mailtrapClient) {
-    await updateNotificationChannelHealth(pool, {
-      tenantKey,
-      channel: "email",
-      destination,
-      status: "non_functioning",
-      errorCode: "mail_provider_missing",
-      errorMessage: "Mailtrap not configured"
-    });
-    throw new Error("mail_provider_missing");
-  }
   try {
-    await mailtrapClient.send({
-      from: mailtrapSender,
-      to: [{ email: destination }],
+    await sendTransactionalEmail({
+      to: destination,
       subject,
       text,
       category: "Lead Alert"
@@ -269,7 +250,7 @@ async function sendEmail(pool, { tenantKey, destination, subject, text }) {
       channel: "email",
       destination,
       status: "non_functioning",
-      errorCode: "send_failed",
+      errorCode: "email_send_failed",
       errorMessage: err instanceof Error ? err.message : "unknown"
     });
     throw err;

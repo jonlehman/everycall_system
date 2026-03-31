@@ -6,9 +6,8 @@ import { usePathname } from 'next/navigation';
 const items = [
   { label: 'Overview', href: '/admin/overview', group: 'Platform' },
   { label: 'Tenants', href: '/admin/tenants', group: 'Platform' },
-  { label: 'Call Monitoring', href: '/admin/monitoring', group: 'Platform' },
+  { label: 'Monitoring', href: '/admin/monitoring', group: 'Platform' },
   { label: 'Provisioning Jobs', href: '/admin/jobs', group: 'Platform' },
-  { label: 'Test Intake', href: '/intake/test', group: 'Platform' },
   { label: 'Phone Numbers', href: '/admin/phone-numbers', group: 'Platform' },
   { label: 'Costs', href: '/admin/usage', group: 'Platform' },
   { label: 'Admin Users', href: '/admin/users', group: 'Controls' },

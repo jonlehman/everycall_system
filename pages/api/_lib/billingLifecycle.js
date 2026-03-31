@@ -1,15 +1,9 @@
-import { MailtrapClient } from "mailtrap";
 import { recordBillingLifecycleEvent } from "./billing.js";
 import { getSharedSmsNumber } from "./alerts.js";
+import { sendTransactionalEmail } from "./mail.js";
 import { sendTelnyxSms, releaseVoiceNumber } from "./telnyx.js";
 
-const SUPPORT_REACTIVATION_MESSAGE = "Please email support@everycall.io to reactivate your account.";
-const mailtrapToken = String(process.env.MAILTRAP_TOKEN || "").trim();
-const mailtrapSender = {
-  email: process.env.MAILTRAP_SENDER_EMAIL || "hello@demomailtrap.co",
-  name: process.env.MAILTRAP_SENDER_NAME || "EveryCall"
-};
-const mailtrapClient = mailtrapToken ? new MailtrapClient({ token: mailtrapToken }) : null;
+const SUPPORT_REACTIVATION_MESSAGE = "Open Billing in EveryCall to restart service and reactivate your account.";
 
 function startOfTodayUtc() {
   const now = new Date();
@@ -117,24 +111,8 @@ async function sendEmail(pool, { tenantKey, to, subject, text }) {
     });
     return false;
   }
-  if (!mailtrapClient) {
-    await updateChannelHealth(pool, {
-      tenantKey,
-      channel: "email",
-      destination: to,
-      status: "non_functioning",
-      errorCode: "mail_provider_missing",
-      errorMessage: "Mailtrap not configured"
-    });
-    return false;
-  }
   try {
-    await mailtrapClient.send({
-      from: mailtrapSender,
-      to: [{ email: to }],
-      subject,
-      text
-    });
+    await sendTransactionalEmail({ to, subject, text, category: "Billing Lifecycle" });
     await updateChannelHealth(pool, {
       tenantKey,
       channel: "email",
@@ -148,7 +126,7 @@ async function sendEmail(pool, { tenantKey, to, subject, text }) {
       channel: "email",
       destination: to,
       status: "non_functioning",
-      errorCode: "send_failed",
+      errorCode: "email_send_failed",
       errorMessage: err?.message || "unknown"
     });
     return false;

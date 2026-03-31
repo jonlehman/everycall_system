@@ -2,24 +2,17 @@ import crypto from "crypto";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { requireTenantBillingAccess, requireTenantRoles } from "../../_lib/billing.js";
-import { MailtrapClient } from "mailtrap";
 import { sendTelnyxSms } from "../../_lib/telnyx.js";
 import { getSharedSmsNumber } from "../../_lib/alerts.js";
 import { normalizePhoneNumber } from "../../_lib/phone.js";
 import { issueAuthToken, revokeAuthTokens } from "../../_lib/authTokens.js";
 import { buildAuditActor, writeAuditLog } from "../../_lib/auditLog.js";
+import { sendTransactionalEmail } from "../../_lib/mail.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
 }
 
-const mailtrapToken = process.env.MAILTRAP_TOKEN;
-const mailtrapSender = {
-  email: process.env.MAILTRAP_SENDER_EMAIL || "hello@demomailtrap.co",
-  name: process.env.MAILTRAP_SENDER_NAME || "EveryCall"
-};
-
-const mailtrapClient = mailtrapToken ? new MailtrapClient({ token: mailtrapToken }) : null;
 const ALLOWED_ROLES = new Set(["admin", "member", "owner", "viewer"]);
 const ALLOWED_STATUSES = new Set(["active", "invited", "suspended", "disabled"]);
 
@@ -77,7 +70,6 @@ async function createInviteToken({ email, tenantKey }) {
 }
 
 async function sendInviteEmail({ tenantKey, name, email, role }) {
-  if (!mailtrapClient) return;
   const baseUrl = process.env.APP_BASE_URL || "https://app.everycall.io";
 
   const subject = `You're invited to EveryCall (${tenantKey})`;
@@ -95,13 +87,7 @@ async function sendInviteEmail({ tenantKey, name, email, role }) {
     "If you have questions, reply to this email."
   ].join("\n");
 
-  await mailtrapClient.send({
-    from: mailtrapSender,
-    to: [{ email }],
-    subject,
-    text,
-    category: "Invite"
-  });
+  await sendTransactionalEmail({ to: email, subject, text, category: "Invite" });
 }
 
 export default async function handler(req, res) {
