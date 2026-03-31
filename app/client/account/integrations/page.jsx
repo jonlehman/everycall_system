@@ -51,6 +51,11 @@ const CONNECTOR_DEFINITIONS = [
   }
 ];
 
+const FIELD_LABEL_CLASS = 'grid gap-1 text-sm normal-case tracking-normal';
+const FIELD_TITLE_CLASS = 'font-medium text-slate-900 normal-case tracking-normal';
+const TOGGLE_LABEL_CLASS = 'flex items-center gap-2 text-sm text-slate-700 normal-case tracking-normal';
+const SECTION_TITLE_CLASS = 'text-sm font-semibold text-slate-900 normal-case tracking-normal';
+
 function fetchJson(url, options) {
   return fetch(url, options).then(async (resp) => {
     const data = await resp.json().catch(() => null);
@@ -294,8 +299,8 @@ export default function AccountIntegrationsPage() {
                 </div>
 
                 <div className="mt-3 grid gap-3">
-                  <label className="grid gap-1 text-sm">
-                    <span className="font-medium text-slate-900">Connection Name</span>
+                  <label className={FIELD_LABEL_CLASS}>
+                    <span className={FIELD_TITLE_CLASS}>Connection Name</span>
                     <input
                       className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                       value={connectorDraft.name}
@@ -306,8 +311,8 @@ export default function AccountIntegrationsPage() {
                   </label>
 
                   {selectedConnectorType === CONNECTOR_TYPES.zapierHook ? (
-                    <label className="grid gap-1 text-sm">
-                      <span className="font-medium text-slate-900">Hook URL</span>
+                    <label className={FIELD_LABEL_CLASS}>
+                      <span className={FIELD_TITLE_CLASS}>Hook URL</span>
                       <span className="text-xs text-slate-500">Paste the Catch Hook URL from Zapier.</span>
                       <input
                         className="rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -321,8 +326,8 @@ export default function AccountIntegrationsPage() {
 
                   {selectedConnectorType === CONNECTOR_TYPES.hubspotPrivateApp ? (
                     <>
-                      <label className="grid gap-1 text-sm">
-                        <span className="font-medium text-slate-900">Private App Token</span>
+                      <label className={FIELD_LABEL_CLASS}>
+                        <span className={FIELD_TITLE_CLASS}>Private App Token</span>
                         <span className="text-xs text-slate-500">Leave blank to keep the saved token.</span>
                         <input
                           className="rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -333,7 +338,7 @@ export default function AccountIntegrationsPage() {
                           disabled={!viewer.canManage}
                         />
                       </label>
-                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <label className={TOGGLE_LABEL_CLASS}>
                         <input
                           type="checkbox"
                           checked={connectorDraft.createNote}
@@ -347,8 +352,8 @@ export default function AccountIntegrationsPage() {
 
                   {selectedConnectorType === CONNECTOR_TYPES.jobberClient ? (
                     <>
-                      <label className="grid gap-1 text-sm">
-                        <span className="font-medium text-slate-900">Client ID</span>
+                      <label className={FIELD_LABEL_CLASS}>
+                        <span className={FIELD_TITLE_CLASS}>Client ID</span>
                         <input
                           className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                           value={connectorDraft.clientId}
@@ -357,8 +362,8 @@ export default function AccountIntegrationsPage() {
                           disabled={!viewer.canManage}
                         />
                       </label>
-                      <label className="grid gap-1 text-sm">
-                        <span className="font-medium text-slate-900">Client Secret</span>
+                      <label className={FIELD_LABEL_CLASS}>
+                        <span className={FIELD_TITLE_CLASS}>Client Secret</span>
                         <span className="text-xs text-slate-500">Leave blank to keep the saved secret.</span>
                         <input
                           className="rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -369,8 +374,8 @@ export default function AccountIntegrationsPage() {
                           disabled={!viewer.canManage}
                         />
                       </label>
-                      <label className="grid gap-1 text-sm">
-                        <span className="font-medium text-slate-900">Refresh Token</span>
+                      <label className={FIELD_LABEL_CLASS}>
+                        <span className={FIELD_TITLE_CLASS}>Refresh Token</span>
                         <span className="text-xs text-slate-500">Leave blank to keep the saved token.</span>
                         <input
                           className="rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -386,8 +391,8 @@ export default function AccountIntegrationsPage() {
 
                   {selectedConnectorType === CONNECTOR_TYPES.serviceTitanBooking ? (
                     <>
-                      <label className="grid gap-1 text-sm">
-                        <span className="font-medium text-slate-900">Client ID</span>
+                      <label className={FIELD_LABEL_CLASS}>
+                        <span className={FIELD_TITLE_CLASS}>Client ID</span>
                         <input
                           className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                           value={connectorDraft.clientId}
@@ -396,8 +401,8 @@ export default function AccountIntegrationsPage() {
                           disabled={!viewer.canManage}
                         />
                       </label>
-                      <label className="grid gap-1 text-sm">
-                        <span className="font-medium text-slate-900">Client Secret</span>
+                      <label className={FIELD_LABEL_CLASS}>
+                        <span className={FIELD_TITLE_CLASS}>Client Secret</span>
                         <span className="text-xs text-slate-500">Leave blank to keep the saved secret.</span>
                         <input
                           className="rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -408,8 +413,8 @@ export default function AccountIntegrationsPage() {
                           disabled={!viewer.canManage}
                         />
                       </label>
-                      <label className="grid gap-1 text-sm">
-                        <span className="font-medium text-slate-900">App Key</span>
+                      <label className={FIELD_LABEL_CLASS}>
+                        <span className={FIELD_TITLE_CLASS}>App Key</span>
                         <span className="text-xs text-slate-500">Leave blank to keep the saved key.</span>
                         <input
                           className="rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -420,8 +425,8 @@ export default function AccountIntegrationsPage() {
                           disabled={!viewer.canManage}
                         />
                       </label>
-                      <label className="grid gap-1 text-sm">
-                        <span className="font-medium text-slate-900">Tenant ID</span>
+                      <label className={FIELD_LABEL_CLASS}>
+                        <span className={FIELD_TITLE_CLASS}>Tenant ID</span>
                         <input
                           className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                           value={connectorDraft.serviceTitanTenantId}
@@ -430,8 +435,8 @@ export default function AccountIntegrationsPage() {
                           disabled={!viewer.canManage}
                         />
                       </label>
-                      <label className="grid gap-1 text-sm">
-                        <span className="font-medium text-slate-900">Environment</span>
+                      <label className={FIELD_LABEL_CLASS}>
+                        <span className={FIELD_TITLE_CLASS}>Environment</span>
                         <select
                           className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                           value={connectorDraft.environment}
@@ -445,8 +450,8 @@ export default function AccountIntegrationsPage() {
                     </>
                   ) : null}
 
-                  <label className="grid gap-1 text-sm">
-                    <span className="font-medium text-slate-900">Status</span>
+                  <label className={FIELD_LABEL_CLASS}>
+                    <span className={FIELD_TITLE_CLASS}>Status</span>
                     <select
                       className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                       value={connectorDraft.status}
@@ -459,10 +464,10 @@ export default function AccountIntegrationsPage() {
                   </label>
 
                   <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <div className="text-sm font-semibold text-slate-900">Include Call Types</div>
+                    <div className={SECTION_TITLE_CLASS}>Include Call Types</div>
                     <div className="mt-2 grid gap-2 sm:grid-cols-2">
                       {CALL_TYPE_OPTIONS.map((type) => (
-                        <label key={`${selectedConnectorType}-${type}`} className="flex items-center gap-2 text-sm text-slate-700">
+                        <label key={`${selectedConnectorType}-${type}`} className={TOGGLE_LABEL_CLASS}>
                           <input
                             type="checkbox"
                             checked={connectorDraft.includeTypes.includes(type)}
@@ -475,7 +480,7 @@ export default function AccountIntegrationsPage() {
                     </div>
                   </div>
 
-                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <label className={TOGGLE_LABEL_CLASS}>
                     <input
                       type="checkbox"
                       checked={connectorDraft.includeNonBillable}
@@ -484,7 +489,7 @@ export default function AccountIntegrationsPage() {
                     />
                     <span>Include non-billable calls</span>
                   </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <label className={TOGGLE_LABEL_CLASS}>
                     <input
                       type="checkbox"
                       checked={connectorDraft.includeDuplicates}
@@ -493,7 +498,7 @@ export default function AccountIntegrationsPage() {
                     />
                     <span>Include duplicate leads</span>
                   </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <label className={TOGGLE_LABEL_CLASS}>
                     <input
                       type="checkbox"
                       checked={connectorDraft.includeTranscript}
