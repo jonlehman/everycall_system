@@ -6,6 +6,8 @@ import { MailtrapClient } from "mailtrap";
 import { sendTelnyxSms } from "../../_lib/telnyx.js";
 import { getSharedSmsNumber } from "../../_lib/alerts.js";
 import { normalizePhoneNumber } from "../../_lib/phone.js";
+import { issueAuthToken, revokeAuthTokens } from "../../_lib/authTokens.js";
+import { buildAuditActor, writeAuditLog } from "../../_lib/auditLog.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
@@ -58,17 +60,20 @@ async function findPhoneConflict(pool, phoneNumber, excludedId = null) {
 }
 
 async function createInviteToken({ email, tenantKey }) {
-  const token = crypto.randomBytes(24).toString("hex");
   const pool = getPool();
-  if (pool) {
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await pool.query(
-      `INSERT INTO auth_tokens (token, token_type, email, tenant_key, expires_at)
-       VALUES ($1, 'invite', $2, $3, $4)`,
-      [token, email, tenantKey, expiresAt.toISOString()]
-    );
-  }
-  return token;
+  if (!pool) return crypto.randomBytes(24).toString("hex");
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  await revokeAuthTokens(pool, {
+    tokenType: "invite",
+    email,
+    tenantKey
+  });
+  return issueAuthToken(pool, {
+    tokenType: "invite",
+    email,
+    tenantKey,
+    expiresAt
+  });
 }
 
 async function sendInviteEmail({ tenantKey, name, email, role }) {
@@ -119,6 +124,12 @@ export default async function handler(req, res) {
     const requireTeamManager = async () => requireTenantRoles(res, session, ["owner", "admin"], {
       message: "Only account admins and owners can manage team users."
     });
+    const audit = async (actorUser, action, details) => writeAuditLog(pool, {
+      tenantKey,
+      actor: buildAuditActor({ session, tenantUser: actorUser }),
+      action,
+      details
+    });
 
     if (req.method === "GET") {
       const rows = await pool.query(
@@ -150,6 +161,10 @@ export default async function handler(req, res) {
            WHERE tenant_key = $1 AND id = $3`,
           [tenantKey, status, id]
         );
+        await audit(manager, "tenant.team_user.status_updated", {
+          user_id: id,
+          status
+        });
         return res.status(200).json({ ok: true });
       }
 
@@ -175,6 +190,11 @@ export default async function handler(req, res) {
            WHERE tenant_key = $1 AND id = $2`,
           [tenantKey, id]
         );
+        await audit(manager, "tenant.team_user.invite_resent", {
+          user_id: id,
+          email: user.email,
+          role: user.role
+        });
         return res.status(200).json({ ok: true });
       }
 
@@ -197,6 +217,10 @@ export default async function handler(req, res) {
            WHERE tenant_key = $1 AND id = $3`,
           [tenantKey, phoneNumber, id]
         );
+        await audit(manager, "tenant.team_user.phone_updated", {
+          user_id: id,
+          phone_number: phoneNumber
+        });
         return res.status(200).json({ ok: true });
       }
 
@@ -270,6 +294,14 @@ export default async function handler(req, res) {
             phoneChanged
           ]
         );
+        await audit(manager, "tenant.team_user.updated", {
+          user_id: id,
+          role,
+          status,
+          lead_alert_sms_enabled: leadAlertSmsEnabled,
+          lead_alert_email_enabled: leadAlertEmailEnabled,
+          phone_changed: phoneChanged
+        });
         return res.status(200).json({ ok: true });
       }
 
@@ -286,6 +318,11 @@ export default async function handler(req, res) {
            WHERE tenant_key = $1 AND id = $4`,
           [tenantKey, Boolean(body.leadAlertSmsEnabled), Boolean(body.leadAlertEmailEnabled), id]
         );
+        await audit(manager, "tenant.team_user.lead_alerts_updated", {
+          user_id: id,
+          lead_alert_sms_enabled: Boolean(body.leadAlertSmsEnabled),
+          lead_alert_email_enabled: Boolean(body.leadAlertEmailEnabled)
+        });
         return res.status(200).json({ ok: true });
       }
 
@@ -326,6 +363,10 @@ export default async function handler(req, res) {
            WHERE tenant_key = $1 AND id = $2`,
           [tenantKey, id]
         );
+        await audit(manager, "tenant.team_user.sms_opt_in_requested", {
+          user_id: id,
+          phone_number: user.phone_number
+        });
         return res.status(200).json({ ok: true });
       }
 
@@ -379,6 +420,13 @@ export default async function handler(req, res) {
         // Email failure should not block user creation.
         console.error("mailtrap_invite_failed", mailErr?.message || mailErr);
       }
+      await audit(manager, "tenant.team_user.created", {
+        email,
+        role,
+        status,
+        lead_alert_sms_enabled: leadAlertSmsEnabled,
+        lead_alert_email_enabled: leadAlertEmailEnabled
+      });
       return res.status(200).json({ ok: true });
     }
 
@@ -393,6 +441,9 @@ export default async function handler(req, res) {
         `DELETE FROM tenant_users WHERE tenant_key = $1 AND id = $2`,
         [tenantKey, id]
       );
+      await audit(manager, "tenant.team_user.deleted", {
+        user_id: id
+      });
       return res.status(200).json({ ok: true });
     }
 

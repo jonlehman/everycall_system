@@ -1,6 +1,7 @@
 import { ensureTables, getPool } from "../../../../_lib/db.js";
 import { updateNotificationChannelHealth } from "../../../../_lib/notificationHealth.js";
 import { readRawBody, verifyTelnyxSignature } from "../../../../_lib/telnyx.js";
+import { claimInboundWebhookEvent } from "../../../../_lib/providerWebhookIdempotency.js";
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -17,7 +18,7 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: "method_not_allowed" });
     }
 
-    const rawBody = await readRawBody(req);
+    const rawBody = await readRawBody(req, { maxBytes: 256 * 1024 });
     const signature = req.headers["telnyx-signature-ed25519"];
     const timestamp = req.headers["telnyx-timestamp"];
     const publicKey = process.env.TELNYX_PUBLIC_KEY;
@@ -44,6 +45,16 @@ export default async function handler(req, res) {
     const data = body.data || {};
     const payload = data.payload || {};
     const eventId = normalizeText(data.id) || null;
+    const eventType = normalizeText(data.event_type || body.data?.event_type) || "telnyx_sms_failover";
+    const claim = await claimInboundWebhookEvent(pool, {
+      provider: "telnyx_sms_failover",
+      eventId,
+      eventType,
+      rawPayload: rawBody
+    });
+    if (claim.duplicate) {
+      return res.status(200).json({ ok: true, duplicate: true, eventId });
+    }
     const providerMessageId = normalizeText(payload.message_id || payload.id || payload.record_id) || null;
     const destination = normalizeText(payload.to?.[0]?.phone_number || payload.to) || null;
     const reason = normalizeText(payload?.errors?.[0]?.description || payload?.errors?.[0]?.title) || "sms_failover";
@@ -123,6 +134,9 @@ export default async function handler(req, res) {
       reason
     });
   } catch (err) {
+    if (String(err?.message || "") === "request_body_too_large") {
+      return res.status(413).json({ error: "payload_too_large" });
+    }
     return res.status(500).json({ error: "telnyx_sms_failover_error", message: err?.message || "unknown" });
   }
 }

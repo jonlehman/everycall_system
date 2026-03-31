@@ -4,13 +4,19 @@ Date: 2026-03-31
 
 This document captures the current EveryCall security remediation plan based on a review of the actual codebase, not just generic SaaS / AI / telephony risk lists.
 
+Status update:
+
+- `Fix Now` implementation is complete in code, with remaining operational follow-up limited to env/config rollout and any desired extra production restrictions.
+- `Next Sprint` implementation is also complete in code as of 2026-03-31.
+- The main remaining work is now under `Later Hardening`, plus any follow-up tightening discovered during live validation.
+
 It is organized by urgency:
 
 - `Fix Now`: high-priority weaknesses that should be addressed before substantial additional feature work
 - `Next Sprint`: important hardening that should follow immediately after the highest-risk items
 - `Later Hardening`: worthwhile improvements that are lower priority than the current access, auth, and secret-management gaps
 
-This is a planning document. It is not itself implementation work.
+This started as a planning document. The status update above reflects implementation progress, while the sections below preserve the remediation rationale and remaining work.
 
 ## Fix Now
 

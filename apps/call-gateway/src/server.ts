@@ -56,6 +56,8 @@ import {
   markAssistantResponseFinished,
   normalizeToolExecutionKey
 } from "./toolResponseControl.js";
+// @ts-expect-error shared JS helper imported from the Next app layer
+import { claimInboundWebhookEvent } from "../../../pages/api/_lib/providerWebhookIdempotency.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -1985,7 +1987,7 @@ function connectOpenAiRealtime(session: StreamSession) {
   });
 }
 
-app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), async (req, res) => {
+app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: "256kb" }), async (req, res) => {
   const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
   logInfo("telnyx_call_control_request", {
     path: req.path,
@@ -2015,8 +2017,19 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
 
   const eventType = payload.data?.event_type || payload.event_type || payload.data?.eventType || "";
   const eventPayload = payload.data?.payload || payload.payload || payload.data || payload;
+  const providerEventId = String(payload.data?.id || payload.id || "").trim();
 
   if (!pool) {
+    return res.status(200).send("ok");
+  }
+
+  const claim = await claimInboundWebhookEvent(pool, {
+    provider: "telnyx_voice_inbound",
+    eventId: providerEventId,
+    eventType,
+    rawPayload: rawBody
+  });
+  if (claim.duplicate) {
     return res.status(200).send("ok");
   }
 

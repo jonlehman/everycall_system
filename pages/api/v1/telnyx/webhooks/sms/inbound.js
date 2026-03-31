@@ -1,6 +1,7 @@
 import { readRawBody, verifyTelnyxSignature, sendTelnyxSms } from "../../../../_lib/telnyx.js";
 import { ensureTables, getPool } from "../../../../_lib/db.js";
 import { getSharedSmsNumber } from "../../../../_lib/alerts.js";
+import { claimInboundWebhookEvent } from "../../../../_lib/providerWebhookIdempotency.js";
 
 export const config = {
   api: { bodyParser: false }
@@ -26,7 +27,7 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: "method_not_allowed" });
     }
 
-    const rawBody = await readRawBody(req);
+    const rawBody = await readRawBody(req, { maxBytes: 256 * 1024 });
     const signature = req.headers["telnyx-signature-ed25519"];
     const timestamp = req.headers["telnyx-timestamp"];
     const publicKey = process.env.TELNYX_PUBLIC_KEY;
@@ -59,6 +60,17 @@ export default async function handler(req, res) {
     const to = payload.to?.[0]?.phone_number || payload.to || null;
     const text = payload.text || payload.body || null;
     const messageId = data.id || null;
+    const eventType = String(data.event_type || body.data?.event_type || "telnyx_sms_inbound");
+
+    const claim = await claimInboundWebhookEvent(pool, {
+      provider: "telnyx_sms_inbound",
+      eventId: messageId,
+      eventType,
+      rawPayload: rawBody
+    });
+    if (claim.duplicate) {
+      return res.status(200).json({ ok: true, duplicate: true, messageId });
+    }
 
     const normalizedText = String(text || "").trim().toLowerCase();
     const isYes = ["yes", "y", "start", "unstop"].includes(normalizedText);
@@ -107,6 +119,9 @@ export default async function handler(req, res) {
       text
     });
   } catch (err) {
+    if (String(err?.message || "") === "request_body_too_large") {
+      return res.status(413).json({ error: "payload_too_large" });
+    }
     return res.status(500).json({ error: "telnyx_sms_inbound_error", message: err?.message || "unknown" });
   }
 }

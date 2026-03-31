@@ -1,6 +1,8 @@
-import crypto from "crypto";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { MailtrapClient } from "mailtrap";
+import { issueAuthToken, revokeAuthTokens } from "../../_lib/authTokens.js";
+import { writeAuditLog } from "../../_lib/auditLog.js";
+import { enforceRateLimit, getClientIp } from "../../_lib/rateLimit.js";
 
 const mailtrapToken = process.env.MAILTRAP_TOKEN;
 const mailtrapSender = {
@@ -25,9 +27,31 @@ export default async function handler(req, res) {
     const body = typeof req.body === "object" && req.body ? req.body : {};
     const email = String(body.email || "").trim().toLowerCase();
     const role = String(body.role || "tenant");
+    const clientIp = getClientIp(req);
+
+    const ipLimit = await enforceRateLimit(res, pool, {
+      scope: "auth.request_reset.ip",
+      key: clientIp,
+      maxHits: 8,
+      windowMs: 15 * 60 * 1000,
+      blockDurationMs: 60 * 60 * 1000,
+      message: "Too many reset attempts. Please try again later."
+    });
+    if (ipLimit?.limited) return;
+
     if (!email) {
       return res.status(400).json({ error: "missing_email" });
     }
+
+    const emailLimit = await enforceRateLimit(res, pool, {
+      scope: "auth.request_reset.email",
+      key: `${role}:${email}`,
+      maxHits: 3,
+      windowMs: 60 * 60 * 1000,
+      blockDurationMs: 2 * 60 * 60 * 1000,
+      message: "Too many reset attempts. Please try again later."
+    });
+    if (emailLimit?.limited) return;
 
     let user = null;
     if (role === "admin") {
@@ -39,16 +63,30 @@ export default async function handler(req, res) {
     }
 
     if (!user) {
+      await writeAuditLog(pool, {
+        tenantKey: null,
+        actor: "anonymous",
+        action: "auth.password_reset.requested",
+        details: { email, role, delivered: false, reason: "user_not_found", ip: clientIp }
+      });
       return res.status(200).json({ ok: true });
     }
 
-    const token = crypto.randomBytes(24).toString("hex");
+    await revokeAuthTokens(pool, {
+      tokenType: "password_reset",
+      userId: user.id,
+      email: user.email,
+      tenantKey: user.tenant_key || null
+    });
+
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-    await pool.query(
-      `INSERT INTO auth_tokens (token, token_type, user_id, email, tenant_key, expires_at)
-       VALUES ($1, 'password_reset', $2, $3, $4, $5)`,
-      [token, user.id, user.email, user.tenant_key || null, expiresAt.toISOString()]
-    );
+    const token = await issueAuthToken(pool, {
+      tokenType: "password_reset",
+      userId: user.id,
+      email: user.email,
+      tenantKey: user.tenant_key || null,
+      expiresAt
+    });
 
     let delivered = false;
     let deliveryError = null;
@@ -68,6 +106,19 @@ export default async function handler(req, res) {
         deliveryError = err?.message || "mailtrap_failed";
       }
     }
+
+    await writeAuditLog(pool, {
+      tenantKey: user.tenant_key || null,
+      actor: user.tenant_key ? `tenant:${user.id}` : `admin:${user.id}`,
+      action: "auth.password_reset.requested",
+      details: {
+        email,
+        role,
+        delivered,
+        delivery_error: deliveryError || null,
+        ip: clientIp
+      }
+    });
 
     return res.status(200).json({ ok: true, delivered, deliveryError });
   } catch (err) {

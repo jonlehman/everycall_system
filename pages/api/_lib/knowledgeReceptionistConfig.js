@@ -151,6 +151,9 @@ export const DEFAULT_RUNTIME_BEHAVIOR_DEFAULTS = {
   callback_offer_required: true
 };
 
+const MAX_UPLOADED_DOCUMENT_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_UPLOADED_DOCUMENT_BODY_CHARS = 250_000;
+
 function normalizeText(value) {
   return String(value || "").trim();
 }
@@ -680,6 +683,13 @@ function normalizeUploadedDocumentPayload(payload = {}) {
   };
 }
 
+function estimateBase64DecodedBytes(value) {
+  const normalized = normalizeText(value).replace(/\s+/g, "");
+  if (!normalized) return 0;
+  const padding = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+}
+
 function isSupportedUploadedDocumentFile({ filename = "", mimeType = "" } = {}) {
   const lowerName = normalizeText(filename).toLowerCase();
   const lowerMimeType = normalizeText(mimeType).toLowerCase();
@@ -707,6 +717,9 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
     if (normalized.fileBase64 && !isSupportedUploadedDocumentFile({ filename: normalized.filename, mimeType: normalized.mimeType })) {
       throw new Error("uploaded_document_file_type_not_supported");
     }
+    if (normalized.fileBase64 && estimateBase64DecodedBytes(normalized.fileBase64) > MAX_UPLOADED_DOCUMENT_FILE_BYTES) {
+      throw new Error("uploaded_document_file_too_large");
+    }
     let bodyText = normalized.bodyText;
     let mimeType = normalized.mimeType;
     let metadata = { ...normalized.metadata };
@@ -729,6 +742,9 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
     const title = normalized.title || normalized.filename || "Uploaded Document";
     if (!title || !bodyText) {
       throw new Error("uploaded_document_title_and_body_required");
+    }
+    if (bodyText.length > MAX_UPLOADED_DOCUMENT_BODY_CHARS) {
+      throw new Error("uploaded_document_body_too_large");
     }
     const uploadedDocumentId = normalized.uploadedDocumentId || createId("udoc");
     const sourceHash = stableHash({

@@ -3,6 +3,7 @@ import { requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess, requireTenantRoles } from "../_lib/billing.js";
 import { normalizePhoneNumber } from "../_lib/phone.js";
 import { getOwnedPhoneNumber, updatePhoneNumberVoiceSettings } from "../_lib/telnyx.js";
+import { buildAuditActor, writeAuditLog } from "../_lib/auditLog.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
@@ -216,6 +217,23 @@ export default async function handler(req, res) {
           message: err?.message || "Caller ID name was saved locally, but the carrier update failed."
         };
       }
+
+      await writeAuditLog(pool, {
+        tenantKey,
+        actor: buildAuditActor({ session, tenantUser: manager }),
+        action: "tenant.settings.updated",
+        details: {
+          timezone,
+          caller_id_name: callerIdName,
+          primary_number: hasOwn(body, "primaryNumber") ? (primaryNumber || null) : undefined,
+          lead_alerts_enabled: leadAlertsEnabled,
+          lead_alert_sms_enabled: leadAlertSmsEnabled,
+          lead_alert_email_enabled: leadAlertEmailEnabled,
+          lead_alert_email_include_transcript: leadAlertEmailIncludeTranscript,
+          provider_sync_ok: providerSync?.ok === true,
+          provider_sync_pending: providerSync?.pending === true
+        }
+      });
 
       return res.status(200).json({ ok: true, callerIdName, providerSync });
     }

@@ -18,6 +18,8 @@ const MAX_WEBSITE_FILES = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_WEBSITE_FILES"
 const CRAWL_BATCH_SIZE = readPositiveIntEnv("KNOWLEDGE_BUILD_CRAWL_BATCH_SIZE", 4);
 const FETCH_TIMEOUT_MS = readPositiveIntEnv("KNOWLEDGE_BUILD_FETCH_TIMEOUT_MS", 5000);
 const WEBSITE_CRAWL_DEADLINE_MS = readPositiveIntEnv("KNOWLEDGE_BUILD_CRAWL_DEADLINE_MS", 90000);
+const MAX_WEBSITE_PAGE_BYTES = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_WEBSITE_PAGE_BYTES", 2 * 1024 * 1024);
+const MAX_WEBSITE_DOWNLOAD_BYTES = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_WEBSITE_DOWNLOAD_BYTES", 6 * 1024 * 1024);
 const SOURCE_DISCOVERY_BATCH_SIZE = 25;
 const SOURCE_PERSIST_BATCH_SIZE = 8;
 const SOURCE_SEGMENT_INSERT_ROW_LIMIT = 1500;
@@ -581,6 +583,49 @@ async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT_MS) {
   }
 }
 
+async function readResponseBufferWithLimit(response, maxBytes) {
+  const safeMaxBytes = Math.max(1024, Number(maxBytes || 0));
+  const declaredLength = Number(response.headers.get("content-length") || 0);
+  if (Number.isFinite(declaredLength) && declaredLength > safeMaxBytes) {
+    throw new Error("website_response_too_large");
+  }
+
+  const stream = response.body;
+  if (!stream) return Buffer.alloc(0);
+
+  const chunks = [];
+  let totalBytes = 0;
+
+  if (typeof stream.getReader === "function") {
+    const reader = stream.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = Buffer.from(value);
+        totalBytes += chunk.length;
+        if (totalBytes > safeMaxBytes) {
+          throw new Error("website_response_too_large");
+        }
+        chunks.push(chunk);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    return Buffer.concat(chunks);
+  }
+
+  for await (const chunk of stream) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.length;
+    if (totalBytes > safeMaxBytes) {
+      throw new Error("website_response_too_large");
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
 function isBlockedHostname(hostname) {
   const normalized = String(hostname || "").trim().toLowerCase();
   if (!normalized) return true;
@@ -693,7 +738,7 @@ export async function fetchWebsitePage(url, options = {}) {
         text: ""
       };
     }
-    const html = await response.text();
+    const html = (await readResponseBufferWithLimit(response, MAX_WEBSITE_PAGE_BYTES)).toString("utf8");
     const structured = extractStructuredPageContent(html);
     return {
       ok: true,
@@ -798,7 +843,7 @@ async function fetchWebsiteDownloadable(url, options = {}) {
         text: ""
       };
     }
-    const buffer = Buffer.from(await response.arrayBuffer());
+    const buffer = await readResponseBufferWithLimit(response, MAX_WEBSITE_DOWNLOAD_BYTES);
     const parsed = extractTextFromDocumentBuffer({
       buffer,
       mimeType: response.headers.get("content-type") || "",

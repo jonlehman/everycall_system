@@ -48,6 +48,8 @@ export const CANONICAL_CLASSIFICATION_TYPES = [
 
 const DEFAULT_APP_BASE_URL = "https://app.everycall.io";
 const DEFAULT_JOBBER_API_VERSION = normalizeText(process.env.JOBBER_API_VERSION || "2026-01-20") || "2026-01-20";
+const MAX_OUTBOUND_TRANSCRIPT_BYTES = 24 * 1024;
+const MAX_OUTBOUND_EVENT_BYTES = 64 * 1024;
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -61,6 +63,23 @@ function truncateText(value, maxLength = 1200) {
   const text = normalizeText(value);
   if (!text || text.length <= maxLength) return text;
   return `${text.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function truncateUtf8Bytes(value, maxBytes) {
+  const text = String(value || "");
+  const safeMaxBytes = Math.max(1, Number(maxBytes || 0));
+  if (!text || Buffer.byteLength(text, "utf8") <= safeMaxBytes) {
+    return text;
+  }
+  let output = "";
+  for (const char of text) {
+    const candidate = `${output}${char}`;
+    if (Buffer.byteLength(candidate, "utf8") > safeMaxBytes) {
+      break;
+    }
+    output = candidate;
+  }
+  return output.trimEnd();
 }
 
 function createId(prefix) {
@@ -317,7 +336,9 @@ export async function buildCallCompletedEvent(pool, {
   }
 
   const canonicalType = normalizeClassificationType(row.lead_outcome_type, row.lead_is_valid);
-  const transcript = includeTranscript ? await loadTranscript(pool, callSid, row) : null;
+  const transcript = includeTranscript
+    ? truncateUtf8Bytes(await loadTranscript(pool, callSid, row), MAX_OUTBOUND_TRANSCRIPT_BYTES) || null
+    : null;
   const nextDeliveryId = normalizeText(deliveryId) || createDeliveryId();
   const nextEventId = normalizeText(eventId) || buildStableEventId({
     tenantKey,
@@ -396,7 +417,7 @@ export function buildSignedWebhookRequest({
   attemptNumber = 1
 }) {
   const timestamp = Math.floor(Date.now() / 1000).toString();
-  const body = JSON.stringify(payload);
+  const body = serializeIntegrationPayload(payload);
   const signature = crypto
     .createHmac("sha256", signingSecret)
     .update(`${timestamp}.${body}`, "utf8")
@@ -416,6 +437,14 @@ export function buildSignedWebhookRequest({
     },
     endpointUrl
   };
+}
+
+export function serializeIntegrationPayload(payload) {
+  const body = JSON.stringify(payload);
+  if (Buffer.byteLength(body, "utf8") > MAX_OUTBOUND_EVENT_BYTES) {
+    throw new Error("integration_payload_too_large");
+  }
+  return body;
 }
 
 export async function recordIntegrationDelivery(pool, {

@@ -332,15 +332,46 @@ export async function ensureTables(pool) {
     CREATE TABLE IF NOT EXISTS auth_tokens (
       id BIGSERIAL PRIMARY KEY,
       token TEXT NOT NULL UNIQUE,
+      token_hash TEXT,
       token_type TEXT NOT NULL,
       user_id BIGINT,
       email TEXT,
       tenant_key TEXT,
       expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS auth_tokens_token_idx ON auth_tokens (token);`);
+  await pool.query(`ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS token_hash TEXT;`);
+  await pool.query(`ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS used_at TIMESTAMPTZ;`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS auth_tokens_token_hash_idx ON auth_tokens (token_hash) WHERE token_hash IS NOT NULL;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS request_rate_limits (
+      scope TEXT NOT NULL,
+      rate_limit_key TEXT NOT NULL,
+      window_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      hits INTEGER NOT NULL DEFAULT 0,
+      blocked_until TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (scope, rate_limit_key)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inbound_webhook_events (
+      id BIGSERIAL PRIMARY KEY,
+      provider TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      event_type TEXT,
+      payload_hash TEXT,
+      first_received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      duplicate_count INTEGER NOT NULL DEFAULT 0,
+      UNIQUE (provider, event_id)
+    );
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_idempotency (
@@ -749,6 +780,8 @@ export async function ensureTables(pool) {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS async_jobs_job_type_dedupe_idx ON async_jobs (job_type, dedupe_key) WHERE dedupe_key IS NOT NULL;`);
   await pool.query(`CREATE INDEX IF NOT EXISTS sms_failover_events_tenant_created_idx ON sms_failover_events (tenant_key, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS sms_failover_events_destination_created_idx ON sms_failover_events (destination, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS request_rate_limits_updated_idx ON request_rate_limits (updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS inbound_webhook_events_provider_seen_idx ON inbound_webhook_events (provider, last_seen_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS incidents_tenant_created_idx ON incidents (tenant_key, created_at DESC);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS tenant_users_email_unique ON tenant_users (email);`);
   if (!duplicateUserPhones.rowCount) {

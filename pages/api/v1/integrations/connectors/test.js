@@ -2,6 +2,7 @@ import { ensureTables, getPool } from "../../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../../_lib/auth.js";
 import { requireTenantBillingAccess, requireActiveTenantUser, requireTenantRoles } from "../../../_lib/billing.js";
 import { testIntegrationConnection } from "../../../_lib/integrationConnectors.js";
+import { enforceRateLimit } from "../../../_lib/rateLimit.js";
 import {
   INTEGRATION_NATIVE_CONNECTOR_TYPES,
   recordIntegrationDelivery,
@@ -44,6 +45,16 @@ export default async function handler(req, res) {
       message: "Only account admins and owners can test integrations."
     });
     if (!manager) return;
+
+    const rateLimit = await enforceRateLimit(res, pool, {
+      scope: "integrations.client_test",
+      key: `${tenantKey}:${session.user_id || "unknown"}`,
+      maxHits: 10,
+      windowMs: 10 * 60 * 1000,
+      blockDurationMs: 30 * 60 * 1000,
+      message: "Too many integration tests. Please try again later."
+    });
+    if (rateLimit?.limited) return;
 
     const body = asObject(req.body);
     const connectionId = Number(body.connectionId || 0);

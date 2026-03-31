@@ -3,6 +3,7 @@ import WebSocket from "ws";
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { requireTenantBillingAccess, requireTenantRoles } from "../../_lib/billing.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
+import { enforceRateLimit } from "../../_lib/rateLimit.js";
 import { buildGatewayPromptResponse } from "../../_lib/gatewayPromptResponse.js";
 import {
   assembleKnowledgeGatewayPrompt,
@@ -251,6 +252,16 @@ export default async function handler(req, res) {
       message: "Only account admins and owners can generate voice previews."
     });
     if (!manager) return;
+
+    const previewLimit = await enforceRateLimit(res, pool, {
+      scope: "voice.sample_preview",
+      key: `${tenantKey}:${session.role}:${session.user_id || "unknown"}`,
+      maxHits: 20,
+      windowMs: 10 * 60 * 1000,
+      blockDurationMs: 30 * 60 * 1000,
+      message: "Too many voice previews. Please try again later."
+    });
+    if (previewLimit?.limited) return;
 
     if (req.method !== "GET" && req.method !== "POST") {
       res.setHeader("Allow", "GET, POST");

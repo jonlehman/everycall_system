@@ -10,8 +10,11 @@ import {
   INTEGRATION_CONNECTOR_LABELS,
   INTEGRATION_CONNECTOR_TYPES,
   parseConnectionConfig,
+  serializeIntegrationPayload,
   shouldDeliverConnection
 } from "./outboundIntegrations.js";
+
+const MAX_CONNECTOR_NOTE_TRANSCRIPT_CHARS = 8_000;
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -125,7 +128,7 @@ function buildCallNoteBody(payload, { includeTranscript = false } = {}) {
     lines.push(`EveryCall: ${payload.artifacts.app_url}`);
   }
   if (includeTranscript && normalizeText(payload?.artifacts?.transcript)) {
-    lines.push("", "Transcript:", payload.artifacts.transcript);
+    lines.push("", "Transcript:", String(payload.artifacts.transcript).slice(0, MAX_CONNECTOR_NOTE_TRANSCRIPT_CHARS));
   }
   return lines.join("\n");
 }
@@ -156,7 +159,7 @@ async function sendWebhookLikeConnection({ connection, payload, attemptNumber, s
     };
   }
 
-  const body = JSON.stringify(payload);
+  const body = serializeIntegrationPayload(payload);
   const headers = buildEveryCallHeaders(payload, attemptNumber);
   const response = await requestJson(endpointUrl, {
     method: "POST",

@@ -45,6 +45,22 @@ export async function createSession({ userId, tenantKey, role }) {
   return sessionId;
 }
 
+export async function deleteSessionsForPrincipal({ userId, role, tenantKey = null }) {
+  const pool = getPool();
+  if (!pool || !userId || !role) return;
+  const values = [userId, role];
+  const conditions = [`user_id = $1`, `role = $2`];
+  if (tenantKey !== null && tenantKey !== undefined) {
+    values.push(tenantKey);
+    conditions.push(`tenant_key = $${values.length}`);
+  }
+  await pool.query(
+    `DELETE FROM sessions
+     WHERE ${conditions.join(" AND ")}`,
+    values
+  );
+}
+
 export async function getSession(req) {
   const pool = getPool();
   if (!pool) return null;

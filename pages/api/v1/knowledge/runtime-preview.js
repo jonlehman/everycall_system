@@ -2,9 +2,11 @@ import { getPool } from "../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { requireTenantBillingAccess, requireTenantRoles } from "../../_lib/billing.js";
 import { assembleKnowledgeRuntimePreview } from "../../_lib/knowledgeReceptionistPrompt.js";
+import { enforceRateLimit } from "../../_lib/rateLimit.js";
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
 const openAiPreviewModel = process.env.OPENAI_PREVIEW_MODEL || process.env.OPENAI_SUMMARY_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini";
+const MAX_RUNTIME_PREVIEW_QUERY_LENGTH = 600;
 
 function fail(res, status, error, message) {
   return res.status(status).json({ ok: false, error, message });
@@ -163,9 +165,29 @@ export default async function handler(req, res) {
     });
     if (!manager) return;
 
+    const previewLimit = await enforceRateLimit(res, pool, {
+      scope: "knowledge.runtime_preview",
+      key: `${tenantKey}:${session.role}:${session.user_id || "unknown"}`,
+      maxHits: 20,
+      windowMs: 10 * 60 * 1000,
+      blockDurationMs: 30 * 60 * 1000,
+      message: "Too many runtime previews. Please try again later."
+    });
+    if (previewLimit?.limited) return;
+
     const body = typeof req.body === "object" && req.body ? req.body : {};
-    const preview = await assembleKnowledgeRuntimePreview(pool, tenantKey, body);
-    const answerEstimate = await generateSpokenAnswerEstimate(body.query, preview);
+    const query = normalizeText(body.query);
+    if (!query) {
+      return fail(res, 400, "query_required", "A caller query is required to assemble a runtime preview.");
+    }
+    if (query.length > MAX_RUNTIME_PREVIEW_QUERY_LENGTH) {
+      return fail(res, 413, "query_too_large", "Runtime preview queries must be 600 characters or fewer.");
+    }
+    const preview = await assembleKnowledgeRuntimePreview(pool, tenantKey, {
+      ...body,
+      query
+    });
+    const answerEstimate = await generateSpokenAnswerEstimate(query, preview);
     return res.status(200).json({
       ok: true,
       ...preview,

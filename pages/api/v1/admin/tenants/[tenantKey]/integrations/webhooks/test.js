@@ -1,5 +1,6 @@
 import { ensureTables, getPool } from "../../../../../../_lib/db.js";
 import { getAdminActor, requireSession } from "../../../../../../_lib/auth.js";
+import { enforceRateLimit } from "../../../../../../_lib/rateLimit.js";
 import {
   buildConnectionTestPayload,
   buildSignedWebhookRequest,
@@ -37,6 +38,16 @@ export default async function handler(req, res) {
     if (!admin) {
       return res.status(403).json({ error: "forbidden" });
     }
+
+    const rateLimit = await enforceRateLimit(res, pool, {
+      scope: "integrations.admin_webhook_test",
+      key: `${session.user_id || "unknown"}`,
+      maxHits: 20,
+      windowMs: 10 * 60 * 1000,
+      blockDurationMs: 30 * 60 * 1000,
+      message: "Too many webhook tests. Please try again later."
+    });
+    if (rateLimit?.limited) return;
 
     const tenantKey = normalizeText(req.query?.tenantKey);
     if (!tenantKey) {

@@ -1,10 +1,16 @@
 import crypto from "crypto";
 import { normalizePhoneNumber } from "./phone.js";
 
-export async function readRawBody(req) {
+export async function readRawBody(req, { maxBytes = 1024 * 1024 } = {}) {
   const chunks = [];
+  let totalBytes = 0;
   for await (const chunk of req) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    totalBytes += buffer.length;
+    if (totalBytes > maxBytes) {
+      throw new Error("request_body_too_large");
+    }
+    chunks.push(buffer);
   }
   return Buffer.concat(chunks).toString("utf8");
 }
