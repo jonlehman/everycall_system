@@ -1,4 +1,5 @@
 import { getPool } from "../../../_lib/db.js";
+import { requireSession } from "../../../_lib/auth.js";
 import {
   DEFAULT_RUNTIME_BEHAVIOR_DEFAULTS,
   DEFAULT_RUNTIME_TOOL_POLICY,
@@ -35,6 +36,9 @@ export default async function handler(req, res) {
   }
 
   try {
+    const session = await requireSession(req, res, { role: "admin" });
+    if (!session) return;
+
     const pool = getPool();
     if (!pool) {
       return res.status(500).json({ ok: false, error: "database_unavailable" });

@@ -1,6 +1,6 @@
 import { getPool } from "../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
-import { requireTenantBillingAccess } from "../../_lib/billing.js";
+import { requireTenantBillingAccess, requireTenantRoles } from "../../_lib/billing.js";
 import { assembleKnowledgeRuntimePreview } from "../../_lib/knowledgeReceptionistPrompt.js";
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
@@ -158,6 +158,10 @@ export default async function handler(req, res) {
     const tenantKey = resolveTenantKey(session, String(req.query?.tenantKey || req.body?.tenantKey || ""));
     const access = await requireTenantBillingAccess(res, pool, session, tenantKey);
     if (!access) return;
+    const manager = await requireTenantRoles(res, session, ["owner", "admin"], {
+      message: "Only account admins and owners can run runtime previews."
+    });
+    if (!manager) return;
 
     const body = typeof req.body === "object" && req.body ? req.body : {};
     const preview = await assembleKnowledgeRuntimePreview(pool, tenantKey, body);

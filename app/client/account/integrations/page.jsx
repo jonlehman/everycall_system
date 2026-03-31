@@ -171,7 +171,7 @@ export default function AccountIntegrationsPage() {
 
   const saveConnector = async () => {
     if (!viewer.canManage) {
-      setStatus({ tone: 'bad', message: 'Only the account owner can manage integrations.' });
+      setStatus({ tone: 'bad', message: 'Only account admins and owners can manage integrations.' });
       return;
     }
     setSaving(true);
@@ -215,7 +215,7 @@ export default function AccountIntegrationsPage() {
 
   const testConnector = async () => {
     if (!viewer.canManage) {
-      setStatus({ tone: 'bad', message: 'Only the account owner can test integrations.' });
+      setStatus({ tone: 'bad', message: 'Only account admins and owners can test integrations.' });
       return;
     }
     if (!connectorDraft.connectionId) {
@@ -519,7 +519,7 @@ export default function AccountIntegrationsPage() {
 
                   {!viewer.canManage ? (
                     <div className="text-sm text-slate-500">
-                      Only the account owner can update or test integrations.
+                      Only account admins and owners can update or test integrations.
                     </div>
                   ) : null}
                 </div>

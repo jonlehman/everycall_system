@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import WebSocket from "ws";
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
-import { requireTenantBillingAccess } from "../../_lib/billing.js";
+import { requireTenantBillingAccess, requireTenantRoles } from "../../_lib/billing.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { buildGatewayPromptResponse } from "../../_lib/gatewayPromptResponse.js";
 import {
@@ -247,6 +247,10 @@ export default async function handler(req, res) {
       const access = await requireTenantBillingAccess(res, pool, session, tenantKey);
       if (!access) return;
     }
+    const manager = await requireTenantRoles(res, session, ["owner", "admin"], {
+      message: "Only account admins and owners can generate voice previews."
+    });
+    if (!manager) return;
 
     if (req.method !== "GET" && req.method !== "POST") {
       res.setHeader("Allow", "GET, POST");

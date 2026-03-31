@@ -1,6 +1,6 @@
 import { getPool } from "../../../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../../../_lib/auth.js";
-import { requireTenantBillingAccess } from "../../../../_lib/billing.js";
+import { requireTenantBillingAccess, requireTenantRoles } from "../../../../_lib/billing.js";
 import { rollbackKnowledgeBuild } from "../../../../_lib/knowledgeReceptionistBuilds.js";
 
 function fail(res, status, error, message) {
@@ -24,6 +24,10 @@ export default async function handler(req, res) {
     const tenantKey = resolveTenantKey(session, String(req.query?.tenantKey || ""));
     const access = await requireTenantBillingAccess(res, pool, session, tenantKey);
     if (!access) return;
+    const manager = await requireTenantRoles(res, session, ["owner", "admin"], {
+      message: "Only account admins and owners can roll back builds."
+    });
+    if (!manager) return;
 
     const buildId = String(req.query?.buildId || "").trim();
     if (!buildId) {

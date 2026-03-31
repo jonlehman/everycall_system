@@ -1,4 +1,5 @@
 import { ensureTables, getPool } from "../_lib/db.js";
+import { INTERNAL_AUTH_PURPOSES, isValidInternalServiceToken } from "@everycall/contracts/internalAuth";
 import { getSession, requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess } from "../_lib/billing.js";
 import { normalizeCapturedCallFields } from "../_lib/callCapture.js";
@@ -196,8 +197,11 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       const body = typeof req.body === "object" && req.body ? req.body : {};
       const internalToken = req.headers["x-everycall-internal"];
-      const expectedToken = process.env.CALL_SUMMARY_TOKEN || "";
-      if (!session && (!expectedToken || internalToken !== expectedToken)) {
+      if (!session && !isValidInternalServiceToken(
+        internalToken,
+        process.env,
+        INTERNAL_AUTH_PURPOSES.callSummaryFinalize
+      )) {
         return res.status(403).json({ error: "forbidden" });
       }
 

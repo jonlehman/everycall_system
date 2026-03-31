@@ -1,12 +1,7 @@
 import crypto from "node:crypto";
 
 function getKeyMaterial() {
-  return String(
-    process.env.INTEGRATION_SECRET_ENCRYPTION_KEY
-    || process.env.CALL_SUMMARY_TOKEN
-    || process.env.DATABASE_URL
-    || ""
-  ).trim();
+  return String(process.env.INTEGRATION_SECRET_ENCRYPTION_KEY || "").trim();
 }
 
 function getEncryptionKey() {

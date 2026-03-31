@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import dns from "node:dns/promises";
+import net from "node:net";
 import { performance } from "node:perf_hooks";
 import { executePlannerPgvectorRuntime } from "@everycall/contracts";
 import { extractTextFromDocumentBuffer } from "./knowledgeReceptionistFiles.js";
@@ -570,7 +572,7 @@ async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT_MS) {
   try {
     return await fetch(url, {
       method: "GET",
-      redirect: "follow",
+      redirect: "manual",
       headers: { "user-agent": "EveryCall Knowledge Build" },
       signal: controller.signal
     });
@@ -579,15 +581,111 @@ async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT_MS) {
   }
 }
 
-export async function fetchWebsitePage(url) {
+function isBlockedHostname(hostname) {
+  const normalized = String(hostname || "").trim().toLowerCase();
+  if (!normalized) return true;
+  if (normalized === "localhost" || normalized.endsWith(".localhost")) return true;
+  if (normalized.endsWith(".local") || normalized.endsWith(".internal")) return true;
+  if (normalized === "metadata" || normalized === "metadata.google.internal") return true;
+  if (normalized === "169.254.169.254") return true;
+  return false;
+}
+
+function isBlockedIpAddress(address) {
+  const normalized = String(address || "").trim().toLowerCase();
+  if (!normalized) return true;
+  if (normalized.startsWith("::ffff:")) {
+    return isBlockedIpAddress(normalized.slice(7));
+  }
+  const version = net.isIP(normalized);
+  if (version === 4) {
+    const parts = normalized.split(".").map((item) => Number.parseInt(item, 10));
+    if (parts.length !== 4 || parts.some((item) => !Number.isFinite(item) || item < 0 || item > 255)) {
+      return true;
+    }
+    const [a, b] = parts;
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    if (a === 198 && (b === 18 || b === 19)) return true;
+    if (a >= 224) return true;
+    return false;
+  }
+  if (version === 6) {
+    if (normalized === "::" || normalized === "::1") return true;
+    if (normalized.startsWith("fe80:")) return true;
+    if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
+    return false;
+  }
+  return true;
+}
+
+async function assertSafePublicWebsiteUrl(value, { allowedOrigin = null } = {}) {
+  const url = value instanceof URL ? value : new URL(String(value || ""));
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("website_url_invalid_protocol");
+  }
+  if (allowedOrigin && url.origin !== allowedOrigin) {
+    throw new Error("website_redirect_origin_not_allowed");
+  }
+  if (isBlockedHostname(url.hostname)) {
+    throw new Error("website_target_not_public");
+  }
+  if (net.isIP(url.hostname)) {
+    if (isBlockedIpAddress(url.hostname)) {
+      throw new Error("website_target_not_public");
+    }
+    return url;
+  }
+  let addresses = [];
   try {
-    const response = await fetchWithTimeout(url);
+    addresses = await dns.lookup(url.hostname, { all: true, verbatim: true });
+  } catch {
+    throw new Error("website_target_unresolvable");
+  }
+  if (!Array.isArray(addresses) || !addresses.length) {
+    throw new Error("website_target_unresolvable");
+  }
+  if (addresses.some((entry) => isBlockedIpAddress(entry?.address))) {
+    throw new Error("website_target_not_public");
+  }
+  return url;
+}
+
+async function fetchSafeResponse(url, { allowedOrigin = null, timeoutMs = FETCH_TIMEOUT_MS, maxRedirects = 5 } = {}) {
+  let nextUrl = String(url || "");
+  for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+    const safeUrl = await assertSafePublicWebsiteUrl(nextUrl, { allowedOrigin });
+    const response = await fetchWithTimeout(safeUrl.toString(), timeoutMs);
+    if (response.status >= 300 && response.status < 400) {
+      const location = String(response.headers.get("location") || "").trim();
+      if (!location) {
+        throw new Error("website_redirect_missing_location");
+      }
+      const redirected = new URL(location, safeUrl);
+      await assertSafePublicWebsiteUrl(redirected, { allowedOrigin });
+      nextUrl = redirected.toString();
+      continue;
+    }
+    return {
+      response,
+      finalUrl: safeUrl.toString()
+    };
+  }
+  throw new Error("website_redirect_limit_exceeded");
+}
+
+export async function fetchWebsitePage(url, options = {}) {
+  try {
+    const { response, finalUrl } = await fetchSafeResponse(url, options);
     if (!response.ok) {
       return {
         ok: false,
         status: response.status,
         failureReason: `http_${response.status}`,
-        url,
+        url: finalUrl,
         html: "",
         title: "",
         headings: [],
@@ -600,7 +698,7 @@ export async function fetchWebsitePage(url) {
     return {
       ok: true,
       status: response.status,
-      url,
+      url: finalUrl,
       html,
       title: structured.title,
       headings: structured.headings,
@@ -684,15 +782,15 @@ function pushUniqueValue(list, value) {
   }
 }
 
-async function fetchWebsiteDownloadable(url) {
+async function fetchWebsiteDownloadable(url, options = {}) {
   try {
-    const response = await fetchWithTimeout(url);
+    const { response, finalUrl } = await fetchSafeResponse(url, options);
     if (!response.ok) {
       return {
         ok: false,
         status: response.status,
         failureReason: `http_${response.status}`,
-        url,
+        url: finalUrl,
         mimeType: "",
         sourceKind: "text",
         title: "",
@@ -704,14 +802,14 @@ async function fetchWebsiteDownloadable(url) {
     const parsed = extractTextFromDocumentBuffer({
       buffer,
       mimeType: response.headers.get("content-type") || "",
-      filename: new URL(url).pathname.split("/").filter(Boolean).slice(-1)[0] || "",
-      locator: url
+      filename: new URL(finalUrl).pathname.split("/").filter(Boolean).slice(-1)[0] || "",
+      locator: finalUrl
     });
-    const title = new URL(url).pathname.split("/").filter(Boolean).slice(-1)[0] || url;
+    const title = new URL(finalUrl).pathname.split("/").filter(Boolean).slice(-1)[0] || finalUrl;
     return {
       ok: true,
       status: response.status,
-      url,
+      url: finalUrl,
       mimeType: parsed.mimeType,
       sourceKind: parsed.sourceKind,
       title,
@@ -747,6 +845,7 @@ async function crawlWebsiteSources(rootUrl) {
   if (!firstPage.ok) {
     throw new Error("website_fetch_failed");
   }
+  const crawlOrigin = new URL(firstPage.url).origin;
 
   const pages = [firstPage];
   const visited = new Set([firstPage.url]);
@@ -758,7 +857,7 @@ async function crawlWebsiteSources(rootUrl) {
   let duplicateDiscoveryCount = 0;
   let canonicalizedDiscoveryCount = 0;
   let retryArtifactCount = 0;
-  const firstInventory = extractLinkInventory(normalizedRootUrl, firstPage.html);
+  const firstInventory = extractLinkInventory(firstPage.url, firstPage.html);
   const queue = firstInventory.pageLinks.slice(0, MAX_WEBSITE_PAGES * 2);
   const downloadableQueue = firstInventory.fileLinks.slice(0, MAX_WEBSITE_FILES * 2);
   const downloadableSeen = new Set(downloadableQueue);
@@ -785,7 +884,7 @@ async function crawlWebsiteSources(rootUrl) {
       break;
     }
     const batch = queue.splice(0, CRAWL_BATCH_SIZE);
-    const results = await Promise.all(batch.map((url) => fetchWebsitePage(url)));
+    const results = await Promise.all(batch.map((url) => fetchWebsitePage(url, { allowedOrigin: crawlOrigin })));
     for (const result of results) {
       if (!result.ok) {
         recordDiscoveryEntry(failedPageByLocator, result.url, {
@@ -811,7 +910,7 @@ async function crawlWebsiteSources(rootUrl) {
       }
       failedPageByLocator.delete(result.url);
       pages.push(result);
-      const linkInventory = extractLinkInventory(normalizedRootUrl, result.html);
+      const linkInventory = extractLinkInventory(crawlOrigin, result.html);
       duplicateDiscoveryCount += Number(linkInventory.duplicateCount || 0);
       canonicalizedDiscoveryCount += Number(linkInventory.canonicalizedCount || 0);
       for (const entry of linkInventory.skippedLinks) {
@@ -850,7 +949,7 @@ async function crawlWebsiteSources(rootUrl) {
       break;
     }
     const batch = downloadableQueue.splice(0, CRAWL_BATCH_SIZE);
-    const results = await Promise.all(batch.map((url) => fetchWebsiteDownloadable(url)));
+    const results = await Promise.all(batch.map((url) => fetchWebsiteDownloadable(url, { allowedOrigin: crawlOrigin })));
     for (const result of results) {
       if (!result.ok) {
         recordDiscoveryEntry(failedFileByLocator, result.url, {

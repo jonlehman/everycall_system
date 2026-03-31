@@ -1,6 +1,6 @@
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
-import { requireTenantBillingAccess, requireActiveTenantUser } from "../../_lib/billing.js";
+import { requireTenantBillingAccess, requireActiveTenantUser, requireTenantRoles, tenantUserHasAnyRole } from "../../_lib/billing.js";
 import {
   decryptIntegrationCredentials,
   encryptIntegrationCredentials
@@ -206,7 +206,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         viewer: {
-          canManage: viewer.role === "owner",
+          canManage: tenantUserHasAnyRole(viewer, ["owner", "admin"]),
           userRole: viewer.role || null
         },
         ...data
@@ -218,12 +218,10 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: "method_not_allowed" });
     }
 
-    if (viewer.role !== "owner") {
-      return res.status(403).json({
-        error: "forbidden",
-        message: "Only the account owner can manage integrations."
-      });
-    }
+    const manager = await requireTenantRoles(res, session, ["owner", "admin"], {
+      message: "Only account admins and owners can manage integrations."
+    });
+    if (!manager) return;
 
     const body = asObject(req.body);
     const connectorType = normalizeText(body.connectorType);
@@ -349,9 +347,9 @@ export default async function handler(req, res) {
 
     const data = await loadConnectionsAndDeliveries(pool, tenantKey);
     return res.status(200).json({
-      ok: true,
-      viewer: {
-        canManage: true,
+        ok: true,
+        viewer: {
+          canManage: true,
         userRole: viewer.role || null
       },
       connection: sanitizeIntegrationConnection(savedRow),

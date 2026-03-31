@@ -32,6 +32,48 @@ export async function requireTenantOwner(session) {
   return user;
 }
 
+export function tenantUserHasAnyRole(user, roles = []) {
+  const allowed = new Set(
+    (Array.isArray(roles) ? roles : [])
+      .map((role) => String(role || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+  if (!allowed.size) return false;
+  const userRole = String(user?.role || "").trim().toLowerCase();
+  return allowed.has(userRole);
+}
+
+export async function requireTenantRoles(res, session, roles = [], options = {}) {
+  if (!session) {
+    res.status(401).json({ error: "unauthorized" });
+    return null;
+  }
+  if (session.role === "admin") {
+    return {
+      id: session.user_id,
+      role: "admin",
+      tenant_key: session.tenant_key || null,
+      isPlatformAdmin: true
+    };
+  }
+  const user = await requireActiveTenantUser(session);
+  if (!user) {
+    res.status(403).json({
+      error: "forbidden",
+      message: options.inactiveMessage || "An active tenant user session is required."
+    });
+    return null;
+  }
+  if (!tenantUserHasAnyRole(user, roles)) {
+    res.status(403).json({
+      error: "forbidden",
+      message: options.message || "You do not have permission to perform this action."
+    });
+    return null;
+  }
+  return user;
+}
+
 export function resolveEffectiveMonthlyAmount(row) {
   const overrideAmount = Number(row?.monthly_amount_override_cents || 0);
   if (overrideAmount > 0) return overrideAmount;

@@ -1,6 +1,6 @@
 import { ensureTables, getPool } from "../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../_lib/auth.js";
-import { requireTenantBillingAccess } from "../_lib/billing.js";
+import { requireTenantBillingAccess, requireTenantRoles } from "../_lib/billing.js";
 import { normalizePhoneNumber } from "../_lib/phone.js";
 import { getOwnedPhoneNumber, updatePhoneNumberVoiceSettings } from "../_lib/telnyx.js";
 
@@ -72,6 +72,10 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "POST") {
+      const manager = await requireTenantRoles(res, session, ["owner", "admin"], {
+        message: "Only account admins and owners can update account settings."
+      });
+      if (!manager) return;
       const body = typeof req.body === "object" && req.body ? req.body : {};
       const tenant = await pool.query(
         `SELECT tenant_key, name, primary_number, telnyx_voice_number, telnyx_voice_number_id

@@ -1,6 +1,6 @@
 import { getPool } from "../../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../../_lib/auth.js";
-import { requireTenantBillingAccess } from "../../../_lib/billing.js";
+import { requireTenantBillingAccess, requireTenantRoles } from "../../../_lib/billing.js";
 import {
   enqueueKnowledgeBuild,
   listKnowledgeReceptionistBuilds
@@ -48,6 +48,10 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "POST") {
+      const manager = await requireTenantRoles(res, session, ["owner", "admin"], {
+        message: "Only account admins and owners can start knowledge builds."
+      });
+      if (!manager) return;
       const body = typeof req.body === "object" && req.body ? req.body : {};
       const buildResult = await enqueueKnowledgeBuild(pool, tenantKey, {
         websiteUrl: body.websiteUrl || body.website_url,

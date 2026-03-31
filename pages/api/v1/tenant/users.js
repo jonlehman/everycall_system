@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
-import { requireTenantBillingAccess } from "../../_lib/billing.js";
+import { requireTenantBillingAccess, requireTenantRoles } from "../../_lib/billing.js";
 import { MailtrapClient } from "mailtrap";
 import { sendTelnyxSms } from "../../_lib/telnyx.js";
 import { getSharedSmsNumber } from "../../_lib/alerts.js";
@@ -116,6 +116,10 @@ export default async function handler(req, res) {
     const access = await requireTenantBillingAccess(res, pool, session, tenantKey);
     if (!access) return;
 
+    const requireTeamManager = async () => requireTenantRoles(res, session, ["owner", "admin"], {
+      message: "Only account admins and owners can manage team users."
+    });
+
     if (req.method === "GET") {
       const rows = await pool.query(
         `SELECT id, name, email, role, status, phone_number, sms_opt_in_status, sms_opt_in_requested_at, sms_opt_in_confirmed_at,
@@ -129,6 +133,8 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "POST") {
+      const manager = await requireTeamManager();
+      if (!manager) return;
       const body = typeof req.body === "object" && req.body ? req.body : {};
       if (body.action === "status") {
         const id = Number(body.id || 0);
@@ -377,6 +383,8 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "DELETE") {
+      const manager = await requireTeamManager();
+      if (!manager) return;
       const id = Number(req.query?.id || 0);
       if (!id) {
         return fail(400, "missing_fields", "User id is required.");

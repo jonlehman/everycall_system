@@ -6,7 +6,13 @@ import { readCallGatewayEnv } from "@everycall/config";
 import type { CallState } from "@everycall/contracts";
 import { estimateAiCostMicrosUsd, estimateBillableMinutes, estimateTelephonyCostMicrosUsd, usdToMicros } from "@everycall/contracts/callCosting";
 import { buildTranscriptFromEvents } from "@everycall/contracts/callTranscript";
-import { logError, logInfo } from "@everycall/observability";
+import {
+  INTERNAL_AUTH_PURPOSES,
+  getInternalServiceToken,
+  isValidInternalServiceToken,
+  resolveInternalServiceSecret
+} from "@everycall/contracts/internalAuth";
+import { logError as baseLogError, logInfo as baseLogInfo, type LogContext } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
 import pg from "pg";
 import fs from "node:fs";
@@ -58,7 +64,12 @@ app.set("trust proxy", true);
 const databaseUrl = process.env.DATABASE_URL || "";
 const pool = databaseUrl ? new pg.Pool({ connectionString: databaseUrl }) : null;
 const appBaseUrl = process.env.APP_BASE_URL || "";
-const callSummaryToken = process.env.CALL_SUMMARY_TOKEN || "";
+const internalServiceSecret = resolveInternalServiceSecret(process.env);
+const gatewayPromptToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PURPOSES.gatewayPrompt);
+const gatewayToolResultToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PURPOSES.gatewayToolResult);
+const gatewayErrorToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PURPOSES.gatewayError);
+const callSummaryFinalizeToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PURPOSES.callSummaryFinalize);
+const gatewayDebugLogToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PURPOSES.gatewayDebugLog);
 const callGatewayBaseUrl = process.env.CALL_GATEWAY_BASE_URL || "";
 const openAiKey = process.env.OPENAI_API_KEY || "";
 const signatureRequired = (process.env.TELNYX_SIGNATURE_REQUIRED || "true").toLowerCase() !== "false";
@@ -69,11 +80,30 @@ const outboundAudioFrameMs = 20;
 const outboundJitterBufferFrames = Math.max(1, Number(process.env.TELNYX_OUTBOUND_BUFFER_FRAMES || "3"));
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
+const verboseGatewayLogging = String(process.env.GATEWAY_VERBOSE_LOGGING || "false").toLowerCase() === "true";
 const realtimeLogRoot = String(process.env.REALTIME_LOG_FILE || "/tmp/realtime-logs.jsonl");
 const Ajv = (AjvModule as unknown as { default?: new (opts?: Record<string, unknown>) => any }).default || (AjvModule as unknown as new (opts?: Record<string, unknown>) => any);
 const ajv = new Ajv({ allErrors: true, strict: false });
 
 const streamIdToCall = new Map<string, string>();
+const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
+  "call_gateway_started",
+  "gateway_call_session_end",
+  "knowledge_build_assets_startup_preload_started",
+  "knowledge_build_assets_startup_preload_completed",
+  "telnyx_bidirectional_payload_mode_normalized"
+]);
+
+function logInfo(event: string, details: LogContext = {}) {
+  if (process.env.NODE_ENV === "production" && !verboseGatewayLogging && !PRODUCTION_INFO_LOG_ALLOWLIST.has(event)) {
+    return;
+  }
+  baseLogInfo(event, details);
+}
+
+function logError(event: string, details: LogContext = {}) {
+  baseLogError(event, details);
+}
 
 type PendingToolCall = {
   name: string;
@@ -378,6 +408,26 @@ function resolveBidirectionalPayloadMode() {
   return bidirectionalPayloadMode === "rtp" ? "rtp" : "rtp";
 }
 
+function buildTelnyxMediaStreamToken(callControlId: string) {
+  const normalizedCallControlId = String(callControlId || "").trim();
+  if (!normalizedCallControlId || !internalServiceSecret) return "";
+  return getInternalServiceToken(
+    { INTERNAL_SERVICE_SECRET: internalServiceSecret },
+    INTERNAL_AUTH_PURPOSES.telnyxMediaStream,
+    normalizedCallControlId
+  );
+}
+
+function buildTelnyxMediaStreamUrl(baseUrl: string, callControlId: string) {
+  const streamToken = buildTelnyxMediaStreamToken(callControlId);
+  if (!streamToken) {
+    throw new Error("missing_internal_service_secret");
+  }
+  const url = new URL(baseUrl);
+  url.searchParams.set("stream_token", streamToken);
+  return url.toString();
+}
+
 function getConfiguredBidirectionalPayloadMode() {
   return bidirectionalPayloadMode;
 }
@@ -393,9 +443,9 @@ function logBidirectionalPayloadModeNormalization() {
   }
 }
 
-function getTelnyxStreamingStartPayload(baseUrl: string) {
+function getTelnyxStreamingStartPayload(baseUrl: string, callControlId: string) {
   return {
-    stream_url: baseUrl,
+    stream_url: buildTelnyxMediaStreamUrl(baseUrl, callControlId),
     stream_track: "both_tracks",
     stream_bidirectional_mode: resolveBidirectionalPayloadMode(),
     stream_bidirectional_codec: "PCMU",
@@ -508,13 +558,13 @@ async function notifyGatewayError(
   message: string,
   details: Record<string, unknown> = {}
 ) {
-  if (!appBaseUrl || !callSummaryToken) return;
+  if (!appBaseUrl || !gatewayErrorToken) return;
   try {
     const resp = await fetch(`${appBaseUrl}/api/v1/gateway/error`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-everycall-internal": callSummaryToken
+        "x-everycall-internal": gatewayErrorToken
       },
       body: JSON.stringify({
         call_id: callId,
@@ -1012,7 +1062,7 @@ async function loadCombinedTranscriptForCall(callSid: string) {
 }
 
 async function finalizeCallSummary(session: StreamSession) {
-  if (!appBaseUrl || !callSummaryToken) return;
+  if (!appBaseUrl || !callSummaryFinalizeToken) return;
 
   const capturedFieldSource = session.knowledgeCallState?.captured_fields
     && typeof session.knowledgeCallState.captured_fields === "object"
@@ -1040,7 +1090,7 @@ async function finalizeCallSummary(session: StreamSession) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-everycall-internal": callSummaryToken
+        "x-everycall-internal": callSummaryFinalizeToken
       },
       body: JSON.stringify({
         action: "summary",
@@ -1127,14 +1177,14 @@ async function flushFinalAudioAndEnd(session: StreamSession | undefined, reason:
 }
 
 async function fetchPromptPayload(tenantKey: string, callSid: string, to: string, from: string): Promise<GatewayPromptPayload> {
-  if (!appBaseUrl || !callSummaryToken) {
+  if (!appBaseUrl || !gatewayPromptToken) {
     throw new Error("missing_app_base_or_token");
   }
   const resp = await fetch(`${appBaseUrl}/api/v1/gateway/prompt`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-everycall-internal": callSummaryToken
+      "x-everycall-internal": gatewayPromptToken
     },
     body: JSON.stringify({ tenantKey, callSid, to, from })
   });
@@ -1243,7 +1293,7 @@ async function forwardToolResult(
   payload: Record<string, unknown>,
   validation: { status: string; errors: string[] }
 ) {
-  if (!appBaseUrl || !callSummaryToken) return;
+  if (!appBaseUrl || !gatewayToolResultToken) return;
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
@@ -1251,7 +1301,7 @@ async function forwardToolResult(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-everycall-internal": callSummaryToken
+          "x-everycall-internal": gatewayToolResultToken
         },
         body: JSON.stringify({ call_id: callId, tenant_key: tenantKey, tool, payload, validation })
       });
@@ -1942,8 +1992,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
     contentLength: req.header("content-length"),
     contentType: req.header("content-type"),
     hasSignature: Boolean(req.header("telnyx-signature-ed25519")),
-    hasTimestamp: Boolean(req.header("telnyx-timestamp")),
-    bodyPreview: rawBody ? rawBody.slice(0, 200) : ""
+    hasTimestamp: Boolean(req.header("telnyx-timestamp"))
   });
   if (signatureRequired && !verifyTelnyx(req, rawBody)) {
     logError("telnyx_signature_invalid", {
@@ -2092,7 +2141,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*" }), asyn
           streamUrl,
           bidirectionalPayloadMode: resolveBidirectionalPayloadMode()
         });
-        await telnyxCallAction(callControlId, "streaming_start", getTelnyxStreamingStartPayload(streamUrl));
+        await telnyxCallAction(callControlId, "streaming_start", getTelnyxStreamingStartPayload(streamUrl, callControlId));
         logInfo("telnyx_stream_start_requested", { callSid: session.callSid, callControlId });
       } catch (err) {
         logError("telnyx_call_control_stream_start_error", {
@@ -2146,8 +2195,11 @@ app.get("/healthz", (_req, res) => {
 });
 
 function handleRealtimeLogDownload(req: express.Request, res: express.Response) {
-  const provided = String(req.header("x-everycall-internal") || req.query?.token || "");
-  if (!callSummaryToken || provided !== callSummaryToken) {
+  if (!realtimeDebug && !realtimeTrace) {
+    return res.status(404).json({ error: "not_found" });
+  }
+  const provided = String(req.header("x-everycall-internal") || "");
+  if (!gatewayDebugLogToken || provided !== gatewayDebugLogToken) {
     return res.status(401).json({ error: "unauthorized" });
   }
   const callId = String(req.query?.call_id || "").trim();
@@ -2168,7 +2220,14 @@ app.get("/v1/debug/realtime-log", handleRealtimeLogDownload);
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/v1/telnyx/stream" });
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
+  let presentedStreamToken = "";
+  try {
+    const url = new URL(req.url || "/v1/telnyx/stream", "http://localhost");
+    presentedStreamToken = String(url.searchParams.get("stream_token") || "").trim();
+  } catch {
+    presentedStreamToken = "";
+  }
   ws.on("message", async (message) => {
     let payload: any = {};
     try {
@@ -2181,6 +2240,22 @@ wss.on("connection", (ws) => {
       const streamId = payload.stream_id;
       const callControlId = payload.start?.call_control_id || payload.call_control_id;
       if (!streamId || !callControlId) return;
+      if (!isValidInternalServiceToken(
+        presentedStreamToken,
+        { INTERNAL_SERVICE_SECRET: internalServiceSecret },
+        INTERNAL_AUTH_PURPOSES.telnyxMediaStream,
+        String(callControlId)
+      )) {
+        logError("telnyx_stream_unauthorized", {
+          callControlId,
+          streamId,
+          hasToken: Boolean(presentedStreamToken)
+        });
+        try {
+          ws.close();
+        } catch {}
+        return;
+      }
       let session = streamSessions.get(callControlId);
       if (!session) {
         logInfo("stream_start_session_recovery_attempt", { callControlId, streamId });

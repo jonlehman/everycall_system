@@ -29,6 +29,8 @@ services:
         sync: false
       - key: APP_BASE_URL
         sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
       - key: CALL_SUMMARY_TOKEN
         sync: false
       - key: DATABASE_URL

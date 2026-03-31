@@ -1,4 +1,5 @@
 import { getPool } from "../../_lib/db.js";
+import { INTERNAL_AUTH_PURPOSES, isValidInternalServiceToken } from "@everycall/contracts/internalAuth";
 import { assertTenantReadyForInboundCalls } from "../../_lib/knowledgeReceptionistConfig.js";
 import { assembleKnowledgeGatewayPrompt, buildFieldSchemaFromOutcomeSchema } from "../../_lib/knowledgeReceptionistPrompt.js";
 import { buildGatewayPromptResponse } from "../../_lib/gatewayPromptResponse.js";
@@ -14,7 +15,7 @@ export default async function handler(req, res) {
   }
 
   const token = String(req.headers["x-everycall-internal"] || "");
-  if (!process.env.CALL_SUMMARY_TOKEN || token !== process.env.CALL_SUMMARY_TOKEN) {
+  if (!isValidInternalServiceToken(token, process.env, INTERNAL_AUTH_PURPOSES.gatewayPrompt)) {
     return fail(res, 401, "unauthorized");
   }
 

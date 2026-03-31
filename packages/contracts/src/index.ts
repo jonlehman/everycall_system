@@ -7,6 +7,7 @@ export * from "./knowledgePolicySelection.js";
 export * from "./promptBlueprints.js";
 export * from "./callTranscript.js";
 export * from "./callCosting.js";
+export * from "./internalAuth.js";
 
 export const inboundWebhookSchema = z.object({
   CallSid: z.string().min(1),

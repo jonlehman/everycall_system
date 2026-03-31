@@ -12,7 +12,8 @@ Deploy full stack (web + services) to staging for integrated testing.
    - `TELNYX_API_KEY`
    - `TELNYX_PUBLIC_KEY`
    - `TELNYX_VOICE_CONNECTION_ID`
-   - `CALL_SUMMARY_TOKEN`
+   - `INTERNAL_SERVICE_SECRET`
+   - `INTEGRATION_SECRET_ENCRYPTION_KEY`
    - `APP_BASE_URL`
 4. Set staging service URLs:
    - `CALL_GATEWAY_URL`

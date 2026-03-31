@@ -1,4 +1,5 @@
 import { ensureTables, getPool } from "../../../_lib/db.js";
+import { INTERNAL_AUTH_PURPOSES, isValidInternalServiceToken } from "@everycall/contracts/internalAuth";
 import { normalizeCapturedCallFields } from "../../../_lib/callCapture.js";
 
 export default async function handler(req, res) {
@@ -8,7 +9,7 @@ export default async function handler(req, res) {
   }
 
   const token = String(req.headers["x-everycall-internal"] || "");
-  if (!process.env.CALL_SUMMARY_TOKEN || token !== process.env.CALL_SUMMARY_TOKEN) {
+  if (!isValidInternalServiceToken(token, process.env, INTERNAL_AUTH_PURPOSES.gatewayToolResult)) {
     return res.status(401).json({ error: "unauthorized" });
   }
 

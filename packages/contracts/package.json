@@ -17,6 +17,10 @@
     "./callCosting": {
       "types": "./dist/callCosting.d.ts",
       "default": "./dist/callCosting.js"
+    },
+    "./internalAuth": {
+      "types": "./dist/internalAuth.d.ts",
+      "default": "./dist/internalAuth.js"
     }
   },
   "scripts": {

@@ -7,9 +7,7 @@ function isAuthorized(req) {
   const bearer = String(req.headers.authorization || "");
   if (bearer === `Bearer ${configured}`) return true;
   const header = String(req.headers["x-cron-secret"] || "");
-  if (header === configured) return true;
-  const query = String(req.query?.token || "");
-  return query === configured;
+  return header === configured;
 }
 
 export default async function handler(req, res) {

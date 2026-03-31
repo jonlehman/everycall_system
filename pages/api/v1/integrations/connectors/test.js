@@ -1,6 +1,6 @@
 import { ensureTables, getPool } from "../../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../../_lib/auth.js";
-import { requireTenantBillingAccess, requireActiveTenantUser } from "../../../_lib/billing.js";
+import { requireTenantBillingAccess, requireActiveTenantUser, requireTenantRoles } from "../../../_lib/billing.js";
 import { testIntegrationConnection } from "../../../_lib/integrationConnectors.js";
 import {
   INTEGRATION_NATIVE_CONNECTOR_TYPES,
@@ -40,12 +40,10 @@ export default async function handler(req, res) {
     if (!viewer) {
       return res.status(403).json({ error: "forbidden" });
     }
-    if (viewer.role !== "owner") {
-      return res.status(403).json({
-        error: "forbidden",
-        message: "Only the account owner can test integrations."
-      });
-    }
+    const manager = await requireTenantRoles(res, session, ["owner", "admin"], {
+      message: "Only account admins and owners can test integrations."
+    });
+    if (!manager) return;
 
     const body = asObject(req.body);
     const connectionId = Number(body.connectionId || 0);
