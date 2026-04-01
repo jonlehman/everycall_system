@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 
 const protectedPaths = ['/client', '/admin', '/dashboard', '/config'];
 const clientBillingPath = '/client/account/billing';
+const billingAllowedClientPaths = new Set([
+  clientBillingPath,
+  '/client/account/support'
+]);
 
 async function getBillingState(url: URL, cookieHeader: string) {
   const resp = await fetch(new URL('/api/v1/billing', url.origin), {
@@ -69,7 +73,7 @@ export async function proxy(req: Request) {
   if (pathname.startsWith('/client') && me.role === 'tenant') {
     const billing = await getBillingState(url, cookieHeader);
     const locked = billing?.billing?.appAccessStatus === 'billing_locked' || billing?.billing?.status === 'deactivated';
-    if (locked && pathname !== clientBillingPath) {
+    if (locked && !billingAllowedClientPaths.has(pathname)) {
       const redirectUrl = new URL(clientBillingPath, url.origin);
       if (me.tenantKey) {
         redirectUrl.searchParams.set('tenantKey', String(me.tenantKey));

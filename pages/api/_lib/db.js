@@ -240,6 +240,57 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE dispatch_queue ADD COLUMN IF NOT EXISTS assigned_to TEXT;`);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS support_conversations (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      created_by_tenant_user_id BIGINT,
+      subject TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'waiting_on_support',
+      priority TEXT NOT NULL DEFAULT 'normal',
+      assigned_admin_user_id BIGINT,
+      client_last_read_at TIMESTAMPTZ,
+      admin_last_read_at TIMESTAMPTZ,
+      client_unread_count INTEGER NOT NULL DEFAULT 0,
+      admin_unread_count INTEGER NOT NULL DEFAULT 0,
+      last_message_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_message_preview TEXT,
+      resolved_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS created_by_tenant_user_id BIGINT;`);
+  await pool.query(`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS subject TEXT;`);
+  await pool.query(`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'waiting_on_support';`);
+  await pool.query(`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal';`);
+  await pool.query(`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS assigned_admin_user_id BIGINT;`);
+  await pool.query(`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS client_last_read_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS admin_last_read_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS client_unread_count INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS admin_unread_count INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS last_message_preview TEXT;`);
+  await pool.query(`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS support_messages (
+      id BIGSERIAL PRIMARY KEY,
+      conversation_id BIGINT NOT NULL,
+      tenant_key TEXT NOT NULL,
+      sender_type TEXT NOT NULL,
+      sender_id TEXT,
+      sender_name TEXT,
+      body TEXT NOT NULL,
+      body_format TEXT NOT NULL DEFAULT 'plain_text',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS sender_id TEXT;`);
+  await pool.query(`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS sender_name TEXT;`);
+  await pool.query(`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS body_format TEXT NOT NULL DEFAULT 'plain_text';`);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS routing_rules (
       tenant_key TEXT PRIMARY KEY,
       primary_queue TEXT NOT NULL,
@@ -759,6 +810,11 @@ export async function ensureTables(pool) {
   }
 
   await pool.query(`CREATE INDEX IF NOT EXISTS calls_tenant_created_idx ON calls (tenant_key, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS support_conversations_tenant_updated_idx ON support_conversations (tenant_key, last_message_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS support_conversations_status_updated_idx ON support_conversations (status, last_message_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS support_conversations_assigned_status_idx ON support_conversations (assigned_admin_user_id, status, last_message_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS support_messages_conversation_created_idx ON support_messages (conversation_id, created_at ASC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS support_messages_tenant_created_idx ON support_messages (tenant_key, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS dispatch_queue_tenant_status_idx ON dispatch_queue (tenant_key, status, due_at);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS audit_log_tenant_created_idx ON audit_log (tenant_key, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS billing_events_tenant_processed_idx ON billing_events (tenant_key, processed_at DESC);`);
