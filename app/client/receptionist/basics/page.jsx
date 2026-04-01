@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '../../../../components/ui/button';
 import GuidePanel from '../../_components/GuidePanel';
-import SalesReceptionistNumberBadge from '../../_components/SalesReceptionistNumberBadge';
+import SalesReceptionistNumberHeaderAside from '../../_components/SalesReceptionistNumberHeaderAside';
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
 import StepSection from '../../_components/StepSection';
@@ -54,6 +54,12 @@ const guideByContext = {
     title: 'Business Phone',
     body: 'This is the business’s main public phone number, separate from the Sales Receptionist Number that EveryCall provisions.',
     tip: 'Use the normal business line your callers already know or see on your website.'
+  },
+  salesReceptionistNumber: {
+    step: '01',
+    title: 'Sales Receptionist Number',
+    body: 'This is the EveryCall phone number your AI sales receptionist answers live. Your business phone system should forward callers to this number when you want EveryCall to pick up the call.',
+    tip: 'Set this number as the forwarding destination in your phone system so inbound callers reach the sales receptionist.'
   },
   businessHours: {
     step: '01',
@@ -108,6 +114,7 @@ export default function ReceptionistBasicsPage() {
 
   const sampleAudioRef = useRef(null);
   const sampleUrlRef = useRef('');
+  const guidePanelRef = useRef(null);
 
   const loadBasics = async () => {
     setLoading(true);
@@ -245,6 +252,10 @@ export default function ReceptionistBasicsPage() {
   const activeGuide = guideByContext[activeGuideKey] || guideByContext.assistantName;
   const activeStep = activeGuide.step || '01';
   const activeCardClassName = 'ring-2 ring-[#2563EB]/20 shadow-[0_0_0_1px_rgba(37,99,235,0.05)]';
+  const openSalesReceptionistNumberGuide = () => {
+    setActiveGuideKey('salesReceptionistNumber');
+    guidePanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
     <SectionPage
@@ -253,7 +264,7 @@ export default function ReceptionistBasicsPage() {
       subtitle="Set the business identity, greeting, and voice used by your sales receptionist."
       status={status}
       statusChip={{ tone: 'ok', label: 'Sales Receptionist Active' }}
-      headerAside={<SalesReceptionistNumberBadge />}
+      headerAside={<SalesReceptionistNumberHeaderAside onHelpClick={openSalesReceptionistNumberGuide} />}
     >
       <div className="grid grid-cols-1 items-start gap-4 pb-[288px] xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
         <div className="grid min-w-0 gap-3">
@@ -400,27 +411,29 @@ export default function ReceptionistBasicsPage() {
           </section>
         </div>
 
-        <GuidePanel
-          title="Basics Guide"
-          eyebrow=""
-          icon="person_4"
-          className="self-start xl:sticky xl:top-32 xl:max-h-[calc(100vh-9rem)] xl:overflow-y-auto"
-        >
-          <div className="rounded-2xl border border-[#d6e4ff] bg-[#f5f8ff] p-3">
-            <div className="font-semibold text-slate-900">{basicsGuideOverview.title}</div>
-            <div className="mt-1 text-sm text-slate-600">{basicsGuideOverview.body}</div>
-            <div className="mt-2 text-sm text-slate-600">{basicsGuideOverview.detail}</div>
-          </div>
-          <div className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-slate-500">{`Step ${activeStep}`}</div>
-          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="font-semibold text-slate-900">{activeGuide.title}</div>
-            <div className="mt-1 text-sm text-slate-600">{activeGuide.body}</div>
-          </div>
-          <div className="rounded-2xl border border-[#d6e4ff] bg-[#f5f8ff] p-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#004ac6]">Tip</div>
-            <div className="mt-2 text-sm italic text-slate-600">{activeGuide.tip}</div>
-          </div>
-        </GuidePanel>
+        <div ref={guidePanelRef}>
+          <GuidePanel
+            title="Basics Guide"
+            eyebrow=""
+            icon="person_4"
+            className="self-start xl:sticky xl:top-32 xl:max-h-[calc(100vh-9rem)] xl:overflow-y-auto"
+          >
+            <div className="rounded-2xl border border-[#d6e4ff] bg-[#f5f8ff] p-3">
+              <div className="font-semibold text-slate-900">{basicsGuideOverview.title}</div>
+              <div className="mt-1 text-sm text-slate-600">{basicsGuideOverview.body}</div>
+              <div className="mt-2 text-sm text-slate-600">{basicsGuideOverview.detail}</div>
+            </div>
+            <div className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-slate-500">{`Step ${activeStep}`}</div>
+            <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+              <div className="font-semibold text-slate-900">{activeGuide.title}</div>
+              <div className="mt-1 text-sm text-slate-600">{activeGuide.body}</div>
+            </div>
+            <div className="rounded-2xl border border-[#d6e4ff] bg-[#f5f8ff] p-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#004ac6]">Tip</div>
+              <div className="mt-2 text-sm italic text-slate-600">{activeGuide.tip}</div>
+            </div>
+          </GuidePanel>
+        </div>
       </div>
     </SectionPage>
   );
