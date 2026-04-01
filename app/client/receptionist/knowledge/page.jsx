@@ -174,8 +174,8 @@ const guideByContext = {
   },
   createBuild: {
     step: '01',
-    title: 'Create Build',
-    body: 'Create Build packages the current website URL and approved uploaded documents into a single knowledge version.',
+    title: 'Create Knowledge Base',
+    body: 'Create Knowledge Base turns the current website URL and approved uploaded documents into a single knowledge version.',
     tip: 'After changing the website or documents, create a new build so those updates can be published.'
   },
   buildHistory: {
@@ -507,7 +507,7 @@ export default function ReceptionistKnowledgePage() {
           }}>
             <StepSection
               step="01"
-              title="Create Build"
+              title="Create Knowledge Base"
               description="A build is the knowledge set your sales receptionist uses to answer caller questions."
               contentClassName={`border-0 bg-transparent p-0 ${activeStep === '01' ? activeCardClassName : ''}`}
             >
@@ -676,7 +676,7 @@ export default function ReceptionistKnowledgePage() {
                     onClick={createBuild}
                     disabled={buildBusy}
                   >
-                    {buildBusy ? 'Queueing...' : 'Create Build'}
+                    {buildBusy ? 'Queueing...' : 'Create Knowledge Base'}
                   </Button>
                 </div>
               </div>
