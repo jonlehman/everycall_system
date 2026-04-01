@@ -30,6 +30,30 @@ export default async function handler(req, res) {
       mine: conversations.filter((item) => item.assignedAdminUserId === Number(admin.id) && item.status !== "resolved").length,
       resolved: conversations.filter((item) => item.status === "resolved").length
     };
+    const summaryOnly = String(req.query?.summary || "").trim() === "1";
+    const latestUnreadConversation = conversations.find((item) => Number(item.adminUnreadCount || 0) > 0) || null;
+
+    if (summaryOnly) {
+      return res.status(200).json({
+        ok: true,
+        viewer: {
+          id: Number(admin.id),
+          email: admin.email,
+          role: admin.role
+        },
+        counts,
+        latestUnreadConversation: latestUnreadConversation
+          ? {
+              id: latestUnreadConversation.id,
+              tenantKey: latestUnreadConversation.tenantKey,
+              subject: latestUnreadConversation.subject,
+              adminUnreadCount: latestUnreadConversation.adminUnreadCount,
+              lastMessageAt: latestUnreadConversation.lastMessageAt,
+              updatedAt: latestUnreadConversation.updatedAt
+            }
+          : null
+      });
+    }
 
     return res.status(200).json({
       ok: true,
