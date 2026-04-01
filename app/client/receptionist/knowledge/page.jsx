@@ -615,6 +615,16 @@ export default function ReceptionistKnowledgePage() {
                   </div>
                 </div>
 
+                <div className="pt-2" onClick={() => setActiveGuideKey('createBuild')} onFocusCapture={() => setActiveGuideKey('createBuild')}>
+                  <Button
+                    className="h-auto rounded px-10 py-3 text-xs font-bold uppercase tracking-[0.18em]"
+                    onClick={createBuild}
+                    disabled={buildBusy}
+                  >
+                    {buildBusy ? 'Queueing...' : 'Create Knowledge Base'}
+                  </Button>
+                </div>
+
                 {buildState.builds.some((build) => isBuildActive(build)) ? (
                   <div className="text-sm text-slate-600">
                     Build status auto-refreshes every 15 seconds while work is active.
@@ -638,15 +648,6 @@ export default function ReceptionistKnowledgePage() {
                   </div>
                 ) : null}
 
-                <div className="pt-2" onClick={() => setActiveGuideKey('createBuild')} onFocusCapture={() => setActiveGuideKey('createBuild')}>
-                  <Button
-                    className="h-auto w-full rounded px-10 py-3 text-xs font-bold uppercase tracking-[0.18em] md:w-auto"
-                    onClick={createBuild}
-                    disabled={buildBusy}
-                  >
-                    {buildBusy ? 'Queueing...' : 'Create and Publish Knowledge Base'}
-                  </Button>
-                </div>
               </div>
             </StepSection>
           </div>
