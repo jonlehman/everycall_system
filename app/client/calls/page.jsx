@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { addTranscriptSpacing } from '@everycall/contracts/callTranscript';
+import { sanitizeTranscriptText } from '@everycall/contracts/callTranscript';
 import { useMediaQuery } from '@mui/material';
 import { Button } from '../../../components/ui/button';
 import { getLeadStatusMeta } from '../../../lib/leadBilling';
@@ -9,13 +9,51 @@ import ClientPage from '../_components/ClientPage';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
 const PAGE_SIZE = 10;
+const TRANSCRIPT_TURN_PATTERN = /^(assistant|caller|agent|system)\s*:\s*(.*)$/i;
 
 function formatLabel(value) {
   return String(value || '').replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function formatTranscript(text) {
-  return addTranscriptSpacing(text);
+function normalizeTranscriptSpeaker(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'agent') return 'assistant';
+  if (normalized === 'assistant' || normalized === 'caller' || normalized === 'system') return normalized;
+  return '';
+}
+
+function parseTranscriptTurns(text) {
+  const cleaned = sanitizeTranscriptText(String(text || ''));
+  if (!cleaned) return [];
+
+  return cleaned
+    .split(/\r?\n/)
+    .map((line) => String(line || '').trim())
+    .filter(Boolean)
+    .reduce((turns, line) => {
+      const match = line.match(TRANSCRIPT_TURN_PATTERN);
+      if (!match) {
+        if (turns.length) {
+          turns[turns.length - 1].text = `${turns[turns.length - 1].text}\n\n${line}`;
+          return turns;
+        }
+        turns.push({ speaker: 'assistant', text: line });
+        return turns;
+      }
+
+      const speaker = normalizeTranscriptSpeaker(match[1]);
+      const message = String(match[2] || '').trim();
+      if (!speaker || speaker === 'system' || !message) return turns;
+
+      const previousTurn = turns[turns.length - 1];
+      if (previousTurn?.speaker === speaker) {
+        previousTurn.text = `${previousTurn.text}\n\n${message}`;
+        return turns;
+      }
+
+      turns.push({ speaker, text: message });
+      return turns;
+    }, []);
 }
 
 function isSameCalendarDay(a, b) {
@@ -324,6 +362,7 @@ export default function CallsPage() {
   const pagedRows = filteredRows.slice(safeQueuePage * PAGE_SIZE, (safeQueuePage + 1) * PAGE_SIZE);
   const pageStart = filteredRows.length ? safeQueuePage * PAGE_SIZE + 1 : 0;
   const pageEnd = filteredRows.length ? Math.min(filteredRows.length, (safeQueuePage + 1) * PAGE_SIZE) : 0;
+  const transcriptTurns = useMemo(() => parseTranscriptTurns(detailTranscript), [detailTranscript]);
 
   const hasUnsavedChanges = Boolean(detailMeta) && (
     detailDraft.status !== (detailMeta.status || 'new')
@@ -801,9 +840,37 @@ export default function CallsPage() {
 
                 <div ref={transcriptRef} className="rounded-xl border border-[#c3c6d7]/10 bg-[#eff4ff] p-4">
                   <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Transcript</div>
-                  <pre className="rounded-md border border-slate-200 bg-white p-3 text-sm leading-6 text-slate-700" style={{ whiteSpace: 'pre-wrap' }}>
-                    {detailTranscript ? formatTranscript(detailTranscript) : 'No transcript available yet.'}
-                  </pre>
+                  <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                    {transcriptTurns.length ? (
+                      <div className="space-y-3">
+                        {transcriptTurns.map((turn, index) => {
+                          const isCaller = turn.speaker === 'caller';
+                          return (
+                            <div key={`${turn.speaker}-${index}`} className={`flex ${isCaller ? 'justify-end' : 'justify-start'}`}>
+                              <div className={`max-w-[88%] ${isCaller ? 'text-right' : ''}`}>
+                                <div className={`mb-1 text-[11px] font-bold uppercase tracking-[0.18em] ${isCaller ? 'text-[#004ac6]' : 'text-slate-500'}`}>
+                                  {isCaller ? 'Caller' : 'Assistant'}
+                                </div>
+                                <div
+                                  className={`rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm ${
+                                    isCaller
+                                      ? 'rounded-br-md bg-primary text-primary-foreground shadow-[0_8px_20px_rgba(0,74,198,0.16)]'
+                                      : 'rounded-bl-md border border-slate-200 bg-[#eff4ff] text-slate-900'
+                                  }`}
+                                >
+                                  <p className="m-0 whitespace-pre-wrap">{turn.text}</p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="rounded-lg bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                        No transcript available yet.
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </>
