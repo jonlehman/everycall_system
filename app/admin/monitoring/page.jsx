@@ -119,7 +119,7 @@ export default function AdminMonitoringPage() {
         <div>
           <h1 className="m-0 text-2xl font-semibold tracking-tight">Platform Monitoring</h1>
           <div className="mt-1 text-sm text-slate-500">
-            Watch delivery failures, stuck work, and launch health across all tenants.
+            Watch delivery failures, stuck work, and setup health across all tenants.
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -149,13 +149,14 @@ export default function AdminMonitoringPage() {
 
       <SectionCard
         title="Release Health"
-        body="These launch metrics help show whether new tenants are actually getting live after signup."
+        body="These setup metrics help show whether new tenants are publishing builds and turning on notifications after signup."
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           <SummaryCard label="New Tenants (30d)" value={Number(releaseHealth.new_tenants_30d || 0)} />
           <SummaryCard label="Published Build Rate" value={`${Number(releaseHealth.tenants_with_published_builds_30d || 0)}/${Number(releaseHealth.new_tenants_30d || 0)}`} />
-          <SummaryCard label="Ready For Calls" value={`${Number(releaseHealth.tenants_ready_for_calls_30d || 0)}/${Number(releaseHealth.new_tenants_30d || 0)}`} />
-          <SummaryCard label="Notifications Ready" value={`${Number(releaseHealth.tenants_with_notifications_ready_30d || 0)}/${Number(releaseHealth.new_tenants_30d || 0)}`} />
+          <SummaryCard label="Alert Recipients" value={`${Number(releaseHealth.tenants_with_alert_recipients_30d || 0)}/${Number(releaseHealth.new_tenants_30d || 0)}`} />
+          <SummaryCard label="Active Runtime Ready" value={`${Number(releaseHealth.tenants_with_active_runtime_30d || 0)}/${Number(releaseHealth.new_tenants_30d || 0)}`} />
+          <SummaryCard label="Fully Configured" value={`${Number(releaseHealth.tenants_fully_configured_30d || 0)}/${Number(releaseHealth.new_tenants_30d || 0)}`} />
           <SummaryCard label="Checkout Started" value={Number(releaseHealth.checkout_created_30d || 0)} />
           <SummaryCard label="Checkout Completed" value={Number(releaseHealth.checkout_completed_30d || 0)} />
         </div>

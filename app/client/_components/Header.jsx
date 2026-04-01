@@ -12,11 +12,6 @@ export default function Header() {
     stripeSubscriptionId: null,
     canManage: false
   });
-  const [readiness, setReadiness] = useState({
-    loading: true,
-    status: 'not_started',
-    blockers: []
-  });
   const [open, setOpen] = useState(false);
   const timerRef = useRef(null);
 
@@ -56,20 +51,12 @@ export default function Header() {
 
   useEffect(() => {
     let mounted = true;
-    const applyReadiness = (payload) => {
-      setReadiness({
-        loading: false,
-        status: payload?.status || 'not_started',
-        blockers: Array.isArray(payload?.blockers) ? payload.blockers : []
-      });
-    };
     const loadHeaderState = () => {
-      Promise.all([
-        fetch('/api/v1/knowledge/readiness', { cache: 'no-store' }).then((resp) => (resp.ok ? resp.json() : null)).catch(() => null),
-        fetch('/api/v1/billing').then((resp) => (resp.ok ? resp.json() : null)).catch(() => null)
-      ]).then(([readinessData, billingData]) => {
+      fetch('/api/v1/billing')
+        .then((resp) => (resp.ok ? resp.json() : null))
+        .catch(() => null)
+        .then((billingData) => {
         if (!mounted) return;
-        applyReadiness(readinessData?.readiness);
         setBilling({
           loading: false,
           status: billingData?.billing?.status || null,
@@ -80,25 +67,17 @@ export default function Header() {
         });
       }).catch(() => {
         if (!mounted) return;
-        setReadiness((current) => ({ ...current, loading: false }));
         setBilling((current) => ({ ...current, loading: false }));
       });
     };
-    const handleReadinessUpdated = (event) => {
-      if (!mounted) return;
-      applyReadiness(event?.detail || null);
-    };
     loadHeaderState();
-    window.addEventListener('everycall:readiness-updated', handleReadinessUpdated);
     return () => {
       mounted = false;
-      window.removeEventListener('everycall:readiness-updated', handleReadinessUpdated);
     };
   }, []);
 
   const showTrialBadge = !billing.loading && billing.status === 'trialing' && !billing.stripeSubscriptionId;
   const showBillingBadge = !billing.loading && !showTrialBadge && (billing.appAccessStatus === 'billing_locked' || billing.status === 'deactivated');
-  const ready = readiness.status === 'ready_for_go_live' || readiness.status === 'live';
   const trialLabel = billing.trialDaysRemaining === 1 ? 'Trial: 1 Day Left' : `Trial: ${billing.trialDaysRemaining ?? 0} Days Left`;
   const accountActionLabel = showTrialBadge || showBillingBadge ? 'Upgrade Plan' : (billing.canManage ? 'Billing' : 'Account');
 
@@ -126,14 +105,6 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-2 md:gap-4">
-          <Link
-            href="/client/receptionist/go-live"
-            className={`hidden items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] md:flex ${ready ? 'text-emerald-700' : 'text-amber-700'}`}
-          >
-            <span className={`h-2 w-2 rounded-full ${ready ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-            {ready ? 'Active' : 'Needs Setup'}
-          </Link>
-
           <Link
             href="/client/account/support"
             className="flex h-9 w-9 items-center justify-center rounded text-slate-700 transition-colors hover:bg-[#eff4ff]"
@@ -190,11 +161,6 @@ export default function Header() {
                 <Link className="mb-1 block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-[#eff4ff]" href="/client/account/support">
                   Support
                 </Link>
-                {!ready && readiness.blockers.length ? (
-                  <Link className="mb-1 block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-[#eff4ff]" href="/client/receptionist/go-live">
-                    Launch readiness
-                  </Link>
-                ) : null}
                 <div className="my-1 border-t border-slate-200" />
                 <button
                   className="block w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-[#eff4ff]"

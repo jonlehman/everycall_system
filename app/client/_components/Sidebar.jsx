@@ -15,48 +15,14 @@ function iconName(kind) {
 
 export default function Sidebar({ collapsed = false, onToggle }) {
   const pathname = usePathname();
-  const [goLiveReady, setGoLiveReady] = useState(false);
-  const [notificationsReady, setNotificationsReady] = useState(false);
   const [knowledgeReady, setKnowledgeReady] = useState(false);
 
   useEffect(() => {
     let mounted = true;
-    const applyReadiness = (payload) => {
-      const status = String(payload?.status || '').trim().toLowerCase();
-      setGoLiveReady(status === 'ready_for_go_live' || status === 'live');
-    };
-    const applyNotifications = (payload) => {
-      const settings = payload?.settings || payload || {};
-      setNotificationsReady(Boolean(settings?.lead_alerts_enabled) && Boolean(settings?.lead_alert_sms_enabled) && Boolean(settings?.lead_alert_email_enabled));
-    };
     const applyKnowledge = (payload) => {
       const builds = Array.isArray(payload?.builds) ? payload.builds : [];
       const hasPublishedBuild = builds.some((build) => String(build?.status || '').trim().toLowerCase() === 'published');
       setKnowledgeReady(hasPublishedBuild);
-    };
-    const loadReadiness = () => {
-      fetch('/api/v1/knowledge/readiness', { cache: 'no-store' })
-        .then((resp) => (resp.ok ? resp.json() : null))
-        .then((data) => {
-          if (!mounted) return;
-          applyReadiness(data?.readiness);
-        })
-        .catch(() => {
-          if (!mounted) return;
-          setGoLiveReady(false);
-        });
-    };
-    const loadNotifications = () => {
-      fetch('/api/v1/settings', { cache: 'no-store' })
-        .then((resp) => (resp.ok ? resp.json() : null))
-        .then((data) => {
-          if (!mounted) return;
-          applyNotifications(data?.settings ? data : null);
-        })
-        .catch(() => {
-          if (!mounted) return;
-          setNotificationsReady(false);
-        });
     };
     const loadKnowledge = () => {
       fetch('/api/v1/knowledge/builds', { cache: 'no-store' })
@@ -70,28 +36,14 @@ export default function Sidebar({ collapsed = false, onToggle }) {
           setKnowledgeReady(false);
         });
     };
-    const handleReadinessUpdated = (event) => {
-      if (!mounted) return;
-      applyReadiness(event?.detail || null);
-    };
-    const handleNotificationsUpdated = (event) => {
-      if (!mounted) return;
-      applyNotifications(event?.detail || null);
-    };
     const handleKnowledgeUpdated = (event) => {
       if (!mounted) return;
       applyKnowledge(event?.detail || null);
     };
-    loadReadiness();
-    loadNotifications();
     loadKnowledge();
-    window.addEventListener('everycall:readiness-updated', handleReadinessUpdated);
-    window.addEventListener('everycall:notifications-updated', handleNotificationsUpdated);
     window.addEventListener('everycall:knowledge-updated', handleKnowledgeUpdated);
     return () => {
       mounted = false;
-      window.removeEventListener('everycall:readiness-updated', handleReadinessUpdated);
-      window.removeEventListener('everycall:notifications-updated', handleNotificationsUpdated);
       window.removeEventListener('everycall:knowledge-updated', handleKnowledgeUpdated);
     };
   }, []);
@@ -127,7 +79,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         {clientPrimaryNavItems.map((item) => {
           const active = pathMatches(pathname, item);
           const showReceptionistDot = !collapsed && item.icon === 'receptionist';
-          const receptionistReady = goLiveReady && notificationsReady && knowledgeReady;
+          const receptionistReady = knowledgeReady;
           return (
             <Link
               key={item.href}

@@ -2,7 +2,6 @@ import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { buildPlanDisplay, ensureTenantBillingAccount, requireTenantBillingAccess } from "../../_lib/billing.js";
 import { listKnowledgeReceptionistBuilds } from "../../_lib/knowledgeReceptionistBuilds.js";
-import { loadKnowledgeReadiness } from "../../_lib/knowledgeReceptionistConfig.js";
 import { computeLeadInvoiceEstimate, getLeadPricingConfig, resolveBillingWindow } from "../../../../lib/leadBilling.js";
 
 function normalizeText(value) {
@@ -44,9 +43,7 @@ export default async function handler(req, res) {
       leadSummaryResult,
       recentLeadsResult,
       recentCallsResult,
-      settingsResult,
-      buildsData,
-      readiness
+      buildsData
     ] = await Promise.all([
       pool.query(
         `SELECT
@@ -105,29 +102,20 @@ export default async function handler(req, res) {
          LIMIT 5`,
         [tenantKey]
       ),
-      pool.query(
-        `SELECT
-           lead_alerts_enabled,
-           lead_alert_sms_enabled,
-           lead_alert_email_enabled
-         FROM tenant_settings
-         WHERE tenant_key = $1
-         LIMIT 1`,
-        [tenantKey]
-      ),
-      listKnowledgeReceptionistBuilds(pool, tenantKey),
-      loadKnowledgeReadiness(pool, tenantKey)
+      listKnowledgeReceptionistBuilds(pool, tenantKey)
     ]);
 
     const callsSummary = callsSummaryResult.rows[0] || {};
     const leadSummary = leadSummaryResult.rows[0] || {};
-    const settings = settingsResult.rows[0] || {};
     const builds = Array.isArray(buildsData?.builds) ? buildsData.builds : [];
     const publishedBuilds = builds.filter((build) => normalizeText(build?.status).toLowerCase() === "published");
     const latestBuild = builds[0] || null;
-    const notificationsReady = Boolean(settings.lead_alerts_enabled)
-      && Boolean(settings.lead_alert_sms_enabled)
-      && Boolean(settings.lead_alert_email_enabled);
+    const activeBuildId = normalizeText(buildsData?.activeBuild?.active_build_id);
+    const latestBuildId = normalizeText(latestBuild?.build_id);
+    const runtimeReady = normalizeText(latestBuild?.status).toLowerCase() === "published"
+      && activeBuildId
+      && latestBuildId
+      && activeBuildId === latestBuildId;
     const invoiceEstimate = computeLeadInvoiceEstimate({
       baseAmountCents: buildPlanDisplay(billingState).monthlyAmountCents,
       billableLeadCount: Number(leadSummary.billable_lead_count || 0)
@@ -141,20 +129,18 @@ export default async function handler(req, res) {
         body: "The receptionist can sound specific only after a build is published."
       });
     }
-    if (!notificationsReady) {
+    if (!runtimeReady) {
       nextSteps.push({
-        href: "/client/receptionist/notifications",
-        title: "Finish notifications",
-        body: "Turn on email and SMS alerts so the team sees every completed call quickly."
+        href: "/client/receptionist/knowledge",
+        title: "Make the latest build active",
+        body: "Publish a build so the Sales Receptionist uses your latest business-specific knowledge."
       });
     }
-    if (!["ready_for_go_live", "live"].includes(normalizeText(readiness?.status).toLowerCase())) {
-      nextSteps.push({
-        href: "/client/receptionist/go-live",
-        title: "Complete the Go Live Checklist",
-        body: "Calls should route to a published build only after the launch checklist is complete."
-      });
-    }
+    nextSteps.push({
+      href: "/client/team",
+      title: "Confirm alert recipients",
+      body: "Use Team to decide which users should receive email or SMS call alerts."
+    });
     nextSteps.push({
       href: "/client/calls",
       title: "Review the latest calls",
@@ -181,12 +167,12 @@ export default async function handler(req, res) {
         invoiceEstimate,
         leadPricing
       },
-      launch: {
-        readinessStatus: readiness?.status || "not_started",
-        blockers: Array.isArray(readiness?.blockers) ? readiness.blockers : [],
+      setup: {
         publishedBuildCount: publishedBuilds.length,
         latestBuildStatus: latestBuild?.status || null,
-        notificationsReady
+        activeBuildId,
+        latestBuildId,
+        runtimeReady
       },
       recentLeads: recentLeadsResult.rows || [],
       recentCalls: recentCallsResult.rows || [],

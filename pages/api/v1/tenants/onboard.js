@@ -8,7 +8,6 @@ import {
   DEFAULT_RUNTIME_WORDING_DEFAULTS,
   saveBusinessCallIntent,
   saveCallOutcomeSchema,
-  saveKnowledgeReadiness,
   saveKnowledgeRuntimeProfile
 } from "../../_lib/knowledgeReceptionistConfig.js";
 import { saveTenantPromptProfile } from "../../_lib/promptBlueprints.js";
@@ -172,18 +171,6 @@ function defaultCallOutcomeSchema(payload, assignments) {
   };
 }
 
-function initialReadinessChecklist(payload) {
-  return {
-    hours_confirmed: false,
-    address_confirmed: false,
-    service_area_confirmed: false,
-    calls_forwarded_to_receptionist: false,
-    sample_calls_passed: false,
-    handoff_path_tested: false,
-    outcome_capture_tested: false
-  };
-}
-
 export default async function handler(req, res) {
   const pool = getPool();
   if (!pool) {
@@ -330,14 +317,6 @@ export default async function handler(req, res) {
         user_id: ownerUserId
       });
 
-      const readiness = await saveKnowledgeReadiness(client, tenantKey, {
-        checklist: initialReadinessChecklist(payload),
-        requestedGoLive: false
-      }, {
-        role: "tenant",
-        user_id: ownerUserId
-      });
-
       let setupInterviewIntent = null;
       if (payload.bootstrapMode === "setup_interview" || !payload.website) {
         setupInterviewIntent = await saveSetupInterviewIntent(client, tenantKey, {
@@ -378,7 +357,6 @@ export default async function handler(req, res) {
         businessCallIntent,
         runtimeProfile,
         callOutcomeSchema,
-        readiness,
         setupInterviewIntent,
         voiceProvisioning
       });

@@ -404,7 +404,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                   <h3>Once your account is created, please visit:</h3>
                   <ul className="intake-followup-list">
                     <li><strong>Knowledge</strong> to publish a build.</li>
-                    <li><strong>Go Live Checklist</strong> to complete setup.</li>
+                    <li><strong>Team</strong> to confirm who should receive completed call alerts.</li>
                   </ul>
                 </div>
               </section>
@@ -453,7 +453,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
               </div>
               <p className="intake-success-copy">
                 {provisioningFailed
-                  ? `The account was created, but number provisioning needs follow-up before the receptionist can go live. ${activation.voiceProvisioning?.errorMessage || ''}`.trim()
+                  ? `The account was created, but number provisioning needs follow-up before the receptionist can start handling calls. ${activation.voiceProvisioning?.errorMessage || ''}`.trim()
                   : 'Continue to the Knowledge Workspace and create the first build when you are ready.'}
               </p>
               <div className="intake-actions">

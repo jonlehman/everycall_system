@@ -1,6 +1,5 @@
 import { getPool } from "../../_lib/db.js";
 import { INTERNAL_AUTH_PURPOSES, isValidInternalServiceToken } from "@everycall/contracts/internalAuth";
-import { assertTenantReadyForInboundCalls } from "../../_lib/knowledgeReceptionistConfig.js";
 import { assembleKnowledgeGatewayPrompt, buildFieldSchemaFromOutcomeSchema } from "../../_lib/knowledgeReceptionistPrompt.js";
 import { buildGatewayPromptResponse } from "../../_lib/gatewayPromptResponse.js";
 
@@ -32,7 +31,6 @@ export default async function handler(req, res) {
       return fail(res, 400, "missing_tenant_or_call");
     }
 
-    const launchReadiness = await assertTenantReadyForInboundCalls(pool, tenantKey);
     const gatewayPrompt = await assembleKnowledgeGatewayPrompt(pool, tenantKey, {
       callSid,
       runtimeEntryMode: String(body.runtimeEntryMode || "").trim() || "customer_call"
@@ -41,8 +39,7 @@ export default async function handler(req, res) {
     return res.status(200).json(
       buildGatewayPromptResponse(gatewayPrompt, buildFieldSchemaFromOutcomeSchema, {
         tenantKey,
-        callSid,
-        launchReadiness
+        callSid
       })
     );
   } catch (err) {
@@ -55,11 +52,6 @@ export default async function handler(req, res) {
     }
     if (message === "build_not_found") {
       return fail(res, 404, "build_not_found");
-    }
-    if (message === "tenant_not_ready_for_calls") {
-      return fail(res, 409, "tenant_not_ready_for_calls", {
-        readiness: err?.readiness || null
-      });
     }
     return fail(res, 500, "prompt_fetch_error", { message });
   }

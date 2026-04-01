@@ -28,6 +28,13 @@ function hasOwn(body, key) {
   return Object.prototype.hasOwnProperty.call(body, key);
 }
 
+const HARDCODED_NOTIFICATION_SETTINGS = {
+  lead_alerts_enabled: true,
+  lead_alert_sms_enabled: true,
+  lead_alert_email_enabled: true,
+  lead_alert_email_include_transcript: true
+};
+
 export default async function handler(req, res) {
   const fail = (status, error, message) => res.status(status).json({ ok: false, error, message });
 
@@ -68,7 +75,9 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         tenant: tenant.rows[0] || null,
-        settings: settings.rows[0] || null
+        settings: settings.rows[0]
+          ? { ...settings.rows[0], ...HARDCODED_NOTIFICATION_SETTINGS }
+          : { ...HARDCODED_NOTIFICATION_SETTINGS }
       });
     }
 
@@ -110,20 +119,10 @@ export default async function handler(req, res) {
       const notes = hasOwn(body, "notes")
         ? String(body.notes || "")
         : String(existingSettings?.notes || "");
-      const leadAlertsEnabled = hasOwn(body, "leadAlertsEnabled")
-        ? Boolean(body.leadAlertsEnabled)
-        : Boolean(existingSettings?.lead_alerts_enabled);
-      const leadAlertSmsEnabled = hasOwn(body, "leadAlertSmsEnabled")
-        ? Boolean(body.leadAlertSmsEnabled)
-        : Boolean(existingSettings?.lead_alert_sms_enabled);
-      const leadAlertEmailEnabled = hasOwn(body, "leadAlertEmailEnabled")
-        ? Boolean(body.leadAlertEmailEnabled)
-        : Boolean(existingSettings?.lead_alert_email_enabled);
-      const leadAlertEmailIncludeTranscript = hasOwn(body, "leadAlertEmailIncludeTranscript")
-        ? Boolean(body.leadAlertEmailIncludeTranscript)
-        : (existingSettings?.lead_alert_email_include_transcript === undefined
-          ? true
-          : Boolean(existingSettings?.lead_alert_email_include_transcript));
+      const leadAlertsEnabled = true;
+      const leadAlertSmsEnabled = true;
+      const leadAlertEmailEnabled = true;
+      const leadAlertEmailIncludeTranscript = true;
       const callerIdName = hasOwn(body, "callerIdName")
         ? normalizeCallerIdName(body.callerIdName)
         : storedCallerIdName;

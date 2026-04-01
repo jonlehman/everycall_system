@@ -355,11 +355,11 @@ async function loadLeadNotificationContext(pool, tenantKey, callSid) {
 
   return {
     tenantName: normalizeText(tenantRes.rows[0]?.name) || tenantKey,
-    settings: settingsRes.rows[0] || {
-      timezone: "America/Los_Angeles",
-      lead_alerts_enabled: false,
-      lead_alert_sms_enabled: false,
-      lead_alert_email_enabled: false,
+    settings: {
+      ...(settingsRes.rows[0] || { timezone: "America/Los_Angeles" }),
+      lead_alerts_enabled: true,
+      lead_alert_sms_enabled: true,
+      lead_alert_email_enabled: true,
       lead_alert_email_include_transcript: true
     },
     callRow: callRes.rows[0] || null,
@@ -370,10 +370,6 @@ async function loadLeadNotificationContext(pool, tenantKey, callSid) {
 export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
   const context = await loadLeadNotificationContext(pool, tenantKey, callSid);
   const settings = context.settings || {};
-  if (!settings.lead_alerts_enabled) {
-    await updateCallNotificationEstimatedCost(pool, { callSid });
-    return { ok: true, skipped: "tenant_alerts_disabled" };
-  }
   if (!context.callRow) {
     return { ok: false, error: "call_not_found" };
   }

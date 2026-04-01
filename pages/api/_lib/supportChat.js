@@ -450,8 +450,7 @@ export async function loadAdminSupportConversationDetail(pool, {
          t.service_access_status,
          t.telnyx_voice_number,
          owner.name AS owner_name,
-         owner.email AS owner_email,
-         kr.status AS readiness_status
+         owner.email AS owner_email
        FROM tenants t
        LEFT JOIN LATERAL (
          SELECT name, email
@@ -461,7 +460,6 @@ export async function loadAdminSupportConversationDetail(pool, {
          ORDER BY id ASC
          LIMIT 1
        ) owner ON TRUE
-       LEFT JOIN knowledge_readiness_states kr ON kr.tenant_key = t.tenant_key
        WHERE t.tenant_key = $1
        LIMIT 1`,
       [conversation.tenantKey]

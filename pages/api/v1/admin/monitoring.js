@@ -53,36 +53,37 @@ async function loadMonitoringData(pool) {
          WHERE tenant_key IN (SELECT tenant_key FROM recent_tenants)
          ORDER BY tenant_key, created_at DESC
        ),
-       notifications_ready AS (
-         SELECT tenant_key
-         FROM tenant_settings
+       alert_recipients_ready AS (
+         SELECT DISTINCT tenant_key
+         FROM tenant_users
          WHERE tenant_key IN (SELECT tenant_key FROM recent_tenants)
-           AND lead_alerts_enabled = TRUE
-           AND lead_alert_sms_enabled = TRUE
-           AND lead_alert_email_enabled = TRUE
+           AND status = 'active'
+           AND (
+             (lead_alert_email_enabled = TRUE AND COALESCE(TRIM(email), '') <> '')
+             OR
+             (lead_alert_sms_enabled = TRUE AND COALESCE(TRIM(phone_number), '') <> '')
+           )
        ),
-       call_ready AS (
-         SELECT kr.tenant_key
-         FROM knowledge_readiness_states kr
-         JOIN recent_tenants rt ON rt.tenant_key = kr.tenant_key
-         LEFT JOIN latest_builds lb ON lb.tenant_key = kr.tenant_key
-         LEFT JOIN tenant_active_knowledge_builds ak ON ak.tenant_key = kr.tenant_key
-         WHERE COALESCE((kr.checklist_json->>'hours_confirmed')::boolean, FALSE) = TRUE
-           AND COALESCE((kr.checklist_json->>'address_confirmed')::boolean, FALSE) = TRUE
-           AND COALESCE((kr.checklist_json->>'service_area_confirmed')::boolean, FALSE) = TRUE
-           AND COALESCE((kr.checklist_json->>'calls_forwarded_to_receptionist')::boolean, FALSE) = TRUE
-           AND COALESCE((kr.checklist_json->>'sample_calls_passed')::boolean, FALSE) = TRUE
-           AND COALESCE((kr.checklist_json->>'handoff_path_tested')::boolean, FALSE) = TRUE
-           AND COALESCE((kr.checklist_json->>'outcome_capture_tested')::boolean, FALSE) = TRUE
+       active_runtime_ready AS (
+         SELECT lb.tenant_key
+         FROM latest_builds lb
+         JOIN tenant_active_knowledge_builds ak ON ak.tenant_key = lb.tenant_key
+         WHERE lb.tenant_key IN (SELECT tenant_key FROM recent_tenants)
            AND LOWER(COALESCE(lb.status, '')) = 'published'
            AND COALESCE(ak.active_build_id, '') <> ''
            AND ak.active_build_id = lb.build_id
+       ),
+       configured_receptionists AS (
+         SELECT arr.tenant_key
+         FROM active_runtime_ready arr
+         JOIN alert_recipients_ready ar ON ar.tenant_key = arr.tenant_key
        )
        SELECT
          (SELECT COUNT(*)::int FROM recent_tenants) AS new_tenants_30d,
          (SELECT COUNT(DISTINCT tenant_key)::int FROM knowledge_builds WHERE tenant_key IN (SELECT tenant_key FROM recent_tenants) AND status = 'published') AS tenants_with_published_builds_30d,
-         (SELECT COUNT(*)::int FROM notifications_ready) AS tenants_with_notifications_ready_30d,
-         (SELECT COUNT(*)::int FROM call_ready) AS tenants_ready_for_calls_30d,
+         (SELECT COUNT(*)::int FROM alert_recipients_ready) AS tenants_with_alert_recipients_30d,
+         (SELECT COUNT(*)::int FROM active_runtime_ready) AS tenants_with_active_runtime_30d,
+         (SELECT COUNT(*)::int FROM configured_receptionists) AS tenants_fully_configured_30d,
          (SELECT COUNT(*)::int FROM billing_events WHERE event_type = 'billing.checkout.created' AND processed_at >= NOW() - interval '30 days') AS checkout_created_30d,
          (SELECT COUNT(*)::int FROM billing_events WHERE event_type = 'checkout.session.completed' AND processed_at >= NOW() - interval '30 days') AS checkout_completed_30d`
     ),

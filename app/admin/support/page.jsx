@@ -558,7 +558,6 @@ export default function AdminSupportPage() {
                 <div className="text-slate-500">Billing</div><div>{detail.tenantContext.billing_status || '-'}</div>
                 <div className="text-slate-500">App access</div><div>{detail.tenantContext.app_access_status || '-'}</div>
                 <div className="text-slate-500">Service access</div><div>{detail.tenantContext.service_access_status || '-'}</div>
-                <div className="text-slate-500">Readiness</div><div>{detail.tenantContext.readiness_status || '-'}</div>
                 <div className="text-slate-500">Receptionist number</div><div>{detail.tenantContext.telnyx_voice_number || '-'}</div>
               </div>
               <div>

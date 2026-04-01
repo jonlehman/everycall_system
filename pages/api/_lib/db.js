@@ -307,9 +307,9 @@ export async function ensureTables(pool) {
       timezone TEXT DEFAULT 'America/Los_Angeles',
       notes TEXT,
       caller_id_name TEXT,
-      lead_alerts_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-      lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-      lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      lead_alerts_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT TRUE,
       lead_alert_email_include_transcript BOOLEAN NOT NULL DEFAULT TRUE,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -319,6 +319,20 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_email_include_transcript BOOLEAN NOT NULL DEFAULT TRUE;`);
+  await pool.query(`ALTER TABLE tenant_settings ALTER COLUMN lead_alerts_enabled SET DEFAULT TRUE;`);
+  await pool.query(`ALTER TABLE tenant_settings ALTER COLUMN lead_alert_sms_enabled SET DEFAULT TRUE;`);
+  await pool.query(`ALTER TABLE tenant_settings ALTER COLUMN lead_alert_email_enabled SET DEFAULT TRUE;`);
+  await pool.query(
+    `UPDATE tenant_settings
+     SET lead_alerts_enabled = TRUE,
+         lead_alert_sms_enabled = TRUE,
+         lead_alert_email_enabled = TRUE,
+         lead_alert_email_include_transcript = TRUE
+     WHERE lead_alerts_enabled IS DISTINCT FROM TRUE
+        OR lead_alert_sms_enabled IS DISTINCT FROM TRUE
+        OR lead_alert_email_enabled IS DISTINCT FROM TRUE
+        OR lead_alert_email_include_transcript IS DISTINCT FROM TRUE`
+  );
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_intake (

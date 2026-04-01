@@ -24,7 +24,7 @@ const FIELD_SECTIONS = [
   {
     id: 'forwarding',
     title: 'Forwarding',
-    description: 'Forwarding readiness and lifecycle timestamps.',
+    description: 'Forwarding status and lifecycle timestamps.',
     fields: [
       { key: 'forwarding_setup_status', label: 'Forwarding setup status', type: 'select', options: ['not_started', 'acknowledged', 'configured'], hint: 'Operational state for forwarding setup.' },
       { key: 'forwarding_acknowledged_at', label: 'Forwarding acknowledged at', type: 'datetime', hint: 'When forwarding setup was acknowledged.' },
@@ -411,7 +411,6 @@ export default function TenantManagePage() {
   const [users, setUsers] = useState([]);
   const [builds, setBuilds] = useState([]);
   const [activeBuild, setActiveBuild] = useState(null);
-  const [readiness, setReadiness] = useState(null);
   const [notificationReview, setNotificationReview] = useState({ channelHealth: [], smsFailovers: [] });
   const [status, setStatus] = useState('Loading tenant...');
   const [loading, setLoading] = useState(false);
@@ -488,11 +487,10 @@ export default function TenantManagePage() {
     setLoading(true);
     setStatus('Loading tenant...');
     try {
-      const [tenantData, usersData, buildData, readinessData, billingData, integrationData, connectorData] = await Promise.all([
+      const [tenantData, usersData, buildData, billingData, integrationData, connectorData] = await Promise.all([
         fetchJson(`/api/v1/tenants?tenantKey=${encodeURIComponent(tenantKey)}`),
         fetchJson(`/api/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`),
         fetchJson(`/api/v1/knowledge/builds?tenantKey=${encodeURIComponent(tenantKey)}`),
-        fetchJson(`/api/v1/knowledge/readiness?tenantKey=${encodeURIComponent(tenantKey)}`),
         fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/billing`).catch(() => ({ channelHealth: [], smsFailovers: [] })),
         fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/integrations/webhooks`).catch(() => ({ connections: [], deliveries: [] })),
         fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/integrations/connectors`).catch(() => ({ connections: [], deliveries: [] }))
@@ -507,7 +505,6 @@ export default function TenantManagePage() {
       setUsers(Array.isArray(usersData?.users) ? usersData.users : []);
       setBuilds(Array.isArray(buildData?.builds) ? buildData.builds : []);
       setActiveBuild(buildData?.activeBuild || null);
-      setReadiness(readinessData?.readiness || null);
       setNotificationReview({
         channelHealth: Array.isArray(billingData?.channelHealth) ? billingData.channelHealth : [],
         smsFailovers: Array.isArray(billingData?.smsFailovers) ? billingData.smsFailovers : []
@@ -963,7 +960,13 @@ export default function TenantManagePage() {
   }
 
   const primaryUserLabel = primaryUser?.role === 'owner' ? 'Owner' : 'Primary User';
-  const readinessHasBlockers = Boolean((readiness?.blockers || []).length);
+  const latestBuild = builds[0] || null;
+  const activeRuntimeReady = Boolean(
+    activeBuild?.active_build_id
+    && latestBuild?.build_id
+    && activeBuild.active_build_id === latestBuild.build_id
+    && String(latestBuild?.status || '').trim().toLowerCase() === 'published'
+  );
   const previewPlanner = preview?.planner || null;
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewRuntimeBundle = preview?.runtimeBundle || null;
@@ -975,7 +978,7 @@ export default function TenantManagePage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="m-0 text-2xl font-semibold tracking-tight">{tenant?.name || tenantKey}</h1>
-          <div className="text-sm text-slate-500">Manage the owner contact, voice setup, readiness, and lower-level tenant record fields.</div>
+          <div className="text-sm text-slate-500">Manage the owner contact, voice setup, knowledge runtime, and lower-level tenant record fields.</div>
           <div className="mt-1 text-xs text-slate-500">Tenant key: <code>{tenantKey}</code></div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1015,9 +1018,9 @@ export default function TenantManagePage() {
         />
         <SummaryCard
           label="Knowledge"
-          value={readiness?.status || 'not_started'}
+          value={activeRuntimeReady ? 'live build published' : (latestBuild?.status || 'none')}
           detail={`Active build ${activeBuild?.active_build_id || 'none'} · ${builds.length} build${builds.length === 1 ? '' : 's'}`}
-          tone={readinessHasBlockers ? 'amber' : 'emerald'}
+          tone={activeRuntimeReady ? 'emerald' : 'amber'}
         />
       </div>
 
@@ -1601,17 +1604,13 @@ export default function TenantManagePage() {
           </section>
 
           <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <h2 className="m-0 text-lg font-semibold">Readiness And Builds</h2>
-            <div className={`mt-3 inline-flex rounded-full px-2 py-1 text-xs font-medium ${readinessHasBlockers ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'}`}>
-              {readiness?.status || 'not_started'}
+            <h2 className="m-0 text-lg font-semibold">Knowledge Builds</h2>
+            <div className={`mt-3 inline-flex rounded-full px-2 py-1 text-xs font-medium ${activeRuntimeReady ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}>
+              {activeRuntimeReady ? 'latest published build is active' : 'active runtime needs attention'}
             </div>
-            {readinessHasBlockers ? (
-              <ul className="mt-3 list-disc pl-5 text-sm text-slate-600">
-                {(readiness?.blockers || []).map((blocker) => <li key={blocker}>{blocker}</li>)}
-              </ul>
-            ) : (
-              <div className="mt-3 text-sm text-emerald-700">This tenant is ready on the new subsystem.</div>
-            )}
+            <div className="mt-3 text-sm text-slate-600">
+              A tenant is operationally ready when the latest build is published and selected as the active runtime.
+            </div>
             <div className="mt-4 grid gap-2">
               {builds.length ? builds.map((build) => (
                 <div key={build.build_id} className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700">

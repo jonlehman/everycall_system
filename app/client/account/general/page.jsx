@@ -26,12 +26,7 @@ function normalizeCallerIdName(value) {
 export default function AccountGeneralPage() {
   const [tenant, setTenant] = useState({ name: '-', plan: '-', data_region: '-', telnyx_voice_number: '', telnyx_voice_number_id: '' });
   const [timezone, setTimezone] = useState('America/Los_Angeles');
-  const [notes, setNotes] = useState('');
   const [callerIdName, setCallerIdName] = useState('');
-  const [leadAlertsEnabled, setLeadAlertsEnabled] = useState(false);
-  const [leadAlertSmsEnabled, setLeadAlertSmsEnabled] = useState(false);
-  const [leadAlertEmailEnabled, setLeadAlertEmailEnabled] = useState(false);
-  const [leadAlertEmailIncludeTranscript, setLeadAlertEmailIncludeTranscript] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState({ message: 'Loading account settings...', tone: 'warn' });
@@ -50,17 +45,8 @@ export default function AccountGeneralPage() {
         const nextTenant = data.tenant || { name: '-', plan: '-', data_region: '-', telnyx_voice_number: '', telnyx_voice_number_id: '' };
         setTenant(nextTenant);
         setTimezone(data.settings?.timezone || 'America/Los_Angeles');
-        setNotes(data.settings?.notes || '');
         const hasStoredCallerIdName = Boolean(data.settings) && Object.prototype.hasOwnProperty.call(data.settings, 'caller_id_name');
         setCallerIdName(hasStoredCallerIdName ? (data.settings?.caller_id_name || '') : normalizeCallerIdName(nextTenant?.name || ''));
-        setLeadAlertsEnabled(Boolean(data.settings?.lead_alerts_enabled));
-        setLeadAlertSmsEnabled(Boolean(data.settings?.lead_alert_sms_enabled));
-        setLeadAlertEmailEnabled(Boolean(data.settings?.lead_alert_email_enabled));
-        setLeadAlertEmailIncludeTranscript(
-          data.settings?.lead_alert_email_include_transcript === undefined
-            ? true
-            : Boolean(data.settings?.lead_alert_email_include_transcript)
-        );
         setStatus({ message: 'Account settings loaded.', tone: 'ok' });
         setLoading(false);
       })
@@ -82,12 +68,7 @@ export default function AccountGeneralPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         timezone,
-        notes,
-        callerIdName,
-        leadAlertsEnabled,
-        leadAlertSmsEnabled,
-        leadAlertEmailEnabled,
-        leadAlertEmailIncludeTranscript
+        callerIdName
       })
     });
     setSaving(false);

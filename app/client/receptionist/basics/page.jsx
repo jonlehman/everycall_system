@@ -404,8 +404,8 @@ export default function ReceptionistBasicsPage() {
               <Link href="/client/receptionist/knowledge" className="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-[0_8px_20px_rgba(0,74,198,0.16)]">
                 Open Knowledge
               </Link>
-              <Link href="/client/receptionist/notifications" className="inline-flex rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm">
-                Open Notifications
+              <Link href="/client/team" className="inline-flex rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm">
+                Open Team
               </Link>
             </div>
           </section>

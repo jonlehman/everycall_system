@@ -76,7 +76,7 @@ function summarizeIntent(intent, runtimeEntryMode) {
       intent_id: "missing_intent",
       intent_type: runtimeEntryMode === "setup_interview" ? "setup_interview_intent" : "business_call_intent",
       primary_goal: runtimeEntryMode === "setup_interview"
-        ? "Collect and confirm business facts needed for launch readiness."
+        ? "Collect and confirm business facts needed for setup."
         : "Welcome callers, answer direct questions, and move them toward the right next step.",
       summary: runtimeEntryMode === "setup_interview"
         ? "Guide the owner through a structured setup interview and confirm important facts."
@@ -157,19 +157,6 @@ function normalizeGuardrailForContract(guardrail, tenantKey) {
     enabled: guardrail.enabled !== false,
     status: normalizeText(guardrail.status) || "approved_live",
     metadata: asObject(guardrail.metadata_json || guardrail.metadata)
-  };
-}
-
-function normalizeReadinessForContract(readiness, tenantKey) {
-  if (!readiness) return null;
-  return {
-    tenant_id: normalizeText(readiness.tenant_key || readiness.tenant_id) || tenantKey,
-    status: normalizeText(readiness.status) || "not_started",
-    requested_go_live: Boolean(readiness.requested_go_live),
-    review_mode: normalizeText(readiness.review_mode) || "immediate_save",
-    checklist: asObject(readiness.checklist),
-    blockers: asStringArray(readiness.blockers),
-    computed_inputs: asObject(readiness.computed_inputs)
   };
 }
 
@@ -292,7 +279,7 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
     throw new Error(buildId ? "build_not_found" : "no_active_build");
   }
 
-  const [{ businessCallIntent, overrides, guardrails, readiness, callOutcomeSchema, runtimeProfile }, setupInterviewIntent, promptRuntime] = await Promise.all([
+  const [{ businessCallIntent, overrides, guardrails, callOutcomeSchema, runtimeProfile }, setupInterviewIntent, promptRuntime] = await Promise.all([
     loadApprovedConfigurationArtifacts(db, tenantKey),
     runtimeEntryMode === "setup_interview" ? loadSetupInterviewIntent(db, tenantKey) : Promise.resolve(null),
     loadPromptRuntimeContext(db, tenantKey, {
@@ -313,8 +300,7 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
       runtime_profile: normalizeRuntimeProfile(runtimeProfile, tenantKey),
       overrides: (overrides || []).map((item) => normalizeOverrideForContract(item, tenantKey)).filter(Boolean),
       guardrails: (guardrails || []).map((item) => normalizeGuardrailForContract(item, tenantKey)).filter(Boolean),
-      call_outcome_schema: normalizeCallOutcomeSchema(callOutcomeSchema) || undefined,
-      readiness: normalizeReadinessForContract(readiness, tenantKey) || undefined
+      call_outcome_schema: normalizeCallOutcomeSchema(callOutcomeSchema) || undefined
     },
     intentSummary,
     promptRuntime

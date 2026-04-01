@@ -73,16 +73,16 @@ export default function ClientDashboardPage() {
 
   const summary = dashboard?.summary || {};
   const billing = dashboard?.billing || {};
-  const launch = dashboard?.launch || {};
+  const setup = dashboard?.setup || {};
   const recentLeads = Array.isArray(dashboard?.recentLeads) ? dashboard.recentLeads : [];
   const recentCalls = Array.isArray(dashboard?.recentCalls) ? dashboard.recentCalls : [];
   const nextSteps = Array.isArray(dashboard?.nextSteps) ? dashboard.nextSteps : [];
-  const readinessOk = ['ready_for_go_live', 'live'].includes(String(launch.readinessStatus || '').trim().toLowerCase());
+  const setupReady = Boolean(setup.runtimeReady);
 
   return (
     <ClientPage
       title="Dashboard"
-      subtitle="Track leads, launch readiness, and billing from one place."
+      subtitle="Track leads, setup progress, and billing from one place."
       status={status}
       primaryAction={{ href: '/client/calls', label: 'Open Calls', brand: true }}
     >
@@ -114,38 +114,26 @@ export default function ClientDashboardPage() {
           <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="m-0 text-lg font-semibold">Launch Readiness</h2>
+                <h2 className="m-0 text-lg font-semibold">Receptionist Setup</h2>
                 <p className="m-0 mt-1 text-sm text-slate-500">
-                  Keep the Sales Receptionist specific, reachable, and fully visible to your team before going live.
+                  Make sure the active knowledge build is published so the Sales Receptionist answers with the latest business-specific knowledge.
                 </p>
               </div>
-              <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${readinessOk ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                {readinessOk ? 'Ready for Go Live' : 'Needs Attention'}
+              <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${setupReady ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                {setupReady ? 'Configured' : 'Needs Attention'}
               </span>
             </div>
             <div className="mt-4 grid gap-2 text-sm md:grid-cols-[220px_1fr]">
-              <div>Published builds</div><div>{Number(launch.publishedBuildCount || 0)}</div>
-              <div>Latest build status</div><div>{launch.latestBuildStatus || 'None yet'}</div>
-              <div>Notifications ready</div><div>{launch.notificationsReady ? 'Yes' : 'No'}</div>
+              <div>Published builds</div><div>{Number(setup.publishedBuildCount || 0)}</div>
+              <div>Latest build status</div><div>{setup.latestBuildStatus || 'None yet'}</div>
+              <div>Active runtime</div><div>{setup.runtimeReady ? 'Latest published build is active' : 'Needs a published active build'}</div>
             </div>
-            {Array.isArray(launch.blockers) && launch.blockers.length ? (
-              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                <div className="text-sm font-semibold text-amber-900">Current blockers</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {launch.blockers.map((blocker) => (
-                    <span key={blocker} className="rounded-full bg-white px-2 py-1 text-xs text-amber-800">
-                      {String(blocker).replaceAll('_', ' ')}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
             <div className="mt-4 flex flex-wrap gap-2">
-              <Link className={cn(buttonVariants({ variant: 'default' }))} href="/client/receptionist/go-live">
-                Open Go Live Checklist
-              </Link>
               <Link className={cn(buttonVariants({ variant: 'outline' }))} href="/client/receptionist/knowledge">
                 Open Knowledge
+              </Link>
+              <Link className={cn(buttonVariants({ variant: 'outline' }))} href="/client/team">
+                Open Team
               </Link>
             </div>
           </section>

@@ -606,7 +606,7 @@ export default function AccountIntegrationsPage() {
             <div className="mt-1 text-sm text-slate-600">Use filters to decide which call types reach each connector, and whether non-billable calls or duplicates should be included.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="font-semibold text-slate-900">Test before go-live</div>
+            <div className="font-semibold text-slate-900">Test before enabling</div>
             <div className="mt-1 text-sm text-slate-600">Save the connector first, then use Test Connection to confirm the credentials or endpoint are valid before relying on live delivery.</div>
           </div>
         </GuidePanel>

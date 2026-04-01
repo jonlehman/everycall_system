@@ -126,7 +126,7 @@ async function upsertSetupInterviewIntentRecord(db, tenantKey, payload = {}) {
       tenantKey,
       version,
       normalizeText(payload.status) || "draft",
-      normalizeText(payload.primaryGoal || payload.primary_goal) || "Collect and confirm business facts needed for launch readiness.",
+      normalizeText(payload.primaryGoal || payload.primary_goal) || "Collect and confirm business facts needed for setup.",
       JSON.stringify(Array.isArray(payload.requiredCaptureCategories || payload.required_capture_categories) ? (payload.requiredCaptureCategories || payload.required_capture_categories) : []),
       JSON.stringify(payload.confirmationPolicy || payload.confirmation_policy || {}),
       JSON.stringify(payload.completionCriteria || payload.completion_criteria || {}),
