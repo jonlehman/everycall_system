@@ -1,9 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
-import GuidePanel from '../../_components/GuidePanel';
 import SectionPage from '../../_components/SectionPage';
 import { accountNavItems } from '../../_components/navigation';
 
@@ -33,80 +31,101 @@ function formatRelative(value) {
   const diffMs = Date.now() - date.getTime();
   const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
   if (diffMinutes < 1) return 'Just now';
-  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  if (diffMinutes < 60) return `${diffMinutes} mins ago`;
   const diffHours = Math.round(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffHours < 24) return `${diffHours} hours ago`;
   const diffDays = Math.round(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffDays < 7) return `${diffDays} days ago`;
   return date.toLocaleDateString();
 }
 
-function conversationStatusMeta(status) {
+function ticketLabel(conversationId) {
+  return `Ticket #${String(Number(conversationId || 0)).padStart(4, '0')}`;
+}
+
+function threadStatusMeta(status) {
   if (status === 'waiting_on_client') {
     return {
-      label: 'Waiting on you',
-      toneClass: 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      label: 'Waiting On You',
+      shortLabel: 'Waiting',
+      badgeClass: 'bg-[#d6e4f9] text-[#3a4859]',
+      dotClass: 'bg-[#205cb5]'
     };
   }
   if (status === 'resolved') {
     return {
       label: 'Resolved',
-      toneClass: 'border-slate-200 bg-slate-100 text-slate-700'
+      shortLabel: 'Resolved',
+      badgeClass: 'bg-slate-200 text-slate-600',
+      dotClass: 'bg-slate-500'
     };
   }
   return {
-    label: 'Waiting on support',
-    toneClass: 'border-amber-200 bg-amber-50 text-amber-800'
+    label: 'Active',
+    shortLabel: 'Active',
+    badgeClass: 'bg-[#0f1c2c] text-white',
+    dotClass: 'bg-emerald-500'
   };
 }
 
 function senderMeta(senderType) {
   if (senderType === 'admin') {
     return {
-      label: 'Support',
-      bubbleClass: 'border-blue-200 bg-blue-50 text-slate-800'
+      label: 'EveryCall Support',
+      avatarIcon: 'support_agent',
+      avatarClass: 'bg-slate-200 text-slate-600',
+      rowClass: 'flex-row-reverse',
+      alignClass: 'items-end text-right',
+      bubbleClass: 'bg-[#e5e9eb] text-slate-800 rounded-2xl rounded-tr-md',
+      timeClass: 'text-right'
     };
   }
   return {
     label: 'You',
-    bubbleClass: 'border-slate-200 bg-white text-slate-800'
+    avatarIcon: 'person',
+    avatarClass: 'bg-[#d8e2ff] text-[#205cb5]',
+    rowClass: '',
+    alignClass: 'items-start text-left',
+    bubbleClass: 'bg-[#d8e2ff] text-[#003576] rounded-2xl rounded-tl-md',
+    timeClass: 'text-left'
   };
 }
 
-function ConversationListItem({ conversation, selected, onSelect }) {
-  const statusMeta = conversationStatusMeta(conversation.status);
+function ConversationRailItem({ conversation, selected, onSelect }) {
+  const meta = threadStatusMeta(conversation.status);
   return (
     <button
       type="button"
       onClick={onSelect}
       className={cn(
-        'w-full rounded-xl border p-3 text-left shadow-sm transition-colors',
+        'w-full rounded-2xl px-4 py-4 text-left transition-all',
         selected
-          ? 'border-[#004ac6]/25 bg-[#eff4ff]'
-          : 'border-slate-200 bg-white hover:bg-slate-50'
+          ? 'border-l-4 border-[#205cb5] bg-white shadow-sm'
+          : 'bg-[#ebeef0] hover:bg-[#e5e9eb]'
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-slate-900">{conversation.subject}</div>
-          <div className="mt-1 text-xs text-slate-500">
-            Started by {conversation.createdByName || conversation.createdByEmail || 'Client'}
-          </div>
-        </div>
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
+          {ticketLabel(conversation.id)}
+        </span>
+        <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.15em]', meta.badgeClass)}>
+          {meta.shortLabel}
+        </span>
+      </div>
+      <h3 className="line-clamp-1 text-sm font-semibold text-slate-900">{conversation.subject}</h3>
+      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">
+        {conversation.lastMessagePreview || 'No messages yet.'}
+      </p>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <p className="flex items-center gap-1 text-[10px] uppercase tracking-[0.15em] text-slate-400">
+          <span className="material-symbols-outlined text-[12px]">schedule</span>
+          {formatRelative(conversation.lastMessageAt)}
+        </p>
         {conversation.clientUnreadCount > 0 ? (
-          <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-[#004ac6] px-2 py-1 text-[11px] font-semibold text-white">
+          <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#205cb5] px-1.5 py-0.5 text-[10px] font-bold text-white">
             {conversation.clientUnreadCount}
           </span>
         ) : null}
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className={cn('inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold', statusMeta.toneClass)}>
-          {statusMeta.label}
-        </span>
-        <span className="text-[11px] text-slate-500">{formatRelative(conversation.lastMessageAt)}</span>
-      </div>
-      <div className="mt-3 line-clamp-2 text-sm leading-5 text-slate-600">
-        {conversation.lastMessagePreview || 'No messages yet.'}
       </div>
     </button>
   );
@@ -126,6 +145,7 @@ export default function AccountSupportPage() {
   const [newBody, setNewBody] = useState('');
   const [replyBody, setReplyBody] = useState('');
   const selectedConversationIdRef = useRef(null);
+  const startConversationRef = useRef(null);
 
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId;
@@ -285,81 +305,49 @@ export default function AccountSupportPage() {
     }
   };
 
-  const selectedStatusMeta = conversationStatusMeta(detail?.conversation?.status);
+  const selectedStatusMeta = threadStatusMeta(detail?.conversation?.status);
   const openConversations = useMemo(
     () => conversations.filter((item) => item.status !== 'resolved'),
     [conversations]
   );
 
+  const scrollToNewConversation = () => {
+    startConversationRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     <SectionPage
       tabs={accountNavItems}
       title="Support"
-      subtitle="Start a conversation with EveryCall support, track replies, and keep everything tied to your tenant."
+      subtitle="Start a conversation with EveryCall support, review your active threads, and reply in one workspace."
       status={status}
     >
-      <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(320px,.95fr)_minmax(0,1.25fr)]">
-        <div className="grid gap-3">
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="m-0 text-lg font-semibold">Start a conversation</h2>
-                <p className="m-0 mt-1 text-sm text-slate-500">
-                  Include the call time, caller number if known, and what you expected the system to do.
-                </p>
-              </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                {viewer.name || viewer.email || 'Tenant user'}
-              </span>
-            </div>
-            <div className="mt-4 grid gap-3">
-              <div className="grid gap-1">
-                <label className="text-sm font-medium text-slate-900">Subject</label>
-                <input
-                  value={newSubject}
-                  onChange={(event) => setNewSubject(event.target.value)}
-                  placeholder="Example: Lead alert email missing for a completed call"
-                  maxLength={160}
-                />
-              </div>
-              <div className="grid gap-1">
-                <label className="text-sm font-medium text-slate-900">Message</label>
-                <textarea
-                  value={newBody}
-                  onChange={(event) => setNewBody(event.target.value)}
-                  placeholder="Describe the issue, when it happened, and what you expected."
-                  rows={5}
-                  maxLength={4000}
-                />
-              </div>
-              <div className="flex justify-end">
-                <Button
-                  type="button"
-                  onClick={createConversation}
-                  disabled={creating || !newSubject.trim() || !newBody.trim()}
-                >
-                  {creating ? 'Starting...' : 'Start Conversation'}
-                </Button>
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div className="overflow-hidden rounded-[1.35rem] border border-slate-200/70 bg-[#f7fafc] shadow-[0_16px_40px_rgba(18,28,42,0.08)] xl:grid xl:grid-cols-[320px_minmax(0,1fr)] xl:min-h-[calc(100vh-14rem)]">
+        <section className="flex flex-col border-b border-slate-200/70 bg-[#f1f4f6] xl:border-b-0 xl:border-r">
+          <div className="border-b border-slate-200/70 px-5 py-5">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="m-0 text-lg font-semibold">Your conversations</h2>
-                <p className="m-0 mt-1 text-sm text-slate-500">
-                  {openConversations.length} open · {conversations.length} total
+                <h2 className="m-0 text-xl font-semibold tracking-[-0.02em] text-slate-900">Your Conversations</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  {openConversations.length} open {openConversations.length === 1 ? 'thread' : 'threads'}
                 </p>
               </div>
-              {loadingList ? (
-                <span className="text-xs text-slate-500">Refreshing...</span>
-              ) : null}
+              <button
+                type="button"
+                onClick={scrollToNewConversation}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#205cb5] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white transition-opacity hover:opacity-90"
+              >
+                <span className="material-symbols-outlined text-[16px]">add</span>
+                New
+              </button>
             </div>
-            <div className="mt-4 grid gap-3">
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            <div className="space-y-3">
               {conversations.length ? (
                 conversations.map((conversation) => (
-                  <ConversationListItem
+                  <ConversationRailItem
                     key={conversation.id}
                     conversation={conversation}
                     selected={conversation.id === selectedConversationId}
@@ -367,94 +355,156 @@ export default function AccountSupportPage() {
                   />
                 ))
               ) : (
-                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                  No support conversations yet.
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
+                  No conversations yet. Start one from the workspace to the right.
                 </div>
               )}
             </div>
-          </section>
+          </div>
+        </section>
 
-          <GuidePanel title="Support Guide" eyebrow="What to include" icon="help">
-            <div>Support can move faster when the first message includes the call time, caller number, and what you expected to happen.</div>
-            <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-              <div className="font-semibold text-slate-900">Best first checks</div>
-              <div className="mt-1 text-sm text-slate-600">Review Calls for the summary and transcript, Billing for lead classification, and Knowledge for the current published build.</div>
-            </div>
-            <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-              <div className="font-semibold text-slate-900">Response flow</div>
-              <div className="mt-1 text-sm text-slate-600">When support replies, the conversation moves to waiting on you. Your next reply automatically reopens it for the support queue.</div>
-            </div>
-          </GuidePanel>
-        </div>
+        <section className="relative flex min-h-[70vh] flex-col bg-[#f7fafc]">
+          <div ref={startConversationRef} className="border-b border-slate-200/70 px-5 py-6 md:px-8">
+            <div className="mx-auto max-w-4xl">
+              <div className="relative overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-6 shadow-sm md:p-8">
+                <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-[#205cb5]/5" />
+                <div className="relative">
+                  <h3 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.02em] text-slate-900">
+                    <span className="material-symbols-outlined text-[#205cb5]">add_box</span>
+                    Start A New Conversation
+                  </h3>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Describe the issue clearly. Include the call time, caller number if known, and what behavior you expected.
+                  </p>
 
-        <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-          {detail?.conversation ? (
-            <>
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Conversation</div>
-                  <h2 className="m-0 mt-2 text-xl font-semibold text-slate-950">{detail.conversation.subject}</h2>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                    <span>Created {formatDateTime(detail.conversation.createdAt)}</span>
-                    <span>&middot;</span>
-                    <span>Last activity {formatRelative(detail.conversation.lastMessageAt)}</span>
+                  <div className="mt-6 grid gap-6">
+                    <div className="grid gap-2">
+                      <label>Subject</label>
+                      <input
+                        value={newSubject}
+                        onChange={(event) => setNewSubject(event.target.value)}
+                        placeholder="Example: Lead alert email missing for a completed call"
+                        maxLength={160}
+                        className="bg-[#f1f4f6] ring-0 focus:bg-white focus:ring-2 focus:ring-[#205cb5]/20"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <label>Detailed Message</label>
+                      <textarea
+                        value={newBody}
+                        onChange={(event) => setNewBody(event.target.value)}
+                        placeholder="Explain the issue, what happened, and what you expected instead."
+                        rows={4}
+                        maxLength={4000}
+                        className="bg-[#f1f4f6] ring-0 focus:bg-white focus:ring-2 focus:ring-[#205cb5]/20"
+                      />
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={createConversation}
+                        disabled={creating || !newSubject.trim() || !newBody.trim()}
+                        className="inline-flex items-center gap-2 rounded-lg bg-[#205cb5] px-6 py-3 text-sm font-semibold text-white transition-all hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {creating ? 'Starting...' : 'Submit Ticket'}
+                        <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <span className={cn('inline-flex rounded-full border px-3 py-1 text-xs font-semibold', selectedStatusMeta.toneClass)}>
-                  {selectedStatusMeta.label}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-5 pb-36 pt-6 md:px-8">
+            <div className="mx-auto max-w-4xl space-y-6">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="h-8 w-px bg-slate-200" />
+                  <div>
+                    <h3 className="text-lg font-semibold tracking-[-0.02em] text-slate-900">
+                      {detail?.conversation ? `Active Conversation: ${detail.conversation.subject}` : 'Conversation Transcript'}
+                    </h3>
+                    {detail?.conversation ? (
+                      <p className="mt-1 text-sm text-slate-500">
+                        {ticketLabel(detail.conversation.id)} · Started {formatDateTime(detail.conversation.createdAt)}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+                <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  <span className={cn('h-2.5 w-2.5 rounded-full', detail?.conversation ? selectedStatusMeta.dotClass : 'bg-slate-300')} />
+                  {detail?.conversation ? selectedStatusMeta.label : 'No thread selected'}
                 </span>
               </div>
 
-              <div className="mt-4 grid gap-3">
-                {(Array.isArray(detail.messages) ? detail.messages : []).map((message) => {
+              {detail?.conversation ? (
+                (Array.isArray(detail.messages) ? detail.messages : []).map((message) => {
                   const meta = senderMeta(message.senderType);
                   return (
-                    <article
-                      key={message.id}
-                      className={cn(
-                        'rounded-xl border p-4 shadow-sm',
-                        meta.bubbleClass
-                      )}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-sm font-semibold text-slate-900">
-                          {message.senderName || meta.label}
+                    <div key={message.id} className={cn('flex gap-4', meta.rowClass)}>
+                      <div className="flex-shrink-0">
+                        <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl', meta.avatarClass)}>
+                          <span className="material-symbols-outlined text-[20px]">{meta.avatarIcon}</span>
                         </div>
-                        <div className="text-xs text-slate-500">{formatDateTime(message.createdAt)}</div>
                       </div>
-                      <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{message.body}</div>
-                    </article>
+                      <div className={cn('flex flex-1 flex-col gap-2', meta.alignClass)}>
+                        <div className="flex items-center gap-3">
+                          {meta.rowClass ? (
+                            <>
+                              <span className={cn('text-[10px] uppercase tracking-[0.18em] text-slate-400', meta.timeClass)}>{formatDateTime(message.createdAt)}</span>
+                              <span className="text-sm font-semibold text-slate-900">{message.senderName || meta.label}</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-sm font-semibold text-slate-900">{message.senderName || meta.label}</span>
+                              <span className={cn('text-[10px] uppercase tracking-[0.18em] text-slate-400', meta.timeClass)}>{formatDateTime(message.createdAt)}</span>
+                            </>
+                          )}
+                        </div>
+                        <div className={cn('max-w-2xl whitespace-pre-wrap px-5 py-4 text-sm leading-7 shadow-sm', meta.bubbleClass)}>
+                          {message.body}
+                        </div>
+                      </div>
+                    </div>
                   );
-                })}
-              </div>
+                })
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-10 text-center text-sm text-slate-500">
+                  {loadingDetail
+                    ? 'Loading conversation...'
+                    : 'Select a conversation from the left or start a new one to begin chatting with support.'}
+                </div>
+              )}
+            </div>
+          </div>
 
-              <div className="mt-4 border-t border-slate-200 pt-4">
-                <div className="grid gap-2">
-                  <label className="text-sm font-medium text-slate-900">Reply</label>
+          <div className="sticky bottom-0 px-5 pb-5 pt-0 md:px-8">
+            <div className="mx-auto max-w-4xl">
+              <div className="flex items-end gap-4 rounded-t-[1.35rem] border border-slate-200/70 bg-white/90 p-4 shadow-[0_-8px_28px_rgba(18,28,42,0.08)] backdrop-blur-xl">
+                <div className="flex-1">
                   <textarea
                     value={replyBody}
                     onChange={(event) => setReplyBody(event.target.value)}
-                    placeholder="Add more detail or answer the latest support question."
-                    rows={5}
+                    placeholder={detail?.conversation ? 'Type your reply to support...' : 'Select a conversation to reply.'}
+                    rows={1}
                     maxLength={4000}
+                    disabled={!detail?.conversation || sending}
+                    className="min-h-[3.5rem] resize-none border-0 bg-transparent px-0 py-2 shadow-none ring-0 focus:ring-0 disabled:cursor-not-allowed disabled:text-slate-400"
                   />
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      onClick={sendReply}
-                      disabled={sending || !replyBody.trim()}
-                    >
-                      {sending ? 'Sending...' : 'Send Reply'}
-                    </Button>
-                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={sendReply}
+                  disabled={sending || !detail?.conversation || !replyBody.trim()}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#205cb5] px-5 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-white transition-all hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {sending ? 'Sending...' : 'Send Reply'}
+                  <span className="material-symbols-outlined text-[16px]">send</span>
+                </button>
               </div>
-            </>
-          ) : (
-            <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
-              {loadingDetail ? 'Loading conversation...' : 'Select a conversation or start a new one to speak with support.'}
             </div>
-          )}
+          </div>
         </section>
       </div>
     </SectionPage>
