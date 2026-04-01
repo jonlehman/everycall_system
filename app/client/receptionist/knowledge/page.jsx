@@ -158,7 +158,7 @@ const guideByContext = {
   website: {
     step: '01',
     title: 'Website',
-    body: 'Set the main website URL the next build should crawl. That site content becomes part of the knowledge set your sales receptionist uses live.',
+    body: 'Set the main website URL the next knowledge base should crawl. That site content becomes part of what your sales receptionist uses live.',
     tip: 'Use the main public site, not a deep page, so the build can discover the right content.'
   },
   documentsMeta: {
@@ -486,7 +486,7 @@ export default function ReceptionistKnowledgePage() {
             <StepSection
               step="01"
               title="Create Knowledge Base"
-              description="A build is the knowledge set your sales receptionist uses to answer caller questions."
+              description="Your knowledge base is the website and document information your sales receptionist uses to answer caller questions."
               contentClassName={`border-0 bg-transparent p-0 ${activeStep === '01' ? activeCardClassName : ''}`}
             >
               <div className="space-y-4">
