@@ -52,6 +52,13 @@ function buildBadgeTone(status) {
   return 'warn';
 }
 
+function buildStatusLabel(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'ready_to_publish') return 'Publishing Soon';
+  if (normalized === 'qa_blocked') return 'Needs Review';
+  return formatLabel(normalized || status) || 'Unknown';
+}
+
 function renderBuildProgress(build) {
   const progress = build?.progress || null;
   if (!progress) return 'No progress details yet.';
@@ -175,26 +182,20 @@ const guideByContext = {
   createBuild: {
     step: '01',
     title: 'Create Knowledge Base',
-    body: 'Create Knowledge Base turns the current website URL and approved uploaded documents into a single knowledge version.',
-    tip: 'After changing the website or documents, create a new build so those updates can be published.'
-  },
-  buildHistory: {
-    step: '02',
-    title: 'Build History',
-    body: 'Each build is a saved knowledge version. Publish the version you want the sales receptionist to use for live caller questions.',
-    tip: 'Only a published build can answer customer questions during live calls.'
+    body: 'Create Knowledge Base turns the current website URL and approved uploaded documents into a single knowledge version and publishes it automatically when it is ready.',
+    tip: 'After changing the website or documents, create a new build so those updates can go live automatically.'
   },
   testQuestion: {
-    step: '03',
+    step: '02',
     title: 'Test Customer Questions',
-    body: 'Ask caller-style questions against the current published build to check how the sales receptionist is likely to answer.',
+    body: 'Ask caller-style questions against the current live build to check how the sales receptionist is likely to answer.',
     tip: 'Use the same wording real callers would use on the phone.'
   },
   likelyAnswer: {
-    step: '03',
+    step: '02',
     title: 'Likely Answer',
-    body: 'This preview shows an estimated answer based on the current published build. It helps you sanity-check the knowledge before sending live calls to it.',
-    tip: 'If the answer looks wrong, update the sources or publish a newer build and test again.'
+    body: 'This preview shows an estimated answer based on the current live build. It helps you sanity-check the knowledge before sending live calls to it.',
+    tip: 'If the answer looks wrong, update the sources, create a new build, and test again.'
   },
   salesReceptionistNumber: {
     step: '01',
@@ -217,7 +218,6 @@ export default function ReceptionistKnowledgePage() {
   const [readingDocumentFile, setReadingDocumentFile] = useState(false);
   const [buildBusy, setBuildBusy] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
-  const [publishingBuildId, setPublishingBuildId] = useState('');
   const [activeGuideKey, setActiveGuideKey] = useState('website');
 
   const [documentForm, setDocumentForm] = useState({
@@ -321,7 +321,7 @@ export default function ReceptionistKnowledgePage() {
       await loadWorkspace({ silent: true });
       const finalStatus = String(data.status || '').trim().toLowerCase();
       setStatus({
-        message: `Build ${buildId || 'created'} ${finalStatus === 'running' ? 'is already running' : 'queued'}. This page will update automatically.`,
+        message: `Build ${buildId || 'created'} ${finalStatus === 'running' ? 'is already running' : 'queued'} and will publish automatically when it is ready. This page will update automatically.`,
         tone: 'ok'
       });
     } catch {
@@ -418,28 +418,6 @@ export default function ReceptionistKnowledgePage() {
     }
   };
 
-  const publishBuild = async (buildId) => {
-    setPublishingBuildId(buildId);
-    setStatus({ message: `Publishing build ${buildId}...`, tone: 'warn' });
-    try {
-      const data = await fetchJson(`/api/v1/knowledge/builds/${encodeURIComponent(buildId)}/publish`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
-      if (!data?.ok) {
-        setStatus({ message: data?.message || `Could not publish build ${buildId}.`, tone: 'bad' });
-        return;
-      }
-      await loadWorkspace({ silent: true });
-      setStatus({ message: `Build ${buildId} published.`, tone: 'ok' });
-    } catch {
-      setStatus({ message: `Could not publish build ${buildId}.`, tone: 'bad' });
-    } finally {
-      setPublishingBuildId('');
-    }
-  };
-
   const runRuntimePreview = async () => {
     setPreviewBusy(true);
     setPreview(null);
@@ -480,7 +458,7 @@ export default function ReceptionistKnowledgePage() {
     : latestBuildStatus === 'published'
       ? { tone: 'ok', label: 'Published Build Active' }
       : latestBuildStatus === 'ready_to_publish'
-        ? { tone: 'warn', label: 'Ready to Publish' }
+        ? { tone: 'warn', label: 'Publishing Soon' }
         : { tone: 'warn', label: 'Knowledge Needs Review' };
   const activeGuide = guideByContext[activeGuideKey] || guideByContext.website;
   const activeStep = activeGuide.step || '01';
@@ -494,7 +472,7 @@ export default function ReceptionistKnowledgePage() {
     <SectionPage
       tabs={receptionistNavItems}
       title="Knowledge"
-      subtitle="Manage builds, uploaded documents, published versions, and simple question testing."
+      subtitle="Manage website and document sources, create a live build, and test customer questions."
       status={status}
       statusChip={statusChip}
       headerAside={<SalesReceptionistNumberHeaderAside onHelpClick={openSalesReceptionistNumberGuide} />}
@@ -670,59 +648,32 @@ export default function ReceptionistKnowledgePage() {
                   </div>
                 ) : null}
 
+                {latestBuild ? (
+                  <div className="rounded-lg border border-slate-200 bg-white p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="font-semibold text-slate-900">Latest Build</div>
+                        <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestBuild, 0)}</div>
+                      </div>
+                      <span className={`badge ${buildBadgeTone(latestBuild.status)}`}>{buildStatusLabel(latestBuild.status)}</span>
+                    </div>
+                    <div className="mt-2 text-sm text-slate-600">
+                      Cards: {latestBuild.artifact_counts_json?.cards || 0} · Facts: {latestBuild.artifact_counts_json?.facts || 0}
+                    </div>
+                    <div className="mt-1 text-sm text-slate-600">{renderBuildProgress(latestBuild)}</div>
+                    <BuildProgressMeter build={latestBuild} compact />
+                  </div>
+                ) : null}
+
                 <div className="pt-2" onClick={() => setActiveGuideKey('createBuild')} onFocusCapture={() => setActiveGuideKey('createBuild')}>
                   <Button
                     className="h-auto w-full rounded px-10 py-3 text-xs font-bold uppercase tracking-[0.18em] md:w-auto"
                     onClick={createBuild}
                     disabled={buildBusy}
                   >
-                    {buildBusy ? 'Queueing...' : 'Create Knowledge Base'}
+                    {buildBusy ? 'Queueing...' : 'Create and Publish Knowledge Base'}
                   </Button>
                 </div>
-              </div>
-            </StepSection>
-          </div>
-
-          <div onClick={(event) => {
-            if (isInteractiveGuideTarget(event.target)) return;
-            setActiveGuideKey('buildHistory');
-          }}>
-            <StepSection
-              className="mt-24"
-              step="02"
-              title="Build History"
-              description="Review previous builds here and publish a ready version when you want it live for callers."
-              contentClassName={activeStep === '02' ? activeCardClassName : ''}
-            >
-              <div className="grid gap-2">
-                {buildState.builds.length ? buildState.builds.map((build, index) => (
-                  <div key={build.build_id} className="rounded-lg border border-slate-200 bg-white p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <div className="font-semibold text-slate-900">{buildDisplayLabel(build, index)}</div>
-                      </div>
-                      <span className={`badge ${buildBadgeTone(build.status)}`}>{build.status}</span>
-                    </div>
-                    <div className="mt-2 text-sm text-slate-600">
-                      Cards: {build.artifact_counts_json?.cards || 0} · Facts: {build.artifact_counts_json?.facts || 0}
-                    </div>
-                    <div className="mt-1 text-sm text-slate-600">{renderBuildProgress(build)}</div>
-                    <BuildProgressMeter build={build} compact />
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {build.status === 'ready_to_publish' ? (
-                        <Button
-                          variant="outline"
-                          onClick={() => publishBuild(build.build_id)}
-                          disabled={publishingBuildId === build.build_id}
-                        >
-                          {publishingBuildId === build.build_id ? 'Publishing...' : 'Publish'}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                )) : (
-                  <div className="text-sm text-slate-500">Publish a knowledge build so the sales receptionist can answer questions about your business.</div>
-                )}
               </div>
             </StepSection>
           </div>
@@ -733,10 +684,10 @@ export default function ReceptionistKnowledgePage() {
           }}>
             <StepSection
               className="mt-24"
-              step="03"
+              step="02"
               title="Test Customer Questions"
-              description="Ask a caller-style question to see an approximate answer based on the current published build."
-              contentClassName={activeStep === '03' ? activeCardClassName : ''}
+              description="Ask a caller-style question to see an approximate answer based on the current live build."
+              contentClassName={activeStep === '02' ? activeCardClassName : ''}
             >
               <label className="mt-2.5">Test Question</label>
               <input
@@ -773,7 +724,7 @@ export default function ReceptionistKnowledgePage() {
           <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <h2 className="m-0 text-lg font-semibold">Next Steps</h2>
             <p className="m-0 mt-2 text-sm text-slate-600">
-              After a build is published and your test questions look right, make sure the right users are set to receive call alerts on the Team page.
+              After your latest build finishes and your test questions look right, make sure the right users are set to receive call alerts on the Team page.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link href="/client/team" className="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-[0_8px_20px_rgba(0,74,198,0.16)]">

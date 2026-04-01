@@ -4109,6 +4109,16 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
           uploadedDocumentIds: executionInput.uploadedDocumentIds,
           setupInterviewSessionIds: executionInput.setupInterviewSessionIds
         });
+        if (normalizeText(buildResult?.status).toLowerCase() === "ready_to_publish") {
+          await publishKnowledgeBuild(client, row.tenant_key, executionInput.buildId);
+          return {
+            buildId: executionInput.buildId,
+            tenantKey: row.tenant_key,
+            action: "processed",
+            status: "published",
+            autoPublished: true
+          };
+        }
         return {
           buildId: executionInput.buildId,
           tenantKey: row.tenant_key,
