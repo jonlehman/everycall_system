@@ -459,7 +459,7 @@ export default function ReceptionistKnowledgePage() {
       ? { tone: 'ok', label: 'Published Build Active' }
       : latestBuildStatus === 'ready_to_publish'
         ? { tone: 'warn', label: 'Publishing Soon' }
-        : { tone: 'warn', label: 'Knowledge Needs Review' };
+        : { tone: 'warn', label: 'Create Knowledge Base' };
   const activeGuide = guideByContext[activeGuideKey] || guideByContext.website;
   const activeStep = activeGuide.step || '01';
   const activeCardClassName = 'ring-2 ring-[#2563EB]/20 shadow-[0_0_0_1px_rgba(37,99,235,0.05)]';
