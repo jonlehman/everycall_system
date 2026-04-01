@@ -188,7 +188,7 @@ const guideByContext = {
   testQuestion: {
     step: '02',
     title: 'Test Customer Questions',
-    body: 'Ask caller-style questions against the current live build to check how the sales receptionist is likely to answer.',
+    body: 'Ask caller-style questions against the current knowledge base to check how the sales receptionist is likely to answer.',
     tip: 'Use the same wording real callers would use on the phone.'
   },
   likelyAnswer: {
@@ -660,7 +660,7 @@ export default function ReceptionistKnowledgePage() {
               className="mt-24"
               step="02"
               title="Test Customer Questions"
-              description="Ask a caller-style question to see an approximate answer based on the current live build."
+              description="Ask a caller-style question to see an approximate answer based on the current knowledge base."
               contentClassName={activeStep === '02' ? activeCardClassName : ''}
             >
               <label className="mt-2.5">Test Question</label>
