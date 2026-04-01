@@ -4,11 +4,7 @@ import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { requireTenantBillingAccess, requireTenantRoles } from "../../_lib/billing.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { enforceRateLimit } from "../../_lib/rateLimit.js";
-import { buildGatewayPromptResponse } from "../../_lib/gatewayPromptResponse.js";
-import {
-  assembleKnowledgeGatewayPrompt,
-  buildFieldSchemaFromOutcomeSchema
-} from "../../_lib/knowledgeReceptionistPrompt.js";
+import { loadKnowledgeRuntimeProfile } from "../../_lib/knowledgeReceptionistConfig.js";
 
 const DEFAULT_SAMPLE_TEXT = "Hi, thanks for calling. This is the Everycall assistant. How can I help you today?";
 const MAX_SAMPLE_TEXT_LENGTH = 600;
@@ -73,16 +69,15 @@ function encodePcm16Wav(pcmBuffer, sampleRate = PREVIEW_SAMPLE_RATE_HZ) {
   return Buffer.concat([createWavHeader(pcmBuffer.length, sampleRate), pcmBuffer]);
 }
 
-function buildPreviewPromptPayload(gatewayPrompt, tenantKey, callSid, voice) {
-  const promptPayload = buildGatewayPromptResponse(
-    gatewayPrompt,
-    buildFieldSchemaFromOutcomeSchema,
-    { tenantKey, callSid }
-  );
+function buildPreviewPromptPayload(runtimeProfile, voice) {
+  const sessionConfig = runtimeProfile?.session_config && typeof runtimeProfile.session_config === "object"
+    ? runtimeProfile.session_config
+    : {};
   return {
-    ...promptPayload,
+    system_prompt: "This is a voice preview for a business greeting. Follow the response instructions exactly and do not use any tools.",
+    tool_definitions: [],
     session_config: {
-      ...(promptPayload.session_config || {}),
+      ...sessionConfig,
       voice,
       output_audio_format: "pcm16"
     }
@@ -281,12 +276,8 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "missing_openai_key" });
     }
 
-    const callSid = createPreviewCallId();
-    const gatewayPrompt = await assembleKnowledgeGatewayPrompt(pool, tenantKey, {
-      callSid,
-      runtimeEntryMode: "customer_call"
-    });
-    const promptPayload = buildPreviewPromptPayload(gatewayPrompt, tenantKey, callSid, voice);
+    const runtimeProfile = await loadKnowledgeRuntimeProfile(pool, tenantKey).catch(() => null);
+    const promptPayload = buildPreviewPromptPayload(runtimeProfile, voice);
     const preview = await requestRealtimePreview({
       apiKey,
       promptPayload,
