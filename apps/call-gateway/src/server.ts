@@ -12,6 +12,7 @@ import {
   isValidInternalServiceToken,
   resolveInternalServiceSecret
 } from "@everycall/contracts/internalAuth";
+import { claimInboundWebhookEvent } from "@everycall/contracts/providerWebhookIdempotency";
 import { logError as baseLogError, logInfo as baseLogInfo, type LogContext } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
 import pg from "pg";
@@ -56,8 +57,6 @@ import {
   markAssistantResponseFinished,
   normalizeToolExecutionKey
 } from "./toolResponseControl.js";
-// @ts-expect-error shared JS helper imported from the Next app layer
-import { claimInboundWebhookEvent } from "../../../pages/api/_lib/providerWebhookIdempotency.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();

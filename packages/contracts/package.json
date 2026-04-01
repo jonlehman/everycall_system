@@ -21,6 +21,10 @@
     "./internalAuth": {
       "types": "./dist/internalAuth.d.ts",
       "default": "./dist/internalAuth.js"
+    },
+    "./providerWebhookIdempotency": {
+      "types": "./dist/providerWebhookIdempotency.d.ts",
+      "default": "./dist/providerWebhookIdempotency.js"
     }
   },
   "scripts": {
