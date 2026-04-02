@@ -3,6 +3,7 @@ import { ensureTables, getPool } from "../../_lib/db.js";
 import { buildPlanDisplay, ensureTenantBillingAccount, requireTenantBillingAccess } from "../../_lib/billing.js";
 import { listKnowledgeReceptionistBuilds } from "../../_lib/knowledgeReceptionistBuilds.js";
 import { loadTenantBusinessHours } from "../../_lib/tenantBusinessHours.js";
+import { enqueueMissingCallTranscriptAnalyses } from "../../_lib/callTranscriptAnalysis.js";
 import { computeLeadInvoiceEstimate, getLeadPricingConfig, resolveBillingWindow } from "../../../../lib/leadBilling.js";
 import { isBusinessOpenAt } from "../../../../lib/businessHours.js";
 
@@ -153,6 +154,24 @@ async function loadKnowledgeSignals(pool, tenantKey) {
   }
 }
 
+async function countPendingTranscriptAnalysisCalls(pool, tenantKey) {
+  try {
+    const result = await pool.query(
+      `SELECT COUNT(*)::int AS pending_call_count_30d
+       FROM calls c
+       LEFT JOIN call_transcript_analyses a ON a.call_sid = c.call_sid
+       WHERE c.tenant_key = $1
+         AND c.created_at >= NOW() - interval '30 days'
+         AND a.call_sid IS NULL`,
+      [tenantKey]
+    );
+    return Number(result.rows?.[0]?.pending_call_count_30d || 0);
+  } catch (error) {
+    if (error?.code === "42P01") return 0;
+    throw error;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -183,6 +202,17 @@ export default async function handler(req, res) {
     });
     const leadPricing = getLeadPricingConfig(process.env);
 
+    let transcriptAnalysisBackfill = { enqueued: 0 };
+    try {
+      transcriptAnalysisBackfill = await enqueueMissingCallTranscriptAnalyses(pool, {
+        tenantKey,
+        days: 30,
+        limit: 50
+      });
+    } catch {
+      transcriptAnalysisBackfill = { enqueued: 0 };
+    }
+
     const [
       callsSummaryResult,
       leadSummaryResult,
@@ -192,6 +222,7 @@ export default async function handler(req, res) {
       volumeRowsResult,
       knowledgeSignals,
       knowledgeGapQuestions,
+      pendingTranscriptAnalysisCallCount30d,
       businessHoursConfig,
       buildsData
     ] = await Promise.all([
@@ -280,6 +311,7 @@ export default async function handler(req, res) {
       ),
       loadKnowledgeSignals(pool, tenantKey),
       loadKnowledgeGapQuestions(pool, tenantKey),
+      countPendingTranscriptAnalysisCalls(pool, tenantKey),
       loadTenantBusinessHours(pool, tenantKey),
       listKnowledgeReceptionistBuilds(pool, tenantKey)
     ]);
@@ -417,6 +449,8 @@ export default async function handler(req, res) {
         unansweredCallCount30d,
         unansweredQuestionCalls30d: unansweredQuestionCount30d,
         unansweredKbCallCount30d: unansweredCallCount30d,
+        pendingTranscriptAnalysisCallCount30d,
+        transcriptAnalysisBackfillEnqueued: Number(transcriptAnalysisBackfill.enqueued || 0),
         answeredQuestionRate30d: kbQuestionCount30d
           ? Math.max(0, Math.round(((kbQuestionCount30d - unansweredQuestionCount30d) / kbQuestionCount30d) * 1000) / 10)
           : 100

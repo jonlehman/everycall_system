@@ -219,6 +219,7 @@ export default function ClientDashboardPage() {
     ?? knowledgeSignals.unansweredQuestionCalls30d
     ?? 0
   );
+  const pendingTranscriptAnalysisCallCount = Number(knowledgeSignals.pendingTranscriptAnalysisCallCount30d || 0);
   const answeredQuestionRate = Number(knowledgeSignals.answeredQuestionRate30d || 0);
   const answeredQuestionCount = Math.max(0, kbQuestionCount - unansweredQuestionCount);
   const maxTrendCount = Math.max(1, ...callVolumeLast7Days.map((day) => Number(day.totalCount || day.count || 0)));
@@ -382,6 +383,11 @@ export default function ClientDashboardPage() {
                 <span className="text-slate-500">Latest KB</span>
                 <span className="font-semibold text-slate-900">{latestBuildLabel}</span>
               </div>
+              {!kbQuestionCount && pendingTranscriptAnalysisCallCount > 0 ? (
+                <div className="rounded-lg border border-slate-200/70 bg-[#f8fafc] px-3 py-2 text-xs text-slate-600">
+                  Analyzing {pendingTranscriptAnalysisCallCount} recent call{pendingTranscriptAnalysisCallCount === 1 ? '' : 's'}.
+                </div>
+              ) : null}
             </div>
 
             {showKnowledgeQuestions ? (

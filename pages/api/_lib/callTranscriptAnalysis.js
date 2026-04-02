@@ -5,6 +5,7 @@ import {
   callOpenAiJsonModel,
   sanitizeTranscriptText
 } from "@everycall/contracts";
+import { ASYNC_JOB_TYPES, enqueueAsyncJob } from "../../../lib/asyncJobs.js";
 
 const ANALYSIS_VERSION = "unanswered_questions_v1";
 const OPENAI_TRANSCRIPT_ANALYSIS_MODEL = process.env.OPENAI_TRANSCRIPT_ANALYSIS_MODEL
@@ -287,6 +288,44 @@ export async function analyzeAndPersistCallTranscriptQuestions(db, {
     skipped: false,
     ...persisted,
     model: analysis.model
+  };
+}
+
+export async function enqueueMissingCallTranscriptAnalyses(db, {
+  tenantKey,
+  days = 30,
+  limit = 50
+}) {
+  const result = await db.query(
+    `SELECT c.call_sid
+     FROM calls c
+     LEFT JOIN call_transcript_analyses a ON a.call_sid = c.call_sid
+     WHERE c.tenant_key = $1
+       AND c.created_at >= NOW() - ($2::text || ' days')::interval
+       AND a.call_sid IS NULL
+     ORDER BY c.created_at DESC
+     LIMIT $3`,
+    [tenantKey, String(Math.max(1, Number(days || 30))), Math.max(1, Number(limit || 50))]
+  );
+
+  let enqueued = 0;
+  for (const row of result.rows || []) {
+    const callSid = normalizeText(row.call_sid);
+    if (!callSid) continue;
+    await enqueueAsyncJob(db, {
+      jobType: ASYNC_JOB_TYPES.callTranscriptAnalysis,
+      tenantKey,
+      dedupeKey: `call_transcript_analysis_backfill:${callSid}`,
+      payload: {
+        tenantKey,
+        callSid
+      },
+      maxAttempts: 4
+    });
+    enqueued += 1;
+  }
+  return {
+    enqueued
   };
 }
 
