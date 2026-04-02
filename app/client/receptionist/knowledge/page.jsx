@@ -59,6 +59,11 @@ function buildStatusLabel(status) {
   return formatLabel(normalized || status) || 'Unknown';
 }
 
+function buildStatusTone(status, hasPendingApprovedDocuments = false) {
+  if (hasPendingApprovedDocuments) return 'warn';
+  return buildBadgeTone(status);
+}
+
 function renderBuildProgress(build) {
   const progress = build?.progress || null;
   if (!progress) return 'No progress details yet.';
@@ -773,7 +778,7 @@ export default function ReceptionistKnowledgePage() {
                         <div className="font-semibold text-slate-900">Live Knowledge Base</div>
                         <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestLiveBuild, 0)}</div>
                       </div>
-                      <span className={`badge ${buildBadgeTone(latestLiveBuild.status)}`}>{buildStatusLabel(latestLiveBuild.status)}</span>
+                      <span className={`badge ${buildStatusTone(latestLiveBuild.status, hasPendingApprovedDocuments)}`}>{hasPendingApprovedDocuments ? 'Documents Pending' : buildStatusLabel(latestLiveBuild.status)}</span>
                     </div>
                     <div className="mt-2 text-sm text-slate-600">
                       Cards: {latestLiveBuild.artifact_counts_json?.cards || 0} · Facts: {latestLiveBuild.artifact_counts_json?.facts || 0}

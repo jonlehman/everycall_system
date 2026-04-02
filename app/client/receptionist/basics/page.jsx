@@ -102,6 +102,7 @@ export default function ReceptionistBasicsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState({ message: 'Loading sales receptionist basics...', tone: 'warn' });
+  const [knowledgeStatusChip, setKnowledgeStatusChip] = useState({ tone: 'ok', label: 'Sales Receptionist Active' });
   const [sampleStatus, setSampleStatus] = useState('');
   const [activeGuideKey, setActiveGuideKey] = useState('assistantName');
   const [form, setForm] = useState({
@@ -125,11 +126,13 @@ export default function ReceptionistBasicsPage() {
     setLoading(true);
     setStatus({ message: 'Loading sales receptionist basics...', tone: 'warn' });
     try {
-      const [profileData, routingData, runtimeData, settingsData] = await Promise.all([
+      const [profileData, routingData, runtimeData, settingsData, buildData, documentData] = await Promise.all([
         fetchJson('/api/v1/knowledge/prompt-profile'),
         fetchJson('/api/v1/routing'),
         fetchJson('/api/v1/knowledge/runtime-profile'),
-        fetchJson('/api/v1/settings')
+        fetchJson('/api/v1/settings'),
+        fetchJson('/api/v1/knowledge/builds'),
+        fetchJson('/api/v1/knowledge/uploaded-documents')
       ]);
       const profile = profileData?.profile || null;
       const routing = routingData?.routing || null;
@@ -150,6 +153,23 @@ export default function ReceptionistBasicsPage() {
         ),
         voiceType: runtimeProfile?.session_config?.voice || 'marin'
       });
+      const builds = Array.isArray(buildData?.builds) ? buildData.builds : [];
+      const activeBuildId = String(buildData?.activeBuild?.active_build_id || '').trim();
+      const latestLiveBuild = builds.find((build) => String(build?.build_id || '').trim() === activeBuildId) || builds[0] || null;
+      const approvedDocuments = Array.isArray(documentData?.documents)
+        ? documentData.documents.filter((document) => String(document?.status || '').trim() === 'approved')
+        : [];
+      const appliedDocumentIds = new Set(
+        Array.isArray(latestLiveBuild?.intake_metadata_json?.uploaded_document_ids)
+          ? latestLiveBuild.intake_metadata_json.uploaded_document_ids.map((value) => String(value || '').trim()).filter(Boolean)
+          : []
+      );
+      const hasPendingApprovedDocuments = approvedDocuments.some((document) => !appliedDocumentIds.has(String(document?.uploaded_document_id || '').trim()));
+      setKnowledgeStatusChip(
+        hasPendingApprovedDocuments
+          ? { tone: 'warn', label: 'Documents Pending' }
+          : { tone: 'ok', label: 'Sales Receptionist Active' }
+      );
       setStatus({ message: 'Sales receptionist basics loaded.', tone: 'ok' });
     } catch {
       setStatus({ message: 'Could not load sales receptionist basics.', tone: 'bad' });
@@ -288,7 +308,7 @@ export default function ReceptionistBasicsPage() {
       title="Basics"
       subtitle="Set the business identity, greeting, and voice used by your sales receptionist."
       status={status}
-      statusChip={{ tone: 'ok', label: 'Sales Receptionist Active' }}
+      statusChip={knowledgeStatusChip}
       headerAside={<SalesReceptionistNumberHeaderAside onHelpClick={openSalesReceptionistNumberGuide} />}
     >
       <div className="grid grid-cols-1 items-start gap-4 pb-[288px] xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
