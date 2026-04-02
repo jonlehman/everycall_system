@@ -5,7 +5,7 @@ import { normalizePhoneNumber } from "../../../_lib/phone.js";
 import { sendTelnyxSms } from "../../../_lib/telnyx.js";
 
 const DEFAULT_TEST_TEXT = "EveryCall by Creative Dynamic test: SMS routing is working. If you receive this, outbound Telnyx delivery from the shared SMS number is at least reaching Telnyx successfully.";
-const DEFAULT_OPT_IN_TEXT = "EveryCall by Creative Dynamic: Reply YES to confirm SMS new lead alerts. Message frequency may vary. Msg&data rates may apply. Consent is not a condition of purchase. Reply HELP for help. Reply STOP to opt out.";
+const DEFAULT_OPT_IN_TEXT = "Creative Dynamic: You are opted in to customer care text messages. Message frequency may vary. Msg&data rates may apply. Consent is not a condition of purchase. Reply HELP for help. Reply STOP to opt out.";
 
 export default async function handler(req, res) {
   try {
