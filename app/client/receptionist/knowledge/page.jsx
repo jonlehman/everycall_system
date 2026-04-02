@@ -456,7 +456,7 @@ export default function ReceptionistKnowledgePage() {
   const statusChip = buildState.builds.some((build) => isBuildActive(build))
     ? { tone: 'warn', label: 'Build In Progress' }
     : latestBuildStatus === 'published'
-      ? { tone: 'ok', label: 'Published Build Active' }
+      ? { tone: 'ok', label: 'Knowledge Base Active' }
       : latestBuildStatus === 'ready_to_publish'
         ? { tone: 'warn', label: 'Publishing Soon' }
         : { tone: 'warn', label: 'Create Knowledge Base' };
