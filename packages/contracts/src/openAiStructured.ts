@@ -345,7 +345,7 @@ export function buildOpenAiJsonResponseRequestBody(input: {
       : { temperature }),
     max_output_tokens: input.maxOutputTokens ?? 1400,
     ...(shouldUseResponsesReasoningNone(model)
-      ? { reasoning: { effort: "minimal" } }
+      ? { reasoning: { effort: "none" } }
       : {}),
     ...(normalizeText(input.promptCacheKey) ? { prompt_cache_key: normalizeText(input.promptCacheKey) } : {}),
     ...(normalizeText(input.promptCacheRetention || OPENAI_BUILD_PROMPT_CACHE_RETENTION)
