@@ -1,24 +1,10 @@
-import { readRawBody, verifyTelnyxSignature, sendTelnyxSms } from "../../../../_lib/telnyx.js";
+import { readRawBody, verifyTelnyxSignature } from "../../../../_lib/telnyx.js";
 import { ensureTables, getPool } from "../../../../_lib/db.js";
-import { getSharedSmsNumber } from "../../../../_lib/alerts.js";
 import { claimInboundWebhookEvent } from "../../../../_lib/providerWebhookIdempotency.js";
 
 export const config = {
   api: { bodyParser: false }
 };
-
-const DEFAULT_APP_BASE_URL = "https://app.everycall.io";
-
-function getAppBaseUrl() {
-  return String(process.env.APP_BASE_URL || DEFAULT_APP_BASE_URL).trim().replace(/\/+$/, "") || DEFAULT_APP_BASE_URL;
-}
-
-function getHelpMessage() {
-  return `EveryCall by Creative Dynamic: For help with SMS new lead alerts, contact support@everycall.io or visit ${getAppBaseUrl()}/terms. Reply STOP to opt out.`;
-}
-
-const OPT_IN_CONFIRMATION_MESSAGE = "Creative Dynamic: You are opted in to customer care text messages. Message frequency may vary. Msg&data rates may apply. Consent is not a condition of purchase. Reply HELP for help. Reply STOP to opt out.";
-const OPT_OUT_CONFIRMATION_MESSAGE = "EveryCall by Creative Dynamic: You are unsubscribed from SMS new lead alerts and will receive no further messages. Reply YES to opt back in.";
 
 export default async function handler(req, res) {
   try {
@@ -95,18 +81,6 @@ export default async function handler(req, res) {
            WHERE phone_number = $1`,
           [from]
         );
-      }
-      const fromNumber = await getSharedSmsNumber(pool);
-      if (fromNumber) {
-        await sendTelnyxSms({
-          from: fromNumber,
-          to: from,
-          text: isHelp
-            ? getHelpMessage()
-            : isYes
-              ? OPT_IN_CONFIRMATION_MESSAGE
-              : OPT_OUT_CONFIRMATION_MESSAGE
-        });
       }
     }
 
