@@ -381,7 +381,7 @@ export default function ReceptionistBasicsPage() {
                   ))}
                 </div>
                 <div className="mt-2 text-xs text-slate-500">
-                  Times use {businessHoursConfig.timezone}. These hours drive business-hours vs after-hours reporting on the dashboard.
+                  Times use {businessHoursConfig.timezone}.
                 </div>
               </div>
             </StepSection>
