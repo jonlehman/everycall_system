@@ -112,12 +112,11 @@ function panelClassName(extra = '') {
   return `rounded-xl border border-slate-200/70 bg-white shadow-sm ${extra}`.trim();
 }
 
-function KpiCard({ label, value, meta = '', icon = 'analytics', progress = null }) {
+function KpiCard({ label, value, meta = '', progress = null }) {
   return (
     <section className={panelClassName('p-6')}>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4">
         <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">{label}</span>
-        <span className="material-symbols-outlined text-[#205cb5]">{icon}</span>
       </div>
       <div className="flex items-baseline gap-2">
         <span className="font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.04em] text-slate-950">{value}</span>
@@ -297,24 +296,20 @@ export default function ClientDashboardPage() {
             label="Calls Handled"
             value={Number(summary.calls30d || 0)}
             meta={billing?.currentPeriod?.label ? billing.currentPeriod.label : ''}
-            icon="call"
           />
           <KpiCard
             label="Lead Capture Rate"
             value={formatPercent(summary.leadCaptureRate30d || 0)}
             meta="Target: 90%"
-            icon="target"
             progress={summary.leadCaptureRate30d || 0}
           />
           <KpiCard
             label="Valid Leads"
             value={Number(summary.validLeadCount30d || 0)}
-            icon="conversion_path"
           />
           <KpiCard
             label="Open Follow-Up"
             value={Number(summary.openFollowUpCount || 0)}
-            icon="pending_actions"
           />
         </div>
 
@@ -324,7 +319,6 @@ export default function ClientDashboardPage() {
               <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Classification Breakdown</div>
               <h2 className="mt-2 font-['Space_Grotesk'] text-xl font-bold tracking-[-0.03em] text-slate-950">Call Mix</h2>
             </div>
-            <span className="material-symbols-outlined text-[#205cb5]">pie_chart</span>
           </div>
           <div className="grid gap-6 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
             <div className="flex items-center justify-center">
