@@ -2,7 +2,9 @@ import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { buildPlanDisplay, ensureTenantBillingAccount, requireTenantBillingAccess } from "../../_lib/billing.js";
 import { listKnowledgeReceptionistBuilds } from "../../_lib/knowledgeReceptionistBuilds.js";
+import { loadTenantBusinessHours } from "../../_lib/tenantBusinessHours.js";
 import { computeLeadInvoiceEstimate, getLeadPricingConfig, resolveBillingWindow } from "../../../../lib/leadBilling.js";
+import { isBusinessOpenAt } from "../../../../lib/businessHours.js";
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -73,6 +75,61 @@ function normalizeCallCategory(outcomeType, isValidLead) {
     return "hangup_or_incomplete";
   }
   return "other_non_billable";
+}
+
+function formatDateKeyInTimezone(value, timezone) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone || "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date).filter((part) => part.type !== "literal").map((part) => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+async function loadKnowledgeGapQuestions(pool, tenantKey) {
+  try {
+    const result = await pool.query(
+      `SELECT
+         k.knowledge_coverage_event_id,
+         k.call_id,
+         k.created_at,
+         k.query_text,
+         k.requested_coverage_item_text,
+         c.summary,
+         c.status,
+         d.caller_first_name,
+         d.caller_last_name,
+         d.callback_number
+       FROM knowledge_coverage_events k
+       LEFT JOIN calls c ON c.call_sid = k.call_id
+       LEFT JOIN call_details d ON d.call_sid = c.call_sid
+       WHERE k.tenant_key = $1
+         AND k.created_at >= NOW() - interval '30 days'
+         AND COALESCE((
+           SELECT MAX((entry->>'similarity')::double precision)
+           FROM jsonb_array_elements(COALESCE(k.top_scores_json, '[]'::jsonb)) AS entry
+           WHERE entry->>'kind' = 'card'
+         ), 0) < $2
+         AND COALESCE((
+           SELECT MAX((entry->>'similarity')::double precision)
+           FROM jsonb_array_elements(COALESCE(k.top_scores_json, '[]'::jsonb)) AS entry
+           WHERE entry->>'kind' = 'fact'
+         ), 0) < $3
+       ORDER BY k.created_at DESC
+       LIMIT 20`,
+      [tenantKey, KNOWLEDGE_CARD_SUPPORT_THRESHOLD, KNOWLEDGE_FACT_SUPPORT_THRESHOLD]
+    );
+    return result.rows || [];
+  } catch (error) {
+    if (error?.code === "42P01") return [];
+    throw error;
+  }
 }
 
 async function loadKnowledgeSignals(pool, tenantKey) {
@@ -160,8 +217,10 @@ export default async function handler(req, res) {
       recentLeadsResult,
       recentCallsResult,
       classificationResult,
-      volumeTrendResult,
+      volumeRowsResult,
       knowledgeSignals,
+      knowledgeGapQuestions,
+      businessHoursConfig,
       buildsData
     ] = await Promise.all([
       pool.query(
@@ -240,16 +299,16 @@ export default async function handler(req, res) {
       ),
       pool.query(
         `SELECT
-           to_char(date_trunc('day', created_at AT TIME ZONE 'America/Los_Angeles'), 'YYYY-MM-DD') AS day_key,
-           COUNT(*)::int AS call_count
+           created_at
          FROM calls
          WHERE tenant_key = $1
            AND created_at >= NOW() - interval '6 days'
-         GROUP BY 1
-         ORDER BY 1 ASC`,
+         ORDER BY created_at ASC`,
         [tenantKey]
       ),
       loadKnowledgeSignals(pool, tenantKey),
+      loadKnowledgeGapQuestions(pool, tenantKey),
+      loadTenantBusinessHours(pool, tenantKey),
       listKnowledgeReceptionistBuilds(pool, tenantKey)
     ]);
 
@@ -261,6 +320,7 @@ export default async function handler(req, res) {
     const kbCallCount30d = Number(knowledgeSignals.kb_call_count_30d || 0);
     const unansweredQuestionCalls30d = Number(knowledgeSignals.unanswered_question_count_30d || 0);
     const unansweredKbCallCount30d = Number(knowledgeSignals.unanswered_call_count_30d || 0);
+    const timezone = normalizeText(businessHoursConfig?.timezone) || "America/Los_Angeles";
     const builds = Array.isArray(buildsData?.builds) ? buildsData.builds : [];
     const publishedBuilds = builds.filter((build) => normalizeText(build?.status).toLowerCase() === "published");
     const latestBuild = builds[0] || null;
@@ -291,17 +351,31 @@ export default async function handler(req, res) {
         percent: classifiedTotal ? Math.round((count / classifiedTotal) * 1000) / 10 : 0
       };
     });
-    const trendMap = new Map(
-      (volumeTrendResult.rows || []).map((row) => [normalizeText(row.day_key), Number(row.call_count || 0)])
-    );
+    const trendMap = new Map();
+    for (const row of volumeRowsResult.rows || []) {
+      const createdAt = row.created_at ? new Date(row.created_at) : null;
+      if (!createdAt || Number.isNaN(createdAt.getTime())) continue;
+      const dayKey = formatDateKeyInTimezone(createdAt, timezone);
+      if (!dayKey) continue;
+      const current = trendMap.get(dayKey) || { totalCount: 0, businessHoursCount: 0, afterHoursCount: 0 };
+      current.totalCount += 1;
+      if (isBusinessOpenAt(businessHoursConfig, createdAt)) {
+        current.businessHoursCount += 1;
+      } else {
+        current.afterHoursCount += 1;
+      }
+      trendMap.set(dayKey, current);
+    }
     const callVolumeLast7Days = Array.from({ length: 7 }, (_, index) => {
-      const date = new Date();
-      date.setHours(0, 0, 0, 0);
-      date.setDate(date.getDate() - (6 - index));
-      const dayKey = date.toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+      const date = new Date(Date.now() - ((6 - index) * 24 * 60 * 60 * 1000));
+      const dayKey = formatDateKeyInTimezone(date, timezone);
+      const counts = trendMap.get(dayKey) || {};
       return {
         day: dayKey,
-        count: Number(trendMap.get(dayKey) || 0)
+        count: Number(counts.totalCount || 0),
+        totalCount: Number(counts.totalCount || 0),
+        businessHoursCount: Number(counts.businessHoursCount || 0),
+        afterHoursCount: Number(counts.afterHoursCount || 0)
       };
     });
 
@@ -373,6 +447,7 @@ export default async function handler(req, res) {
           ? Math.max(0, Math.round(((kbQuestionCount30d - unansweredQuestionCalls30d) / kbQuestionCount30d) * 1000) / 10)
           : 100
       },
+      knowledgeGapQuestions,
       nextSteps
     });
   } catch (err) {

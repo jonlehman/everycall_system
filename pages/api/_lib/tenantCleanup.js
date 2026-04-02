@@ -37,6 +37,7 @@ const TENANT_KEY_TABLES = [
   "calls",
   "dispatch_queue",
   "routing_rules",
+  "tenant_business_hours",
   "tenant_settings",
   "tenant_bootstrap_profiles",
   "onboarding_intake",

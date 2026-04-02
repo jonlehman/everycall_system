@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { buttonVariants } from '../../../components/ui/button';
-import { cn } from '../../../lib/utils';
 import ClientPage from '../_components/ClientPage';
 import { formatLeadOutcomeLabel, getLeadStatusMeta } from '../../../lib/leadBilling';
 
@@ -19,14 +17,14 @@ const CATEGORY_ORDER = [
 ];
 
 const CATEGORY_TONE = {
-  project_inquiry: 'border-[#205cb5]/30 bg-[#eef4ff] text-[#205cb5]',
-  general_inquiry: 'border-slate-200 bg-slate-50 text-slate-700',
-  existing_customer_support: 'border-slate-200 bg-slate-50 text-slate-700',
-  vendor_or_sales: 'border-slate-200 bg-slate-50 text-slate-700',
-  spam: 'border-slate-200 bg-slate-50 text-slate-700',
-  wrong_number: 'border-slate-200 bg-slate-50 text-slate-700',
-  hangup_or_incomplete: 'border-slate-200 bg-slate-50 text-slate-700',
-  other_non_billable: 'border-slate-200 bg-slate-50 text-slate-700'
+  project_inquiry: 'bg-[#205cb5]',
+  general_inquiry: 'bg-[#6e9ffd]',
+  existing_customer_support: 'bg-[#94a3b8]',
+  vendor_or_sales: 'bg-[#cbd5e1]',
+  spam: 'bg-[#fecaca]',
+  wrong_number: 'bg-[#e2e8f0]',
+  hangup_or_incomplete: 'bg-[#bac8dc]',
+  other_non_billable: 'bg-[#d7dadc]'
 };
 
 function normalizeText(value) {
@@ -63,36 +61,16 @@ function normalizeCallCategory(outcomeType, isValidLead) {
   if (['vendor_or_sales', 'vendor', 'sales_call'].includes(normalized)) {
     return 'vendor_or_sales';
   }
-  if (normalized === 'spam') {
-    return 'spam';
-  }
-  if (normalized === 'wrong_number') {
-    return 'wrong_number';
-  }
+  if (normalized === 'spam') return 'spam';
+  if (normalized === 'wrong_number') return 'wrong_number';
   if (['hangup', 'hangup_incomplete', 'canceled'].includes(normalized)) {
     return 'hangup_or_incomplete';
   }
   return 'other_non_billable';
 }
 
-function formatMoney(amountCents) {
-  const value = Number(amountCents || 0) / 100;
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 2
-  }).format(value);
-}
-
 function formatPercent(value) {
   return `${Number(value || 0).toFixed(1)}%`;
-}
-
-function formatDateTime(value) {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString();
 }
 
 function formatTimeOnly(value) {
@@ -102,11 +80,18 @@ function formatTimeOnly(value) {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
 function formatDayLabel(value) {
   if (!value) return '-';
   const date = new Date(`${value}T12:00:00`);
   if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleDateString([], { weekday: 'short' });
+  return date.toLocaleDateString([], { weekday: 'short' }).toUpperCase();
 }
 
 function fetchJson(url, options) {
@@ -119,20 +104,41 @@ function fetchJson(url, options) {
   });
 }
 
-function MetricCard({ label, value, eyebrow = null, accent = null }) {
+function panelClassName(extra = '') {
+  return `rounded-xl border border-slate-200/70 bg-white shadow-sm ${extra}`.trim();
+}
+
+function KpiCard({ label, value, meta = '', icon = 'analytics', progress = null }) {
   return (
-    <div className="workspace-panel flex min-h-[150px] flex-col justify-between border-b-2 border-b-transparent p-6 transition-all hover:border-b-[#205cb5]">
-      <div>
-        <div className="mb-5 flex items-start justify-between gap-3">
-          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">{label}</span>
-          {eyebrow ? (
-            <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${accent || 'bg-slate-100 text-slate-600'}`}>
-              {eyebrow}
-            </span>
-          ) : null}
-        </div>
-        <div className="font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.04em] text-slate-950">{value}</div>
+    <section className={panelClassName('p-6')}>
+      <div className="mb-4 flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">{label}</span>
+        <span className="material-symbols-outlined text-[#205cb5]">{icon}</span>
       </div>
+      <div className="flex items-baseline gap-2">
+        <span className="font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.04em] text-slate-950">{value}</span>
+        {meta ? <span className="text-xs font-medium text-slate-500">{meta}</span> : null}
+      </div>
+      {progress !== null ? (
+        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100">
+          <div className="h-full rounded-full bg-[#205cb5]" style={{ width: `${Math.max(4, Math.min(100, Number(progress || 0)))}%` }} />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ClassificationRow({ item }) {
+  return (
+    <div className="grid grid-cols-[112px_minmax(0,1fr)_44px] items-center gap-3">
+      <span className="text-[11px] font-medium text-slate-600">{item.label}</span>
+      <div className="h-4 overflow-hidden rounded bg-[#d8e2ff]">
+        <div
+          className={`h-full rounded ${CATEGORY_TONE[item.key] || CATEGORY_TONE.other_non_billable}`}
+          style={{ width: `${Math.max(item.count ? 6 : 0, Math.min(100, Number(item.percent || 0)))}%` }}
+        />
+      </div>
+      <span className="text-right text-[11px] font-bold text-slate-800">{Number(item.percent || 0)}%</span>
     </div>
   );
 }
@@ -140,29 +146,38 @@ function MetricCard({ label, value, eyebrow = null, accent = null }) {
 function LeadStatusPill({ call }) {
   const meta = getLeadStatusMeta(call || {});
   const toneClass = meta.tone === 'ok'
-    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+    ? 'bg-[#d8e2ff] text-[#205cb5]'
     : meta.tone === 'warn'
-      ? 'border-amber-200 bg-amber-50 text-amber-800'
-      : 'border-slate-200 bg-slate-100 text-slate-700';
+      ? 'bg-amber-100 text-amber-800'
+      : 'bg-slate-100 text-slate-600';
   return (
-    <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold ${toneClass}`}>
+    <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${toneClass}`}>
       {meta.label}
     </span>
   );
 }
 
-function ActionTile({ href, icon, title }) {
+function CategoryPill({ categoryKey, label }) {
+  if (categoryKey === 'project_inquiry') {
+    return <span className="rounded-full bg-[#d6e4f9] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#205cb5]">Lead</span>;
+  }
+  if (categoryKey === 'existing_customer_support') {
+    return <span className="rounded-full bg-[#e5e9eb] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">Support</span>;
+  }
+  if (categoryKey === 'spam' || categoryKey === 'vendor_or_sales') {
+    return <span className="rounded-full bg-[#ffdad6] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#93000a]">{label}</span>;
+  }
+  return <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">{label}</span>;
+}
+
+function ActionRow({ href, icon, title }) {
   return (
     <Link
       href={href}
-      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-[#205cb5]/20 hover:shadow-md"
+      className="group flex items-center gap-3 rounded-lg border border-slate-200/70 p-3 transition-all hover:bg-[#f1f4f6]"
     >
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#eef4ff] text-[#205cb5]">
-          <span className="material-symbols-outlined text-[20px]">{icon}</span>
-        </div>
-        <div className="font-medium text-slate-900">{title}</div>
-      </div>
+      <span className="material-symbols-outlined text-[#205cb5]">{icon}</span>
+      <span className="text-sm font-medium text-slate-900 transition-transform group-hover:translate-x-1">{title}</span>
     </Link>
   );
 }
@@ -170,6 +185,7 @@ function ActionTile({ href, icon, title }) {
 export default function ClientDashboardPage() {
   const [dashboard, setDashboard] = useState(null);
   const [status, setStatus] = useState({ tone: 'warn', message: 'Loading dashboard...' });
+  const [showKnowledgeQuestions, setShowKnowledgeQuestions] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -189,21 +205,25 @@ export default function ClientDashboardPage() {
   }, []);
 
   const summary = dashboard?.summary || {};
-  const billing = dashboard?.billing || {};
   const setup = dashboard?.setup || {};
+  const billing = dashboard?.billing || {};
   const classificationBreakdown = Array.isArray(dashboard?.classificationBreakdown) ? dashboard.classificationBreakdown : [];
   const recentCalls = Array.isArray(dashboard?.recentCalls) ? dashboard.recentCalls : [];
   const callVolumeLast7Days = Array.isArray(dashboard?.callVolumeLast7Days) ? dashboard.callVolumeLast7Days : [];
   const knowledgeSignals = dashboard?.knowledgeSignals || {};
-  const runtimeReady = Boolean(setup.runtimeReady);
+  const knowledgeGapQuestions = Array.isArray(dashboard?.knowledgeGapQuestions) ? dashboard.knowledgeGapQuestions : [];
   const latestBuildLabel = setup.latestBuildStatus ? formatLeadOutcomeLabel(setup.latestBuildStatus) : 'No knowledge base yet';
-  const maxTrendCount = Math.max(1, ...callVolumeLast7Days.map((day) => Number(day.count || 0)));
   const kbQuestionCount = Number(knowledgeSignals.kbQuestionCount30d || 0);
-  const kbCallCount = Number(knowledgeSignals.kbCallCount30d || 0);
-  const unansweredQuestionCalls = Number(knowledgeSignals.unansweredQuestionCalls30d || 0);
-  const unansweredKbCallCount = Number(knowledgeSignals.unansweredKbCallCount30d || 0);
+  const unansweredQuestionCount = Number(knowledgeSignals.unansweredQuestionCalls30d || 0);
   const answeredQuestionRate = Number(knowledgeSignals.answeredQuestionRate30d || 0);
-  const needsKnowledgeDetail = unansweredQuestionCalls >= 3 || (kbQuestionCount >= 8 && answeredQuestionRate < 80);
+  const answeredQuestionCount = Math.max(0, kbQuestionCount - unansweredQuestionCount);
+  const maxTrendCount = Math.max(1, ...callVolumeLast7Days.map((day) => Number(day.totalCount || day.count || 0)));
+
+  useEffect(() => {
+    if (!unansweredQuestionCount) {
+      setShowKnowledgeQuestions(false);
+    }
+  }, [unansweredQuestionCount]);
 
   const orderedBreakdown = useMemo(() => {
     const byKey = new Map(classificationBreakdown.map((item) => [item.key, item]));
@@ -217,237 +237,226 @@ export default function ClientDashboardPage() {
 
   return (
     <ClientPage
-      title="Dashboard"
+      title="System Performance"
       subtitle=""
       status={status}
-      headerAside={billing?.currentPeriod?.label ? (
-        <div className="inline-flex items-center gap-2 rounded-full bg-[#eef2f6] px-3 py-2 text-sm font-medium text-slate-600">
-          <span className="material-symbols-outlined text-[18px]">calendar_today</span>
-          {billing.currentPeriod.label}
+      headerAside={(
+        <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-[#f1f4f6] px-4 py-2 text-sm font-medium text-slate-700">
+          <span>Last 30 Days</span>
+          <span className="material-symbols-outlined text-[18px]">expand_more</span>
         </div>
-      ) : null}
+      )}
       primaryAction={{ href: '/client/calls', label: 'Open Calls', brand: true }}
     >
-      <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-5">
-        <MetricCard
+      <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
           label="Calls Handled"
           value={Number(summary.calls30d || 0)}
-          eyebrow="Last 30 Days"
-          accent="bg-[#eef4ff] text-[#205cb5]"
+          meta={billing?.currentPeriod?.label ? billing.currentPeriod.label : ''}
+          icon="call"
         />
-        <MetricCard
+        <KpiCard
           label="Lead Capture Rate"
           value={formatPercent(summary.leadCaptureRate30d || 0)}
-          eyebrow={`${Number(summary.validLeadCount30d || 0)} valid leads`}
-          accent="bg-emerald-100 text-emerald-800"
+          meta="Target: 90%"
+          icon="target"
+          progress={summary.leadCaptureRate30d || 0}
         />
+        <KpiCard
+          label="Valid Leads"
+          value={Number(summary.validLeadCount30d || 0)}
+          icon="conversion_path"
+        />
+        <KpiCard
+          label="Open Follow-Up"
+          value={Number(summary.openFollowUpCount || 0)}
+          icon="pending_actions"
+        />
+      </section>
 
-        <div className="workspace-panel xl:col-span-3 p-6">
-          <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="font-mono text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Call Classification Breakdown</div>
-              <h2 className="mt-3 font-['Space_Grotesk'] text-2xl font-bold tracking-[-0.03em] text-slate-950">Call Mix</h2>
-            </div>
-            <div className="rounded-full bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-600">
-              Last 30 Days
-            </div>
+      <section className={panelClassName('p-6')}>
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Classification Breakdown</div>
+            <h2 className="mt-2 font-['Space_Grotesk'] text-xl font-bold tracking-[-0.03em] text-slate-950">Call Mix</h2>
           </div>
-          <div className="grid grid-cols-2 gap-x-8 gap-y-5 lg:grid-cols-4">
-            {orderedBreakdown.map((item) => (
-              <div key={item.key} className={`border-l-2 pl-3 ${item.key === 'project_inquiry' ? 'border-[#205cb5]' : 'border-slate-200'}`}>
-                <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-                  {item.label}
-                </div>
-                <div className="mt-1 flex items-baseline gap-2">
-                  <span className="font-['Space_Grotesk'] text-2xl font-bold tracking-[-0.03em] text-slate-950">
-                    {Number(item.count || 0)}
-                  </span>
-                  <span className="font-mono text-[11px] text-slate-500">{Number(item.percent || 0)}%</span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <span className="material-symbols-outlined text-[#205cb5]">analytics</span>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {orderedBreakdown.map((item) => (
+            <ClassificationRow key={item.key} item={item} />
+          ))}
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-        <div className="lg:col-span-8">
-          <div className="mb-4 flex items-center justify-between px-1">
-            <h2 className="font-['Space_Grotesk'] text-2xl font-bold tracking-[-0.03em] text-slate-950">Recent Calls</h2>
-            <Link className={cn(buttonVariants({ variant: 'outline' }))} href="/client/calls">
-              View All Calls
+      <section className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+        <section className={panelClassName('overflow-hidden')}>
+          <div className="flex items-center justify-between border-b border-slate-200/70 px-6 py-5">
+            <h2 className="font-['Space_Grotesk'] text-lg font-bold text-slate-950">Recent Activity</h2>
+            <Link className="text-xs font-bold uppercase tracking-[0.18em] text-[#205cb5]" href="/client/calls">
+              View All
             </Link>
           </div>
-
-          <div className="workspace-panel overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] border-collapse text-left">
-                <thead className="bg-[#eef2f6]">
-                  <tr>
-                    <th className="px-6 py-4 font-mono text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Time</th>
-                    <th className="px-6 py-4 font-mono text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Caller</th>
-                    <th className="px-6 py-4 font-mono text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Summary</th>
-                    <th className="px-6 py-4 font-mono text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Category</th>
-                    <th className="px-6 py-4 font-mono text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Status</th>
-                    <th className="px-6 py-4"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {recentCalls.length ? recentCalls.map((call) => {
-                    const categoryKey = normalizeCallCategory(call.lead_outcome_type, call.lead_is_valid);
-                    const callerName = [call.caller_first_name, call.caller_last_name].filter(Boolean).join(' ') || 'Unknown caller';
-                    const categoryLabel = orderedBreakdown.find((item) => item.key === categoryKey)?.label || formatLeadOutcomeLabel(categoryKey);
-                    return (
-                      <tr key={call.call_sid} className="transition-colors hover:bg-slate-50/70">
-                        <td className="px-6 py-4 align-top">
-                          <div className="font-mono text-sm text-slate-700">{formatTimeOnly(call.created_at)}</div>
-                        </td>
-                        <td className="px-6 py-4 align-top">
-                          <div className="font-medium text-slate-900">{callerName}</div>
-                        </td>
-                        <td className="px-6 py-4 align-top">
-                          <div className="max-w-[320px] text-sm leading-6 text-slate-700">{call.summary || 'No summary yet.'}</div>
-                        </td>
-                        <td className="px-6 py-4 align-top">
-                          <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold ${CATEGORY_TONE[categoryKey] || CATEGORY_TONE.other_non_billable}`}>
-                            {categoryLabel}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 align-top">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left">
+              <thead className="bg-[#f1f4f6]">
+                <tr>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Time</th>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Caller</th>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Summary</th>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Category</th>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {recentCalls.length ? recentCalls.map((call) => {
+                  const callerName = [call.caller_first_name, call.caller_last_name].filter(Boolean).join(' ') || (call.callback_number || 'Unknown caller');
+                  const categoryKey = normalizeCallCategory(call.lead_outcome_type, call.lead_is_valid);
+                  const categoryLabel = orderedBreakdown.find((item) => item.key === categoryKey)?.label || formatLeadOutcomeLabel(categoryKey);
+                  return (
+                    <tr
+                      key={call.call_sid}
+                      className="cursor-pointer transition-colors hover:bg-[#f7fafc]"
+                      onClick={() => { window.location.href = '/client/calls'; }}
+                    >
+                      <td className="px-6 py-4 text-xs text-slate-500 whitespace-nowrap">{formatTimeOnly(call.created_at)}</td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-bold text-slate-900">{callerName}</div>
+                        <div className="text-[10px] text-slate-500">{call.callback_number || 'No callback number'}</div>
+                      </td>
+                      <td className="px-6 py-4 text-xs font-medium text-slate-800">{call.summary || 'No summary yet.'}</td>
+                      <td className="px-6 py-4">
+                        <CategoryPill categoryKey={categoryKey} label={categoryLabel} />
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-between gap-3">
                           <LeadStatusPill call={call} />
-                        </td>
-                        <td className="px-6 py-4 align-top text-right">
-                          <Link
-                            href="/client/calls"
-                            className="inline-flex items-center gap-1 text-sm font-semibold text-[#205cb5] hover:text-[#0b3d87]"
-                          >
-                            Open
-                            <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
-                          </Link>
-                        </td>
-                      </tr>
-                    );
-                  }) : (
-                    <tr>
-                      <td colSpan={6} className="px-6 py-10 text-sm text-slate-500">
-                        No recent calls yet.
+                          <span className="material-symbols-outlined text-sm text-slate-400">chevron_right</span>
+                        </div>
                       </td>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  );
+                }) : (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-10 text-sm text-slate-500">No recent calls yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
-        </div>
+        </section>
 
-        <div className="grid gap-6 lg:col-span-4">
-          <section className="rounded-2xl bg-[#205cb5] p-6 text-white shadow-[0_24px_60px_rgba(32,92,181,0.24)]">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="font-['Space_Grotesk'] text-lg font-bold uppercase tracking-[0.16em]">Knowledge Coverage</h2>
-              <span className="material-symbols-outlined">smart_toy</span>
-            </div>
-            <div className="space-y-5">
-              <div>
-                <div className="text-xs font-mono uppercase tracking-[0.14em] text-white/75">Unanswered KB questions</div>
-                <div className="mt-2 flex items-end gap-3">
-                  <span className="font-['Space_Grotesk'] text-5xl font-bold tracking-[-0.05em] text-white">{unansweredQuestionCalls}</span>
-                  <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${needsKnowledgeDetail ? 'bg-amber-200 text-amber-950' : 'bg-emerald-200 text-emerald-950'}`}>
-                    {needsKnowledgeDetail ? 'Needs Detail' : 'Healthy'}
-                  </span>
+        <div className="space-y-6">
+          <section className={panelClassName('p-6')}>
+            <h2 className="mb-4 font-['Space_Grotesk'] text-lg font-bold text-slate-950">Knowledge Base Status</h2>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500">Answer Rate</span>
+                <span className="font-bold text-[#205cb5]">{formatPercent(answeredQuestionRate)}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-[#f1f4f6]">
+                <div className="h-full rounded-full bg-[#205cb5]" style={{ width: `${Math.max(4, Math.min(100, answeredQuestionRate))}%` }} />
+              </div>
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                <div className="rounded-lg bg-[#f1f4f6] p-3">
+                  <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Answered</div>
+                  <div className="font-['Space_Grotesk'] text-2xl font-bold text-slate-950">{answeredQuestionCount}</div>
                 </div>
+                <button
+                  type="button"
+                  className="rounded-lg bg-[#f1f4f6] p-3 text-left transition-all hover:bg-[#e5e9eb]"
+                  onClick={() => unansweredQuestionCount && setShowKnowledgeQuestions((current) => !current)}
+                >
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                    <span>No Answer</span>
+                    <span className="material-symbols-outlined text-sm text-[#205cb5]">{showKnowledgeQuestions ? 'expand_less' : 'chevron_right'}</span>
+                  </div>
+                  <div className="font-['Space_Grotesk'] text-2xl font-bold text-slate-950">{unansweredQuestionCount}</div>
+                </button>
               </div>
-              <div>
-                <div className="mb-1 flex items-center justify-between text-xs font-mono uppercase tracking-[0.14em] text-white/75">
-                  <span>Answered from KB</span>
-                  <span>{formatPercent(answeredQuestionRate)}</span>
-                </div>
-                <div className="h-2 rounded-full bg-white/15">
-                  <div
-                    className="h-full rounded-full bg-white"
-                    style={{ width: `${Math.max(6, Math.min(100, answeredQuestionRate))}%` }}
-                  />
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-white/80">KB questions</span>
-                <span className="text-sm font-bold">{kbQuestionCount}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-white/80">Calls using KB</span>
-                <span className="text-sm font-bold">{kbCallCount}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-white/80">Calls with gaps</span>
-                <span className="text-sm font-bold">{unansweredKbCallCount}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-white/80">Latest KB</span>
-                <span className="text-right text-sm font-bold">{latestBuildLabel}</span>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Latest KB</span>
+                <span className="font-semibold text-slate-900">{latestBuildLabel}</span>
               </div>
             </div>
-            <div className="mt-6 border-t border-white/15 pt-5 text-sm leading-6 text-white/85">
-              {!runtimeReady
-                ? 'Create a knowledge base.'
-                : kbQuestionCount === 0
-                  ? 'No KB questions yet.'
-                  : (needsKnowledgeDetail ? 'Add detail for repeated unanswered questions.' : 'Coverage looks healthy.')}
-            </div>
+
+            {showKnowledgeQuestions ? (
+              <div className="mt-5 border-t border-slate-200/70 pt-5">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Unanswered Questions</div>
+                  <Link href="/client/receptionist/knowledge" className="text-xs font-bold uppercase tracking-[0.18em] text-[#205cb5]">
+                    Update KB
+                  </Link>
+                </div>
+                <div className="space-y-3">
+                  {knowledgeGapQuestions.length ? knowledgeGapQuestions.map((question) => {
+                    const callerName = [question.caller_first_name, question.caller_last_name].filter(Boolean).join(' ') || question.callback_number || 'Unknown caller';
+                    const promptText = normalizeText(question.requested_coverage_item_text || question.query_text) || 'Unknown question';
+                    return (
+                      <div key={question.knowledge_coverage_event_id} className="rounded-lg border border-slate-200/70 bg-[#f8fafc] p-3">
+                        <div className="text-sm font-semibold text-slate-900">{promptText}</div>
+                        <div className="mt-1 text-[11px] text-slate-500">{callerName} · {formatDateTime(question.created_at)}</div>
+                        {question.summary ? <div className="mt-2 text-xs text-slate-600">{question.summary}</div> : null}
+                      </div>
+                    );
+                  }) : (
+                    <div className="text-sm text-slate-500">No unanswered KB questions in the last 30 days.</div>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </section>
 
-          <section className="workspace-panel-soft p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="font-['Space_Grotesk'] text-lg font-bold uppercase tracking-[0.16em] text-slate-900">Quick Actions</h2>
-              <span className="material-symbols-outlined text-[#205cb5]">bolt</span>
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-              <ActionTile
-                href="/client/calls"
-                icon="phone_in_talk"
-                title="Review Calls"
-              />
-              <ActionTile
-                href="/client/receptionist/knowledge"
-                icon="school"
-                title="Update Knowledge Base"
-              />
-              <ActionTile
-                href="/client/receptionist/basics"
-                icon="record_voice_over"
-                title="Adjust Basics"
-              />
-              <ActionTile
-                href="/client/team"
-                icon="groups"
-                title="Manage Team Alerts"
-              />
+          <section className={panelClassName('p-6')}>
+            <h2 className="mb-4 font-['Space_Grotesk'] text-lg font-bold text-slate-950">Quick Actions</h2>
+            <div className="grid gap-2">
+              <ActionRow href="/client/calls" icon="visibility" title="Review Calls" />
+              <ActionRow href="/client/receptionist/knowledge" icon="edit_note" title="Update Knowledge Base" />
+              <ActionRow href="/client/receptionist/basics" icon="settings_input_component" title="Adjust Basics" />
+              <ActionRow href="/client/team" icon="notifications_active" title="Manage Team" />
             </div>
           </section>
         </div>
       </section>
 
-      <section className="workspace-panel p-8">
+      <section className={panelClassName('p-6')}>
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <h2 className="font-['Space_Grotesk'] text-2xl font-bold tracking-[-0.03em] text-slate-950">Call Volume</h2>
-          <div className="rounded-full bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-600">
-            Last 7 Days
+          <div>
+            <h2 className="font-['Space_Grotesk'] text-lg font-bold text-slate-950">Call Volume Trends</h2>
+            <p className="mt-1 text-xs text-slate-500">Last 7 days</p>
+          </div>
+          <div className="flex gap-4">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm bg-[#205cb5]" />
+              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Business Hours</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm bg-[#6e9ffd]" />
+              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">After Hours</span>
+            </div>
           </div>
         </div>
 
-        <div className="relative grid h-[250px] grid-cols-7 items-end gap-4">
+        <div className="grid h-52 grid-cols-7 items-end gap-4 px-2">
           {callVolumeLast7Days.map((day) => {
-            const count = Number(day.count || 0);
-            const height = `${Math.max(10, (count / maxTrendCount) * 100)}%`;
+            const totalCount = Number(day.totalCount || day.count || 0);
+            const businessCount = Number(day.businessHoursCount || 0);
+            const afterHoursCount = Number(day.afterHoursCount || 0);
+            const height = totalCount ? `${Math.max(10, (totalCount / maxTrendCount) * 100)}%` : '8%';
+            const businessShare = totalCount ? (businessCount / totalCount) * 100 : 0;
+            const afterHoursShare = totalCount ? (afterHoursCount / totalCount) * 100 : 0;
             return (
-              <div key={day.day} className="flex h-full flex-col items-center justify-end gap-3">
-                <div className="text-xs font-semibold text-slate-500">{count}</div>
-                <div className="relative flex h-[190px] w-full items-end justify-center">
-                  <div className="absolute inset-x-3 bottom-0 top-0 rounded-t-xl bg-slate-100" />
-                  <div
-                    className="relative z-10 w-full rounded-t-xl bg-[#205cb5] shadow-[0_10px_25px_rgba(32,92,181,0.18)]"
-                    style={{ height }}
-                  />
+              <div key={day.day} className="flex h-full flex-col items-center justify-end gap-2">
+                <div className="text-xs font-semibold text-slate-500">{totalCount}</div>
+                <div className="flex h-[180px] w-full items-end">
+                  <div className="w-full overflow-hidden rounded-t-sm bg-[#ebeef0]" style={{ height }}>
+                    <div className="flex h-full flex-col justify-end">
+                      <div className="bg-[#6e9ffd]" style={{ height: `${afterHoursShare}%` }} />
+                      <div className="bg-[#205cb5]" style={{ height: `${businessShare}%` }} />
+                    </div>
+                  </div>
                 </div>
-                <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-slate-500">{formatDayLabel(day.day)}</div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{formatDayLabel(day.day)}</div>
               </div>
             );
           })}

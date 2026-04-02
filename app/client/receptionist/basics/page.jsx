@@ -8,6 +8,10 @@ import SalesReceptionistNumberHeaderAside from '../../_components/SalesReception
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
 import StepSection from '../../_components/StepSection';
+import {
+  BUSINESS_HOURS_DAY_LABELS,
+  createBusinessHoursConfig
+} from '../../../../lib/businessHours';
 
 function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
@@ -64,8 +68,8 @@ const guideByContext = {
   businessHours: {
     step: '01',
     title: 'Business Hours',
-    body: 'These hours tell the sales receptionist when the business is considered open versus after hours.',
-    tip: 'Match this to the real schedule your team can support.'
+    body: 'Set the weekly hours that define when calls count as business hours versus after hours.',
+    tip: 'Keep this aligned with the real hours your team can actually support.'
   },
   greeting: {
     step: '02',
@@ -94,6 +98,7 @@ const basicsGuideOverview = {
 };
 
 export default function ReceptionistBasicsPage() {
+  const defaultHoursConfig = createBusinessHoursConfig({ timezone: 'America/Los_Angeles' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState({ message: 'Loading sales receptionist basics...', tone: 'warn' });
@@ -108,7 +113,7 @@ export default function ReceptionistBasicsPage() {
     primaryQueue: 'Dispatch Team',
     emergencyBehavior: 'Immediate Transfer',
     afterHours: 'Collect details and dispatch callback',
-    businessHours: 'Mon-Fri 7:00 AM - 8:00 PM',
+    businessHoursConfig: defaultHoursConfig,
     voiceType: 'marin'
   });
 
@@ -129,6 +134,7 @@ export default function ReceptionistBasicsPage() {
       const profile = profileData?.profile || null;
       const routing = routingData?.routing || null;
       const runtimeProfile = runtimeData?.profile || null;
+      const timezone = settingsData?.settings?.timezone || 'America/Los_Angeles';
       setForm({
         assistantName: profile?.assistant_name || '',
         businessName: profile?.business_name || '',
@@ -138,7 +144,10 @@ export default function ReceptionistBasicsPage() {
         primaryQueue: routing?.primary_queue || 'Dispatch Team',
         emergencyBehavior: routing?.emergency_behavior || 'Immediate Transfer',
         afterHours: routing?.after_hours_behavior || 'Collect details and dispatch callback',
-        businessHours: routing?.business_hours || 'Mon-Fri 7:00 AM - 8:00 PM',
+        businessHoursConfig: createBusinessHoursConfig(
+          routing?.business_hours_config || { businessHours: routing?.business_hours || '', timezone },
+          timezone
+        ),
         voiceType: runtimeProfile?.session_config?.voice || 'marin'
       });
       setStatus({ message: 'Sales receptionist basics loaded.', tone: 'ok' });
@@ -180,7 +189,7 @@ export default function ReceptionistBasicsPage() {
             primaryQueue: form.primaryQueue,
             emergencyBehavior: form.emergencyBehavior,
             afterHoursBehavior: form.afterHours,
-            businessHours: form.businessHours
+            businessHoursConfig: form.businessHoursConfig
           })
         }),
         fetchJson('/api/v1/knowledge/runtime-profile', {
@@ -252,6 +261,22 @@ export default function ReceptionistBasicsPage() {
   const activeGuide = guideByContext[activeGuideKey] || guideByContext.assistantName;
   const activeStep = activeGuide.step || '01';
   const activeCardClassName = 'ring-2 ring-[#2563EB]/20 shadow-[0_0_0_1px_rgba(37,99,235,0.05)]';
+  const businessHoursConfig = createBusinessHoursConfig(form.businessHoursConfig || defaultHoursConfig, defaultHoursConfig.timezone);
+  const updateBusinessHoursDay = (day, patch) => {
+    setForm((current) => {
+      const currentConfig = createBusinessHoursConfig(current.businessHoursConfig || defaultHoursConfig, defaultHoursConfig.timezone);
+      const weeklyHours = currentConfig.weeklyHours.map((row) => (
+        row.day === day ? { ...row, ...patch } : row
+      ));
+      return {
+        ...current,
+        businessHoursConfig: createBusinessHoursConfig({
+          ...currentConfig,
+          weeklyHours
+        }, currentConfig.timezone)
+      };
+    });
+  };
   const openSalesReceptionistNumberGuide = () => {
     setActiveGuideKey('salesReceptionistNumber');
     guidePanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -323,11 +348,41 @@ export default function ReceptionistBasicsPage() {
 
               <div className="mt-3">
                 <label>Business Hours</label>
-                <input
-                  value={form.businessHours}
-                  onChange={(event) => setForm((current) => ({ ...current, businessHours: event.target.value }))}
+                <div
+                  className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white"
                   onFocus={() => setActiveGuideKey('businessHours')}
-                />
+                >
+                  {businessHoursConfig.weeklyHours.map((row) => (
+                    <div key={row.day} className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0 md:grid-cols-[72px_110px_minmax(0,1fr)]">
+                      <div className="text-sm font-semibold text-slate-900">{BUSINESS_HOURS_DAY_LABELS[row.day] || row.day}</div>
+                      <label className="inline-flex items-center gap-2 text-sm text-slate-600">
+                        <input
+                          checked={Boolean(row.enabled)}
+                          type="checkbox"
+                          onChange={(event) => updateBusinessHoursDay(row.day, { enabled: event.target.checked })}
+                        />
+                        Open
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="time"
+                          value={row.openTime === '24:00' ? '23:59' : row.openTime}
+                          disabled={!row.enabled}
+                          onChange={(event) => updateBusinessHoursDay(row.day, { openTime: event.target.value })}
+                        />
+                        <input
+                          type="time"
+                          value={row.closeTime === '24:00' ? '23:59' : row.closeTime}
+                          disabled={!row.enabled}
+                          onChange={(event) => updateBusinessHoursDay(row.day, { closeTime: event.target.value })}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 text-xs text-slate-500">
+                  Times use {businessHoursConfig.timezone}. These hours drive business-hours vs after-hours reporting on the dashboard.
+                </div>
               </div>
             </StepSection>
           </div>

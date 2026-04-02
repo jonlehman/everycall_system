@@ -19,6 +19,7 @@ import {
 import { saveSetupInterviewIntent } from "../../_lib/knowledgeReceptionistSetupInterview.js";
 import { saveTenantBootstrapProfile } from "../../_lib/tenantBootstrapProfiles.js";
 import { normalizePhoneNumber } from "../../_lib/phone.js";
+import { createDefaultTenantBusinessHours, saveTenantBusinessHours } from "../../_lib/tenantBusinessHours.js";
 import { normalizeCallerIdName, provisionTenantVoiceNumber } from "../../_lib/voiceProvisioning.js";
 
 function slugify(input) {
@@ -266,7 +267,7 @@ export default async function handler(req, res) {
           "Dispatch Team",
           "handoff_or_emergency_redirect",
           "capture_and_callback",
-          "Unknown"
+          "Mon-Fri 7:00 AM - 8:00 PM"
         ]
       );
 
@@ -274,6 +275,13 @@ export default async function handler(req, res) {
         `INSERT INTO tenant_settings (tenant_key, timezone, notes, caller_id_name)
          VALUES ($1, $2, $3, $4)`,
         [tenantKey, "America/Los_Angeles", payload.companyDescription, normalizeCallerIdName(payload.businessName)]
+      );
+
+      await saveTenantBusinessHours(
+        client,
+        tenantKey,
+        createDefaultTenantBusinessHours("America/Los_Angeles"),
+        { timezone: "America/Los_Angeles", syncRoutingDisplayText: true }
       );
 
       await ensureTenantBillingAccount(client, tenantKey);

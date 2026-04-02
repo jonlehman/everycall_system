@@ -302,6 +302,32 @@ export async function ensureTables(pool) {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_business_hours (
+      tenant_key TEXT PRIMARY KEY REFERENCES tenants(tenant_key) ON DELETE CASCADE,
+      timezone TEXT NOT NULL DEFAULT 'America/Los_Angeles',
+      source TEXT NOT NULL DEFAULT 'manual',
+      open_status TEXT NOT NULL DEFAULT 'OPEN',
+      regular_hours_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      special_hours_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      more_hours_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      display_text TEXT,
+      external_source_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      last_synced_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE tenant_business_hours ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/Los_Angeles';`);
+  await pool.query(`ALTER TABLE tenant_business_hours ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual';`);
+  await pool.query(`ALTER TABLE tenant_business_hours ADD COLUMN IF NOT EXISTS open_status TEXT NOT NULL DEFAULT 'OPEN';`);
+  await pool.query(`ALTER TABLE tenant_business_hours ADD COLUMN IF NOT EXISTS regular_hours_json JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE tenant_business_hours ADD COLUMN IF NOT EXISTS special_hours_json JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE tenant_business_hours ADD COLUMN IF NOT EXISTS more_hours_json JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE tenant_business_hours ADD COLUMN IF NOT EXISTS display_text TEXT;`);
+  await pool.query(`ALTER TABLE tenant_business_hours ADD COLUMN IF NOT EXISTS external_source_json JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE tenant_business_hours ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenant_business_hours ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS tenant_settings (
       tenant_key TEXT PRIMARY KEY,
       timezone TEXT DEFAULT 'America/Los_Angeles',

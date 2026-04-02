@@ -1,6 +1,7 @@
 import { ensureTables, getPool } from "../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess } from "../_lib/billing.js";
+import { loadTenantBusinessHours, saveTenantBusinessHours } from "../_lib/tenantBusinessHours.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
@@ -30,16 +31,43 @@ export default async function handler(req, res) {
          WHERE tenant_key = $1`,
         [tenantKey]
       );
-      return res.status(200).json({ ok: true, routing: row.rows[0] || null });
+      const routing = row.rows[0] || null;
+      const businessHoursConfig = await loadTenantBusinessHours(pool, tenantKey, {
+        legacyBusinessHours: routing?.business_hours || ""
+      });
+      return res.status(200).json({
+        ok: true,
+        routing: routing
+          ? {
+            ...routing,
+            business_hours: businessHoursConfig.displayText || routing.business_hours,
+            business_hours_config: businessHoursConfig
+          }
+          : {
+            tenant_key: tenantKey,
+            primary_queue: "Dispatch Team",
+            emergency_behavior: "Immediate Transfer",
+            after_hours_behavior: "Collect details and dispatch callback",
+            business_hours: businessHoursConfig.displayText,
+            business_hours_config: businessHoursConfig
+          }
+      });
     }
 
     if (req.method === "POST") {
       const body = typeof req.body === "object" && req.body ? req.body : {};
       const primaryQueue = String(body.primaryQueue || "Dispatch Team");
-      const emergencyBehavior = String(body.emergencyBehavior || "Priority Queue");
+      const emergencyBehavior = String(body.emergencyBehavior || "Immediate Transfer");
       const afterHoursBehavior = String(body.afterHoursBehavior || "Collect details and dispatch callback");
-      const businessHours = String(body.businessHours || "");
-      if (!primaryQueue.trim() || !emergencyBehavior.trim() || !afterHoursBehavior.trim() || !businessHours.trim()) {
+      const businessHoursConfig = body.businessHoursConfig && typeof body.businessHoursConfig === "object"
+        ? body.businessHoursConfig
+        : null;
+      const businessHours = String(
+        businessHoursConfig?.displayText
+        || body.businessHours
+        || ""
+      );
+      if (!primaryQueue.trim() || !emergencyBehavior.trim() || !afterHoursBehavior.trim()) {
         return fail(400, "missing_fields", "All routing fields are required.");
       }
 
@@ -55,7 +83,14 @@ export default async function handler(req, res) {
         [tenantKey, primaryQueue, emergencyBehavior, afterHoursBehavior, businessHours]
       );
 
-      return res.status(200).json({ ok: true });
+      const savedBusinessHours = await saveTenantBusinessHours(
+        pool,
+        tenantKey,
+        businessHoursConfig || { businessHours },
+        { syncRoutingDisplayText: true }
+      );
+
+      return res.status(200).json({ ok: true, businessHoursConfig: savedBusinessHours });
     }
 
     res.setHeader("Allow", "GET, POST");
