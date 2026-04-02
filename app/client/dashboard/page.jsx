@@ -16,15 +16,15 @@ const CATEGORY_ORDER = [
   'other_non_billable'
 ];
 
-const CATEGORY_TONE = {
-  project_inquiry: 'bg-[#205cb5]',
-  general_inquiry: 'bg-[#6e9ffd]',
-  existing_customer_support: 'bg-[#94a3b8]',
-  vendor_or_sales: 'bg-[#cbd5e1]',
-  spam: 'bg-[#fecaca]',
-  wrong_number: 'bg-[#e2e8f0]',
-  hangup_or_incomplete: 'bg-[#bac8dc]',
-  other_non_billable: 'bg-[#d7dadc]'
+const CATEGORY_COLOR = {
+  project_inquiry: '#205cb5',
+  general_inquiry: '#6e9ffd',
+  existing_customer_support: '#94a3b8',
+  vendor_or_sales: '#cbd5e1',
+  spam: '#fecaca',
+  wrong_number: '#e2e8f0',
+  hangup_or_incomplete: '#bac8dc',
+  other_non_billable: '#d7dadc'
 };
 
 function normalizeText(value) {
@@ -132,21 +132,6 @@ function KpiCard({ label, value, meta = '', icon = 'analytics', progress = null 
   );
 }
 
-function ClassificationRow({ item }) {
-  return (
-    <div className="grid grid-cols-[112px_minmax(0,1fr)_44px] items-center gap-3">
-      <span className="text-[11px] font-medium text-slate-600">{item.label}</span>
-      <div className="h-4 overflow-hidden rounded bg-[#d8e2ff]">
-        <div
-          className={`h-full rounded ${CATEGORY_TONE[item.key] || CATEGORY_TONE.other_non_billable}`}
-          style={{ width: `${Math.max(item.count ? 6 : 0, Math.min(100, Number(item.percent || 0)))}%` }}
-        />
-      </div>
-      <span className="text-right text-[11px] font-bold text-slate-800">{Number(item.percent || 0)}%</span>
-    </div>
-  );
-}
-
 function LeadStatusPill({ call }) {
   const meta = getLeadStatusMeta(call || {});
   const toneClass = meta.tone === 'ok'
@@ -184,6 +169,28 @@ function ActionRow({ href, icon, title }) {
       <span className="text-sm font-medium text-slate-900 transition-transform group-hover:translate-x-1">{title}</span>
     </Link>
   );
+}
+
+function buildCallMixGradient(items) {
+  const slices = items.filter((item) => Number(item.count || 0) > 0);
+  if (!slices.length) {
+    return 'conic-gradient(#e2e8f0 0deg 360deg)';
+  }
+
+  let current = 0;
+  const stops = slices.map((item) => {
+    const percent = Number(item.percent || 0);
+    const start = current;
+    const degrees = (percent / 100) * 360;
+    current += degrees;
+    return `${CATEGORY_COLOR[item.key] || CATEGORY_COLOR.other_non_billable} ${start}deg ${current}deg`;
+  });
+
+  if (current < 360) {
+    stops.push(`#e2e8f0 ${current}deg 360deg`);
+  }
+
+  return `conic-gradient(${stops.join(', ')})`;
 }
 
 export default function ClientDashboardPage() {
@@ -269,6 +276,7 @@ export default function ClientDashboardPage() {
       percent: 0
     });
   }, [classificationBreakdown]);
+  const callMixGradient = useMemo(() => buildCallMixGradient(orderedBreakdown), [orderedBreakdown]);
 
   return (
     <ClientPage
@@ -283,45 +291,67 @@ export default function ClientDashboardPage() {
       )}
       primaryAction={{ href: '/client/calls', label: 'Open Calls', brand: true }}
     >
-      <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          label="Calls Handled"
-          value={Number(summary.calls30d || 0)}
-          meta={billing?.currentPeriod?.label ? billing.currentPeriod.label : ''}
-          icon="call"
-        />
-        <KpiCard
-          label="Lead Capture Rate"
-          value={formatPercent(summary.leadCaptureRate30d || 0)}
-          meta="Target: 90%"
-          icon="target"
-          progress={summary.leadCaptureRate30d || 0}
-        />
-        <KpiCard
-          label="Valid Leads"
-          value={Number(summary.validLeadCount30d || 0)}
-          icon="conversion_path"
-        />
-        <KpiCard
-          label="Open Follow-Up"
-          value={Number(summary.openFollowUpCount || 0)}
-          icon="pending_actions"
-        />
-      </section>
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.95fr)]">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <KpiCard
+            label="Calls Handled"
+            value={Number(summary.calls30d || 0)}
+            meta={billing?.currentPeriod?.label ? billing.currentPeriod.label : ''}
+            icon="call"
+          />
+          <KpiCard
+            label="Lead Capture Rate"
+            value={formatPercent(summary.leadCaptureRate30d || 0)}
+            meta="Target: 90%"
+            icon="target"
+            progress={summary.leadCaptureRate30d || 0}
+          />
+          <KpiCard
+            label="Valid Leads"
+            value={Number(summary.validLeadCount30d || 0)}
+            icon="conversion_path"
+          />
+          <KpiCard
+            label="Open Follow-Up"
+            value={Number(summary.openFollowUpCount || 0)}
+            icon="pending_actions"
+          />
+        </div>
 
-      <section className={panelClassName('p-6')}>
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Classification Breakdown</div>
-            <h2 className="mt-2 font-['Space_Grotesk'] text-xl font-bold tracking-[-0.03em] text-slate-950">Call Mix</h2>
+        <section className={panelClassName('p-6')}>
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Classification Breakdown</div>
+              <h2 className="mt-2 font-['Space_Grotesk'] text-xl font-bold tracking-[-0.03em] text-slate-950">Call Mix</h2>
+            </div>
+            <span className="material-symbols-outlined text-[#205cb5]">pie_chart</span>
           </div>
-          <span className="material-symbols-outlined text-[#205cb5]">analytics</span>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {orderedBreakdown.map((item) => (
-            <ClassificationRow key={item.key} item={item} />
-          ))}
-        </div>
+          <div className="grid gap-6 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
+            <div className="flex items-center justify-center">
+              <div
+                className="relative h-40 w-40 rounded-full"
+                style={{ background: callMixGradient }}
+                aria-label="Call mix pie chart"
+                role="img"
+              >
+                <div className="absolute inset-[22%] rounded-full bg-white" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              {orderedBreakdown.map((item) => (
+                <div key={item.key} className="grid grid-cols-[auto_minmax(0,1fr)_40px_44px] items-center gap-3">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: CATEGORY_COLOR[item.key] || CATEGORY_COLOR.other_non_billable }}
+                  />
+                  <span className="truncate text-[11px] font-medium text-slate-600">{item.label}</span>
+                  <span className="text-right text-[11px] font-semibold text-slate-500">{item.count}</span>
+                  <span className="text-right text-[11px] font-bold text-slate-800">{Number(item.percent || 0)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
       </section>
 
       <section className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
