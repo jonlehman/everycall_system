@@ -9,9 +9,7 @@ import { ASYNC_JOB_TYPES, enqueueAsyncJob } from "../../../lib/asyncJobs.js";
 
 const ANALYSIS_VERSION = "unanswered_questions_v1";
 const OPENAI_TRANSCRIPT_ANALYSIS_MODEL = process.env.OPENAI_TRANSCRIPT_ANALYSIS_MODEL
-  || process.env.OPENAI_SUMMARY_MODEL
-  || process.env.OPENAI_MODEL
-  || "gpt-5.2";
+  || "gpt-5.4-nano";
 const MAX_TRANSCRIPT_ANALYSIS_CHARS = 20_000;
 const MAX_UNANSWERED_QUESTIONS = 12;
 
