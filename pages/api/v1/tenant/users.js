@@ -339,7 +339,8 @@ export default async function handler(req, res) {
           return fail(500, "sms_number_missing", "Shared SMS number is not configured.");
         }
         const text = "EveryCall by Creative Dynamic: Reply YES to confirm SMS new lead alerts. Message frequency may vary. Msg&data rates may apply. Consent is not a condition of purchase. Reply HELP for help. Reply STOP to opt out.";
-        await sendTelnyxSms({ from: fromNumber, to: user.phone_number, text });
+        const smsResult = await sendTelnyxSms({ from: fromNumber, to: user.phone_number, text });
+        const providerMessageId = String(smsResult?.data?.id || smsResult?.id || "").trim() || null;
         await pool.query(
           `UPDATE tenant_users
            SET sms_opt_in_status = 'pending',
@@ -351,9 +352,16 @@ export default async function handler(req, res) {
         );
         await audit(manager, "tenant.team_user.sms_opt_in_requested", {
           user_id: id,
-          phone_number: user.phone_number
+          phone_number: user.phone_number,
+          provider_message_id: providerMessageId
         });
-        return res.status(200).json({ ok: true });
+        return res.status(200).json({
+          ok: true,
+          message: providerMessageId
+            ? `SMS opt-in request accepted by Telnyx. Message ID: ${providerMessageId}.`
+            : "SMS opt-in request accepted by Telnyx.",
+          providerMessageId
+        });
       }
 
       const name = String(body.name || "").trim();

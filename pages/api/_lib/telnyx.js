@@ -1,6 +1,24 @@
 import crypto from "crypto";
 import { normalizePhoneNumber } from "./phone.js";
 
+function summarizeTelnyxErrorBody(body, fallback = "") {
+  let detail = String(fallback || "").trim();
+  try {
+    const parsed = JSON.parse(body);
+    const errors = Array.isArray(parsed?.errors) ? parsed.errors : [];
+    const first = errors[0] || parsed?.error || null;
+    if (first && typeof first === "object") {
+      const code = String(first?.code || first?.status || "").trim();
+      const title = String(first?.title || first?.message || "").trim();
+      const description = String(first?.detail || first?.description || "").trim();
+      detail = [code, title, description].filter(Boolean).join(" | ") || detail;
+    }
+  } catch {
+    // Keep raw response snippet when JSON parsing fails.
+  }
+  return detail.slice(0, 500);
+}
+
 export async function readRawBody(req, { maxBytes = 1024 * 1024 } = {}) {
   const chunks = [];
   let totalBytes = 0;
@@ -63,7 +81,8 @@ export async function sendTelnyxSms({ from, to, text }) {
   });
   if (!resp.ok) {
     const body = await resp.text().catch(() => "");
-    throw new Error(`telnyx_sms_failed:${resp.status}:${body.slice(0, 200)}`);
+    const detail = summarizeTelnyxErrorBody(body, body);
+    throw new Error(`Telnyx SMS failed (${resp.status}): ${detail || "unknown error"}`);
   }
   return resp.json();
 }
@@ -83,20 +102,7 @@ async function telnyxRequest(path, options = {}) {
   });
   if (!resp.ok) {
     const body = await resp.text().catch(() => "");
-    let detail = body.slice(0, 500);
-    try {
-      const parsed = JSON.parse(body);
-      const errors = Array.isArray(parsed?.errors) ? parsed.errors : [];
-      const first = errors[0] || parsed?.error || null;
-      if (first && typeof first === "object") {
-        const code = first?.code || first?.status || "";
-        const title = first?.title || first?.message || "";
-        const description = first?.detail || first?.description || "";
-        detail = [code, title, description].filter(Boolean).join(" | ") || detail;
-      }
-    } catch {
-      // Keep raw response snippet when JSON parsing fails.
-    }
+    const detail = summarizeTelnyxErrorBody(body, body);
     throw new Error(`telnyx_request_failed:${resp.status}:${detail.slice(0, 500)}`);
   }
   return resp.json();

@@ -26,7 +26,7 @@ export default function TeamPage() {
   const [formState, setFormState] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [savingForm, setSavingForm] = useState(false);
-  const [status, setStatus] = useState({ message: 'Loading team users...', tone: 'warn' });
+  const [status, setStatus] = useState(null);
 
   const loadUsers = () => {
     setLoading(true);
@@ -39,7 +39,6 @@ export default function TeamPage() {
           return;
         }
         setUsers(data.users || []);
-        setStatus({ message: `Loaded ${data.users?.length || 0} team user(s).`, tone: 'ok' });
         setLoading(false);
       })
       .catch(() => {
@@ -99,12 +98,12 @@ export default function TeamPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'sms_opt_in_request', id, consentConfirmed: true })
     });
+    const body = await resp.json().catch(() => null);
     if (!resp.ok) {
-      const body = await resp.json().catch(() => null);
       setStatus({ message: body?.message || 'SMS opt-in request failed.', tone: 'bad' });
       return;
     }
-    setStatus({ message: 'SMS opt-in request sent.', tone: 'ok' });
+    setStatus({ message: body?.message || 'SMS opt-in request sent.', tone: 'ok' });
     setFormState((current) => ({ ...current, smsOptInStatus: 'pending' }));
     loadUsers();
   };
