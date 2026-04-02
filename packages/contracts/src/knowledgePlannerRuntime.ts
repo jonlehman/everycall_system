@@ -7,6 +7,7 @@ const stringArraySchema = z.array(z.string().min(1)).default([]);
 const jsonRecordSchema = z.record(z.any()).default({});
 
 export const supportStrengthSchema = z.enum(["strong", "partial", "none"]);
+export const kbAnswerabilitySchema = z.enum(["answered", "partial", "unanswered"]);
 
 export const plannerCoverageItemSchema = z.union([
   z.string().min(1),
@@ -103,11 +104,14 @@ export type RetrievedFactSupport = z.infer<typeof retrievedFactSupportSchema>;
 export type PacketCoverageItem = z.infer<typeof packetCoverageItemSchema>;
 export type DeterministicAnswerPacket = z.infer<typeof deterministicAnswerPacketSchema>;
 export type SupportStrength = z.infer<typeof supportStrengthSchema>;
+export type KbAnswerability = z.infer<typeof kbAnswerabilitySchema>;
 
 const STRONG_CARD_SIMILARITY = 0.62;
 const STRONG_FACT_SIMILARITY = 0.65;
 const PARTIAL_CARD_SIMILARITY = 0.38;
 const PARTIAL_FACT_SIMILARITY = 0.42;
+const OVERVIEW_PARTIAL_CARD_SIMILARITY = 0.3;
+const OVERVIEW_PARTIAL_FACT_SIMILARITY = 0.32;
 
 export const FORCED_SUPPORT_MODE_ACTIVE = true;
 export const FORCED_SUPPORT_STRENGTH: SupportStrength = "strong";
@@ -256,12 +260,13 @@ export function normalizePlannerResponse(raw: unknown): PlannerTurnResponse {
   };
 }
 
-export function computeSupportStrength(
+function computeSupportStrengthInternal(
   coverageItemText: string,
   cards: RetrievedCardSupport[],
-  facts: RetrievedFactSupport[]
+  facts: RetrievedFactSupport[],
+  options: { honorForcedMode?: boolean } = {}
 ): SupportStrength {
-  if (FORCED_SUPPORT_MODE_ACTIVE) {
+  if (options.honorForcedMode !== false && FORCED_SUPPORT_MODE_ACTIVE) {
     return FORCED_SUPPORT_STRENGTH;
   }
   const intent = analyzeCoverageIntent(coverageItemText);
@@ -284,6 +289,57 @@ export function computeSupportStrength(
     return "partial";
   }
   return "none";
+}
+
+export function computeSupportStrength(
+  coverageItemText: string,
+  cards: RetrievedCardSupport[],
+  facts: RetrievedFactSupport[]
+): SupportStrength {
+  return computeSupportStrengthInternal(coverageItemText, cards, facts, { honorForcedMode: true });
+}
+
+export function computeObservedSupportStrength(
+  coverageItemText: string,
+  cards: RetrievedCardSupport[],
+  facts: RetrievedFactSupport[]
+): SupportStrength {
+  return computeSupportStrengthInternal(coverageItemText, cards, facts, { honorForcedMode: false });
+}
+
+export function computeKbAnswerability(input: {
+  coverageItemText: string;
+  cards: RetrievedCardSupport[];
+  facts: RetrievedFactSupport[];
+  usedCardIds?: string[];
+  usedFactIds?: string[];
+  directAnswerPoints?: string[];
+}): KbAnswerability {
+  const observedSupportStrength = computeObservedSupportStrength(input.coverageItemText, input.cards, input.facts);
+  if (observedSupportStrength === "strong") return "answered";
+
+  const intent = analyzeCoverageIntent(input.coverageItemText);
+  const topCard = input.cards[0]?.similarity ?? 0;
+  const topFact = input.facts[0]?.similarity ?? 0;
+  const hasAnswerMaterial = Array.isArray(input.directAnswerPoints) && input.directAnswerPoints.some((item) => normalizeText(item));
+  const hasSelectedCards = Array.isArray(input.usedCardIds) ? input.usedCardIds.length > 0 : input.cards.length > 0;
+  const hasSelectedFacts = Array.isArray(input.usedFactIds) ? input.usedFactIds.length > 0 : input.facts.length > 0;
+  const hasRetrievedSupport = hasSelectedCards || hasSelectedFacts;
+
+  if (observedSupportStrength === "partial") {
+    return hasAnswerMaterial ? "answered" : "partial";
+  }
+
+  if (
+    intent.prefersBroadOverview
+    && hasAnswerMaterial
+    && hasRetrievedSupport
+    && (topCard >= OVERVIEW_PARTIAL_CARD_SIMILARITY || topFact >= OVERVIEW_PARTIAL_FACT_SIMILARITY)
+  ) {
+    return "partial";
+  }
+
+  return "unanswered";
 }
 
 export function getRuntimeBundleConfidenceScore(

@@ -368,7 +368,7 @@ export default function ClientDashboardPage() {
                   onClick={() => unansweredQuestionCount && setShowKnowledgeQuestions((current) => !current)}
                 >
                   <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
-                    <span>No Answer</span>
+                    <span>No KB Answer</span>
                     <span className="material-symbols-outlined text-sm text-[#205cb5]">{showKnowledgeQuestions ? 'expand_less' : 'chevron_right'}</span>
                   </div>
                   <div className="font-['Space_Grotesk'] text-2xl font-bold text-slate-950">{unansweredQuestionCount}</div>
@@ -383,7 +383,7 @@ export default function ClientDashboardPage() {
             {showKnowledgeQuestions ? (
               <div className="mt-5 border-t border-slate-200/70 pt-5">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Unanswered Questions</div>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Questions Not Answered From KB</div>
                   <Link href="/client/receptionist/knowledge" className="text-xs font-bold uppercase tracking-[0.18em] text-[#205cb5]">
                     Update KB
                   </Link>
@@ -400,7 +400,7 @@ export default function ClientDashboardPage() {
                       </div>
                     );
                   }) : (
-                    <div className="text-sm text-slate-500">No unanswered KB questions in the last 30 days.</div>
+                    <div className="text-sm text-slate-500">No KB gaps in the last 30 days.</div>
                   )}
                 </div>
               </div>

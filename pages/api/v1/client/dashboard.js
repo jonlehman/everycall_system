@@ -35,6 +35,45 @@ const DASHBOARD_CATEGORY_LABELS = {
 const KNOWLEDGE_CARD_SUPPORT_THRESHOLD = 0.38;
 const KNOWLEDGE_FACT_SUPPORT_THRESHOLD = 0.42;
 
+function coerceNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function classifyKnowledgeCoverageEvent(row) {
+  const maxCardSimilarity = coerceNumber(
+    row?.max_card_similarity
+    ?? row?.maxCardSimilarity
+    ?? row?.top_card_similarity
+  );
+  const maxFactSimilarity = coerceNumber(
+    row?.max_fact_similarity
+    ?? row?.maxFactSimilarity
+    ?? row?.top_fact_similarity
+  );
+  const kbAnswerability = normalizeText(row?.kb_answerability || row?.kbAnswerability).toLowerCase();
+  const observedSupportStrength = normalizeText(row?.observed_support_strength || row?.observedSupportStrength).toLowerCase();
+  const answeredFromKbValue = row?.answered_from_kb ?? row?.answeredFromKb;
+  const unansweredFromKbValue = row?.unanswered_from_kb ?? row?.unansweredFromKb;
+
+  let unansweredFromKb = unansweredFromKbValue === true;
+  if (answeredFromKbValue === true) unansweredFromKb = false;
+  if (!unansweredFromKb && kbAnswerability === "unanswered") unansweredFromKb = true;
+  if (!unansweredFromKb && !kbAnswerability && observedSupportStrength === "none") unansweredFromKb = true;
+  if (!unansweredFromKb && !kbAnswerability && !observedSupportStrength) {
+    unansweredFromKb = maxCardSimilarity < KNOWLEDGE_CARD_SUPPORT_THRESHOLD
+      && maxFactSimilarity < KNOWLEDGE_FACT_SUPPORT_THRESHOLD;
+  }
+
+  return {
+    kbAnswerability: kbAnswerability || (unansweredFromKb ? "unanswered" : "answered"),
+    unansweredFromKb,
+    answeredFromKb: !unansweredFromKb,
+    maxCardSimilarity,
+    maxFactSimilarity
+  };
+}
+
 function normalizeCallCategory(outcomeType, isValidLead) {
   const normalized = normalizeText(outcomeType).toLowerCase();
   if (
@@ -101,6 +140,12 @@ async function loadKnowledgeGapQuestions(pool, tenantKey) {
          k.created_at,
          k.query_text,
          k.requested_coverage_item_text,
+         k.kb_answerability,
+         k.answered_from_kb,
+         k.unanswered_from_kb,
+         k.observed_support_strength,
+         k.max_card_similarity,
+         k.max_fact_similarity,
          c.summary,
          c.status,
          d.caller_first_name,
@@ -111,21 +156,14 @@ async function loadKnowledgeGapQuestions(pool, tenantKey) {
        LEFT JOIN call_details d ON d.call_sid = c.call_sid
        WHERE k.tenant_key = $1
          AND k.created_at >= NOW() - interval '30 days'
-         AND COALESCE((
-           SELECT MAX((entry->>'similarity')::double precision)
-           FROM jsonb_array_elements(COALESCE(k.top_scores_json, '[]'::jsonb)) AS entry
-           WHERE entry->>'kind' = 'card'
-         ), 0) < $2
-         AND COALESCE((
-           SELECT MAX((entry->>'similarity')::double precision)
-           FROM jsonb_array_elements(COALESCE(k.top_scores_json, '[]'::jsonb)) AS entry
-           WHERE entry->>'kind' = 'fact'
-         ), 0) < $3
        ORDER BY k.created_at DESC
-       LIMIT 20`,
-      [tenantKey, KNOWLEDGE_CARD_SUPPORT_THRESHOLD, KNOWLEDGE_FACT_SUPPORT_THRESHOLD]
+       LIMIT 80`,
+      [tenantKey]
     );
-    return result.rows || [];
+    return (result.rows || [])
+      .map((row) => ({ ...row, ...classifyKnowledgeCoverageEvent(row) }))
+      .filter((row) => row.unansweredFromKb)
+      .slice(0, 20);
   } catch (error) {
     if (error?.code === "42P01") return [];
     throw error;
@@ -135,39 +173,33 @@ async function loadKnowledgeGapQuestions(pool, tenantKey) {
 async function loadKnowledgeSignals(pool, tenantKey) {
   try {
     const result = await pool.query(
-      `WITH coverage AS (
-         SELECT
-           call_id,
-           COALESCE((
-             SELECT MAX((entry->>'similarity')::double precision)
-             FROM jsonb_array_elements(COALESCE(top_scores_json, '[]'::jsonb)) AS entry
-             WHERE entry->>'kind' = 'card'
-           ), 0) AS max_card_similarity,
-           COALESCE((
-             SELECT MAX((entry->>'similarity')::double precision)
-             FROM jsonb_array_elements(COALESCE(top_scores_json, '[]'::jsonb)) AS entry
-             WHERE entry->>'kind' = 'fact'
-           ), 0) AS max_fact_similarity
-         FROM knowledge_coverage_events
-         WHERE tenant_key = $1
-           AND created_at >= NOW() - interval '30 days'
-       )
-       SELECT
-         COUNT(*)::int AS kb_question_count_30d,
-         COUNT(DISTINCT call_id)::int AS kb_call_count_30d,
-         COUNT(*) FILTER (
-           WHERE max_card_similarity < $2
-             AND max_fact_similarity < $3
-         )::int AS unanswered_question_count_30d,
-         COUNT(DISTINCT call_id) FILTER (
-           WHERE call_id IS NOT NULL
-             AND max_card_similarity < $2
-             AND max_fact_similarity < $3
-         )::int AS unanswered_call_count_30d
-       FROM coverage`,
-      [tenantKey, KNOWLEDGE_CARD_SUPPORT_THRESHOLD, KNOWLEDGE_FACT_SUPPORT_THRESHOLD]
+      `SELECT
+         call_id,
+         kb_answerability,
+         answered_from_kb,
+         unanswered_from_kb,
+         observed_support_strength,
+         max_card_similarity,
+         max_fact_similarity
+       FROM knowledge_coverage_events
+       WHERE tenant_key = $1
+         AND created_at >= NOW() - interval '30 days'`,
+      [tenantKey]
     );
-    return result.rows?.[0] || {};
+    const rows = (result.rows || []).map((row) => ({ ...row, ...classifyKnowledgeCoverageEvent(row) }));
+    const unansweredRows = rows.filter((row) => row.unansweredFromKb);
+    const unansweredCallIds = new Set(
+      unansweredRows.map((row) => normalizeText(row.call_id)).filter(Boolean)
+    );
+    const callIds = new Set(
+      rows.map((row) => normalizeText(row.call_id)).filter(Boolean)
+    );
+    return {
+      kb_question_count_30d: rows.length,
+      kb_call_count_30d: callIds.size,
+      unanswered_question_count_30d: unansweredRows.length,
+      unanswered_call_count_30d: unansweredCallIds.size
+    };
   } catch (error) {
     if (error?.code === "42P01") {
       return {

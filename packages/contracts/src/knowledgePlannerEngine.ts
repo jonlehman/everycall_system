@@ -2,9 +2,12 @@ import { performance } from "node:perf_hooks";
 import {
   analyzeCoverageIntent,
   assembleDeterministicAnswerPacket,
+  computeKbAnswerability,
+  computeObservedSupportStrength,
   createDeterministicId,
   normalizePlannerResponse,
   plannerTurnResponseSchema,
+  type KbAnswerability,
   type DeterministicAnswerPacket,
   type PlannerTurnResponse,
   type RetrievedCardSupport,
@@ -45,6 +48,15 @@ export type CoverageSupportEvent = {
   knowledgeCoverageEventId: string;
   requestedCoverageItemText: string;
   supportStrength: "strong" | "partial" | "none";
+  observedSupportStrength: "strong" | "partial" | "none";
+  kbAnswerability: KbAnswerability;
+  answeredFromKb: boolean;
+  unansweredFromKb: boolean;
+  maxCardSimilarity: number;
+  maxFactSimilarity: number;
+  selectedCardCount: number;
+  selectedFactCount: number;
+  directAnswerPointCount: number;
   topCardIds: string[];
   topFactIds: string[];
   topScores: Array<{ kind: "card" | "fact"; id: string; similarity: number }>;
@@ -747,21 +759,43 @@ export async function executePlannerPgvectorRuntime(db: Queryable, input: Planne
   const packetMs = Number((performance.now() - packetStarted).toFixed(3));
 
   const coverageSupportEvents = answerPacket.coverage.map((item) => {
-    const topCards: RetrievedCardSupport[] = (cardResultsByCoverageItem[item.requested_coverage_item_text] || []).slice(0, 3);
-    const topFacts: RetrievedFactSupport[] = (factResultsByCoverageItem[item.requested_coverage_item_text] || []).slice(0, 3);
+    const fullCards: RetrievedCardSupport[] = (cardResultsByCoverageItem[item.requested_coverage_item_text] || []).slice();
+    const fullFacts: RetrievedFactSupport[] = (factResultsByCoverageItem[item.requested_coverage_item_text] || []).slice();
+    const topCards: RetrievedCardSupport[] = fullCards.slice(0, 3);
+    const topFacts: RetrievedFactSupport[] = fullFacts.slice(0, 3);
+    const observedSupportStrength = computeObservedSupportStrength(item.requested_coverage_item_text, fullCards, fullFacts);
+    const kbAnswerability = computeKbAnswerability({
+      coverageItemText: item.requested_coverage_item_text,
+      cards: fullCards,
+      facts: fullFacts,
+      usedCardIds: item.used_card_ids,
+      usedFactIds: item.used_fact_ids,
+      directAnswerPoints: item.direct_answer_points
+    });
+    const maxCardSimilarity = fullCards[0]?.similarity ?? 0;
+    const maxFactSimilarity = fullFacts[0]?.similarity ?? 0;
     return {
       knowledgeCoverageEventId: createDeterministicId("cov"),
       requestedCoverageItemText: item.requested_coverage_item_text,
       supportStrength: item.support_strength,
+      observedSupportStrength,
+      kbAnswerability,
+      answeredFromKb: kbAnswerability !== "unanswered",
+      unansweredFromKb: kbAnswerability === "unanswered",
+      maxCardSimilarity,
+      maxFactSimilarity,
+      selectedCardCount: Array.isArray(item.used_card_ids) ? item.used_card_ids.length : 0,
+      selectedFactCount: Array.isArray(item.used_fact_ids) ? item.used_fact_ids.length : 0,
+      directAnswerPointCount: Array.isArray(item.direct_answer_points) ? item.direct_answer_points.length : 0,
       topCardIds: topCards.map((card) => card.knowledge_card_id),
       topFactIds: topFacts.map((fact) => fact.knowledge_fact_id),
       topScores: [
         ...topCards.map((card) => ({ kind: "card" as const, id: card.knowledge_card_id, similarity: card.similarity })),
         ...topFacts.map((fact) => ({ kind: "fact" as const, id: fact.knowledge_fact_id, similarity: fact.similarity }))
       ],
-      gapReason: item.support_strength === "none"
+      gapReason: kbAnswerability === "unanswered"
         ? "no_support_above_threshold"
-        : (item.support_strength === "partial" ? "partial_support_only" : null)
+        : (kbAnswerability === "partial" ? "partial_support_only" : null)
     };
   });
 
@@ -811,6 +845,15 @@ export async function persistCoverageGapEvents(db: Queryable, input: {
          query_text,
          requested_coverage_item_text,
          support_strength,
+         observed_support_strength,
+         kb_answerability,
+         answered_from_kb,
+         unanswered_from_kb,
+         max_card_similarity,
+         max_fact_similarity,
+         selected_card_count,
+         selected_fact_count,
+         direct_answer_point_count,
          top_card_ids_json,
          top_fact_ids_json,
          top_scores_json,
@@ -818,7 +861,7 @@ export async function persistCoverageGapEvents(db: Queryable, input: {
          metadata_json
        )
        VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13::jsonb
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19::jsonb, $20::jsonb, $21, $22::jsonb
        )`,
       [
         event.knowledgeCoverageEventId,
@@ -829,6 +872,15 @@ export async function persistCoverageGapEvents(db: Queryable, input: {
         input.queryText,
         event.requestedCoverageItemText,
         event.supportStrength,
+        event.observedSupportStrength,
+        event.kbAnswerability,
+        event.answeredFromKb,
+        event.unansweredFromKb,
+        event.maxCardSimilarity,
+        event.maxFactSimilarity,
+        event.selectedCardCount,
+        event.selectedFactCount,
+        event.directAnswerPointCount,
         JSON.stringify(event.topCardIds),
         JSON.stringify(event.topFactIds),
         JSON.stringify(event.topScores),
