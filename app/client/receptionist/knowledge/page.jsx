@@ -252,6 +252,7 @@ export default function ReceptionistKnowledgePage() {
   const [buildBusyKind, setBuildBusyKind] = useState('');
   const [previewBusy, setPreviewBusy] = useState(false);
   const [activeGuideKey, setActiveGuideKey] = useState('website');
+  const [websiteSectionExpanded, setWebsiteSectionExpanded] = useState(false);
 
   const [documentForm, setDocumentForm] = useState({
     title: '',
@@ -564,6 +565,12 @@ export default function ReceptionistKnowledgePage() {
     setActiveGuideKey('salesReceptionistNumber');
     guidePanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+  const toggleWebsiteSectionExpanded = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveGuideKey('website');
+    setWebsiteSectionExpanded((current) => !current);
+  };
 
   return (
     <SectionPage
@@ -592,49 +599,71 @@ export default function ReceptionistKnowledgePage() {
                   onClick={() => setActiveGuideKey('website')}
                   onFocusCapture={() => setActiveGuideKey('website')}
                 >
-                  <div className="mb-4">
-                    <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website Base</h4>
-                    <p className="mt-1 text-sm text-slate-500">Crawl the main website and refresh the base knowledge layer.</p>
-                  </div>
-                  <label className="sr-only">Website URL</label>
-                  <input
-                    className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
-                    value={buildForm.websiteUrl}
-                    onChange={(event) => setBuildForm({ websiteUrl: event.target.value })}
-                    onFocus={() => setActiveGuideKey('website')}
-                    placeholder="https://example.com"
-                  />
-                  {!latestBuild && buildForm.websiteUrl ? (
-                    <div className="mt-2 text-xs text-slate-500">
-                      Pre-filled from tenant setup. You can change it before creating the first build.
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website Base</h4>
+                      <p className="mt-1 text-sm text-slate-500">Crawl the main website and refresh the base knowledge layer.</p>
                     </div>
-                  ) : null}
-                  <div className="mt-4 flex flex-wrap items-center gap-3" onClick={() => setActiveGuideKey('websiteBuild')} onFocusCapture={() => setActiveGuideKey('websiteBuild')}>
-                    <Button
-                      className="h-auto rounded px-6 py-3 text-xs font-bold uppercase tracking-[0.18em]"
-                      onClick={() => queueBuild('website_base')}
-                      disabled={buildBusyKind === 'website_base'}
+                    <button
+                      type="button"
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                      onClick={toggleWebsiteSectionExpanded}
+                      aria-label={websiteSectionExpanded ? 'Collapse website base section' : 'Expand website base section'}
+                      aria-expanded={websiteSectionExpanded}
                     >
-                      {buildBusyKind === 'website_base' ? 'Queueing...' : 'Rebuild Website'}
-                    </Button>
-                    {latestWebsiteBuild ? (
-                      <span className={`badge ${buildBadgeTone(latestWebsiteBuild.status)}`}>{buildStatusLabel(latestWebsiteBuild.status)}</span>
-                    ) : (
-                      <span className="text-xs text-slate-500">No website rebuild yet.</span>
-                    )}
+                      <svg
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        className={`h-5 w-5 transition-transform ${websiteSectionExpanded ? 'rotate-180' : ''}`}
+                        aria-hidden="true"
+                      >
+                        <path d="M5 8l5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
                   </div>
-                  {latestWebsiteBuild ? (
-                    <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <div className="font-semibold text-slate-900">Latest Website Build</div>
-                          <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestWebsiteBuild, 0)}</div>
+                  {websiteSectionExpanded ? (
+                    <>
+                      <label className="sr-only">Website URL</label>
+                      <input
+                        className="mt-4 w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                        value={buildForm.websiteUrl}
+                        onChange={(event) => setBuildForm({ websiteUrl: event.target.value })}
+                        onFocus={() => setActiveGuideKey('website')}
+                        placeholder="https://example.com"
+                      />
+                      {!latestBuild && buildForm.websiteUrl ? (
+                        <div className="mt-2 text-xs text-slate-500">
+                          Pre-filled from tenant setup. You can change it before creating the first build.
                         </div>
-                        <span className={`badge ${buildBadgeTone(latestWebsiteBuild.status)}`}>{buildStatusLabel(latestWebsiteBuild.status)}</span>
+                      ) : null}
+                      <div className="mt-4 flex flex-wrap items-center gap-3" onClick={() => setActiveGuideKey('websiteBuild')} onFocusCapture={() => setActiveGuideKey('websiteBuild')}>
+                        <Button
+                          className="h-auto rounded px-6 py-3 text-xs font-bold uppercase tracking-[0.18em]"
+                          onClick={() => queueBuild('website_base')}
+                          disabled={buildBusyKind === 'website_base'}
+                        >
+                          {buildBusyKind === 'website_base' ? 'Queueing...' : 'Rebuild Website'}
+                        </Button>
+                        {latestWebsiteBuild ? (
+                          <span className={`badge ${buildBadgeTone(latestWebsiteBuild.status)}`}>{buildStatusLabel(latestWebsiteBuild.status)}</span>
+                        ) : (
+                          <span className="text-xs text-slate-500">No website rebuild yet.</span>
+                        )}
                       </div>
-                      <div className="mt-2 text-sm text-slate-600">{renderBuildProgress(latestWebsiteBuild)}</div>
-                      <BuildProgressMeter build={latestWebsiteBuild} compact />
-                    </div>
+                      {latestWebsiteBuild ? (
+                        <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <div className="font-semibold text-slate-900">Latest Website Build</div>
+                              <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestWebsiteBuild, 0)}</div>
+                            </div>
+                            <span className={`badge ${buildBadgeTone(latestWebsiteBuild.status)}`}>{buildStatusLabel(latestWebsiteBuild.status)}</span>
+                          </div>
+                          <div className="mt-2 text-sm text-slate-600">{renderBuildProgress(latestWebsiteBuild)}</div>
+                          <BuildProgressMeter build={latestWebsiteBuild} compact />
+                        </div>
+                      ) : null}
+                    </>
                   ) : null}
                 </div>
 
