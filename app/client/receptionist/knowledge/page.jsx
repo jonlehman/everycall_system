@@ -482,6 +482,13 @@ export default function ReceptionistKnowledgePage() {
     return kind === 'website_base' || kind === 'legacy_combined';
   }) || null;
   const latestDocumentBuild = buildState.builds.find((build) => String(build?.build_kind || '').trim().toLowerCase() === 'document_overlay') || null;
+  const appliedDocumentIds = new Set(
+    Array.isArray(latestLiveBuild?.intake_metadata_json?.uploaded_document_ids)
+      ? latestLiveBuild.intake_metadata_json.uploaded_document_ids.map((value) => String(value || '').trim()).filter(Boolean)
+      : []
+  );
+  const pendingApprovedDocuments = approvedUploadedDocuments.filter((document) => !appliedDocumentIds.has(String(document?.uploaded_document_id || '').trim()));
+  const hasPendingApprovedDocuments = pendingApprovedDocuments.length > 0;
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewAnswer = preview?.spokenAnswerEstimate || buildRepresentativeAnswer(previewAnswerPacket);
   const previewAnswerDisplay = previewBusy
@@ -492,6 +499,8 @@ export default function ReceptionistKnowledgePage() {
   const latestBuildStatus = String(latestLiveBuild?.status || '').trim().toLowerCase();
   const statusChip = buildState.builds.some((build) => isBuildActive(build))
     ? { tone: 'warn', label: 'Build In Progress' }
+    : hasPendingApprovedDocuments
+      ? { tone: 'warn', label: 'Documents Pending' }
     : latestBuildStatus === 'published'
       ? { tone: 'ok', label: 'Knowledge Base Active' }
       : latestBuildStatus === 'ready_to_publish'
@@ -713,6 +722,9 @@ export default function ReceptionistKnowledgePage() {
                     </div>
 
                     <div className="mt-4 flex flex-wrap items-center gap-3" onClick={() => setActiveGuideKey('documentApply')} onFocusCapture={() => setActiveGuideKey('documentApply')}>
+                      {hasPendingApprovedDocuments ? (
+                        <span className="inline-flex h-2.5 w-2.5 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)]" aria-hidden="true" />
+                      ) : null}
                       <Button
                         className="h-auto rounded px-6 py-3 text-xs font-bold uppercase tracking-[0.18em]"
                         onClick={() => queueBuild('document_overlay')}
@@ -720,6 +732,11 @@ export default function ReceptionistKnowledgePage() {
                       >
                         {buildBusyKind === 'document_overlay' ? 'Queueing...' : 'Apply Documents'}
                       </Button>
+                      {hasPendingApprovedDocuments ? (
+                        <span className="text-xs font-medium text-amber-700">
+                          {pendingApprovedDocuments.length} pending
+                        </span>
+                      ) : null}
                       {latestDocumentBuild ? (
                         <span className={`badge ${buildBadgeTone(latestDocumentBuild.status)}`}>{buildStatusLabel(latestDocumentBuild.status)}</span>
                       ) : (
