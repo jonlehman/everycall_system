@@ -1978,9 +1978,6 @@ async function collectDocumentOverlaySourcePayload(db, tenantKey, input = {}, bu
   const effectiveUploadedDocumentIds = requestedUploadedDocumentIds.length
     ? requestedUploadedDocumentIds
     : await loadApprovedUploadedDocumentIds(db, tenantKey);
-  if (!effectiveUploadedDocumentIds.length) {
-    throw new Error("approved_document_required");
-  }
 
   const [uploadedDocumentSources, setupInterviewSources] = await Promise.all([
     loadUploadedDocumentSourceItems(db, tenantKey, effectiveUploadedDocumentIds),
@@ -4367,9 +4364,6 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
   }
   if (!websiteUrl && !uploadedDocumentIds.length && !setupInterviewSessionIds.length) {
     throw new Error("approved_source_required");
-  }
-  if (buildKind === "document_overlay" && !uploadedDocumentIds.length) {
-    throw new Error("approved_document_required");
   }
 
   const inputFingerprint = buildSourceInputFingerprint({

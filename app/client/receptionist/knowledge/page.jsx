@@ -59,9 +59,30 @@ function buildStatusLabel(status) {
   return formatLabel(normalized || status) || 'Unknown';
 }
 
-function buildStatusTone(status, hasPendingApprovedDocuments = false) {
-  if (hasPendingApprovedDocuments) return 'warn';
+function buildStatusTone(status, hasPendingDocumentChanges = false) {
+  if (hasPendingDocumentChanges) return 'warn';
   return buildBadgeTone(status);
+}
+
+function buildDocumentPendingState({ approvedDocuments = [], latestLiveBuild = null } = {}) {
+  const appliedDocumentIds = new Set(
+    Array.isArray(latestLiveBuild?.intake_metadata_json?.uploaded_document_ids)
+      ? latestLiveBuild.intake_metadata_json.uploaded_document_ids.map((value) => String(value || '').trim()).filter(Boolean)
+      : []
+  );
+  const approvedDocumentIds = new Set(
+    approvedDocuments
+      .map((document) => String(document?.uploaded_document_id || '').trim())
+      .filter(Boolean)
+  );
+  const pendingApprovedDocuments = approvedDocuments.filter((document) => !appliedDocumentIds.has(String(document?.uploaded_document_id || '').trim()));
+  const removedLiveDocumentIds = Array.from(appliedDocumentIds).filter((id) => !approvedDocumentIds.has(id));
+  return {
+    pendingApprovedDocuments,
+    removedLiveDocumentIds,
+    pendingCount: pendingApprovedDocuments.length + removedLiveDocumentIds.length,
+    hasPendingChanges: pendingApprovedDocuments.length > 0 || removedLiveDocumentIds.length > 0
+  };
 }
 
 function renderBuildProgress(build) {
@@ -227,6 +248,7 @@ export default function ReceptionistKnowledgePage() {
   const [status, setStatus] = useState({ message: 'Loading knowledge tools...', tone: 'warn' });
   const [savingDocument, setSavingDocument] = useState(false);
   const [readingDocumentFile, setReadingDocumentFile] = useState(false);
+  const [deletingDocumentId, setDeletingDocumentId] = useState('');
   const [buildBusyKind, setBuildBusyKind] = useState('');
   const [previewBusy, setPreviewBusy] = useState(false);
   const [activeGuideKey, setActiveGuideKey] = useState('website');
@@ -311,8 +333,8 @@ export default function ReceptionistKnowledgePage() {
     const normalizedBuildKind = String(buildKind || '').trim().toLowerCase();
     const isWebsiteBuild = normalizedBuildKind === 'website_base';
     const approvedDocumentIds = approvedUploadedDocuments.map((document) => document.uploaded_document_id);
-    if (!isWebsiteBuild && !approvedDocumentIds.length) {
-      setStatus({ message: 'Save at least one approved document before applying documents.', tone: 'bad' });
+    if (!isWebsiteBuild && !canApplyDocuments) {
+      setStatus({ message: 'Save a document or remove a live document before applying documents.', tone: 'bad' });
       return;
     }
 
@@ -351,6 +373,34 @@ export default function ReceptionistKnowledgePage() {
       setStatus({ message: isWebsiteBuild ? 'Website rebuild failed.' : 'Document apply failed.', tone: 'bad' });
     } finally {
       setBuildBusyKind('');
+    }
+  };
+
+  const archiveDocument = async (uploadedDocumentId, title) => {
+    const normalizedId = String(uploadedDocumentId || '').trim();
+    if (!normalizedId) return;
+    const label = String(title || 'this document').trim() || 'this document';
+    if (typeof window !== 'undefined' && !window.confirm(`Remove ${label} from future knowledge builds? It will stay live until you click Apply Documents.`)) {
+      return;
+    }
+
+    setDeletingDocumentId(normalizedId);
+    setStatus({ message: 'Removing document...', tone: 'warn' });
+    try {
+      const data = await fetchJson(`/api/v1/knowledge/uploaded-documents/${encodeURIComponent(normalizedId)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!data?.ok) {
+        setStatus({ message: data?.message || 'Could not remove that document.', tone: 'bad' });
+        return;
+      }
+      await loadWorkspace({ silent: true });
+      setStatus({ message: 'Document removed from future builds. Apply documents to update the live knowledge base.', tone: 'ok' });
+    } catch {
+      setStatus({ message: 'Could not remove that document.', tone: 'bad' });
+    } finally {
+      setDeletingDocumentId('');
     }
   };
 
@@ -487,13 +537,9 @@ export default function ReceptionistKnowledgePage() {
     return kind === 'website_base' || kind === 'legacy_combined';
   }) || null;
   const latestDocumentBuild = buildState.builds.find((build) => String(build?.build_kind || '').trim().toLowerCase() === 'document_overlay') || null;
-  const appliedDocumentIds = new Set(
-    Array.isArray(latestLiveBuild?.intake_metadata_json?.uploaded_document_ids)
-      ? latestLiveBuild.intake_metadata_json.uploaded_document_ids.map((value) => String(value || '').trim()).filter(Boolean)
-      : []
-  );
-  const pendingApprovedDocuments = approvedUploadedDocuments.filter((document) => !appliedDocumentIds.has(String(document?.uploaded_document_id || '').trim()));
-  const hasPendingApprovedDocuments = pendingApprovedDocuments.length > 0;
+  const documentPendingState = buildDocumentPendingState({ approvedDocuments: approvedUploadedDocuments, latestLiveBuild });
+  const hasPendingDocumentChanges = documentPendingState.hasPendingChanges;
+  const canApplyDocuments = approvedUploadedDocuments.length > 0 || documentPendingState.removedLiveDocumentIds.length > 0;
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewAnswer = preview?.spokenAnswerEstimate || buildRepresentativeAnswer(previewAnswerPacket);
   const previewAnswerDisplay = previewBusy
@@ -504,7 +550,7 @@ export default function ReceptionistKnowledgePage() {
   const latestBuildStatus = String(latestLiveBuild?.status || '').trim().toLowerCase();
   const statusChip = buildState.builds.some((build) => isBuildActive(build))
     ? { tone: 'warn', label: 'Build In Progress' }
-    : hasPendingApprovedDocuments
+    : hasPendingDocumentChanges
       ? { tone: 'warn', label: 'Documents Pending' }
     : latestBuildStatus === 'published'
       ? { tone: 'ok', label: 'Knowledge Base Active' }
@@ -706,7 +752,17 @@ export default function ReceptionistKnowledgePage() {
                               <div className="font-semibold text-slate-900">{document.title}</div>
                               <div className="text-xs text-slate-500">{document.uploaded_document_id}</div>
                             </div>
-                            <span className={`badge ${document.status === 'approved' ? 'ok' : 'warn'}`}>{document.status}</span>
+                            <div className="flex items-center gap-2">
+                              <span className={`badge ${document.status === 'approved' ? 'ok' : 'warn'}`}>{document.status}</span>
+                              <button
+                                type="button"
+                                className="rounded border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => archiveDocument(document.uploaded_document_id, document.title)}
+                                disabled={Boolean(deletingDocumentId) || buildBusyKind === 'document_overlay'}
+                              >
+                                {deletingDocumentId === document.uploaded_document_id ? 'Removing...' : 'Delete'}
+                              </button>
+                            </div>
                           </div>
                           <div className="mt-2 text-sm text-slate-600">
                             {formatLabel(document.document_class)} · {formatLabel(document.source_authority)}
@@ -727,19 +783,19 @@ export default function ReceptionistKnowledgePage() {
                     </div>
 
                     <div className="mt-4 flex flex-wrap items-center gap-3" onClick={() => setActiveGuideKey('documentApply')} onFocusCapture={() => setActiveGuideKey('documentApply')}>
-                      {hasPendingApprovedDocuments ? (
+                      {hasPendingDocumentChanges ? (
                         <span className="inline-flex h-2.5 w-2.5 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)]" aria-hidden="true" />
                       ) : null}
                       <Button
                         className="h-auto rounded px-6 py-3 text-xs font-bold uppercase tracking-[0.18em]"
                         onClick={() => queueBuild('document_overlay')}
-                        disabled={buildBusyKind === 'document_overlay' || !approvedUploadedDocuments.length}
+                        disabled={buildBusyKind === 'document_overlay' || !canApplyDocuments}
                       >
                         {buildBusyKind === 'document_overlay' ? 'Queueing...' : 'Apply Documents'}
                       </Button>
-                      {hasPendingApprovedDocuments ? (
+                      {hasPendingDocumentChanges ? (
                         <span className="text-xs font-medium text-amber-700">
-                          {pendingApprovedDocuments.length} pending
+                          {documentPendingState.pendingCount} pending
                         </span>
                       ) : null}
                       {latestDocumentBuild ? (
@@ -778,7 +834,7 @@ export default function ReceptionistKnowledgePage() {
                         <div className="font-semibold text-slate-900">Live Knowledge Base</div>
                         <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestLiveBuild, 0)}</div>
                       </div>
-                      <span className={`badge ${buildStatusTone(latestLiveBuild.status, hasPendingApprovedDocuments)}`}>{hasPendingApprovedDocuments ? 'Documents Pending' : buildStatusLabel(latestLiveBuild.status)}</span>
+                      <span className={`badge ${buildStatusTone(latestLiveBuild.status, hasPendingDocumentChanges)}`}>{hasPendingDocumentChanges ? 'Documents Pending' : buildStatusLabel(latestLiveBuild.status)}</span>
                     </div>
                     <div className="mt-2 text-sm text-slate-600">
                       Cards: {latestLiveBuild.artifact_counts_json?.cards || 0} · Facts: {latestLiveBuild.artifact_counts_json?.facts || 0}

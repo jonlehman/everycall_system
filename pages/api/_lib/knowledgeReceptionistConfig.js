@@ -713,14 +713,16 @@ function isSupportedUploadedDocumentFile({ filename = "", mimeType = "" } = {}) 
   return false;
 }
 
-export async function listUploadedDocuments(db, tenantKey) {
+export async function listUploadedDocuments(db, tenantKey, options = {}) {
   await assertConfigTablesReady(db);
+  const includeArchived = options?.includeArchived === true;
   const res = await db.query(
     `SELECT *
      FROM uploaded_documents
      WHERE tenant_key = $1
+       AND ($2::boolean OR status <> 'archived')
      ORDER BY updated_at DESC`,
-    [tenantKey]
+    [tenantKey, includeArchived]
   );
   return res.rows || [];
 }
@@ -864,6 +866,49 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
       [uploadedDocumentId]
     );
     return res.rows[0] || null;
+  });
+}
+
+export async function archiveUploadedDocument(db, tenantKey, uploadedDocumentId, actor = null) {
+  await assertConfigTablesReady(db);
+  return withTransaction(db, async (client) => {
+    const id = normalizeText(uploadedDocumentId);
+    if (!id) {
+      throw new Error("uploaded_document_not_found");
+    }
+
+    const existingRes = await client.query(
+      `SELECT *
+       FROM uploaded_documents
+       WHERE tenant_key = $1
+         AND uploaded_document_id = $2
+       LIMIT 1`,
+      [tenantKey, id]
+    );
+    const existing = existingRes.rows[0] || null;
+    if (!existing) {
+      throw new Error("uploaded_document_not_found");
+    }
+    if (normalizeText(existing.status) === "archived") {
+      return existing;
+    }
+
+    const archivedRes = await client.query(
+      `UPDATE uploaded_documents
+       SET status = 'archived',
+           updated_at = NOW()
+       WHERE tenant_key = $1
+         AND uploaded_document_id = $2
+       RETURNING *`,
+      [tenantKey, id]
+    );
+    const archived = archivedRes.rows[0] || null;
+    await writeAuditLog(client, tenantKey, actor, "knowledge_receptionist.uploaded_document.archived", {
+      uploaded_document_id: id,
+      prior_status: existing.status || null,
+      title: existing.title || null
+    });
+    return archived;
   });
 }
 

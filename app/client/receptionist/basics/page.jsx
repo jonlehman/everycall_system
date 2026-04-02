@@ -21,6 +21,24 @@ function isInteractiveGuideTarget(target) {
   return target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, button, a, label, [role="button"]'));
 }
 
+function buildDocumentPendingState({ approvedDocuments = [], latestLiveBuild = null } = {}) {
+  const appliedDocumentIds = new Set(
+    Array.isArray(latestLiveBuild?.intake_metadata_json?.uploaded_document_ids)
+      ? latestLiveBuild.intake_metadata_json.uploaded_document_ids.map((value) => String(value || '').trim()).filter(Boolean)
+      : []
+  );
+  const approvedDocumentIds = new Set(
+    approvedDocuments
+      .map((document) => String(document?.uploaded_document_id || '').trim())
+      .filter(Boolean)
+  );
+  const pendingApprovedDocuments = approvedDocuments.filter((document) => !appliedDocumentIds.has(String(document?.uploaded_document_id || '').trim()));
+  const removedLiveDocumentIds = Array.from(appliedDocumentIds).filter((id) => !approvedDocumentIds.has(id));
+  return {
+    hasPendingChanges: pendingApprovedDocuments.length > 0 || removedLiveDocumentIds.length > 0
+  };
+}
+
 const voiceOptions = [
   { value: 'alloy', label: 'Alloy', description: 'Balanced' },
   { value: 'ash', label: 'Ash', description: 'Clear' },
@@ -159,14 +177,12 @@ export default function ReceptionistBasicsPage() {
       const approvedDocuments = Array.isArray(documentData?.documents)
         ? documentData.documents.filter((document) => String(document?.status || '').trim() === 'approved')
         : [];
-      const appliedDocumentIds = new Set(
-        Array.isArray(latestLiveBuild?.intake_metadata_json?.uploaded_document_ids)
-          ? latestLiveBuild.intake_metadata_json.uploaded_document_ids.map((value) => String(value || '').trim()).filter(Boolean)
-          : []
-      );
-      const hasPendingApprovedDocuments = approvedDocuments.some((document) => !appliedDocumentIds.has(String(document?.uploaded_document_id || '').trim()));
+      const hasPendingDocumentChanges = buildDocumentPendingState({
+        approvedDocuments,
+        latestLiveBuild
+      }).hasPendingChanges;
       setKnowledgeStatusChip(
-        hasPendingApprovedDocuments
+        hasPendingDocumentChanges
           ? { tone: 'warn', label: 'Documents Pending' }
           : { tone: 'ok', label: 'Sales Receptionist Active' }
       );
