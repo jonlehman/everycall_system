@@ -109,6 +109,7 @@ export default async function handler(req, res) {
       recentCallsResult,
       classificationResult,
       volumeTrendResult,
+      knowledgeSignalsResult,
       buildsData
     ] = await Promise.all([
       pool.query(
@@ -196,6 +197,33 @@ export default async function handler(req, res) {
          ORDER BY 1 ASC`,
         [tenantKey]
       ),
+      pool.query(
+        `SELECT
+           COUNT(*)::int AS unanswered_question_calls_30d
+         FROM calls c
+         LEFT JOIN call_details d ON d.call_sid = c.call_sid
+         WHERE c.tenant_key = $1
+           AND c.created_at >= NOW() - interval '30 days'
+           AND (
+             COALESCE(d.transcript_combined, d.transcript, '') ILIKE ANY (ARRAY[
+               '%don''t know%',
+               '%do not know%',
+               '%have someone call%',
+               '%call you back%',
+               '%call them back%',
+               '%someone call%'
+             ])
+             OR COALESCE(c.summary, '') ILIKE ANY (ARRAY[
+               '%don''t know%',
+               '%do not know%',
+               '%have someone call%',
+               '%call you back%',
+               '%call them back%',
+               '%someone call%'
+             ])
+           )`,
+        [tenantKey]
+      ),
       listKnowledgeReceptionistBuilds(pool, tenantKey)
     ]);
 
@@ -203,6 +231,7 @@ export default async function handler(req, res) {
     const leadSummary = leadSummaryResult.rows[0] || {};
     const validLeadCount30d = Number(callsSummary.valid_lead_count_30d || 0);
     const calls30d = Number(callsSummary.calls_30d || 0);
+    const unansweredQuestionCalls30d = Number(knowledgeSignalsResult.rows?.[0]?.unanswered_question_calls_30d || 0);
     const builds = Array.isArray(buildsData?.builds) ? buildsData.builds : [];
     const publishedBuilds = builds.filter((build) => normalizeText(build?.status).toLowerCase() === "published");
     const latestBuild = builds[0] || null;
@@ -306,6 +335,12 @@ export default async function handler(req, res) {
       recentCalls: recentCallsResult.rows || [],
       classificationBreakdown,
       callVolumeLast7Days,
+      knowledgeSignals: {
+        unansweredQuestionCalls30d,
+        answeredQuestionRate30d: calls30d
+          ? Math.max(0, Math.round(((calls30d - unansweredQuestionCalls30d) / calls30d) * 1000) / 10)
+          : 100
+      },
       nextSteps
     });
   } catch (err) {
