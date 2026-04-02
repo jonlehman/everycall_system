@@ -1752,6 +1752,14 @@ async function assertSliceTablesReady(db) {
   if (!normalizeText(res.rows[0]?.table_name)) {
     throw new Error("knowledge_receptionist_migrations_not_applied");
   }
+  await db.query(
+    `ALTER TABLE knowledge_builds
+       ADD COLUMN IF NOT EXISTS build_kind TEXT NOT NULL DEFAULT 'legacy_combined',
+       ADD COLUMN IF NOT EXISTS base_build_id TEXT REFERENCES knowledge_builds(build_id) ON DELETE SET NULL,
+       ADD COLUMN IF NOT EXISTS overlay_build_id TEXT REFERENCES knowledge_builds(build_id) ON DELETE SET NULL,
+       ADD COLUMN IF NOT EXISTS composite_parent_build_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+       ADD COLUMN IF NOT EXISTS source_fingerprint_json JSONB NOT NULL DEFAULT '{}'::jsonb;`
+  );
 }
 
 async function nextBuildVersion(db, tenantKey) {
@@ -1777,8 +1785,18 @@ function sameNormalizedIdArray(left, right) {
   return leftValues.every((value, index) => value === rightValues[index]);
 }
 
-function buildSourceInputFingerprint({ websiteUrl, uploadedDocumentIds, setupInterviewSessionIds }) {
+function normalizeBuildKind(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  if (normalized === "website_base") return "website_base";
+  if (normalized === "document_overlay") return "document_overlay";
+  if (normalized === "composite") return "composite";
+  return "legacy_combined";
+}
+
+function buildSourceInputFingerprint({ buildKind, websiteUrl, uploadedDocumentIds, setupInterviewSessionIds, baseBuildId }) {
   return {
+    build_kind: normalizeBuildKind(buildKind),
+    base_build_id: normalizeText(baseBuildId),
     website_root_url: normalizeWebsiteUrl(websiteUrl),
     uploaded_document_ids: uniqueValues(uploadedDocumentIds).sort(),
     setup_interview_session_ids: uniqueValues(setupInterviewSessionIds).sort()
@@ -1791,6 +1809,8 @@ async function findResumableBuildState(db, tenantKey, inputFingerprint, preferre
     `SELECT kb.build_id,
             kb.version,
             kb.status AS build_status,
+            kb.build_kind,
+            kb.base_build_id,
             kb.domain_assignments_json,
             sis.source_intake_session_id,
             sis.status AS intake_status,
@@ -1820,6 +1840,8 @@ async function findResumableBuildState(db, tenantKey, inputFingerprint, preferre
       ? row.metadata_json
       : {};
     const rowFingerprint = buildSourceInputFingerprint({
+      buildKind: row.build_kind,
+      baseBuildId: row.base_build_id,
       websiteUrl: row.website_root_url,
       uploadedDocumentIds: metadata.uploaded_document_ids || [],
       setupInterviewSessionIds: metadata.setup_interview_session_ids || []
@@ -1828,6 +1850,8 @@ async function findResumableBuildState(db, tenantKey, inputFingerprint, preferre
       || Number(row.persistence_checkpoint_json?.total_persisted_sources || 0) > 0;
     const buildStatus = normalizeText(row.build_status).toLowerCase();
     if (!hasPersistedState && !["queued", "running"].includes(buildStatus)) continue;
+    if (rowFingerprint.build_kind !== inputFingerprint.build_kind) continue;
+    if (rowFingerprint.base_build_id !== inputFingerprint.base_build_id) continue;
     if (rowFingerprint.website_root_url !== inputFingerprint.website_root_url) continue;
     if (!sameNormalizedIdArray(rowFingerprint.uploaded_document_ids, inputFingerprint.uploaded_document_ids)) continue;
     if (!sameNormalizedIdArray(rowFingerprint.setup_interview_session_ids, inputFingerprint.setup_interview_session_ids)) continue;
@@ -1850,11 +1874,14 @@ async function loadUploadedDocumentSourceItems(db, tenantKey, uploadedDocumentId
   if (res.rows.length !== ids.length) {
     throw new Error("uploaded_document_not_found");
   }
-  return res.rows.map((row) => normalizeSourceItem({
+  const byId = new Map((res.rows || []).map((row) => [normalizeText(row.uploaded_document_id), row]));
+  return ids.map((id) => byId.get(id)).filter(Boolean).map((row) => normalizeSourceItem({
     sourceChannel: "uploaded_document",
-    sourceKind: /\.pdf$/i.test(normalizeText(row.filename || row.mime_type)) ? "pdf" : "text",
+    sourceKind: normalizeText(row.source_kind) === "single_page_url"
+      ? "html"
+      : (/\.pdf$/i.test(normalizeText(row.filename || row.mime_type)) ? "pdf" : "text"),
     sourceAuthority: row.source_authority,
-    sourceLocator: `uploaded-document:${row.uploaded_document_id}`,
+    sourceLocator: normalizeText(row.source_locator) || `uploaded-document:${row.uploaded_document_id}`,
     title: row.title,
     text: row.body_text,
     pageType: classifyTextPageType(row.title, row.body_text, row.document_class === "policy" ? "policy" : "unknown_mixed"),
@@ -1863,9 +1890,135 @@ async function loadUploadedDocumentSourceItems(db, tenantKey, uploadedDocumentId
       uploaded_document_id: row.uploaded_document_id,
       filename: row.filename,
       mime_type: row.mime_type,
-      status: row.status
+      status: row.status,
+      source_kind: row.source_kind,
+      source_locator: row.source_locator,
+      fetch_status: row.fetch_status
     }
   }));
+}
+
+async function loadApprovedUploadedDocumentIds(db, tenantKey) {
+  const res = await db.query(
+    `SELECT uploaded_document_id
+     FROM uploaded_documents
+     WHERE tenant_key = $1
+       AND status = 'approved'
+     ORDER BY updated_at DESC, uploaded_document_id DESC`,
+    [tenantKey]
+  );
+  return uniqueValues((res.rows || []).map((row) => row.uploaded_document_id));
+}
+
+function isReusableBaseSourceChannel(value) {
+  const normalized = normalizeText(value);
+  return normalized === "website_page" || normalized === "website_file" || normalized === "owner_interview";
+}
+
+async function loadDocumentOverlayBaseBuild(db, tenantKey, preferredBaseBuildId = "") {
+  const preferred = normalizeText(preferredBaseBuildId);
+  const params = [tenantKey];
+  let filterSql = "";
+  if (preferred) {
+    params.push(preferred);
+    filterSql = `AND kb.build_id = $2`;
+  } else {
+    filterSql = `AND (kb.build_id = pointer.active_build_id OR kb.status IN ('published', 'superseded', 'ready_to_publish'))`;
+  }
+  const res = await db.query(
+    `SELECT kb.build_id,
+            kb.status,
+            kb.build_kind,
+            sis.source_intake_session_id,
+            sis.website_root_url
+     FROM knowledge_builds kb
+     LEFT JOIN tenant_active_knowledge_builds pointer
+       ON pointer.tenant_key = kb.tenant_key
+     LEFT JOIN source_intake_sessions sis
+       ON sis.build_id = kb.build_id
+     WHERE kb.tenant_key = $1
+       ${filterSql}
+     ORDER BY CASE WHEN kb.build_id = pointer.active_build_id THEN 0 ELSE 1 END,
+              kb.created_at DESC
+     LIMIT 1`,
+    params
+  );
+  return res.rows[0] || null;
+}
+
+async function loadReusableBaseSourceItems(db, tenantKey, baseBuildId, sourceIntakeSessionId) {
+  const rows = await loadPersistedSourceIntakeItems(
+    db,
+    { tenant_key: tenantKey, build_id: baseBuildId },
+    sourceIntakeSessionId,
+    "included"
+  );
+  return (rows || [])
+    .filter((row) => isReusableBaseSourceChannel(row.source_channel))
+    .map((row) => buildSourceItemFromIntakeRow(row));
+}
+
+async function collectDocumentOverlaySourcePayload(db, tenantKey, input = {}, buildInfo, sourceIntakeSessionId, preferredBaseBuildId = "") {
+  const baseBuild = await loadDocumentOverlayBaseBuild(db, tenantKey, preferredBaseBuildId);
+  if (!baseBuild?.build_id || !baseBuild?.source_intake_session_id) {
+    throw new Error("overlay_base_build_required");
+  }
+
+  const baseSourceItems = await loadReusableBaseSourceItems(
+    db,
+    tenantKey,
+    baseBuild.build_id,
+    baseBuild.source_intake_session_id
+  );
+  if (!baseSourceItems.length) {
+    throw new Error("overlay_base_sources_missing");
+  }
+
+  const requestedUploadedDocumentIds = normalizeIdArray(input.uploadedDocumentIds || input.uploaded_document_ids);
+  const effectiveUploadedDocumentIds = requestedUploadedDocumentIds.length
+    ? requestedUploadedDocumentIds
+    : await loadApprovedUploadedDocumentIds(db, tenantKey);
+  if (!effectiveUploadedDocumentIds.length) {
+    throw new Error("approved_document_required");
+  }
+
+  const [uploadedDocumentSources, setupInterviewSources] = await Promise.all([
+    loadUploadedDocumentSourceItems(db, tenantKey, effectiveUploadedDocumentIds),
+    loadSetupInterviewSourceItems(db, tenantKey, input.setupInterviewSessionIds || input.setup_interview_session_ids || [])
+  ]);
+
+  const includedSourceItems = [...baseSourceItems, ...uploadedDocumentSources, ...setupInterviewSources];
+  const discoveryEntries = includedSourceItems.map((item) => buildDiscoveryEntryFromSourceItem(buildInfo, sourceIntakeSessionId, item));
+  const reusedWebsitePages = baseSourceItems.filter((item) => item.sourceChannel === "website_page").length;
+  const reusedWebsiteFiles = baseSourceItems.filter((item) => item.sourceChannel === "website_file").length;
+
+  return {
+    baseBuildId: normalizeText(baseBuild.build_id),
+    websiteUrl: normalizeWebsiteUrl(baseBuild.website_root_url),
+    sourceItems: includedSourceItems,
+    discoveryEntries,
+    crawlSummary: buildSourceCollectionSummary(discoveryEntries, {
+      rootUrl: normalizeWebsiteUrl(baseBuild.website_root_url),
+      crawlDeadlineMs: 0,
+      crawlElapsedMs: 0,
+      truncated: false,
+      truncationReasons: [],
+      discoveredWebsitePages: reusedWebsitePages,
+      discoveredWebsiteFiles: reusedWebsiteFiles,
+      includedWebsitePages: reusedWebsitePages,
+      includedWebsiteFiles: reusedWebsiteFiles,
+      skippedCount: 0,
+      failedCount: 0,
+      trueFailedPageCount: 0,
+      trueFailedFileCount: 0,
+      retryArtifactCount: 0,
+      duplicateDiscoveryCount: 0,
+      canonicalizedDiscoveryCount: 0,
+      skippedReasonCounts: {},
+      failedReasonCounts: {}
+    }),
+    warnings: ["website_sources_reused_for_document_overlay"]
+  };
 }
 
 async function loadSetupInterviewSourceItems(db, tenantKey, setupInterviewSessionIds = []) {
@@ -3934,6 +4087,8 @@ async function loadKnowledgeBuildExecutionInput(db, tenantKey, buildId) {
     `SELECT kb.build_id,
             kb.tenant_key,
             kb.status,
+            kb.build_kind,
+            kb.base_build_id,
             kb.domain_assignments_json,
             sis.website_root_url,
             sis.metadata_json
@@ -3953,6 +4108,8 @@ async function loadKnowledgeBuildExecutionInput(db, tenantKey, buildId) {
   return {
     buildId: normalizeText(row.build_id),
     buildStatus: normalizeText(row.status).toLowerCase(),
+    buildKind: normalizeBuildKind(row.build_kind),
+    baseBuildId: normalizeText(row.base_build_id),
     websiteUrl: normalizeWebsiteUrl(row.website_root_url),
     uploadedDocumentIds: normalizeIdArray(metadata.uploaded_document_ids),
     setupInterviewSessionIds: normalizeIdArray(metadata.setup_interview_session_ids),
@@ -4000,6 +4157,8 @@ export async function listKnowledgeReceptionistBuilds(db, tenantKey) {
     db.query(
       `SELECT kb.build_id,
               kb.status,
+              kb.build_kind,
+              kb.base_build_id,
               kb.version,
               kb.domain_assignments_json,
               kb.source_channels_json,
@@ -4104,6 +4263,8 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
       try {
         const buildResult = await createKnowledgeBuild(client, row.tenant_key, {
           buildId: executionInput.buildId,
+          buildKind: executionInput.buildKind,
+          baseBuildId: executionInput.baseBuildId,
           websiteUrl: executionInput.websiteUrl,
           assignments: executionInput.assignments,
           uploadedDocumentIds: executionInput.uploadedDocumentIds,
@@ -4174,20 +4335,46 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
   const enqueueOnly = input.enqueueOnly === true
     || String(input.enqueueOnly || input.enqueue_only || "").toLowerCase() === "true";
   const preferredBuildId = normalizeText(input.buildId || input.build_id);
+  const buildKind = normalizeBuildKind(input.buildKind || input.build_kind);
+  let baseBuildId = normalizeText(input.baseBuildId || input.base_build_id);
   let websiteUrl = normalizeWebsiteUrl(input.websiteUrl || input.website_url);
-  const uploadedDocumentIds = normalizeIdArray(input.uploadedDocumentIds || input.uploaded_document_ids);
+  let uploadedDocumentIds = normalizeIdArray(input.uploadedDocumentIds || input.uploaded_document_ids);
   const setupInterviewSessionIds = normalizeIdArray(input.setupInterviewSessionIds || input.setup_interview_session_ids);
   const forceRescrape = input.forceRescrape === true
     || String(input.forceRescrape || input.force_rescrape || "").toLowerCase() === "true";
-  if (!websiteUrl && !uploadedDocumentIds.length && !setupInterviewSessionIds.length) {
+
+  if (buildKind === "document_overlay" && !uploadedDocumentIds.length) {
+    uploadedDocumentIds = await loadApprovedUploadedDocumentIds(db, tenantKey);
+  }
+  if (buildKind === "website_base" && !uploadedDocumentIds.length) {
+    uploadedDocumentIds = await loadApprovedUploadedDocumentIds(db, tenantKey);
+  }
+
+  if (buildKind !== "document_overlay" && !websiteUrl && !uploadedDocumentIds.length && !setupInterviewSessionIds.length) {
     const bootstrapProfile = await loadTenantBootstrapProfile(db, tenantKey);
     websiteUrl = normalizeWebsiteUrl(bootstrapProfile?.website_url);
+  }
+  if (buildKind === "document_overlay") {
+    const overlayBaseBuild = await loadDocumentOverlayBaseBuild(db, tenantKey, baseBuildId);
+    if (!overlayBaseBuild?.build_id) {
+      throw new Error("overlay_base_build_required");
+    }
+    baseBuildId = normalizeText(overlayBaseBuild.build_id);
+    websiteUrl = normalizeWebsiteUrl(overlayBaseBuild.website_root_url);
+  }
+  if (buildKind === "website_base" && !websiteUrl) {
+    throw new Error("website_url_required");
   }
   if (!websiteUrl && !uploadedDocumentIds.length && !setupInterviewSessionIds.length) {
     throw new Error("approved_source_required");
   }
+  if (buildKind === "document_overlay" && !uploadedDocumentIds.length) {
+    throw new Error("approved_document_required");
+  }
 
   const inputFingerprint = buildSourceInputFingerprint({
+    buildKind,
+    baseBuildId,
     websiteUrl,
     uploadedDocumentIds,
     setupInterviewSessionIds
@@ -4226,7 +4413,7 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
     extraWarnings.push("multi_domain_assignment_present_slice_uses_primary_assignment_only");
   }
   const sourceChannels = [];
-  if (websiteUrl) sourceChannels.push("website_page", "website_file");
+  if (websiteUrl || buildKind === "document_overlay") sourceChannels.push("website_page", "website_file");
   if (uploadedDocumentIds.length) sourceChannels.push("uploaded_document");
   if (setupInterviewSessionIds.length) sourceChannels.push("owner_interview");
   const runtimeEntryMode = setupInterviewSessionIds.length && !websiteUrl && !uploadedDocumentIds.length
@@ -4239,11 +4426,12 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
         `INSERT INTO knowledge_builds (
            build_id, tenant_key, status, version, domain_assignments_json, source_snapshot_id,
            source_channels_json, artifact_counts_json, quality_summary_json, warnings_json, validation_summary_json,
-           created_by_type, created_by_id
+           created_by_type, created_by_id, build_kind, base_build_id, source_fingerprint_json,
+           composite_parent_build_ids_json
          )
          VALUES (
            $1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, '{}'::jsonb, '{}'::jsonb, '[]'::jsonb,
-           '{}'::jsonb, 'tenant', NULL
+           '{}'::jsonb, 'tenant', NULL, $8, $9, $10::jsonb, $11::jsonb
          )`,
         [
           buildId,
@@ -4252,7 +4440,11 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
           version,
           JSON.stringify(effectiveAssignments.map((item) => ({ domain_id: item.domainId, subdomain_id: item.subdomainId }))),
           intakeSessionId,
-          JSON.stringify(sourceChannels)
+          JSON.stringify(sourceChannels),
+          buildKind,
+          baseBuildId || null,
+          JSON.stringify(inputFingerprint),
+          JSON.stringify(baseBuildId ? [baseBuildId] : [])
         ]
       );
       await client.query(
@@ -4271,7 +4463,12 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
           enqueueOnly ? "queued" : "discovering",
           websiteUrl || null,
           JSON.stringify(sourceChannels),
-          JSON.stringify({ uploaded_document_ids: uploadedDocumentIds, setup_interview_session_ids: setupInterviewSessionIds })
+          JSON.stringify({
+            build_kind: buildKind,
+            base_build_id: baseBuildId || null,
+            uploaded_document_ids: uploadedDocumentIds,
+            setup_interview_session_ids: setupInterviewSessionIds
+          })
         ]
       );
     });
@@ -4290,19 +4487,36 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
       await db.query(
         `UPDATE knowledge_builds
          SET status = $2,
+             build_kind = $3,
+             base_build_id = $4,
+             source_fingerprint_json = $5::jsonb,
              warnings_json = CASE WHEN $2 = 'queued' THEN '[]'::jsonb ELSE warnings_json END,
              updated_at = NOW()
          WHERE build_id = $1`,
-        [buildId, queuedStatus]
+        [buildId, queuedStatus, buildKind, baseBuildId || null, JSON.stringify(inputFingerprint)]
       );
       await db.query(
         `UPDATE source_intake_sessions
          SET status = $2,
+             website_root_url = $3,
+             source_channels_json = $4::jsonb,
+             metadata_json = $5::jsonb,
              errors_json = '[]'::jsonb,
              completed_at = CASE WHEN $2 = 'queued' THEN NULL ELSE completed_at END,
              updated_at = NOW()
          WHERE source_intake_session_id = $1`,
-        [intakeSessionId, queuedStatus === "running" ? "running" : "queued"]
+        [
+          intakeSessionId,
+          queuedStatus === "running" ? "running" : "queued",
+          websiteUrl || null,
+          JSON.stringify(sourceChannels),
+          JSON.stringify({
+            build_kind: buildKind,
+            base_build_id: baseBuildId || null,
+            uploaded_document_ids: uploadedDocumentIds,
+            setup_interview_session_ids: setupInterviewSessionIds
+          })
+        ]
       );
     }
     const queuedBuild = await loadKnowledgeBuildRow(db, buildId);
@@ -4339,10 +4553,13 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
     await db.query(
       `UPDATE knowledge_builds
        SET status = 'running',
+           build_kind = $2,
+           base_build_id = $3,
+           source_fingerprint_json = $4::jsonb,
            warnings_json = '[]'::jsonb,
            updated_at = NOW()
        WHERE build_id = $1`,
-      [buildId]
+      [buildId, buildKind, baseBuildId || null, JSON.stringify(inputFingerprint)]
     );
     await db.query(
       `UPDATE source_intake_sessions
@@ -4359,7 +4576,12 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
         rawSourceStageStatus,
         websiteUrl || null,
         JSON.stringify(sourceChannels),
-        JSON.stringify({ uploaded_document_ids: uploadedDocumentIds, setup_interview_session_ids: setupInterviewSessionIds })
+        JSON.stringify({
+          build_kind: buildKind,
+          base_build_id: baseBuildId || null,
+          uploaded_document_ids: uploadedDocumentIds,
+          setup_interview_session_ids: setupInterviewSessionIds
+        })
       ]
     );
 
@@ -4373,16 +4595,31 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
           await client.query(`DELETE FROM source_refs WHERE tenant_key = $1 AND build_id = $2`, [tenantKey, buildId]);
         });
       }
-      const sourcePayload = await collectBuildSourcePayload(
-        db,
-        tenantKey,
-        { uploadedDocumentIds, setupInterviewSessionIds },
-        websiteUrl,
-        rawBuildInfo,
-        intakeSessionId
-      );
+      const sourcePayload = buildKind === "document_overlay"
+        ? await collectDocumentOverlaySourcePayload(
+            db,
+            tenantKey,
+            { uploadedDocumentIds, setupInterviewSessionIds },
+            rawBuildInfo,
+            intakeSessionId,
+            baseBuildId
+          )
+        : await collectBuildSourcePayload(
+            db,
+            tenantKey,
+            { uploadedDocumentIds, setupInterviewSessionIds },
+            websiteUrl,
+            rawBuildInfo,
+            intakeSessionId
+          );
       if (!(sourcePayload.sourceItems || []).length) {
         throw new Error("approved_source_required");
+      }
+      if (normalizeText(sourcePayload.baseBuildId)) {
+        baseBuildId = normalizeText(sourcePayload.baseBuildId);
+      }
+      if (normalizeWebsiteUrl(sourcePayload.websiteUrl)) {
+        websiteUrl = normalizeWebsiteUrl(sourcePayload.websiteUrl);
       }
       extraWarnings.push(...uniqueValues(sourcePayload.warnings || []));
       await persistDiscoveredSourceItems(

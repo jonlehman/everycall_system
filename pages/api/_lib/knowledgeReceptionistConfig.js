@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { extractTextFromDocumentBuffer } from "./knowledgeReceptionistFiles.js";
+import { fetchWebsitePage } from "./knowledgeReceptionistBuilds.js";
 
 const DEFAULT_STAGE_IDS = [
   "opening",
@@ -252,6 +253,14 @@ async function assertConfigTablesReady(db) {
   }
   await db.query(`ALTER TABLE knowledge_runtime_profiles ADD COLUMN IF NOT EXISTS company_description TEXT;`);
   await db.query(`ALTER TABLE knowledge_runtime_profiles ALTER COLUMN greeting_text DROP NOT NULL;`);
+  await db.query(
+    `ALTER TABLE uploaded_documents
+       ADD COLUMN IF NOT EXISTS source_kind TEXT NOT NULL DEFAULT 'file_upload',
+       ADD COLUMN IF NOT EXISTS source_locator TEXT,
+       ADD COLUMN IF NOT EXISTS fetch_status TEXT,
+       ADD COLUMN IF NOT EXISTS fetch_metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+       ADD COLUMN IF NOT EXISTS content_fingerprint TEXT;`
+  );
 }
 
 function actorId(actor) {
@@ -668,12 +677,19 @@ function normalizeUploadedDocumentPayload(payload = {}) {
     else if (documentClass === "marketing") sourceAuthority = "uploaded_first_party_marketing";
     else sourceAuthority = "uploaded_unclassified_pending_review";
   }
+  const explicitSourceKind = normalizeText(payload.sourceKind || payload.source_kind).toLowerCase();
+  const sourceKind = explicitSourceKind
+    || (normalizeText(payload.sourceLocator || payload.source_locator) ? "single_page_url" : (normalizeText(payload.fileBase64 || payload.file_base64 || payload.contentBase64 || payload.content_base64) ? "file_upload" : "inline_text"));
   return {
     uploadedDocumentId: normalizeText(payload.uploadedDocumentId || payload.uploaded_document_id),
     status: normalizeText(payload.status) || "approved",
     title: normalizeText(payload.title),
     filename: normalizeText(payload.filename || payload.fileName || payload.file_name) || null,
     mimeType: normalizeText(payload.mimeType || payload.mime_type) || "text/plain",
+    sourceKind: ["file_upload", "single_page_url", "inline_text"].includes(explicitSourceKind || sourceKind)
+      ? (explicitSourceKind || sourceKind)
+      : "file_upload",
+    sourceLocator: normalizeText(payload.sourceLocator || payload.source_locator),
     sourceAuthority,
     documentClass,
     bodyText: normalizeText(payload.bodyText || payload.body_text),
@@ -713,17 +729,50 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
   await assertConfigTablesReady(db);
   return withTransaction(db, async (client) => {
     const normalized = normalizeUploadedDocumentPayload(payload);
-    if (normalized.fileBase64 && !isSupportedUploadedDocumentFile({ filename: normalized.filename, mimeType: normalized.mimeType })) {
+    if (normalized.sourceKind === "file_upload" && normalized.fileBase64 && !isSupportedUploadedDocumentFile({ filename: normalized.filename, mimeType: normalized.mimeType })) {
       throw new Error("uploaded_document_file_type_not_supported");
     }
-    if (normalized.fileBase64 && estimateBase64DecodedBytes(normalized.fileBase64) > MAX_UPLOADED_DOCUMENT_FILE_BYTES) {
+    if (normalized.sourceKind === "file_upload" && normalized.fileBase64 && estimateBase64DecodedBytes(normalized.fileBase64) > MAX_UPLOADED_DOCUMENT_FILE_BYTES) {
       throw new Error("uploaded_document_file_too_large");
     }
     let bodyText = normalized.bodyText;
     let mimeType = normalized.mimeType;
     let metadata = { ...normalized.metadata };
+    let title = normalized.title || normalized.filename || "Uploaded Document";
+    let filename = normalized.filename;
+    let sourceLocator = normalized.sourceLocator || null;
+    let fetchStatus = null;
+    let fetchMetadata = {};
 
-    if (!bodyText && normalized.fileBase64) {
+    if (normalized.sourceKind === "single_page_url") {
+      if (!sourceLocator) {
+        throw new Error("single_page_url_required");
+      }
+      const fetchedPage = await fetchWebsitePage(sourceLocator);
+      if (!fetchedPage.ok) {
+        throw new Error("single_page_fetch_failed");
+      }
+      bodyText = normalizeText(fetchedPage.text);
+      if (!bodyText) {
+        throw new Error("single_page_empty_text");
+      }
+      sourceLocator = normalizeText(fetchedPage.url) || sourceLocator;
+      title = normalized.title || normalizeText(fetchedPage.title) || sourceLocator;
+      mimeType = "text/html";
+      fetchStatus = "fetched";
+      fetchMetadata = {
+        fetched_url: sourceLocator,
+        final_url: sourceLocator,
+        title: normalizeText(fetchedPage.title) || null,
+        headings: Array.isArray(fetchedPage.headings) ? fetchedPage.headings.filter(Boolean).slice(0, 25) : [],
+        fetched_at: new Date().toISOString()
+      };
+      metadata = {
+        ...metadata,
+        imported_from_single_page: true
+      };
+      filename = null;
+    } else if (!bodyText && normalized.fileBase64) {
       const parsed = extractTextFromDocumentBuffer({
         buffer: Buffer.from(normalized.fileBase64, "base64"),
         mimeType: normalized.mimeType,
@@ -738,7 +787,6 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
       };
     }
 
-    const title = normalized.title || normalized.filename || "Uploaded Document";
     if (!title || !bodyText) {
       throw new Error("uploaded_document_title_and_body_required");
     }
@@ -749,15 +797,23 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
     const sourceHash = stableHash({
       title,
       bodyText,
+      sourceKind: normalized.sourceKind,
+      sourceLocator,
       documentClass: normalized.documentClass,
       sourceAuthority: normalized.sourceAuthority
+    });
+    const contentFingerprint = stableHash({
+      bodyText,
+      mimeType,
+      sourceKind: normalized.sourceKind
     });
     await client.query(
       `INSERT INTO uploaded_documents (
          uploaded_document_id, tenant_key, status, title, filename, mime_type, source_authority, document_class,
-         body_text, metadata_json, source_hash, created_by_type, created_by_id, updated_at
+         body_text, metadata_json, source_hash, created_by_type, created_by_id, updated_at,
+         source_kind, source_locator, fetch_status, fetch_metadata_json, content_fingerprint
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, 'tenant', $12, NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, 'tenant', $12, NOW(), $13, $14, $15, $16::jsonb, $17)
        ON CONFLICT (uploaded_document_id)
        DO UPDATE SET status = EXCLUDED.status,
                      title = EXCLUDED.title,
@@ -768,6 +824,11 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
                      body_text = EXCLUDED.body_text,
                      metadata_json = EXCLUDED.metadata_json,
                      source_hash = EXCLUDED.source_hash,
+                     source_kind = EXCLUDED.source_kind,
+                     source_locator = EXCLUDED.source_locator,
+                     fetch_status = EXCLUDED.fetch_status,
+                     fetch_metadata_json = EXCLUDED.fetch_metadata_json,
+                     content_fingerprint = EXCLUDED.content_fingerprint,
                      created_by_id = EXCLUDED.created_by_id,
                      updated_at = NOW()`,
       [
@@ -775,14 +836,19 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
         tenantKey,
         normalized.status,
         title,
-        normalized.filename,
+        filename,
         mimeType,
         normalized.sourceAuthority,
         normalized.documentClass,
         bodyText,
         JSON.stringify(metadata),
         sourceHash,
-        actorId(actor)
+        actorId(actor),
+        normalized.sourceKind,
+        sourceLocator,
+        fetchStatus,
+        JSON.stringify(fetchMetadata),
+        contentFingerprint
       ]
     );
     await writeAuditLog(client, tenantKey, actor, "knowledge_receptionist.uploaded_document.saved", {

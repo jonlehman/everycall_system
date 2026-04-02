@@ -18,6 +18,7 @@ import {
 } from "../../_lib/knowledgeReceptionistPacks.js";
 import { saveSetupInterviewIntent } from "../../_lib/knowledgeReceptionistSetupInterview.js";
 import { saveTenantBootstrapProfile } from "../../_lib/tenantBootstrapProfiles.js";
+import { enqueueKnowledgeBuild } from "../../_lib/knowledgeReceptionistBuilds.js";
 import { normalizePhoneNumber } from "../../_lib/phone.js";
 import { createDefaultTenantBusinessHours, saveTenantBusinessHours } from "../../_lib/tenantBusinessHours.js";
 import { normalizeCallerIdName, provisionTenantVoiceNumber } from "../../_lib/voiceProvisioning.js";
@@ -355,6 +356,22 @@ export default async function handler(req, res) {
         failureAuditAction: "onboarding.voice_number_provision_failed"
       });
 
+      let initialKnowledgeBuild = null;
+      if (payload.website) {
+        try {
+          initialKnowledgeBuild = await enqueueKnowledgeBuild(pool, tenantKey, {
+            buildKind: "website_base",
+            websiteUrl: payload.website,
+            assignments
+          });
+        } catch (knowledgeBuildErr) {
+          console.error("initial_knowledge_build_enqueue_failed", {
+            tenantKey,
+            error: String(knowledgeBuildErr?.message || "unknown")
+          });
+        }
+      }
+
       return res.status(200).json({
         ok: true,
         tenantKey,
@@ -366,7 +383,8 @@ export default async function handler(req, res) {
         runtimeProfile,
         callOutcomeSchema,
         setupInterviewIntent,
-        voiceProvisioning
+        voiceProvisioning,
+        initialKnowledgeBuild
       });
     } catch (err) {
       await client.query("ROLLBACK");

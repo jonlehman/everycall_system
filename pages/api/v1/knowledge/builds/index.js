@@ -54,6 +54,8 @@ export default async function handler(req, res) {
       if (!manager) return;
       const body = typeof req.body === "object" && req.body ? req.body : {};
       const buildResult = await enqueueKnowledgeBuild(pool, tenantKey, {
+        buildKind: body.buildKind || body.build_kind,
+        baseBuildId: body.baseBuildId || body.base_build_id,
         websiteUrl: body.websiteUrl || body.website_url,
         assignments: normalizeAssignments(body.assignments),
         uploadedDocumentIds: normalizeIdArray(body.uploadedDocumentIds || body.uploaded_document_ids),
@@ -75,8 +77,14 @@ export default async function handler(req, res) {
     if (message === "approved_source_required") {
       return fail(res, 400, "approved_source_required", "At least one approved source channel is required for a build.");
     }
+    if (message === "approved_document_required") {
+      return fail(res, 400, "approved_document_required", "At least one approved document is required to apply a document overlay.");
+    }
     if (message === "domain_assignment_required") {
       return fail(res, 400, "domain_assignment_required", "At least one canonical domain/subdomain assignment is required.");
+    }
+    if (message === "overlay_base_build_required" || message === "overlay_base_sources_missing") {
+      return fail(res, 409, "overlay_base_build_required", "A completed knowledge base is required before documents can be applied on top of it.");
     }
     if (message === "uploaded_document_not_found") {
       return fail(res, 404, "uploaded_document_not_found", "One or more uploaded documents were not found for this tenant.");

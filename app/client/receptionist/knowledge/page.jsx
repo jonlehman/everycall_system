@@ -158,32 +158,38 @@ const guideByContext = {
   website: {
     step: '01',
     title: 'Website',
-    body: 'Set the main website URL the next knowledge base should crawl. That site content becomes part of what your sales receptionist uses live.',
-    tip: 'Use the main public site, not a deep page, so the build can discover the right content.'
+    body: 'Set the main website URL for the website base. Rebuilding the website refreshes crawled site content and keeps approved documents applied on top of it.',
+    tip: 'Use the main public site, not a deep page, so the website rebuild can discover the right content.'
   },
   documentsMeta: {
     step: '01',
     title: 'Document Details',
-    body: 'Name the document and choose its class before saving it. Approved uploaded documents are bundled into future builds alongside website content.',
+    body: 'Name the document, choose its class, and pick the document source type before saving it.',
     tip: 'Use clear titles so your team can recognize each saved document later.'
   },
   documentsFile: {
     step: '01',
     title: 'Upload File',
-    body: 'Use file upload for source documents in .pdf or .txt format that should feed the next build.',
+    body: 'Use file upload for source documents in .pdf or .txt format that should override or supplement website content.',
     tip: 'Use this for finalized PDFs or plain-text reference documents that should become part of the next build.'
   },
-  documentsText: {
+  documentsPage: {
     step: '01',
-    title: 'Document Text',
-    body: 'Paste short source text directly when you do not need to upload a file. This is useful for rules, scripts, and internal notes.',
-    tip: 'Paste only the exact text you want the receptionist to prioritize.'
+    title: 'Single Web Page',
+    body: 'Use a single web page document when one exact page should override or supplement the larger website build without crawling child pages.',
+    tip: 'Paste the exact page URL you want to import. Only that page is fetched.'
   },
-  createBuild: {
+  websiteBuild: {
     step: '01',
-    title: 'Create Knowledge Base',
-    body: 'Create Knowledge Base turns the current website URL and approved uploaded documents into a single knowledge version and publishes it automatically when it is ready.',
-    tip: 'After changing the website or documents, create a new build so those updates can go live automatically.'
+    title: 'Rebuild Website',
+    body: 'Rebuild Website refreshes the website base and publishes a new live knowledge base automatically when it is ready.',
+    tip: 'Use this after major website changes or when the base site content needs a fresh crawl.'
+  },
+  documentApply: {
+    step: '01',
+    title: 'Apply Documents',
+    body: 'Apply Documents reuses the current live website base and layers the approved documents on top without crawling the website again.',
+    tip: 'Use this after saving a document or single-page source so the override can go live quickly.'
   },
   testQuestion: {
     step: '02',
@@ -207,7 +213,7 @@ const guideByContext = {
 
 const knowledgeGuideOverview = {
   title: 'What This Page Does',
-  body: 'This page turns your website and uploaded documents into the published knowledge build your sales receptionist uses during live calls.',
+  body: 'This page manages the website base and document overlays that make up the published knowledge base your sales receptionist uses during live calls.',
   detail: 'Before a build is published, the sales receptionist can answer only generic questions from the business description. If a caller asks for specific business details it does not know yet, it will apologize and offer to have someone call them back.'
 };
 
@@ -216,13 +222,15 @@ export default function ReceptionistKnowledgePage() {
   const [status, setStatus] = useState({ message: 'Loading knowledge tools...', tone: 'warn' });
   const [savingDocument, setSavingDocument] = useState(false);
   const [readingDocumentFile, setReadingDocumentFile] = useState(false);
-  const [buildBusy, setBuildBusy] = useState(false);
+  const [buildBusyKind, setBuildBusyKind] = useState('');
   const [previewBusy, setPreviewBusy] = useState(false);
   const [activeGuideKey, setActiveGuideKey] = useState('website');
 
   const [documentForm, setDocumentForm] = useState({
     title: '',
     documentClass: 'operational',
+    sourceKind: 'file_upload',
+    sourceLocator: '',
     bodyText: '',
     filename: '',
     mimeType: 'text/plain',
@@ -294,20 +302,30 @@ export default function ReceptionistKnowledgePage() {
     return () => window.clearInterval(intervalId);
   }, [buildState.builds]);
 
-  const createBuild = async () => {
-    setBuildBusy(true);
-    setStatus({ message: 'Queueing build...', tone: 'warn' });
+  const queueBuild = async (buildKind) => {
+    const normalizedBuildKind = String(buildKind || '').trim().toLowerCase();
+    const isWebsiteBuild = normalizedBuildKind === 'website_base';
+    const approvedDocumentIds = approvedUploadedDocuments.map((document) => document.uploaded_document_id);
+    if (!isWebsiteBuild && !approvedDocumentIds.length) {
+      setStatus({ message: 'Save at least one approved document before applying documents.', tone: 'bad' });
+      return;
+    }
+
+    setBuildBusyKind(normalizedBuildKind);
+    setStatus({ message: isWebsiteBuild ? 'Queueing website rebuild...' : 'Queueing document apply...', tone: 'warn' });
     try {
       const data = await fetchJson('/api/v1/knowledge/builds', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          websiteUrl: buildForm.websiteUrl.trim() || undefined,
-          uploadedDocumentIds: approvedUploadedDocuments.map((document) => document.uploaded_document_id)
+          buildKind: normalizedBuildKind,
+          baseBuildId: !isWebsiteBuild ? (buildState.activeBuild?.active_build_id || undefined) : undefined,
+          websiteUrl: isWebsiteBuild ? (buildForm.websiteUrl.trim() || undefined) : undefined,
+          uploadedDocumentIds: approvedDocumentIds
         })
       });
       if (!data?.ok) {
-        setStatus({ message: data?.message || 'Build failed.', tone: 'bad' });
+        setStatus({ message: data?.message || (isWebsiteBuild ? 'Website rebuild failed.' : 'Document apply failed.'), tone: 'bad' });
         return;
       }
       const buildId = data.build?.build_id || '';
@@ -321,30 +339,35 @@ export default function ReceptionistKnowledgePage() {
       await loadWorkspace({ silent: true });
       const finalStatus = String(data.status || '').trim().toLowerCase();
       setStatus({
-        message: `Build ${buildId || 'created'} ${finalStatus === 'running' ? 'is already running' : 'queued'} and will publish automatically when it is ready. This page will update automatically.`,
+        message: `${isWebsiteBuild ? 'Website rebuild' : 'Document apply'} ${buildId || 'request'} ${finalStatus === 'running' ? 'is already running' : 'queued'} and will publish automatically when it is ready. This page will update automatically.`,
         tone: 'ok'
       });
     } catch {
-      setStatus({ message: 'Build failed.', tone: 'bad' });
+      setStatus({ message: isWebsiteBuild ? 'Website rebuild failed.' : 'Document apply failed.', tone: 'bad' });
     } finally {
-      setBuildBusy(false);
+      setBuildBusyKind('');
     }
   };
 
   const saveUploadedDocument = async () => {
     const title = documentForm.title.trim();
-    const bodyText = documentForm.bodyText.trim();
-    if (!title && !documentForm.filename) {
+    const sourceKind = String(documentForm.sourceKind || '').trim();
+    const sourceLocator = documentForm.sourceLocator.trim();
+    if (sourceKind === 'single_page_url' && !sourceLocator) {
+      setStatus({ message: 'Add the exact web page URL you want to use as a document.', tone: 'bad' });
+      return;
+    }
+    if (sourceKind !== 'single_page_url' && !title && !documentForm.filename) {
       setStatus({ message: 'Uploaded documents need a title or filename.', tone: 'bad' });
       return;
     }
-    if (!bodyText && !documentForm.fileBase64) {
-      setStatus({ message: 'Add document text or choose a file to upload.', tone: 'bad' });
+    if (sourceKind !== 'single_page_url' && !documentForm.fileBase64) {
+      setStatus({ message: 'Choose a file to upload.', tone: 'bad' });
       return;
     }
 
     setSavingDocument(true);
-    setStatus({ message: 'Saving uploaded document...', tone: 'warn' });
+    setStatus({ message: sourceKind === 'single_page_url' ? 'Saving web page document...' : 'Saving uploaded document...', tone: 'warn' });
     try {
       const data = await fetchJson('/api/v1/knowledge/uploaded-documents', {
         method: 'POST',
@@ -353,7 +376,8 @@ export default function ReceptionistKnowledgePage() {
           document: {
             title: title || undefined,
             documentClass: documentForm.documentClass,
-            bodyText: bodyText || undefined,
+            sourceKind,
+            sourceLocator: sourceLocator || undefined,
             filename: documentForm.filename || undefined,
             mimeType: documentForm.mimeType || undefined,
             fileBase64: documentForm.fileBase64 || undefined
@@ -367,15 +391,17 @@ export default function ReceptionistKnowledgePage() {
       setDocumentForm({
         title: '',
         documentClass: 'operational',
+        sourceKind: 'file_upload',
+        sourceLocator: '',
         bodyText: '',
         filename: '',
         mimeType: 'text/plain',
         fileBase64: ''
       });
       await loadWorkspace({ silent: true });
-      setStatus({ message: 'Uploaded document saved. Include it in the next build to make it live.', tone: 'ok' });
+      setStatus({ message: sourceKind === 'single_page_url' ? 'Web page document saved. Apply documents to make it live.' : 'Uploaded document saved. Apply documents to make it live.', tone: 'ok' });
     } catch {
-      setStatus({ message: 'Could not save uploaded document.', tone: 'bad' });
+      setStatus({ message: sourceKind === 'single_page_url' ? 'Could not save that web page document.' : 'Could not save uploaded document.', tone: 'bad' });
     } finally {
       setSavingDocument(false);
     }
@@ -386,6 +412,8 @@ export default function ReceptionistKnowledgePage() {
     if (!file) {
       setDocumentForm((current) => ({
         ...current,
+        sourceKind: 'file_upload',
+        sourceLocator: '',
         filename: '',
         mimeType: 'text/plain',
         fileBase64: ''
@@ -405,6 +433,8 @@ export default function ReceptionistKnowledgePage() {
       const fileBase64 = await fileToBase64(file);
       setDocumentForm((current) => ({
         ...current,
+        sourceKind: 'file_upload',
+        sourceLocator: '',
         filename: file.name,
         mimeType: file.type || 'application/octet-stream',
         fileBase64
@@ -445,6 +475,13 @@ export default function ReceptionistKnowledgePage() {
 
   const latestBuild = buildState.builds[0] || null;
   const approvedUploadedDocuments = uploadedDocuments.filter((document) => String(document?.status || '').trim() === 'approved');
+  const activeBuildId = String(buildState.activeBuild?.active_build_id || '').trim();
+  const latestLiveBuild = buildState.builds.find((build) => String(build?.build_id || '').trim() === activeBuildId) || latestBuild;
+  const latestWebsiteBuild = buildState.builds.find((build) => {
+    const kind = String(build?.build_kind || '').trim().toLowerCase();
+    return kind === 'website_base' || kind === 'legacy_combined';
+  }) || null;
+  const latestDocumentBuild = buildState.builds.find((build) => String(build?.build_kind || '').trim().toLowerCase() === 'document_overlay') || null;
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewAnswer = preview?.spokenAnswerEstimate || buildRepresentativeAnswer(previewAnswerPacket);
   const previewAnswerDisplay = previewBusy
@@ -452,7 +489,7 @@ export default function ReceptionistKnowledgePage() {
     : (preview
         ? previewAnswer
         : 'Your answer preview will appear here after you test a customer question.');
-  const latestBuildStatus = String(latestBuild?.status || '').trim().toLowerCase();
+  const latestBuildStatus = String(latestLiveBuild?.status || '').trim().toLowerCase();
   const statusChip = buildState.builds.some((build) => isBuildActive(build))
     ? { tone: 'warn', label: 'Build In Progress' }
     : latestBuildStatus === 'published'
@@ -485,8 +522,8 @@ export default function ReceptionistKnowledgePage() {
           }}>
             <StepSection
               step="01"
-              title="Create Knowledge Base"
-              description="Your knowledge base is the website and document information your sales receptionist uses to answer caller questions."
+              title="Knowledge Sources"
+              description="Manage the website base and document overlays that make up your live knowledge base."
               contentClassName={`border-0 bg-transparent p-0 ${activeStep === '01' ? activeCardClassName : ''}`}
             >
               <div className="space-y-4">
@@ -496,8 +533,8 @@ export default function ReceptionistKnowledgePage() {
                   onFocusCapture={() => setActiveGuideKey('website')}
                 >
                   <div className="mb-4">
-                    <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website</h4>
-                    <p className="mt-1 text-sm text-slate-500">Train the sales receptionist with up to 500 pages from your website (pages selected automatically).</p>
+                    <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website Base</h4>
+                    <p className="mt-1 text-sm text-slate-500">Crawl the main website and refresh the base knowledge layer.</p>
                   </div>
                   <label className="sr-only">Website URL</label>
                   <input
@@ -512,6 +549,33 @@ export default function ReceptionistKnowledgePage() {
                       Pre-filled from tenant setup. You can change it before creating the first build.
                     </div>
                   ) : null}
+                  <div className="mt-4 flex flex-wrap items-center gap-3" onClick={() => setActiveGuideKey('websiteBuild')} onFocusCapture={() => setActiveGuideKey('websiteBuild')}>
+                    <Button
+                      className="h-auto rounded px-6 py-3 text-xs font-bold uppercase tracking-[0.18em]"
+                      onClick={() => queueBuild('website_base')}
+                      disabled={buildBusyKind === 'website_base'}
+                    >
+                      {buildBusyKind === 'website_base' ? 'Queueing...' : 'Rebuild Website'}
+                    </Button>
+                    {latestWebsiteBuild ? (
+                      <span className={`badge ${buildBadgeTone(latestWebsiteBuild.status)}`}>{buildStatusLabel(latestWebsiteBuild.status)}</span>
+                    ) : (
+                      <span className="text-xs text-slate-500">No website rebuild yet.</span>
+                    )}
+                  </div>
+                  {latestWebsiteBuild ? (
+                    <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <div className="font-semibold text-slate-900">Latest Website Build</div>
+                          <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestWebsiteBuild, 0)}</div>
+                        </div>
+                        <span className={`badge ${buildBadgeTone(latestWebsiteBuild.status)}`}>{buildStatusLabel(latestWebsiteBuild.status)}</span>
+                      </div>
+                      <div className="mt-2 text-sm text-slate-600">{renderBuildProgress(latestWebsiteBuild)}</div>
+                      <BuildProgressMeter build={latestWebsiteBuild} compact />
+                    </div>
+                  ) : null}
                 </div>
 
                 <div
@@ -520,17 +584,13 @@ export default function ReceptionistKnowledgePage() {
                   onFocusCapture={() => setActiveGuideKey('documentsMeta')}
                 >
                   <div className="mb-2">
-                    <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Documents</h4>
+                    <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Document Overlay</h4>
                     <p className="mt-1 text-sm text-slate-500">
-                      Information in uploaded documents takes precedence over conflicting information on the website.
+                      Approved document sources override conflicting website details when you apply documents.
                     </p>
                   </div>
 
-                  <div
-                    className="grid grid-cols-1 gap-4 md:grid-cols-2"
-                    onClick={() => setActiveGuideKey('documentsMeta')}
-                    onFocusCapture={() => setActiveGuideKey('documentsMeta')}
-                  >
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3" onClick={() => setActiveGuideKey('documentsMeta')} onFocusCapture={() => setActiveGuideKey('documentsMeta')}>
                     <div>
                       <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Title</label>
                       <input
@@ -553,33 +613,66 @@ export default function ReceptionistKnowledgePage() {
                         <option value="unclassified">Unclassified</option>
                       </select>
                     </div>
+                    <div>
+                      <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Source Type</label>
+                      <select
+                        className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                        value={documentForm.sourceKind}
+                        onChange={(event) => setDocumentForm((current) => ({
+                          ...current,
+                          sourceKind: event.target.value,
+                          sourceLocator: event.target.value === 'single_page_url' ? current.sourceLocator : '',
+                          filename: event.target.value === 'file_upload' ? current.filename : '',
+                          mimeType: event.target.value === 'file_upload' ? current.mimeType : 'text/plain',
+                          fileBase64: event.target.value === 'file_upload' ? current.fileBase64 : ''
+                        }))}
+                      >
+                        <option value="file_upload">File Upload</option>
+                        <option value="single_page_url">Single Web Page</option>
+                      </select>
+                    </div>
                   </div>
 
-                  <div
-                    className="space-y-3 pt-4"
-                    onClick={() => setActiveGuideKey('documentsFile')}
-                    onFocusCapture={() => setActiveGuideKey('documentsFile')}
-                  >
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload File</div>
-                    <div className="flex w-full items-center overflow-hidden rounded border border-[#E2E8F0] bg-white">
-                      <label className="cursor-pointer border-r border-[#E2E8F0] bg-slate-100 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200">
-                        Browse...
-                        <input
-                          className="hidden"
-                          type="file"
-                          accept=".txt,.pdf"
-                          onChange={handleDocumentFileChange}
-                          disabled={readingDocumentFile || savingDocument}
-                        />
-                      </label>
-                      <span className="px-4 text-xs text-slate-500">
-                        {documentForm.filename || 'No file selected.'}
-                      </span>
+                  {documentForm.sourceKind === 'single_page_url' ? (
+                    <div className="space-y-3 pt-4" onClick={() => setActiveGuideKey('documentsPage')} onFocusCapture={() => setActiveGuideKey('documentsPage')}>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Web Page URL</div>
+                      <input
+                        className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                        value={documentForm.sourceLocator}
+                        onChange={(event) => setDocumentForm((current) => ({ ...current, sourceLocator: event.target.value }))}
+                        placeholder="https://example.com/specific-page"
+                      />
+                      <p className="mt-2 text-[10px] italic text-slate-500">
+                        Only this exact page is imported. Child pages are not crawled.
+                      </p>
                     </div>
-                    <p className="mt-2 text-[10px] italic text-slate-500">
-                      Upload a .pdf or .txt file.
-                    </p>
-                  </div>
+                  ) : (
+                    <div
+                      className="space-y-3 pt-4"
+                      onClick={() => setActiveGuideKey('documentsFile')}
+                      onFocusCapture={() => setActiveGuideKey('documentsFile')}
+                    >
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload File</div>
+                      <div className="flex w-full items-center overflow-hidden rounded border border-[#E2E8F0] bg-white">
+                        <label className="cursor-pointer border-r border-[#E2E8F0] bg-slate-100 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200">
+                          Browse...
+                          <input
+                            className="hidden"
+                            type="file"
+                            accept=".txt,.pdf"
+                            onChange={handleDocumentFileChange}
+                            disabled={readingDocumentFile || savingDocument}
+                          />
+                        </label>
+                        <span className="px-4 text-xs text-slate-500">
+                          {documentForm.filename || 'No file selected.'}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-[10px] italic text-slate-500">
+                        Upload a .pdf or .txt file.
+                      </p>
+                    </div>
+                  )}
 
                   <div onClick={() => setActiveGuideKey('documentsMeta')} onFocusCapture={() => setActiveGuideKey('documentsMeta')}>
                     <Button
@@ -604,25 +697,50 @@ export default function ReceptionistKnowledgePage() {
                           <div className="mt-2 text-sm text-slate-600">
                             {formatLabel(document.document_class)} · {formatLabel(document.source_authority)}
                           </div>
+                          {document.source_kind ? (
+                            <div className="mt-1 text-xs text-slate-500">Source: {formatLabel(document.source_kind)}</div>
+                          ) : null}
                           {document.filename ? (
                             <div className="mt-1 text-xs text-slate-500">File: {document.filename}</div>
+                          ) : null}
+                          {!document.filename && document.source_locator ? (
+                            <div className="mt-1 break-all text-xs text-slate-500">Page: {document.source_locator}</div>
                           ) : null}
                         </div>
                       )) : (
                         <p className="mt-4 text-[10px] text-slate-500">No uploaded documents yet.</p>
                       )}
                     </div>
-                  </div>
-                </div>
 
-                <div className="pt-2" onClick={() => setActiveGuideKey('createBuild')} onFocusCapture={() => setActiveGuideKey('createBuild')}>
-                  <Button
-                    className="h-auto rounded px-10 py-3 text-xs font-bold uppercase tracking-[0.18em]"
-                    onClick={createBuild}
-                    disabled={buildBusy}
-                  >
-                    {buildBusy ? 'Queueing...' : 'Create Knowledge Base'}
-                  </Button>
+                    <div className="mt-4 flex flex-wrap items-center gap-3" onClick={() => setActiveGuideKey('documentApply')} onFocusCapture={() => setActiveGuideKey('documentApply')}>
+                      <Button
+                        className="h-auto rounded px-6 py-3 text-xs font-bold uppercase tracking-[0.18em]"
+                        onClick={() => queueBuild('document_overlay')}
+                        disabled={buildBusyKind === 'document_overlay' || !approvedUploadedDocuments.length}
+                      >
+                        {buildBusyKind === 'document_overlay' ? 'Queueing...' : 'Apply Documents'}
+                      </Button>
+                      {latestDocumentBuild ? (
+                        <span className={`badge ${buildBadgeTone(latestDocumentBuild.status)}`}>{buildStatusLabel(latestDocumentBuild.status)}</span>
+                      ) : (
+                        <span className="text-xs text-slate-500">No document apply yet.</span>
+                      )}
+                    </div>
+
+                    {latestDocumentBuild ? (
+                      <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <div className="font-semibold text-slate-900">Latest Document Apply</div>
+                            <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestDocumentBuild, 0)}</div>
+                          </div>
+                          <span className={`badge ${buildBadgeTone(latestDocumentBuild.status)}`}>{buildStatusLabel(latestDocumentBuild.status)}</span>
+                        </div>
+                        <div className="mt-2 text-sm text-slate-600">{renderBuildProgress(latestDocumentBuild)}</div>
+                        <BuildProgressMeter build={latestDocumentBuild} compact />
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
 
                 {buildState.builds.some((build) => isBuildActive(build)) ? (
@@ -631,20 +749,20 @@ export default function ReceptionistKnowledgePage() {
                   </div>
                 ) : null}
 
-                {latestBuild ? (
+                {latestLiveBuild ? (
                   <div className="rounded-lg border border-slate-200 bg-white p-4">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <div className="font-semibold text-slate-900">Latest Build</div>
-                        <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestBuild, 0)}</div>
+                        <div className="font-semibold text-slate-900">Live Knowledge Base</div>
+                        <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestLiveBuild, 0)}</div>
                       </div>
-                      <span className={`badge ${buildBadgeTone(latestBuild.status)}`}>{buildStatusLabel(latestBuild.status)}</span>
+                      <span className={`badge ${buildBadgeTone(latestLiveBuild.status)}`}>{buildStatusLabel(latestLiveBuild.status)}</span>
                     </div>
                     <div className="mt-2 text-sm text-slate-600">
-                      Cards: {latestBuild.artifact_counts_json?.cards || 0} · Facts: {latestBuild.artifact_counts_json?.facts || 0}
+                      Cards: {latestLiveBuild.artifact_counts_json?.cards || 0} · Facts: {latestLiveBuild.artifact_counts_json?.facts || 0}
                     </div>
-                    <div className="mt-1 text-sm text-slate-600">{renderBuildProgress(latestBuild)}</div>
-                    <BuildProgressMeter build={latestBuild} compact />
+                    <div className="mt-1 text-sm text-slate-600">{renderBuildProgress(latestLiveBuild)}</div>
+                    <BuildProgressMeter build={latestLiveBuild} compact />
                   </div>
                 ) : null}
 

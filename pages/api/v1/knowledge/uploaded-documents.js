@@ -50,6 +50,15 @@ export default async function handler(req, res) {
     if (message === "uploaded_document_body_too_large") {
       return fail(res, 413, "uploaded_document_body_too_large", "Uploaded document text is too large to process.");
     }
+    if (message === "single_page_url_required") {
+      return fail(res, 400, "single_page_url_required", "A single web page source needs a page URL.");
+    }
+    if (message === "single_page_fetch_failed") {
+      return fail(res, 502, "single_page_fetch_failed", "That web page could not be fetched right now.");
+    }
+    if (message === "single_page_empty_text") {
+      return fail(res, 400, "single_page_empty_text", "That web page did not contain usable text.");
+    }
     return fail(res, 500, "uploaded_document_error", message);
   }
 }
