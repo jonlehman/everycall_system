@@ -36,7 +36,19 @@ function toPemPublicKey(rawKey: string | undefined): string {
   if (!rawKey) return "";
   if (rawKey.includes("BEGIN PUBLIC KEY")) return rawKey;
   const cleaned = rawKey.replace(/[\r\n\s]/g, "");
-  const wrapped = cleaned.match(/.{1,64}/g)?.join("\n") || cleaned;
+  let pemBase64 = cleaned;
+  try {
+    const rawBytes = Buffer.from(cleaned, "base64");
+    // Telnyx exposes the webhook verification key as a raw 32-byte Ed25519 key,
+    // but Node's crypto.verify expects an SPKI public key when given PEM input.
+    if (rawBytes.length === 32) {
+      const spkiPrefix = Buffer.from("302a300506032b6570032100", "hex");
+      pemBase64 = Buffer.concat([spkiPrefix, rawBytes]).toString("base64");
+    }
+  } catch {
+    // Fall back to the provided key material if decoding fails.
+  }
+  const wrapped = pemBase64.match(/.{1,64}/g)?.join("\n") || pemBase64;
   return `-----BEGIN PUBLIC KEY-----\n${wrapped}\n-----END PUBLIC KEY-----`;
 }
 
