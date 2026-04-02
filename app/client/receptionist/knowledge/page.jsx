@@ -646,7 +646,7 @@ export default function ReceptionistKnowledgePage() {
                   <div className="mb-2">
                     <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Document Overlay</h4>
                     <p className="mt-1 text-sm text-slate-500">
-                      Approved document sources override conflicting website details when you apply documents.
+                      Approved document sources override conflicting website details when you apply documents and single web page uploads.
                     </p>
                   </div>
 
