@@ -3011,22 +3011,102 @@ async function persistRawBuildSourcesFromDb(db, buildInfo, sourceIntakeSessionId
 }
 
 async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
+  const validTopicIds = new Set((compiled.topics || []).map((topic) => normalizeText(topic?.knowledge_topic_id)).filter(Boolean));
+  const validSubtopicIds = new Set((compiled.subtopics || []).map((subtopic) => normalizeText(subtopic?.knowledge_subtopic_id)).filter(Boolean));
+  const sanitizedFacts = [];
+  const sanitizedCards = [];
+  let sanitizedFactTopicRefs = 0;
+  let sanitizedCardTopicRefs = 0;
+
+  for (const fact of compiled.facts || []) {
+    const nextFact = { ...fact };
+    const topicId = normalizeText(nextFact.knowledge_topic_id);
+    const subtopicId = normalizeText(nextFact.knowledge_subtopic_id);
+    if (topicId && !validTopicIds.has(topicId)) {
+      nextFact.knowledge_topic_id = null;
+      nextFact.knowledge_subtopic_id = null;
+      sanitizedFactTopicRefs += 1;
+    } else if (subtopicId && !validSubtopicIds.has(subtopicId)) {
+      nextFact.knowledge_subtopic_id = null;
+      sanitizedFactTopicRefs += 1;
+    }
+    sanitizedFacts.push(nextFact);
+  }
+
+  for (const card of compiled.cards || []) {
+    const nextCard = { ...card };
+    const topicId = normalizeText(nextCard.knowledge_topic_id);
+    const subtopicId = normalizeText(nextCard.knowledge_subtopic_id);
+    if (topicId && !validTopicIds.has(topicId)) {
+      nextCard.knowledge_topic_id = null;
+      nextCard.knowledge_subtopic_id = null;
+      sanitizedCardTopicRefs += 1;
+    } else if (subtopicId && !validSubtopicIds.has(subtopicId)) {
+      nextCard.knowledge_subtopic_id = null;
+      sanitizedCardTopicRefs += 1;
+    }
+    sanitizedCards.push(nextCard);
+  }
+
   const sourceCounts = {
     sourceRefs: Number(rawCounts?.sourceRefs || 0),
     sourceSegments: Number(rawCounts?.sourceSegments || 0),
     sourceChunks: Number(rawCounts?.sourceChunks || 0),
     topics: compiled.topics.length,
     subtopics: compiled.subtopics.length,
-    cards: compiled.cards.length,
-    facts: compiled.facts.length
+    cards: sanitizedCards.length,
+    facts: sanitizedFacts.length
   };
 
   await db.query(`DELETE FROM knowledge_build_card_vectors WHERE tenant_key = $1 AND build_id = $2`, [buildInfo.tenant_key, buildInfo.build_id]);
   await db.query(`DELETE FROM knowledge_build_fact_vectors WHERE tenant_key = $1 AND build_id = $2`, [buildInfo.tenant_key, buildInfo.build_id]);
   await db.query(`DELETE FROM knowledge_build_cards WHERE tenant_key = $1 AND build_id = $2`, [buildInfo.tenant_key, buildInfo.build_id]);
   await db.query(`DELETE FROM knowledge_build_facts WHERE tenant_key = $1 AND build_id = $2`, [buildInfo.tenant_key, buildInfo.build_id]);
+  await db.query(`DELETE FROM knowledge_build_subtopics WHERE tenant_key = $1 AND build_id = $2`, [buildInfo.tenant_key, buildInfo.build_id]);
+  await db.query(`DELETE FROM knowledge_build_topics WHERE tenant_key = $1 AND build_id = $2`, [buildInfo.tenant_key, buildInfo.build_id]);
 
-  for (const fact of compiled.facts) {
+  for (const topic of compiled.topics || []) {
+    await db.query(
+      `INSERT INTO knowledge_build_topics (
+         knowledge_topic_id, tenant_key, build_id, topic_name, description, aliases_json,
+         source_coverage_summary, metadata_json
+       )
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb)`,
+      [
+        topic.knowledge_topic_id,
+        topic.tenant_key,
+        topic.build_id,
+        topic.topic_name,
+        topic.description,
+        JSON.stringify(topic.aliases_json || []),
+        topic.source_coverage_summary || null,
+        JSON.stringify(topic.metadata_json || {})
+      ]
+    );
+  }
+
+  for (const subtopic of compiled.subtopics || []) {
+    await db.query(
+      `INSERT INTO knowledge_build_subtopics (
+         knowledge_subtopic_id, tenant_key, build_id, knowledge_topic_id, subtopic_name, description,
+         aliases_json, source_coverage_summary, metadata_json
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb)`,
+      [
+        subtopic.knowledge_subtopic_id,
+        subtopic.tenant_key,
+        subtopic.build_id,
+        subtopic.knowledge_topic_id,
+        subtopic.subtopic_name,
+        subtopic.description,
+        JSON.stringify(subtopic.aliases_json || []),
+        subtopic.source_coverage_summary || null,
+        JSON.stringify(subtopic.metadata_json || {})
+      ]
+    );
+  }
+
+  for (const fact of sanitizedFacts) {
     await db.query(
       `INSERT INTO knowledge_build_facts (
          knowledge_fact_id, tenant_key, build_id, domain_id, subdomain_id, fact_type, object_type, subject,
@@ -3073,7 +3153,7 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
     );
   }
 
-  for (const card of compiled.cards) {
+  for (const card of sanitizedCards) {
     await db.query(
       `INSERT INTO knowledge_build_cards (
          knowledge_card_id, tenant_key, build_id, domain_id, subdomain_id, card_type, object_type, canonical_name,
@@ -3176,7 +3256,11 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
 
   return {
     counts: sourceCounts,
-    compilerWarnings: compiled.warnings || [],
+    compilerWarnings: uniqueValues([
+      ...(compiled.warnings || []),
+      ...(sanitizedFactTopicRefs ? [`fact_topic_refs_cleared:${sanitizedFactTopicRefs}`] : []),
+      ...(sanitizedCardTopicRefs ? [`card_topic_refs_cleared:${sanitizedCardTopicRefs}`] : [])
+    ]),
     compiled
   };
 }
