@@ -779,7 +779,6 @@ export default function ReceptionistKnowledgePage() {
                           <div className="flex items-center justify-between gap-2">
                             <div>
                               <div className="font-semibold text-slate-900">{document.title}</div>
-                              <div className="text-xs text-slate-500">{document.uploaded_document_id}</div>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className={`badge ${document.status === 'approved' ? 'ok' : 'warn'}`}>{document.status}</span>
