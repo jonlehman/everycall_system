@@ -189,7 +189,7 @@ function ActionRow({ href, icon, title }) {
 export default function ClientDashboardPage() {
   const [dashboard, setDashboard] = useState(null);
   const [status, setStatus] = useState({ tone: 'warn', message: 'Loading dashboard...' });
-  const [showKnowledgeQuestions, setShowKnowledgeQuestions] = useState(false);
+  const [expandedKnowledgeList, setExpandedKnowledgeList] = useState(null);
   const [retryingTranscriptAnalysis, setRetryingTranscriptAnalysis] = useState(false);
 
   useEffect(() => {
@@ -216,9 +216,14 @@ export default function ClientDashboardPage() {
   const recentCalls = Array.isArray(dashboard?.recentCalls) ? dashboard.recentCalls : [];
   const callVolumeLast7Days = Array.isArray(dashboard?.callVolumeLast7Days) ? dashboard.callVolumeLast7Days : [];
   const knowledgeSignals = dashboard?.knowledgeSignals || {};
+  const answeredKnowledgeQuestions = Array.isArray(dashboard?.answeredKnowledgeQuestions) ? dashboard.answeredKnowledgeQuestions : [];
   const knowledgeGapQuestions = Array.isArray(dashboard?.knowledgeGapQuestions) ? dashboard.knowledgeGapQuestions : [];
   const latestBuildLabel = setup.latestBuildStatus ? formatLeadOutcomeLabel(setup.latestBuildStatus) : 'No knowledge base yet';
   const kbQuestionCount = Number(knowledgeSignals.kbQuestionCount30d || 0);
+  const answeredQuestionCount = Number(
+    knowledgeSignals.answeredQuestionCount30d
+    ?? Math.max(0, Number(knowledgeSignals.kbQuestionCount30d || 0) - Number(knowledgeSignals.unansweredQuestionCount30d || 0))
+  );
   const unansweredQuestionCount = Number(
     knowledgeSignals.unansweredQuestionCount30d
     ?? knowledgeSignals.unansweredQuestionCalls30d
@@ -227,14 +232,16 @@ export default function ClientDashboardPage() {
   const pendingTranscriptAnalysisCallCount = Number(knowledgeSignals.pendingTranscriptAnalysisCallCount30d || 0);
   const failedTranscriptAnalysisCallCount = Number(knowledgeSignals.failedTranscriptAnalysisCallCount30d || 0);
   const answeredQuestionRate = Number(knowledgeSignals.answeredQuestionRate30d || 0);
-  const answeredQuestionCount = Math.max(0, kbQuestionCount - unansweredQuestionCount);
   const maxTrendCount = Math.max(1, ...callVolumeLast7Days.map((day) => Number(day.totalCount || day.count || 0)));
 
   useEffect(() => {
-    if (!unansweredQuestionCount) {
-      setShowKnowledgeQuestions(false);
+    if (expandedKnowledgeList === 'answered' && !answeredQuestionCount) {
+      setExpandedKnowledgeList(null);
     }
-  }, [unansweredQuestionCount]);
+    if (expandedKnowledgeList === 'unanswered' && !unansweredQuestionCount) {
+      setExpandedKnowledgeList(null);
+    }
+  }, [answeredQuestionCount, unansweredQuestionCount, expandedKnowledgeList]);
 
   async function handleRetryTranscriptAnalysis() {
     setRetryingTranscriptAnalysis(true);
@@ -386,18 +393,25 @@ export default function ClientDashboardPage() {
                 <div className="h-full rounded-full bg-[#205cb5]" style={{ width: `${Math.max(4, Math.min(100, answeredQuestionRate))}%` }} />
               </div>
               <div className="grid grid-cols-2 gap-4 pt-2">
-                <div className="rounded-lg bg-[#f1f4f6] p-3">
-                  <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Answered</div>
-                  <div className="font-['Space_Grotesk'] text-2xl font-bold text-slate-950">{answeredQuestionCount}</div>
-                </div>
                 <button
                   type="button"
                   className="rounded-lg bg-[#f1f4f6] p-3 text-left transition-all hover:bg-[#e5e9eb]"
-                  onClick={() => unansweredQuestionCount && setShowKnowledgeQuestions((current) => !current)}
+                  onClick={() => answeredQuestionCount && setExpandedKnowledgeList((current) => current === 'answered' ? null : 'answered')}
+                >
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                    <span>Answered</span>
+                    <span className="material-symbols-outlined text-sm text-[#205cb5]">{expandedKnowledgeList === 'answered' ? 'expand_less' : 'chevron_right'}</span>
+                  </div>
+                  <div className="font-['Space_Grotesk'] text-2xl font-bold text-slate-950">{answeredQuestionCount}</div>
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg bg-[#f1f4f6] p-3 text-left transition-all hover:bg-[#e5e9eb]"
+                  onClick={() => unansweredQuestionCount && setExpandedKnowledgeList((current) => current === 'unanswered' ? null : 'unanswered')}
                 >
                   <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
                     <span>No KB Answer</span>
-                    <span className="material-symbols-outlined text-sm text-[#205cb5]">{showKnowledgeQuestions ? 'expand_less' : 'chevron_right'}</span>
+                    <span className="material-symbols-outlined text-sm text-[#205cb5]">{expandedKnowledgeList === 'unanswered' ? 'expand_less' : 'chevron_right'}</span>
                   </div>
                   <div className="font-['Space_Grotesk'] text-2xl font-bold text-slate-950">{unansweredQuestionCount}</div>
                 </button>
@@ -428,22 +442,30 @@ export default function ClientDashboardPage() {
               ) : null}
             </div>
 
-            {showKnowledgeQuestions ? (
+            {expandedKnowledgeList ? (
               <div className="mt-5 border-t border-slate-200/70 pt-5">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Questions Not Answered From KB</div>
-                  <Link href="/client/receptionist/knowledge" className="text-xs font-bold uppercase tracking-[0.18em] text-[#205cb5]">
-                    Update KB
-                  </Link>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                    {expandedKnowledgeList === 'answered' ? 'Questions Answered From KB' : 'Questions Not Answered From KB'}
+                  </div>
+                  {expandedKnowledgeList === 'answered' ? (
+                    <Link href="/client/calls" className="text-xs font-bold uppercase tracking-[0.18em] text-[#205cb5]">
+                      Open Calls
+                    </Link>
+                  ) : (
+                    <Link href="/client/receptionist/knowledge" className="text-xs font-bold uppercase tracking-[0.18em] text-[#205cb5]">
+                      Update KB
+                    </Link>
+                  )}
                 </div>
                 <div className="space-y-3">
-                  {knowledgeGapQuestions.length ? knowledgeGapQuestions.map((question) => {
+                  {(expandedKnowledgeList === 'answered' ? answeredKnowledgeQuestions : knowledgeGapQuestions).length ? (expandedKnowledgeList === 'answered' ? answeredKnowledgeQuestions : knowledgeGapQuestions).map((question) => {
                     const callerName = [question.caller_first_name, question.caller_last_name].filter(Boolean).join(' ') || question.callback_number || 'Unknown caller';
                     const promptText = normalizeText(question.question_text) || 'Unknown question';
                     const assistantResponse = normalizeText(question.assistant_response_text);
                     return (
                       <Link
-                        key={question.unanswered_question_id}
+                        key={question.answered_question_id || question.unanswered_question_id}
                         href={`/client/calls?callSid=${encodeURIComponent(question.call_sid || '')}`}
                         className="block rounded-lg border border-slate-200/70 bg-[#f8fafc] p-3 transition-colors hover:bg-[#eff4ff]"
                       >
@@ -458,7 +480,11 @@ export default function ClientDashboardPage() {
                       </Link>
                     );
                   }) : (
-                    <div className="text-sm text-slate-500">No KB gaps in the last 30 days.</div>
+                    <div className="text-sm text-slate-500">
+                      {expandedKnowledgeList === 'answered'
+                        ? 'No answered KB questions in the last 30 days.'
+                        : 'No KB gaps in the last 30 days.'}
+                    </div>
                   )}
                 </div>
               </div>

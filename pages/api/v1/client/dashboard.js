@@ -3,7 +3,10 @@ import { ensureTables, getPool } from "../../_lib/db.js";
 import { buildPlanDisplay, ensureTenantBillingAccount, requireTenantBillingAccess } from "../../_lib/billing.js";
 import { listKnowledgeReceptionistBuilds } from "../../_lib/knowledgeReceptionistBuilds.js";
 import { loadTenantBusinessHours } from "../../_lib/tenantBusinessHours.js";
-import { enqueueMissingCallTranscriptAnalyses } from "../../_lib/callTranscriptAnalysis.js";
+import {
+  CALL_TRANSCRIPT_ANALYSIS_VERSION,
+  enqueueMissingCallTranscriptAnalyses
+} from "../../_lib/callTranscriptAnalysis.js";
 import { computeLeadInvoiceEstimate, getLeadPricingConfig, resolveBillingWindow } from "../../../../lib/leadBilling.js";
 import { isBusinessOpenAt } from "../../../../lib/businessHours.js";
 
@@ -121,6 +124,36 @@ async function loadKnowledgeGapQuestions(pool, tenantKey) {
   }
 }
 
+async function loadAnsweredKnowledgeQuestions(pool, tenantKey) {
+  try {
+    const result = await pool.query(
+      `SELECT
+         q.id AS answered_question_id,
+         q.call_sid,
+         c.created_at,
+         q.question_text,
+         q.assistant_response_text,
+         c.summary,
+         c.status,
+         d.caller_first_name,
+         d.caller_last_name,
+         d.callback_number
+       FROM call_answered_questions q
+       LEFT JOIN calls c ON c.call_sid = q.call_sid
+       LEFT JOIN call_details d ON d.call_sid = c.call_sid
+       WHERE q.tenant_key = $1
+         AND c.created_at >= NOW() - interval '30 days'
+       ORDER BY q.created_at DESC
+       LIMIT 30`,
+      [tenantKey]
+    );
+    return result.rows || [];
+  } catch (error) {
+    if (error?.code === "42P01") return [];
+    throw error;
+  }
+}
+
 async function loadKnowledgeSignals(pool, tenantKey) {
   try {
     const result = await pool.query(
@@ -167,8 +200,8 @@ async function countPendingTranscriptAnalysisCalls(pool, tenantKey) {
         AND j.status IN ('pending', 'running')
        WHERE c.tenant_key = $1
          AND c.created_at >= NOW() - interval '30 days'
-         AND a.call_sid IS NULL`,
-      [tenantKey]
+         AND (a.call_sid IS NULL OR a.analysis_version IS DISTINCT FROM $2)`,
+      [tenantKey, CALL_TRANSCRIPT_ANALYSIS_VERSION]
     );
     return Number(result.rows?.[0]?.pending_call_count_30d || 0);
   } catch (error) {
@@ -190,8 +223,8 @@ async function countFailedTranscriptAnalysisCalls(pool, tenantKey) {
         AND j.status = 'dead_letter'
        WHERE c.tenant_key = $1
          AND c.created_at >= NOW() - interval '30 days'
-         AND a.call_sid IS NULL`,
-      [tenantKey]
+         AND (a.call_sid IS NULL OR a.analysis_version IS DISTINCT FROM $2)`,
+      [tenantKey, CALL_TRANSCRIPT_ANALYSIS_VERSION]
     );
     return Number(result.rows?.[0]?.failed_call_count_30d || 0);
   } catch (error) {
@@ -249,6 +282,7 @@ export default async function handler(req, res) {
       classificationResult,
       volumeRowsResult,
       knowledgeSignals,
+      answeredKnowledgeQuestions,
       knowledgeGapQuestions,
       pendingTranscriptAnalysisCallCount30d,
       failedTranscriptAnalysisCallCount30d,
@@ -339,6 +373,7 @@ export default async function handler(req, res) {
         [tenantKey]
       ),
       loadKnowledgeSignals(pool, tenantKey),
+      loadAnsweredKnowledgeQuestions(pool, tenantKey),
       loadKnowledgeGapQuestions(pool, tenantKey),
       countPendingTranscriptAnalysisCalls(pool, tenantKey),
       countFailedTranscriptAnalysisCalls(pool, tenantKey),
@@ -475,6 +510,7 @@ export default async function handler(req, res) {
       knowledgeSignals: {
         kbQuestionCount30d,
         kbCallCount30d,
+        answeredQuestionCount30d: Math.max(0, kbQuestionCount30d - unansweredQuestionCount30d),
         unansweredQuestionCount30d,
         unansweredCallCount30d,
         unansweredQuestionCalls30d: unansweredQuestionCount30d,
@@ -486,6 +522,7 @@ export default async function handler(req, res) {
           ? Math.max(0, Math.round(((kbQuestionCount30d - unansweredQuestionCount30d) / kbQuestionCount30d) * 1000) / 10)
           : 100
       },
+      answeredKnowledgeQuestions,
       knowledgeGapQuestions,
       nextSteps
     });

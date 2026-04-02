@@ -7,11 +7,11 @@ import {
 } from "@everycall/contracts";
 import { ASYNC_JOB_TYPES, enqueueAsyncJob } from "../../../lib/asyncJobs.js";
 
-const ANALYSIS_VERSION = "unanswered_questions_v1";
+const ANALYSIS_VERSION = "question_inventory_v2";
 const OPENAI_TRANSCRIPT_ANALYSIS_MODEL = process.env.OPENAI_TRANSCRIPT_ANALYSIS_MODEL
   || "gpt-5.4-nano";
 const MAX_TRANSCRIPT_ANALYSIS_CHARS = 20_000;
-const MAX_UNANSWERED_QUESTIONS = 12;
+const MAX_QUESTION_ITEMS = 50;
 const CANONICAL_UNANSWERED_REASONS = new Set([
   "explicit_unknown",
   "cannot_confirm",
@@ -52,9 +52,15 @@ const unansweredQuestionSchema = z.object({
   reason: z.string().min(1).max(160).optional()
 });
 
+const answeredQuestionSchema = z.object({
+  question_text: z.string().min(1).max(500),
+  assistant_response_text: z.string().min(1).max(1000)
+});
+
 const callTranscriptAnalysisSchema = z.object({
   total_business_questions: z.number().int().min(0).max(50),
-  unanswered_questions: z.array(unansweredQuestionSchema).max(MAX_UNANSWERED_QUESTIONS).default([])
+  answered_questions: z.array(answeredQuestionSchema).max(MAX_QUESTION_ITEMS).default([]),
+  unanswered_questions: z.array(unansweredQuestionSchema).max(MAX_QUESTION_ITEMS).default([])
 });
 
 function normalizeUnansweredReason(value) {
@@ -140,6 +146,7 @@ export async function analyzeTranscriptForUnansweredQuestions(transcript) {
   if (!preparedTranscript) {
     return {
       totalBusinessQuestions: 0,
+      answeredQuestions: [],
       unansweredQuestions: [],
       model: null,
       responseId: null,
@@ -152,17 +159,21 @@ export async function analyzeTranscriptForUnansweredQuestions(transcript) {
     "Count only direct business-information questions asked by the caller.",
     "A business-information question asks for factual information about the business, services, pricing, warranty, policies, availability, service area, process, timing, or capabilities.",
     "Do not count basic lead-capture prompts like asking for a name, callback number, address, or appointment time unless the caller is asking for factual business information.",
+    "Return every business-information question in exactly one bucket: answered_questions or unanswered_questions.",
+    "Mark a question as answered when the assistant gave a direct, useful business-specific answer to that question.",
     "Mark a question as unanswered only when the assistant clearly failed to answer it from business-specific knowledge.",
     "Examples of unanswered: the assistant says it does not know, cannot confirm, needs someone to follow up, or gives a generic deflection instead of answering the question.",
     "Do not mark a question unanswered if the assistant gave a reasonable direct answer, even if brief.",
     "Use only the transcript. Do not invent missing facts.",
-    "For each unanswered question, preserve the caller's question and the assistant response that showed the gap as closely as possible."
+    "For each question, preserve the caller's question and the assistant response that answered it or showed the gap as closely as possible."
   ].join(" ");
 
   const user = [
     "Return JSON with:",
     "- total_business_questions: integer",
+    "- answered_questions: array of objects with question_text and assistant_response_text",
     "- unanswered_questions: array of objects with question_text, assistant_response_text, and optional reason",
+    "- total_business_questions should equal answered_questions.length + unanswered_questions.length",
     "",
     "Transcript:",
     preparedTranscript
@@ -173,9 +184,15 @@ export async function analyzeTranscriptForUnansweredQuestions(transcript) {
     system,
     user,
     schema: callTranscriptAnalysisSchema,
-    maxOutputTokens: 1200,
-    jsonSchemaName: "call_transcript_unanswered_questions"
+    maxOutputTokens: 2200,
+    jsonSchemaName: "call_transcript_question_inventory"
   });
+
+  const answeredQuestions = (result.parsed.answered_questions || []).map((item, index) => ({
+    ordinal: index,
+    questionText: clipText(item.question_text, 500),
+    assistantResponseText: clipText(item.assistant_response_text, 1000)
+  })).filter((item) => item.questionText && item.assistantResponseText);
 
   const unansweredQuestions = (result.parsed.unanswered_questions || []).map((item, index) => ({
     ordinal: index,
@@ -184,8 +201,11 @@ export async function analyzeTranscriptForUnansweredQuestions(transcript) {
     reason: normalizeUnansweredReason(item.reason)
   })).filter((item) => item.questionText && item.assistantResponseText);
 
+  const derivedTotalQuestionCount = answeredQuestions.length + unansweredQuestions.length;
+
   return {
-    totalBusinessQuestions: Number(result.parsed.total_business_questions || 0),
+    totalBusinessQuestions: Math.max(Number(result.parsed.total_business_questions || 0), derivedTotalQuestionCount),
+    answeredQuestions,
     unansweredQuestions,
     model: result.model,
     responseId: result.responseId,
@@ -200,10 +220,16 @@ export async function persistTranscriptQuestionAnalysis(db, {
   analysis
 }) {
   const transcriptSha256 = buildTranscriptHash(transcript);
+  const answeredQuestionCount = Array.isArray(analysis?.answeredQuestions) ? analysis.answeredQuestions.length : 0;
   const unansweredQuestionCount = Array.isArray(analysis?.unansweredQuestions) ? analysis.unansweredQuestions.length : 0;
   const totalBusinessQuestions = Number(analysis?.totalBusinessQuestions || 0);
   const analysisJson = {
     total_business_questions: totalBusinessQuestions,
+    answered_questions: (analysis?.answeredQuestions || []).map((item) => ({
+      ordinal: item.ordinal,
+      question_text: item.questionText,
+      assistant_response_text: item.assistantResponseText
+    })),
     unanswered_questions: (analysis?.unansweredQuestions || []).map((item) => ({
       ordinal: item.ordinal,
       question_text: item.questionText,
@@ -224,12 +250,13 @@ export async function persistTranscriptQuestionAnalysis(db, {
          model,
          response_id,
          total_business_questions,
+         answered_question_count,
          unanswered_question_count,
          analysis_json,
          created_at,
          updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, NOW(), NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NOW(), NOW())
        ON CONFLICT (call_sid)
        DO UPDATE SET
          tenant_key = EXCLUDED.tenant_key,
@@ -238,6 +265,7 @@ export async function persistTranscriptQuestionAnalysis(db, {
          model = EXCLUDED.model,
          response_id = EXCLUDED.response_id,
          total_business_questions = EXCLUDED.total_business_questions,
+         answered_question_count = EXCLUDED.answered_question_count,
          unanswered_question_count = EXCLUDED.unanswered_question_count,
          analysis_json = EXCLUDED.analysis_json,
          updated_at = NOW()`,
@@ -249,9 +277,16 @@ export async function persistTranscriptQuestionAnalysis(db, {
         normalizeText(analysis?.model) || null,
         normalizeText(analysis?.responseId) || null,
         totalBusinessQuestions,
+        answeredQuestionCount,
         unansweredQuestionCount,
         JSON.stringify(analysisJson)
       ]
+    );
+
+    await client.query(
+      `DELETE FROM call_answered_questions
+       WHERE call_sid = $1`,
+      [callSid]
     );
 
     await client.query(
@@ -259,6 +294,30 @@ export async function persistTranscriptQuestionAnalysis(db, {
        WHERE call_sid = $1`,
       [callSid]
     );
+
+    for (const item of analysis?.answeredQuestions || []) {
+      await client.query(
+        `INSERT INTO call_answered_questions (
+           tenant_key,
+           call_sid,
+           analysis_version,
+           ordinal,
+           question_text,
+           assistant_response_text,
+           created_at,
+           updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+        [
+          tenantKey,
+          callSid,
+          ANALYSIS_VERSION,
+          Number(item.ordinal || 0),
+          item.questionText,
+          item.assistantResponseText
+        ]
+      );
+    }
 
     for (const item of analysis?.unansweredQuestions || []) {
       await client.query(
@@ -299,6 +358,7 @@ export async function persistTranscriptQuestionAnalysis(db, {
   return {
     transcriptSha256,
     totalBusinessQuestions,
+    answeredQuestionCount,
     unansweredQuestionCount
   };
 }
@@ -358,10 +418,10 @@ export async function enqueueMissingCallTranscriptAnalyses(db, {
      LEFT JOIN call_transcript_analyses a ON a.call_sid = c.call_sid
      WHERE c.tenant_key = $1
        AND c.created_at >= NOW() - ($2::text || ' days')::interval
-       AND a.call_sid IS NULL
+       AND (a.call_sid IS NULL OR a.analysis_version IS DISTINCT FROM $4)
      ORDER BY c.created_at DESC
      LIMIT $3`,
-    [tenantKey, String(Math.max(1, Number(days || 30))), Math.max(1, Number(limit || 50))]
+    [tenantKey, String(Math.max(1, Number(days || 30))), Math.max(1, Number(limit || 50)), ANALYSIS_VERSION]
   );
 
   let enqueued = 0;
@@ -371,7 +431,7 @@ export async function enqueueMissingCallTranscriptAnalyses(db, {
     await enqueueAsyncJob(db, {
       jobType: ASYNC_JOB_TYPES.callTranscriptAnalysis,
       tenantKey,
-      dedupeKey: `call_transcript_analysis_backfill:${callSid}`,
+      dedupeKey: `call_transcript_analysis_backfill:${ANALYSIS_VERSION}:${callSid}`,
       payload: {
         tenantKey,
         callSid
@@ -408,7 +468,7 @@ export async function reviveDeadLetterCallTranscriptAnalyses(db, {
          AND j.status = 'dead_letter'
          AND c.tenant_key = $2
          AND c.created_at >= NOW() - ($3::text || ' days')::interval
-         AND a.call_sid IS NULL
+         AND (a.call_sid IS NULL OR a.analysis_version IS DISTINCT FROM $5)
      ),
      candidate AS (
        SELECT id
@@ -433,7 +493,8 @@ export async function reviveDeadLetterCallTranscriptAnalyses(db, {
       ASYNC_JOB_TYPES.callTranscriptAnalysis,
       tenantKey,
       String(Math.max(1, Number(days || 30))),
-      Math.max(1, Number(limit || 50))
+      Math.max(1, Number(limit || 50)),
+      ANALYSIS_VERSION
     ]
   );
 

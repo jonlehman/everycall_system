@@ -4,6 +4,7 @@ import { releaseVoiceNumber } from "./telnyx.js";
 const TENANT_KEY_TABLES = [
   "runtime_bundles",
   "call_transcript_analyses",
+  "call_answered_questions",
   "call_unanswered_questions",
   "call_states",
   "knowledge_coverage_events",
