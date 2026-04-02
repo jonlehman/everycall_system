@@ -601,7 +601,7 @@ export default function ReceptionistKnowledgePage() {
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website Base</h4>
+                      <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website</h4>
                       <p className="mt-1 text-sm text-slate-500">Crawl the main website and refresh the base knowledge layer.</p>
                     </div>
                     <button
@@ -673,7 +673,7 @@ export default function ReceptionistKnowledgePage() {
                   onFocusCapture={() => setActiveGuideKey('documentsMeta')}
                 >
                   <div className="mb-2">
-                    <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Document Overlay</h4>
+                    <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Documents</h4>
                     <p className="mt-1 text-sm text-slate-500">
                       Approved document sources override conflicting website details when you apply documents and single web page uploads.
                     </p>
