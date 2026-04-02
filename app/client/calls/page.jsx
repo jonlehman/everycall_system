@@ -247,11 +247,9 @@ export default function CallsPage() {
   }, []);
 
   useEffect(() => {
-    if (!requestedCallSid || !calls.length || selectedCallSid === requestedCallSid) return;
-    const exists = calls.some((call) => call.call_sid === requestedCallSid);
-    if (!exists) return;
+    if (!requestedCallSid || selectedCallSid === requestedCallSid) return;
     loadDetail(requestedCallSid);
-  }, [requestedCallSid, calls, selectedCallSid]);
+  }, [requestedCallSid, selectedCallSid]);
 
   useEffect(() => {
     setQueuePage(0);
@@ -273,6 +271,17 @@ export default function CallsPage() {
     if (metaResp.ok) {
       const data = await metaResp.json();
       const call = data.call || null;
+      if (call?.call_sid) {
+        setCalls((current) => {
+          const existingIndex = current.findIndex((entry) => entry.call_sid === call.call_sid);
+          if (existingIndex === -1) {
+            return [call, ...current];
+          }
+          const next = [...current];
+          next[existingIndex] = { ...next[existingIndex], ...call };
+          return next;
+        });
+      }
       setDetailMeta(call);
       setDetailDraft({
         status: call?.status || 'new',
