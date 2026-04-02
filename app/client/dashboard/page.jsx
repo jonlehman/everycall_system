@@ -104,6 +104,10 @@ function fetchJson(url, options) {
   });
 }
 
+async function loadDashboard() {
+  return fetchJson('/api/v1/client/dashboard');
+}
+
 function panelClassName(extra = '') {
   return `rounded-xl border border-slate-200/70 bg-white shadow-sm ${extra}`.trim();
 }
@@ -186,10 +190,11 @@ export default function ClientDashboardPage() {
   const [dashboard, setDashboard] = useState(null);
   const [status, setStatus] = useState({ tone: 'warn', message: 'Loading dashboard...' });
   const [showKnowledgeQuestions, setShowKnowledgeQuestions] = useState(false);
+  const [retryingTranscriptAnalysis, setRetryingTranscriptAnalysis] = useState(false);
 
   useEffect(() => {
     let mounted = true;
-    fetchJson('/api/v1/client/dashboard')
+    loadDashboard()
       .then((data) => {
         if (!mounted) return;
         setDashboard(data);
@@ -220,6 +225,7 @@ export default function ClientDashboardPage() {
     ?? 0
   );
   const pendingTranscriptAnalysisCallCount = Number(knowledgeSignals.pendingTranscriptAnalysisCallCount30d || 0);
+  const failedTranscriptAnalysisCallCount = Number(knowledgeSignals.failedTranscriptAnalysisCallCount30d || 0);
   const answeredQuestionRate = Number(knowledgeSignals.answeredQuestionRate30d || 0);
   const answeredQuestionCount = Math.max(0, kbQuestionCount - unansweredQuestionCount);
   const maxTrendCount = Math.max(1, ...callVolumeLast7Days.map((day) => Number(day.totalCount || day.count || 0)));
@@ -229,6 +235,23 @@ export default function ClientDashboardPage() {
       setShowKnowledgeQuestions(false);
     }
   }, [unansweredQuestionCount]);
+
+  async function handleRetryTranscriptAnalysis() {
+    setRetryingTranscriptAnalysis(true);
+    setStatus({ tone: 'warn', message: 'Retrying transcript analysis...' });
+    try {
+      await fetchJson('/api/v1/client/dashboard/transcript-analysis/retry', {
+        method: 'POST'
+      });
+      const refreshed = await loadDashboard();
+      setDashboard(refreshed);
+      setStatus({ tone: 'ok', message: 'Transcript analysis retry queued.' });
+    } catch (error) {
+      setStatus({ tone: 'bad', message: error?.message || 'Could not retry transcript analysis.' });
+    } finally {
+      setRetryingTranscriptAnalysis(false);
+    }
+  }
 
   const orderedBreakdown = useMemo(() => {
     const byKey = new Map(classificationBreakdown.map((item) => [item.key, item]));
@@ -386,6 +409,21 @@ export default function ClientDashboardPage() {
               {!kbQuestionCount && pendingTranscriptAnalysisCallCount > 0 ? (
                 <div className="rounded-lg border border-slate-200/70 bg-[#f8fafc] px-3 py-2 text-xs text-slate-600">
                   Analyzing {pendingTranscriptAnalysisCallCount} recent call{pendingTranscriptAnalysisCallCount === 1 ? '' : 's'}.
+                </div>
+              ) : null}
+              {!kbQuestionCount && !pendingTranscriptAnalysisCallCount && failedTranscriptAnalysisCallCount > 0 ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-900">
+                  <div>
+                    Analysis stalled on {failedTranscriptAnalysisCallCount} recent call{failedTranscriptAnalysisCallCount === 1 ? '' : 's'}.
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-2 rounded-md bg-white px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={handleRetryTranscriptAnalysis}
+                    disabled={retryingTranscriptAnalysis}
+                  >
+                    {retryingTranscriptAnalysis ? 'Retrying...' : 'Retry Analysis'}
+                  </button>
                 </div>
               ) : null}
             </div>

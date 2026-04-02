@@ -329,4 +329,62 @@ export async function enqueueMissingCallTranscriptAnalyses(db, {
   };
 }
 
+export async function reviveDeadLetterCallTranscriptAnalyses(db, {
+  tenantKey,
+  days = 30,
+  limit = 50
+}) {
+  const result = await db.query(
+    `WITH ranked AS (
+       SELECT
+         j.id,
+         ROW_NUMBER() OVER (
+           PARTITION BY (j.payload_json->>'callSid')
+           ORDER BY j.updated_at DESC, j.id DESC
+         ) AS rn
+       FROM async_jobs j
+       JOIN calls c
+         ON c.call_sid = (j.payload_json->>'callSid')
+       LEFT JOIN call_transcript_analyses a
+         ON a.call_sid = c.call_sid
+       WHERE j.job_type = $1
+         AND j.tenant_key = $2
+         AND j.status = 'dead_letter'
+         AND j.last_error = 'openai_api_key_missing'
+         AND c.tenant_key = $2
+         AND c.created_at >= NOW() - ($3::text || ' days')::interval
+         AND a.call_sid IS NULL
+     ),
+     candidate AS (
+       SELECT id
+       FROM ranked
+       WHERE rn = 1
+       ORDER BY id ASC
+       LIMIT $4
+     )
+     UPDATE async_jobs jobs
+     SET status = 'pending',
+         attempts = 0,
+         completed_at = NULL,
+         available_at = NOW(),
+         locked_at = NULL,
+         locked_by = NULL,
+         last_error = NULL,
+         updated_at = NOW()
+     FROM candidate
+     WHERE jobs.id = candidate.id
+     RETURNING jobs.id`,
+    [
+      ASYNC_JOB_TYPES.callTranscriptAnalysis,
+      tenantKey,
+      String(Math.max(1, Number(days || 30))),
+      Math.max(1, Number(limit || 50))
+    ]
+  );
+
+  return {
+    revived: result.rowCount || 0
+  };
+}
+
 export { ANALYSIS_VERSION as CALL_TRANSCRIPT_ANALYSIS_VERSION };

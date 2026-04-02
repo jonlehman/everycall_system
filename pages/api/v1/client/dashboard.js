@@ -157,15 +157,43 @@ async function loadKnowledgeSignals(pool, tenantKey) {
 async function countPendingTranscriptAnalysisCalls(pool, tenantKey) {
   try {
     const result = await pool.query(
-      `SELECT COUNT(*)::int AS pending_call_count_30d
+      `SELECT COUNT(DISTINCT c.call_sid)::int AS pending_call_count_30d
        FROM calls c
        LEFT JOIN call_transcript_analyses a ON a.call_sid = c.call_sid
+       JOIN async_jobs j
+         ON j.tenant_key = c.tenant_key
+        AND j.job_type = 'call_transcript.analysis'
+        AND (j.payload_json->>'callSid') = c.call_sid
+        AND j.status IN ('pending', 'running')
        WHERE c.tenant_key = $1
          AND c.created_at >= NOW() - interval '30 days'
          AND a.call_sid IS NULL`,
       [tenantKey]
     );
     return Number(result.rows?.[0]?.pending_call_count_30d || 0);
+  } catch (error) {
+    if (error?.code === "42P01") return 0;
+    throw error;
+  }
+}
+
+async function countFailedTranscriptAnalysisCalls(pool, tenantKey) {
+  try {
+    const result = await pool.query(
+      `SELECT COUNT(DISTINCT c.call_sid)::int AS failed_call_count_30d
+       FROM calls c
+       LEFT JOIN call_transcript_analyses a ON a.call_sid = c.call_sid
+       JOIN async_jobs j
+         ON j.tenant_key = c.tenant_key
+        AND j.job_type = 'call_transcript.analysis'
+        AND (j.payload_json->>'callSid') = c.call_sid
+        AND j.status = 'dead_letter'
+       WHERE c.tenant_key = $1
+         AND c.created_at >= NOW() - interval '30 days'
+         AND a.call_sid IS NULL`,
+      [tenantKey]
+    );
+    return Number(result.rows?.[0]?.failed_call_count_30d || 0);
   } catch (error) {
     if (error?.code === "42P01") return 0;
     throw error;
@@ -223,6 +251,7 @@ export default async function handler(req, res) {
       knowledgeSignals,
       knowledgeGapQuestions,
       pendingTranscriptAnalysisCallCount30d,
+      failedTranscriptAnalysisCallCount30d,
       businessHoursConfig,
       buildsData
     ] = await Promise.all([
@@ -312,6 +341,7 @@ export default async function handler(req, res) {
       loadKnowledgeSignals(pool, tenantKey),
       loadKnowledgeGapQuestions(pool, tenantKey),
       countPendingTranscriptAnalysisCalls(pool, tenantKey),
+      countFailedTranscriptAnalysisCalls(pool, tenantKey),
       loadTenantBusinessHours(pool, tenantKey),
       listKnowledgeReceptionistBuilds(pool, tenantKey)
     ]);
@@ -450,6 +480,7 @@ export default async function handler(req, res) {
         unansweredQuestionCalls30d: unansweredQuestionCount30d,
         unansweredKbCallCount30d: unansweredCallCount30d,
         pendingTranscriptAnalysisCallCount30d,
+        failedTranscriptAnalysisCallCount30d,
         transcriptAnalysisBackfillEnqueued: Number(transcriptAnalysisBackfill.enqueued || 0),
         answeredQuestionRate30d: kbQuestionCount30d
           ? Math.max(0, Math.round(((kbQuestionCount30d - unansweredQuestionCount30d) / kbQuestionCount30d) * 1000) / 10)
