@@ -70,7 +70,6 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         ) : (
           <>
             <h2 className="text-lg font-bold tracking-[-0.02em] text-slate-900">Client Workspace</h2>
-            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Operational Console</p>
           </>
         )}
       </div>
