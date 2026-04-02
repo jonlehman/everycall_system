@@ -12,6 +12,13 @@ const OPENAI_TRANSCRIPT_ANALYSIS_MODEL = process.env.OPENAI_TRANSCRIPT_ANALYSIS_
   || "gpt-5.4-nano";
 const MAX_TRANSCRIPT_ANALYSIS_CHARS = 20_000;
 const MAX_UNANSWERED_QUESTIONS = 12;
+const CANONICAL_UNANSWERED_REASONS = new Set([
+  "explicit_unknown",
+  "cannot_confirm",
+  "follow_up_needed",
+  "generic_deflection",
+  "partial_but_unanswered"
+]);
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -42,19 +49,70 @@ function trimTranscriptForAnalysis(transcript) {
 const unansweredQuestionSchema = z.object({
   question_text: z.string().min(1).max(500),
   assistant_response_text: z.string().min(1).max(1000),
-  reason: z.enum([
-    "explicit_unknown",
-    "cannot_confirm",
-    "follow_up_needed",
-    "generic_deflection",
-    "partial_but_unanswered"
-  ]).optional()
+  reason: z.string().min(1).max(160).optional()
 });
 
 const callTranscriptAnalysisSchema = z.object({
   total_business_questions: z.number().int().min(0).max(50),
   unanswered_questions: z.array(unansweredQuestionSchema).max(MAX_UNANSWERED_QUESTIONS).default([])
 });
+
+function normalizeUnansweredReason(value) {
+  const normalized = normalizeText(value).toLowerCase().replace(/[\s-]+/g, "_");
+  if (!normalized) return null;
+  if (CANONICAL_UNANSWERED_REASONS.has(normalized)) {
+    return normalized;
+  }
+  if (
+    normalized.includes("follow_up")
+    || normalized.includes("followup")
+    || normalized.includes("someone_review")
+    || normalized.includes("someone_reach")
+    || normalized.includes("call_back")
+    || normalized.includes("callback")
+  ) {
+    return "follow_up_needed";
+  }
+  if (
+    normalized.includes("cannot_confirm")
+    || normalized.includes("cant_confirm")
+    || normalized.includes("can't_confirm")
+    || normalized.includes("could_not_confirm")
+    || normalized.includes("not_confirm")
+    || normalized.includes("no_specific_information")
+  ) {
+    return "cannot_confirm";
+  }
+  if (
+    normalized.includes("dont_know")
+    || normalized.includes("don't_know")
+    || normalized.includes("does_not_know")
+    || normalized.includes("did_not_know")
+    || normalized.includes("unknown")
+    || normalized.includes("couldnt_find")
+    || normalized.includes("couldn't_find")
+    || normalized.includes("not_sure")
+  ) {
+    return "explicit_unknown";
+  }
+  if (
+    normalized.includes("generic")
+    || normalized.includes("deflection")
+    || normalized.includes("redirect")
+    || normalized.includes("contact_support")
+  ) {
+    return "generic_deflection";
+  }
+  if (
+    normalized.includes("partial")
+    || normalized.includes("incomplete")
+    || normalized.includes("not_fully")
+    || normalized.includes("not_specific")
+  ) {
+    return "partial_but_unanswered";
+  }
+  return null;
+}
 
 export async function loadCombinedTranscriptForAnalysis(db, callSid) {
   const detail = await db.query(
@@ -123,7 +181,7 @@ export async function analyzeTranscriptForUnansweredQuestions(transcript) {
     ordinal: index,
     questionText: clipText(item.question_text, 500),
     assistantResponseText: clipText(item.assistant_response_text, 1000),
-    reason: normalizeText(item.reason)
+    reason: normalizeUnansweredReason(item.reason)
   })).filter((item) => item.questionText && item.assistantResponseText);
 
   return {
