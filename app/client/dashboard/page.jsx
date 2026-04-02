@@ -352,7 +352,7 @@ export default function ClientDashboardPage() {
                     <tr
                       key={call.call_sid}
                       className="cursor-pointer transition-colors hover:bg-[#f7fafc]"
-                      onClick={() => { window.location.href = '/client/calls'; }}
+                      onClick={() => { window.location.href = `/client/calls?callSid=${encodeURIComponent(call.call_sid || '')}`; }}
                     >
                       <td className="px-6 py-4 text-xs text-slate-500 whitespace-nowrap">{formatTimeOnly(call.created_at)}</td>
                       <td className="px-6 py-4">
