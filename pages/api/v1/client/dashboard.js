@@ -93,7 +93,7 @@ function formatDateKeyInTimezone(value, timezone) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-async function loadKnowledgeGapQuestions(pool, tenantKey) {
+async function loadKnowledgeGapQuestions(pool, tenantKey, { limit = 25 } = {}) {
   try {
     const result = await pool.query(
       `SELECT
@@ -114,8 +114,8 @@ async function loadKnowledgeGapQuestions(pool, tenantKey) {
        WHERE q.tenant_key = $1
          AND c.created_at >= NOW() - interval '30 days'
        ORDER BY q.created_at DESC
-       LIMIT 20`,
-      [tenantKey]
+       LIMIT $2`,
+      [tenantKey, Math.max(1, Number(limit || 25))]
     );
     return result.rows || [];
   } catch (error) {
@@ -124,7 +124,7 @@ async function loadKnowledgeGapQuestions(pool, tenantKey) {
   }
 }
 
-async function loadAnsweredKnowledgeQuestions(pool, tenantKey) {
+async function loadAnsweredKnowledgeQuestions(pool, tenantKey, { limit = 25 } = {}) {
   try {
     const result = await pool.query(
       `SELECT
@@ -144,8 +144,8 @@ async function loadAnsweredKnowledgeQuestions(pool, tenantKey) {
        WHERE q.tenant_key = $1
          AND c.created_at >= NOW() - interval '30 days'
        ORDER BY q.created_at DESC
-       LIMIT 30`,
-      [tenantKey]
+       LIMIT $2`,
+      [tenantKey, Math.max(1, Number(limit || 25))]
     );
     return result.rows || [];
   } catch (error) {

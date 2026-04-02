@@ -448,16 +448,14 @@ export default function ClientDashboardPage() {
                   <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
                     {expandedKnowledgeList === 'answered' ? 'Questions Answered From KB' : 'Questions Not Answered From KB'}
                   </div>
-                  {expandedKnowledgeList === 'answered' ? (
-                    <Link href="/client/calls" className="text-xs font-bold uppercase tracking-[0.18em] text-[#205cb5]">
-                      Open Calls
-                    </Link>
-                  ) : (
-                    <Link href="/client/receptionist/knowledge" className="text-xs font-bold uppercase tracking-[0.18em] text-[#205cb5]">
-                      Update KB
-                    </Link>
-                  )}
+                  <Link
+                    href={`/client/dashboard/questions?kind=${expandedKnowledgeList === 'answered' ? 'answered' : 'unanswered'}&page=1`}
+                    className="text-xs font-bold uppercase tracking-[0.18em] text-[#205cb5]"
+                  >
+                    View All
+                  </Link>
                 </div>
+                <div className="mb-3 text-[11px] text-slate-500">Showing first 25.</div>
                 <div className="space-y-3">
                   {(expandedKnowledgeList === 'answered' ? answeredKnowledgeQuestions : knowledgeGapQuestions).length ? (expandedKnowledgeList === 'answered' ? answeredKnowledgeQuestions : knowledgeGapQuestions).map((question) => {
                     const callerName = [question.caller_first_name, question.caller_last_name].filter(Boolean).join(' ') || question.callback_number || 'Unknown caller';
