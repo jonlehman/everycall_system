@@ -348,7 +348,6 @@ export async function reviveDeadLetterCallTranscriptAnalyses(db, {
        WHERE j.job_type = $1
          AND j.tenant_key = $2
          AND j.status = 'dead_letter'
-         AND j.last_error = 'openai_api_key_missing'
          AND c.tenant_key = $2
          AND c.created_at >= NOW() - ($3::text || ' days')::interval
          AND a.call_sid IS NULL
