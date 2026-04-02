@@ -10,6 +10,16 @@ import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
 const PAGE_SIZE = 10;
 const TRANSCRIPT_TURN_PATTERN = /^(assistant|caller|agent|system)\s*:\s*(.*)$/i;
+const CALL_CATEGORY_OPTIONS = [
+  'project_inquiry',
+  'general_inquiry',
+  'existing_customer_support',
+  'vendor_or_sales',
+  'spam',
+  'wrong_number',
+  'hangup_or_incomplete',
+  'other_non_billable'
+];
 
 function formatLabel(value) {
   return String(value || '').replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -110,6 +120,48 @@ function leadBadgeClass(tone) {
   return 'border-slate-200 bg-slate-100 text-slate-700';
 }
 
+function normalizeCallCategory(outcomeType, isValidLead) {
+  const normalized = String(outcomeType || '').trim().toLowerCase();
+  if (
+    isValidLead
+    || [
+      'callback_request',
+      'estimate_request',
+      'quote_request',
+      'consultation_request',
+      'appointment_request',
+      'project_request',
+      'project_inquiry',
+      'service_request',
+      'lead',
+      'new_customer_lead',
+      'message_taken',
+      'transfer'
+    ].includes(normalized)
+  ) {
+    return 'project_inquiry';
+  }
+  if (['general_inquiry', 'general_question', 'question_only'].includes(normalized)) {
+    return 'general_inquiry';
+  }
+  if (normalized === 'existing_customer_support' || normalized === 'existing_customer') {
+    return 'existing_customer_support';
+  }
+  if (['vendor_or_sales', 'vendor', 'sales_call'].includes(normalized)) {
+    return 'vendor_or_sales';
+  }
+  if (normalized === 'spam') {
+    return 'spam';
+  }
+  if (normalized === 'wrong_number') {
+    return 'wrong_number';
+  }
+  if (['hangup', 'hangup_incomplete', 'canceled'].includes(normalized)) {
+    return 'hangup_or_incomplete';
+  }
+  return 'other_non_billable';
+}
+
 export default function CallsPage() {
   const isMobile = useMediaQuery('(max-width: 980px)');
   const [calls, setCalls] = useState([]);
@@ -120,6 +172,7 @@ export default function CallsPage() {
   const [saveStatus, setSaveStatus] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [urgencyFilter, setUrgencyFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -192,7 +245,7 @@ export default function CallsPage() {
 
   useEffect(() => {
     setQueuePage(0);
-  }, [statusFilter, urgencyFilter, search, dateFrom, dateTo]);
+  }, [statusFilter, urgencyFilter, categoryFilter, search, dateFrom, dateTo]);
 
   const loadDetail = async (callSid) => {
     if (!callSid) return;
@@ -307,6 +360,7 @@ export default function CallsPage() {
     leadIsValid: Boolean(call.lead_is_valid),
     leadIsBillable: Boolean(call.lead_is_billable),
     leadDecisionReason: call.lead_decision_reason || '',
+    callCategory: normalizeCallCategory(call.lead_outcome_type, call.lead_is_valid),
     firstName: call.caller_first_name || '',
     lastName: call.caller_last_name || '',
     addressLine1: call.address_line1 || '',
@@ -323,6 +377,7 @@ export default function CallsPage() {
   const filteredRows = rows.filter((row) => {
     if (statusFilter !== 'all' && row.status !== statusFilter) return false;
     if (urgencyFilter !== 'all' && row.urgency !== urgencyFilter) return false;
+    if (categoryFilter !== 'all' && row.callCategory !== categoryFilter) return false;
     if (search.trim()) {
       const hay = [
         row.sid,
@@ -400,7 +455,7 @@ export default function CallsPage() {
               <p className="m-0 mt-1 text-sm font-medium text-slate-500">Use filters to focus the call queue before you open details.</p>
             </div>
 
-            <div className={`mt-6 grid gap-6 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-3'}`}>
+            <div className={`mt-6 grid gap-6 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-4'}`}>
               <div className="space-y-1.5">
                 <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Search Text</label>
                 <div className="relative">
@@ -452,7 +507,22 @@ export default function CallsPage() {
                 </select>
               </div>
 
-              <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:col-span-2 md:grid-cols-2'}`}>
+              <div className="space-y-1.5">
+                <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Call Category</label>
+                <select
+                  className="w-full appearance-none rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
+                  value={categoryFilter}
+                  onChange={(event) => setCategoryFilter(event.target.value)}
+                  aria-label="Call Category"
+                >
+                  <option value="all">All Categories</option>
+                  {CALL_CATEGORY_OPTIONS.map((value) => (
+                    <option key={value} value={value}>{formatLabel(value)}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:col-span-3 md:grid-cols-2'}`}>
                 <div className="space-y-1.5">
                   <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Date From</label>
                   <input
@@ -482,6 +552,7 @@ export default function CallsPage() {
                   onClick={() => {
                     setStatusFilter('all');
                     setUrgencyFilter('all');
+                    setCategoryFilter('all');
                     setDateFrom('');
                     setDateTo('');
                     setSearch('');
@@ -502,6 +573,7 @@ export default function CallsPage() {
                     <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Time</th>
                     <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Number</th>
                     <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">AI Summary</th>
+                    <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Call Category</th>
                     <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Status</th>
                     <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Urgency</th>
                   </tr>
@@ -554,6 +626,11 @@ export default function CallsPage() {
                           </div>
                         </td>
                         <td className="px-6 py-5">
+                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[0.7rem] font-semibold tracking-wide text-slate-700">
+                            {formatLabel(row.callCategory)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-5">
                           <span className={`rounded-full px-2.5 py-1 text-[0.65rem] font-extrabold uppercase tracking-wider ${queueStatusClass(row.status)}`}>
                             {formatLabel(row.status)}
                           </span>
@@ -568,7 +645,7 @@ export default function CallsPage() {
                     );
                   }) : (
                     <tr>
-                      <td className="px-6 py-8 text-sm text-slate-500" colSpan={5}>
+                      <td className="px-6 py-8 text-sm text-slate-500" colSpan={6}>
                         {loading ? 'Loading calls...' : 'No calls match the current filters.'}
                       </td>
                     </tr>
