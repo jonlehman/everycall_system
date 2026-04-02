@@ -381,7 +381,7 @@ export default function ReceptionistBasicsPage() {
                   ))}
                 </div>
                 <div className="mt-2 text-xs text-slate-500">
-                  Times use {businessHoursConfig.timezone}.
+                  Times use your local time zone set in Account.
                 </div>
               </div>
             </StepSection>
