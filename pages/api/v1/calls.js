@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { ensureTables, getPool } from "../_lib/db.js";
 import { INTERNAL_AUTH_PURPOSES, isValidInternalServiceToken } from "@everycall/contracts/internalAuth";
 import { getSession, requireSession, resolveTenantKey } from "../_lib/auth.js";
@@ -18,6 +19,15 @@ const openAiSummaryModel = process.env.OPENAI_SUMMARY_MODEL || "gpt-5.2";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
+}
+
+function buildTranscriptAnalysisDedupeKey(callSid, transcript) {
+  const normalizedCallSid = String(callSid || "").trim();
+  const normalizedTranscript = sanitizeTranscriptText(String(transcript || ""));
+  if (!normalizedCallSid) return "";
+  if (!normalizedTranscript) return `call_transcript_analysis:${normalizedCallSid}`;
+  const hash = crypto.createHash("sha256").update(normalizedTranscript, "utf8").digest("hex").slice(0, 16);
+  return `call_transcript_analysis:${normalizedCallSid}:${hash}`;
 }
 
 function normalizeSummary(rawText) {
@@ -385,6 +395,25 @@ export default async function handler(req, res) {
             tenantKey: effectiveTenantKey,
             callId,
             message: integrationErr?.message || "unknown"
+          });
+        }
+
+        try {
+          await enqueueAsyncJob(pool, {
+            jobType: ASYNC_JOB_TYPES.callTranscriptAnalysis,
+            tenantKey: effectiveTenantKey,
+            dedupeKey: buildTranscriptAnalysisDedupeKey(callId, transcriptFromPayload || ""),
+            payload: {
+              tenantKey: effectiveTenantKey,
+              callSid: callId
+            },
+            maxAttempts: 4
+          });
+        } catch (analysisErr) {
+          console.error("call_transcript_analysis_enqueue_failed", {
+            tenantKey: effectiveTenantKey,
+            callId,
+            message: analysisErr?.message || "unknown"
           });
         }
 

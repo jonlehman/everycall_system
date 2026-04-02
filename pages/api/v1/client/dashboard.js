@@ -32,48 +32,6 @@ const DASHBOARD_CATEGORY_LABELS = {
   other_non_billable: "Other Non-Billable"
 };
 
-const KNOWLEDGE_CARD_SUPPORT_THRESHOLD = 0.38;
-const KNOWLEDGE_FACT_SUPPORT_THRESHOLD = 0.42;
-
-function coerceNumber(value) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : 0;
-}
-
-function classifyKnowledgeCoverageEvent(row) {
-  const maxCardSimilarity = coerceNumber(
-    row?.max_card_similarity
-    ?? row?.maxCardSimilarity
-    ?? row?.top_card_similarity
-  );
-  const maxFactSimilarity = coerceNumber(
-    row?.max_fact_similarity
-    ?? row?.maxFactSimilarity
-    ?? row?.top_fact_similarity
-  );
-  const kbAnswerability = normalizeText(row?.kb_answerability || row?.kbAnswerability).toLowerCase();
-  const observedSupportStrength = normalizeText(row?.observed_support_strength || row?.observedSupportStrength).toLowerCase();
-  const answeredFromKbValue = row?.answered_from_kb ?? row?.answeredFromKb;
-  const unansweredFromKbValue = row?.unanswered_from_kb ?? row?.unansweredFromKb;
-
-  let unansweredFromKb = unansweredFromKbValue === true;
-  if (answeredFromKbValue === true) unansweredFromKb = false;
-  if (!unansweredFromKb && kbAnswerability === "unanswered") unansweredFromKb = true;
-  if (!unansweredFromKb && !kbAnswerability && observedSupportStrength === "none") unansweredFromKb = true;
-  if (!unansweredFromKb && !kbAnswerability && !observedSupportStrength) {
-    unansweredFromKb = maxCardSimilarity < KNOWLEDGE_CARD_SUPPORT_THRESHOLD
-      && maxFactSimilarity < KNOWLEDGE_FACT_SUPPORT_THRESHOLD;
-  }
-
-  return {
-    kbAnswerability: kbAnswerability || (unansweredFromKb ? "unanswered" : "answered"),
-    unansweredFromKb,
-    answeredFromKb: !unansweredFromKb,
-    maxCardSimilarity,
-    maxFactSimilarity
-  };
-}
-
 function normalizeCallCategory(outcomeType, isValidLead) {
   const normalized = normalizeText(outcomeType).toLowerCase();
   if (
@@ -135,35 +93,27 @@ async function loadKnowledgeGapQuestions(pool, tenantKey) {
   try {
     const result = await pool.query(
       `SELECT
-         k.knowledge_coverage_event_id,
-         k.call_id,
-         k.created_at,
-         k.query_text,
-         k.requested_coverage_item_text,
-         k.kb_answerability,
-         k.answered_from_kb,
-         k.unanswered_from_kb,
-         k.observed_support_strength,
-         k.max_card_similarity,
-         k.max_fact_similarity,
+         q.id AS unanswered_question_id,
+         q.call_sid,
+         c.created_at,
+         q.question_text,
+         q.assistant_response_text,
+         q.reason,
          c.summary,
          c.status,
          d.caller_first_name,
          d.caller_last_name,
          d.callback_number
-       FROM knowledge_coverage_events k
-       LEFT JOIN calls c ON c.call_sid = k.call_id
+       FROM call_unanswered_questions q
+       LEFT JOIN calls c ON c.call_sid = q.call_sid
        LEFT JOIN call_details d ON d.call_sid = c.call_sid
-       WHERE k.tenant_key = $1
-         AND k.created_at >= NOW() - interval '30 days'
-       ORDER BY k.created_at DESC
-       LIMIT 80`,
+       WHERE q.tenant_key = $1
+         AND c.created_at >= NOW() - interval '30 days'
+       ORDER BY q.created_at DESC
+       LIMIT 20`,
       [tenantKey]
     );
-    return (result.rows || [])
-      .map((row) => ({ ...row, ...classifyKnowledgeCoverageEvent(row) }))
-      .filter((row) => row.unansweredFromKb)
-      .slice(0, 20);
+    return result.rows || [];
   } catch (error) {
     if (error?.code === "42P01") return [];
     throw error;
@@ -174,31 +124,21 @@ async function loadKnowledgeSignals(pool, tenantKey) {
   try {
     const result = await pool.query(
       `SELECT
-         call_id,
-         kb_answerability,
-         answered_from_kb,
-         unanswered_from_kb,
-         observed_support_strength,
-         max_card_similarity,
-         max_fact_similarity
-       FROM knowledge_coverage_events
-       WHERE tenant_key = $1
-         AND created_at >= NOW() - interval '30 days'`,
+         COALESCE(SUM(a.total_business_questions), 0)::int AS kb_question_count_30d,
+         COUNT(DISTINCT a.call_sid) FILTER (WHERE a.total_business_questions > 0)::int AS kb_call_count_30d,
+         COALESCE(SUM(a.unanswered_question_count), 0)::int AS unanswered_question_count_30d,
+         COUNT(DISTINCT a.call_sid) FILTER (WHERE a.unanswered_question_count > 0)::int AS unanswered_call_count_30d
+       FROM call_transcript_analyses a
+       JOIN calls c ON c.call_sid = a.call_sid
+       WHERE a.tenant_key = $1
+         AND c.created_at >= NOW() - interval '30 days'`,
       [tenantKey]
     );
-    const rows = (result.rows || []).map((row) => ({ ...row, ...classifyKnowledgeCoverageEvent(row) }));
-    const unansweredRows = rows.filter((row) => row.unansweredFromKb);
-    const unansweredCallIds = new Set(
-      unansweredRows.map((row) => normalizeText(row.call_id)).filter(Boolean)
-    );
-    const callIds = new Set(
-      rows.map((row) => normalizeText(row.call_id)).filter(Boolean)
-    );
-    return {
-      kb_question_count_30d: rows.length,
-      kb_call_count_30d: callIds.size,
-      unanswered_question_count_30d: unansweredRows.length,
-      unanswered_call_count_30d: unansweredCallIds.size
+    return result.rows?.[0] || {
+      kb_question_count_30d: 0,
+      kb_call_count_30d: 0,
+      unanswered_question_count_30d: 0,
+      unanswered_call_count_30d: 0
     };
   } catch (error) {
     if (error?.code === "42P01") {
@@ -350,8 +290,8 @@ export default async function handler(req, res) {
     const calls30d = Number(callsSummary.calls_30d || 0);
     const kbQuestionCount30d = Number(knowledgeSignals.kb_question_count_30d || 0);
     const kbCallCount30d = Number(knowledgeSignals.kb_call_count_30d || 0);
-    const unansweredQuestionCalls30d = Number(knowledgeSignals.unanswered_question_count_30d || 0);
-    const unansweredKbCallCount30d = Number(knowledgeSignals.unanswered_call_count_30d || 0);
+    const unansweredQuestionCount30d = Number(knowledgeSignals.unanswered_question_count_30d || 0);
+    const unansweredCallCount30d = Number(knowledgeSignals.unanswered_call_count_30d || 0);
     const timezone = normalizeText(businessHoursConfig?.timezone) || "America/Los_Angeles";
     const builds = Array.isArray(buildsData?.builds) ? buildsData.builds : [];
     const publishedBuilds = builds.filter((build) => normalizeText(build?.status).toLowerCase() === "published");
@@ -473,10 +413,12 @@ export default async function handler(req, res) {
       knowledgeSignals: {
         kbQuestionCount30d,
         kbCallCount30d,
-        unansweredQuestionCalls30d,
-        unansweredKbCallCount30d,
+        unansweredQuestionCount30d,
+        unansweredCallCount30d,
+        unansweredQuestionCalls30d: unansweredQuestionCount30d,
+        unansweredKbCallCount30d: unansweredCallCount30d,
         answeredQuestionRate30d: kbQuestionCount30d
-          ? Math.max(0, Math.round(((kbQuestionCount30d - unansweredQuestionCalls30d) / kbQuestionCount30d) * 1000) / 10)
+          ? Math.max(0, Math.round(((kbQuestionCount30d - unansweredQuestionCount30d) / kbQuestionCount30d) * 1000) / 10)
           : 100
       },
       knowledgeGapQuestions,

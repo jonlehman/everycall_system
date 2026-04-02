@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { sanitizeTranscriptText } from '@everycall/contracts/callTranscript';
 import { useMediaQuery } from '@mui/material';
 import { Button } from '../../../components/ui/button';
@@ -163,6 +164,7 @@ function normalizeCallCategory(outcomeType, isValidLead) {
 }
 
 export default function CallsPage() {
+  const searchParams = useSearchParams();
   const isMobile = useMediaQuery('(max-width: 980px)');
   const [calls, setCalls] = useState([]);
   const [selectedCallSid, setSelectedCallSid] = useState('');
@@ -199,6 +201,7 @@ export default function CallsPage() {
   const [lastSavedAt, setLastSavedAt] = useState('');
   const searchInputRef = useRef(null);
   const transcriptRef = useRef(null);
+  const requestedCallSid = String(searchParams?.get('callSid') || '').trim();
 
   const loadCalls = async ({ showLoading = true } = {}) => {
     if (showLoading) setLoading(true);
@@ -242,6 +245,13 @@ export default function CallsPage() {
   useEffect(() => {
     loadCalls();
   }, []);
+
+  useEffect(() => {
+    if (!requestedCallSid || !calls.length || selectedCallSid === requestedCallSid) return;
+    const exists = calls.some((call) => call.call_sid === requestedCallSid);
+    if (!exists) return;
+    loadDetail(requestedCallSid);
+  }, [requestedCallSid, calls, selectedCallSid]);
 
   useEffect(() => {
     setQueuePage(0);

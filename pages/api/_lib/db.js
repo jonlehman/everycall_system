@@ -224,6 +224,55 @@ export async function ensureTables(pool) {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS call_transcript_analyses (
+      call_sid TEXT PRIMARY KEY REFERENCES calls(call_sid) ON DELETE CASCADE,
+      tenant_key TEXT NOT NULL,
+      transcript_sha256 TEXT,
+      analysis_version TEXT NOT NULL DEFAULT 'unanswered_questions_v1',
+      model TEXT,
+      response_id TEXT,
+      total_business_questions INTEGER NOT NULL DEFAULT 0,
+      unanswered_question_count INTEGER NOT NULL DEFAULT 0,
+      analysis_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE call_transcript_analyses ADD COLUMN IF NOT EXISTS tenant_key TEXT;`);
+  await pool.query(`ALTER TABLE call_transcript_analyses ADD COLUMN IF NOT EXISTS transcript_sha256 TEXT;`);
+  await pool.query(`ALTER TABLE call_transcript_analyses ADD COLUMN IF NOT EXISTS analysis_version TEXT NOT NULL DEFAULT 'unanswered_questions_v1';`);
+  await pool.query(`ALTER TABLE call_transcript_analyses ADD COLUMN IF NOT EXISTS model TEXT;`);
+  await pool.query(`ALTER TABLE call_transcript_analyses ADD COLUMN IF NOT EXISTS response_id TEXT;`);
+  await pool.query(`ALTER TABLE call_transcript_analyses ADD COLUMN IF NOT EXISTS total_business_questions INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE call_transcript_analyses ADD COLUMN IF NOT EXISTS unanswered_question_count INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE call_transcript_analyses ADD COLUMN IF NOT EXISTS analysis_json JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE call_transcript_analyses ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`ALTER TABLE call_transcript_analyses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS call_unanswered_questions (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      call_sid TEXT NOT NULL REFERENCES calls(call_sid) ON DELETE CASCADE,
+      analysis_version TEXT NOT NULL DEFAULT 'unanswered_questions_v1',
+      ordinal INTEGER NOT NULL DEFAULT 0,
+      question_text TEXT NOT NULL,
+      assistant_response_text TEXT,
+      reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE call_unanswered_questions ADD COLUMN IF NOT EXISTS tenant_key TEXT;`);
+  await pool.query(`ALTER TABLE call_unanswered_questions ADD COLUMN IF NOT EXISTS analysis_version TEXT NOT NULL DEFAULT 'unanswered_questions_v1';`);
+  await pool.query(`ALTER TABLE call_unanswered_questions ADD COLUMN IF NOT EXISTS ordinal INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE call_unanswered_questions ADD COLUMN IF NOT EXISTS question_text TEXT;`);
+  await pool.query(`ALTER TABLE call_unanswered_questions ADD COLUMN IF NOT EXISTS assistant_response_text TEXT;`);
+  await pool.query(`ALTER TABLE call_unanswered_questions ADD COLUMN IF NOT EXISTS reason TEXT;`);
+  await pool.query(`ALTER TABLE call_unanswered_questions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`ALTER TABLE call_unanswered_questions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS dispatch_queue (
       id BIGSERIAL PRIMARY KEY,
       tenant_key TEXT NOT NULL,
@@ -857,6 +906,10 @@ export async function ensureTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS support_messages_tenant_created_idx ON support_messages (tenant_key, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS dispatch_queue_tenant_status_idx ON dispatch_queue (tenant_key, status, due_at);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS audit_log_tenant_created_idx ON audit_log (tenant_key, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS call_transcript_analyses_tenant_updated_idx ON call_transcript_analyses (tenant_key, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS call_unanswered_questions_tenant_created_idx ON call_unanswered_questions (tenant_key, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS call_unanswered_questions_call_created_idx ON call_unanswered_questions (call_sid, created_at DESC);`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS call_unanswered_questions_call_ordinal_idx ON call_unanswered_questions (call_sid, analysis_version, ordinal);`);
   await pool.query(`ALTER TABLE IF EXISTS knowledge_coverage_events ADD COLUMN IF NOT EXISTS observed_support_strength TEXT;`);
   await pool.query(`ALTER TABLE IF EXISTS knowledge_coverage_events ADD COLUMN IF NOT EXISTS kb_answerability TEXT;`);
   await pool.query(`ALTER TABLE IF EXISTS knowledge_coverage_events ADD COLUMN IF NOT EXISTS answered_from_kb BOOLEAN;`);

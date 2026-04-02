@@ -214,7 +214,11 @@ export default function ClientDashboardPage() {
   const knowledgeGapQuestions = Array.isArray(dashboard?.knowledgeGapQuestions) ? dashboard.knowledgeGapQuestions : [];
   const latestBuildLabel = setup.latestBuildStatus ? formatLeadOutcomeLabel(setup.latestBuildStatus) : 'No knowledge base yet';
   const kbQuestionCount = Number(knowledgeSignals.kbQuestionCount30d || 0);
-  const unansweredQuestionCount = Number(knowledgeSignals.unansweredQuestionCalls30d || 0);
+  const unansweredQuestionCount = Number(
+    knowledgeSignals.unansweredQuestionCount30d
+    ?? knowledgeSignals.unansweredQuestionCalls30d
+    ?? 0
+  );
   const answeredQuestionRate = Number(knowledgeSignals.answeredQuestionRate30d || 0);
   const answeredQuestionCount = Math.max(0, kbQuestionCount - unansweredQuestionCount);
   const maxTrendCount = Math.max(1, ...callVolumeLast7Days.map((day) => Number(day.totalCount || day.count || 0)));
@@ -391,13 +395,23 @@ export default function ClientDashboardPage() {
                 <div className="space-y-3">
                   {knowledgeGapQuestions.length ? knowledgeGapQuestions.map((question) => {
                     const callerName = [question.caller_first_name, question.caller_last_name].filter(Boolean).join(' ') || question.callback_number || 'Unknown caller';
-                    const promptText = normalizeText(question.requested_coverage_item_text || question.query_text) || 'Unknown question';
+                    const promptText = normalizeText(question.question_text) || 'Unknown question';
+                    const assistantResponse = normalizeText(question.assistant_response_text);
                     return (
-                      <div key={question.knowledge_coverage_event_id} className="rounded-lg border border-slate-200/70 bg-[#f8fafc] p-3">
+                      <Link
+                        key={question.unanswered_question_id}
+                        href={`/client/calls?callSid=${encodeURIComponent(question.call_sid || '')}`}
+                        className="block rounded-lg border border-slate-200/70 bg-[#f8fafc] p-3 transition-colors hover:bg-[#eff4ff]"
+                      >
                         <div className="text-sm font-semibold text-slate-900">{promptText}</div>
                         <div className="mt-1 text-[11px] text-slate-500">{callerName} · {formatDateTime(question.created_at)}</div>
-                        {question.summary ? <div className="mt-2 text-xs text-slate-600">{question.summary}</div> : null}
-                      </div>
+                        {assistantResponse ? (
+                          <div className="mt-2 text-xs text-slate-600">
+                            <span className="font-semibold text-slate-700">AI response:</span> {assistantResponse}
+                          </div>
+                        ) : null}
+                        {question.summary ? <div className="mt-2 text-xs text-slate-500">{question.summary}</div> : null}
+                      </Link>
                     );
                   }) : (
                     <div className="text-sm text-slate-500">No KB gaps in the last 30 days.</div>

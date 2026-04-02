@@ -1,6 +1,7 @@
 import pg from "pg";
 import { logError, logInfo } from "@everycall/observability";
 import { ensureTables } from "../../../pages/api/_lib/db.js";
+import { analyzeAndPersistCallTranscriptQuestions } from "../../../pages/api/_lib/callTranscriptAnalysis.js";
 import { deliverIntegrationConnection } from "../../../pages/api/_lib/integrationConnectors.js";
 import { sendLeadNotifications } from "../../../pages/api/_lib/leadNotifications.js";
 import {
@@ -124,6 +125,17 @@ async function processJob(job) {
     return;
   }
 
+  if (job.job_type === ASYNC_JOB_TYPES.callTranscriptAnalysis) {
+    const payload = typeof job.payload_json === "object" && job.payload_json ? job.payload_json : {};
+    const tenantKey = String(payload.tenantKey || job.tenant_key || "").trim();
+    const callSid = String(payload.callSid || "").trim();
+    if (!tenantKey || !callSid) {
+      throw new Error("call_transcript_analysis_job_missing_fields");
+    }
+    await analyzeAndPersistCallTranscriptQuestions(pool, { tenantKey, callSid });
+    return;
+  }
+
   throw new Error(`unknown_job_type:${job.job_type}`);
 }
 
@@ -138,7 +150,8 @@ async function runLoop() {
         jobTypes: [
           ASYNC_JOB_TYPES.leadNotificationSend,
           ASYNC_JOB_TYPES.integrationWebhookSend,
-          ASYNC_JOB_TYPES.integrationConnectionSend
+          ASYNC_JOB_TYPES.integrationConnectionSend,
+          ASYNC_JOB_TYPES.callTranscriptAnalysis
         ],
         limit: claimLimit
       });
