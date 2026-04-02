@@ -198,9 +198,12 @@ export default function ClientDashboardPage() {
   const runtimeReady = Boolean(setup.runtimeReady);
   const latestBuildLabel = setup.latestBuildStatus ? formatLeadOutcomeLabel(setup.latestBuildStatus) : 'No knowledge base yet';
   const maxTrendCount = Math.max(1, ...callVolumeLast7Days.map((day) => Number(day.count || 0)));
+  const kbQuestionCount = Number(knowledgeSignals.kbQuestionCount30d || 0);
+  const kbCallCount = Number(knowledgeSignals.kbCallCount30d || 0);
   const unansweredQuestionCalls = Number(knowledgeSignals.unansweredQuestionCalls30d || 0);
+  const unansweredKbCallCount = Number(knowledgeSignals.unansweredKbCallCount30d || 0);
   const answeredQuestionRate = Number(knowledgeSignals.answeredQuestionRate30d || 0);
-  const needsKnowledgeDetail = unansweredQuestionCalls >= 3;
+  const needsKnowledgeDetail = unansweredQuestionCalls >= 3 || (kbQuestionCount >= 8 && answeredQuestionRate < 80);
 
   const orderedBreakdown = useMemo(() => {
     const byKey = new Map(classificationBreakdown.map((item) => [item.key, item]));
@@ -340,22 +343,22 @@ export default function ClientDashboardPage() {
         <div className="grid gap-6 lg:col-span-4">
           <section className="rounded-2xl bg-[#205cb5] p-6 text-white shadow-[0_24px_60px_rgba(32,92,181,0.24)]">
             <div className="mb-6 flex items-center justify-between">
-              <h2 className="font-['Space_Grotesk'] text-lg font-bold uppercase tracking-[0.16em]">Knowledge Base Coverage</h2>
+              <h2 className="font-['Space_Grotesk'] text-lg font-bold uppercase tracking-[0.16em]">Knowledge Coverage</h2>
               <span className="material-symbols-outlined">smart_toy</span>
             </div>
             <div className="space-y-5">
               <div>
-                <div className="text-xs font-mono uppercase tracking-[0.14em] text-white/75">Unanswered caller questions</div>
+                <div className="text-xs font-mono uppercase tracking-[0.14em] text-white/75">Unanswered KB questions</div>
                 <div className="mt-2 flex items-end gap-3">
                   <span className="font-['Space_Grotesk'] text-5xl font-bold tracking-[-0.05em] text-white">{unansweredQuestionCalls}</span>
                   <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${needsKnowledgeDetail ? 'bg-amber-200 text-amber-950' : 'bg-emerald-200 text-emerald-950'}`}>
-                    {needsKnowledgeDetail ? 'Needs More Detail' : 'Looking Good'}
+                    {needsKnowledgeDetail ? 'Needs Detail' : 'Healthy'}
                   </span>
                 </div>
               </div>
               <div>
                 <div className="mb-1 flex items-center justify-between text-xs font-mono uppercase tracking-[0.14em] text-white/75">
-                  <span>Answered rate</span>
+                  <span>Answered from KB</span>
                   <span>{formatPercent(answeredQuestionRate)}</span>
                 </div>
                 <div className="h-2 rounded-full bg-white/15">
@@ -366,18 +369,28 @@ export default function ClientDashboardPage() {
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-white/80">Latest knowledge base</span>
-                <span className="text-sm font-bold">{latestBuildLabel}</span>
+                <span className="text-sm text-white/80">KB questions</span>
+                <span className="text-sm font-bold">{kbQuestionCount}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-white/80">Published</span>
-                <span className="text-sm font-bold">{Number(setup.publishedBuildCount || 0)}</span>
+                <span className="text-sm text-white/80">Calls using KB</span>
+                <span className="text-sm font-bold">{kbCallCount}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-white/80">Calls with gaps</span>
+                <span className="text-sm font-bold">{unansweredKbCallCount}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-white/80">Latest KB</span>
+                <span className="text-right text-sm font-bold">{latestBuildLabel}</span>
               </div>
             </div>
             <div className="mt-6 border-t border-white/15 pt-5 text-sm leading-6 text-white/85">
-              {runtimeReady
-                ? (needsKnowledgeDetail ? 'Add more website or document detail to reduce fallback answers.' : 'The knowledge base is covering most caller questions well.')
-                : 'Publish a knowledge base so callers get business-specific answers.'}
+              {!runtimeReady
+                ? 'Create a knowledge base.'
+                : kbQuestionCount === 0
+                  ? 'No KB questions yet.'
+                  : (needsKnowledgeDetail ? 'Add detail for repeated unanswered questions.' : 'Coverage looks healthy.')}
             </div>
           </section>
 

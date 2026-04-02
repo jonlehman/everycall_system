@@ -30,6 +30,9 @@ const DASHBOARD_CATEGORY_LABELS = {
   other_non_billable: "Other Non-Billable"
 };
 
+const KNOWLEDGE_CARD_SUPPORT_THRESHOLD = 0.38;
+const KNOWLEDGE_FACT_SUPPORT_THRESHOLD = 0.42;
+
 function normalizeCallCategory(outcomeType, isValidLead) {
   const normalized = normalizeText(outcomeType).toLowerCase();
   if (
@@ -72,6 +75,55 @@ function normalizeCallCategory(outcomeType, isValidLead) {
   return "other_non_billable";
 }
 
+async function loadKnowledgeSignals(pool, tenantKey) {
+  try {
+    const result = await pool.query(
+      `WITH coverage AS (
+         SELECT
+           call_id,
+           COALESCE((
+             SELECT MAX((entry->>'similarity')::double precision)
+             FROM jsonb_array_elements(COALESCE(top_scores_json, '[]'::jsonb)) AS entry
+             WHERE entry->>'kind' = 'card'
+           ), 0) AS max_card_similarity,
+           COALESCE((
+             SELECT MAX((entry->>'similarity')::double precision)
+             FROM jsonb_array_elements(COALESCE(top_scores_json, '[]'::jsonb)) AS entry
+             WHERE entry->>'kind' = 'fact'
+           ), 0) AS max_fact_similarity
+         FROM knowledge_coverage_events
+         WHERE tenant_key = $1
+           AND created_at >= NOW() - interval '30 days'
+       )
+       SELECT
+         COUNT(*)::int AS kb_question_count_30d,
+         COUNT(DISTINCT call_id)::int AS kb_call_count_30d,
+         COUNT(*) FILTER (
+           WHERE max_card_similarity < $2
+             AND max_fact_similarity < $3
+         )::int AS unanswered_question_count_30d,
+         COUNT(DISTINCT call_id) FILTER (
+           WHERE call_id IS NOT NULL
+             AND max_card_similarity < $2
+             AND max_fact_similarity < $3
+         )::int AS unanswered_call_count_30d
+       FROM coverage`,
+      [tenantKey, KNOWLEDGE_CARD_SUPPORT_THRESHOLD, KNOWLEDGE_FACT_SUPPORT_THRESHOLD]
+    );
+    return result.rows?.[0] || {};
+  } catch (error) {
+    if (error?.code === "42P01") {
+      return {
+        kb_question_count_30d: 0,
+        kb_call_count_30d: 0,
+        unanswered_question_count_30d: 0,
+        unanswered_call_count_30d: 0
+      };
+    }
+    throw error;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -109,7 +161,7 @@ export default async function handler(req, res) {
       recentCallsResult,
       classificationResult,
       volumeTrendResult,
-      knowledgeSignalsResult,
+      knowledgeSignals,
       buildsData
     ] = await Promise.all([
       pool.query(
@@ -197,33 +249,7 @@ export default async function handler(req, res) {
          ORDER BY 1 ASC`,
         [tenantKey]
       ),
-      pool.query(
-        `SELECT
-           COUNT(*)::int AS unanswered_question_calls_30d
-         FROM calls c
-         LEFT JOIN call_details d ON d.call_sid = c.call_sid
-         WHERE c.tenant_key = $1
-           AND c.created_at >= NOW() - interval '30 days'
-           AND (
-             COALESCE(d.transcript_combined, d.transcript, '') ILIKE ANY (ARRAY[
-               '%don''t know%',
-               '%do not know%',
-               '%have someone call%',
-               '%call you back%',
-               '%call them back%',
-               '%someone call%'
-             ])
-             OR COALESCE(c.summary, '') ILIKE ANY (ARRAY[
-               '%don''t know%',
-               '%do not know%',
-               '%have someone call%',
-               '%call you back%',
-               '%call them back%',
-               '%someone call%'
-             ])
-           )`,
-        [tenantKey]
-      ),
+      loadKnowledgeSignals(pool, tenantKey),
       listKnowledgeReceptionistBuilds(pool, tenantKey)
     ]);
 
@@ -231,7 +257,10 @@ export default async function handler(req, res) {
     const leadSummary = leadSummaryResult.rows[0] || {};
     const validLeadCount30d = Number(callsSummary.valid_lead_count_30d || 0);
     const calls30d = Number(callsSummary.calls_30d || 0);
-    const unansweredQuestionCalls30d = Number(knowledgeSignalsResult.rows?.[0]?.unanswered_question_calls_30d || 0);
+    const kbQuestionCount30d = Number(knowledgeSignals.kb_question_count_30d || 0);
+    const kbCallCount30d = Number(knowledgeSignals.kb_call_count_30d || 0);
+    const unansweredQuestionCalls30d = Number(knowledgeSignals.unanswered_question_count_30d || 0);
+    const unansweredKbCallCount30d = Number(knowledgeSignals.unanswered_call_count_30d || 0);
     const builds = Array.isArray(buildsData?.builds) ? buildsData.builds : [];
     const publishedBuilds = builds.filter((build) => normalizeText(build?.status).toLowerCase() === "published");
     const latestBuild = builds[0] || null;
@@ -336,9 +365,12 @@ export default async function handler(req, res) {
       classificationBreakdown,
       callVolumeLast7Days,
       knowledgeSignals: {
+        kbQuestionCount30d,
+        kbCallCount30d,
         unansweredQuestionCalls30d,
-        answeredQuestionRate30d: calls30d
-          ? Math.max(0, Math.round(((calls30d - unansweredQuestionCalls30d) / calls30d) * 1000) / 10)
+        unansweredKbCallCount30d,
+        answeredQuestionRate30d: kbQuestionCount30d
+          ? Math.max(0, Math.round(((kbQuestionCount30d - unansweredQuestionCalls30d) / kbQuestionCount30d) * 1000) / 10)
           : 100
       },
       nextSteps
