@@ -279,7 +279,7 @@ export default function ClientDashboardPage() {
 
   return (
     <ClientPage
-      title="System Performance"
+      title="Dashboard"
       subtitle=""
       status={status}
       headerAside={(
@@ -316,8 +316,7 @@ export default function ClientDashboardPage() {
         <section className={panelClassName('p-6')}>
           <div className="mb-5 flex items-center justify-between gap-4">
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Classification Breakdown</div>
-              <h2 className="mt-2 font-['Space_Grotesk'] text-xl font-bold tracking-[-0.03em] text-slate-950">Call Mix</h2>
+              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Call Mix</div>
             </div>
           </div>
           <div className="grid gap-6 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
@@ -407,7 +406,7 @@ export default function ClientDashboardPage() {
 
         <div className="space-y-6">
           <section className={panelClassName('p-6')}>
-            <h2 className="mb-4 font-['Space_Grotesk'] text-lg font-bold text-slate-950">Knowledge Base Status</h2>
+            <h2 className="mb-4 font-['Space_Grotesk'] text-lg font-bold text-slate-950">Knowledge Base Performance</h2>
             <div className="space-y-4">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-500">Answer Rate</span>
