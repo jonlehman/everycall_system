@@ -1,5 +1,6 @@
 import { performance } from "node:perf_hooks";
 import {
+  buildBusinessHoursAnswerPacket,
   buildPlannerOpenAiRequestBody,
   buildRuntimeEmbeddingsRequestBody,
   executePlannerPgvectorRuntime,
@@ -127,6 +128,43 @@ function setBuildAssetCache(tenantKey: string, buildId: string, assets: BuildAss
 
 function invalidateBuildAssetCache(tenantKey: string, buildId: string) {
   buildAssetCache.delete(cacheKey(tenantKey, buildId));
+}
+
+async function loadBusinessHoursForRuntime(db: Queryable, tenantKey: string) {
+  const [hoursRes, routingRes, settingsRes] = await Promise.all([
+    db.query(
+      `SELECT timezone, open_status, regular_hours_json, display_text
+       FROM tenant_business_hours
+       WHERE tenant_key = $1
+       LIMIT 1`,
+      [tenantKey]
+    ),
+    db.query(
+      `SELECT business_hours
+       FROM routing_rules
+       WHERE tenant_key = $1
+       LIMIT 1`,
+      [tenantKey]
+    ),
+    db.query(
+      `SELECT timezone
+       FROM tenant_settings
+       WHERE tenant_key = $1
+       LIMIT 1`,
+      [tenantKey]
+    )
+  ]);
+  const row = hoursRes.rows?.[0] || {};
+  const timezone = normalizeText(row.timezone) || normalizeText(settingsRes.rows?.[0]?.timezone) || "America/Los_Angeles";
+  const displayText = normalizeText(row.display_text) || normalizeText(routingRes.rows?.[0]?.business_hours);
+  const regularHours = Array.isArray(row.regular_hours_json) ? row.regular_hours_json : [];
+  if (!displayText && !regularHours.length) return null;
+  return {
+    timezone,
+    openStatus: normalizeText(row.open_status) || "OPEN",
+    regularHours,
+    displayText
+  };
 }
 
 async function loadBuildAssetMetaFromDb(db: Queryable, tenantKey: string, buildId: string): Promise<BuildAssetMeta> {
@@ -394,6 +432,121 @@ export async function fetchKnowledgeRuntimeTurn(
   const totalStarted = performance.now();
   const buildId = normalizeText(body.buildId) || promptPayload.knowledge_runtime.active_build_id;
   const loaded = await loadBuildAssets(pool, body.tenantKey, buildId, { useCache: true });
+  const businessHours = await loadBusinessHoursForRuntime(pool, body.tenantKey);
+  const businessHoursAnswerPacket = buildBusinessHoursAnswerPacket({
+    tenantId: body.tenantKey,
+    buildId,
+    queryText: query,
+    businessHours,
+    now: new Date()
+  });
+  if (businessHoursAnswerPacket) {
+    const compatibilityBundle = buildCompatibilityBundle(
+      businessHoursAnswerPacket,
+      promptPayload,
+      {},
+      {}
+    );
+    const configuration = promptPayload.knowledge_runtime.approved_configuration;
+    const matchedOverrides = selectSharedMatchedOverrides(configuration.overrides, query, compatibilityBundle);
+    const matchedGuardrails = selectSharedMatchedGuardrails(configuration.guardrails, query, compatibilityBundle, body.callState);
+    const runtimeMode = deriveRuntimeMode(businessHoursAnswerPacket, matchedGuardrails);
+    const nextCallState: CallState = {
+      ...body.callState,
+      current_stage: runtimeMode === "clarify"
+        ? "clarify_if_needed"
+        : ((runtimeMode === "handoff" || runtimeMode === "emergency_redirect") ? "advance_next_step" : body.callState.current_stage),
+      last_turn_intent: query,
+      last_bundle_id: normalizeText(businessHoursAnswerPacket.answer_packet_id),
+      active_domain_id: loaded.assets.primaryDomainId,
+      active_subdomain_id: loaded.assets.primarySubdomainId,
+      uncertainty_mode: runtimeMode === "clarify" ? "needs_clarification" : null
+    };
+    const finalAnswerPacket = {
+      ...businessHoursAnswerPacket,
+      runtime_mode: runtimeMode
+    };
+    const runtimeBundlePersistStarted = performance.now();
+    await pool.query(
+      `INSERT INTO runtime_bundles (
+         runtime_bundle_id, call_id, turn_id, tenant_key, build_id, runtime_entry_mode, runtime_mode,
+         active_domain_id, active_subdomain_id, detected_turn_intent, bundle_json
+       )
+       VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb
+       )`,
+      [
+        normalizeText(finalAnswerPacket.answer_packet_id),
+        body.callId,
+        normalizeText(finalAnswerPacket.answer_packet_id),
+        body.tenantKey,
+        buildId,
+        body.callState.runtime_entry_mode,
+        runtimeMode,
+        loaded.assets.primaryDomainId,
+        loaded.assets.primarySubdomainId,
+        query,
+        JSON.stringify(finalAnswerPacket)
+      ]
+    );
+    const runtimeBundlePersistMs = Number((performance.now() - runtimeBundlePersistStarted).toFixed(3));
+    const coverageGapPersistStarted = performance.now();
+    await persistCoverageGapEvents(pool, {
+      tenantKey: body.tenantKey,
+      buildId,
+      callId: body.callId,
+      turnId: normalizeText(finalAnswerPacket.answer_packet_id),
+      queryText: query,
+      events: [],
+      metadata: {
+        runtime_mode: runtimeMode,
+        answer_source: "tenant_business_hours"
+      }
+    });
+    const coverageGapPersistMs = Number((performance.now() - coverageGapPersistStarted).toFixed(3));
+    const totalDurationMs = Number((performance.now() - totalStarted).toFixed(3));
+    return {
+      answer_packet: finalAnswerPacket,
+      runtime_bundle: {
+        ...compatibilityBundle,
+        runtime_mode: runtimeMode,
+        call_id: body.callId
+      },
+      matched_overrides: matchedOverrides,
+      matched_guardrails: matchedGuardrails,
+      call_state: nextCallState,
+      retrieval_telemetry: {
+        query,
+        duration_ms: 0,
+        total_gateway_turn_ms: totalDurationMs,
+        asset_cache_hit: loaded.cacheHit,
+        asset_fetch_ms: loaded.fetchMs,
+        asset_load_strategy: loaded.cacheHit ? "warm_cache" : "cold_fallback",
+        recent_conversation_summary_ms: 0,
+        planner_ms: 0,
+        embedding_ms: 0,
+        retrieval_ms: 0,
+        packet_ms: 0,
+        runtime_core_ms: 0,
+        runtime_bundle_persist_ms: runtimeBundlePersistMs,
+        coverage_gap_persist_ms: coverageGapPersistMs,
+        planner_coverage_items: [query],
+        embedded_coverage_items: [],
+        planner_request_payload: null,
+        planner_response_payload: null,
+        embedding_request_payload: null,
+        embedding_response_payloads: [],
+        coverage: finalAnswerPacket.coverage,
+        answer_source: "tenant_business_hours"
+      },
+      token_counts: {
+        startup_prompt_tokens: promptPayload.knowledge_runtime.token_counts?.prompt_payload_tokens ?? 0,
+        startup_instruction_tokens: promptPayload.knowledge_runtime.token_counts?.startup_instruction_tokens ?? 0,
+        answer_packet_tokens: Number(finalAnswerPacket.token_counts?.packet_tokens || 0),
+        runtime_bundle_tokens: estimateTokenCount(compatibilityBundle)
+      }
+    };
+  }
   const conversationSummaryStarted = performance.now();
   const recentConversationSummary = FORCE_SKIP_PLANNER
     ? ""

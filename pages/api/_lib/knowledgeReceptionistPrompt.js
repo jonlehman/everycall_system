@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import {
+  buildBusinessHoursAnswerPacket,
   FORCED_RUNTIME_CONFIDENCE_SCORE,
   FORCED_SUPPORT_MODE_ACTIVE,
   getRuntimeBundleConfidenceScore,
@@ -10,6 +11,7 @@ import {
 import { getKnowledgeBuild, loadActiveKnowledgeBuildAssets } from "./knowledgeReceptionistBuilds.js";
 import { loadApprovedConfigurationArtifacts } from "./knowledgeReceptionistConfig.js";
 import { buildPromptToolDefinitions, loadPromptRuntimeContext } from "./promptBlueprints.js";
+import { loadTenantBusinessHours } from "./tenantBusinessHours.js";
 
 const DEFAULT_STAGE_IDS = [
   "opening",
@@ -270,6 +272,78 @@ function deriveRuntimeMode(answerPacket, matchedGuardrails = []) {
   return normalizeText(answerPacket?.runtime_mode) || "clarify";
 }
 
+async function maybeAssembleBusinessHoursTurn(db, tenantKey, query, build, configuration, promptRuntime, intentSummary, {
+  runtimeEntryMode,
+  callId,
+  currentStage,
+  callState
+}) {
+  const businessHours = await loadTenantBusinessHours(db, tenantKey);
+  const answerPacket = buildBusinessHoursAnswerPacket({
+    tenantId: tenantKey,
+    buildId: build.build_id,
+    queryText: query,
+    businessHours,
+    now: new Date()
+  });
+  if (!answerPacket) return null;
+
+  const compatibilityBundle = buildCompatibilityBundle(answerPacket, runtimeEntryMode, build, {}, {});
+  const matchedOverrides = selectSharedMatchedOverrides(configuration.overrides || [], query, compatibilityBundle);
+  const matchedGuardrails = selectSharedMatchedGuardrails(configuration.guardrails || [], query, compatibilityBundle, callState);
+  const runtimeMode = deriveRuntimeMode(answerPacket, matchedGuardrails);
+  const nextCallState = {
+    ...createInitialCallState({
+      tenantKey,
+      callId,
+      runtimeEntryMode,
+      build,
+      intentSummary,
+      currentStage
+    }),
+    ...callState,
+    current_stage: runtimeMode === "clarify"
+      ? "clarify_if_needed"
+      : ((runtimeMode === "handoff" || runtimeMode === "emergency_redirect") ? "advance_next_step" : currentStage),
+    last_turn_intent: query,
+    last_bundle_id: answerPacket.answer_packet_id,
+    uncertainty_mode: runtimeMode === "clarify" ? "needs_clarification" : null
+  };
+
+  return {
+    build,
+    answerPacket: {
+      ...answerPacket,
+      runtime_mode: runtimeMode
+    },
+    runtimeBundle: {
+      ...compatibilityBundle,
+      runtime_mode: runtimeMode
+    },
+    planner: {
+      coverage_items: [query],
+      next_step_suggestions: []
+    },
+    promptPreview: promptRuntime.rendered.startupPrompt,
+    promptPayloadTokens: estimateTokenCount(answerPacket),
+    matchedOverrides,
+    matchedGuardrails,
+    callState: nextCallState,
+    retrievalTelemetry: {
+      planner_coverage_items: [query],
+      coverage: answerPacket.coverage,
+      coverage_support_events: [],
+      answer_source: "tenant_business_hours",
+      business_hours_display_text: businessHours?.displayText || businessHours?.display_text || ""
+    },
+    tokenCounts: {
+      runtime_bundle_tokens: estimateTokenCount(compatibilityBundle),
+      prompt_payload_tokens: estimateTokenCount(answerPacket),
+      answer_packet_tokens: answerPacket.token_counts.packet_tokens
+    }
+  };
+}
+
 async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input = {}) {
   const buildId = normalizeText(input.buildId || input.build_id);
   const build = buildId
@@ -380,6 +454,25 @@ export async function assembleKnowledgeRuntimeTurn(db, tenantKey, input = {}) {
   const { build, configuration, intentSummary, promptRuntime } = runtimeContext;
   const callState = asObject(input.callState || input.call_state);
   const currentStage = normalizeText(callState.current_stage) || intentSummary.stage_ids[0] || "answer_or_route";
+
+  const businessHoursTurn = await maybeAssembleBusinessHoursTurn(
+    db,
+    tenantKey,
+    query,
+    build,
+    configuration,
+    promptRuntime,
+    intentSummary,
+    {
+      runtimeEntryMode,
+      callId,
+      currentStage,
+      callState
+    }
+  );
+  if (businessHoursTurn) {
+    return businessHoursTurn;
+  }
 
   const runtimeResult = await executePlannerPgvectorRuntime(db, {
     tenantKey,
