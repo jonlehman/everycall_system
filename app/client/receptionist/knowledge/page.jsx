@@ -146,6 +146,27 @@ function BuildProgressMeter({ build, compact = false }) {
   );
 }
 
+function CollapseToggleButton({ expanded, onClick, expandedLabel, collapsedLabel }) {
+  return (
+    <button
+      type="button"
+      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+      onClick={onClick}
+      aria-label={expanded ? expandedLabel : collapsedLabel}
+      aria-expanded={expanded}
+    >
+      <svg
+        viewBox="0 0 20 20"
+        fill="none"
+        className={`h-5 w-5 transition-transform ${expanded ? 'rotate-180' : ''}`}
+        aria-hidden="true"
+      >
+        <path d="M5 8l5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  );
+}
+
 function ensureSentence(value) {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -253,6 +274,9 @@ export default function ReceptionistKnowledgePage() {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [activeGuideKey, setActiveGuideKey] = useState('website');
   const [websiteSectionExpanded, setWebsiteSectionExpanded] = useState(false);
+  const [latestDocumentApplyExpanded, setLatestDocumentApplyExpanded] = useState(false);
+  const [liveKnowledgeBaseExpanded, setLiveKnowledgeBaseExpanded] = useState(false);
+  const [expandedDocumentIds, setExpandedDocumentIds] = useState({});
 
   const [documentForm, setDocumentForm] = useState({
     title: '',
@@ -571,6 +595,29 @@ export default function ReceptionistKnowledgePage() {
     setActiveGuideKey('website');
     setWebsiteSectionExpanded((current) => !current);
   };
+  const toggleLatestDocumentApplyExpanded = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveGuideKey('documentApply');
+    setLatestDocumentApplyExpanded((current) => !current);
+  };
+  const toggleLiveKnowledgeBaseExpanded = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveGuideKey('documentApply');
+    setLiveKnowledgeBaseExpanded((current) => !current);
+  };
+  const toggleDocumentExpanded = (event, uploadedDocumentId) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const normalizedId = String(uploadedDocumentId || '').trim();
+    if (!normalizedId) return;
+    setActiveGuideKey('documentsMeta');
+    setExpandedDocumentIds((current) => ({
+      ...current,
+      [normalizedId]: !current[normalizedId]
+    }));
+  };
 
   return (
     <SectionPage
@@ -790,19 +837,29 @@ export default function ReceptionistKnowledgePage() {
                               >
                                 {deletingDocumentId === document.uploaded_document_id ? 'Removing...' : 'Delete'}
                               </button>
+                              <CollapseToggleButton
+                                expanded={Boolean(expandedDocumentIds[String(document.uploaded_document_id || '').trim()])}
+                                onClick={(event) => toggleDocumentExpanded(event, document.uploaded_document_id)}
+                                expandedLabel="Collapse document details"
+                                collapsedLabel="Expand document details"
+                              />
                             </div>
                           </div>
-                          <div className="mt-2 text-sm text-slate-600">
-                            {formatLabel(document.document_class)} · {formatLabel(document.source_authority)}
-                          </div>
-                          {document.source_kind ? (
-                            <div className="mt-1 text-xs text-slate-500">Source: {formatLabel(document.source_kind)}</div>
-                          ) : null}
-                          {document.filename ? (
-                            <div className="mt-1 text-xs text-slate-500">File: {document.filename}</div>
-                          ) : null}
-                          {!document.filename && document.source_locator ? (
-                            <div className="mt-1 break-all text-xs text-slate-500">Page: {document.source_locator}</div>
+                          {expandedDocumentIds[String(document.uploaded_document_id || '').trim()] ? (
+                            <>
+                              <div className="mt-2 text-sm text-slate-600">
+                                {formatLabel(document.document_class)} · {formatLabel(document.source_authority)}
+                              </div>
+                              {document.source_kind ? (
+                                <div className="mt-1 text-xs text-slate-500">Source: {formatLabel(document.source_kind)}</div>
+                              ) : null}
+                              {document.filename ? (
+                                <div className="mt-1 text-xs text-slate-500">File: {document.filename}</div>
+                              ) : null}
+                              {!document.filename && document.source_locator ? (
+                                <div className="mt-1 break-all text-xs text-slate-500">Page: {document.source_locator}</div>
+                              ) : null}
+                            </>
                           ) : null}
                         </div>
                       )) : (
@@ -840,10 +897,22 @@ export default function ReceptionistKnowledgePage() {
                             <div className="font-semibold text-slate-900">Latest Document Apply</div>
                             <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestDocumentBuild, 0)}</div>
                           </div>
-                          <span className={`badge ${buildBadgeTone(latestDocumentBuild.status)}`}>{buildStatusLabel(latestDocumentBuild.status)}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`badge ${buildBadgeTone(latestDocumentBuild.status)}`}>{buildStatusLabel(latestDocumentBuild.status)}</span>
+                            <CollapseToggleButton
+                              expanded={latestDocumentApplyExpanded}
+                              onClick={toggleLatestDocumentApplyExpanded}
+                              expandedLabel="Collapse latest document apply section"
+                              collapsedLabel="Expand latest document apply section"
+                            />
+                          </div>
                         </div>
-                        <div className="mt-2 text-sm text-slate-600">{renderBuildProgress(latestDocumentBuild)}</div>
-                        <BuildProgressMeter build={latestDocumentBuild} compact />
+                        {latestDocumentApplyExpanded ? (
+                          <>
+                            <div className="mt-2 text-sm text-slate-600">{renderBuildProgress(latestDocumentBuild)}</div>
+                            <BuildProgressMeter build={latestDocumentBuild} compact />
+                          </>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
@@ -862,13 +931,25 @@ export default function ReceptionistKnowledgePage() {
                         <div className="font-semibold text-slate-900">Live Knowledge Base</div>
                         <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestLiveBuild, 0)}</div>
                       </div>
-                      <span className={`badge ${buildStatusTone(latestLiveBuild.status, hasPendingDocumentChanges)}`}>{hasPendingDocumentChanges ? 'Documents Pending' : buildStatusLabel(latestLiveBuild.status)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`badge ${buildStatusTone(latestLiveBuild.status, hasPendingDocumentChanges)}`}>{hasPendingDocumentChanges ? 'Documents Pending' : buildStatusLabel(latestLiveBuild.status)}</span>
+                        <CollapseToggleButton
+                          expanded={liveKnowledgeBaseExpanded}
+                          onClick={toggleLiveKnowledgeBaseExpanded}
+                          expandedLabel="Collapse live knowledge base section"
+                          collapsedLabel="Expand live knowledge base section"
+                        />
+                      </div>
                     </div>
-                    <div className="mt-2 text-sm text-slate-600">
-                      Cards: {latestLiveBuild.artifact_counts_json?.cards || 0} · Facts: {latestLiveBuild.artifact_counts_json?.facts || 0}
-                    </div>
-                    <div className="mt-1 text-sm text-slate-600">{renderBuildProgress(latestLiveBuild)}</div>
-                    <BuildProgressMeter build={latestLiveBuild} compact />
+                    {liveKnowledgeBaseExpanded ? (
+                      <>
+                        <div className="mt-2 text-sm text-slate-600">
+                          Cards: {latestLiveBuild.artifact_counts_json?.cards || 0} · Facts: {latestLiveBuild.artifact_counts_json?.facts || 0}
+                        </div>
+                        <div className="mt-1 text-sm text-slate-600">{renderBuildProgress(latestLiveBuild)}</div>
+                        <BuildProgressMeter build={latestLiveBuild} compact />
+                      </>
+                    ) : null}
                   </div>
                 ) : null}
 
