@@ -69,6 +69,31 @@ function isWebsiteBuildKind(buildKind) {
   return normalized === 'website_base' || normalized === 'legacy_combined';
 }
 
+function resolveWebsiteAncestorBuildId(builds, activeBuild) {
+  const rows = Array.isArray(builds) ? builds : [];
+  const startBuildId = String(activeBuild?.build_id || '').trim();
+  if (!startBuildId) return '';
+  const byBuildId = new Map(
+    rows
+      .map((build) => [String(build?.build_id || '').trim(), build])
+      .filter(([buildId]) => Boolean(buildId))
+  );
+  let currentBuildId = startBuildId;
+  const visited = new Set();
+  while (currentBuildId && !visited.has(currentBuildId)) {
+    visited.add(currentBuildId);
+    const build = byBuildId.get(currentBuildId);
+    if (!build) break;
+    if (isWebsiteBuildKind(build.build_kind)) {
+      return currentBuildId;
+    }
+    const nextBuildId = String(build?.base_build_id || '').trim();
+    if (!nextBuildId) break;
+    currentBuildId = nextBuildId;
+  }
+  return '';
+}
+
 function buildDocumentPendingState({ approvedDocuments = [], latestLiveBuild = null } = {}) {
   const appliedDocumentIds = new Set(
     Array.isArray(latestLiveBuild?.intake_metadata_json?.uploaded_document_ids)
@@ -571,9 +596,7 @@ export default function ReceptionistKnowledgePage() {
   const latestLiveBuildKind = String(latestLiveBuild?.build_kind || '').trim().toLowerCase();
   const latestWebsiteBuildId = String(latestWebsiteBuild?.build_id || '').trim();
   const latestDocumentBuildId = String(latestDocumentBuild?.build_id || '').trim();
-  const liveWebsiteBuildId = isWebsiteBuildKind(latestLiveBuildKind)
-    ? String(latestLiveBuild?.build_id || '').trim()
-    : (latestLiveBuildKind === 'document_overlay' ? String(latestLiveBuild?.base_build_id || '').trim() : '');
+  const liveWebsiteBuildId = resolveWebsiteAncestorBuildId(buildState.builds, latestLiveBuild);
   const websitePublished = Boolean(latestWebsiteBuildId) && latestWebsiteBuildId === liveWebsiteBuildId;
   const documentsPublished = latestLiveBuildKind === 'document_overlay' && Boolean(latestDocumentBuildId) && latestDocumentBuildId === activeBuildId;
   const websiteBuildStatusLabel = websitePublished ? 'Published' : buildStatusLabel(latestWebsiteBuild?.status);
