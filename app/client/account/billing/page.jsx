@@ -209,15 +209,15 @@ export default function AccountBillingPage() {
             <h2 className="mt-0 text-lg font-semibold">Status</h2>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs normal-case tracking-normalr text-slate-500">Billing Status</div>
+                <div className="text-xs normal-case tracking-normal text-slate-500">Billing Status</div>
                 <div className="mt-1 text-xl font-semibold">{billing?.status || '-'}</div>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs normal-case tracking-normalr text-slate-500">Monthly Base</div>
+                <div className="text-xs normal-case tracking-normal text-slate-500">Monthly Base</div>
                 <div className="mt-1 text-xl font-semibold">{formatMoney(billing?.plan?.monthlyAmountCents)}</div>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs normal-case tracking-normalr text-slate-500">Trial Days Left</div>
+                <div className="text-xs normal-case tracking-normal text-slate-500">Trial Days Left</div>
                 <div className="mt-1 text-xl font-semibold">{typeof billing?.trialDaysRemaining === 'number' ? billing.trialDaysRemaining : '-'}</div>
               </div>
             </div>

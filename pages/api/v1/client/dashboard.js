@@ -1,13 +1,19 @@
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { buildPlanDisplay, ensureTenantBillingAccount, requireTenantBillingAccess } from "../../_lib/billing.js";
+import {
+  buildPlanDisplay,
+  ensureTenantBillingAccount,
+  getSystemBillingConfig,
+  requireTenantBillingAccess,
+  resolveEffectiveLeadPricing
+} from "../../_lib/billing.js";
 import { listKnowledgeReceptionistBuilds } from "../../_lib/knowledgeReceptionistBuilds.js";
 import { loadTenantBusinessHours } from "../../_lib/tenantBusinessHours.js";
 import {
   CALL_TRANSCRIPT_ANALYSIS_VERSION,
   enqueueMissingCallTranscriptAnalyses
 } from "../../_lib/callTranscriptAnalysis.js";
-import { computeLeadInvoiceEstimate, getLeadPricingConfig, resolveBillingWindow } from "../../../../lib/leadBilling.js";
+import { computeLeadInvoiceEstimate, resolveBillingWindow } from "../../../../lib/leadBilling.js";
 import { isBusinessOpenAt } from "../../../../lib/businessHours.js";
 
 function normalizeText(value) {
@@ -256,12 +262,13 @@ export default async function handler(req, res) {
     if (!billingState) {
       return res.status(404).json({ error: "tenant_not_found" });
     }
+    const billingConfig = await getSystemBillingConfig(pool);
 
     const billingWindow = resolveBillingWindow({
       currentPeriodStart: billingState.current_period_start,
       currentPeriodEnd: billingState.current_period_end
     });
-    const leadPricing = getLeadPricingConfig(process.env);
+    const leadPricing = resolveEffectiveLeadPricing(billingState, billingConfig);
 
     let transcriptAnalysisBackfill = { enqueued: 0 };
     try {
@@ -400,7 +407,7 @@ export default async function handler(req, res) {
       && latestBuildId
       && activeBuildId === latestBuildId;
     const invoiceEstimate = computeLeadInvoiceEstimate({
-      baseAmountCents: buildPlanDisplay(billingState).monthlyAmountCents,
+      baseAmountCents: buildPlanDisplay(billingState, billingConfig).monthlyAmountCents,
       billableLeadCount: Number(leadSummary.billable_lead_count || 0)
     }, leadPricing);
     const categoryCounts = Object.fromEntries(
@@ -487,7 +494,7 @@ export default async function handler(req, res) {
       billing: {
         status: billingState.billing_status,
         appAccessStatus: billingState.app_access_status,
-        plan: buildPlanDisplay(billingState),
+        plan: buildPlanDisplay(billingState, billingConfig),
         currentPeriod: {
           label: billingWindow.label,
           start: billingWindow.start.toISOString(),

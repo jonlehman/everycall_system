@@ -15,8 +15,6 @@ const FIELD_SECTIONS = [
       { key: 'name', label: 'Tenant name', type: 'text', required: true, hint: 'Display name shown across admin and client views.' },
       { key: 'status', label: 'Status', type: 'select', options: ['active', 'inactive', 'suspended'], hint: 'High-level tenant lifecycle state.' },
       { key: 'data_region', label: 'Data region', type: 'select', options: ['US', 'EU'], hint: 'Primary region used for tenant data handling.' },
-      { key: 'plan', label: 'Plan', type: 'text', hint: 'Commercial plan label shown in admin.' },
-      { key: 'plan_code', label: 'Plan code', type: 'text', hint: 'Internal billing/plan identifier if one exists.' },
       { key: 'primary_number', label: 'Primary number', type: 'text', hint: 'Customer-facing main number for the tenant.' },
       { key: 'industry', label: 'Business Category', type: 'text', hint: 'Broad business category used for knowledge-pack defaults.' }
     ]
@@ -141,6 +139,41 @@ function formatDateTimeDisplay(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleString();
+}
+
+function formatMoney(amountCents) {
+  const value = Number(amountCents || 0) / 100;
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 2
+  }).format(value);
+}
+
+function formatMoneyInput(amountCents) {
+  const amount = Number(amountCents || 0) / 100;
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+}
+
+function parseMoneyInput(value, { allowZero = false } = {}) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return allowZero ? 0 : null;
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount)) return null;
+  const rounded = Math.round(amount * 100);
+  if (rounded < 0) return null;
+  if (!allowZero && rounded <= 0) return null;
+  return rounded;
+}
+
+function buildPricingDraft(billing = null, pricingCatalog = null) {
+  const plans = Array.isArray(pricingCatalog?.plans) ? pricingCatalog.plans : [];
+  const selectedPlanCode = billing?.pricing?.selectedPlanCode || plans[0]?.code || 'growth';
+  return {
+    planCode: selectedPlanCode,
+    monthlyAmount: formatMoneyInput(billing?.pricing?.effectiveMonthlyAmountCents),
+    leadRate: formatMoneyInput(billing?.pricing?.effectiveLeadRateCents)
+  };
 }
 
 function buildDraftFromTenant(tenant) {
@@ -411,6 +444,9 @@ export default function TenantManagePage() {
   const [users, setUsers] = useState([]);
   const [builds, setBuilds] = useState([]);
   const [activeBuild, setActiveBuild] = useState(null);
+  const [billingReview, setBillingReview] = useState({ billing: null, pricingCatalog: { plans: [], defaultTrialDays: null } });
+  const [pricingDraft, setPricingDraft] = useState(buildPricingDraft(null, null));
+  const [pricingSaving, setPricingSaving] = useState(false);
   const [notificationReview, setNotificationReview] = useState({ channelHealth: [], smsFailovers: [] });
   const [status, setStatus] = useState('Loading tenant...');
   const [loading, setLoading] = useState(false);
@@ -458,11 +494,20 @@ export default function TenantManagePage() {
     () => buildPrimaryUserDraft(primaryUser),
     [primaryUser?.id, primaryUser?.name, primaryUser?.email, primaryUser?.phone_number]
   );
+  const savedPricingDraft = useMemo(
+    () => buildPricingDraft(billingReview.billing, billingReview.pricingCatalog),
+    [billingReview]
+  );
   const primaryUserChangedCount = useMemo(
     () => countChangedFields(primaryUserDraft, savedPrimaryUserDraft, PRIMARY_USER_FIELDS),
     [primaryUserDraft, savedPrimaryUserDraft]
   );
+  const pricingChangedCount = useMemo(
+    () => countChangedFields(pricingDraft, savedPricingDraft, ['planCode', 'monthlyAmount', 'leadRate']),
+    [pricingDraft, savedPricingDraft]
+  );
   const hasPrimaryUserChanges = primaryUserChangedCount > 0;
+  const hasPricingChanges = pricingChangedCount > 0;
 
   useEffect(() => {
     setPrimaryUserDraft(buildPrimaryUserDraft(primaryUser));
@@ -500,11 +545,17 @@ export default function TenantManagePage() {
         fetchJson(`/api/v1/knowledge/overrides?tenantKey=${encodeURIComponent(tenantKey)}`).catch(() => ({ overrides: [] }))
       ]);
       const nextTenant = tenantData?.tenant || null;
+      const nextBillingReview = {
+        billing: billingData?.billing || null,
+        pricingCatalog: billingData?.pricingCatalog || { plans: [], defaultTrialDays: null }
+      };
       setTenant(nextTenant);
       setDraft(nextTenant ? buildDraftFromTenant(nextTenant) : null);
       setUsers(Array.isArray(usersData?.users) ? usersData.users : []);
       setBuilds(Array.isArray(buildData?.builds) ? buildData.builds : []);
       setActiveBuild(buildData?.activeBuild || null);
+      setBillingReview(nextBillingReview);
+      setPricingDraft(buildPricingDraft(nextBillingReview.billing, nextBillingReview.pricingCatalog));
       setNotificationReview({
         channelHealth: Array.isArray(billingData?.channelHealth) ? billingData.channelHealth : [],
         smsFailovers: Array.isArray(billingData?.smsFailovers) ? billingData.smsFailovers : []
@@ -546,6 +597,10 @@ export default function TenantManagePage() {
 
   const updatePrimaryUserField = (key, value) => {
     setPrimaryUserDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const updatePricingField = (key, value) => {
+    setPricingDraft((current) => ({ ...current, [key]: value }));
   };
 
   const updateWebhookField = (key, value) => {
@@ -591,6 +646,11 @@ export default function TenantManagePage() {
   const resetPrimaryUserDraft = () => {
     setPrimaryUserDraft(buildPrimaryUserDraft(primaryUser));
     setStatus('Reverted unsaved owner changes.');
+  };
+
+  const resetPricingDraft = () => {
+    setPricingDraft(buildPricingDraft(billingReview.billing, billingReview.pricingCatalog));
+    setStatus('Reverted unsaved pricing changes.');
   };
 
   const saveTenant = async () => {
@@ -646,6 +706,50 @@ export default function TenantManagePage() {
       setStatus(error?.message || 'Primary user update failed.');
     } finally {
       setPrimaryUserSaving(false);
+    }
+  };
+
+  const savePricing = async () => {
+    const selectedPlan = (Array.isArray(billingReview.pricingCatalog?.plans) ? billingReview.pricingCatalog.plans : [])
+      .find((plan) => plan.code === pricingDraft.planCode);
+    const monthlyAmountCents = parseMoneyInput(pricingDraft.monthlyAmount);
+    const leadRateCents = parseMoneyInput(pricingDraft.leadRate, { allowZero: true });
+
+    if (!selectedPlan) {
+      setStatus('Select a pricing tier first.');
+      return;
+    }
+    if (monthlyAmountCents === null) {
+      setStatus('Enter a valid monthly amount.');
+      return;
+    }
+    if (leadRateCents === null) {
+      setStatus('Enter a valid per-lead amount.');
+      return;
+    }
+
+    setPricingSaving(true);
+    setStatus('Saving tenant pricing...');
+    try {
+      const data = await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/billing/pricing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          planCode: pricingDraft.planCode,
+          monthlyAmountCents,
+          leadRateCents
+        })
+      });
+      setBillingReview((current) => ({
+        ...current,
+        billing: data?.billing ? { ...(current?.billing || {}), ...data.billing } : current.billing
+      }));
+      await loadTenant();
+      setStatus('Tenant pricing updated.');
+    } catch (error) {
+      setStatus(error?.message || 'Tenant pricing update failed.');
+    } finally {
+      setPricingSaving(false);
     }
   };
 
@@ -955,6 +1059,9 @@ export default function TenantManagePage() {
   if (hasPrimaryUserChanges) {
     unsavedNotes.push(`${primaryUserChangedCount} primary user change${primaryUserChangedCount === 1 ? '' : 's'}`);
   }
+  if (hasPricingChanges) {
+    unsavedNotes.push(`${pricingChangedCount} billing pricing change${pricingChangedCount === 1 ? '' : 's'}`);
+  }
   if (hasUnsavedChanges) {
     unsavedNotes.push(`${changedCount} advanced tenant field${changedCount === 1 ? '' : 's'}`);
   }
@@ -967,6 +1074,12 @@ export default function TenantManagePage() {
     && activeBuild.active_build_id === latestBuild.build_id
     && String(latestBuild?.status || '').trim().toLowerCase() === 'published'
   );
+  const availablePricingPlans = Array.isArray(billingReview.pricingCatalog?.plans) ? billingReview.pricingCatalog.plans : [];
+  const selectedPricingPlan = availablePricingPlans.find((plan) => plan.code === pricingDraft.planCode) || availablePricingPlans[0] || null;
+  const pricingState = billingReview.billing?.pricing || null;
+  const pricingSubscriptionDisplayId = billingReview.billing?.stripeSubscriptionDisplayId
+    || pricingState?.subscriptionDisplayId
+    || '—';
   const previewPlanner = preview?.planner || null;
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewRuntimeBundle = preview?.runtimeBundle || null;
@@ -1131,6 +1244,100 @@ export default function TenantManagePage() {
         </section>
 
         <div className="grid gap-4">
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="m-0 text-lg font-semibold">Billing Pricing</h2>
+                <div className="mt-1 text-sm text-slate-500">
+                  Choose a standard tier or set tenant-specific monthly and per-lead pricing.
+                </div>
+              </div>
+              <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                Subscription ID: {pricingSubscriptionDisplayId}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <RuntimeStat label="Billing Status" value={billingReview.billing?.status || '-'} />
+              <RuntimeStat label="Default Trial Days" value={billingReview.pricingCatalog?.defaultTrialDays ?? '-'} />
+              <RuntimeStat
+                label="Current Monthly"
+                value={billingReview.billing?.plan ? formatMoney(billingReview.billing.plan.monthlyAmountCents) : '-'}
+              />
+              <RuntimeStat
+                label="Current Per Lead"
+                value={billingReview.billing?.plan ? formatMoney(billingReview.billing.plan.leadRateCents) : '-'}
+              />
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <Field label="Pricing Tier" hint="Changing tiers resets the monthly and per-lead fields to that tier’s defaults.">
+                <SelectInput
+                  value={pricingDraft.planCode}
+                  options={availablePricingPlans.map((plan) => plan.code)}
+                  onChange={(event) => {
+                    const nextPlan = availablePricingPlans.find((plan) => plan.code === event.target.value) || null;
+                    setPricingDraft((current) => ({
+                      ...current,
+                      planCode: event.target.value,
+                      monthlyAmount: nextPlan ? formatMoneyInput(nextPlan.monthlyAmountCents) : current.monthlyAmount,
+                      leadRate: nextPlan ? formatMoneyInput(nextPlan.leadRateCents) : current.leadRate
+                    }));
+                  }}
+                />
+              </Field>
+
+              {selectedPricingPlan ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                  Tier default: {selectedPricingPlan.label} · {formatMoney(selectedPricingPlan.monthlyAmountCents)} / month · {formatMoney(selectedPricingPlan.leadRateCents)} / lead
+                </div>
+              ) : null}
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="Monthly Amount" hint="Override the monthly base for this tenant if needed.">
+                  <div className="flex items-center rounded-md border border-slate-300 bg-white px-3">
+                    <span className="text-sm text-slate-500">$</span>
+                    <input
+                      inputMode="decimal"
+                      value={pricingDraft.monthlyAmount}
+                      onChange={(event) => updatePricingField('monthlyAmount', event.target.value)}
+                      className="w-full border-0 bg-transparent px-2 py-2 text-sm focus:outline-none"
+                    />
+                  </div>
+                </Field>
+                <Field label="Per Lead" hint="Used for billing estimates and tenant-level lead pricing.">
+                  <div className="flex items-center rounded-md border border-slate-300 bg-white px-3">
+                    <span className="text-sm text-slate-500">$</span>
+                    <input
+                      inputMode="decimal"
+                      value={pricingDraft.leadRate}
+                      onChange={(event) => updatePricingField('leadRate', event.target.value)}
+                      className="w-full border-0 bg-transparent px-2 py-2 text-sm focus:outline-none"
+                    />
+                  </div>
+                </Field>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                {billingReview.billing?.plan?.isCustom
+                  ? `Custom pricing is active. Base tier: ${billingReview.billing.plan.basePlanLabel}.`
+                  : `Standard tier pricing is active${billingReview.billing?.plan?.label ? `: ${billingReview.billing.plan.label}.` : '.'}`}
+                {billingReview.billing?.pricing?.stripeSubscriptionId
+                  ? ` Stripe record: ${billingReview.billing.pricing.stripeSubscriptionId}.`
+                  : ' No Stripe subscription is linked yet.'}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={savePricing} disabled={pricingSaving || !hasPricingChanges}>
+                  {pricingSaving ? 'Saving...' : 'Save Pricing'}
+                </Button>
+                <Button variant="outline" onClick={resetPricingDraft} disabled={pricingSaving || !hasPricingChanges}>
+                  Reset
+                </Button>
+              </div>
+            </div>
+          </section>
+
           <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <h2 className="m-0 text-lg font-semibold">Voice Number</h2>
             <div className="mt-3 grid grid-cols-[140px_1fr] gap-2 text-sm">

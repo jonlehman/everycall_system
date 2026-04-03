@@ -17,6 +17,31 @@ function formatTimestamp(value) {
   return parsed.toLocaleString();
 }
 
+function formatMoneyInput(amountCents) {
+  const amount = Number(amountCents || 0) / 100;
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+}
+
+function parseMoneyInput(value, { allowZero = false } = {}) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return allowZero ? 0 : null;
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount)) return null;
+  const rounded = Math.round(amount * 100);
+  if (rounded < 0) return null;
+  if (!allowZero && rounded <= 0) return null;
+  return rounded;
+}
+
+function buildPlanDrafts(plans) {
+  return (Array.isArray(plans) ? plans : []).map((plan) => ({
+    code: String(plan?.code || '').trim(),
+    label: String(plan?.label || '').trim(),
+    monthlyAmount: formatMoneyInput(plan?.monthlyAmountCents),
+    leadRate: formatMoneyInput(plan?.leadRateCents)
+  }));
+}
+
 function RuntimeFlag({ label, active }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
@@ -66,6 +91,8 @@ function RecentTable({ title, emptyLabel, columns, rows }) {
 
 export default function AdminSystemPage() {
   const [phrase, setPhrase] = useState('');
+  const [defaultTrialDays, setDefaultTrialDays] = useState('30');
+  const [billingPlans, setBillingPlans] = useState([]);
   const [telnyxSmsNumber, setTelnyxSmsNumber] = useState('');
   const [telnyxSmsNumberId, setTelnyxSmsNumberId] = useState('');
   const [telnyxSmsMessagingProfileId, setTelnyxSmsMessagingProfileId] = useState('');
@@ -95,6 +122,8 @@ export default function AdminSystemPage() {
         return;
       }
       setPhrase(data?.config?.global_emergency_phrase || '');
+      setDefaultTrialDays(String(data?.config?.default_trial_days || '30'));
+      setBillingPlans(buildPlanDrafts(data?.config?.billing_plans_json || []));
       setTelnyxSmsNumber(data?.config?.telnyx_sms_number || '');
       setTelnyxSmsNumberId(data?.config?.telnyx_sms_number_id || '');
       setTelnyxSmsMessagingProfileId(data?.config?.telnyx_sms_messaging_profile_id || '');
@@ -139,6 +168,26 @@ export default function AdminSystemPage() {
       setConfigStatus({ message: 'Global emergency phrase is required.', tone: 'bad' });
       return;
     }
+    const normalizedTrialDays = Number(defaultTrialDays || 0);
+    if (!Number.isInteger(normalizedTrialDays) || normalizedTrialDays < 1 || normalizedTrialDays > 365) {
+      setConfigStatus({ message: 'Default free trial days must be between 1 and 365.', tone: 'bad' });
+      return;
+    }
+    const normalizedPlans = [];
+    for (const plan of billingPlans) {
+      const monthlyAmountCents = parseMoneyInput(plan.monthlyAmount);
+      const leadRateCents = parseMoneyInput(plan.leadRate, { allowZero: true });
+      if (!plan?.code || !plan?.label?.trim() || monthlyAmountCents === null || leadRateCents === null) {
+        setConfigStatus({ message: 'Each billing tier needs a label, monthly amount, and per-lead amount.', tone: 'bad' });
+        return;
+      }
+      normalizedPlans.push({
+        code: plan.code,
+        label: plan.label.trim(),
+        monthlyAmountCents,
+        leadRateCents
+      });
+    }
     setConfigStatus({ message: 'Saving system config...', tone: 'warn' });
     try {
       const resp = await fetch('/api/v1/system/config', {
@@ -146,6 +195,8 @@ export default function AdminSystemPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           globalEmergencyPhrase: phrase.trim(),
+          defaultTrialDays: normalizedTrialDays,
+          billingPlans: normalizedPlans,
           telnyxSmsNumber: telnyxSmsNumber.trim(),
           telnyxSmsNumberId: telnyxSmsNumberId.trim(),
           telnyxSmsMessagingProfileId: telnyxSmsMessagingProfileId.trim()
@@ -155,11 +206,18 @@ export default function AdminSystemPage() {
         ? { message: 'System config saved.', tone: 'ok' }
         : { message: 'Save failed.', tone: 'bad' });
       if (resp.ok) {
+        loadConfig();
         loadDiagnostics();
       }
     } catch {
       setConfigStatus({ message: 'Save failed.', tone: 'bad' });
     }
+  };
+
+  const updateBillingPlanField = (index, key, value) => {
+    setBillingPlans((current) => current.map((plan, planIndex) => (
+      planIndex === index ? { ...plan, [key]: value } : plan
+    )));
   };
 
   const sendTestSms = async () => {
@@ -214,6 +272,65 @@ export default function AdminSystemPage() {
           value={phrase}
           onChange={(event) => setPhrase(event.target.value)}
         />
+
+        <div className="mt-6">
+          <h2 className="m-0 text-lg font-semibold text-slate-900">Billing Defaults</h2>
+          <div className="mt-1 text-sm text-slate-500">
+            These defaults are used for new tenants and when an admin resets a tenant back to a standard pricing tier.
+          </div>
+          <div className="mt-4 max-w-xs">
+            <label className="block text-sm font-medium text-slate-700">Global Free Trial Days</label>
+            <input
+              type="number"
+              min="1"
+              max="365"
+              className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              value={defaultTrialDays}
+              onChange={(event) => setDefaultTrialDays(event.target.value)}
+            />
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+            {billingPlans.map((plan, index) => (
+              <div key={plan.code || index} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-xs font-medium text-slate-500">{plan.code || `Plan ${index + 1}`}</div>
+                <div className="mt-3 grid gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700">Label</label>
+                    <input
+                      className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={plan.label}
+                      onChange={(event) => updateBillingPlanField(index, 'label', event.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700">Monthly Amount</label>
+                    <div className="mt-2 flex items-center rounded-lg border border-slate-300 bg-white px-3">
+                      <span className="text-sm text-slate-500">$</span>
+                      <input
+                        inputMode="decimal"
+                        className="w-full border-0 bg-transparent px-2 py-2 text-sm focus:outline-none"
+                        value={plan.monthlyAmount}
+                        onChange={(event) => updateBillingPlanField(index, 'monthlyAmount', event.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700">Per Lead</label>
+                    <div className="mt-2 flex items-center rounded-lg border border-slate-300 bg-white px-3">
+                      <span className="text-sm text-slate-500">$</span>
+                      <input
+                        inputMode="decimal"
+                        className="w-full border-0 bg-transparent px-2 py-2 text-sm focus:outline-none"
+                        value={plan.leadRate}
+                        onChange={(event) => updateBillingPlanField(index, 'leadRate', event.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <div>

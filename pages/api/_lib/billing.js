@@ -4,6 +4,97 @@ export const DEFAULT_PLAN_CODE = "growth";
 export const DEFAULT_MONTHLY_AMOUNT_CENTS = Number(process.env.DEFAULT_PLAN_MONTHLY_AMOUNT_CENTS || "50000");
 export const DEFAULT_STRIPE_PRODUCT_ID = String(process.env.STRIPE_DEFAULT_PRODUCT_ID || "").trim() || null;
 export const DEFAULT_TRIAL_DAYS = Number(process.env.DEFAULT_TRIAL_DAYS || "30");
+export const DEFAULT_BILLING_PLANS = [
+  {
+    code: "starter",
+    label: "Starter",
+    monthlyAmountCents: 30000,
+    leadRateCents: 1200,
+    includedCount: 0
+  },
+  {
+    code: "growth",
+    label: "Growth",
+    monthlyAmountCents: 50000,
+    leadRateCents: 700,
+    includedCount: 0
+  },
+  {
+    code: "pro",
+    label: "Pro",
+    monthlyAmountCents: 90000,
+    leadRateCents: 400,
+    includedCount: 0
+  }
+];
+
+function normalizePlanCode(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizePlanLabel(value, fallback) {
+  const text = String(value || "").trim();
+  return text || fallback;
+}
+
+function normalizeMoneyCents(value, fallback) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return fallback;
+  }
+  return Math.round(amount);
+}
+
+function normalizeCount(value, fallback = 0) {
+  const count = Number(value);
+  if (!Number.isFinite(count) || count < 0) {
+    return fallback;
+  }
+  return Math.round(count);
+}
+
+export function normalizeBillingPlans(value) {
+  const source = Array.isArray(value) ? value : [];
+  return DEFAULT_BILLING_PLANS.map((fallbackPlan) => {
+    const configured = source.find((item) => normalizePlanCode(item?.code) === fallbackPlan.code) || {};
+    return {
+      code: fallbackPlan.code,
+      label: normalizePlanLabel(configured.label, fallbackPlan.label),
+      monthlyAmountCents: normalizeMoneyCents(configured.monthlyAmountCents, fallbackPlan.monthlyAmountCents),
+      leadRateCents: normalizeMoneyCents(configured.leadRateCents, fallbackPlan.leadRateCents),
+      includedCount: normalizeCount(configured.includedCount, fallbackPlan.includedCount)
+    };
+  });
+}
+
+export async function getSystemBillingConfig(pool) {
+  if (!pool) {
+    return {
+      defaultTrialDays: DEFAULT_TRIAL_DAYS,
+      plans: normalizeBillingPlans(DEFAULT_BILLING_PLANS)
+    };
+  }
+  const result = await pool.query(
+    `SELECT default_trial_days, billing_plans_json
+     FROM system_config
+     WHERE id = 1
+     LIMIT 1`
+  );
+  const row = result.rows[0] || {};
+  const configuredTrialDays = normalizeCount(row.default_trial_days, DEFAULT_TRIAL_DAYS);
+  return {
+    defaultTrialDays: configuredTrialDays || DEFAULT_TRIAL_DAYS,
+    plans: normalizeBillingPlans(row.billing_plans_json)
+  };
+}
+
+export function getBillingPlanByCode(plans, code) {
+  const normalizedCode = normalizePlanCode(code) || DEFAULT_PLAN_CODE;
+  const planList = normalizeBillingPlans(plans);
+  return planList.find((plan) => plan.code === normalizedCode)
+    || planList.find((plan) => plan.code === DEFAULT_PLAN_CODE)
+    || planList[0];
+}
 
 export async function requireActiveTenantUser(session) {
   const pool = getPool();
@@ -82,6 +173,32 @@ export function resolveEffectiveMonthlyAmount(row) {
   return DEFAULT_MONTHLY_AMOUNT_CENTS;
 }
 
+export function hasCustomPricing(row) {
+  const monthlyOverrideSet = row?.monthly_amount_override_cents !== null
+    && row?.monthly_amount_override_cents !== undefined;
+  const leadOverrideSet = row?.lead_rate_override_cents !== null
+    && row?.lead_rate_override_cents !== undefined;
+  return monthlyOverrideSet || leadOverrideSet;
+}
+
+export function resolveEffectiveLeadPricing(row, billingConfig = null) {
+  const plan = getBillingPlanByCode(
+    billingConfig?.plans || DEFAULT_BILLING_PLANS,
+    row?.plan_code || DEFAULT_PLAN_CODE
+  );
+  const overrideRate = Number(row?.lead_rate_override_cents);
+  const baseRate = Number(row?.lead_rate_cents || 0);
+  const includedCount = Number(row?.included_lead_count);
+  const hasLeadRateOverride = row?.lead_rate_override_cents !== null
+    && row?.lead_rate_override_cents !== undefined
+    && Number.isFinite(overrideRate)
+    && overrideRate >= 0;
+  return {
+    rateCents: hasLeadRateOverride ? Math.round(overrideRate) : (baseRate > 0 ? Math.round(baseRate) : plan.leadRateCents),
+    includedCount: Number.isFinite(includedCount) && includedCount >= 0 ? Math.round(includedCount) : plan.includedCount
+  };
+}
+
 export async function getTenantBillingState(pool, tenantKey) {
   const result = await pool.query(
     `SELECT
@@ -109,7 +226,10 @@ export async function getTenantBillingState(pool, tenantKey) {
        b.stripe_product_id,
        b.stripe_price_id,
        b.monthly_amount_cents,
+       b.lead_rate_cents,
+       b.included_lead_count,
        b.monthly_amount_override_cents,
+       b.lead_rate_override_cents,
        b.price_override_reason,
        b.price_override_cycles_remaining,
        b.current_period_start,
@@ -138,42 +258,117 @@ export async function getTenantBillingState(pool, tenantKey) {
 }
 
 export async function ensureTenantBillingAccount(pool, tenantKey, values = {}) {
+  const current = await getTenantBillingState(pool, tenantKey);
+  const billingConfig = await getSystemBillingConfig(pool);
+  const plan = getBillingPlanByCode(
+    billingConfig.plans,
+    values.plan_code || current?.plan_code || DEFAULT_PLAN_CODE
+  );
   await pool.query(
     `UPDATE tenants
      SET trial_started_at = COALESCE(trial_started_at, created_at),
          trial_end = COALESCE(trial_end, created_at + ($2::text || ' days')::interval),
          billing_status_updated_at = COALESCE(billing_status_updated_at, NOW()),
-         plan_code = COALESCE(plan_code, $3)
+         plan_code = COALESCE(plan_code, $3),
+         plan = COALESCE(plan, $4)
      WHERE tenant_key = $1`,
-    [tenantKey, String(values.default_trial_days || DEFAULT_TRIAL_DAYS), values.plan_code || DEFAULT_PLAN_CODE]
+    [
+      tenantKey,
+      String(values.default_trial_days || billingConfig.defaultTrialDays || DEFAULT_TRIAL_DAYS),
+      plan.code,
+      plan.label
+    ]
   );
   await pool.query(
     `INSERT INTO tenant_billing_accounts (
        tenant_key,
        monthly_amount_cents,
+       lead_rate_cents,
+       included_lead_count,
        stripe_product_id,
        updated_at
      )
-     VALUES ($1, $2, $3, NOW())
+     VALUES ($1, $2, $3, $4, $5, NOW())
      ON CONFLICT (tenant_key)
      DO UPDATE SET
        monthly_amount_cents = COALESCE(tenant_billing_accounts.monthly_amount_cents, EXCLUDED.monthly_amount_cents),
+       lead_rate_cents = COALESCE(tenant_billing_accounts.lead_rate_cents, EXCLUDED.lead_rate_cents),
+       included_lead_count = COALESCE(tenant_billing_accounts.included_lead_count, EXCLUDED.included_lead_count),
        stripe_product_id = COALESCE(tenant_billing_accounts.stripe_product_id, EXCLUDED.stripe_product_id),
        updated_at = NOW()`,
     [
       tenantKey,
-      Number(values.monthly_amount_cents || DEFAULT_MONTHLY_AMOUNT_CENTS),
+      Number(values.monthly_amount_cents || plan.monthlyAmountCents || DEFAULT_MONTHLY_AMOUNT_CENTS),
+      Number(values.lead_rate_cents || plan.leadRateCents || 0),
+      Number(values.included_lead_count ?? plan.includedCount ?? 0),
       values.stripe_product_id || DEFAULT_STRIPE_PRODUCT_ID
     ]
   );
   return getTenantBillingState(pool, tenantKey);
 }
 
-export function buildPlanDisplay(row) {
+export function buildPlanDisplay(row, billingConfig = null) {
+  const plan = getBillingPlanByCode(
+    billingConfig?.plans || DEFAULT_BILLING_PLANS,
+    row?.plan_code || DEFAULT_PLAN_CODE
+  );
+  const effectiveLeadPricing = resolveEffectiveLeadPricing(row, billingConfig);
+  const isCustom = hasCustomPricing(row);
   return {
-    code: row?.plan_code || DEFAULT_PLAN_CODE,
+    code: isCustom ? "custom" : plan.code,
+    label: isCustom ? "Custom" : normalizePlanLabel(row?.plan, plan.label),
+    basePlanCode: plan.code,
+    basePlanLabel: normalizePlanLabel(row?.plan, plan.label),
     legacyLabel: row?.plan || null,
-    monthlyAmountCents: resolveEffectiveMonthlyAmount(row)
+    monthlyAmountCents: resolveEffectiveMonthlyAmount(row),
+    leadRateCents: effectiveLeadPricing.rateCents,
+    includedCount: effectiveLeadPricing.includedCount,
+    isCustom
+  };
+}
+
+export function buildPricingOverride(row) {
+  if (!hasCustomPricing(row)) return null;
+  const monthlyAmountOverrideCents = Number(row?.monthly_amount_override_cents);
+  const leadRateOverrideCents = Number(row?.lead_rate_override_cents);
+  const hasMonthlyOverride = row?.monthly_amount_override_cents !== null
+    && row?.monthly_amount_override_cents !== undefined
+    && Number.isFinite(monthlyAmountOverrideCents)
+    && monthlyAmountOverrideCents >= 0;
+  const hasLeadOverride = row?.lead_rate_override_cents !== null
+    && row?.lead_rate_override_cents !== undefined
+    && Number.isFinite(leadRateOverrideCents)
+    && leadRateOverrideCents >= 0;
+  return {
+    monthlyAmountCents: hasMonthlyOverride ? monthlyAmountOverrideCents : null,
+    leadRateCents: hasLeadOverride ? leadRateOverrideCents : null,
+    reason: row?.price_override_reason || null,
+    cyclesRemaining: row?.price_override_cycles_remaining ?? null
+  };
+}
+
+export function buildAdminPricingState(row, billingConfig = null) {
+  const normalizedBillingConfig = billingConfig || {
+    defaultTrialDays: DEFAULT_TRIAL_DAYS,
+    plans: DEFAULT_BILLING_PLANS
+  };
+  const planDisplay = buildPlanDisplay(row, normalizedBillingConfig);
+  const basePlan = getBillingPlanByCode(normalizedBillingConfig.plans, planDisplay.basePlanCode);
+  return {
+    availablePlans: normalizeBillingPlans(normalizedBillingConfig.plans),
+    defaultTrialDays: Number(normalizedBillingConfig.defaultTrialDays || DEFAULT_TRIAL_DAYS),
+    selectedPlanCode: basePlan.code,
+    selectedPlanLabel: basePlan.label,
+    effectiveMonthlyAmountCents: planDisplay.monthlyAmountCents,
+    effectiveLeadRateCents: planDisplay.leadRateCents,
+    includedCount: planDisplay.includedCount,
+    baseMonthlyAmountCents: basePlan.monthlyAmountCents,
+    baseLeadRateCents: basePlan.leadRateCents,
+    baseIncludedCount: basePlan.includedCount,
+    subscriptionDisplayId: planDisplay.isCustom ? "Custom" : (row?.stripe_subscription_id || null),
+    stripeSubscriptionId: row?.stripe_subscription_id || null,
+    stripeCustomerId: row?.stripe_customer_id || null,
+    isCustom: planDisplay.isCustom
   };
 }
 

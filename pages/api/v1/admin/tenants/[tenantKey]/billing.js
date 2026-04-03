@@ -1,6 +1,13 @@
 import { ensureTables, getPool } from "../../../../_lib/db.js";
 import { getAdminActor, requireSession } from "../../../../_lib/auth.js";
-import { buildPlanDisplay, computeTrialDaysRemaining, ensureTenantBillingAccount, getTenantBillingState } from "../../../../_lib/billing.js";
+import {
+  buildAdminPricingState,
+  buildPlanDisplay,
+  buildPricingOverride,
+  computeTrialDaysRemaining,
+  ensureTenantBillingAccount,
+  getSystemBillingConfig
+} from "../../../../_lib/billing.js";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -31,6 +38,9 @@ export default async function handler(req, res) {
     if (!row) {
       return res.status(404).json({ error: "tenant_not_found" });
     }
+    const billingConfig = await getSystemBillingConfig(pool);
+    const plan = buildPlanDisplay(row, billingConfig);
+    const pricing = buildAdminPricingState(row, billingConfig);
 
     const lifecycle = await pool.query(
       `SELECT event_type, from_billing_status, to_billing_status, reason, created_by_type, created_at
@@ -89,14 +99,14 @@ export default async function handler(req, res) {
         currentPeriodEnd: row.current_period_end,
         cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
         canceledAt: row.canceled_at,
-        plan: buildPlanDisplay(row),
-        override: row.monthly_amount_override_cents
-          ? {
-              amountCents: Number(row.monthly_amount_override_cents),
-              reason: row.price_override_reason || null,
-              cyclesRemaining: row.price_override_cycles_remaining
-            }
-          : null
+        stripeSubscriptionDisplayId: pricing.subscriptionDisplayId,
+        plan,
+        pricing,
+        override: buildPricingOverride(row)
+      },
+      pricingCatalog: {
+        defaultTrialDays: pricing.defaultTrialDays,
+        plans: pricing.availablePlans
       },
       channelHealth: channelHealth.rows,
       smsFailovers: smsFailovers.rows,

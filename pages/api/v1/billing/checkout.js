@@ -1,6 +1,13 @@
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { buildPlanDisplay, ensureTenantBillingAccount, requireTenantOwner, resolveEffectiveMonthlyAmount, syncTenantStripeSubscription } from "../../_lib/billing.js";
+import {
+  buildPlanDisplay,
+  ensureTenantBillingAccount,
+  getSystemBillingConfig,
+  requireTenantOwner,
+  resolveEffectiveMonthlyAmount,
+  syncTenantStripeSubscription
+} from "../../_lib/billing.js";
 import { createCheckoutSession, findCurrentSubscriptionForCustomer, findCurrentSubscriptionForTenantKey, findOrCreateCustomer, retrieveSubscription } from "../../_lib/stripe.js";
 
 function getTenantKey(req) {
@@ -33,6 +40,7 @@ export default async function handler(req, res) {
     if (!row) {
       return res.status(404).json({ error: "tenant_not_found" });
     }
+    const billingConfig = await getSystemBillingConfig(pool);
 
     let existingSubscription = null;
     let checkoutLookupSource = "none";
@@ -121,7 +129,7 @@ export default async function handler(req, res) {
       productName: `${row.name || "EveryCall"} Subscription`,
       trialEnd,
       tenantKey,
-      planCode: buildPlanDisplay(row).code,
+      planCode: buildPlanDisplay(row, billingConfig).code,
       metadata: {
         tenant_key: tenantKey,
         actor_user_id: String(session.user_id || "")

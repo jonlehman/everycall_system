@@ -1,8 +1,18 @@
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { buildPlanDisplay, computeTrialDaysRemaining, ensureTenantBillingAccount, requireActiveTenantUser, requireTenantOwner, syncTenantStripeSubscription } from "../../_lib/billing.js";
+import {
+  buildPricingOverride,
+  buildPlanDisplay,
+  computeTrialDaysRemaining,
+  ensureTenantBillingAccount,
+  getSystemBillingConfig,
+  requireActiveTenantUser,
+  requireTenantOwner,
+  resolveEffectiveLeadPricing,
+  syncTenantStripeSubscription
+} from "../../_lib/billing.js";
 import { findCurrentSubscriptionForCustomer, findCurrentSubscriptionForTenantKey, retrieveSubscription } from "../../_lib/stripe.js";
-import { computeLeadInvoiceEstimate, getLeadPricingConfig, resolveBillingWindow } from "../../../../lib/leadBilling.js";
+import { computeLeadInvoiceEstimate, resolveBillingWindow } from "../../../../lib/leadBilling.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
@@ -35,6 +45,7 @@ export default async function handler(req, res) {
     if (!row) {
       return res.status(404).json({ error: "tenant_not_found" });
     }
+    const billingConfig = await getSystemBillingConfig(pool);
 
     let stripeSubscription = null;
     let stripeSubscriptionSource = "none";
@@ -84,7 +95,7 @@ export default async function handler(req, res) {
       currentPeriodStart: row.current_period_start,
       currentPeriodEnd: row.current_period_end
     });
-    const leadPricing = getLeadPricingConfig(process.env);
+    const leadPricing = resolveEffectiveLeadPricing(row, billingConfig);
     const [leadSummaryResult, leadRowsResult] = await Promise.all([
       pool.query(
         `SELECT
@@ -124,7 +135,7 @@ export default async function handler(req, res) {
     ]);
     const leadSummary = leadSummaryResult.rows[0] || {};
     const invoiceEstimate = computeLeadInvoiceEstimate({
-      baseAmountCents: buildPlanDisplay(row).monthlyAmountCents,
+      baseAmountCents: buildPlanDisplay(row, billingConfig).monthlyAmountCents,
       billableLeadCount: Number(leadSummary.billable_lead_count || 0)
     }, leadPricing);
 
@@ -147,7 +158,7 @@ export default async function handler(req, res) {
         currentPeriodEnd: row.current_period_end,
         cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
         canceledAt: row.canceled_at,
-        plan: buildPlanDisplay(row),
+        plan: buildPlanDisplay(row, billingConfig),
         currentPeriod: {
           label: billingWindow.label,
           start: billingWindow.start.toISOString(),
@@ -162,13 +173,7 @@ export default async function handler(req, res) {
           recentCalls: leadRowsResult.rows || []
         },
         invoiceEstimate,
-        override: row.monthly_amount_override_cents
-          ? {
-              amountCents: Number(row.monthly_amount_override_cents),
-              reason: row.price_override_reason || null,
-              cyclesRemaining: row.price_override_cycles_remaining
-            }
-          : null,
+        override: buildPricingOverride(row),
         invoices
       },
       viewer: {

@@ -556,6 +556,8 @@ export async function ensureTables(pool) {
     CREATE TABLE IF NOT EXISTS system_config (
       id SMALLINT PRIMARY KEY DEFAULT 1,
       global_emergency_phrase TEXT NOT NULL,
+      default_trial_days INTEGER NOT NULL DEFAULT 30,
+      billing_plans_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       telnyx_sms_number TEXT,
       telnyx_sms_number_id TEXT,
       telnyx_sms_messaging_profile_id TEXT,
@@ -563,6 +565,8 @@ export async function ensureTables(pool) {
     );
   `);
 
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS default_trial_days INTEGER NOT NULL DEFAULT 30;`);
+  await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS billing_plans_json JSONB NOT NULL DEFAULT '[]'::jsonb;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_number TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_number_id TEXT;`);
   await pool.query(`ALTER TABLE system_config ADD COLUMN IF NOT EXISTS telnyx_sms_messaging_profile_id TEXT;`);
@@ -652,7 +656,10 @@ export async function ensureTables(pool) {
       stripe_product_id TEXT,
       stripe_price_id TEXT,
       monthly_amount_cents INTEGER,
+      lead_rate_cents INTEGER,
+      included_lead_count INTEGER,
       monthly_amount_override_cents INTEGER,
+      lead_rate_override_cents INTEGER,
       price_override_reason TEXT,
       price_override_cycles_remaining INTEGER,
       current_period_start TIMESTAMPTZ,
@@ -669,7 +676,10 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS stripe_product_id TEXT;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS stripe_price_id TEXT;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS monthly_amount_cents INTEGER;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS lead_rate_cents INTEGER;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS included_lead_count INTEGER;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS monthly_amount_override_cents INTEGER;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS lead_rate_override_cents INTEGER;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS price_override_reason TEXT;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS price_override_cycles_remaining INTEGER;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS current_period_start TIMESTAMPTZ;`);
