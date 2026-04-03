@@ -217,8 +217,8 @@ const guideByContext = {
   documentsFile: {
     step: '01',
     title: 'Upload File',
-    body: 'Use file upload for source documents in .pdf or .txt format that should override or supplement website content.',
-    tip: 'Use this for finalized PDFs or plain-text reference documents that should become part of the next build.'
+    body: 'Use file upload for .txt source documents that should override or supplement website content.',
+    tip: 'Use this for finalized plain-text reference documents that should become part of the next build.'
   },
   documentsPage: {
     step: '01',
@@ -501,8 +501,8 @@ export default function ReceptionistKnowledgePage() {
     }
 
     const lowerName = String(file.name || '').toLowerCase();
-    if (!(lowerName.endsWith('.pdf') || lowerName.endsWith('.txt'))) {
-      setStatus({ message: 'Only .pdf and .txt files can be uploaded here right now.', tone: 'bad' });
+    if (!lowerName.endsWith('.txt')) {
+      setStatus({ message: 'Only .txt files can be uploaded here right now.', tone: 'bad' });
       event.target.value = '';
       return;
     }
@@ -800,7 +800,7 @@ export default function ReceptionistKnowledgePage() {
                               <input
                                 className="hidden"
                                 type="file"
-                                accept=".txt,.pdf"
+                                accept=".txt,text/plain"
                                 onChange={handleDocumentFileChange}
                                 disabled={readingDocumentFile || savingDocument}
                               />
@@ -810,7 +810,7 @@ export default function ReceptionistKnowledgePage() {
                             </span>
                           </div>
                           <p className="mt-2 text-[10px] italic text-slate-500">
-                            Upload a .pdf or .txt file.
+                            Upload a .txt file.
                           </p>
                         </div>
                       )}
@@ -825,7 +825,11 @@ export default function ReceptionistKnowledgePage() {
                           {savingDocument ? 'Saving...' : (readingDocumentFile ? 'Reading File...' : 'Save Document')}
                         </Button>
 
-                        <div className="mt-4 grid gap-2">
+                        <div className="mt-4">
+                          <div className="text-sm font-semibold text-slate-900">Documents</div>
+                        </div>
+
+                        <div className="mt-3 grid gap-2">
                           {uploadedDocuments.length ? uploadedDocuments.map((document) => (
                             <div key={document.uploaded_document_id} className="rounded-lg border border-slate-200 bg-white p-3">
                               <div className="flex items-center justify-between gap-2">

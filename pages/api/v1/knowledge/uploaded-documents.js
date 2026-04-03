@@ -42,7 +42,7 @@ export default async function handler(req, res) {
       return fail(res, 400, "uploaded_document_title_and_body_required", "Uploaded documents require both a title and body text.");
     }
     if (message === "uploaded_document_file_type_not_supported") {
-      return fail(res, 400, "uploaded_document_file_type_not_supported", "Only .pdf and .txt files are supported for file upload right now.");
+      return fail(res, 400, "uploaded_document_file_type_not_supported", "Only .txt files are supported for file upload right now.");
     }
     if (message === "uploaded_document_file_too_large") {
       return fail(res, 413, "uploaded_document_file_too_large", "Uploaded files must be 5 MB or smaller.");

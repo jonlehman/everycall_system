@@ -708,8 +708,8 @@ function estimateBase64DecodedBytes(value) {
 function isSupportedUploadedDocumentFile({ filename = "", mimeType = "" } = {}) {
   const lowerName = normalizeText(filename).toLowerCase();
   const lowerMimeType = normalizeText(mimeType).toLowerCase();
-  if (lowerName.endsWith(".pdf") || lowerName.endsWith(".txt")) return true;
-  if (lowerMimeType === "application/pdf" || lowerMimeType === "text/plain") return true;
+  if (lowerName.endsWith(".txt")) return true;
+  if (lowerMimeType === "text/plain") return true;
   return false;
 }
 
