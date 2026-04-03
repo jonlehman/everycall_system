@@ -6,6 +6,7 @@ import { executePlannerPgvectorRuntime } from "@everycall/contracts";
 import { extractTextFromDocumentBuffer } from "./knowledgeReceptionistFiles.js";
 import { buildSourceChunksForSourceItem, compileKnowledgeBuildArtifacts } from "./knowledgeReceptionistCompiler.js";
 import { loadTenantDomainAssignments, resolveTenantDomainAssignments, syncCanonicalKnowledgePacks } from "./knowledgeReceptionistPacks.js";
+import { ensureTenantPromptProfileCompanyDescriptionSnapshot } from "./promptBlueprints.js";
 import { loadTenantBootstrapProfile } from "./tenantBootstrapProfiles.js";
 
 function readPositiveIntEnv(name, fallback) {
@@ -4857,6 +4858,11 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId) {
        WHERE build_id = $1`,
       [buildId, currentActiveBuildId]
     );
+
+    await ensureTenantPromptProfileCompanyDescriptionSnapshot(client, tenantKey, {
+      buildId,
+      actor: "system:publish_build"
+    });
 
     if (currentActiveBuildId && currentActiveBuildId !== buildId) {
       await client.query(

@@ -128,7 +128,12 @@ async function loadBuildDerivedCompanyDescription(db, tenantKey) {
     [tenantKey]
   );
   const activeBuildId = normalizeText(activeBuildRes.rows?.[0]?.active_build_id);
-  if (!activeBuildId) return "";
+  return loadBuildDerivedCompanyDescriptionForBuild(db, tenantKey, activeBuildId);
+}
+
+async function loadBuildDerivedCompanyDescriptionForBuild(db, tenantKey, buildId) {
+  const normalizedBuildId = normalizeText(buildId);
+  if (!normalizedBuildId) return "";
 
   const summaryRes = await db.query(
     `SELECT kss.summary_text,
@@ -151,7 +156,7 @@ async function loadBuildDerivedCompanyDescription(db, tenantKey) {
      END,
      sr.title ASC
      LIMIT 8`,
-    [tenantKey, activeBuildId]
+    [tenantKey, normalizedBuildId]
   );
   for (const row of summaryRes.rows || []) {
     const candidate = truncateText(row.summary_text, 320);
@@ -167,7 +172,7 @@ async function loadBuildDerivedCompanyDescription(db, tenantKey) {
        AND build_id = $2
      ORDER BY topic_name ASC
      LIMIT 8`,
-    [tenantKey, activeBuildId]
+    [tenantKey, normalizedBuildId]
   );
   for (const row of topicRes.rows || []) {
     const topicName = normalizeText(row.topic_name).toLowerCase();
@@ -181,6 +186,84 @@ async function loadBuildDerivedCompanyDescription(db, tenantKey) {
   }
 
   return "";
+}
+
+export async function ensureTenantPromptProfileCompanyDescriptionSnapshot(db, tenantKey, options = {}) {
+  const normalizedTenantKey = normalizeText(tenantKey);
+  if (!normalizedTenantKey) return { changed: false, company_description: "" };
+
+  const activeBuildRes = await db.query(
+    `SELECT tp.company_description AS prompt_company_description,
+            bp.company_description AS bootstrap_company_description
+     FROM tenants t
+     LEFT JOIN tenant_prompt_profiles tp
+       ON tp.tenant_key = t.tenant_key
+     LEFT JOIN tenant_bootstrap_profiles bp
+       ON bp.tenant_key = t.tenant_key
+     WHERE t.tenant_key = $1
+     LIMIT 1`,
+    [normalizedTenantKey]
+  );
+  const promptCompanyDescription = normalizeText(activeBuildRes.rows?.[0]?.prompt_company_description);
+  const bootstrapCompanyDescription = normalizeText(activeBuildRes.rows?.[0]?.bootstrap_company_description);
+  if (promptCompanyDescription) {
+    return { changed: false, company_description: promptCompanyDescription };
+  }
+  if (bootstrapCompanyDescription) {
+    return { changed: false, company_description: bootstrapCompanyDescription };
+  }
+
+  const buildDerivedCompanyDescription = await loadBuildDerivedCompanyDescriptionForBuild(
+    db,
+    normalizedTenantKey,
+    options.buildId
+  ) || await loadBuildDerivedCompanyDescription(db, normalizedTenantKey);
+  const snapshotValue = normalizeText(buildDerivedCompanyDescription);
+  if (!snapshotValue) {
+    return { changed: false, company_description: "" };
+  }
+
+  await db.query(
+    `INSERT INTO tenant_prompt_profiles (
+       tenant_key,
+       company_description,
+       updated_by_id,
+       updated_at
+     )
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (tenant_key)
+     DO UPDATE SET company_description = CASE
+                        WHEN tenant_prompt_profiles.company_description IS NULL
+                          OR BTRIM(tenant_prompt_profiles.company_description) = ''
+                        THEN EXCLUDED.company_description
+                        ELSE tenant_prompt_profiles.company_description
+                      END,
+                   updated_by_id = CASE
+                        WHEN tenant_prompt_profiles.company_description IS NULL
+                          OR BTRIM(tenant_prompt_profiles.company_description) = ''
+                        THEN EXCLUDED.updated_by_id
+                        ELSE tenant_prompt_profiles.updated_by_id
+                      END,
+                   updated_at = CASE
+                        WHEN tenant_prompt_profiles.company_description IS NULL
+                          OR BTRIM(tenant_prompt_profiles.company_description) = ''
+                        THEN NOW()
+                        ELSE tenant_prompt_profiles.updated_at
+                      END`,
+    [
+      normalizedTenantKey,
+      snapshotValue,
+      actorId(options.actor || "system:build_snapshot")
+    ]
+  );
+
+  await writeAuditLog(db, normalizedTenantKey, options.actor || "system:build_snapshot", "tenant.prompt_profile.company_description_snapshot", {
+    target_tenant: normalizedTenantKey,
+    source: "active_build_summary",
+    build_id: normalizeText(options.buildId) || null
+  });
+
+  return { changed: true, company_description: snapshotValue };
 }
 
 async function loadTenantName(db, tenantKey) {
@@ -438,6 +521,7 @@ export async function savePromptBlueprint(db, input = {}, actor = null) {
 }
 
 export async function loadTenantPromptProfile(db, tenantKey) {
+  await ensureTenantPromptProfileCompanyDescriptionSnapshot(db, tenantKey);
   const defaults = await buildTenantPromptProfileDefaults(db, tenantKey);
   const res = await db.query(
     `SELECT tenant_key, assistant_name, business_name, company_description, opening_line, ai_disclosure_line,
@@ -453,6 +537,7 @@ export async function loadTenantPromptProfile(db, tenantKey) {
 }
 
 export async function loadTenantPromptProfileEditorState(db, tenantKey) {
+  await ensureTenantPromptProfileCompanyDescriptionSnapshot(db, tenantKey);
   const defaults = await buildTenantPromptProfileDefaults(db, tenantKey);
   const res = await db.query(
     `SELECT tenant_key, assistant_name, business_name, company_description, opening_line, ai_disclosure_line,
