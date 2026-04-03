@@ -236,7 +236,7 @@ export default function TeamPage() {
     leadAlertEmailCategories: sanitizeCallCategorySelection(user.lead_alert_email_categories, { fallbackToAll: Boolean(user.lead_alert_email_enabled) })
   })), [users]);
 
-  const fieldLabelClass = 'mb-1.5 ml-1 block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500';
+  const fieldLabelClass = 'mb-1.5 ml-1 block text-[10px] font-bold normal-case tracking-normal text-slate-500';
   const fieldControlClass = 'w-full rounded-xl border border-slate-200/70 bg-[#eff4ff] px-3 py-3 text-sm font-medium text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition focus:border-sky-300 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-100';
   const smsStatusClass = formState.smsOptInStatus === 'opted_in'
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
@@ -259,7 +259,7 @@ export default function TeamPage() {
         </label>
         {enabled ? (
           <button
-            className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700"
+            className="text-xs font-semibold normal-case tracking-normal text-sky-700"
             onClick={() => selectAllCategories(categoriesField)}
             type="button"
           >
@@ -427,7 +427,7 @@ export default function TeamPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-blue-700">
+                  <span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold normal-case tracking-normal text-blue-700">
                     Active Workspace
                   </span>
                   <Button variant="outline" type="button" onClick={closeForm} disabled={savingForm}>
@@ -532,7 +532,7 @@ export default function TeamPage() {
                     <div className="min-w-0 flex-1 space-y-4">
                       <div className="flex flex-wrap items-center gap-3">
                         <h3 className="text-sm font-bold text-slate-900">SMS Opt-In Compliance Workflow</h3>
-                        <span className={`rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${smsStatusClass}`}>
+                        <span className={`rounded-md border px-2 py-1 text-[10px] font-bold normal-case tracking-normal ${smsStatusClass}`}>
                           {formState.smsOptInStatus.replaceAll('_', ' ')}
                         </span>
                       </div>

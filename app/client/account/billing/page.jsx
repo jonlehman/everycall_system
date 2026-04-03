@@ -209,15 +209,15 @@ export default function AccountBillingPage() {
             <h2 className="mt-0 text-lg font-semibold">Status</h2>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs uppercase tracking-wider text-slate-500">Billing Status</div>
+                <div className="text-xs normal-case tracking-normalr text-slate-500">Billing Status</div>
                 <div className="mt-1 text-xl font-semibold">{billing?.status || '-'}</div>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs uppercase tracking-wider text-slate-500">Monthly Base</div>
+                <div className="text-xs normal-case tracking-normalr text-slate-500">Monthly Base</div>
                 <div className="mt-1 text-xl font-semibold">{formatMoney(billing?.plan?.monthlyAmountCents)}</div>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs uppercase tracking-wider text-slate-500">Trial Days Left</div>
+                <div className="text-xs normal-case tracking-normalr text-slate-500">Trial Days Left</div>
                 <div className="mt-1 text-xl font-semibold">{typeof billing?.trialDaysRemaining === 'number' ? billing.trialDaysRemaining : '-'}</div>
               </div>
             </div>
@@ -242,7 +242,7 @@ export default function AccountBillingPage() {
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
               {invoiceCards.map((card) => (
                 <div key={card.label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-xs uppercase tracking-wider text-slate-500">{card.label}</div>
+                  <div className="text-xs normal-case tracking-normalr text-slate-500">{card.label}</div>
                   <div className="mt-1 text-xl font-semibold">{card.value}</div>
                 </div>
               ))}
@@ -268,10 +268,10 @@ export default function AccountBillingPage() {
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="border-b border-slate-200">
-                    <th className="px-2 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Time</th>
-                    <th className="px-2 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Caller</th>
-                    <th className="px-2 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Summary</th>
-                    <th className="px-2 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Lead Status</th>
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normalr text-slate-500">Time</th>
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normalr text-slate-500">Caller</th>
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normalr text-slate-500">Summary</th>
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normalr text-slate-500">Lead Status</th>
                   </tr>
                 </thead>
                 <tbody>

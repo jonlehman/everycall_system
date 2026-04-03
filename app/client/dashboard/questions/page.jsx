@@ -113,7 +113,7 @@ export default function DashboardQuestionsPage() {
       <section className={panelClassName('p-6')}>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Last 30 Days</div>
+            <div className="text-[10px] font-bold normal-case tracking-normal text-slate-500">Last 30 Days</div>
             <h2 className="mt-2 font-['Space_Grotesk'] text-xl font-bold tracking-[-0.03em] text-slate-950">{title}</h2>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -172,7 +172,7 @@ export default function DashboardQuestionsPage() {
                   </div>
                 ) : null}
                 {kind === 'unanswered' && normalizeText(question.reason) ? (
-                  <div className="mt-2 text-[11px] uppercase tracking-[0.18em] text-amber-800">{normalizeText(question.reason)}</div>
+                  <div className="mt-2 text-[11px] normal-case tracking-normal text-amber-800">{normalizeText(question.reason)}</div>
                 ) : null}
                 {question.summary ? <div className="mt-2 text-xs text-slate-500">{question.summary}</div> : null}
               </Link>

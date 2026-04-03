@@ -116,7 +116,7 @@ function KpiCard({ label, value, meta = '', progress = null }) {
   return (
     <section className={panelClassName('p-6')}>
       <div className="mb-4">
-        <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">{label}</span>
+        <span className="text-[10px] font-bold normal-case tracking-normal text-slate-500">{label}</span>
       </div>
       <div className="flex items-baseline gap-2">
         <span className="font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.04em] text-slate-950">{value}</span>
@@ -139,7 +139,7 @@ function LeadStatusPill({ call }) {
       ? 'bg-amber-100 text-amber-800'
       : 'bg-slate-100 text-slate-600';
   return (
-    <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${toneClass}`}>
+    <span className={`rounded-full px-2 py-1 text-[10px] font-bold normal-case tracking-normal ${toneClass}`}>
       {meta.label}
     </span>
   );
@@ -147,15 +147,15 @@ function LeadStatusPill({ call }) {
 
 function CategoryPill({ categoryKey, label }) {
   if (categoryKey === 'project_inquiry') {
-    return <span className="rounded-full bg-[#d6e4f9] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#205cb5]">Lead</span>;
+    return <span className="rounded-full bg-[#d6e4f9] px-2 py-1 text-[10px] font-bold normal-case tracking-normal text-[#205cb5]">Lead</span>;
   }
   if (categoryKey === 'existing_customer_support') {
-    return <span className="rounded-full bg-[#e5e9eb] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">Support</span>;
+    return <span className="rounded-full bg-[#e5e9eb] px-2 py-1 text-[10px] font-bold normal-case tracking-normal text-slate-600">Support</span>;
   }
   if (categoryKey === 'spam' || categoryKey === 'vendor_or_sales') {
-    return <span className="rounded-full bg-[#ffdad6] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#93000a]">{label}</span>;
+    return <span className="rounded-full bg-[#ffdad6] px-2 py-1 text-[10px] font-bold normal-case tracking-normal text-[#93000a]">{label}</span>;
   }
-  return <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">{label}</span>;
+  return <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold normal-case tracking-normal text-slate-600">{label}</span>;
 }
 
 function ActionRow({ href, icon, title }) {
@@ -316,7 +316,7 @@ export default function ClientDashboardPage() {
         <section className={panelClassName('p-6')}>
           <div className="mb-5 flex items-center justify-between gap-4">
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Call Mix</div>
+              <div className="text-[10px] font-bold normal-case tracking-normal text-slate-500">Call Mix</div>
             </div>
           </div>
           <div className="grid gap-6 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
@@ -351,7 +351,7 @@ export default function ClientDashboardPage() {
         <section className={panelClassName('overflow-hidden')}>
           <div className="flex items-center justify-between border-b border-slate-200/70 px-6 py-5">
             <h2 className="font-['Space_Grotesk'] text-lg font-bold text-slate-950">Recent Activity</h2>
-            <Link className="text-xs font-bold uppercase tracking-[0.18em] text-[#205cb5]" href="/client/calls">
+            <Link className="text-xs font-bold normal-case tracking-normal text-[#205cb5]" href="/client/calls">
               View All
             </Link>
           </div>
@@ -359,11 +359,11 @@ export default function ClientDashboardPage() {
             <table className="w-full min-w-[720px] text-left">
               <thead className="bg-[#f1f4f6]">
                 <tr>
-                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Time</th>
-                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Caller</th>
-                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Summary</th>
-                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Category</th>
-                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Status</th>
+                  <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Time</th>
+                  <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Caller</th>
+                  <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Summary</th>
+                  <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Category</th>
+                  <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -421,7 +421,7 @@ export default function ClientDashboardPage() {
                   className="rounded-lg bg-[#f1f4f6] p-3 text-left transition-all hover:bg-[#e5e9eb]"
                   onClick={() => answeredQuestionCount && setExpandedKnowledgeList((current) => current === 'answered' ? null : 'answered')}
                 >
-                  <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold normal-case tracking-normal text-slate-500">
                     <span>Answered</span>
                     <span className="material-symbols-outlined text-sm text-[#205cb5]">{expandedKnowledgeList === 'answered' ? 'expand_less' : 'chevron_right'}</span>
                   </div>
@@ -432,7 +432,7 @@ export default function ClientDashboardPage() {
                   className="rounded-lg bg-[#f1f4f6] p-3 text-left transition-all hover:bg-[#e5e9eb]"
                   onClick={() => unansweredQuestionCount && setExpandedKnowledgeList((current) => current === 'unanswered' ? null : 'unanswered')}
                 >
-                  <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold normal-case tracking-normal text-slate-500">
                     <span>No KB Answer</span>
                     <span className="material-symbols-outlined text-sm text-[#205cb5]">{expandedKnowledgeList === 'unanswered' ? 'expand_less' : 'chevron_right'}</span>
                   </div>
@@ -455,7 +455,7 @@ export default function ClientDashboardPage() {
                   </div>
                   <button
                     type="button"
-                    className="mt-2 rounded-md bg-white px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mt-2 rounded-md bg-white px-3 py-1.5 text-[11px] font-bold normal-case tracking-normal text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={handleRetryTranscriptAnalysis}
                     disabled={retryingTranscriptAnalysis}
                   >
@@ -468,12 +468,12 @@ export default function ClientDashboardPage() {
             {expandedKnowledgeList ? (
               <div className="mt-5 border-t border-slate-200/70 pt-5">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                  <div className="text-[10px] font-bold normal-case tracking-normal text-slate-500">
                     {expandedKnowledgeList === 'answered' ? 'Questions Answered From KB' : 'Questions Not Answered From KB'}
                   </div>
                   <Link
                     href={`/client/dashboard/questions?kind=${expandedKnowledgeList === 'answered' ? 'answered' : 'unanswered'}&page=1`}
-                    className="text-xs font-bold uppercase tracking-[0.18em] text-[#205cb5]"
+                    className="text-xs font-bold normal-case tracking-normal text-[#205cb5]"
                   >
                     View All
                   </Link>
@@ -533,11 +533,11 @@ export default function ClientDashboardPage() {
           <div className="flex gap-4">
             <div className="flex items-center gap-2">
               <span className="h-3 w-3 rounded-sm bg-[#205cb5]" />
-              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Business Hours</span>
+              <span className="text-[10px] font-bold normal-case tracking-normal text-slate-500">Business Hours</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="h-3 w-3 rounded-sm bg-[#6e9ffd]" />
-              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">After Hours</span>
+              <span className="text-[10px] font-bold normal-case tracking-normal text-slate-500">After Hours</span>
             </div>
           </div>
         </div>
@@ -561,7 +561,7 @@ export default function ClientDashboardPage() {
                     </div>
                   </div>
                 </div>
-                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{formatDayLabel(day.day)}</div>
+                <div className="text-[10px] font-bold normal-case tracking-normal text-slate-500">{formatDayLabel(day.day)}</div>
               </div>
             );
           })}

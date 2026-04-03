@@ -714,7 +714,7 @@ export default function ReceptionistKnowledgePage() {
                       ) : null}
                       <div className="mt-4 flex flex-wrap items-center gap-3" onClick={() => setActiveGuideKey('websiteBuild')} onFocusCapture={() => setActiveGuideKey('websiteBuild')}>
                         <Button
-                          className="h-auto rounded px-6 py-3 text-xs font-bold uppercase tracking-[0.18em]"
+                          className="h-auto rounded px-6 py-3 text-xs font-bold normal-case tracking-normal"
                           onClick={() => queueBuild('website_base')}
                           disabled={buildBusyKind === 'website_base'}
                         >
@@ -769,7 +769,7 @@ export default function ReceptionistKnowledgePage() {
                     <>
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-3" onClick={() => setActiveGuideKey('documentsMeta')} onFocusCapture={() => setActiveGuideKey('documentsMeta')}>
                         <div>
-                          <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Title</label>
+                          <label className="mb-2 block text-[10px] font-bold normal-case tracking-normalr text-slate-500">Document Title</label>
                           <input
                             className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
                             value={documentForm.title}
@@ -777,7 +777,7 @@ export default function ReceptionistKnowledgePage() {
                           />
                         </div>
                         <div>
-                          <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Class</label>
+                          <label className="mb-2 block text-[10px] font-bold normal-case tracking-normalr text-slate-500">Document Class</label>
                           <select
                             className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
                             value={documentForm.documentClass}
@@ -791,7 +791,7 @@ export default function ReceptionistKnowledgePage() {
                           </select>
                         </div>
                         <div>
-                          <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Source Type</label>
+                          <label className="mb-2 block text-[10px] font-bold normal-case tracking-normalr text-slate-500">Source Type</label>
                           <select
                             className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
                             value={documentForm.sourceKind}
@@ -812,7 +812,7 @@ export default function ReceptionistKnowledgePage() {
 
                       {documentForm.sourceKind === 'single_page_url' ? (
                         <div className="space-y-3 pt-4" onClick={() => setActiveGuideKey('documentsPage')} onFocusCapture={() => setActiveGuideKey('documentsPage')}>
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Web Page URL</div>
+                          <div className="text-[10px] font-bold normal-case tracking-normalr text-slate-500">Web Page URL</div>
                           <input
                             className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
                             value={documentForm.sourceLocator}
@@ -829,7 +829,7 @@ export default function ReceptionistKnowledgePage() {
                           onClick={() => setActiveGuideKey('documentsFile')}
                           onFocusCapture={() => setActiveGuideKey('documentsFile')}
                         >
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload File</div>
+                          <div className="text-[10px] font-bold normal-case tracking-normalr text-slate-500">Upload File</div>
                           <div className="flex w-full items-center overflow-hidden rounded border border-[#E2E8F0] bg-white">
                             <label className="cursor-pointer border-r border-[#E2E8F0] bg-slate-100 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200">
                               Browse...
@@ -854,7 +854,7 @@ export default function ReceptionistKnowledgePage() {
                       <div onClick={() => setActiveGuideKey('documentsMeta')} onFocusCapture={() => setActiveGuideKey('documentsMeta')}>
                         <Button
                           variant="outline"
-                          className="border-[#2563EB] bg-transparent px-6 py-3 text-xs font-bold uppercase tracking-widest text-[#2563EB] shadow-sm hover:bg-blue-50"
+                          className="border-[#2563EB] bg-transparent px-6 py-3 text-xs font-bold normal-case tracking-normalst text-[#2563EB] shadow-sm hover:bg-blue-50"
                           onClick={saveUploadedDocument}
                           disabled={savingDocument || readingDocumentFile}
                         >
@@ -917,7 +917,7 @@ export default function ReceptionistKnowledgePage() {
                             <span className="inline-flex h-2.5 w-2.5 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)]" aria-hidden="true" />
                           ) : null}
                           <Button
-                            className="h-auto rounded px-6 py-3 text-xs font-bold uppercase tracking-[0.18em]"
+                            className="h-auto rounded px-6 py-3 text-xs font-bold normal-case tracking-normal"
                             onClick={() => queueBuild('document_overlay')}
                             disabled={buildBusyKind === 'document_overlay' || !canApplyDocuments}
                           >
@@ -1019,13 +1019,13 @@ export default function ReceptionistKnowledgePage() {
               <div className="mt-1 text-sm text-slate-600">{knowledgeGuideOverview.body}</div>
               <div className="mt-2 text-sm text-slate-600">{knowledgeGuideOverview.detail}</div>
             </div>
-            <div className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-slate-500">{`Step ${activeStep}`}</div>
+            <div className="text-[11px] font-extrabold normal-case tracking-normal text-slate-500">{`Step ${activeStep}`}</div>
             <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
               <div className="font-semibold text-slate-900">{activeGuide.title}</div>
               <div className="mt-1 text-sm text-slate-600">{activeGuide.body}</div>
             </div>
             <div className="rounded-2xl border border-[#d6e4ff] bg-[#f5f8ff] p-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#004ac6]">Tip</div>
+              <div className="text-[11px] font-semibold normal-case tracking-normal text-[#004ac6]">Tip</div>
               <div className="mt-2 text-sm italic text-slate-600">{activeGuide.tip}</div>
             </div>
           </GuidePanel>

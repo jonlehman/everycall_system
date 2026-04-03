@@ -105,10 +105,10 @@ function ConversationRailItem({ conversation, selected, onSelect }) {
       )}
     >
       <div className="mb-2 flex items-start justify-between gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
+        <span className="text-[10px] font-bold normal-case tracking-normal text-slate-500">
           {ticketLabel(conversation.id)}
         </span>
-        <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.15em]', meta.badgeClass)}>
+        <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-bold normal-case tracking-normal', meta.badgeClass)}>
           {meta.shortLabel}
         </span>
       </div>
@@ -117,7 +117,7 @@ function ConversationRailItem({ conversation, selected, onSelect }) {
         {conversation.lastMessagePreview || 'No messages yet.'}
       </p>
       <div className="mt-3 flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1 text-[10px] uppercase tracking-[0.15em] text-slate-400">
+        <p className="flex items-center gap-1 text-[10px] normal-case tracking-normal text-slate-400">
           <span className="material-symbols-outlined text-[12px]">schedule</span>
           {formatRelative(conversation.lastMessageAt)}
         </p>
@@ -335,7 +335,7 @@ export default function AccountSupportPage() {
               <button
                 type="button"
                 onClick={scrollToNewConversation}
-                className="inline-flex items-center gap-2 rounded-lg bg-[#205cb5] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white transition-opacity hover:opacity-90"
+                className="inline-flex items-center gap-2 rounded-lg bg-[#205cb5] px-3 py-2 text-xs font-semibold normal-case tracking-normal text-white transition-opacity hover:opacity-90"
               >
                 <span className="material-symbols-outlined text-[16px]">add</span>
                 New
@@ -432,7 +432,7 @@ export default function AccountSupportPage() {
                     ) : null}
                   </div>
                 </div>
-                <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                <span className="flex items-center gap-2 text-[11px] font-semibold normal-case tracking-normal text-slate-500">
                   <span className={cn('h-2.5 w-2.5 rounded-full', detail?.conversation ? selectedStatusMeta.dotClass : 'bg-slate-300')} />
                   {detail?.conversation ? selectedStatusMeta.label : 'No thread selected'}
                 </span>
@@ -452,13 +452,13 @@ export default function AccountSupportPage() {
                         <div className="flex items-center gap-3">
                           {meta.rowClass ? (
                             <>
-                              <span className={cn('text-[10px] uppercase tracking-[0.18em] text-slate-400', meta.timeClass)}>{formatDateTime(message.createdAt)}</span>
+                              <span className={cn('text-[10px] normal-case tracking-normal text-slate-400', meta.timeClass)}>{formatDateTime(message.createdAt)}</span>
                               <span className="text-sm font-semibold text-slate-900">{message.senderName || meta.label}</span>
                             </>
                           ) : (
                             <>
                               <span className="text-sm font-semibold text-slate-900">{message.senderName || meta.label}</span>
-                              <span className={cn('text-[10px] uppercase tracking-[0.18em] text-slate-400', meta.timeClass)}>{formatDateTime(message.createdAt)}</span>
+                              <span className={cn('text-[10px] normal-case tracking-normal text-slate-400', meta.timeClass)}>{formatDateTime(message.createdAt)}</span>
                             </>
                           )}
                         </div>
@@ -497,7 +497,7 @@ export default function AccountSupportPage() {
                   type="button"
                   onClick={sendReply}
                   disabled={sending || !detail?.conversation || !replyBody.trim()}
-                  className="inline-flex items-center gap-2 rounded-lg bg-[#205cb5] px-5 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-white transition-all hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#205cb5] px-5 py-3 text-xs font-semibold normal-case tracking-normal text-white transition-all hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {sending ? 'Sending...' : 'Send Reply'}
                   <span className="material-symbols-outlined text-[16px]">send</span>

@@ -100,19 +100,19 @@ export default function AdminPhoneNumbersPage() {
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Total Numbers</div>
+          <div className="text-xs normal-case tracking-normal text-slate-500">Total Numbers</div>
           <div className="mt-1 text-3xl font-bold">{report.summary?.totalNumbers ?? 0}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Assigned</div>
+          <div className="text-xs normal-case tracking-normal text-slate-500">Assigned</div>
           <div className="mt-1 text-3xl font-bold">{report.summary?.assignedNumbers ?? 0}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Unassigned</div>
+          <div className="text-xs normal-case tracking-normal text-slate-500">Unassigned</div>
           <div className="mt-1 text-3xl font-bold">{report.summary?.unassignedNumbers ?? 0}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Tracked 30-Day Cost</div>
+          <div className="text-xs normal-case tracking-normal text-slate-500">Tracked 30-Day Cost</div>
           <div className="mt-1 text-3xl font-bold">{formatMoney((report.summary?.trackedEstimated30DayCostCents ?? 0) / 100)}</div>
         </div>
       </div>

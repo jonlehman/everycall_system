@@ -11,7 +11,7 @@ export default function SectionPage({ tabs = [], title, subtitle = '', status = 
             {statusChip ? (
               <div className="hidden items-center gap-2 md:flex">
                 <span className={`h-2 w-2 rounded-full ${statusChip.tone === 'ok' ? 'bg-emerald-500' : statusChip.tone === 'warn' ? 'bg-amber-500' : 'bg-slate-400'}`} />
-                <span className={`text-[11px] font-bold uppercase tracking-[0.14em] ${
+                <span className={`text-[11px] font-bold normal-case tracking-normal ${
                   statusChip.tone === 'ok' ? 'text-emerald-700' : statusChip.tone === 'warn' ? 'text-amber-700' : 'text-slate-500'
                 }`}>
                   {statusChip.label}

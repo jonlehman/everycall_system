@@ -89,27 +89,27 @@ export default function AdminUsagePage() {
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Calls</div>
+          <div className="text-xs normal-case tracking-normal text-slate-500">Calls</div>
           <div className="mt-1 text-3xl font-bold">{formatInt(report.summary?.totalCalls ?? 0)}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Minutes</div>
+          <div className="text-xs normal-case tracking-normal text-slate-500">Minutes</div>
           <div className="mt-1 text-3xl font-bold">{formatDurationMinutes(report.summary?.totalDurationSeconds ?? 0)}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Billable Minutes</div>
+          <div className="text-xs normal-case tracking-normal text-slate-500">Billable Minutes</div>
           <div className="mt-1 text-3xl font-bold">{formatInt(report.summary?.totalTelephonyBillableMinutes ?? 0)}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className="text-xs uppercase tracking-wide text-slate-500">AI Cost</div>
+          <div className="text-xs normal-case tracking-normal text-slate-500">AI Cost</div>
           <div className="mt-1 text-3xl font-bold">{formatUsdFromMicros(report.summary?.totalAiEstimatedCostMicrosUsd ?? 0)}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Telephony Cost</div>
+          <div className="text-xs normal-case tracking-normal text-slate-500">Telephony Cost</div>
           <div className="mt-1 text-3xl font-bold">{formatUsdFromMicros(report.summary?.totalTelephonyEstimatedCostMicrosUsd ?? 0)}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Total Estimated Cost</div>
+          <div className="text-xs normal-case tracking-normal text-slate-500">Total Estimated Cost</div>
           <div className="mt-1 text-3xl font-bold">{formatUsdFromMicros(report.summary?.totalEstimatedCostMicrosUsd ?? 0)}</div>
         </div>
       </div>

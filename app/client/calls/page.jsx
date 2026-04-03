@@ -476,7 +476,7 @@ export default function CallsPage() {
 
             <div className={`mt-6 grid gap-6 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-4'}`}>
               <div className="space-y-1.5">
-                <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Search Text</label>
+                <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Search Text</label>
                 <div className="relative">
                   <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg text-slate-400">search</span>
                   <input
@@ -491,7 +491,7 @@ export default function CallsPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Call Status</label>
+                <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Call Status</label>
                 <select
                   className="w-full appearance-none rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                   value={statusFilter}
@@ -511,7 +511,7 @@ export default function CallsPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Urgency</label>
+                <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Urgency</label>
                 <select
                   className="w-full appearance-none rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                   value={urgencyFilter}
@@ -527,7 +527,7 @@ export default function CallsPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Call Category</label>
+                <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Call Category</label>
                 <select
                   className="w-full appearance-none rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                   value={categoryFilter}
@@ -543,7 +543,7 @@ export default function CallsPage() {
 
               <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:col-span-3 md:grid-cols-2'}`}>
                 <div className="space-y-1.5">
-                  <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Date From</label>
+                  <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Date From</label>
                   <input
                     className="w-full rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                     type="date"
@@ -553,7 +553,7 @@ export default function CallsPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Date To</label>
+                  <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Date To</label>
                   <input
                     className="w-full rounded-md border-none bg-white px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                     type="date"
@@ -589,12 +589,12 @@ export default function CallsPage() {
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="border-b border-[#c3c6d7]/10 bg-[#eff4ff]">
-                    <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Time</th>
-                    <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Number</th>
-                    <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">AI Summary</th>
-                    <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Call Category</th>
-                    <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Status</th>
-                    <th className="px-6 py-4 text-[0.75rem] font-bold uppercase tracking-widest text-slate-500">Urgency</th>
+                    <th className="px-6 py-4 text-[0.75rem] font-bold normal-case tracking-normalst text-slate-500">Time</th>
+                    <th className="px-6 py-4 text-[0.75rem] font-bold normal-case tracking-normalst text-slate-500">Number</th>
+                    <th className="px-6 py-4 text-[0.75rem] font-bold normal-case tracking-normalst text-slate-500">AI Summary</th>
+                    <th className="px-6 py-4 text-[0.75rem] font-bold normal-case tracking-normalst text-slate-500">Call Category</th>
+                    <th className="px-6 py-4 text-[0.75rem] font-bold normal-case tracking-normalst text-slate-500">Status</th>
+                    <th className="px-6 py-4 text-[0.75rem] font-bold normal-case tracking-normalst text-slate-500">Urgency</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#c3c6d7]/5">
@@ -650,7 +650,7 @@ export default function CallsPage() {
                           </span>
                         </td>
                         <td className="px-6 py-5">
-                          <span className={`rounded-full px-2.5 py-1 text-[0.65rem] font-extrabold uppercase tracking-wider ${queueStatusClass(row.status)}`}>
+                          <span className={`rounded-full px-2.5 py-1 text-[0.65rem] font-extrabold normal-case tracking-normalr ${queueStatusClass(row.status)}`}>
                             {formatLabel(row.status)}
                           </span>
                         </td>
@@ -716,7 +716,7 @@ export default function CallsPage() {
             <>
               <div className="space-y-6">
                 <div className="rounded-lg border-l-4 border-[#004ac6] bg-[#eff4ff]/50 p-4">
-                  <label className="mb-2 block text-[0.65rem] font-extrabold uppercase tracking-widest text-[#004ac6]">AI Summary</label>
+                  <label className="mb-2 block text-[0.65rem] font-extrabold normal-case tracking-normalst text-[#004ac6]">AI Summary</label>
                   <textarea
                     className="min-h-[110px] w-full resize-none border-none bg-transparent p-0 text-sm leading-relaxed text-slate-900 outline-none ring-0 placeholder:text-slate-400 focus:ring-0"
                     value={detailDraft.summary}
@@ -750,7 +750,7 @@ export default function CallsPage() {
 
                   <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Number</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Number</label>
                       <input
                         className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none"
                         value={formatPhoneDisplay(detailMeta.from_number) || ''}
@@ -758,7 +758,7 @@ export default function CallsPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Call Time</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Call Time</label>
                       <input
                         className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none"
                         value={new Date(detailMeta.created_at).toLocaleString()}
@@ -769,7 +769,7 @@ export default function CallsPage() {
 
                   <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Status Update</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Status Update</label>
                       <select
                         className="w-full appearance-none rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                         value={detailDraft.status}
@@ -786,7 +786,7 @@ export default function CallsPage() {
                       </select>
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Urgency</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Urgency</label>
                       <select
                         className="w-full appearance-none rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                         value={detailDraft.urgency}
@@ -802,7 +802,7 @@ export default function CallsPage() {
 
                   <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">First Name</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">First Name</label>
                       <input
                         className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                         value={detailDraft.firstName}
@@ -811,7 +811,7 @@ export default function CallsPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Last Name</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Last Name</label>
                       <input
                         className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                         value={detailDraft.lastName}
@@ -820,7 +820,7 @@ export default function CallsPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Callback Number</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Callback Number</label>
                       <input
                         className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                         value={detailDraft.callbackNumber}
@@ -829,7 +829,7 @@ export default function CallsPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Service Required</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Service Required</label>
                       <input
                         className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                         value={detailDraft.serviceRequired}
@@ -838,7 +838,7 @@ export default function CallsPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Requested Date</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Requested Date</label>
                       <input
                         className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                         type="date"
@@ -847,7 +847,7 @@ export default function CallsPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Requested Time</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Requested Time</label>
                       <input
                         className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                         value={detailDraft.requestedTime}
@@ -856,7 +856,7 @@ export default function CallsPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Address Line 1</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Address Line 1</label>
                       <input
                         className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                         value={detailDraft.addressLine1}
@@ -865,7 +865,7 @@ export default function CallsPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Address Line 2</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Address Line 2</label>
                       <input
                         className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                         value={detailDraft.addressLine2}
@@ -874,7 +874,7 @@ export default function CallsPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">City</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">City</label>
                       <input
                         className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                         value={detailDraft.city}
@@ -883,7 +883,7 @@ export default function CallsPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">State</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">State</label>
                       <input
                         className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                         value={detailDraft.state}
@@ -892,7 +892,7 @@ export default function CallsPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Zip</label>
+                      <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Zip</label>
                       <input
                         className="w-full rounded-md border-none bg-[#eff4ff]/40 px-4 py-2 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                         value={detailDraft.postalCode}
@@ -904,7 +904,7 @@ export default function CallsPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[0.75rem] font-bold uppercase tracking-wider text-slate-500">Internal Notes</label>
+                  <label className="text-[0.75rem] font-bold normal-case tracking-normalr text-slate-500">Internal Notes</label>
                   <textarea
                     className="w-full resize-none rounded-md border-none bg-[#eff4ff]/30 px-4 py-3 text-sm text-slate-900 ring-1 ring-[#c3c6d7]/20 outline-none transition-all focus:ring-2 focus:ring-[#004ac6]/20"
                     value={detailDraft.notes}
@@ -935,7 +935,7 @@ export default function CallsPage() {
                 </div>
 
                 <div ref={transcriptRef} className="rounded-xl border border-[#c3c6d7]/10 bg-[#eff4ff] p-4">
-                  <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Transcript</div>
+                  <div className="mb-2 text-[11px] font-bold normal-case tracking-normal text-slate-500">Transcript</div>
                   <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
                     {transcriptTurns.length ? (
                       <div className="space-y-3">
@@ -944,7 +944,7 @@ export default function CallsPage() {
                           return (
                             <div key={`${turn.speaker}-${index}`} className={`flex ${isCaller ? 'justify-end' : 'justify-start'}`}>
                               <div className={`max-w-[88%] ${isCaller ? 'text-right' : ''}`}>
-                                <div className={`mb-1 text-[11px] font-bold uppercase tracking-[0.18em] ${isCaller ? 'text-[#004ac6]' : 'text-slate-500'}`}>
+                                <div className={`mb-1 text-[11px] font-bold normal-case tracking-normal ${isCaller ? 'text-[#004ac6]' : 'text-slate-500'}`}>
                                   {isCaller ? 'Caller' : 'Assistant'}
                                 </div>
                                 <div

@@ -85,7 +85,7 @@ function SourceBadge({ source }) {
 function PreviewVariantPanel({ label, children }) {
   return (
     <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-[11px] font-semibold normal-case tracking-normal text-slate-500">{label}</div>
       {children}
     </div>
   );
@@ -361,7 +361,7 @@ function CollapsibleSectionGroup({ id, title, description, defaultOpen, children
             <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
             <p className="mt-1 text-sm text-slate-500">{description}</p>
           </div>
-          <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Open Group</span>
+          <span className="text-xs font-medium normal-case tracking-normal text-slate-400">Open Group</span>
         </div>
       </summary>
       <div className="grid gap-4 border-t border-slate-200 p-4 pt-4">
@@ -673,14 +673,14 @@ export default function AdminPromptConfigPage() {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => loadPage(selectedBlueprintId)} disabled={loading || savingGlobal || savingTenant}>Reload</Button>
           <div className="grid gap-2 rounded-xl border border-sky-200 bg-sky-50 p-2">
-            <div className="px-1 text-[11px] font-semibold uppercase tracking-wide text-sky-700">Global Blueprint</div>
+            <div className="px-1 text-[11px] font-semibold normal-case tracking-normal text-sky-700">Global Blueprint</div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" className="border-sky-200 bg-white text-sky-900 hover:bg-sky-100" onClick={resetDraftBlueprintToSaved} disabled={savingGlobal}>Reset Global To Saved</Button>
               <Button className="bg-sky-600 text-white hover:bg-sky-700" onClick={saveGlobalBlueprint} disabled={savingGlobal}>{savingGlobal ? 'Saving...' : 'Save Global Blueprint'}</Button>
             </div>
           </div>
           <div className="grid gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-2">
-            <div className="px-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Selected Tenant</div>
+            <div className="px-1 text-[11px] font-semibold normal-case tracking-normal text-emerald-700">Selected Tenant</div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" className="border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-100" onClick={resetTenantToSaved} disabled={savingTenant || !savedTenantConfig}>Reset Tenant To Saved</Button>
               <Button variant="outline" className="border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-100" onClick={resetTenantToDefaults} disabled={savingTenant || !selectedTenant}>Reset Tenant To Defaults</Button>
@@ -803,7 +803,7 @@ export default function AdminPromptConfigPage() {
                   This is the complete prompt sent at session start. It is the main behavior source for the call.
                 </p>
               </div>
-              <span className="rounded-full bg-slate-200 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-700">
+              <span className="rounded-full bg-slate-200 px-2 py-1 text-[11px] font-medium normal-case tracking-normal text-slate-700">
                 {previewMode === 'compare' ? 'draft vs live' : previewMode}
               </span>
             </div>

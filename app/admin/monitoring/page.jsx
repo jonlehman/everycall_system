@@ -25,7 +25,7 @@ function fetchJson(url, options) {
 function SummaryCard({ label, value, detail }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-xs normal-case tracking-normal text-slate-500">{label}</div>
       <div className="mt-1 text-3xl font-bold text-slate-900">{value}</div>
       {detail ? <div className="mt-1 text-sm text-slate-500">{detail}</div> : null}
     </div>

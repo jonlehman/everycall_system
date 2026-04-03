@@ -151,7 +151,7 @@ export default function Header() {
                   }
                 }}
               >
-                <div className="px-2 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Account</div>
+                <div className="px-2 py-1 text-[11px] font-bold normal-case tracking-normal text-slate-500">Account</div>
                 <Link className="mb-1 block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-[#eff4ff]" href="/client/account/general">
                   Open account
                 </Link>

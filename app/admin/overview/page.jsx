@@ -51,10 +51,10 @@ export default function AdminOverviewPage() {
         <h1 className="m-0 text-2xl font-semibold tracking-tight">Platform Overview</h1>
       </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wide text-slate-500">Active Tenants</div><div className="mt-1 text-3xl font-bold">{stats.activeTenants}</div></div>
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wide text-slate-500">Calls (24h)</div><div className="mt-1 text-3xl font-bold">{stats.calls24h}</div></div>
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wide text-slate-500">Errors (24h)</div><div className="mt-1 text-3xl font-bold">{stats.errors24h}</div></div>
-        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs uppercase tracking-wide text-slate-500">Avg Latency</div><div className="mt-1 text-3xl font-bold">{stats.avgLatencyMs}ms</div></div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs normal-case tracking-normal text-slate-500">Active Tenants</div><div className="mt-1 text-3xl font-bold">{stats.activeTenants}</div></div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs normal-case tracking-normal text-slate-500">Calls (24h)</div><div className="mt-1 text-3xl font-bold">{stats.calls24h}</div></div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs normal-case tracking-normal text-slate-500">Errors (24h)</div><div className="mt-1 text-3xl font-bold">{stats.errors24h}</div></div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-sm"><div className="text-xs normal-case tracking-normal text-slate-500">Avg Latency</div><div className="mt-1 text-3xl font-bold">{stats.avgLatencyMs}ms</div></div>
       </div>
       <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_.8fr]">
         <div className="rounded-xl border border-border bg-card p-3 shadow-sm">

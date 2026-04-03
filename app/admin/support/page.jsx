@@ -451,7 +451,7 @@ export default function AdminSupportPage() {
               <div className="border-b border-slate-200 pb-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    <div className="text-xs font-semibold normal-case tracking-normal text-slate-500">
                       {detail.conversation.tenantKey}
                     </div>
                     <h2 className="m-0 mt-2 text-xl font-semibold text-slate-950">{detail.conversation.subject}</h2>
@@ -547,7 +547,7 @@ export default function AdminSupportPage() {
           {detail?.tenantContext ? (
             <div className="mt-4 grid gap-4">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs uppercase tracking-wider text-slate-500">Tenant</div>
+                <div className="text-xs normal-case tracking-normalr text-slate-500">Tenant</div>
                 <div className="mt-1 text-base font-semibold text-slate-900">
                   {detail.tenantContext.name || detail.tenantContext.tenant_key || '-'}
                 </div>

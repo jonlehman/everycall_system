@@ -313,7 +313,7 @@ function SummaryCard({ label, value, detail, tone = 'slate' }) {
   };
   return (
     <div className={`rounded-xl border p-4 shadow-sm ${toneClasses[tone] || toneClasses.slate}`}>
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-xs font-semibold normal-case tracking-normal text-slate-500">{label}</div>
       <div className="mt-2 text-lg font-semibold text-slate-900">{value || '-'}</div>
       {detail ? <div className="mt-1 text-sm text-slate-600">{detail}</div> : null}
     </div>
@@ -335,7 +335,7 @@ function UserCard({ user }) {
 function RuntimeStat({ label, value }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-[11px] font-semibold normal-case tracking-normal text-slate-500">{label}</div>
       <div className="mt-1 text-base font-semibold text-slate-900">{value ?? '-'}</div>
     </div>
   );
