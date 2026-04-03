@@ -5,7 +5,11 @@ import Link from 'next/link';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
 export default function SalesReceptionistNumberBadge() {
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [readiness, setReadiness] = useState({
+    showSalesReceptionistNumber: false,
+    phoneNumber: '',
+    label: 'Setting things up'
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -13,11 +17,20 @@ export default function SalesReceptionistNumberBadge() {
       .then((resp) => (resp.ok ? resp.json() : null))
       .then((data) => {
         if (!mounted) return;
-        setPhoneNumber(String(data?.tenant?.telnyx_voice_number || '').trim());
+        const nextReadiness = data?.salesReceptionistReadiness || null;
+        setReadiness({
+          showSalesReceptionistNumber: Boolean(nextReadiness?.showSalesReceptionistNumber),
+          phoneNumber: String(nextReadiness?.phoneNumber || '').trim(),
+          label: String(nextReadiness?.label || 'Setting things up').trim() || 'Setting things up'
+        });
       })
       .catch(() => {
         if (!mounted) return;
-        setPhoneNumber('');
+        setReadiness({
+          showSalesReceptionistNumber: false,
+          phoneNumber: '',
+          label: 'Setting things up'
+        });
       });
     return () => {
       mounted = false;
@@ -30,7 +43,11 @@ export default function SalesReceptionistNumberBadge() {
       className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-[#eff4ff] px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-[#dfe9fc]"
     >
       <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Sales Receptionist Number</span>
-      <span className="font-semibold text-slate-900">{formatPhoneDisplay(phoneNumber) || 'Provisioning pending'}</span>
+      <span className="font-semibold text-slate-900">
+        {readiness.showSalesReceptionistNumber
+          ? (formatPhoneDisplay(readiness.phoneNumber) || readiness.phoneNumber)
+          : readiness.label}
+      </span>
     </Link>
   );
 }

@@ -162,7 +162,7 @@ export async function provisionTenantVoiceNumber({
            telnyx_voice_monthly_cost_cents = $5,
            telnyx_voice_upfront_cost_cents = $6,
            telnyx_voice_purchased_at = NOW(),
-           telnyx_voice_status = 'active',
+           telnyx_voice_status = 'provisioning',
            updated_at = NOW()
        WHERE tenant_key = $1`,
       [

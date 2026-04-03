@@ -228,13 +228,8 @@ export function IntakePageClient({ qaMode = false } = {}) {
           message: `Account created, but phone number provisioning needs follow-up: ${data.voiceProvisioning.errorMessage || 'unknown error'}`,
           tone: 'warn'
         });
-      } else if (data?.voiceProvisioning?.phoneNumber) {
-        setStatus({
-          message: `Account created and ${data.voiceProvisioning.phoneNumber} was provisioned. Redirecting to the Knowledge Workspace...`,
-          tone: 'ok'
-        });
       } else {
-        setStatus({ message: 'Account created. Redirecting to the Knowledge Workspace...', tone: 'ok' });
+        setStatus({ message: 'Account created. Setting things up and redirecting to the Knowledge Workspace...', tone: 'ok' });
       }
     } catch {
       setStatus({ message: 'Could not create account.', tone: 'bad' });
@@ -444,11 +439,11 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 </div>
                 <div>
                   <span className="intake-success-label">Sales Receptionist Number</span>
-                  <div>{activation.voiceProvisioning?.phoneNumber || 'Provisioning pending'}</div>
+                  <div>Setting things up</div>
                 </div>
                 <div>
                   <span className="intake-success-label">Provisioning</span>
-                  <div>{activation.voiceProvisioning?.ok === false ? 'Needs follow-up' : 'Complete'}</div>
+                  <div>{activation.voiceProvisioning?.ok === false ? 'Needs follow-up' : 'In progress'}</div>
                 </div>
               </div>
               <p className="intake-success-copy">

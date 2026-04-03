@@ -75,6 +75,7 @@ export default async function handler(req, res) {
            telnyx_voice_monthly_cost_cents = $5,
            telnyx_voice_upfront_cost_cents = $6,
            telnyx_voice_purchased_at = NOW(),
+           telnyx_voice_status = 'provisioning',
            billing_status_updated_at = NOW()
        WHERE tenant_key = $1`,
       [

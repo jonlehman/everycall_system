@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { formatPhoneDisplay } from '../../../../lib/phoneDisplay';
 import GuidePanel from '../../_components/GuidePanel';
 import SectionPage from '../../_components/SectionPage';
 import { accountNavItems } from '../../_components/navigation';
@@ -25,6 +26,11 @@ function normalizeCallerIdName(value) {
 
 export default function AccountGeneralPage() {
   const [tenant, setTenant] = useState({ name: '-', plan: '-', data_region: '-', telnyx_voice_number: '', telnyx_voice_number_id: '' });
+  const [salesReceptionistReadiness, setSalesReceptionistReadiness] = useState({
+    showSalesReceptionistNumber: false,
+    phoneNumber: '',
+    label: 'Setting things up'
+  });
   const [timezone, setTimezone] = useState('America/Los_Angeles');
   const [callerIdName, setCallerIdName] = useState('');
   const [loading, setLoading] = useState(true);
@@ -44,6 +50,11 @@ export default function AccountGeneralPage() {
         }
         const nextTenant = data.tenant || { name: '-', plan: '-', data_region: '-', telnyx_voice_number: '', telnyx_voice_number_id: '' };
         setTenant(nextTenant);
+        setSalesReceptionistReadiness({
+          showSalesReceptionistNumber: Boolean(data?.salesReceptionistReadiness?.showSalesReceptionistNumber),
+          phoneNumber: String(data?.salesReceptionistReadiness?.phoneNumber || '').trim(),
+          label: String(data?.salesReceptionistReadiness?.label || 'Setting things up').trim() || 'Setting things up'
+        });
         setTimezone(data.settings?.timezone || 'America/Los_Angeles');
         const hasStoredCallerIdName = Boolean(data.settings) && Object.prototype.hasOwnProperty.call(data.settings, 'caller_id_name');
         setCallerIdName(hasStoredCallerIdName ? (data.settings?.caller_id_name || '') : normalizeCallerIdName(nextTenant?.name || ''));
@@ -107,7 +118,12 @@ export default function AccountGeneralPage() {
               <div>Tenant</div><div>{tenant.name || '-'}</div>
               <div>Plan</div><div>{tenant.plan || '-'}</div>
               <div>Data Region</div><div>{tenant.data_region || '-'}</div>
-              <div>Sales Receptionist Number</div><div>{tenant.telnyx_voice_number || 'Not assigned yet'}</div>
+              <div>Sales Receptionist Number</div>
+              <div>
+                {salesReceptionistReadiness.showSalesReceptionistNumber
+                  ? (formatPhoneDisplay(salesReceptionistReadiness.phoneNumber) || salesReceptionistReadiness.phoneNumber)
+                  : salesReceptionistReadiness.label}
+              </div>
             </div>
           </div>
 

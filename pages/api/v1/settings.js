@@ -3,6 +3,7 @@ import { requireSession, resolveTenantKey } from "../_lib/auth.js";
 import { requireTenantBillingAccess, requireTenantRoles } from "../_lib/billing.js";
 import { normalizePhoneNumber } from "../_lib/phone.js";
 import { getOwnedPhoneNumber, updatePhoneNumberVoiceSettings } from "../_lib/telnyx.js";
+import { resolveSalesReceptionistReadiness } from "../_lib/salesReceptionistReadiness.js";
 import { buildAuditActor, writeAuditLog } from "../_lib/auditLog.js";
 
 function getTenantKey(req) {
@@ -54,11 +55,13 @@ export default async function handler(req, res) {
 
     if (req.method === "GET") {
       const tenant = await pool.query(
-        `SELECT tenant_key, name, plan, data_region, status, primary_number, telnyx_voice_number, telnyx_voice_number_id
+        `SELECT tenant_key, name, plan, data_region, status, primary_number, telnyx_voice_number, telnyx_voice_number_id, telnyx_voice_status
          FROM tenants
          WHERE tenant_key = $1`,
         [tenantKey]
       );
+      const tenantRow = tenant.rows[0] || null;
+      const salesReceptionistReadiness = await resolveSalesReceptionistReadiness(pool, tenantRow || { tenant_key: tenantKey });
       const settings = await pool.query(
         `SELECT tenant_key,
                 timezone,
@@ -74,7 +77,14 @@ export default async function handler(req, res) {
       );
       return res.status(200).json({
         ok: true,
-        tenant: tenant.rows[0] || null,
+        tenant: tenantRow
+          ? {
+              ...tenantRow,
+              telnyx_voice_status: salesReceptionistReadiness.telnyxVoiceStatus || tenantRow.telnyx_voice_status || null,
+              telnyx_voice_number_id: tenantRow.telnyx_voice_number_id || null
+            }
+          : null,
+        salesReceptionistReadiness,
         settings: settings.rows[0]
           ? { ...settings.rows[0], ...HARDCODED_NOTIFICATION_SETTINGS }
           : { ...HARDCODED_NOTIFICATION_SETTINGS }
