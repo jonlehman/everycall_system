@@ -58,7 +58,7 @@ export async function proxy(req: Request) {
   if (!me?.authenticated) {
     const loginPath = pathname.startsWith('/admin') ? '/admin/login' : '/login';
     const redirectUrl = new URL(loginPath, url.origin);
-    redirectUrl.searchParams.set('next', pathname);
+    redirectUrl.searchParams.set('next', `${pathname}${url.search}`);
     return NextResponse.redirect(redirectUrl);
   }
 

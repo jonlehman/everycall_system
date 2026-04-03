@@ -2,6 +2,14 @@
 
 import { useState } from 'react';
 
+function resolveClientRedirect(nextPath, tenantKey) {
+  const fallback = `/client/calls?tenantKey=${encodeURIComponent(tenantKey || 'default')}`;
+  const normalized = String(nextPath || '').trim();
+  if (!normalized.startsWith('/client')) return fallback;
+  if (normalized.startsWith('//')) return fallback;
+  return normalized;
+}
+
 export default function LoginPage() {
   const [clientEmail, setClientEmail] = useState('');
   const [clientPassword, setClientPassword] = useState('');
@@ -33,7 +41,8 @@ export default function LoginPage() {
       setStatus: setClientStatus,
       onSuccess: (data) => {
         const tenantKey = data?.tenantKey || 'default';
-        window.location.href = `/client/calls?tenantKey=${encodeURIComponent(tenantKey)}`;
+        const nextPath = new URLSearchParams(window.location.search).get('next');
+        window.location.href = resolveClientRedirect(nextPath, tenantKey);
       }
     });
   };
