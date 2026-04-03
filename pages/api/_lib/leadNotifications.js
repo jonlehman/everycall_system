@@ -1,6 +1,7 @@
 import { estimateNotificationCostMicrosUsd } from "@everycall/contracts/callCosting";
 import { addTranscriptSpacing, buildTranscriptFromEvents, sanitizeTranscriptText } from "@everycall/contracts/callTranscript";
 import { getSharedSmsNumber } from "./alerts.js";
+import { buildCallAlertUrl, buildDirectCallUrl, getCallAlertBaseUrl, issueCallAlertLink } from "./callAlertLinks.js";
 import { sendTransactionalEmail } from "./mail.js";
 import { updateNotificationChannelHealth } from "./notificationHealth.js";
 import { sendTelnyxSms } from "./telnyx.js";
@@ -70,6 +71,18 @@ function buildClassificationLine(callRow) {
     normalizeClassificationType(callRow.lead_outcome_type, callRow.lead_is_valid)
   );
   return `Classification: ${outcomeLabel}`;
+}
+
+function buildSmsTypeLabel(callRow) {
+  const normalized = normalizeClassificationType(callRow.lead_outcome_type, callRow.lead_is_valid);
+  if (normalized === "project_inquiry") return "Lead";
+  if (normalized === "general_inquiry") return "Inquiry";
+  if (normalized === "existing_customer_support") return "Customer support";
+  if (normalized === "vendor_or_sales") return "Vendor/sales";
+  if (normalized === "spam") return "Spam";
+  if (normalized === "wrong_number") return "Wrong number";
+  if (normalized === "hangup_or_incomplete") return "Hangup";
+  return "Call";
 }
 
 function getEffectiveRecipientCategories(value, enabled) {
@@ -187,16 +200,33 @@ async function loadCombinedTranscript(pool, callSid, callRow) {
   return buildTranscriptFromEvents(events.rows);
 }
 
-function buildLeadSms({ tenantName, callRow }) {
-  const parts = [
-    `${buildNotificationTitle(callRow, tenantName)}.`,
-    `${buildClassificationLine(callRow)}.`,
-    buildCallerName(callRow) ? `Name: ${buildCallerName(callRow)}.` : null,
-    callRow.callback_number ? `Callback: ${formatDisplayPhone(callRow.callback_number)}.` : null,
-    callRow.service_required ? `Service: ${truncateText(callRow.service_required, 60)}.` : null,
-    callRow.summary ? `Summary: ${truncateText(callRow.summary, 120)}.` : null
+function buildLeadSms({ callRow, callAlertUrl }) {
+  const typeLabel = buildSmsTypeLabel(callRow);
+  const callerName = truncateText(buildCallerName(callRow), 28);
+  const callbackNumber = truncateText(formatDisplayPhone(callRow.callback_number), 22);
+  const detailLabel = normalizeText(callRow.service_required) ? "Need" : "Summary";
+  const detailValue = normalizeText(callRow.service_required) || normalizeText(callRow.summary);
+  const prefixLines = [
+    typeLabel,
+    callerName ? `Caller: ${callerName}` : null,
+    callbackNumber ? `Phone: ${callbackNumber}` : null
   ].filter(Boolean);
-  return truncateText(parts.join(" "), 320);
+  const suffixLines = [
+    callAlertUrl ? `View: ${callAlertUrl}` : null
+  ].filter(Boolean);
+
+  let detailLine = null;
+  if (detailValue) {
+    const reservedLength = [...prefixLines, `${detailLabel}: `, ...suffixLines].join("\n").length;
+    const availableDetailLength = Math.max(0, 160 - reservedLength);
+    if (availableDetailLength > 0) {
+      detailLine = `${detailLabel}: ${truncateText(detailValue, Math.max(12, availableDetailLength))}`;
+    }
+  }
+
+  return [...prefixLines, detailLine, ...suffixLines]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function buildLeadEmail({ tenantName, appBaseUrl, callSid, callRow, transcript, includeTranscript, timezone }) {
@@ -212,7 +242,7 @@ function buildLeadEmail({ tenantName, appBaseUrl, callSid, callRow, transcript, 
     callRow.created_at
       ? `Received at: ${new Date(callRow.created_at).toLocaleString("en-US", { timeZone: timezone || "America/Los_Angeles" })} ${timezone || ""}`.trim()
       : null,
-    appBaseUrl ? `Open EveryCall: ${appBaseUrl.replace(/\/$/, "")}/client/calls` : null
+    appBaseUrl ? `Open EveryCall: ${appBaseUrl.replace(/\/$/, "")}/client/calls?callSid=${encodeURIComponent(callSid)}` : null
   ].filter(Boolean);
   const lines = [
     buildNotificationTitle(callRow, tenantName),
@@ -412,13 +442,31 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
   const transcript = settings.lead_alert_email_enabled && settings.lead_alert_email_include_transcript
     ? await loadCombinedTranscript(pool, callSid, context.callRow)
     : "";
+  const appBaseUrl = getCallAlertBaseUrl();
+  let smsCallUrl = "";
+  if (smsRecipients.length) {
+    try {
+      const callAlertToken = await issueCallAlertLink(pool, {
+        tenantKey,
+        callSid
+      });
+      smsCallUrl = buildCallAlertUrl(callAlertToken) || buildDirectCallUrl(callSid);
+    } catch (err) {
+      console.error("call_alert_link_issue_failed", {
+        tenantKey,
+        callSid,
+        message: err instanceof Error ? err.message : "unknown"
+      });
+      smsCallUrl = buildDirectCallUrl(callSid);
+    }
+  }
   const smsText = smsRecipients.length
-    ? buildLeadSms({ tenantName: context.tenantName, callRow: context.callRow })
+    ? buildLeadSms({ callRow: context.callRow, callAlertUrl: smsCallUrl })
     : "";
   const emailPayload = emailRecipients.length
     ? buildLeadEmail({
         tenantName: context.tenantName,
-        appBaseUrl: process.env.APP_BASE_URL || "https://app.everycall.io",
+        appBaseUrl,
         callSid,
         callRow: context.callRow,
         transcript,

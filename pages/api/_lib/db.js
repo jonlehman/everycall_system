@@ -749,6 +749,16 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE lead_notification_deliveries ADD COLUMN IF NOT EXISTS provider_reference TEXT;`);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS call_alert_links (
+      token TEXT PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      call_sid TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS integration_connections (
       id BIGSERIAL PRIMARY KEY,
       tenant_key TEXT NOT NULL,
@@ -1018,6 +1028,8 @@ export async function ensureTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS lead_notification_deliveries_tenant_call_idx ON lead_notification_deliveries (tenant_key, call_sid, updated_at DESC);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS lead_notification_deliveries_unique_destination_idx ON lead_notification_deliveries (tenant_key, call_sid, channel, destination, event_type);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS lead_notification_deliveries_provider_reference_idx ON lead_notification_deliveries (provider_reference);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS call_alert_links_tenant_call_created_idx ON call_alert_links (tenant_key, call_sid, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS call_alert_links_expires_idx ON call_alert_links (expires_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS integration_connections_tenant_idx ON integration_connections (tenant_key, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS integration_connections_tenant_status_idx ON integration_connections (tenant_key, status, connector_type);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS integration_deliveries_tenant_created_idx ON integration_deliveries (tenant_key, created_at DESC);`);
