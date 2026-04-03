@@ -37,8 +37,8 @@ const INTAKE_STEPS = [
   {
     key: 'knowledge',
     number: '03',
-    title: 'Knowledge Workspace Setup',
-    navTitle: 'Knowledge Workspace Setup',
+    title: 'Knowledge Base Setup',
+    navTitle: 'Knowledge Base Setup',
     heroTitle: 'Just moments away...',
     heroCopy: '... from capturing more leads than you thought possible.'
   }
