@@ -720,11 +720,6 @@ export default function ReceptionistKnowledgePage() {
                         >
                           {buildBusyKind === 'website_base' ? 'Queueing...' : 'Rebuild Website'}
                         </Button>
-                        {latestWebsiteBuild ? (
-                          <span className={`badge ${websiteBuildStatusTone}`}>{websiteBuildStatusLabel}</span>
-                        ) : (
-                          <span className="text-xs text-slate-500">No website rebuild yet.</span>
-                        )}
                       </div>
                       {latestWebsiteBuild ? (
                         <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
