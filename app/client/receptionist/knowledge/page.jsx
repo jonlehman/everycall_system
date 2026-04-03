@@ -718,7 +718,7 @@ export default function ReceptionistKnowledgePage() {
                         ) : null}
                       </div>
                       <p className="mt-1 text-sm text-slate-500">
-                        Approved document sources override conflicting website details when you apply documents and single web page uploads.
+                        Uploaded documents and single web pages override any conflicting information from the website.
                       </p>
                     </div>
                     <CollapseToggleButton
