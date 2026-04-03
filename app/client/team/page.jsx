@@ -5,25 +5,43 @@ import { DataGrid } from '@mui/x-data-grid';
 import { Button } from '../../../components/ui/button';
 import GuidePanel from '../_components/GuidePanel';
 import ClientPage from '../_components/ClientPage';
+import {
+  CALL_CATEGORY_OPTIONS,
+  formatCallCategoryLabel,
+  getDefaultCallCategorySelection,
+  sanitizeCallCategorySelection
+} from '../../../lib/callCategories';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
-const EMPTY_FORM = {
-  name: '',
-  email: '',
-  phoneNumber: '',
-  role: 'member',
-  status: 'active',
-  leadAlertEmailEnabled: false,
-  leadAlertSmsEnabled: false,
-  smsConsentConfirmed: false,
-  smsOptInStatus: 'not_requested'
-};
+function createEmptyForm() {
+  return {
+    name: '',
+    email: '',
+    phoneNumber: '',
+    role: 'member',
+    status: 'active',
+    leadAlertEmailEnabled: false,
+    leadAlertSmsEnabled: false,
+    leadAlertEmailCategories: getDefaultCallCategorySelection(),
+    leadAlertSmsCategories: getDefaultCallCategorySelection(),
+    smsConsentConfirmed: false,
+    smsOptInStatus: 'not_requested'
+  };
+}
+
+function summarizeCategories(categories) {
+  const count = Array.isArray(categories) ? categories.length : 0;
+  if (!count) return 'No categories';
+  if (count === CALL_CATEGORY_OPTIONS.length) return 'All categories';
+  if (count === 1) return '1 category';
+  return `${count} categories`;
+}
 
 export default function TeamPage() {
   const [users, setUsers] = useState([]);
   const [formMode, setFormMode] = useState(null);
   const [editingUserId, setEditingUserId] = useState(null);
-  const [formState, setFormState] = useState(EMPTY_FORM);
+  const [formState, setFormState] = useState(createEmptyForm);
   const [loading, setLoading] = useState(false);
   const [savingForm, setSavingForm] = useState(false);
   const [status, setStatus] = useState(null);
@@ -54,13 +72,13 @@ export default function TeamPage() {
   const closeForm = () => {
     setFormMode(null);
     setEditingUserId(null);
-    setFormState(EMPTY_FORM);
+    setFormState(createEmptyForm());
   };
 
   const openCreateForm = () => {
     setFormMode('create');
     setEditingUserId(null);
-    setFormState(EMPTY_FORM);
+    setFormState(createEmptyForm());
   };
 
   const openEditForm = (row) => {
@@ -74,6 +92,8 @@ export default function TeamPage() {
       status: row.status || 'active',
       leadAlertEmailEnabled: Boolean(row.leadAlertEmailEnabled),
       leadAlertSmsEnabled: Boolean(row.leadAlertSmsEnabled),
+      leadAlertEmailCategories: sanitizeCallCategorySelection(row.leadAlertEmailCategories, { fallbackToAll: Boolean(row.leadAlertEmailEnabled) }),
+      leadAlertSmsCategories: sanitizeCallCategorySelection(row.leadAlertSmsCategories, { fallbackToAll: Boolean(row.leadAlertSmsEnabled) }),
       smsConsentConfirmed: false,
       smsOptInStatus: row.smsOptIn || 'not_requested'
     });
@@ -81,6 +101,36 @@ export default function TeamPage() {
 
   const updateFormField = (field, value) => {
     setFormState((current) => ({ ...current, [field]: value }));
+  };
+
+  const updateChannelEnabled = (enabledField, categoriesField, checked) => {
+    setFormState((current) => ({
+      ...current,
+      [enabledField]: checked,
+      [categoriesField]: checked && !current[categoriesField]?.length
+        ? getDefaultCallCategorySelection()
+        : current[categoriesField]
+    }));
+  };
+
+  const toggleCategory = (field, category) => {
+    setFormState((current) => {
+      const existing = Array.isArray(current[field]) ? current[field] : [];
+      const next = existing.includes(category)
+        ? existing.filter((value) => value !== category)
+        : [...existing, category];
+      return {
+        ...current,
+        [field]: sanitizeCallCategorySelection(next)
+      };
+    });
+  };
+
+  const selectAllCategories = (field) => {
+    setFormState((current) => ({
+      ...current,
+      [field]: getDefaultCallCategorySelection()
+    }));
   };
 
   const resendInvite = async (id) => {
@@ -134,8 +184,19 @@ export default function TeamPage() {
       role: formState.role,
       status: formState.status,
       leadAlertEmailEnabled: Boolean(formState.leadAlertEmailEnabled),
-      leadAlertSmsEnabled: Boolean(formState.leadAlertSmsEnabled)
+      leadAlertSmsEnabled: Boolean(formState.leadAlertSmsEnabled),
+      leadAlertEmailCategories: sanitizeCallCategorySelection(formState.leadAlertEmailCategories),
+      leadAlertSmsCategories: sanitizeCallCategorySelection(formState.leadAlertSmsCategories)
     };
+
+    if (payload.leadAlertEmailEnabled && !payload.leadAlertEmailCategories.length) {
+      setStatus({ message: 'Choose at least one email alert category or turn email alerts off.', tone: 'bad' });
+      return;
+    }
+    if (payload.leadAlertSmsEnabled && !payload.leadAlertSmsCategories.length) {
+      setStatus({ message: 'Choose at least one SMS alert category or turn SMS alerts off.', tone: 'bad' });
+      return;
+    }
 
     setSavingForm(true);
     setStatus({ message: formMode === 'edit' ? 'Saving user...' : 'Creating user...', tone: 'warn' });
@@ -170,7 +231,9 @@ export default function TeamPage() {
     status: user.status,
     smsOptIn: user.sms_opt_in_status || 'not_requested',
     leadAlertSmsEnabled: Boolean(user.lead_alert_sms_enabled),
-    leadAlertEmailEnabled: Boolean(user.lead_alert_email_enabled)
+    leadAlertEmailEnabled: Boolean(user.lead_alert_email_enabled),
+    leadAlertSmsCategories: sanitizeCallCategorySelection(user.lead_alert_sms_categories, { fallbackToAll: Boolean(user.lead_alert_sms_enabled) }),
+    leadAlertEmailCategories: sanitizeCallCategorySelection(user.lead_alert_email_categories, { fallbackToAll: Boolean(user.lead_alert_email_enabled) })
   })), [users]);
 
   const fieldLabelClass = 'mb-1.5 ml-1 block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500';
@@ -180,6 +243,59 @@ export default function TeamPage() {
     : formState.smsOptInStatus === 'pending'
       ? 'border-amber-200 bg-amber-50 text-amber-700'
       : 'border-slate-200 bg-slate-100 text-slate-600';
+
+  const renderCategorySelector = (title, enabled, enabledField, categoriesField) => (
+    <div className={`rounded-2xl border px-4 py-4 ${enabled ? 'border-slate-200 bg-slate-50/80' : 'border-slate-200/70 bg-slate-50/40 opacity-80'}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label className="flex items-start gap-3 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(event) => updateChannelEnabled(enabledField, categoriesField, event.target.checked)}
+          />
+          <span className="normal-case font-medium tracking-normal text-slate-700">
+            {title}
+          </span>
+        </label>
+        {enabled ? (
+          <button
+            className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700"
+            onClick={() => selectAllCategories(categoriesField)}
+            type="button"
+          >
+            Select All
+          </button>
+        ) : null}
+      </div>
+      <div className="mt-3 ml-6 text-xs text-slate-500">
+        {enabled ? 'Choose which call categories trigger this alert channel.' : 'Turn this on to choose which call categories trigger this channel.'}
+      </div>
+      {enabled ? (
+        <div className="mt-4 ml-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {CALL_CATEGORY_OPTIONS.map((category) => {
+            const selected = formState[categoriesField].includes(category);
+            return (
+              <label
+                className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 text-sm transition ${
+                  selected
+                    ? 'border-sky-200 bg-white text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]'
+                    : 'border-slate-200 bg-white/70 text-slate-600'
+                }`}
+                key={category}
+              >
+                <input
+                  checked={selected}
+                  onChange={() => toggleCategory(categoriesField, category)}
+                  type="checkbox"
+                />
+                <span className="font-medium">{formatCallCategoryLabel(category)}</span>
+              </label>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
 
   const columns = [
     { field: 'name', headerName: 'Name', flex: 0.9, minWidth: 110 },
@@ -197,9 +313,16 @@ export default function TeamPage() {
       flex: 0.72,
       minWidth: 92,
       renderCell: (params) => (
-        <span className={`badge ${params.value ? 'ok' : 'bad'}`}>
-          {params.value ? 'enabled' : 'off'}
-        </span>
+        <div className="flex flex-col py-1">
+          <span className={`badge ${params.value ? 'ok' : 'bad'}`}>
+            {params.value ? 'enabled' : 'off'}
+          </span>
+          {params.value ? (
+            <span className="mt-1 text-[11px] text-slate-500">
+              {summarizeCategories(params.row.leadAlertEmailCategories)}
+            </span>
+          ) : null}
+        </div>
       )
     },
     {
@@ -208,21 +331,28 @@ export default function TeamPage() {
       flex: 0.72,
       minWidth: 92,
       renderCell: (params) => (
-        <span
-          className={`badge ${
-            !params.row.leadAlertSmsEnabled
-              ? 'bad'
+        <div className="flex flex-col py-1">
+          <span
+            className={`badge ${
+              !params.row.leadAlertSmsEnabled
+                ? 'bad'
+                : params.row.smsOptIn === 'opted_in'
+                  ? 'ok'
+                  : 'warn'
+            }`}
+          >
+            {!params.row.leadAlertSmsEnabled
+              ? 'off'
               : params.row.smsOptIn === 'opted_in'
-                ? 'ok'
-                : 'warn'
-          }`}
-        >
-          {!params.row.leadAlertSmsEnabled
-            ? 'off'
-            : params.row.smsOptIn === 'opted_in'
-              ? 'enabled'
-              : 'pending'}
-        </span>
+                ? 'enabled'
+                : 'pending'}
+          </span>
+          {params.row.leadAlertSmsEnabled ? (
+            <span className="mt-1 text-[11px] text-slate-500">
+              {summarizeCategories(params.row.leadAlertSmsCategories)}
+            </span>
+          ) : null}
+        </div>
       )
     },
     {
@@ -275,7 +405,7 @@ export default function TeamPage() {
   return (
     <ClientPage
       title="Team"
-      subtitle="Invite teammates, edit their details, and control who receives lead alerts."
+      subtitle="Invite teammates, edit their details, and control who receives call alerts."
       status={status}
       primaryAction={{
         label: formMode === 'create' ? 'Close User Form' : 'Add User',
@@ -381,26 +511,18 @@ export default function TeamPage() {
                     Notification Preferences
                   </h3>
                   <div className="flex flex-col gap-3">
-                    <label className="flex items-start gap-3 text-sm text-slate-600">
-                      <input
-                        type="checkbox"
-                        checked={formState.leadAlertEmailEnabled}
-                        onChange={(event) => updateFormField('leadAlertEmailEnabled', event.target.checked)}
-                      />
-                      <span className="normal-case font-medium tracking-normal text-slate-700">
-                        Receive lead email alerts
-                      </span>
-                    </label>
-                    <label className="flex items-start gap-3 text-sm text-slate-600">
-                      <input
-                        type="checkbox"
-                        checked={formState.leadAlertSmsEnabled}
-                        onChange={(event) => updateFormField('leadAlertSmsEnabled', event.target.checked)}
-                      />
-                      <span className="normal-case font-medium tracking-normal text-slate-700">
-                        Receive lead SMS alerts
-                      </span>
-                    </label>
+                    {renderCategorySelector(
+                      'Receive email alerts',
+                      formState.leadAlertEmailEnabled,
+                      'leadAlertEmailEnabled',
+                      'leadAlertEmailCategories'
+                    )}
+                    {renderCategorySelector(
+                      'Receive SMS alerts',
+                      formState.leadAlertSmsEnabled,
+                      'leadAlertSmsEnabled',
+                      'leadAlertSmsCategories'
+                    )}
                   </div>
                 </div>
 
@@ -529,7 +651,7 @@ export default function TeamPage() {
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Use Edit for</div>
-            <div className="mt-1 text-sm text-slate-600">Name, email, phone, role, status, SMS setup, and lead alert preferences.</div>
+            <div className="mt-1 text-sm text-slate-600">Name, email, phone, role, status, SMS setup, and call-category alert preferences.</div>
           </div>
         </GuidePanel>
       </div>

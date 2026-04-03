@@ -75,6 +75,8 @@ export async function ensureTables(pool) {
       sms_opt_in_confirmed_at TIMESTAMPTZ,
       lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      lead_alert_sms_categories_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      lead_alert_email_categories_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       password_hash TEXT,
       role TEXT NOT NULL DEFAULT 'owner',
       status TEXT NOT NULL DEFAULT 'active',
@@ -89,6 +91,8 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS sms_opt_in_confirmed_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS lead_alert_sms_categories_json JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS lead_alert_email_categories_json JSONB NOT NULL DEFAULT '[]'::jsonb;`);
   const duplicateUserPhones = await pool.query(
     `SELECT phone_number
      FROM tenant_users

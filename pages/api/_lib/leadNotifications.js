@@ -4,6 +4,8 @@ import { getSharedSmsNumber } from "./alerts.js";
 import { sendTransactionalEmail } from "./mail.js";
 import { updateNotificationChannelHealth } from "./notificationHealth.js";
 import { sendTelnyxSms } from "./telnyx.js";
+import { normalizeClassificationType } from "./outboundIntegrations.js";
+import { sanitizeCallCategorySelection } from "../../../lib/callCategories.js";
 import { formatPhoneDisplay } from "../../../lib/phoneDisplay.js";
 const leadAlertSmsCostUsd = Number.isFinite(Number(process.env.LEAD_ALERT_SMS_COST_USD))
   ? Number(process.env.LEAD_ALERT_SMS_COST_USD)
@@ -64,9 +66,15 @@ function buildNotificationTitle(callRow, tenantName) {
 }
 
 function buildClassificationLine(callRow) {
-  if (callRow.lead_is_valid) return "Classification: Valid lead";
-  const outcomeLabel = formatOutcomeLabel(callRow.lead_outcome_type);
+  const outcomeLabel = formatOutcomeLabel(
+    normalizeClassificationType(callRow.lead_outcome_type, callRow.lead_is_valid)
+  );
   return `Classification: ${outcomeLabel}`;
+}
+
+function getEffectiveRecipientCategories(value, enabled) {
+  if (!enabled) return [];
+  return sanitizeCallCategorySelection(value, { fallbackToAll: true });
 }
 
 async function beginLeadDelivery(pool, {
@@ -345,7 +353,9 @@ async function loadLeadNotificationContext(pool, tenantKey, callSid) {
     ),
     pool.query(
       `SELECT id, name, email, phone_number, sms_opt_in_status,
-              lead_alert_sms_enabled, lead_alert_email_enabled
+              lead_alert_sms_enabled, lead_alert_email_enabled,
+              lead_alert_sms_categories_json AS lead_alert_sms_categories,
+              lead_alert_email_categories_json AS lead_alert_email_categories
        FROM tenant_users
        WHERE tenant_key = $1
          AND status = 'active'`,
@@ -374,11 +384,24 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
     return { ok: false, error: "call_not_found" };
   }
 
+  const normalizedCallCategory = normalizeClassificationType(
+    context.callRow.lead_outcome_type,
+    context.callRow.lead_is_valid
+  );
   const smsRecipients = settings.lead_alert_sms_enabled
-    ? context.recipients.filter((row) => row.lead_alert_sms_enabled && normalizeText(row.phone_number) && row.sms_opt_in_status === "opted_in")
+    ? context.recipients.filter((row) => (
+      row.lead_alert_sms_enabled
+      && normalizeText(row.phone_number)
+      && row.sms_opt_in_status === "opted_in"
+      && getEffectiveRecipientCategories(row.lead_alert_sms_categories, row.lead_alert_sms_enabled).includes(normalizedCallCategory)
+    ))
     : [];
   const emailRecipients = settings.lead_alert_email_enabled
-    ? context.recipients.filter((row) => row.lead_alert_email_enabled && normalizeText(row.email))
+    ? context.recipients.filter((row) => (
+      row.lead_alert_email_enabled
+      && normalizeText(row.email)
+      && getEffectiveRecipientCategories(row.lead_alert_email_categories, row.lead_alert_email_enabled).includes(normalizedCallCategory)
+    ))
     : [];
 
   if (!smsRecipients.length && !emailRecipients.length) {

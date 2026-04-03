@@ -8,6 +8,7 @@ import { normalizePhoneNumber } from "../../_lib/phone.js";
 import { issueAuthToken, revokeAuthTokens } from "../../_lib/authTokens.js";
 import { buildAuditActor, writeAuditLog } from "../../_lib/auditLog.js";
 import { sendTransactionalEmail } from "../../_lib/mail.js";
+import { sanitizeCallCategorySelection } from "../../../../lib/callCategories.js";
 
 function getTenantKey(req) {
   return String(req.query?.tenantKey || "default");
@@ -15,6 +16,10 @@ function getTenantKey(req) {
 
 const ALLOWED_ROLES = new Set(["admin", "member", "owner", "viewer"]);
 const ALLOWED_STATUSES = new Set(["active", "invited", "suspended", "disabled"]);
+
+function resolveAlertCategories(value, enabled) {
+  return sanitizeCallCategorySelection(value, { fallbackToAll: Boolean(enabled) });
+}
 
 async function findEmailConflict(pool, email, excludedId = null) {
   if (!email) return false;
@@ -120,7 +125,9 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const rows = await pool.query(
         `SELECT id, name, email, role, status, phone_number, sms_opt_in_status, sms_opt_in_requested_at, sms_opt_in_confirmed_at,
-                lead_alert_sms_enabled, lead_alert_email_enabled
+                lead_alert_sms_enabled, lead_alert_email_enabled,
+                lead_alert_sms_categories_json AS lead_alert_sms_categories,
+                lead_alert_email_categories_json AS lead_alert_email_categories
          FROM tenant_users
          WHERE tenant_key = $1
          ORDER BY id ASC`,
@@ -219,6 +226,8 @@ export default async function handler(req, res) {
         const phoneNumber = normalizePhoneNumber(body.phoneNumber);
         const leadAlertSmsEnabled = Boolean(body.leadAlertSmsEnabled);
         const leadAlertEmailEnabled = Boolean(body.leadAlertEmailEnabled);
+        const leadAlertSmsCategories = resolveAlertCategories(body.leadAlertSmsCategories, leadAlertSmsEnabled);
+        const leadAlertEmailCategories = resolveAlertCategories(body.leadAlertEmailCategories, leadAlertEmailEnabled);
 
         if (!id || !name || !email) {
           return fail(400, "missing_fields", "User id, name, and email are required.");
@@ -262,9 +271,11 @@ export default async function handler(req, res) {
                status = $7,
                lead_alert_sms_enabled = $8,
                lead_alert_email_enabled = $9,
-               sms_opt_in_status = CASE WHEN $10 THEN 'not_requested' ELSE sms_opt_in_status END,
-               sms_opt_in_requested_at = CASE WHEN $10 THEN NULL ELSE sms_opt_in_requested_at END,
-               sms_opt_in_confirmed_at = CASE WHEN $10 THEN NULL ELSE sms_opt_in_confirmed_at END,
+               lead_alert_sms_categories_json = $10::jsonb,
+               lead_alert_email_categories_json = $11::jsonb,
+               sms_opt_in_status = CASE WHEN $12 THEN 'not_requested' ELSE sms_opt_in_status END,
+               sms_opt_in_requested_at = CASE WHEN $12 THEN NULL ELSE sms_opt_in_requested_at END,
+               sms_opt_in_confirmed_at = CASE WHEN $12 THEN NULL ELSE sms_opt_in_confirmed_at END,
                updated_at = NOW()
            WHERE tenant_key = $1 AND id = $2`,
           [
@@ -277,6 +288,8 @@ export default async function handler(req, res) {
             status,
             leadAlertSmsEnabled,
             leadAlertEmailEnabled,
+            JSON.stringify(leadAlertSmsCategories),
+            JSON.stringify(leadAlertEmailCategories),
             phoneChanged
           ]
         );
@@ -286,6 +299,8 @@ export default async function handler(req, res) {
           status,
           lead_alert_sms_enabled: leadAlertSmsEnabled,
           lead_alert_email_enabled: leadAlertEmailEnabled,
+          lead_alert_sms_categories: leadAlertSmsCategories,
+          lead_alert_email_categories: leadAlertEmailCategories,
           phone_changed: phoneChanged
         });
         return res.status(200).json({ ok: true });
@@ -296,18 +311,33 @@ export default async function handler(req, res) {
         if (!id) {
           return fail(400, "missing_fields", "User id is required.");
         }
+        const leadAlertSmsEnabled = Boolean(body.leadAlertSmsEnabled);
+        const leadAlertEmailEnabled = Boolean(body.leadAlertEmailEnabled);
+        const leadAlertSmsCategories = resolveAlertCategories(body.leadAlertSmsCategories, leadAlertSmsEnabled);
+        const leadAlertEmailCategories = resolveAlertCategories(body.leadAlertEmailCategories, leadAlertEmailEnabled);
         await pool.query(
           `UPDATE tenant_users
            SET lead_alert_sms_enabled = $2,
                lead_alert_email_enabled = $3,
+               lead_alert_sms_categories_json = $4::jsonb,
+               lead_alert_email_categories_json = $5::jsonb,
                updated_at = NOW()
-           WHERE tenant_key = $1 AND id = $4`,
-          [tenantKey, Boolean(body.leadAlertSmsEnabled), Boolean(body.leadAlertEmailEnabled), id]
+           WHERE tenant_key = $1 AND id = $6`,
+          [
+            tenantKey,
+            leadAlertSmsEnabled,
+            leadAlertEmailEnabled,
+            JSON.stringify(leadAlertSmsCategories),
+            JSON.stringify(leadAlertEmailCategories),
+            id
+          ]
         );
         await audit(manager, "tenant.team_user.lead_alerts_updated", {
           user_id: id,
-          lead_alert_sms_enabled: Boolean(body.leadAlertSmsEnabled),
-          lead_alert_email_enabled: Boolean(body.leadAlertEmailEnabled)
+          lead_alert_sms_enabled: leadAlertSmsEnabled,
+          lead_alert_email_enabled: leadAlertEmailEnabled,
+          lead_alert_sms_categories: leadAlertSmsCategories,
+          lead_alert_email_categories: leadAlertEmailCategories
         });
         return res.status(200).json({ ok: true });
       }
@@ -369,6 +399,8 @@ export default async function handler(req, res) {
       const phoneNumber = normalizePhoneNumber(body.phoneNumber);
       const leadAlertSmsEnabled = Boolean(body.leadAlertSmsEnabled);
       const leadAlertEmailEnabled = Boolean(body.leadAlertEmailEnabled);
+      const leadAlertSmsCategories = resolveAlertCategories(body.leadAlertSmsCategories, leadAlertSmsEnabled);
+      const leadAlertEmailCategories = resolveAlertCategories(body.leadAlertEmailCategories, leadAlertEmailEnabled);
       if (!name || !email) {
         return fail(400, "missing_fields", "Name and email are required.");
       }
@@ -395,9 +427,11 @@ export default async function handler(req, res) {
            role,
            status,
            lead_alert_sms_enabled,
-           lead_alert_email_enabled
+           lead_alert_email_enabled,
+           lead_alert_sms_categories_json,
+           lead_alert_email_categories_json
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb)
          ON CONFLICT (email)
          DO UPDATE SET tenant_key = EXCLUDED.tenant_key,
                        name = EXCLUDED.name,
@@ -405,8 +439,21 @@ export default async function handler(req, res) {
                        role = EXCLUDED.role,
                        status = EXCLUDED.status,
                        lead_alert_sms_enabled = EXCLUDED.lead_alert_sms_enabled,
-                       lead_alert_email_enabled = EXCLUDED.lead_alert_email_enabled`,
-        [tenantKey, name, email, phoneNumber || null, role, status, leadAlertSmsEnabled, leadAlertEmailEnabled]
+                       lead_alert_email_enabled = EXCLUDED.lead_alert_email_enabled,
+                       lead_alert_sms_categories_json = EXCLUDED.lead_alert_sms_categories_json,
+                       lead_alert_email_categories_json = EXCLUDED.lead_alert_email_categories_json`,
+        [
+          tenantKey,
+          name,
+          email,
+          phoneNumber || null,
+          role,
+          status,
+          leadAlertSmsEnabled,
+          leadAlertEmailEnabled,
+          JSON.stringify(leadAlertSmsCategories),
+          JSON.stringify(leadAlertEmailCategories)
+        ]
       );
       try {
         await sendInviteEmail({ tenantKey, name, email, role });
@@ -419,7 +466,9 @@ export default async function handler(req, res) {
         role,
         status,
         lead_alert_sms_enabled: leadAlertSmsEnabled,
-        lead_alert_email_enabled: leadAlertEmailEnabled
+        lead_alert_email_enabled: leadAlertEmailEnabled,
+        lead_alert_sms_categories: leadAlertSmsCategories,
+        lead_alert_email_categories: leadAlertEmailCategories
       });
       return res.status(200).json({ ok: true });
     }
