@@ -518,7 +518,7 @@ export default function ClientDashboardPage() {
               <ActionRow href="/client/calls" icon="visibility" title="Review Calls" />
               <ActionRow href="/client/receptionist/knowledge" icon="edit_note" title="Update Knowledge Base" />
               <ActionRow href="/client/receptionist/basics" icon="settings_input_component" title="Adjust Basics" />
-              <ActionRow href="/client/team" icon="notifications_active" title="Manage Team" />
+              <ActionRow href="/client/team" icon="notifications_active" title="Manage Users" />
             </div>
           </section>
         </div>

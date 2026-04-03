@@ -19,7 +19,7 @@ export const clientPrimaryNavItems = [
   },
   {
     href: '/client/team',
-    label: 'Team',
+    label: 'Users',
     icon: 'team',
     matchPrefixes: ['/client/team']
   },

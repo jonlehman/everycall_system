@@ -404,7 +404,7 @@ export default function TeamPage() {
 
   return (
     <ClientPage
-      title="Team"
+      title="Users"
       subtitle="Invite teammates, edit their details, and control who receives call alerts."
       status={status}
       primaryAction={{
@@ -420,7 +420,7 @@ export default function TeamPage() {
               <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-8 py-6">
                 <div className="space-y-1">
                   <h2 className="mt-0 font-['Space_Grotesk'] text-lg font-bold text-slate-900">
-                    {formMode === 'edit' ? 'Edit Team User' : 'Add Team User'}
+                    {formMode === 'edit' ? 'Edit User' : 'Add User'}
                   </h2>
                   <div className="text-sm text-slate-500">
                     Update access, alerts, and SMS permission settings for this teammate.
@@ -605,7 +605,7 @@ export default function TeamPage() {
           ) : null}
 
           <div className="min-w-0 rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Team Directory</h2>
+            <h2 className="mt-0 text-lg font-semibold">Users</h2>
             <div style={{ height: rows.length ? 'auto' : 300 }}>
               <DataGrid
                 rows={rows}
@@ -643,8 +643,8 @@ export default function TeamPage() {
           </div>
         </div>
 
-        <GuidePanel title="Team Guide" eyebrow="How it works" icon="groups">
-          <div>Use Team to manage users, alert recipients, invitation state, and SMS opt-in status.</div>
+        <GuidePanel title="Users Guide" eyebrow="How it works" icon="groups">
+          <div>Use Users to manage access, alert recipients, invitation state, and SMS opt-in status.</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Lead SMS requirements</div>
             <div className="mt-1 text-sm text-slate-600">SMS alerts can be turned on in advance, but they stay pending and will not send until the user replies YES.</div>
