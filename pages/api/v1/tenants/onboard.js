@@ -89,6 +89,7 @@ function validatePayload(payload) {
   if (!payload.ownerPhone) fieldErrors.ownerPhone = "Owner phone is required.";
   if (!payload.businessPhone) fieldErrors.businessPhone = "Business phone is required.";
   if (!payload.password || payload.password.length < 8) fieldErrors.password = "Password must be at least 8 characters.";
+  if (!payload.website) fieldErrors.website = "Website URL is required.";
   if (!payload.companyDescription) fieldErrors.companyDescription = "A short business description is required.";
   if (payload.ownerPhone && !isValidPhoneNumber(payload.ownerPhone)) fieldErrors.ownerPhone = "Enter a valid owner phone number.";
   if (payload.businessPhone && !isValidPhoneNumber(payload.businessPhone)) fieldErrors.businessPhone = "Enter a valid business phone number.";

@@ -101,6 +101,9 @@ function validateAccountStep(form) {
 }
 
 function validateContextStep(form) {
+  if (!form.website.trim()) {
+    return 'Website URL is required.';
+  }
   if (!form.companyDescription.trim()) {
     return 'Add a short description of what the business does.';
   }
@@ -180,7 +183,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
 
   const submit = async () => {
     const confirmed = window.confirm(
-      'Create this account and provision a Sales Receptionist Number? This will create the tenant and may incur provider charges.'
+      'Create this account, provision a Sales Receptionist Number, and start the website knowledge build? This will create the tenant and may incur provider charges.'
     );
     if (!confirmed) {
       return;
@@ -201,7 +204,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
     }
 
     setBusy(true);
-    setStatus({ message: 'Creating account and provisioning phone number...', tone: 'warn' });
+    setStatus({ message: 'Creating account, provisioning phone number, and starting the website build...', tone: 'warn' });
     try {
       const data = await fetchJson('/api/v1/tenants/onboard', {
         method: 'POST',
@@ -367,8 +370,9 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 </div>
 
                 <div className="intake-stack">
-                  <label>Website URL (Optional)</label>
+                  <label>Website URL</label>
                   <input
+                    type="url"
                     value={form.website}
                     onChange={(event) => setFormValue('website', event.target.value)}
                     placeholder="https://example.com"
@@ -398,7 +402,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 <div className="intake-note-card">
                   <h3>Once your account is created, please visit:</h3>
                   <ul className="intake-followup-list">
-                    <li><strong>Knowledge</strong> to publish a build.</li>
+                    <li><strong>Knowledge</strong> to upload documents if needed.</li>
                     <li><strong>Team</strong> to confirm who should receive completed call alerts.</li>
                   </ul>
                 </div>
@@ -449,7 +453,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
               <p className="intake-success-copy">
                 {provisioningFailed
                   ? `The account was created, but number provisioning needs follow-up before the receptionist can start handling calls. ${activation.voiceProvisioning?.errorMessage || ''}`.trim()
-                  : 'Continue to the Knowledge Workspace and create the first build when you are ready.'}
+                  : 'Continue to the Knowledge Workspace to review the website build and upload documents if needed.'}
               </p>
               <div className="intake-actions">
                 <a className="btn primary" href={nextHref}>Continue to Knowledge Workspace</a>
