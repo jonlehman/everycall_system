@@ -274,8 +274,7 @@ export default function ReceptionistKnowledgePage() {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [activeGuideKey, setActiveGuideKey] = useState('website');
   const [websiteSectionExpanded, setWebsiteSectionExpanded] = useState(false);
-  const [latestDocumentApplyExpanded, setLatestDocumentApplyExpanded] = useState(false);
-  const [liveKnowledgeBaseExpanded, setLiveKnowledgeBaseExpanded] = useState(false);
+  const [documentsSectionExpanded, setDocumentsSectionExpanded] = useState(false);
   const [expandedDocumentIds, setExpandedDocumentIds] = useState({});
 
   const [documentForm, setDocumentForm] = useState({
@@ -565,6 +564,8 @@ export default function ReceptionistKnowledgePage() {
   const documentPendingState = buildDocumentPendingState({ approvedDocuments: approvedUploadedDocuments, latestLiveBuild });
   const hasPendingDocumentChanges = documentPendingState.hasPendingChanges;
   const canApplyDocuments = approvedUploadedDocuments.length > 0 || documentPendingState.removedLiveDocumentIds.length > 0;
+  const websitePublished = String(latestWebsiteBuild?.status || '').trim().toLowerCase() === 'published';
+  const documentsPublished = String(latestDocumentBuild?.status || '').trim().toLowerCase() === 'published';
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewAnswer = preview?.spokenAnswerEstimate || buildRepresentativeAnswer(previewAnswerPacket);
   const previewAnswerDisplay = previewBusy
@@ -595,17 +596,11 @@ export default function ReceptionistKnowledgePage() {
     setActiveGuideKey('website');
     setWebsiteSectionExpanded((current) => !current);
   };
-  const toggleLatestDocumentApplyExpanded = (event) => {
+  const toggleDocumentsSectionExpanded = (event) => {
     event.preventDefault();
     event.stopPropagation();
-    setActiveGuideKey('documentApply');
-    setLatestDocumentApplyExpanded((current) => !current);
-  };
-  const toggleLiveKnowledgeBaseExpanded = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setActiveGuideKey('documentApply');
-    setLiveKnowledgeBaseExpanded((current) => !current);
+    setActiveGuideKey('documentsMeta');
+    setDocumentsSectionExpanded((current) => !current);
   };
   const toggleDocumentExpanded = (event, uploadedDocumentId) => {
     event.preventDefault();
@@ -648,25 +643,20 @@ export default function ReceptionistKnowledgePage() {
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website</h4>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website</h4>
+                        {websitePublished ? (
+                          <span className="badge ok">Published</span>
+                        ) : null}
+                      </div>
                       <p className="mt-1 text-sm text-slate-500">Crawl the main website and refresh the base knowledge layer.</p>
                     </div>
-                    <button
-                      type="button"
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                    <CollapseToggleButton
+                      expanded={websiteSectionExpanded}
                       onClick={toggleWebsiteSectionExpanded}
-                      aria-label={websiteSectionExpanded ? 'Collapse website base section' : 'Expand website base section'}
-                      aria-expanded={websiteSectionExpanded}
-                    >
-                      <svg
-                        viewBox="0 0 20 20"
-                        fill="none"
-                        className={`h-5 w-5 transition-transform ${websiteSectionExpanded ? 'rotate-180' : ''}`}
-                        aria-hidden="true"
-                      >
-                        <path d="M5 8l5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </button>
+                      expandedLabel="Collapse website section"
+                      collapsedLabel="Expand website section"
+                    />
                   </div>
                   {websiteSectionExpanded ? (
                     <>
@@ -719,203 +709,194 @@ export default function ReceptionistKnowledgePage() {
                   onClick={() => setActiveGuideKey('documentsMeta')}
                   onFocusCapture={() => setActiveGuideKey('documentsMeta')}
                 >
-                  <div className="mb-2">
-                    <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Documents</h4>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Approved document sources override conflicting website details when you apply documents and single web page uploads.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3" onClick={() => setActiveGuideKey('documentsMeta')} onFocusCapture={() => setActiveGuideKey('documentsMeta')}>
+                  <div className="mb-2 flex items-start justify-between gap-4">
                     <div>
-                      <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Title</label>
-                      <input
-                        className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
-                        value={documentForm.title}
-                        onChange={(event) => setDocumentForm((current) => ({ ...current, title: event.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Class</label>
-                      <select
-                        className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
-                        value={documentForm.documentClass}
-                        onChange={(event) => setDocumentForm((current) => ({ ...current, documentClass: event.target.value }))}
-                      >
-                        <option value="operational">Operational</option>
-                        <option value="policy">Policy</option>
-                        <option value="reference">Reference</option>
-                        <option value="marketing">Marketing</option>
-                        <option value="unclassified">Unclassified</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Source Type</label>
-                      <select
-                        className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
-                        value={documentForm.sourceKind}
-                        onChange={(event) => setDocumentForm((current) => ({
-                          ...current,
-                          sourceKind: event.target.value,
-                          sourceLocator: event.target.value === 'single_page_url' ? current.sourceLocator : '',
-                          filename: event.target.value === 'file_upload' ? current.filename : '',
-                          mimeType: event.target.value === 'file_upload' ? current.mimeType : 'text/plain',
-                          fileBase64: event.target.value === 'file_upload' ? current.fileBase64 : ''
-                        }))}
-                      >
-                        <option value="file_upload">File Upload</option>
-                        <option value="single_page_url">Single Web Page</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {documentForm.sourceKind === 'single_page_url' ? (
-                    <div className="space-y-3 pt-4" onClick={() => setActiveGuideKey('documentsPage')} onFocusCapture={() => setActiveGuideKey('documentsPage')}>
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Web Page URL</div>
-                      <input
-                        className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
-                        value={documentForm.sourceLocator}
-                        onChange={(event) => setDocumentForm((current) => ({ ...current, sourceLocator: event.target.value }))}
-                        placeholder="https://example.com/specific-page"
-                      />
-                      <p className="mt-2 text-[10px] italic text-slate-500">
-                        Only this exact page is imported. Child pages are not crawled.
-                      </p>
-                    </div>
-                  ) : (
-                    <div
-                      className="space-y-3 pt-4"
-                      onClick={() => setActiveGuideKey('documentsFile')}
-                      onFocusCapture={() => setActiveGuideKey('documentsFile')}
-                    >
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload File</div>
-                      <div className="flex w-full items-center overflow-hidden rounded border border-[#E2E8F0] bg-white">
-                        <label className="cursor-pointer border-r border-[#E2E8F0] bg-slate-100 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200">
-                          Browse...
-                          <input
-                            className="hidden"
-                            type="file"
-                            accept=".txt,.pdf"
-                            onChange={handleDocumentFileChange}
-                            disabled={readingDocumentFile || savingDocument}
-                          />
-                        </label>
-                        <span className="px-4 text-xs text-slate-500">
-                          {documentForm.filename || 'No file selected.'}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-[10px] italic text-slate-500">
-                        Upload a .pdf or .txt file.
-                      </p>
-                    </div>
-                  )}
-
-                  <div onClick={() => setActiveGuideKey('documentsMeta')} onFocusCapture={() => setActiveGuideKey('documentsMeta')}>
-                    <Button
-                      variant="outline"
-                      className="border-[#2563EB] bg-transparent px-6 py-3 text-xs font-bold uppercase tracking-widest text-[#2563EB] shadow-sm hover:bg-blue-50"
-                      onClick={saveUploadedDocument}
-                      disabled={savingDocument || readingDocumentFile}
-                    >
-                      {savingDocument ? 'Saving...' : (readingDocumentFile ? 'Reading File...' : 'Save Document')}
-                    </Button>
-
-                    <div className="mt-4 grid gap-2">
-                      {uploadedDocuments.length ? uploadedDocuments.map((document) => (
-                        <div key={document.uploaded_document_id} className="rounded-lg border border-slate-200 bg-white p-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <div className="font-semibold text-slate-900">{document.title}</div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className={`badge ${document.status === 'approved' ? 'ok' : 'warn'}`}>{document.status}</span>
-                              <button
-                                type="button"
-                                className="rounded border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
-                                onClick={() => archiveDocument(document.uploaded_document_id, document.title)}
-                                disabled={Boolean(deletingDocumentId) || buildBusyKind === 'document_overlay'}
-                              >
-                                {deletingDocumentId === document.uploaded_document_id ? 'Removing...' : 'Delete'}
-                              </button>
-                              <CollapseToggleButton
-                                expanded={Boolean(expandedDocumentIds[String(document.uploaded_document_id || '').trim()])}
-                                onClick={(event) => toggleDocumentExpanded(event, document.uploaded_document_id)}
-                                expandedLabel="Collapse document details"
-                                collapsedLabel="Expand document details"
-                              />
-                            </div>
-                          </div>
-                          {expandedDocumentIds[String(document.uploaded_document_id || '').trim()] ? (
-                            <>
-                              <div className="mt-2 text-sm text-slate-600">
-                                {formatLabel(document.document_class)} · {formatLabel(document.source_authority)}
-                              </div>
-                              {document.source_kind ? (
-                                <div className="mt-1 text-xs text-slate-500">Source: {formatLabel(document.source_kind)}</div>
-                              ) : null}
-                              {document.filename ? (
-                                <div className="mt-1 text-xs text-slate-500">File: {document.filename}</div>
-                              ) : null}
-                              {!document.filename && document.source_locator ? (
-                                <div className="mt-1 break-all text-xs text-slate-500">Page: {document.source_locator}</div>
-                              ) : null}
-                            </>
-                          ) : null}
-                        </div>
-                      )) : (
-                        <p className="mt-4 text-[10px] text-slate-500">No uploaded documents yet.</p>
-                      )}
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap items-center gap-3" onClick={() => setActiveGuideKey('documentApply')} onFocusCapture={() => setActiveGuideKey('documentApply')}>
-                      {hasPendingDocumentChanges ? (
-                        <span className="inline-flex h-2.5 w-2.5 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)]" aria-hidden="true" />
-                      ) : null}
-                      <Button
-                        className="h-auto rounded px-6 py-3 text-xs font-bold uppercase tracking-[0.18em]"
-                        onClick={() => queueBuild('document_overlay')}
-                        disabled={buildBusyKind === 'document_overlay' || !canApplyDocuments}
-                      >
-                        {buildBusyKind === 'document_overlay' ? 'Queueing...' : 'Apply Documents'}
-                      </Button>
-                      {hasPendingDocumentChanges ? (
-                        <span className="text-xs font-medium text-amber-700">
-                          {documentPendingState.pendingCount} pending
-                        </span>
-                      ) : null}
-                      {latestDocumentBuild ? (
-                        <span className={`badge ${buildBadgeTone(latestDocumentBuild.status)}`}>{buildStatusLabel(latestDocumentBuild.status)}</span>
-                      ) : (
-                        <span className="text-xs text-slate-500">No document apply yet.</span>
-                      )}
-                    </div>
-
-                    {latestDocumentBuild ? (
-                      <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <div className="font-semibold text-slate-900">Latest Document Apply</div>
-                            <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestDocumentBuild, 0)}</div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className={`badge ${buildBadgeTone(latestDocumentBuild.status)}`}>{buildStatusLabel(latestDocumentBuild.status)}</span>
-                            <CollapseToggleButton
-                              expanded={latestDocumentApplyExpanded}
-                              onClick={toggleLatestDocumentApplyExpanded}
-                              expandedLabel="Collapse latest document apply section"
-                              collapsedLabel="Expand latest document apply section"
-                            />
-                          </div>
-                        </div>
-                        {latestDocumentApplyExpanded ? (
-                          <>
-                            <div className="mt-2 text-sm text-slate-600">{renderBuildProgress(latestDocumentBuild)}</div>
-                            <BuildProgressMeter build={latestDocumentBuild} compact />
-                          </>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Documents</h4>
+                        {documentsPublished ? (
+                          <span className="badge ok">Published</span>
                         ) : null}
                       </div>
-                    ) : null}
+                      <p className="mt-1 text-sm text-slate-500">
+                        Approved document sources override conflicting website details when you apply documents and single web page uploads.
+                      </p>
+                    </div>
+                    <CollapseToggleButton
+                      expanded={documentsSectionExpanded}
+                      onClick={toggleDocumentsSectionExpanded}
+                      expandedLabel="Collapse documents section"
+                      collapsedLabel="Expand documents section"
+                    />
                   </div>
+
+                  {documentsSectionExpanded ? (
+                    <>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-3" onClick={() => setActiveGuideKey('documentsMeta')} onFocusCapture={() => setActiveGuideKey('documentsMeta')}>
+                        <div>
+                          <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Title</label>
+                          <input
+                            className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                            value={documentForm.title}
+                            onChange={(event) => setDocumentForm((current) => ({ ...current, title: event.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Document Class</label>
+                          <select
+                            className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                            value={documentForm.documentClass}
+                            onChange={(event) => setDocumentForm((current) => ({ ...current, documentClass: event.target.value }))}
+                          >
+                            <option value="operational">Operational</option>
+                            <option value="policy">Policy</option>
+                            <option value="reference">Reference</option>
+                            <option value="marketing">Marketing</option>
+                            <option value="unclassified">Unclassified</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Source Type</label>
+                          <select
+                            className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                            value={documentForm.sourceKind}
+                            onChange={(event) => setDocumentForm((current) => ({
+                              ...current,
+                              sourceKind: event.target.value,
+                              sourceLocator: event.target.value === 'single_page_url' ? current.sourceLocator : '',
+                              filename: event.target.value === 'file_upload' ? current.filename : '',
+                              mimeType: event.target.value === 'file_upload' ? current.mimeType : 'text/plain',
+                              fileBase64: event.target.value === 'file_upload' ? current.fileBase64 : ''
+                            }))}
+                          >
+                            <option value="file_upload">File Upload</option>
+                            <option value="single_page_url">Single Web Page</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {documentForm.sourceKind === 'single_page_url' ? (
+                        <div className="space-y-3 pt-4" onClick={() => setActiveGuideKey('documentsPage')} onFocusCapture={() => setActiveGuideKey('documentsPage')}>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Web Page URL</div>
+                          <input
+                            className="w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                            value={documentForm.sourceLocator}
+                            onChange={(event) => setDocumentForm((current) => ({ ...current, sourceLocator: event.target.value }))}
+                            placeholder="https://example.com/specific-page"
+                          />
+                          <p className="mt-2 text-[10px] italic text-slate-500">
+                            Only this exact page is imported. Child pages are not crawled.
+                          </p>
+                        </div>
+                      ) : (
+                        <div
+                          className="space-y-3 pt-4"
+                          onClick={() => setActiveGuideKey('documentsFile')}
+                          onFocusCapture={() => setActiveGuideKey('documentsFile')}
+                        >
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Upload File</div>
+                          <div className="flex w-full items-center overflow-hidden rounded border border-[#E2E8F0] bg-white">
+                            <label className="cursor-pointer border-r border-[#E2E8F0] bg-slate-100 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200">
+                              Browse...
+                              <input
+                                className="hidden"
+                                type="file"
+                                accept=".txt,.pdf"
+                                onChange={handleDocumentFileChange}
+                                disabled={readingDocumentFile || savingDocument}
+                              />
+                            </label>
+                            <span className="px-4 text-xs text-slate-500">
+                              {documentForm.filename || 'No file selected.'}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-[10px] italic text-slate-500">
+                            Upload a .pdf or .txt file.
+                          </p>
+                        </div>
+                      )}
+
+                      <div onClick={() => setActiveGuideKey('documentsMeta')} onFocusCapture={() => setActiveGuideKey('documentsMeta')}>
+                        <Button
+                          variant="outline"
+                          className="border-[#2563EB] bg-transparent px-6 py-3 text-xs font-bold uppercase tracking-widest text-[#2563EB] shadow-sm hover:bg-blue-50"
+                          onClick={saveUploadedDocument}
+                          disabled={savingDocument || readingDocumentFile}
+                        >
+                          {savingDocument ? 'Saving...' : (readingDocumentFile ? 'Reading File...' : 'Save Document')}
+                        </Button>
+
+                        <div className="mt-4 grid gap-2">
+                          {uploadedDocuments.length ? uploadedDocuments.map((document) => (
+                            <div key={document.uploaded_document_id} className="rounded-lg border border-slate-200 bg-white p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <div className="font-semibold text-slate-900">{document.title}</div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`badge ${document.status === 'approved' ? 'ok' : 'warn'}`}>{document.status}</span>
+                                  <button
+                                    type="button"
+                                    className="rounded border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                    onClick={() => archiveDocument(document.uploaded_document_id, document.title)}
+                                    disabled={Boolean(deletingDocumentId) || buildBusyKind === 'document_overlay'}
+                                  >
+                                    {deletingDocumentId === document.uploaded_document_id ? 'Removing...' : 'Delete'}
+                                  </button>
+                                  <CollapseToggleButton
+                                    expanded={Boolean(expandedDocumentIds[String(document.uploaded_document_id || '').trim()])}
+                                    onClick={(event) => toggleDocumentExpanded(event, document.uploaded_document_id)}
+                                    expandedLabel="Collapse document details"
+                                    collapsedLabel="Expand document details"
+                                  />
+                                </div>
+                              </div>
+                              {expandedDocumentIds[String(document.uploaded_document_id || '').trim()] ? (
+                                <>
+                                  <div className="mt-2 text-sm text-slate-600">
+                                    {formatLabel(document.document_class)} · {formatLabel(document.source_authority)}
+                                  </div>
+                                  {document.source_kind ? (
+                                    <div className="mt-1 text-xs text-slate-500">Source: {formatLabel(document.source_kind)}</div>
+                                  ) : null}
+                                  {document.filename ? (
+                                    <div className="mt-1 text-xs text-slate-500">File: {document.filename}</div>
+                                  ) : null}
+                                  {!document.filename && document.source_locator ? (
+                                    <div className="mt-1 break-all text-xs text-slate-500">Page: {document.source_locator}</div>
+                                  ) : null}
+                                </>
+                              ) : null}
+                            </div>
+                          )) : (
+                            <p className="mt-4 text-[10px] text-slate-500">No uploaded documents yet.</p>
+                          )}
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap items-center gap-3" onClick={() => setActiveGuideKey('documentApply')} onFocusCapture={() => setActiveGuideKey('documentApply')}>
+                          {hasPendingDocumentChanges ? (
+                            <span className="inline-flex h-2.5 w-2.5 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)]" aria-hidden="true" />
+                          ) : null}
+                          <Button
+                            className="h-auto rounded px-6 py-3 text-xs font-bold uppercase tracking-[0.18em]"
+                            onClick={() => queueBuild('document_overlay')}
+                            disabled={buildBusyKind === 'document_overlay' || !canApplyDocuments}
+                          >
+                            {buildBusyKind === 'document_overlay' ? 'Queueing...' : 'Apply Documents'}
+                          </Button>
+                          {hasPendingDocumentChanges ? (
+                            <span className="text-xs font-medium text-amber-700">
+                              {documentPendingState.pendingCount} pending
+                            </span>
+                          ) : null}
+                          {latestDocumentBuild ? (
+                            <span className={`badge ${buildBadgeTone(latestDocumentBuild.status)}`}>{buildStatusLabel(latestDocumentBuild.status)}</span>
+                          ) : (
+                            <span className="text-xs text-slate-500">No document apply yet.</span>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
 
                 {buildState.builds.some((build) => isBuildActive(build)) ? (
@@ -923,36 +904,6 @@ export default function ReceptionistKnowledgePage() {
                     Build status auto-refreshes every 15 seconds while work is active.
                   </div>
                 ) : null}
-
-                {latestLiveBuild ? (
-                  <div className="rounded-lg border border-slate-200 bg-white p-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <div className="font-semibold text-slate-900">Live Knowledge Base</div>
-                        <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestLiveBuild, 0)}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`badge ${buildStatusTone(latestLiveBuild.status, hasPendingDocumentChanges)}`}>{hasPendingDocumentChanges ? 'Documents Pending' : buildStatusLabel(latestLiveBuild.status)}</span>
-                        <CollapseToggleButton
-                          expanded={liveKnowledgeBaseExpanded}
-                          onClick={toggleLiveKnowledgeBaseExpanded}
-                          expandedLabel="Collapse live knowledge base section"
-                          collapsedLabel="Expand live knowledge base section"
-                        />
-                      </div>
-                    </div>
-                    {liveKnowledgeBaseExpanded ? (
-                      <>
-                        <div className="mt-2 text-sm text-slate-600">
-                          Cards: {latestLiveBuild.artifact_counts_json?.cards || 0} · Facts: {latestLiveBuild.artifact_counts_json?.facts || 0}
-                        </div>
-                        <div className="mt-1 text-sm text-slate-600">{renderBuildProgress(latestLiveBuild)}</div>
-                        <BuildProgressMeter build={latestLiveBuild} compact />
-                      </>
-                    ) : null}
-                  </div>
-                ) : null}
-
               </div>
             </StepSection>
           </div>
