@@ -64,6 +64,11 @@ function buildStatusTone(status, hasPendingDocumentChanges = false) {
   return buildBadgeTone(status);
 }
 
+function isWebsiteBuildKind(buildKind) {
+  const normalized = String(buildKind || '').trim().toLowerCase();
+  return normalized === 'website_base' || normalized === 'legacy_combined';
+}
+
 function buildDocumentPendingState({ approvedDocuments = [], latestLiveBuild = null } = {}) {
   const appliedDocumentIds = new Set(
     Array.isArray(latestLiveBuild?.intake_metadata_json?.uploaded_document_ids)
@@ -557,15 +562,26 @@ export default function ReceptionistKnowledgePage() {
   const activeBuildId = String(buildState.activeBuild?.active_build_id || '').trim();
   const latestLiveBuild = buildState.builds.find((build) => String(build?.build_id || '').trim() === activeBuildId) || latestBuild;
   const latestWebsiteBuild = buildState.builds.find((build) => {
-    const kind = String(build?.build_kind || '').trim().toLowerCase();
-    return kind === 'website_base' || kind === 'legacy_combined';
+    return isWebsiteBuildKind(build?.build_kind);
   }) || null;
   const latestDocumentBuild = buildState.builds.find((build) => String(build?.build_kind || '').trim().toLowerCase() === 'document_overlay') || null;
   const documentPendingState = buildDocumentPendingState({ approvedDocuments: approvedUploadedDocuments, latestLiveBuild });
   const hasPendingDocumentChanges = documentPendingState.hasPendingChanges;
   const canApplyDocuments = approvedUploadedDocuments.length > 0 || documentPendingState.removedLiveDocumentIds.length > 0;
-  const websitePublished = String(latestWebsiteBuild?.status || '').trim().toLowerCase() === 'published';
-  const documentsPublished = String(latestDocumentBuild?.status || '').trim().toLowerCase() === 'published';
+  const latestLiveBuildKind = String(latestLiveBuild?.build_kind || '').trim().toLowerCase();
+  const latestWebsiteBuildId = String(latestWebsiteBuild?.build_id || '').trim();
+  const latestDocumentBuildId = String(latestDocumentBuild?.build_id || '').trim();
+  const liveWebsiteBuildId = isWebsiteBuildKind(latestLiveBuildKind)
+    ? String(latestLiveBuild?.build_id || '').trim()
+    : (latestLiveBuildKind === 'document_overlay' ? String(latestLiveBuild?.base_build_id || '').trim() : '');
+  const websitePublished = Boolean(latestWebsiteBuildId) && latestWebsiteBuildId === liveWebsiteBuildId;
+  const documentsPublished = latestLiveBuildKind === 'document_overlay' && Boolean(latestDocumentBuildId) && latestDocumentBuildId === activeBuildId;
+  const websiteBuildStatusLabel = websitePublished ? 'Published' : buildStatusLabel(latestWebsiteBuild?.status);
+  const websiteBuildStatusTone = websitePublished ? 'ok' : buildBadgeTone(latestWebsiteBuild?.status);
+  const showWebsiteBuildProgress = latestWebsiteBuild && !websitePublished;
+  const websiteBuildSummary = websitePublished
+    ? 'This website crawl is part of the current live knowledge base.'
+    : renderBuildProgress(latestWebsiteBuild);
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewAnswer = preview?.spokenAnswerEstimate || buildRepresentativeAnswer(previewAnswerPacket);
   const previewAnswerDisplay = previewBusy
@@ -682,7 +698,7 @@ export default function ReceptionistKnowledgePage() {
                           {buildBusyKind === 'website_base' ? 'Queueing...' : 'Rebuild Website'}
                         </Button>
                         {latestWebsiteBuild ? (
-                          <span className={`badge ${buildBadgeTone(latestWebsiteBuild.status)}`}>{buildStatusLabel(latestWebsiteBuild.status)}</span>
+                          <span className={`badge ${websiteBuildStatusTone}`}>{websiteBuildStatusLabel}</span>
                         ) : (
                           <span className="text-xs text-slate-500">No website rebuild yet.</span>
                         )}
@@ -694,10 +710,12 @@ export default function ReceptionistKnowledgePage() {
                               <div className="font-semibold text-slate-900">Latest Website Build</div>
                               <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestWebsiteBuild, 0)}</div>
                             </div>
-                            <span className={`badge ${buildBadgeTone(latestWebsiteBuild.status)}`}>{buildStatusLabel(latestWebsiteBuild.status)}</span>
+                            <span className={`badge ${websiteBuildStatusTone}`}>{websiteBuildStatusLabel}</span>
                           </div>
-                          <div className="mt-2 text-sm text-slate-600">{renderBuildProgress(latestWebsiteBuild)}</div>
-                          <BuildProgressMeter build={latestWebsiteBuild} compact />
+                          <div className="mt-2 text-sm text-slate-600">{websiteBuildSummary}</div>
+                          {showWebsiteBuildProgress ? (
+                            <BuildProgressMeter build={latestWebsiteBuild} compact />
+                          ) : null}
                         </div>
                       ) : null}
                     </>
