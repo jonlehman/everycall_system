@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '../../../components/ui/button';
+import GuidePanel from '../../client/_components/GuidePanel';
 
 function toneClass(tone) {
   if (tone === 'bad') return 'rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900';
@@ -668,6 +669,44 @@ export default function AdminSystemPage() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          <div className="mt-4">
+            <GuidePanel title="Coupons Guide" eyebrow="How coupons work" icon="sell">
+              <div>
+                Coupons are EveryCall-owned, not Stripe-owned. Customers enter them on the EveryCall billing page before checkout, and Stripe Checkout itself stays coupon-free.
+              </div>
+              <div>
+                Each code is one-time use across the whole system. After one tenant redeems it successfully, nobody else can use it.
+              </div>
+              <div>
+                Coupons can apply to one or more standard plans: <code>Starter</code>, <code>Growth</code>, and <code>Pro</code>. They do not apply to <code>Custom</code> pricing by default.
+              </div>
+              <div>
+                <strong>Monthly Discount %</strong> reduces the base subscription amount. For already-active Stripe subscriptions, that discounted monthly amount applies on the next billing period, not immediately.
+              </div>
+              <div>
+                <strong>Overage Discount %</strong> reduces call overage charges inside EveryCall billing. The discounted amount is what gets sent to Stripe as the overage invoice item.
+              </div>
+              <div>
+                <strong>Free Trial Days</strong> opens a no-card trial. The tenant can stay active during that trial without entering a payment method.
+              </div>
+              <div>
+                <strong>Discount Duration Days</strong> controls how long the monthly and overage discounts apply after paid billing begins. <code>0</code> means unlimited.
+              </div>
+              <div>
+                Trial timing and discount timing are separate. Trial days start when the coupon is redeemed. Discount duration starts when paid billing starts, so customers do not lose discount time during the free trial.
+              </div>
+              <div>
+                If a tenant already has an active coupon and a new coupon is redeemed successfully, the new one replaces the old one automatically.
+              </div>
+              <div>
+                <strong>Redeem By</strong> is optional. If set, the coupon can no longer be redeemed after that timestamp.
+              </div>
+              <div>
+                The coupons table shows whether a code has already been redeemed, by which tenant, and when it happened. Use <strong>Edit</strong> to update an unused or operationally managed code.
+              </div>
+            </GuidePanel>
           </div>
         </div>
 
