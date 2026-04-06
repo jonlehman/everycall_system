@@ -5,6 +5,8 @@ import {
   decryptIntegrationCredentials,
   encryptIntegrationCredentials
 } from "../../_lib/integrationSecrets.js";
+import { notifySupportOfNewConversation } from "../../_lib/supportNotifications.js";
+import { appendSupportMessage, createSupportConversation } from "../../_lib/supportChat.js";
 import { validateSafePublicEndpointUrl } from "../../_lib/safePublicEndpoint.js";
 import {
   buildDefaultServiceTitanResourcePath,
@@ -164,6 +166,116 @@ async function loadConnectionsAndDeliveries(pool, tenantKey) {
   };
 }
 
+function buildSupportConversationSubject(connectorType) {
+  return `Integration setup: ${INTEGRATION_CONNECTOR_LABELS[connectorType] || formatConnectorType(connectorType)}`;
+}
+
+function formatConnectorType(value) {
+  return normalizeText(value)
+    .split(/[_\s]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildIntegrationSupportMessage({
+  connectorType,
+  name,
+  status,
+  config,
+  endpointUrl,
+  credentialsUpdated,
+  isUpdate,
+  viewer
+}) {
+  const includeTypes = Array.isArray(config?.includeTypes) && config.includeTypes.length
+    ? config.includeTypes.join(", ")
+    : "none selected";
+
+  return [
+    `${normalizeText(viewer?.name) || normalizeText(viewer?.email) || "A tenant user"} ${isUpdate ? "updated" : "saved"} the ${INTEGRATION_CONNECTOR_LABELS[connectorType] || formatConnectorType(connectorType)} integration in the client portal.`,
+    "",
+    "Support should finish setup, run the connection test, and fix any issues before the tenant relies on it.",
+    "",
+    `Connection name: ${normalizeText(name) || "-"}`,
+    `Status: ${normalizeText(status) || "enabled"}`,
+    `Hook URL saved: ${endpointUrl ? "yes" : "no"}`,
+    `Credentials updated: ${credentialsUpdated ? "yes" : "no"}`,
+    `Included call types: ${includeTypes}`,
+    `Include non-billable: ${config?.includeNonBillable === false ? "no" : "yes"}`,
+    `Include duplicates: ${config?.includeDuplicates === false ? "no" : "yes"}`,
+    `Include transcript: ${config?.includeTranscript === true ? "yes" : "no"}`
+  ].join("\n");
+}
+
+async function createOrUpdateIntegrationSupportConversation(pool, {
+  tenantKey,
+  tenantUser,
+  connectorType,
+  name,
+  status,
+  config,
+  endpointUrl,
+  credentialsUpdated,
+  isUpdate
+}) {
+  const subject = buildSupportConversationSubject(connectorType);
+  const body = buildIntegrationSupportMessage({
+    connectorType,
+    name,
+    status,
+    config,
+    endpointUrl,
+    credentialsUpdated,
+    isUpdate,
+    viewer: tenantUser
+  });
+
+  const existing = await pool.query(
+    `SELECT id
+     FROM support_conversations
+     WHERE tenant_key = $1
+       AND subject = $2
+       AND status <> 'resolved'
+     ORDER BY last_message_at DESC, id DESC
+     LIMIT 1`,
+    [tenantKey, subject]
+  );
+
+  const conversationId = Number(existing.rows[0]?.id || 0) || null;
+  if (conversationId) {
+    await appendSupportMessage(pool, {
+      conversationId,
+      tenantKey,
+      senderType: "tenant_user",
+      senderId: tenantUser?.id ? `tenant:${tenantUser.id}` : null,
+      senderName: normalizeText(tenantUser?.name) || normalizeText(tenantUser?.email) || "Client",
+      body
+    });
+    return { conversationId, created: false };
+  }
+
+  const createdConversationId = await createSupportConversation(pool, {
+    tenantKey,
+    tenantUser,
+    subject,
+    body
+  });
+
+  try {
+    await notifySupportOfNewConversation(pool, {
+      tenantKey,
+      conversationId: createdConversationId,
+      subject,
+      messagePreview: body,
+      senderName: tenantUser?.name,
+      senderEmail: tenantUser?.email
+    });
+  } catch {}
+
+  return { conversationId: createdConversationId, created: true };
+}
+
 export default async function handler(req, res) {
   try {
     const pool = getPool();
@@ -252,6 +364,9 @@ export default async function handler(req, res) {
     const credentialsCiphertext = Object.keys(credentials).length ? encryptIntegrationCredentials(credentials) : null;
     const name = normalizeText(body.name) || existing?.name || INTEGRATION_CONNECTOR_LABELS[connectorType] || "Integration";
 
+    const credentialsUpdated = Object.keys(asObject(body))
+      .some((key) => ["privateAppToken", "clientId", "clientSecret", "refreshToken", "appKey"].includes(key) && normalizeText(body[key]));
+
     let savedRow = null;
     if (existing) {
       const updated = await pool.query(
@@ -327,6 +442,18 @@ export default async function handler(req, res) {
       });
     }
 
+    const supportConversation = await createOrUpdateIntegrationSupportConversation(pool, {
+      tenantKey,
+      tenantUser: viewer,
+      connectorType,
+      name,
+      status,
+      config,
+      endpointUrl,
+      credentialsUpdated,
+      isUpdate: Boolean(existing)
+    });
+
     const data = await loadConnectionsAndDeliveries(pool, tenantKey);
     return res.status(200).json({
         ok: true,
@@ -335,6 +462,8 @@ export default async function handler(req, res) {
         userRole: viewer.role || null
       },
       connection: sanitizeIntegrationConnection(savedRow),
+      supportConversationId: supportConversation.conversationId,
+      supportConversationCreated: supportConversation.created,
       ...data
     });
   } catch (error) {

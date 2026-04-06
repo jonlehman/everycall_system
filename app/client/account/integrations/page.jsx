@@ -32,8 +32,8 @@ const CONNECTOR_DEFINITIONS = [
     defaultName: 'Zapier Catch Hook',
     setupNotes: [
       'Create a Catch Hook Zap in Zapier first.',
-      'Paste the hook URL here and save the connector before testing it.',
-      'Start with all call types, then narrow filters once you see live traffic.'
+      'Paste the hook URL here and save the connector.',
+      'Support will test the connection and finish setup for you.'
     ]
   },
   {
@@ -44,7 +44,7 @@ const CONNECTOR_DEFINITIONS = [
     setupNotes: [
       'Create a HubSpot private app with contacts and CRM object write access.',
       'Paste the private app token here. Leave it blank later if you are only editing filters.',
-      'Test the connection before expecting live deliveries.'
+      'Support will test the connection and finish setup for you.'
     ]
   },
   {
@@ -55,7 +55,7 @@ const CONNECTOR_DEFINITIONS = [
     setupNotes: [
       'Create the Jobber app credentials and capture the refresh token first.',
       'Enter the client id, client secret, and refresh token together on first save.',
-      'Keep filters narrow at first so only project inquiries land in Jobber.'
+      'Support will test the connection and finish setup for you.'
     ]
   },
   {
@@ -65,8 +65,8 @@ const CONNECTOR_DEFINITIONS = [
     defaultName: 'ServiceTitan',
     setupNotes: [
       'Use the right environment and tenant id for the ServiceTitan account you intend to test.',
-      'Save credentials first, then run Test Connection before enabling the connector for live traffic.',
-      'Keep transcripts off unless the downstream workflow truly needs them.'
+      'Save credentials first and keep transcripts off unless the downstream workflow truly needs them.',
+      'Support will test the connection and finish setup for you.'
     ]
   }
 ];
@@ -138,7 +138,6 @@ export default function AccountIntegrationsPage() {
   const [connectorDraft, setConnectorDraft] = useState(buildConnectorDraft(CONNECTOR_TYPES.zapierHook, null));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState({ tone: 'warn', message: 'Loading integrations...' });
 
   const selectedConnectorDefinition = CONNECTOR_DEFINITIONS.find((item) => item.type === selectedConnectorType) || CONNECTOR_DEFINITIONS[0];
@@ -225,38 +224,16 @@ export default function AccountIntegrationsPage() {
         connections: Array.isArray(data?.connections) ? data.connections : [],
         deliveries: Array.isArray(data?.deliveries) ? data.deliveries : []
       });
-      setStatus({ tone: 'ok', message: `${selectedConnectorDefinition.label} saved.` });
+      setStatus({
+        tone: 'ok',
+        message: data?.supportConversationCreated
+          ? `${selectedConnectorDefinition.label} saved. Support has been notified and will finish the setup for you.`
+          : `${selectedConnectorDefinition.label} saved. Support will review the updated setup and finish it for you.`
+      });
     } catch (error) {
       setStatus({ tone: 'bad', message: error?.message || 'Connector save failed.' });
     } finally {
       setSaving(false);
-    }
-  };
-
-  const testConnector = async () => {
-    if (!viewer.canManage) {
-      setStatus({ tone: 'bad', message: 'Only account admins and owners can test integrations.' });
-      return;
-    }
-    if (!connectorDraft.connectionId) {
-      setStatus({ tone: 'warn', message: 'Save the connector before testing it.' });
-      return;
-    }
-    setTesting(true);
-    setStatus({ tone: 'warn', message: `Testing ${selectedConnectorDefinition.label}...` });
-    try {
-      const data = await fetchJson('/api/v1/integrations/connectors/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connectionId: connectorDraft.connectionId })
-      });
-      await loadIntegrations();
-      setStatus({ tone: 'ok', message: data?.responseStatus ? `${selectedConnectorDefinition.label} test succeeded with HTTP ${data.responseStatus}.` : `${selectedConnectorDefinition.label} test succeeded.` });
-    } catch (error) {
-      await loadIntegrations();
-      setStatus({ tone: 'bad', message: error?.message || 'Connector test failed.' });
-    } finally {
-      setTesting(false);
     }
   };
 
@@ -329,6 +306,10 @@ export default function AccountIntegrationsPage() {
                         </div>
                       ))}
                     </div>
+                  </div>
+
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    Support will finish the setup for you after you save this integration, including testing it and fixing any issues.
                   </div>
 
                   <label className={FIELD_LABEL_CLASS}>
@@ -544,14 +525,11 @@ export default function AccountIntegrationsPage() {
                     <Button onClick={saveConnector} disabled={!viewer.canManage || saving || loading}>
                       {saving ? 'Saving...' : `Save ${selectedConnectorDefinition.label}`}
                     </Button>
-                    <Button variant="outline" onClick={testConnector} disabled={!viewer.canManage || testing || saving || !connectorDraft.connectionId}>
-                      {testing ? 'Testing...' : 'Test Connection'}
-                    </Button>
                   </div>
 
                   {!viewer.canManage ? (
                     <div className="text-sm text-slate-500">
-                      Only account admins and owners can update or test integrations.
+                      Only account admins and owners can update integrations.
                     </div>
                   ) : null}
                 </div>
@@ -592,10 +570,10 @@ export default function AccountIntegrationsPage() {
         </div>
 
         <GuidePanel title="Integrations Guide" eyebrow="How it works" icon="settings_input_component">
-          <div>Use this page to connect EveryCall to the systems that should receive your completed calls.</div>
+          <div>Use this page to connect EveryCall to the systems that should receive your completed calls. After you save, Support will finish the setup and validate the connection for you.</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="font-semibold text-slate-900">Recommended rollout</div>
-            <div className="mt-1 text-sm text-slate-600">Save the connector, test it, confirm one live call lands correctly, then widen filters or enable transcripts only if the downstream workflow needs more detail.</div>
+            <div className="font-semibold text-slate-900">What happens next</div>
+            <div className="mt-1 text-sm text-slate-600">Save the connector, and EveryCall Support will review the setup, run the connection test, and fix issues before you rely on live delivery.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">What gets sent</div>
@@ -606,8 +584,8 @@ export default function AccountIntegrationsPage() {
             <div className="mt-1 text-sm text-slate-600">Use filters to decide which call types reach each connector, and whether non-billable calls or duplicates should be included.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="font-semibold text-slate-900">Test before enabling</div>
-            <div className="mt-1 text-sm text-slate-600">Save the connector first, then use Test Connection to confirm the credentials or endpoint are valid before relying on live delivery.</div>
+            <div className="font-semibold text-slate-900">Support review</div>
+            <div className="mt-1 text-sm text-slate-600">Each integration save creates or updates a support request so setup can be verified and completed for you.</div>
           </div>
         </GuidePanel>
       </div>
