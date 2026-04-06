@@ -225,7 +225,9 @@ export default function ClientDashboardPage() {
   const knowledgeSignals = dashboard?.knowledgeSignals || {};
   const answeredKnowledgeQuestions = Array.isArray(dashboard?.answeredKnowledgeQuestions) ? dashboard.answeredKnowledgeQuestions : [];
   const knowledgeGapQuestions = Array.isArray(dashboard?.knowledgeGapQuestions) ? dashboard.knowledgeGapQuestions : [];
-  const latestBuildLabel = setup.latestBuildStatus ? formatLeadOutcomeLabel(setup.latestBuildStatus) : 'No knowledge base yet';
+  const latestBuildLabel = (setup.activeBuildStatus || setup.latestBuildStatus)
+    ? formatLeadOutcomeLabel(setup.activeBuildStatus || setup.latestBuildStatus)
+    : 'No knowledge base yet';
   const kbQuestionCount = Number(knowledgeSignals.kbQuestionCount30d || 0);
   const answeredQuestionCount = Number(
     knowledgeSignals.answeredQuestionCount30d

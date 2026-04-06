@@ -88,17 +88,6 @@ async function resolveCarrierActivationState(pool, tenant) {
       providerVerified: true
     };
   } catch (error) {
-    if (storedStatus === "active") {
-      return {
-        carrierReady: true,
-        phoneNumber,
-        phoneNumberId,
-        telnyxVoiceStatus: storedStatus,
-        providerStatus: "",
-        providerVerified: false,
-        providerSyncError: error?.message || "unknown"
-      };
-    }
     return {
       carrierReady: false,
       phoneNumber,

@@ -33,8 +33,23 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
   lead_alerts_enabled: true,
   lead_alert_sms_enabled: true,
   lead_alert_email_enabled: true,
+  lead_alert_sms_quiet_hours_enabled: true,
+  lead_alert_sms_quiet_hours_start: "21:00",
+  lead_alert_sms_quiet_hours_end: "08:00",
   lead_alert_email_include_transcript: true
 };
+
+function normalizeTimeOfDay(value, fallback) {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  const match = /^(\d{2}):(\d{2})$/.exec(text);
+  if (!match) return fallback;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || hours < 0 || hours > 23) return fallback;
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > 59) return fallback;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
 
 export default async function handler(req, res) {
   const fail = (status, error, message) => res.status(status).json({ ok: false, error, message });
@@ -70,6 +85,9 @@ export default async function handler(req, res) {
                 lead_alerts_enabled,
                 lead_alert_sms_enabled,
                 lead_alert_email_enabled,
+                lead_alert_sms_quiet_hours_enabled,
+                lead_alert_sms_quiet_hours_start,
+                lead_alert_sms_quiet_hours_end,
                 lead_alert_email_include_transcript
          FROM tenant_settings
          WHERE tenant_key = $1`,
@@ -112,6 +130,9 @@ export default async function handler(req, res) {
                 lead_alerts_enabled,
                 lead_alert_sms_enabled,
                 lead_alert_email_enabled,
+                lead_alert_sms_quiet_hours_enabled,
+                lead_alert_sms_quiet_hours_start,
+                lead_alert_sms_quiet_hours_end,
                 lead_alert_email_include_transcript
          FROM tenant_settings
          WHERE tenant_key = $1
@@ -138,6 +159,24 @@ export default async function handler(req, res) {
       const leadAlertEmailEnabled = hasOwn(body, "leadAlertEmailEnabled")
         ? Boolean(body.leadAlertEmailEnabled)
         : Boolean(existingSettings?.lead_alert_email_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.lead_alert_email_enabled);
+      const leadAlertSmsQuietHoursEnabled = hasOwn(body, "leadAlertSmsQuietHoursEnabled")
+        ? Boolean(body.leadAlertSmsQuietHoursEnabled)
+        : Boolean(
+          existingSettings?.lead_alert_sms_quiet_hours_enabled
+          ?? DEFAULT_NOTIFICATION_SETTINGS.lead_alert_sms_quiet_hours_enabled
+        );
+      const leadAlertSmsQuietHoursStart = hasOwn(body, "leadAlertSmsQuietHoursStart")
+        ? normalizeTimeOfDay(body.leadAlertSmsQuietHoursStart, DEFAULT_NOTIFICATION_SETTINGS.lead_alert_sms_quiet_hours_start)
+        : normalizeTimeOfDay(
+          existingSettings?.lead_alert_sms_quiet_hours_start,
+          DEFAULT_NOTIFICATION_SETTINGS.lead_alert_sms_quiet_hours_start
+        );
+      const leadAlertSmsQuietHoursEnd = hasOwn(body, "leadAlertSmsQuietHoursEnd")
+        ? normalizeTimeOfDay(body.leadAlertSmsQuietHoursEnd, DEFAULT_NOTIFICATION_SETTINGS.lead_alert_sms_quiet_hours_end)
+        : normalizeTimeOfDay(
+          existingSettings?.lead_alert_sms_quiet_hours_end,
+          DEFAULT_NOTIFICATION_SETTINGS.lead_alert_sms_quiet_hours_end
+        );
       const leadAlertEmailIncludeTranscript = hasOwn(body, "leadAlertEmailIncludeTranscript")
         ? Boolean(body.leadAlertEmailIncludeTranscript)
         : Boolean(
@@ -167,9 +206,12 @@ export default async function handler(req, res) {
            lead_alerts_enabled,
            lead_alert_sms_enabled,
            lead_alert_email_enabled,
+           lead_alert_sms_quiet_hours_enabled,
+           lead_alert_sms_quiet_hours_start,
+           lead_alert_sms_quiet_hours_end,
            lead_alert_email_include_transcript
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (tenant_key)
          DO UPDATE SET
            timezone = EXCLUDED.timezone,
@@ -178,6 +220,9 @@ export default async function handler(req, res) {
            lead_alerts_enabled = EXCLUDED.lead_alerts_enabled,
            lead_alert_sms_enabled = EXCLUDED.lead_alert_sms_enabled,
            lead_alert_email_enabled = EXCLUDED.lead_alert_email_enabled,
+           lead_alert_sms_quiet_hours_enabled = EXCLUDED.lead_alert_sms_quiet_hours_enabled,
+           lead_alert_sms_quiet_hours_start = EXCLUDED.lead_alert_sms_quiet_hours_start,
+           lead_alert_sms_quiet_hours_end = EXCLUDED.lead_alert_sms_quiet_hours_end,
            lead_alert_email_include_transcript = EXCLUDED.lead_alert_email_include_transcript,
            updated_at = NOW()`,
         [
@@ -188,6 +233,9 @@ export default async function handler(req, res) {
           leadAlertsEnabled,
           leadAlertSmsEnabled,
           leadAlertEmailEnabled,
+          leadAlertSmsQuietHoursEnabled,
+          leadAlertSmsQuietHoursStart,
+          leadAlertSmsQuietHoursEnd,
           leadAlertEmailIncludeTranscript
         ]
       );
@@ -249,6 +297,9 @@ export default async function handler(req, res) {
           lead_alerts_enabled: leadAlertsEnabled,
           lead_alert_sms_enabled: leadAlertSmsEnabled,
           lead_alert_email_enabled: leadAlertEmailEnabled,
+          lead_alert_sms_quiet_hours_enabled: leadAlertSmsQuietHoursEnabled,
+          lead_alert_sms_quiet_hours_start: leadAlertSmsQuietHoursStart,
+          lead_alert_sms_quiet_hours_end: leadAlertSmsQuietHoursEnd,
           lead_alert_email_include_transcript: leadAlertEmailIncludeTranscript,
           provider_sync_ok: providerSync?.ok === true,
           provider_sync_pending: providerSync?.pending === true

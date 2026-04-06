@@ -93,7 +93,7 @@ export default function AccountBillingPage() {
         setStatus({ tone: 'warn', message: 'Billing is required to unlock the rest of the workspace.' });
         return;
       }
-      if (data.billing.status === 'trialing' && !data.billing.stripeSubscriptionId) {
+      if (data.billing.status === 'trialing' && !data.billing.hasStripeSubscription) {
         const days = typeof data.billing.trialDaysRemaining === 'number' ? data.billing.trialDaysRemaining : 0;
         setStatus({ tone: 'warn', message: `Trial mode is active. ${days === 1 ? '1 day remains' : `${days} days remain`} before billing is required.` });
         return;
@@ -181,9 +181,9 @@ export default function AccountBillingPage() {
       }
     : viewer.canManage && billing?.status !== 'deactivated'
       ? {
-          label: billing?.stripeSubscriptionId ? 'Open Billing Portal' : 'Activate Billing',
+          label: billing?.hasStripeSubscription ? 'Open Billing Portal' : 'Activate Billing',
           brand: true,
-          onClick: billing?.stripeSubscriptionId ? openPortal : startCheckout,
+          onClick: billing?.hasStripeSubscription ? openPortal : startCheckout,
           disabled: actionState.checkout || actionState.portal || actionState.reactivating || loadState === 'loading'
         }
       : null;
@@ -314,9 +314,9 @@ export default function AccountBillingPage() {
                   Refresh
                 </Button>
               </div>
-            ) : billing?.stripeSubscriptionId ? (
+            ) : billing?.hasStripeSubscription ? (
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" type="button" onClick={openPortal} disabled={actionState.checkout || actionState.portal || !billing?.stripeCustomerId}>
+                <Button variant="outline" type="button" onClick={openPortal} disabled={actionState.checkout || actionState.portal || !billing?.hasStripeCustomer}>
                   {actionState.portal ? 'Opening portal...' : 'Open Billing Portal'}
                 </Button>
                 <Button variant="outline" type="button" onClick={() => loadBilling()} disabled={actionState.checkout || actionState.portal}>

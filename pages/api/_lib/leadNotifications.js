@@ -90,6 +90,51 @@ function getEffectiveRecipientCategories(value, enabled) {
   return sanitizeCallCategorySelection(value, { fallbackToAll: true });
 }
 
+function parseTimeOfDayMinutes(value, fallbackMinutes) {
+  const text = normalizeText(value);
+  const match = /^(\d{2}):(\d{2})$/.exec(text);
+  if (!match) return fallbackMinutes;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || hours < 0 || hours > 23) return fallbackMinutes;
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > 59) return fallbackMinutes;
+  return (hours * 60) + minutes;
+}
+
+function getLocalMinutesInTimezone(value, timezone) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone || "America/Los_Angeles",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  const hours = Number(parts.hour);
+  const minutes = Number(parts.minute);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+  return (hours * 60) + minutes;
+}
+
+function isSmsQuietHoursActive(settings, timestamp = new Date()) {
+  if (!settings?.lead_alert_sms_quiet_hours_enabled) return false;
+  const timezone = normalizeText(settings.timezone) || "America/Los_Angeles";
+  const localMinutes = getLocalMinutesInTimezone(timestamp, timezone);
+  if (localMinutes === null) return false;
+  const startMinutes = parseTimeOfDayMinutes(settings.lead_alert_sms_quiet_hours_start, 21 * 60);
+  const endMinutes = parseTimeOfDayMinutes(settings.lead_alert_sms_quiet_hours_end, 8 * 60);
+  if (startMinutes === endMinutes) return false;
+  if (startMinutes < endMinutes) {
+    return localMinutes >= startMinutes && localMinutes < endMinutes;
+  }
+  return localMinutes >= startMinutes || localMinutes < endMinutes;
+}
+
 async function beginLeadDelivery(pool, {
   tenantKey,
   callSid,
@@ -362,6 +407,9 @@ async function loadLeadNotificationContext(pool, tenantKey, callSid) {
               lead_alerts_enabled,
               lead_alert_sms_enabled,
               lead_alert_email_enabled,
+              lead_alert_sms_quiet_hours_enabled,
+              lead_alert_sms_quiet_hours_start,
+              lead_alert_sms_quiet_hours_end,
               lead_alert_email_include_transcript
        FROM tenant_settings
        WHERE tenant_key = $1
@@ -400,6 +448,9 @@ async function loadLeadNotificationContext(pool, tenantKey, callSid) {
       lead_alerts_enabled: settingsRes.rows[0]?.lead_alerts_enabled ?? true,
       lead_alert_sms_enabled: settingsRes.rows[0]?.lead_alert_sms_enabled ?? true,
       lead_alert_email_enabled: settingsRes.rows[0]?.lead_alert_email_enabled ?? true,
+      lead_alert_sms_quiet_hours_enabled: settingsRes.rows[0]?.lead_alert_sms_quiet_hours_enabled ?? true,
+      lead_alert_sms_quiet_hours_start: normalizeText(settingsRes.rows[0]?.lead_alert_sms_quiet_hours_start) || "21:00",
+      lead_alert_sms_quiet_hours_end: normalizeText(settingsRes.rows[0]?.lead_alert_sms_quiet_hours_end) || "08:00",
       lead_alert_email_include_transcript: settingsRes.rows[0]?.lead_alert_email_include_transcript ?? true
     },
     callRow: callRes.rows[0] || null,
@@ -434,6 +485,7 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
       && getEffectiveRecipientCategories(row.lead_alert_email_categories, row.lead_alert_email_enabled).includes(normalizedCallCategory)
     ))
     : [];
+  const smsQuietHoursActive = Boolean(smsRecipients.length) && isSmsQuietHoursActive(settings, new Date());
 
   if (!smsRecipients.length && !emailRecipients.length) {
     await updateCallNotificationEstimatedCost(pool, { callSid });
@@ -488,6 +540,25 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
   for (const recipient of smsRecipients) {
     const destination = normalizeText(recipient.phone_number);
     if (!destination) continue;
+    if (smsQuietHoursActive) {
+      const shouldRecordSkip = await beginLeadDelivery(pool, {
+        tenantKey,
+        callSid,
+        channel: "sms",
+        destination
+      });
+      if (!shouldRecordSkip) continue;
+      await markLeadDelivery(pool, {
+        tenantKey,
+        callSid,
+        channel: "sms",
+        destination,
+        status: "skipped",
+        errorCode: "quiet_hours",
+        errorMessage: `SMS alert skipped during quiet hours (${settings.lead_alert_sms_quiet_hours_start}-${settings.lead_alert_sms_quiet_hours_end} ${settings.timezone || "America/Los_Angeles"})`
+      });
+      continue;
+    }
     const shouldSend = await beginLeadDelivery(pool, {
       tenantKey,
       callSid,

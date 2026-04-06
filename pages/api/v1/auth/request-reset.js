@@ -110,8 +110,14 @@ export default async function handler(req, res) {
       }
     });
 
-    return res.status(200).json({ ok: true, delivered, deliveryError });
+    return res.status(200).json({
+      ok: true,
+      message: "If an account exists for that email, a reset link will be sent."
+    });
   } catch (err) {
-    return res.status(500).json({ error: "reset_request_error", message: err?.message || "unknown" });
+    return res.status(500).json({
+      error: "reset_request_error",
+      message: "Could not process the reset request."
+    });
   }
 }

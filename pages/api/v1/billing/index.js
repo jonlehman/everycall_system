@@ -39,6 +39,7 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: "forbidden" });
     }
     const owner = session.role === "tenant" ? await requireTenantOwner(session) : null;
+    const canViewStripeDetails = session.role === "admin" || Boolean(owner);
 
     const tenantKey = resolveTenantKey(session, getTenantKey(req));
     let row = await ensureTenantBillingAccount(pool, tenantKey);
@@ -79,10 +80,10 @@ export default async function handler(req, res) {
 
     console.info("billing_summary_stripe_lookup", {
       tenantKey,
-      storedStripeCustomerId: row.stripe_customer_id || null,
-      storedStripeSubscriptionId: row.stripe_subscription_id || null,
+      hasStoredStripeCustomerId: Boolean(row.stripe_customer_id),
+      hasStoredStripeSubscriptionId: Boolean(row.stripe_subscription_id),
       source: stripeSubscriptionSource,
-      foundSubscriptionId: tenantSubscription?.id || null,
+      foundSubscription: Boolean(tenantSubscription?.id),
       foundSubscriptionStatus: tenantSubscription?.status || null,
       stripeLookupError
     });
@@ -111,8 +112,10 @@ export default async function handler(req, res) {
         serviceAccessStatus: row.service_access_status,
         appAccessStatus: row.app_access_status,
         lockReason: row.billing_lock_reason || null,
-        stripeCustomerId: row.stripe_customer_id || null,
-        stripeSubscriptionId: row.stripe_subscription_id || null,
+        stripeCustomerId: canViewStripeDetails ? (row.stripe_customer_id || null) : null,
+        stripeSubscriptionId: canViewStripeDetails ? (row.stripe_subscription_id || null) : null,
+        hasStripeCustomer: Boolean(row.stripe_customer_id),
+        hasStripeSubscription: Boolean(row.stripe_subscription_id),
         trialStartedAt: row.trial_started_at,
         trialEnd: row.trial_end,
         trialDaysRemaining: computeTrialDaysRemaining(row.trial_end),

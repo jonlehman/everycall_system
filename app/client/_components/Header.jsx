@@ -9,7 +9,7 @@ export default function Header() {
     status: null,
     trialDaysRemaining: null,
     appAccessStatus: null,
-    stripeSubscriptionId: null,
+    hasStripeSubscription: false,
     canManage: false
   });
   const [open, setOpen] = useState(false);
@@ -62,7 +62,7 @@ export default function Header() {
           status: billingData?.billing?.status || null,
           trialDaysRemaining: typeof billingData?.billing?.trialDaysRemaining === 'number' ? billingData.billing.trialDaysRemaining : null,
           appAccessStatus: billingData?.billing?.appAccessStatus || null,
-          stripeSubscriptionId: billingData?.billing?.stripeSubscriptionId || null,
+          hasStripeSubscription: Boolean(billingData?.billing?.hasStripeSubscription),
           canManage: Boolean(billingData?.viewer?.canManage)
         });
       }).catch(() => {
@@ -76,7 +76,7 @@ export default function Header() {
     };
   }, []);
 
-  const showTrialBadge = !billing.loading && billing.status === 'trialing' && !billing.stripeSubscriptionId;
+  const showTrialBadge = !billing.loading && billing.status === 'trialing' && !billing.hasStripeSubscription;
   const showBillingBadge = !billing.loading && !showTrialBadge && (billing.appAccessStatus === 'billing_locked' || billing.status === 'deactivated');
   const trialLabel = billing.trialDaysRemaining === 1 ? 'Trial: 1 Day Left' : `Trial: ${billing.trialDaysRemaining ?? 0} Days Left`;
   const accountActionLabel = showTrialBadge || showBillingBadge ? 'Upgrade Plan' : (billing.canManage ? 'Billing' : 'Account');

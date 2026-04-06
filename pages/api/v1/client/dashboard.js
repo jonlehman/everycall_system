@@ -379,10 +379,9 @@ export default async function handler(req, res) {
     const latestBuild = builds[0] || null;
     const activeBuildId = normalizeText(buildsData?.activeBuild?.active_build_id);
     const latestBuildId = normalizeText(latestBuild?.build_id);
-    const runtimeReady = normalizeText(latestBuild?.status).toLowerCase() === "published"
-      && activeBuildId
-      && latestBuildId
-      && activeBuildId === latestBuildId;
+    const activeBuild = builds.find((build) => normalizeText(build?.build_id) === activeBuildId) || null;
+    const activeBuildStatus = normalizeText(activeBuild?.status).toLowerCase();
+    const runtimeReady = Boolean(activeBuildId) && activeBuildStatus === "published";
     const categoryCounts = Object.fromEntries(
       DASHBOARD_CATEGORY_ORDER.map((key) => [key, 0])
     );
@@ -436,11 +435,11 @@ export default async function handler(req, res) {
         body: "The receptionist can sound specific only after a build is published."
       });
     }
-    if (!runtimeReady) {
+    if (publishedBuilds.length && !runtimeReady) {
       nextSteps.push({
         href: "/client/receptionist/knowledge",
-        title: "Make the latest build active",
-        body: "Publish a build so the Sales Receptionist uses your latest business-specific knowledge."
+        title: "Make a published build live",
+        body: "The Sales Receptionist needs an active published knowledge build to answer with business-specific details."
       });
     }
     nextSteps.push({
@@ -478,6 +477,7 @@ export default async function handler(req, res) {
       setup: {
         publishedBuildCount: publishedBuilds.length,
         latestBuildStatus: latestBuild?.status || null,
+        activeBuildStatus: activeBuild?.status || null,
         activeBuildId,
         latestBuildId,
         runtimeReady
