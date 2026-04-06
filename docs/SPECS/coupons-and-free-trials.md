@@ -111,16 +111,23 @@ Reason:
 - simplifies support and invoicing
 - avoids stacked-discount edge cases
 
+Replacement rule:
+- a new successful coupon redemption replaces the tenant's previous active coupon redemption
+- replacement should be atomic
+- the prior active redemption should be marked `revoked`
+
 ### 4. Coupons apply to EveryCall plans, not arbitrary Stripe products
 For v1, a coupon should be scoped by EveryCall plan code:
 - `starter`
 - `growth`
 - `pro`
-- optionally `custom` later if needed
 
 Reason:
 - cleaner alignment with EveryCall’s billing model
 - avoids tightly coupling admin coupon setup to Stripe object IDs
+
+Default rule:
+- coupons are not valid for `custom` plan tenants by default
 
 ### 5. Free trial does not require a card
 If a coupon grants `freeTrialDays > 0`:
@@ -261,9 +268,13 @@ When a user enters a coupon code, the system must validate:
 - coupon exists
 - coupon is `active`
 - coupon has not expired by `redeem_by`
-- tenant has no conflicting active coupon redemption
 - tenant’s selected or effective plan is in scope
 - coupon has not already been redeemed when `single_use_global = true`
+
+If the tenant already has an active coupon redemption:
+- a new successful redemption should replace it
+- the old redemption should be marked `revoked`
+- replacement must happen in the same transaction as the new redemption
 
 ### Concurrency
 Coupon redemption must happen in a transaction with row-level locking on the coupon row.
@@ -276,7 +287,8 @@ If valid:
 - create redemption row
 - mark coupon unavailable to everyone else
 - snapshot coupon terms
-- attach redemption to the tenant billing account
+- revoke any prior active redemption for the tenant
+- attach the new redemption to the tenant billing account
 - if `free_trial_days > 0`, set trial state immediately
 - if `free_trial_days = 0`, allow the coupon to affect checkout immediately
 
@@ -334,6 +346,7 @@ EveryCall redemption state determines whether the tenant currently has a valid m
 Recommended v1:
 - apply the monthly discount programmatically when creating paid billing
 - Stripe should not expose customer-entered promo-code UI
+- if a tenant already has an active Stripe subscription, coupon-driven monthly discounts should apply on the next billing period, not immediately
 
 Two implementation options:
 
@@ -355,6 +368,10 @@ When discount duration ends:
 - if Stripe has an attached discount that outlives the intended window, EveryCall must remove or replace it
 
 This requires background synchronization logic.
+
+Immediate-change rule:
+- do not retroactively change the current open billing period on already-active subscriptions
+- if support/admin needs an immediate financial correction, that should be handled directly in Stripe through refund or credit workflows
 
 ## Overage Discount
 
@@ -415,10 +432,13 @@ show:
 - active coupon redemption
 - trial end
 - discount end
+- admin ability to manually redeem a coupon on behalf of a tenant
+- admin ability to replace the tenant's active coupon with a new one
 - admin ability to revoke coupon benefits if needed
 
-V1 optional:
-- admin manual apply/revoke may be phase 2 rather than phase 1
+Rule:
+- manual admin redemption should override whatever coupon the tenant currently has
+- this should use the same atomic replacement logic and audit trail as self-service redemption
 
 ## Client UX
 
@@ -459,6 +479,8 @@ Add coupon CRUD endpoints, for example:
 - `POST /api/v1/admin/billing/coupons`
 - `PATCH /api/v1/admin/billing/coupons/[couponId]`
 - `POST /api/v1/admin/billing/coupons/[couponId]/disable`
+- `POST /api/v1/admin/tenants/[tenantKey]/billing/coupons/redeem`
+- `POST /api/v1/admin/tenants/[tenantKey]/billing/coupons/revoke`
 
 ### Client
 Add coupon redemption / preview endpoints, for example:
@@ -491,8 +513,8 @@ If the tenant is on a standard plan:
 
 ### Custom pricing compatibility
 If the tenant is on custom pricing:
-- coupon logic should still work
-- monthly discounts may be applied against the custom monthly amount
+- coupons should not be valid by default
+- support/admin should use other billing controls for custom tenants unless a later phase explicitly adds custom-plan coupon support
 
 ## Audit And Reporting
 
@@ -518,6 +540,7 @@ Billing reporting should show:
 ### Phase 1
 - coupon schema
 - admin coupon CRUD
+- admin tenant manual coupon redemption and replacement
 - client coupon entry on billing page
 - one-time redemption with locking
 - EveryCall-managed free trial without card
@@ -527,7 +550,6 @@ Billing reporting should show:
 ### Phase 2
 - monthly Stripe discount synchronization
 - auto-expiry cleanup jobs
-- admin manual apply/revoke
 - richer historical coupon reporting
 
 ### Phase 3
@@ -566,9 +588,9 @@ Billing reporting should show:
   - free trial days
   - discount duration days
 - discount duration starts when paid billing begins
+- coupons are not valid for `custom` plan tenants by default
+- a newer successful coupon redemption replaces the older active one
+- monthly discounts on already-active subscriptions apply next billing period, not immediately
 
 ## Open Questions
-- Should admins be able to manually redeem a coupon on behalf of a tenant in phase 1 or phase 2?
-- Should coupons ever be valid for `custom` plan tenants by default?
-- Should a tenant be allowed to replace one active coupon with another, or must support/admin revoke the first one first?
-- Should monthly discounts on already-active Stripe subscriptions be applied immediately or only on next billing period?
+- None for v1 at this time.
