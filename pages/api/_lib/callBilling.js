@@ -485,6 +485,73 @@ async function sumBillingPeriodAdjustments(pool, billingPeriodId) {
   };
 }
 
+export async function listBillingPeriods(pool, tenantKey, { limit = 12 } = {}) {
+  if (!tenantKey) return [];
+  await ensureCurrentBillingPeriod(pool, tenantKey);
+  const result = await pool.query(
+    `SELECT
+       p.billing_period_id,
+       p.status,
+       p.source,
+       p.billing_rule_version,
+       p.period_start,
+       p.period_end,
+       p.plan_code,
+       p.monthly_amount_cents,
+       p.included_call_count,
+       p.eligible_call_count,
+       p.included_call_count_used,
+       p.overage_call_count,
+       p.overage_amount_cents,
+       p.stripe_invoice_id,
+       p.stripe_invoice_item_id,
+       p.finalized_at,
+       p.invoiced_at,
+       COALESCE(adj.credit_amount_cents, 0)::int AS credit_amount_cents,
+       COALESCE(adj.debit_amount_cents, 0)::int AS debit_amount_cents
+     FROM billing_periods p
+     LEFT JOIN (
+       SELECT
+         billing_period_id,
+         COALESCE(SUM(CASE WHEN adjustment_type = 'credit' THEN amount_cents ELSE 0 END), 0)::int AS credit_amount_cents,
+         COALESCE(SUM(CASE WHEN adjustment_type = 'debit' THEN amount_cents ELSE 0 END), 0)::int AS debit_amount_cents
+       FROM billing_period_adjustments
+       GROUP BY billing_period_id
+     ) adj
+       ON adj.billing_period_id = p.billing_period_id
+     WHERE p.tenant_key = $1
+     ORDER BY p.period_start DESC, p.billing_period_id DESC
+     LIMIT $2`,
+    [tenantKey, Math.max(1, Number(limit || 12))]
+  );
+  return (result.rows || []).map((row) => {
+    const creditAmountCents = Number(row.credit_amount_cents || 0);
+    const debitAmountCents = Number(row.debit_amount_cents || 0);
+    return {
+      billingPeriodId: Number(row.billing_period_id || 0),
+      status: row.status || "open",
+      source: row.source || null,
+      billingRuleVersion: row.billing_rule_version || null,
+      periodStart: row.period_start,
+      periodEnd: row.period_end,
+      planCode: row.plan_code || null,
+      monthlyAmountCents: Number(row.monthly_amount_cents || 0),
+      includedCallCount: Number(row.included_call_count || 0),
+      eligibleCallCount: Number(row.eligible_call_count || 0),
+      includedCallCountUsed: Number(row.included_call_count_used || 0),
+      overageCallCount: Number(row.overage_call_count || 0),
+      overageAmountCents: Number(row.overage_amount_cents || 0),
+      creditAmountCents,
+      debitAmountCents,
+      netAdjustmentAmountCents: debitAmountCents - creditAmountCents,
+      stripeInvoiceId: row.stripe_invoice_id || null,
+      stripeInvoiceItemId: row.stripe_invoice_item_id || null,
+      finalizedAt: row.finalized_at || null,
+      invoicedAt: row.invoiced_at || null
+    };
+  });
+}
+
 export async function getBillingPeriodDetail(pool, billingPeriodId, { callLimit = 100 } = {}) {
   if (!Number.isFinite(Number(billingPeriodId)) || Number(billingPeriodId) <= 0) {
     return null;

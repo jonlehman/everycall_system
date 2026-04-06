@@ -33,9 +33,6 @@ export default function AccountGeneralPage() {
   });
   const [timezone, setTimezone] = useState('America/Los_Angeles');
   const [callerIdName, setCallerIdName] = useState('');
-  const [leadAlertSmsQuietHoursEnabled, setLeadAlertSmsQuietHoursEnabled] = useState(true);
-  const [leadAlertSmsQuietHoursStart, setLeadAlertSmsQuietHoursStart] = useState('21:00');
-  const [leadAlertSmsQuietHoursEnd, setLeadAlertSmsQuietHoursEnd] = useState('08:00');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState({ message: 'Loading account settings...', tone: 'warn' });
@@ -61,9 +58,6 @@ export default function AccountGeneralPage() {
         setTimezone(data.settings?.timezone || 'America/Los_Angeles');
         const hasStoredCallerIdName = Boolean(data.settings) && Object.prototype.hasOwnProperty.call(data.settings, 'caller_id_name');
         setCallerIdName(hasStoredCallerIdName ? (data.settings?.caller_id_name || '') : normalizeCallerIdName(nextTenant?.name || ''));
-        setLeadAlertSmsQuietHoursEnabled(data.settings?.lead_alert_sms_quiet_hours_enabled !== false);
-        setLeadAlertSmsQuietHoursStart(data.settings?.lead_alert_sms_quiet_hours_start || '21:00');
-        setLeadAlertSmsQuietHoursEnd(data.settings?.lead_alert_sms_quiet_hours_end || '08:00');
         setStatus({ message: 'Account settings loaded.', tone: 'ok' });
         setLoading(false);
       })
@@ -85,10 +79,7 @@ export default function AccountGeneralPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         timezone,
-        callerIdName,
-        leadAlertSmsQuietHoursEnabled,
-        leadAlertSmsQuietHoursStart,
-        leadAlertSmsQuietHoursEnd
+        callerIdName
       })
     });
     setSaving(false);
@@ -149,42 +140,6 @@ export default function AccountGeneralPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">SMS Quiet Hours</h2>
-            <div className="grid gap-3">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={leadAlertSmsQuietHoursEnabled}
-                  onChange={(event) => setLeadAlertSmsQuietHoursEnabled(event.target.checked)}
-                />
-                Pause team SMS alerts during quiet hours
-              </label>
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="grid gap-1 text-sm text-slate-700">
-                  <span>Quiet hours start</span>
-                  <input
-                    type="time"
-                    value={leadAlertSmsQuietHoursStart}
-                    onChange={(event) => setLeadAlertSmsQuietHoursStart(event.target.value)}
-                    disabled={!leadAlertSmsQuietHoursEnabled}
-                  />
-                </label>
-                <label className="grid gap-1 text-sm text-slate-700">
-                  <span>Quiet hours end</span>
-                  <input
-                    type="time"
-                    value={leadAlertSmsQuietHoursEnd}
-                    onChange={(event) => setLeadAlertSmsQuietHoursEnd(event.target.value)}
-                    disabled={!leadAlertSmsQuietHoursEnabled}
-                  />
-                </label>
-              </div>
-              <div className="text-sm text-slate-500">
-                SMS alerts use your account timezone. Email alerts are not delayed.
-              </div>
-            </div>
-          </div>
         </div>
 
         <GuidePanel title="Account Guide" eyebrow="How it works" icon="settings">
@@ -196,10 +151,6 @@ export default function AccountGeneralPage() {
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Business Timezone</div>
             <div className="mt-1 text-sm text-slate-600">Set the local timezone the system should use for account-level scheduling and display defaults.</div>
-          </div>
-          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="font-semibold text-slate-900">SMS Quiet Hours</div>
-            <div className="mt-1 text-sm text-slate-600">Use quiet hours to pause SMS call alerts overnight while keeping email alerts active.</div>
           </div>
         </GuidePanel>
       </div>

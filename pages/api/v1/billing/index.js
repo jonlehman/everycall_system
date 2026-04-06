@@ -11,7 +11,7 @@ import {
   resolveEffectiveCallPricing,
   syncTenantStripeSubscription
 } from "../../_lib/billing.js";
-import { syncCurrentBillingPeriod } from "../../_lib/callBilling.js";
+import { listBillingPeriods, syncCurrentBillingPeriod } from "../../_lib/callBilling.js";
 import { findCurrentSubscriptionForCustomer, findCurrentSubscriptionForTenantKey, retrieveSubscription } from "../../_lib/stripe.js";
 
 function getTenantKey(req) {
@@ -103,6 +103,16 @@ export default async function handler(req, res) {
       callBilling = null;
     }
     const callPricing = callBilling?.callPricing || resolveEffectiveCallPricing(row, billingConfig);
+    let billingPeriodHistory = [];
+    try {
+      billingPeriodHistory = await listBillingPeriods(pool, tenantKey, { limit: 12 });
+    } catch (historyError) {
+      console.error("billing_period_history_failed", {
+        tenantKey,
+        message: historyError?.message || "unknown"
+      });
+      billingPeriodHistory = [];
+    }
 
     return res.status(200).json({
       ok: true,
@@ -147,6 +157,12 @@ export default async function handler(req, res) {
         },
         callInvoiceEstimate: callBilling?.invoiceEstimate || null,
         callBillingPeriod: callBilling?.currentPeriod || null,
+        currentBillingPeriodId: Number(callBilling?.billingPeriodId || 0) || null,
+        billingPeriodHistory: billingPeriodHistory.map((period) => ({
+          ...period,
+          stripeInvoiceId: canViewStripeDetails ? period.stripeInvoiceId : null,
+          stripeInvoiceItemId: canViewStripeDetails ? period.stripeInvoiceItemId : null
+        })),
         override: buildPricingOverride(row),
         invoices
       },

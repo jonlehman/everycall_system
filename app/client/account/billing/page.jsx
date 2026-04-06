@@ -31,6 +31,34 @@ function formatDateTime(value) {
   return date.toLocaleString();
 }
 
+function formatPeriodRange(start, end) {
+  return `${formatDate(start)} to ${formatDate(end)}`;
+}
+
+function formatBillingPeriodStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return 'Unknown';
+  return normalized
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function BillingPeriodStatusBadge({ status }) {
+  const normalized = String(status || '').trim().toLowerCase();
+  const toneClass = normalized === 'invoiced'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+    : normalized === 'finalized'
+      ? 'border-blue-200 bg-blue-50 text-blue-800'
+      : 'border-amber-200 bg-amber-50 text-amber-800';
+  return (
+    <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${toneClass}`}>
+      {formatBillingPeriodStatus(status)}
+    </span>
+  );
+}
+
 function fetchJson(url, options) {
   return fetch(url, options).then(async (resp) => {
     const data = await resp.json().catch(() => null);
@@ -64,6 +92,9 @@ export default function AccountBillingPage() {
   const [viewer, setViewer] = useState({ canManage: false, userRole: null });
   const [loadState, setLoadState] = useState('loading');
   const [actionState, setActionState] = useState({ checkout: false, portal: false, reactivating: false });
+  const [selectedBillingPeriod, setSelectedBillingPeriod] = useState(null);
+  const [selectedBillingPeriodId, setSelectedBillingPeriodId] = useState(null);
+  const [selectedBillingPeriodLoading, setSelectedBillingPeriodLoading] = useState(false);
   const [status, setStatus] = useState({ tone: 'warn', message: 'Loading billing status...' });
 
   const loadBilling = async ({ keepStatus = false } = {}) => {
@@ -166,11 +197,27 @@ export default function AccountBillingPage() {
     }
   };
 
+  const loadBillingPeriodDetail = async (billingPeriodId) => {
+    if (!billingPeriodId) return;
+    setSelectedBillingPeriodId(billingPeriodId);
+    setSelectedBillingPeriodLoading(true);
+    try {
+      const data = await fetchJson(`/api/v1/billing/periods/${encodeURIComponent(billingPeriodId)}`);
+      setSelectedBillingPeriod(data?.billingPeriod || null);
+    } catch (error) {
+      setStatus({ tone: 'bad', message: error?.message || 'Could not load billing period details.' });
+      setSelectedBillingPeriod(null);
+    } finally {
+      setSelectedBillingPeriodLoading(false);
+    }
+  };
+
   const callUsage = billing?.callUsage || {};
   const callInvoiceEstimate = billing?.callInvoiceEstimate || {};
   const callPricing = billing?.callPricing || {};
   const callAdjustments = billing?.callAdjustments || {};
   const recentCalls = Array.isArray(callUsage.recentCalls) ? callUsage.recentCalls : [];
+  const billingPeriodHistory = Array.isArray(billing?.billingPeriodHistory) ? billing.billingPeriodHistory : [];
   const canReactivate = viewer.canManage && billing?.status === 'deactivated';
   const primaryAction = canReactivate
     ? {
@@ -195,6 +242,10 @@ export default function AccountBillingPage() {
     { label: 'Overage Charges', value: formatMoney(callInvoiceEstimate.overageAmountCents) },
     { label: 'Current Estimate', value: formatMoney(callInvoiceEstimate.totalEstimatedInvoiceCents) }
   ]), [callInvoiceEstimate, callPricing.callOverageRateCents, callUsage.eligibleCallCount]);
+  const selectedPeriodCallUsage = selectedBillingPeriod?.callUsage || {};
+  const selectedPeriodInvoiceEstimate = selectedBillingPeriod?.invoiceEstimate || {};
+  const selectedPeriodAdjustments = selectedBillingPeriod?.adjustments || {};
+  const selectedPeriodRecentCalls = Array.isArray(selectedPeriodCallUsage.recentCalls) ? selectedPeriodCallUsage.recentCalls : [];
 
   return (
     <SectionPage
@@ -334,6 +385,182 @@ export default function AccountBillingPage() {
               </div>
             )}
           </div>
+
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="mt-0 text-lg font-semibold">Billing History</h2>
+                <p className="m-0 mt-1 text-sm text-slate-500">Open a billing period to review its calls, overages, and adjustments.</p>
+              </div>
+            </div>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Period</th>
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Status</th>
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Calls</th>
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Overage</th>
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Est. Total</th>
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {billingPeriodHistory.length ? billingPeriodHistory.map((period) => {
+                    const estimatedTotal = Number(period.monthlyAmountCents || 0)
+                      + Number(period.overageAmountCents || 0)
+                      + Number(period.netAdjustmentAmountCents || 0);
+                    const isSelected = Number(selectedBillingPeriodId || 0) === Number(period.billingPeriodId || 0);
+                    const isCurrent = Number(period.billingPeriodId || 0) === Number(billing?.currentBillingPeriodId || 0);
+                    return (
+                      <tr key={period.billingPeriodId} className="border-b border-slate-100 align-top">
+                        <td className="px-2 py-3 text-sm text-slate-700">
+                          <div className="font-medium text-slate-900">{formatPeriodRange(period.periodStart, period.periodEnd)}</div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {isCurrent ? 'Current billing window' : (period.planCode || 'Plan')}
+                          </div>
+                        </td>
+                        <td className="px-2 py-3 text-sm text-slate-700">
+                          <BillingPeriodStatusBadge status={period.status} />
+                        </td>
+                        <td className="px-2 py-3 text-sm text-slate-700">
+                          <div>{Number(period.eligibleCallCount || 0)} eligible</div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {Number(period.includedCallCountUsed || 0)} included · {Number(period.overageCallCount || 0)} overage
+                          </div>
+                        </td>
+                        <td className="px-2 py-3 text-sm text-slate-700">{formatMoney(period.overageAmountCents || 0)}</td>
+                        <td className="px-2 py-3 text-sm font-medium text-slate-900">{formatMoney(estimatedTotal)}</td>
+                        <td className="px-2 py-3 text-right">
+                          <Button
+                            variant={isSelected ? 'default' : 'outline'}
+                            type="button"
+                            onClick={() => loadBillingPeriodDetail(period.billingPeriodId)}
+                            disabled={selectedBillingPeriodLoading && isSelected}
+                          >
+                            {selectedBillingPeriodLoading && isSelected ? 'Loading...' : 'Open'}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  }) : (
+                    <tr>
+                      <td colSpan={6} className="px-2 py-6 text-sm text-slate-500">No billing periods have been recorded yet.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {selectedBillingPeriod ? (
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="mt-0 text-lg font-semibold">Billing Period Detail</h2>
+                  <p className="m-0 mt-1 text-sm text-slate-500">{formatPeriodRange(selectedBillingPeriod.periodStart, selectedBillingPeriod.periodEnd)}</p>
+                </div>
+                <BillingPeriodStatusBadge status={selectedBillingPeriod.status} />
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs normal-case tracking-normal text-slate-500">Base Subscription</div>
+                  <div className="mt-1 text-xl font-semibold">{formatMoney(selectedPeriodInvoiceEstimate.baseAmountCents)}</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs normal-case tracking-normal text-slate-500">Eligible Calls</div>
+                  <div className="mt-1 text-xl font-semibold">{Number(selectedPeriodCallUsage.eligibleCallCount || 0)}</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs normal-case tracking-normal text-slate-500">Overage Charges</div>
+                  <div className="mt-1 text-xl font-semibold">{formatMoney(selectedPeriodInvoiceEstimate.overageAmountCents)}</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs normal-case tracking-normal text-slate-500">Adjustments</div>
+                  <div className="mt-1 text-xl font-semibold">{formatMoney(selectedPeriodAdjustments.netAdjustmentAmountCents || 0)}</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs normal-case tracking-normal text-slate-500">Estimated Total</div>
+                  <div className="mt-1 text-xl font-semibold">{formatMoney(selectedPeriodInvoiceEstimate.totalEstimatedInvoiceCents)}</div>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2 text-sm md:grid-cols-[220px_1fr]">
+                <div>Included calls</div><div>{Number(selectedBillingPeriod?.callPricing?.includedCallCount || 0)}</div>
+                <div>Included used</div><div>{Number(selectedPeriodCallUsage.includedCallCountUsed || 0)}</div>
+                <div>Excluded calls</div><div>{Number(selectedPeriodCallUsage.excludedCallCount || 0)}</div>
+                <div>Overage rate</div><div>{formatMoney(selectedBillingPeriod?.callPricing?.callOverageRateCents || 0)} / call</div>
+              </div>
+
+              <div className="mt-6">
+                <h3 className="m-0 text-base font-semibold text-slate-900">Calls In This Period</h3>
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full border-collapse text-left">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Time</th>
+                        <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Caller</th>
+                        <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Summary</th>
+                        <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Billing Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedPeriodRecentCalls.length ? selectedPeriodRecentCalls.map((call) => (
+                        <tr key={`${selectedBillingPeriod.billingPeriodId}-${call.call_sid}`} className="border-b border-slate-100 align-top">
+                          <td className="px-2 py-3 text-sm text-slate-600">{formatDateTime(call.created_at)}</td>
+                          <td className="px-2 py-3 text-sm text-slate-900">
+                            <div>{[call.caller_first_name, call.caller_last_name].filter(Boolean).join(' ') || 'Unknown caller'}</div>
+                            <div className="text-xs text-slate-500">{call.callback_number || '-'}</div>
+                          </td>
+                          <td className="px-2 py-3 text-sm text-slate-700">
+                            <div>{call.summary || 'No summary available yet.'}</div>
+                            <div className="mt-1 text-xs text-slate-500">{call.service_required || 'No service summary available.'}</div>
+                          </td>
+                          <td className="px-2 py-3 text-sm text-slate-700">
+                            <CallChargeBadge call={call} />
+                          </td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td colSpan={4} className="px-2 py-6 text-sm text-slate-500">No calls are recorded for this billing period.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {Array.isArray(selectedPeriodAdjustments.items) && selectedPeriodAdjustments.items.length ? (
+                <div className="mt-6">
+                  <h3 className="m-0 text-base font-semibold text-slate-900">Adjustments</h3>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full border-collapse text-left">
+                      <thead>
+                        <tr className="border-b border-slate-200">
+                          <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Created</th>
+                          <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Type</th>
+                          <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Description</th>
+                          <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedPeriodAdjustments.items.map((item) => (
+                          <tr key={item.billing_period_adjustment_id} className="border-b border-slate-100 align-top">
+                            <td className="px-2 py-3 text-sm text-slate-600">{formatDateTime(item.created_at)}</td>
+                            <td className="px-2 py-3 text-sm text-slate-700">{formatBillingPeriodStatus(item.adjustment_type)}</td>
+                            <td className="px-2 py-3 text-sm text-slate-700">{item.description || '-'}</td>
+                            <td className="px-2 py-3 text-sm font-medium text-slate-900">
+                              {String(item.adjustment_type || '').toLowerCase() === 'credit' ? '-' : ''}
+                              {formatMoney(item.amount_cents)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <GuidePanel title="Billing Guide" eyebrow="How pricing works" icon="payments">
