@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 const items = [
   { label: 'Overview', href: '/admin/overview', group: 'Operations' },
@@ -31,6 +32,29 @@ const items = [
 export default function AdminSidebar() {
   const pathname = usePathname();
   const groups = ['Operations', 'Tenants', 'Finance', 'Platform'];
+  const [expandedItems, setExpandedItems] = useState({});
+
+  useEffect(() => {
+    setExpandedItems((current) => {
+      const next = { ...current };
+      for (const item of items) {
+        if (!item.children) continue;
+        if (pathname === item.href || pathname.startsWith(`${item.href}/`)) {
+          next[item.href] = true;
+        } else if (!(item.href in next)) {
+          next[item.href] = false;
+        }
+      }
+      return next;
+    });
+  }, [pathname]);
+
+  const toggleExpanded = (href) => {
+    setExpandedItems((current) => ({
+      ...current,
+      [href]: !current[href]
+    }));
+  };
 
   return (
     <aside className="sidebar">
@@ -40,14 +64,37 @@ export default function AdminSidebar() {
           <div className="nav-label">{group}</div>
           {items.filter((item) => item.group === group).map((item) => (
             <div key={item.href}>
-              <Link
-                className={`nav-btn${pathname === item.href || pathname.startsWith(`${item.href}/`) ? ' active' : ''}`}
-                href={item.href}
-                style={{ display: 'block' }}
-              >
-                {item.label}
-              </Link>
-              {item.children && pathname.startsWith(`${item.href}/`) ? (
+              {item.children ? (
+                <div className={`nav-parent-row${pathname === item.href || pathname.startsWith(`${item.href}/`) ? ' active' : ''}`}>
+                  <Link
+                    className={`nav-btn${pathname === item.href || pathname.startsWith(`${item.href}/`) ? ' active' : ''}`}
+                    href={item.href}
+                    style={{ display: 'block' }}
+                  >
+                    {item.label}
+                  </Link>
+                  <button
+                    type="button"
+                    className="nav-toggle"
+                    aria-label={expandedItems[item.href] ? `Collapse ${item.label}` : `Expand ${item.label}`}
+                    aria-expanded={Boolean(expandedItems[item.href])}
+                    onClick={() => toggleExpanded(item.href)}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      {expandedItems[item.href] ? 'expand_more' : 'chevron_right'}
+                    </span>
+                  </button>
+                </div>
+              ) : (
+                <Link
+                  className={`nav-btn${pathname === item.href || pathname.startsWith(`${item.href}/`) ? ' active' : ''}`}
+                  href={item.href}
+                  style={{ display: 'block' }}
+                >
+                  {item.label}
+                </Link>
+              )}
+              {item.children && expandedItems[item.href] ? (
                 <div className="sub-menu">
                   {item.children.map((child) => (
                     <Link

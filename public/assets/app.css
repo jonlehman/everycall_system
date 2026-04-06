@@ -123,6 +123,41 @@ a { color: inherit; }
   transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, color .18s ease;
 }
 
+.nav-parent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.nav-parent-row .nav-btn {
+  margin: 4px 0;
+}
+
+.nav-toggle {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--nav-ink);
+  border-radius: 6px;
+  padding: 10px 8px;
+  margin: 4px 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color .18s ease, border-color .18s ease, color .18s ease;
+}
+
+.nav-toggle:hover {
+  background: rgba(217,227,246,.72);
+}
+
+.nav-parent-row.active .nav-toggle {
+  background: #ffffff;
+  color: var(--brand);
+  box-shadow: var(--shadow-soft);
+}
+
 .nav-btn:hover { background: rgba(217,227,246,.72); }
 
 .nav-btn.active {
