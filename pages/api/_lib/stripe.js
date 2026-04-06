@@ -170,6 +170,7 @@ export function buildRecurringPriceData({
 export async function createCheckoutSession({
   customerId,
   customerEmail,
+  priceId,
   unitAmount,
   productId,
   productName,
@@ -190,20 +191,25 @@ export async function createCheckoutSession({
     success_url: successUrl || getStripeSuccessUrl(),
     cancel_url: cancelUrl || getStripeCancelUrl(),
     line_items: [
-      {
-        quantity: 1,
-        price_data: buildRecurringPriceData({
-          unitAmount,
-          productId,
-          productName,
-          currency,
-          metadata: {
-            tenant_key: tenantKey,
-            plan_code: planCode,
-            ...metadata
+      priceId
+        ? {
+            quantity: 1,
+            price: priceId
           }
-        })
-      }
+        : {
+            quantity: 1,
+            price_data: buildRecurringPriceData({
+              unitAmount,
+              productId,
+              productName,
+              currency,
+              metadata: {
+                tenant_key: tenantKey,
+                plan_code: planCode,
+                ...metadata
+              }
+            })
+          }
     ],
     subscription_data: {
       ...(trialEnd ? { trial_end: Math.floor(new Date(trialEnd).getTime() / 1000) } : {}),
@@ -256,6 +262,7 @@ export async function reactivateSubscription(subscriptionId) {
 export async function updateSubscriptionPrice({
   subscriptionId,
   subscriptionItemId,
+  priceId,
   unitAmount,
   productId,
   productName,
@@ -265,16 +272,21 @@ export async function updateSubscriptionPrice({
   const stripe = getStripe();
   return stripe.subscriptions.update(subscriptionId, {
     items: [
-      {
-        id: subscriptionItemId,
-        price_data: buildRecurringPriceData({
-          unitAmount,
-          productId,
-          productName,
-          currency,
-          metadata
-        })
-      }
+      priceId
+        ? {
+            id: subscriptionItemId,
+            price: priceId
+          }
+        : {
+            id: subscriptionItemId,
+            price_data: buildRecurringPriceData({
+              unitAmount,
+              productId,
+              productName,
+              currency,
+              metadata
+            })
+          }
     ],
     proration_behavior: "none"
   });

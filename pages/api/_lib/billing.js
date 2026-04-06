@@ -4,27 +4,45 @@ export const DEFAULT_PLAN_CODE = "growth";
 export const DEFAULT_MONTHLY_AMOUNT_CENTS = Number(process.env.DEFAULT_PLAN_MONTHLY_AMOUNT_CENTS || "50000");
 export const DEFAULT_STRIPE_PRODUCT_ID = String(process.env.STRIPE_DEFAULT_PRODUCT_ID || "").trim() || null;
 export const DEFAULT_TRIAL_DAYS = Number(process.env.DEFAULT_TRIAL_DAYS || "30");
+
+function normalizeOptionalId(value) {
+  const text = String(value || "").trim();
+  return text || null;
+}
+
+function getDefaultPlanStripeCatalog(planCode) {
+  const normalizedCode = String(planCode || "").trim().toUpperCase();
+  return {
+    stripeProductId: normalizeOptionalId(process.env[`STRIPE_${normalizedCode}_PRODUCT_ID`])
+      || (normalizedCode === String(DEFAULT_PLAN_CODE).trim().toUpperCase() ? DEFAULT_STRIPE_PRODUCT_ID : null),
+    stripePriceId: normalizeOptionalId(process.env[`STRIPE_${normalizedCode}_PRICE_ID`])
+  };
+}
+
 export const DEFAULT_BILLING_PLANS = [
   {
     code: "starter",
     label: "Starter",
     monthlyAmountCents: 30000,
     leadRateCents: 1200,
-    includedCount: 0
+    includedCount: 0,
+    ...getDefaultPlanStripeCatalog("starter")
   },
   {
     code: "growth",
     label: "Growth",
     monthlyAmountCents: 50000,
     leadRateCents: 700,
-    includedCount: 0
+    includedCount: 0,
+    ...getDefaultPlanStripeCatalog("growth")
   },
   {
     code: "pro",
     label: "Pro",
     monthlyAmountCents: 90000,
     leadRateCents: 400,
-    includedCount: 0
+    includedCount: 0,
+    ...getDefaultPlanStripeCatalog("pro")
   }
 ];
 
@@ -65,6 +83,12 @@ export function normalizeBillingPlans(value) {
       configured.includedCount ?? configured.includedCallCount,
       fallbackPlan.includedCount
     );
+    const stripeProductId = normalizeOptionalId(
+      configured.stripeProductId ?? configured.stripe_product_id ?? fallbackPlan.stripeProductId
+    );
+    const stripePriceId = normalizeOptionalId(
+      configured.stripePriceId ?? configured.stripe_price_id ?? fallbackPlan.stripePriceId
+    );
     return {
       code: fallbackPlan.code,
       label: normalizePlanLabel(configured.label, fallbackPlan.label),
@@ -72,7 +96,9 @@ export function normalizeBillingPlans(value) {
       leadRateCents: normalizedLeadRate,
       includedCount: normalizedIncludedCount,
       callOverageRateCents: normalizedLeadRate,
-      includedCallCount: normalizedIncludedCount
+      includedCallCount: normalizedIncludedCount,
+      stripeProductId,
+      stripePriceId
     };
   });
 }
@@ -337,9 +363,10 @@ export async function ensureTenantBillingAccount(pool, tenantKey, values = {}) {
        call_overage_rate_cents,
        included_call_count,
        stripe_product_id,
+       stripe_price_id,
        updated_at
      )
-     VALUES ($1, $2, $3, $4, $3, $4, $5, NOW())
+     VALUES ($1, $2, $3, $4, $3, $4, $5, $6, NOW())
      ON CONFLICT (tenant_key)
      DO UPDATE SET
        monthly_amount_cents = COALESCE(tenant_billing_accounts.monthly_amount_cents, EXCLUDED.monthly_amount_cents),
@@ -348,13 +375,15 @@ export async function ensureTenantBillingAccount(pool, tenantKey, values = {}) {
        call_overage_rate_cents = COALESCE(tenant_billing_accounts.call_overage_rate_cents, EXCLUDED.call_overage_rate_cents),
        included_call_count = COALESCE(tenant_billing_accounts.included_call_count, EXCLUDED.included_call_count),
        stripe_product_id = COALESCE(tenant_billing_accounts.stripe_product_id, EXCLUDED.stripe_product_id),
+       stripe_price_id = COALESCE(tenant_billing_accounts.stripe_price_id, EXCLUDED.stripe_price_id),
        updated_at = NOW()`,
     [
       tenantKey,
       Number(values.monthly_amount_cents || plan.monthlyAmountCents || DEFAULT_MONTHLY_AMOUNT_CENTS),
       Number(values.lead_rate_cents || plan.leadRateCents || 0),
       Number(values.included_lead_count ?? plan.includedCount ?? 0),
-      values.stripe_product_id || DEFAULT_STRIPE_PRODUCT_ID
+      values.stripe_product_id || plan.stripeProductId || DEFAULT_STRIPE_PRODUCT_ID,
+      values.stripe_price_id || plan.stripePriceId || null
     ]
   );
   return getTenantBillingState(pool, tenantKey);

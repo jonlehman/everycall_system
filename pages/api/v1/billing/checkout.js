@@ -3,6 +3,7 @@ import { ensureTables, getPool } from "../../_lib/db.js";
 import {
   buildPlanDisplay,
   ensureTenantBillingAccount,
+  getBillingPlanByCode,
   getSystemBillingConfig,
   requireTenantOwner,
   resolveEffectiveMonthlyAmount,
@@ -91,14 +92,26 @@ export default async function handler(req, res) {
         tenant_name: row.name || ""
       }
     });
+    const planDisplay = buildPlanDisplay(row, billingConfig);
+    const selectedPlan = getBillingPlanByCode(billingConfig.plans, planDisplay.basePlanCode);
+    const standardStripePriceId = !planDisplay.isCustom ? (selectedPlan?.stripePriceId || null) : null;
+    const standardStripeProductId = !planDisplay.isCustom ? (selectedPlan?.stripeProductId || null) : null;
 
     await pool.query(
-      `INSERT INTO tenant_billing_accounts (tenant_key, stripe_customer_id, monthly_amount_cents, stripe_product_id, updated_at)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO tenant_billing_accounts (tenant_key, stripe_customer_id, monthly_amount_cents, stripe_product_id, stripe_price_id, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
        ON CONFLICT (tenant_key)
        DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id,
+                     stripe_product_id = COALESCE(tenant_billing_accounts.stripe_product_id, EXCLUDED.stripe_product_id),
+                     stripe_price_id = COALESCE(tenant_billing_accounts.stripe_price_id, EXCLUDED.stripe_price_id),
                      updated_at = NOW()`,
-      [tenantKey, customer.id, Number(row.monthly_amount_cents || resolveEffectiveMonthlyAmount(row)), row.stripe_product_id || null]
+      [
+        tenantKey,
+        customer.id,
+        Number(row.monthly_amount_cents || resolveEffectiveMonthlyAmount(row)),
+        standardStripeProductId || row.stripe_product_id || null,
+        standardStripePriceId || row.stripe_price_id || null
+      ]
     );
 
     const currentCustomerSubscription = await findCurrentSubscriptionForCustomer(customer.id).catch(() => null);
@@ -124,12 +137,13 @@ export default async function handler(req, res) {
     const sessionData = await createCheckoutSession({
       customerId: customer.id,
       customerEmail: customer.email || owner.email || row.owner_email || undefined,
+      priceId: standardStripePriceId,
       unitAmount: resolveEffectiveMonthlyAmount(row),
-      productId: row.stripe_product_id || null,
+      productId: standardStripeProductId || row.stripe_product_id || null,
       productName: `${row.name || "EveryCall"} Subscription`,
       trialEnd,
       tenantKey,
-      planCode: buildPlanDisplay(row, billingConfig).code,
+      planCode: planDisplay.code,
       metadata: {
         tenant_key: tenantKey,
         actor_user_id: String(session.user_id || "")

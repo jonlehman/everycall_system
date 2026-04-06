@@ -39,7 +39,9 @@ function buildPlanDrafts(plans) {
     label: String(plan?.label || '').trim(),
     monthlyAmount: formatMoneyInput(plan?.monthlyAmountCents),
     includedCalls: String(Number(plan?.includedCallCount ?? plan?.includedCount ?? 0)),
-    callOverageRate: formatMoneyInput(plan?.callOverageRateCents ?? plan?.leadRateCents)
+    callOverageRate: formatMoneyInput(plan?.callOverageRateCents ?? plan?.leadRateCents),
+    stripeProductId: String(plan?.stripeProductId || plan?.stripe_product_id || '').trim(),
+    stripePriceId: String(plan?.stripePriceId || plan?.stripe_price_id || '').trim()
   }));
 }
 
@@ -188,7 +190,9 @@ export default function AdminSystemPage() {
         label: plan.label.trim(),
         monthlyAmountCents,
         includedCallCount,
-        callOverageRateCents
+        callOverageRateCents,
+        stripeProductId: String(plan.stripeProductId || '').trim(),
+        stripePriceId: String(plan.stripePriceId || '').trim()
       });
     }
     setConfigStatus({ message: 'Saving system config...', tone: 'warn' });
@@ -337,6 +341,24 @@ export default function AdminSystemPage() {
                         onChange={(event) => updateBillingPlanField(index, 'callOverageRate', event.target.value)}
                       />
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700">Stripe Product ID</label>
+                    <input
+                      className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={plan.stripeProductId}
+                      onChange={(event) => updateBillingPlanField(index, 'stripeProductId', event.target.value)}
+                      placeholder="prod_..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700">Stripe Price ID</label>
+                    <input
+                      className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={plan.stripePriceId}
+                      onChange={(event) => updateBillingPlanField(index, 'stripePriceId', event.target.value)}
+                      placeholder="price_..."
+                    />
                   </div>
                 </div>
               </div>

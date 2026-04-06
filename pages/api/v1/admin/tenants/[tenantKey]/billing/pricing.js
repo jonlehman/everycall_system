@@ -132,11 +132,14 @@ export default async function handler(req, res) {
       if (!subscriptionItem?.id) {
         return res.status(500).json({ error: "stripe_subscription_item_missing" });
       }
+      const standardStripePriceId = !nextIsCustom ? (selectedPlan.stripePriceId || null) : null;
+      const standardStripeProductId = !nextIsCustom ? (selectedPlan.stripeProductId || null) : null;
       const updatedSubscription = await updateSubscriptionPrice({
         subscriptionId: activeSubscription.id,
         subscriptionItemId: subscriptionItem.id,
+        priceId: standardStripePriceId,
         unitAmount: monthlyAmountCents,
-        productId: row.stripe_product_id || subscriptionItem.price?.product || null,
+        productId: standardStripeProductId || row.stripe_product_id || subscriptionItem.price?.product || null,
         productName: `${row.name || "EveryCall"} Subscription`,
         metadata: {
           tenant_key: tenantKey,
@@ -163,6 +166,8 @@ export default async function handler(req, res) {
          included_lead_count,
          call_overage_rate_cents,
          included_call_count,
+         stripe_product_id,
+         stripe_price_id,
          monthly_amount_override_cents,
          lead_rate_override_cents,
          call_overage_rate_override_cents,
@@ -170,7 +175,7 @@ export default async function handler(req, res) {
          price_override_cycles_remaining,
          updated_at
        )
-       VALUES ($1, $2, $3, $4, $3, $4, $5, $6, $6, $7, NULL, NOW())
+       VALUES ($1, $2, $3, $4, $3, $4, $5, $6, $7, $8, $8, $9, NULL, NOW())
        ON CONFLICT (tenant_key)
        DO UPDATE SET
          monthly_amount_cents = EXCLUDED.monthly_amount_cents,
@@ -178,6 +183,8 @@ export default async function handler(req, res) {
          included_lead_count = EXCLUDED.included_lead_count,
          call_overage_rate_cents = EXCLUDED.call_overage_rate_cents,
          included_call_count = EXCLUDED.included_call_count,
+         stripe_product_id = EXCLUDED.stripe_product_id,
+         stripe_price_id = EXCLUDED.stripe_price_id,
          monthly_amount_override_cents = EXCLUDED.monthly_amount_override_cents,
          lead_rate_override_cents = EXCLUDED.lead_rate_override_cents,
          call_overage_rate_override_cents = EXCLUDED.call_overage_rate_override_cents,
@@ -189,6 +196,8 @@ export default async function handler(req, res) {
         selectedPlan.monthlyAmountCents,
         selectedPlanCallOverageRateCents,
         selectedPlanIncludedCallCount,
+        selectedPlan.stripeProductId || null,
+        selectedPlan.stripePriceId || null,
         monthlyAmountOverrideCents,
         leadRateOverrideCents,
         nextIsCustom ? "custom_pricing" : null
