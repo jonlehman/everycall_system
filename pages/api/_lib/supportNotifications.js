@@ -15,6 +15,10 @@ function listEmails(value) {
     .filter(Boolean);
 }
 
+function getCalendarIntegrationRecipient() {
+  return "support@everycall.io";
+}
+
 async function getSupportRecipients(pool) {
   const explicit = listEmails(process.env.SUPPORT_INBOX_EMAILS || process.env.SUPPORT_EMAILS);
   if (explicit.length) {
@@ -100,5 +104,40 @@ export async function notifyTenantOfAdminReply(pool, {
     subject: `EveryCall support replied: ${normalizeText(row?.subject) || "Support conversation"}`,
     text,
     category: "Support Reply"
+  });
+}
+
+export async function notifySupportOfCalendarIntegrationRequest({
+  tenantKey,
+  conversationId,
+  requesterName,
+  requesterEmail,
+  calendarSystem,
+  workflow,
+  teamSetup,
+  notes
+}) {
+  const appBaseUrl = getAppBaseUrl();
+  const text = [
+    `A tenant requested calendar integration help in EveryCall.`,
+    ``,
+    `Tenant: ${normalizeText(tenantKey) || "-"}`,
+    `Requested system: ${normalizeText(calendarSystem) || "-"}`,
+    `Requested workflow: ${normalizeText(workflow) || "-"}`,
+    `Who should be booked: ${normalizeText(teamSetup) || "-"}`,
+    `Requested by: ${normalizeText(requesterName) || normalizeText(requesterEmail) || "Tenant user"}`,
+    ``,
+    `Notes:`,
+    normalizeText(notes) || "-",
+    ``,
+    `Open admin support: ${appBaseUrl}/admin/support`,
+    `Conversation ID: ${conversationId}`
+  ].join("\n");
+
+  await sendTransactionalEmail({
+    to: getCalendarIntegrationRecipient(),
+    subject: `EveryCall calendar integration request: ${normalizeText(tenantKey) || "tenant"}`,
+    text,
+    category: "Calendar Integration Request"
   });
 }

@@ -75,6 +75,25 @@ const FIELD_LABEL_CLASS = 'grid gap-1 text-sm normal-case tracking-normal';
 const FIELD_TITLE_CLASS = 'font-medium text-slate-900 normal-case tracking-normal';
 const TOGGLE_LABEL_CLASS = 'flex items-center gap-2 text-sm text-slate-700 normal-case tracking-normal';
 const SECTION_TITLE_CLASS = 'text-sm font-semibold text-slate-900 normal-case tracking-normal';
+const CALENDAR_SYSTEM_OPTIONS = [
+  'Google Calendar',
+  'Microsoft 365',
+  'Calendly',
+  'ServiceTitan',
+  'Jobber',
+  'Other'
+];
+const CALENDAR_WORKFLOW_OPTIONS = [
+  'Collect a preferred date and time only',
+  'Offer available time windows',
+  'Book appointments live during the call',
+  'Handle reschedules or cancellations too'
+];
+const CALENDAR_TEAM_OPTIONS = [
+  'One person or one calendar',
+  'Multiple team members or calendars',
+  'Not sure yet'
+];
 
 function fetchJson(url, options) {
   return fetch(url, options).then(async (resp) => {
@@ -138,6 +157,14 @@ export default function AccountIntegrationsPage() {
   const [connectorDraft, setConnectorDraft] = useState(buildConnectorDraft(CONNECTOR_TYPES.zapierHook, null));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [requestingCalendar, setRequestingCalendar] = useState(false);
+  const [calendarRequestOpen, setCalendarRequestOpen] = useState(false);
+  const [calendarRequestForm, setCalendarRequestForm] = useState({
+    calendarSystem: CALENDAR_SYSTEM_OPTIONS[0],
+    workflow: CALENDAR_WORKFLOW_OPTIONS[0],
+    teamSetup: CALENDAR_TEAM_OPTIONS[0],
+    notes: ''
+  });
   const [status, setStatus] = useState({ tone: 'warn', message: 'Loading integrations...' });
 
   const selectedConnectorDefinition = CONNECTOR_DEFINITIONS.find((item) => item.type === selectedConnectorType) || CONNECTOR_DEFINITIONS[0];
@@ -173,6 +200,10 @@ export default function AccountIntegrationsPage() {
 
   const updateConnectorField = (key, value) => {
     setConnectorDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateCalendarRequestField = (key, value) => {
+    setCalendarRequestForm((current) => ({ ...current, [key]: value }));
   };
 
   const toggleConnectorTypeFilter = (type) => {
@@ -237,14 +268,44 @@ export default function AccountIntegrationsPage() {
     }
   };
 
+  const submitCalendarRequest = async () => {
+    setRequestingCalendar(true);
+    setStatus({ tone: 'warn', message: 'Sending calendar integration request...' });
+    try {
+      const data = await fetchJson('/api/v1/integrations/calendar-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(calendarRequestForm)
+      });
+      setCalendarRequestOpen(false);
+      setCalendarRequestForm({
+        calendarSystem: CALENDAR_SYSTEM_OPTIONS[0],
+        workflow: CALENDAR_WORKFLOW_OPTIONS[0],
+        teamSetup: CALENDAR_TEAM_OPTIONS[0],
+        notes: ''
+      });
+      setStatus({
+        tone: 'ok',
+        message: data?.created
+          ? 'Calendar integration request sent. Support will review it and finish the setup for you.'
+          : 'Calendar integration request updated. Support will review the new details and finish the setup for you.'
+      });
+    } catch (error) {
+      setStatus({ tone: 'bad', message: error?.message || 'Calendar integration request failed.' });
+    } finally {
+      setRequestingCalendar(false);
+    }
+  };
+
   return (
-    <SectionPage
-      tabs={accountNavItems}
-      title="Integrations"
-      subtitle="Connect EveryCall to the systems that should receive your completed calls."
-      status={status}
-    >
-      <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,.75fr)]">
+    <>
+      <SectionPage
+        tabs={accountNavItems}
+        title="Integrations"
+        subtitle="Connect EveryCall to the systems that should receive your completed calls."
+        status={status}
+      >
+        <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,.75fr)]">
         <div className="grid min-w-0 gap-3">
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -254,8 +315,13 @@ export default function AccountIntegrationsPage() {
                   Every completed call is delivered with a classification so your downstream tools can decide what to do with it.
                 </div>
               </div>
-              <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
-                {connectorReview.connections.length} configured
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" onClick={() => setCalendarRequestOpen(true)}>
+                  Request Calendar Integration
+                </Button>
+                <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                  {connectorReview.connections.length} configured
+                </div>
               </div>
             </div>
 
@@ -587,8 +653,109 @@ export default function AccountIntegrationsPage() {
             <div className="font-semibold text-slate-900">Support review</div>
             <div className="mt-1 text-sm text-slate-600">Each integration save creates or updates a support request so setup can be verified and completed for you.</div>
           </div>
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">Calendar booking</div>
+            <div className="mt-1 text-sm text-slate-600">If you want the receptionist tied to a calendar system, use Request Calendar Integration and Support will scope the right setup with you.</div>
+          </div>
         </GuidePanel>
       </div>
-    </SectionPage>
+      </SectionPage>
+
+      {calendarRequestOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="m-0 text-xl font-semibold text-slate-900">Request Calendar Integration</h2>
+                <div className="mt-1 text-sm text-slate-500">
+                  Answer a few questions and Support will finish the setup for you.
+                </div>
+              </div>
+              <button
+                type="button"
+                className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                onClick={() => !requestingCalendar && setCalendarRequestOpen(false)}
+                disabled={requestingCalendar}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <label className={FIELD_LABEL_CLASS}>
+                <span className={FIELD_TITLE_CLASS}>Which system do you want connected?</span>
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  value={calendarRequestForm.calendarSystem}
+                  onChange={(event) => updateCalendarRequestField('calendarSystem', event.target.value)}
+                  disabled={requestingCalendar}
+                >
+                  {CALENDAR_SYSTEM_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className={FIELD_LABEL_CLASS}>
+                <span className={FIELD_TITLE_CLASS}>What should the receptionist do?</span>
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  value={calendarRequestForm.workflow}
+                  onChange={(event) => updateCalendarRequestField('workflow', event.target.value)}
+                  disabled={requestingCalendar}
+                >
+                  {CALENDAR_WORKFLOW_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className={FIELD_LABEL_CLASS}>
+                <span className={FIELD_TITLE_CLASS}>Who should be booked?</span>
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  value={calendarRequestForm.teamSetup}
+                  onChange={(event) => updateCalendarRequestField('teamSetup', event.target.value)}
+                  disabled={requestingCalendar}
+                >
+                  {CALENDAR_TEAM_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className={FIELD_LABEL_CLASS}>
+                <span className={FIELD_TITLE_CLASS}>Anything Support should know?</span>
+                <textarea
+                  className="min-h-28 rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  value={calendarRequestForm.notes}
+                  onChange={(event) => updateCalendarRequestField('notes', event.target.value)}
+                  placeholder="Anything about your scheduling flow, tools, team setup, or special requirements."
+                  disabled={requestingCalendar}
+                />
+              </label>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-slate-500">
+                This sends your request to Support and emails the full details to support@everycall.io.
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setCalendarRequestOpen(false)} disabled={requestingCalendar}>
+                  Cancel
+                </Button>
+                <Button onClick={submitCalendarRequest} disabled={requestingCalendar}>
+                  {requestingCalendar ? 'Sending...' : 'Send Request'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
