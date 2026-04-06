@@ -396,11 +396,11 @@ async function loadLeadNotificationContext(pool, tenantKey, callSid) {
   return {
     tenantName: normalizeText(tenantRes.rows[0]?.name) || tenantKey,
     settings: {
-      ...(settingsRes.rows[0] || { timezone: "America/Los_Angeles" }),
-      lead_alerts_enabled: true,
-      lead_alert_sms_enabled: true,
-      lead_alert_email_enabled: true,
-      lead_alert_email_include_transcript: true
+      timezone: normalizeText(settingsRes.rows[0]?.timezone) || "America/Los_Angeles",
+      lead_alerts_enabled: settingsRes.rows[0]?.lead_alerts_enabled ?? true,
+      lead_alert_sms_enabled: settingsRes.rows[0]?.lead_alert_sms_enabled ?? true,
+      lead_alert_email_enabled: settingsRes.rows[0]?.lead_alert_email_enabled ?? true,
+      lead_alert_email_include_transcript: settingsRes.rows[0]?.lead_alert_email_include_transcript ?? true
     },
     callRow: callRes.rows[0] || null,
     recipients: recipientsRes.rows || []
@@ -418,7 +418,8 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
     context.callRow.lead_outcome_type,
     context.callRow.lead_is_valid
   );
-  const smsRecipients = settings.lead_alert_sms_enabled
+  const alertsEnabled = settings.lead_alerts_enabled !== false;
+  const smsRecipients = alertsEnabled && settings.lead_alert_sms_enabled
     ? context.recipients.filter((row) => (
       row.lead_alert_sms_enabled
       && normalizeText(row.phone_number)
@@ -426,7 +427,7 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
       && getEffectiveRecipientCategories(row.lead_alert_sms_categories, row.lead_alert_sms_enabled).includes(normalizedCallCategory)
     ))
     : [];
-  const emailRecipients = settings.lead_alert_email_enabled
+  const emailRecipients = alertsEnabled && settings.lead_alert_email_enabled
     ? context.recipients.filter((row) => (
       row.lead_alert_email_enabled
       && normalizeText(row.email)

@@ -137,7 +137,7 @@ export default async function handler(req, res) {
         status: "failed",
         errorMessage: error?.message || "integration_test_failed"
       });
-      return res.status(502).json({
+      return res.status(Number(error?.statusCode || 502)).json({
         error: "integration_test_failed",
         message: error?.message || "Integration test failed.",
         responseStatus: error?.responseStatus || null,

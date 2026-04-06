@@ -1,7 +1,6 @@
 import { requireSession, resolveTenantKey } from "../../../_lib/auth.js";
 import { ensureTables, getPool } from "../../../_lib/db.js";
 import { ensureTenantBillingAccount, requireTenantBillingAccess } from "../../../_lib/billing.js";
-import { enqueueMissingCallTranscriptAnalyses } from "../../../_lib/callTranscriptAnalysis.js";
 
 const PAGE_SIZE = 25;
 
@@ -150,16 +149,6 @@ export default async function handler(req, res) {
     const billingState = await ensureTenantBillingAccount(pool, tenantKey);
     if (!billingState) {
       return res.status(404).json({ error: "tenant_not_found" });
-    }
-
-    try {
-      await enqueueMissingCallTranscriptAnalyses(pool, {
-        tenantKey,
-        days: 30,
-        limit: 50
-      });
-    } catch {
-      // Best effort only.
     }
 
     const kind = normalizeKind(req.query?.kind);

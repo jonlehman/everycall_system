@@ -659,6 +659,22 @@ export async function requireTenantBillingAccess(res, pool, session, tenantKey, 
     return { allowed: true, reason: null };
   }
 
+  const activeUser = await requireActiveTenantUser(session);
+  if (!activeUser) {
+    res.status(403).json({
+      error: "forbidden",
+      message: "An active tenant user session is required."
+    });
+    return null;
+  }
+  if (activeUser.tenant_key && tenantKey && activeUser.tenant_key !== tenantKey) {
+    res.status(403).json({
+      error: "forbidden",
+      message: "That tenant does not match the active session."
+    });
+    return null;
+  }
+
   const state = await getTenantBillingState(pool, tenantKey);
   if (!state) {
     res.status(404).json({ error: "tenant_not_found" });

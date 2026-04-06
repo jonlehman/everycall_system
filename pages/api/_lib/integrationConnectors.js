@@ -1,5 +1,6 @@
 import { normalizePhoneNumber } from "./phone.js";
 import { encryptIntegrationCredentials } from "./integrationSecrets.js";
+import { fetchSafePublicEndpointResponse } from "./safePublicEndpoint.js";
 import {
   buildCallCompletedEvent,
   buildConnectionTestPayload,
@@ -79,17 +80,23 @@ async function readResponse(response) {
   };
 }
 
-async function requestJson(url, options = {}) {
-  const response = await fetch(url, options);
-  const parsed = await readResponse(response);
+async function requestJson(url, options = {}, requestOptions = {}) {
+  const useSafePublicEndpoint = requestOptions.safePublicEndpoint === true;
+  const responseWrapper = useSafePublicEndpoint
+    ? await fetchSafePublicEndpointResponse(url, options)
+    : { response: await fetch(url, options), finalUrl: url };
+  const parsed = await readResponse(responseWrapper.response);
   if (!parsed.ok) {
     throw createConnectorError(`http_${parsed.status}`, {
-      requestUrl: url,
+      requestUrl: responseWrapper.finalUrl || url,
       responseStatus: parsed.status,
       responseBodyExcerpt: parsed.text || stringifyResponseBody(parsed.json)
     });
   }
-  return parsed;
+  return {
+    ...parsed,
+    finalUrl: responseWrapper.finalUrl || url
+  };
 }
 
 function formatClassificationLabel(type) {
@@ -150,9 +157,9 @@ async function sendWebhookLikeConnection({ connection, payload, attemptNumber, s
       method: "POST",
       headers: request.headers,
       body: request.body
-    });
+    }, { safePublicEndpoint: true });
     return {
-      requestUrl: request.endpointUrl,
+      requestUrl: response.finalUrl || request.endpointUrl,
       responseStatus: response.status,
       responseBody: response.text,
       responseBodyExcerpt: response.text
@@ -165,9 +172,9 @@ async function sendWebhookLikeConnection({ connection, payload, attemptNumber, s
     method: "POST",
     headers,
     body
-  });
+  }, { safePublicEndpoint: true });
   return {
-    requestUrl: endpointUrl,
+    requestUrl: response.finalUrl || endpointUrl,
     responseStatus: response.status,
     responseBody: response.text,
     responseBodyExcerpt: response.text

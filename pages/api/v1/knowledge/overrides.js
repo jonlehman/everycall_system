@@ -1,6 +1,6 @@
 import { getPool } from "../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
-import { requireTenantBillingAccess } from "../../_lib/billing.js";
+import { requireTenantBillingAccess, requireTenantRoles } from "../../_lib/billing.js";
 import { listKnowledgeOverrides, saveKnowledgeOverride } from "../../_lib/knowledgeReceptionistConfig.js";
 
 function fail(res, status, error, message) {
@@ -26,6 +26,10 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "POST") {
+      const manager = await requireTenantRoles(res, session, ["owner", "admin"], {
+        message: "Only account admins and owners can update knowledge overrides."
+      });
+      if (!manager) return;
       const body = typeof req.body === "object" && req.body ? req.body : {};
       const override = await saveKnowledgeOverride(pool, tenantKey, body.override || body, session);
       return res.status(200).json({ ok: true, override });

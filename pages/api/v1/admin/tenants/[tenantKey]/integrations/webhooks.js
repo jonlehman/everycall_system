@@ -1,6 +1,7 @@
 import { ensureTables, getPool } from "../../../../../_lib/db.js";
 import { getAdminActor, requireSession } from "../../../../../_lib/auth.js";
 import { encryptIntegrationSecret } from "../../../../../_lib/integrationSecrets.js";
+import { validateSafePublicEndpointUrl } from "../../../../../_lib/safePublicEndpoint.js";
 import {
   CANONICAL_CLASSIFICATION_TYPES,
   createSigningSecret,
@@ -43,25 +44,6 @@ function buildConfigFromBody(body) {
     includeDuplicates: payload.includeDuplicates !== false,
     includeTranscript: payload.includeTranscript === true
   });
-}
-
-function validateEndpointUrl(value) {
-  const text = normalizeText(value);
-  if (!text) {
-    throw Object.assign(new Error("Webhook endpoint URL is required."), { statusCode: 400 });
-  }
-  let url;
-  try {
-    url = new URL(text);
-  } catch {
-    throw Object.assign(new Error("Webhook endpoint URL is invalid."), { statusCode: 400 });
-  }
-  const isHttps = url.protocol === "https:";
-  const isLocalHttp = process.env.NODE_ENV !== "production" && url.protocol === "http:";
-  if (!isHttps && !isLocalHttp) {
-    throw Object.assign(new Error("Webhook endpoint must use HTTPS."), { statusCode: 400 });
-  }
-  return url.toString();
 }
 
 async function loadConnectionsAndDeliveries(pool, tenantKey) {
@@ -140,7 +122,7 @@ export default async function handler(req, res) {
     const body = asObject(req.body);
     const connectionId = Number(body.connectionId || 0) || null;
     const name = normalizeText(body.name) || "Outbound Webhook";
-    const endpointUrl = validateEndpointUrl(body.endpointUrl);
+    const endpointUrl = await validateSafePublicEndpointUrl(body.endpointUrl);
     const status = normalizeText(body.status) === "disabled" || body.enabled === false ? "disabled" : "enabled";
     const config = buildConfigFromBody(body);
     const providedSecret = normalizeText(body.signingSecret);

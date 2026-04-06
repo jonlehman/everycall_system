@@ -1,6 +1,10 @@
 import { requireSession, resolveTenantKey } from "../../../../_lib/auth.js";
 import { ensureTables, getPool } from "../../../../_lib/db.js";
-import { ensureTenantBillingAccount, requireTenantBillingAccess } from "../../../../_lib/billing.js";
+import {
+  ensureTenantBillingAccount,
+  requireTenantBillingAccess,
+  requireTenantRoles
+} from "../../../../_lib/billing.js";
 import {
   enqueueMissingCallTranscriptAnalyses,
   reviveDeadLetterCallTranscriptAnalyses
@@ -24,6 +28,10 @@ export default async function handler(req, res) {
     const tenantKey = resolveTenantKey(session, String(req.query?.tenantKey || "default"));
     const access = await requireTenantBillingAccess(res, pool, session, tenantKey);
     if (!access) return;
+    const manager = await requireTenantRoles(res, session, ["owner", "admin"], {
+      message: "Only account admins and owners can manage transcript analysis."
+    });
+    if (!manager) return;
 
     const billingState = await ensureTenantBillingAccount(pool, tenantKey);
     if (!billingState) {

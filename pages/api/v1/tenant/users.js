@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
+import { deleteSessionsForPrincipal, requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { requireTenantBillingAccess, requireTenantRoles } from "../../_lib/billing.js";
 import { sendTelnyxSms } from "../../_lib/telnyx.js";
 import { getSharedSmsNumber } from "../../_lib/alerts.js";
@@ -115,6 +115,14 @@ export default async function handler(req, res) {
     const requireTeamManager = async () => requireTenantRoles(res, session, ["owner", "admin"], {
       message: "Only account admins and owners can manage team users."
     });
+    const endTenantUserSessions = async (userId) => {
+      if (!userId) return;
+      await deleteSessionsForPrincipal({
+        userId,
+        role: "tenant",
+        tenantKey
+      });
+    };
     const audit = async (actorUser, action, details) => writeAuditLog(pool, {
       tenantKey,
       actor: buildAuditActor({ session, tenantUser: actorUser }),
@@ -149,11 +157,25 @@ export default async function handler(req, res) {
         if (!ALLOWED_STATUSES.has(status)) {
           return fail(400, "invalid_status", "Invalid user status.");
         }
+        const existingResult = await pool.query(
+          `SELECT id, status
+           FROM tenant_users
+           WHERE tenant_key = $1 AND id = $2
+           LIMIT 1`,
+          [tenantKey, id]
+        );
+        if (!existingResult.rowCount) {
+          return fail(404, "not_found", "User not found.");
+        }
+        const existing = existingResult.rows[0];
         await pool.query(
           `UPDATE tenant_users SET status = $2, updated_at = NOW()
            WHERE tenant_key = $1 AND id = $3`,
           [tenantKey, status, id]
         );
+        if (status !== "active" && existing.status === "active") {
+          await endTenantUserSessions(id);
+        }
         await audit(manager, "tenant.team_user.status_updated", {
           user_id: id,
           status
@@ -240,7 +262,7 @@ export default async function handler(req, res) {
         }
 
         const existingResult = await pool.query(
-          `SELECT id, email, phone_number
+          `SELECT id, email, phone_number, status
            FROM tenant_users
            WHERE tenant_key = $1 AND id = $2
            LIMIT 1`,
@@ -293,6 +315,9 @@ export default async function handler(req, res) {
             phoneChanged
           ]
         );
+        if (status !== "active" && existing.status === "active") {
+          await endTenantUserSessions(id);
+        }
         await audit(manager, "tenant.team_user.updated", {
           user_id: id,
           role,
@@ -480,6 +505,7 @@ export default async function handler(req, res) {
       if (!id) {
         return fail(400, "missing_fields", "User id is required.");
       }
+      await endTenantUserSessions(id);
       await pool.query(
         `DELETE FROM tenant_users WHERE tenant_key = $1 AND id = $2`,
         [tenantKey, id]

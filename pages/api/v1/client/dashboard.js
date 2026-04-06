@@ -4,18 +4,15 @@ import {
   buildPlanDisplay,
   ensureTenantBillingAccount,
   getSystemBillingConfig,
+  requireActiveTenantUser,
   requireTenantBillingAccess,
   resolveEffectiveCallPricing,
-  resolveEffectiveLeadPricing
+  tenantUserHasAnyRole
 } from "../../_lib/billing.js";
 import { syncCurrentBillingPeriod } from "../../_lib/callBilling.js";
 import { listKnowledgeReceptionistBuilds } from "../../_lib/knowledgeReceptionistBuilds.js";
 import { loadTenantBusinessHours } from "../../_lib/tenantBusinessHours.js";
-import {
-  CALL_TRANSCRIPT_ANALYSIS_VERSION,
-  enqueueMissingCallTranscriptAnalyses
-} from "../../_lib/callTranscriptAnalysis.js";
-import { computeLeadInvoiceEstimate, resolveBillingWindow } from "../../../../lib/leadBilling.js";
+import { CALL_TRANSCRIPT_ANALYSIS_VERSION } from "../../_lib/callTranscriptAnalysis.js";
 import { isBusinessOpenAt } from "../../../../lib/businessHours.js";
 
 function normalizeText(value) {
@@ -265,12 +262,7 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "tenant_not_found" });
     }
     const billingConfig = await getSystemBillingConfig(pool);
-
-    const billingWindow = resolveBillingWindow({
-      currentPeriodStart: billingState.current_period_start,
-      currentPeriodEnd: billingState.current_period_end
-    });
-    const leadPricing = resolveEffectiveLeadPricing(billingState, billingConfig);
+    const activeTenantUser = session.role === "tenant" ? await requireActiveTenantUser(session) : null;
     let callBilling = null;
     try {
       callBilling = await syncCurrentBillingPeriod(pool, tenantKey);
@@ -278,20 +270,8 @@ export default async function handler(req, res) {
       callBilling = null;
     }
 
-    let transcriptAnalysisBackfill = { enqueued: 0 };
-    try {
-      transcriptAnalysisBackfill = await enqueueMissingCallTranscriptAnalyses(pool, {
-        tenantKey,
-        days: 30,
-        limit: 50
-      });
-    } catch {
-      transcriptAnalysisBackfill = { enqueued: 0 };
-    }
-
     const [
       callsSummaryResult,
-      leadSummaryResult,
       recentLeadsResult,
       recentCallsResult,
       classificationResult,
@@ -313,16 +293,6 @@ export default async function handler(req, res) {
          WHERE tenant_key = $1
            AND created_at >= NOW() - interval '30 days'`,
         [tenantKey]
-      ),
-      pool.query(
-        `SELECT
-           COUNT(*) FILTER (WHERE lead_is_valid = TRUE)::int AS valid_lead_count,
-           COUNT(*) FILTER (WHERE lead_is_billable = TRUE)::int AS billable_lead_count
-         FROM calls
-         WHERE tenant_key = $1
-           AND created_at >= $2
-           AND created_at < $3`,
-        [tenantKey, billingWindow.start.toISOString(), billingWindow.end.toISOString()]
       ),
       pool.query(
         `SELECT
@@ -397,7 +367,6 @@ export default async function handler(req, res) {
     ]);
 
     const callsSummary = callsSummaryResult.rows[0] || {};
-    const leadSummary = leadSummaryResult.rows[0] || {};
     const validLeadCount30d = Number(callsSummary.valid_lead_count_30d || 0);
     const calls30d = Number(callsSummary.calls_30d || 0);
     const kbQuestionCount30d = Number(knowledgeSignals.kb_question_count_30d || 0);
@@ -414,10 +383,6 @@ export default async function handler(req, res) {
       && activeBuildId
       && latestBuildId
       && activeBuildId === latestBuildId;
-    const invoiceEstimate = computeLeadInvoiceEstimate({
-      baseAmountCents: buildPlanDisplay(billingState, billingConfig).monthlyAmountCents,
-      billableLeadCount: Number(leadSummary.billable_lead_count || 0)
-    }, leadPricing);
     const categoryCounts = Object.fromEntries(
       DASHBOARD_CATEGORY_ORDER.map((key) => [key, 0])
     );
@@ -495,21 +460,17 @@ export default async function handler(req, res) {
         calls30d,
         validLeadCount30d,
         leadCaptureRate30d: calls30d ? Math.round((validLeadCount30d / calls30d) * 1000) / 10 : 0,
-        openFollowUpCount: Number(callsSummary.open_follow_up_count || 0),
-        validLeadCount: Number(leadSummary.valid_lead_count || 0),
-        billableLeadCount: Number(leadSummary.billable_lead_count || 0)
+        openFollowUpCount: Number(callsSummary.open_follow_up_count || 0)
       },
       billing: {
         status: billingState.billing_status,
         appAccessStatus: billingState.app_access_status,
         plan: buildPlanDisplay(billingState, billingConfig),
         currentPeriod: {
-          label: billingWindow.label,
-          start: billingWindow.start.toISOString(),
-          end: billingWindow.end.toISOString()
+          label: callBilling?.currentPeriod?.label || null,
+          start: callBilling?.currentPeriod?.start || billingState.current_period_start || null,
+          end: callBilling?.currentPeriod?.end || billingState.current_period_end || null
         },
-        invoiceEstimate,
-        leadPricing,
         callPricing: callBilling?.callPricing || resolveEffectiveCallPricing(billingState, billingConfig),
         callUsage: callBilling?.callUsage || null,
         callInvoiceEstimate: callBilling?.invoiceEstimate || null
@@ -535,10 +496,14 @@ export default async function handler(req, res) {
         unansweredKbCallCount30d: unansweredCallCount30d,
         pendingTranscriptAnalysisCallCount30d,
         failedTranscriptAnalysisCallCount30d,
-        transcriptAnalysisBackfillEnqueued: Number(transcriptAnalysisBackfill.enqueued || 0),
         answeredQuestionRate30d: kbQuestionCount30d
           ? Math.max(0, Math.round(((kbQuestionCount30d - unansweredQuestionCount30d) / kbQuestionCount30d) * 1000) / 10)
           : 100
+      },
+      viewer: {
+        canManageKnowledgeAnalysis: session.role === "admin"
+          || tenantUserHasAnyRole(activeTenantUser, ["owner", "admin"]),
+        userRole: session.role === "admin" ? "admin" : (activeTenantUser?.role || null)
       },
       answeredKnowledgeQuestions,
       knowledgeGapQuestions,

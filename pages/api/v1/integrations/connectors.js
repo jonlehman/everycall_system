@@ -5,6 +5,7 @@ import {
   decryptIntegrationCredentials,
   encryptIntegrationCredentials
 } from "../../_lib/integrationSecrets.js";
+import { validateSafePublicEndpointUrl } from "../../_lib/safePublicEndpoint.js";
 import {
   buildDefaultServiceTitanResourcePath,
   CANONICAL_CLASSIFICATION_TYPES,
@@ -30,25 +31,6 @@ async function writeAuditLog(pool, { tenantKey, actorId, action, details }) {
      VALUES ($1, $2, $3, $4)`,
     [tenantKey, actorId, action, JSON.stringify(details || {})]
   );
-}
-
-function validateEndpointUrl(value) {
-  const text = normalizeText(value);
-  if (!text) {
-    throw Object.assign(new Error("Endpoint URL is required."), { statusCode: 400 });
-  }
-  let url;
-  try {
-    url = new URL(text);
-  } catch {
-    throw Object.assign(new Error("Endpoint URL is invalid."), { statusCode: 400 });
-  }
-  const isHttps = url.protocol === "https:";
-  const isLocalHttp = process.env.NODE_ENV !== "production" && url.protocol === "http:";
-  if (!isHttps && !isLocalHttp) {
-    throw Object.assign(new Error("Endpoint URL must use HTTPS."), { statusCode: 400 });
-  }
-  return url.toString();
 }
 
 function buildBaseConfig(body, connectorType) {
@@ -233,7 +215,7 @@ export default async function handler(req, res) {
     const status = normalizeText(body.status) === "disabled" || body.enabled === false ? "disabled" : "enabled";
     const config = buildBaseConfig(body, connectorType);
     const endpointUrl = connectorType === INTEGRATION_CONNECTOR_TYPES.zapierHook
-      ? validateEndpointUrl(body.endpointUrl)
+      ? await validateSafePublicEndpointUrl(body.endpointUrl)
       : null;
 
     let existing = null;

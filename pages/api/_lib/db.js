@@ -454,17 +454,6 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenant_settings ALTER COLUMN lead_alerts_enabled SET DEFAULT TRUE;`);
   await pool.query(`ALTER TABLE tenant_settings ALTER COLUMN lead_alert_sms_enabled SET DEFAULT TRUE;`);
   await pool.query(`ALTER TABLE tenant_settings ALTER COLUMN lead_alert_email_enabled SET DEFAULT TRUE;`);
-  await pool.query(
-    `UPDATE tenant_settings
-     SET lead_alerts_enabled = TRUE,
-         lead_alert_sms_enabled = TRUE,
-         lead_alert_email_enabled = TRUE,
-         lead_alert_email_include_transcript = TRUE
-     WHERE lead_alerts_enabled IS DISTINCT FROM TRUE
-        OR lead_alert_sms_enabled IS DISTINCT FROM TRUE
-        OR lead_alert_email_enabled IS DISTINCT FROM TRUE
-        OR lead_alert_email_include_transcript IS DISTINCT FROM TRUE`
-  );
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_intake (

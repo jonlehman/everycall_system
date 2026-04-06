@@ -1,6 +1,6 @@
 import { getPool } from "../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
-import { requireTenantBillingAccess } from "../../_lib/billing.js";
+import { requireTenantBillingAccess, requireTenantRoles } from "../../_lib/billing.js";
 import {
   createSetupInterviewSessionSkeleton,
   loadSetupInterviewState,
@@ -31,6 +31,10 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "POST") {
+      const manager = await requireTenantRoles(res, session, ["owner", "admin"], {
+        message: "Only account admins and owners can update setup interview data."
+      });
+      if (!manager) return;
       const body = typeof req.body === "object" && req.body ? req.body : {};
       if (body.intent && body.session) {
         const result = await saveSetupInterviewSubmission(pool, tenantKey, body);

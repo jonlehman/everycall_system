@@ -218,6 +218,7 @@ export default function ClientDashboardPage() {
   const summary = dashboard?.summary || {};
   const setup = dashboard?.setup || {};
   const billing = dashboard?.billing || {};
+  const viewer = dashboard?.viewer || {};
   const classificationBreakdown = Array.isArray(dashboard?.classificationBreakdown) ? dashboard.classificationBreakdown : [];
   const recentCalls = Array.isArray(dashboard?.recentCalls) ? dashboard.recentCalls : [];
   const callVolumeLast7Days = Array.isArray(dashboard?.callVolumeLast7Days) ? dashboard.callVolumeLast7Days : [];
@@ -235,6 +236,7 @@ export default function ClientDashboardPage() {
     ?? knowledgeSignals.unansweredQuestionCalls30d
     ?? 0
   );
+  const canManageKnowledgeAnalysis = Boolean(viewer.canManageKnowledgeAnalysis);
   const pendingTranscriptAnalysisCallCount = Number(knowledgeSignals.pendingTranscriptAnalysisCallCount30d || 0);
   const failedTranscriptAnalysisCallCount = Number(knowledgeSignals.failedTranscriptAnalysisCallCount30d || 0);
   const answeredQuestionRate = Number(knowledgeSignals.answeredQuestionRate30d || 0);
@@ -251,14 +253,15 @@ export default function ClientDashboardPage() {
 
   async function handleRetryTranscriptAnalysis() {
     setRetryingTranscriptAnalysis(true);
-    setStatus({ tone: 'warn', message: 'Retrying transcript analysis...' });
+    const isRetry = failedTranscriptAnalysisCallCount > 0;
+    setStatus({ tone: 'warn', message: isRetry ? 'Retrying transcript analysis...' : 'Queueing transcript analysis...' });
     try {
       await fetchJson('/api/v1/client/dashboard/transcript-analysis/retry', {
         method: 'POST'
       });
       const refreshed = await loadDashboard();
       setDashboard(refreshed);
-      setStatus({ tone: 'ok', message: 'Transcript analysis retry queued.' });
+      setStatus({ tone: 'ok', message: isRetry ? 'Transcript analysis retry queued.' : 'Transcript analysis queued.' });
     } catch (error) {
       setStatus({ tone: 'bad', message: error?.message || 'Could not retry transcript analysis.' });
     } finally {
@@ -448,7 +451,20 @@ export default function ClientDashboardPage() {
                   Analyzing {pendingTranscriptAnalysisCallCount} recent call{pendingTranscriptAnalysisCallCount === 1 ? '' : 's'}.
                 </div>
               ) : null}
-              {!kbQuestionCount && !pendingTranscriptAnalysisCallCount && failedTranscriptAnalysisCallCount > 0 ? (
+              {!kbQuestionCount && !pendingTranscriptAnalysisCallCount && !failedTranscriptAnalysisCallCount && canManageKnowledgeAnalysis ? (
+                <div className="rounded-lg border border-slate-200/70 bg-[#f8fafc] px-3 py-3 text-xs text-slate-600">
+                  <div>Transcript analysis has not been queued for recent calls yet.</div>
+                  <button
+                    type="button"
+                    className="mt-2 rounded-md bg-white px-3 py-1.5 text-[11px] font-bold normal-case tracking-normal text-slate-900 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={handleRetryTranscriptAnalysis}
+                    disabled={retryingTranscriptAnalysis}
+                  >
+                    {retryingTranscriptAnalysis ? 'Queueing...' : 'Analyze Recent Calls'}
+                  </button>
+                </div>
+              ) : null}
+              {!kbQuestionCount && !pendingTranscriptAnalysisCallCount && failedTranscriptAnalysisCallCount > 0 && canManageKnowledgeAnalysis ? (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-900">
                   <div>
                     Analysis stalled on {failedTranscriptAnalysisCallCount} recent call{failedTranscriptAnalysisCallCount === 1 ? '' : 's'}.

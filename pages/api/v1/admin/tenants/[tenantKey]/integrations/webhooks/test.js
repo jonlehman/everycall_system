@@ -1,6 +1,7 @@
 import { ensureTables, getPool } from "../../../../../../_lib/db.js";
 import { getAdminActor, requireSession } from "../../../../../../_lib/auth.js";
 import { enforceRateLimit } from "../../../../../../_lib/rateLimit.js";
+import { fetchSafePublicEndpointResponse } from "../../../../../../_lib/safePublicEndpoint.js";
 import {
   buildConnectionTestPayload,
   buildSignedWebhookRequest,
@@ -86,7 +87,7 @@ export default async function handler(req, res) {
       attemptNumber: 1
     });
 
-    const response = await fetch(request.endpointUrl, {
+    const { response, finalUrl } = await fetchSafePublicEndpointResponse(request.endpointUrl, {
       method: "POST",
       headers: request.headers,
       body: request.body
@@ -104,7 +105,7 @@ export default async function handler(req, res) {
         deliveryId: payload.delivery_id,
         attemptNumber: 1,
         status: "failed",
-        requestUrl: connection.endpoint_url,
+        requestUrl: finalUrl || connection.endpoint_url,
         responseStatus: response.status,
         responseBodyExcerpt: responseText,
         errorMessage: `http_${response.status}`
@@ -133,7 +134,7 @@ export default async function handler(req, res) {
       deliveryId: payload.delivery_id,
       attemptNumber: 1,
       status: "delivered",
-      requestUrl: connection.endpoint_url,
+      requestUrl: finalUrl || connection.endpoint_url,
       responseStatus: response.status,
       responseBodyExcerpt: responseText
     });
@@ -157,7 +158,7 @@ export default async function handler(req, res) {
       connection: sanitizeIntegrationConnection(refreshed.rows[0] || connection)
     });
   } catch (err) {
-    return res.status(500).json({
+    return res.status(Number(err?.statusCode || 500)).json({
       error: "admin_integrations_webhook_test_error",
       message: err?.message || "unknown"
     });
