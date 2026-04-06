@@ -27,7 +27,7 @@ export default async function handler(req, res) {
     const session = await requireSession(req, res, { role: "admin" });
     if (!session) return;
     const admin = await getAdminActor(session);
-    if (!admin || admin.role !== "super-admin") {
+    if (!admin) {
       return res.status(403).json({ error: "forbidden" });
     }
 
