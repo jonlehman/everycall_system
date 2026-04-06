@@ -6,7 +6,7 @@ import { Button } from '../../../../components/ui/button';
 import GuidePanel from '../../_components/GuidePanel';
 import SectionPage from '../../_components/SectionPage';
 import { accountNavItems } from '../../_components/navigation';
-import { formatLeadDecisionReason, getLeadStatusMeta } from '../../../../lib/leadBilling';
+import { formatBillingCallTypeLabel, getChargeBucketMeta } from '../../../../lib/callBilling';
 
 function formatMoney(amountCents) {
   const value = Number(amountCents || 0) / 100;
@@ -41,19 +41,19 @@ function fetchJson(url, options) {
   });
 }
 
-function LeadStatusBadge({ call }) {
-  const meta = getLeadStatusMeta(call || {});
-  const toneClass = meta.tone === 'ok'
+function CallChargeBadge({ call }) {
+  const bucket = getChargeBucketMeta(call?.charge_bucket);
+  const toneClass = bucket.tone === 'ok'
     ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-    : meta.tone === 'warn'
+    : bucket.tone === 'warn'
       ? 'border-amber-200 bg-amber-50 text-amber-800'
       : 'border-slate-200 bg-slate-100 text-slate-700';
   return (
     <div className="space-y-1">
       <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${toneClass}`}>
-        {meta.label}
+        {bucket.label}
       </span>
-      <div className="text-xs text-slate-500">{meta.detail}</div>
+      <div className="text-xs text-slate-500">{call?.billing_call_type_label || formatBillingCallTypeLabel(call?.billing_call_type_code)}</div>
     </div>
   );
 }
@@ -166,10 +166,11 @@ export default function AccountBillingPage() {
     }
   };
 
-  const leadUsage = billing?.leadUsage || {};
-  const invoiceEstimate = billing?.invoiceEstimate || {};
-  const leadPricing = billing?.leadPricing || {};
-  const recentCalls = Array.isArray(leadUsage.recentCalls) ? leadUsage.recentCalls : [];
+  const callUsage = billing?.callUsage || {};
+  const callInvoiceEstimate = billing?.callInvoiceEstimate || {};
+  const callPricing = billing?.callPricing || {};
+  const callAdjustments = billing?.callAdjustments || {};
+  const recentCalls = Array.isArray(callUsage.recentCalls) ? callUsage.recentCalls : [];
   const canReactivate = viewer.canManage && billing?.status === 'deactivated';
   const primaryAction = canReactivate
     ? {
@@ -188,18 +189,18 @@ export default function AccountBillingPage() {
       : null;
 
   const invoiceCards = useMemo(() => ([
-    { label: 'Base Subscription', value: formatMoney(invoiceEstimate.baseAmountCents) },
-    { label: 'Billable Leads', value: `${Number(invoiceEstimate.billableLeadCount || 0)}` },
-    { label: 'Lead Rate', value: `${formatMoney(leadPricing.rateCents)} / lead` },
-    { label: 'Lead Charges', value: formatMoney(invoiceEstimate.leadChargesCents) },
-    { label: 'Current Estimate', value: formatMoney(invoiceEstimate.totalEstimatedInvoiceCents) }
-  ]), [invoiceEstimate, leadPricing.rateCents]);
+    { label: 'Base Subscription', value: formatMoney(callInvoiceEstimate.baseAmountCents) },
+    { label: 'Eligible Calls', value: `${Number(callUsage.eligibleCallCount || 0)}` },
+    { label: 'Overage Rate', value: `${formatMoney(callPricing.callOverageRateCents)} / call` },
+    { label: 'Overage Charges', value: formatMoney(callInvoiceEstimate.overageAmountCents) },
+    { label: 'Current Estimate', value: formatMoney(callInvoiceEstimate.totalEstimatedInvoiceCents) }
+  ]), [callInvoiceEstimate, callPricing.callOverageRateCents, callUsage.eligibleCallCount]);
 
   return (
     <SectionPage
       tabs={accountNavItems}
       title="Billing"
-      subtitle="Review subscription state, valid lead charges, and the current invoice estimate."
+      subtitle="Review subscription state, included call usage, overages, and the current invoice estimate."
       status={status}
       primaryAction={primaryAction}
     >
@@ -232,25 +233,25 @@ export default function AccountBillingPage() {
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="mt-0 text-lg font-semibold">Lead Billing</h2>
-                <p className="m-0 mt-1 text-sm text-slate-500">Only valid billable leads count toward usage. General questions, duplicates, spam, and non-project calls do not.</p>
+                <h2 className="mt-0 text-lg font-semibold">Call Billing</h2>
+                <p className="m-0 mt-1 text-sm text-slate-500">Included calls are consumed in chronological order. Calls above the included allowance become overages for this billing period.</p>
               </div>
               <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                {Number(leadUsage.validLeadCount || 0)} valid · {Number(leadUsage.billableLeadCount || 0)} billable
+                {Number(callUsage.includedCallCountUsed || 0)} included · {Number(callUsage.overageCallCount || 0)} overage
               </div>
             </div>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
               {invoiceCards.map((card) => (
                 <div key={card.label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-xs normal-case tracking-normalr text-slate-500">{card.label}</div>
+                  <div className="text-xs normal-case tracking-normal text-slate-500">{card.label}</div>
                   <div className="mt-1 text-xl font-semibold">{card.value}</div>
                 </div>
               ))}
             </div>
             <div className="mt-4 grid gap-2 text-sm md:grid-cols-[220px_1fr]">
-              <div>Included leads</div><div>{Number(leadPricing.includedCount || 0)}</div>
-              <div>Open follow-up calls</div><div>{Number(leadUsage.openFollowUpCount || 0)}</div>
-              <div>Non-lead calls in window</div><div>{Number(leadUsage.nonLeadCount || 0)}</div>
+              <div>Included calls</div><div>{Number(callPricing.includedCallCount || 0)}</div>
+              <div>Excluded calls</div><div>{Number(callUsage.excludedCallCount || 0)}</div>
+              <div>Manual adjustments</div><div>{formatMoney(callAdjustments.netAdjustmentAmountCents || 0)}</div>
             </div>
           </div>
 
@@ -258,7 +259,7 @@ export default function AccountBillingPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="mt-0 text-lg font-semibold">Recent Calls In This Billing Window</h2>
-                <p className="m-0 mt-1 text-sm text-slate-500">This is the ledger customers need to trust: what counted, what did not, and why.</p>
+                <p className="m-0 mt-1 text-sm text-slate-500">This is the call-usage ledger for the current billing period.</p>
               </div>
               <Button variant="outline" type="button" onClick={() => loadBilling()} disabled={loadState === 'loading'}>
                 Refresh
@@ -268,10 +269,10 @@ export default function AccountBillingPage() {
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="border-b border-slate-200">
-                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normalr text-slate-500">Time</th>
-                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normalr text-slate-500">Caller</th>
-                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normalr text-slate-500">Summary</th>
-                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normalr text-slate-500">Lead Status</th>
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Time</th>
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Caller</th>
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Summary</th>
+                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Billing Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -284,10 +285,10 @@ export default function AccountBillingPage() {
                       </td>
                       <td className="px-2 py-3 text-sm text-slate-700">
                         <div>{call.summary || 'No summary available yet.'}</div>
-                        <div className="mt-1 text-xs text-slate-500">{call.service_required || formatLeadDecisionReason(call.lead_decision_reason)}</div>
+                        <div className="mt-1 text-xs text-slate-500">{call.service_required || 'No service summary available.'}</div>
                       </td>
                       <td className="px-2 py-3 text-sm text-slate-700">
-                        <LeadStatusBadge call={call} />
+                        <CallChargeBadge call={call} />
                       </td>
                     </tr>
                   )) : (
@@ -336,13 +337,13 @@ export default function AccountBillingPage() {
         </div>
 
         <GuidePanel title="Billing Guide" eyebrow="How pricing works" icon="payments">
-          <div>Your monthly bill has two parts: the base subscription and the valid billable leads captured during the current billing window.</div>
+          <div>Your monthly bill has two parts: the base subscription and any call overages above the included allowance in the current billing period.</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="font-semibold text-slate-900">What counts as billable</div>
+            <div className="font-semibold text-slate-900">What counts toward usage</div>
             <ul className="mb-0 mt-2 list-disc pl-5 text-sm text-slate-600">
-              <li>Real project or service interest.</li>
-              <li>Usable callback information.</li>
-              <li>Not spam, not wrong number, not duplicate, and not a general question only.</li>
+              <li>Calls the receptionist answered and handled.</li>
+              <li>Excluded calls stay off the invoice.</li>
+              <li>Short abandons and technical failures do not count toward usage.</li>
             </ul>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">

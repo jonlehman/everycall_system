@@ -11,9 +11,17 @@ import {
   resolveEffectiveCallPricing
 } from "./billing.js";
 import { resolveBillingWindow } from "../../../lib/leadBilling.js";
+import { createInvoiceItem } from "./stripe.js";
 
 function normalizeText(value) {
   return String(value || "").trim();
+}
+
+function normalizeReasonCode(value) {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 const BILLING_CALL_TYPE_SEED = [
@@ -126,6 +134,21 @@ export async function listBillingCallTypes(db) {
 export async function getBillingCallTypesByCode(db) {
   const rows = await listBillingCallTypes(db);
   return new Map(rows.map((row) => [String(row.code || "").trim().toLowerCase(), row]));
+}
+
+export async function getBillingCallTypeByCode(db, code) {
+  const normalizedCode = normalizeText(code).toLowerCase();
+  if (!normalizedCode) return null;
+  await ensureBillingCallTypesSeeded(db);
+  const result = await db.query(
+    `SELECT billing_call_type_id, code, label, short_description, long_description,
+            counts_toward_usage, display_order, is_system, active
+     FROM billing_call_types
+     WHERE code = $1
+     LIMIT 1`,
+    [normalizedCode]
+  );
+  return result.rows[0] || null;
 }
 
 async function loadCallForBilling(db, { tenantKey, callSid }) {
@@ -447,6 +470,155 @@ export async function rateBillingPeriod(pool, periodId) {
   }
 }
 
+async function sumBillingPeriodAdjustments(pool, billingPeriodId) {
+  const result = await pool.query(
+    `SELECT
+       COALESCE(SUM(CASE WHEN adjustment_type = 'credit' THEN amount_cents ELSE 0 END), 0)::int AS credit_amount_cents,
+       COALESCE(SUM(CASE WHEN adjustment_type = 'debit' THEN amount_cents ELSE 0 END), 0)::int AS debit_amount_cents
+     FROM billing_period_adjustments
+     WHERE billing_period_id = $1`,
+    [billingPeriodId]
+  );
+  return result.rows[0] || {
+    credit_amount_cents: 0,
+    debit_amount_cents: 0
+  };
+}
+
+export async function getBillingPeriodDetail(pool, billingPeriodId, { callLimit = 100 } = {}) {
+  if (!Number.isFinite(Number(billingPeriodId)) || Number(billingPeriodId) <= 0) {
+    return null;
+  }
+
+  const periodResult = await pool.query(
+    `SELECT *
+     FROM billing_periods
+     WHERE billing_period_id = $1
+     LIMIT 1`,
+    [billingPeriodId]
+  );
+  const period = periodResult.rows[0] || null;
+  if (!period) return null;
+
+  const [callsResult, adjustmentsResult, adjustmentTotals, usageSummaryResult] = await Promise.all([
+    pool.query(
+      `SELECT
+         a.call_sid,
+         a.charge_bucket,
+         a.sequence_number,
+         bct.code AS billing_call_type_code,
+         bct.label AS billing_call_type_label,
+         c.created_at,
+         c.summary,
+         c.status,
+         c.duration_seconds,
+         d.caller_first_name,
+         d.caller_last_name,
+         d.callback_number,
+         d.service_required
+       FROM billing_period_call_assignments a
+       LEFT JOIN billing_call_types bct
+         ON bct.billing_call_type_id = a.billing_call_type_id
+       LEFT JOIN calls c
+         ON c.call_sid = a.call_sid
+       LEFT JOIN call_details d
+         ON d.call_sid = a.call_sid
+       WHERE a.billing_period_id = $1
+       ORDER BY c.created_at DESC, a.call_sid DESC
+       LIMIT $2`,
+      [billingPeriodId, Math.max(1, Number(callLimit || 100))]
+    ),
+    pool.query(
+      `SELECT
+         billing_period_adjustment_id,
+         adjustment_type,
+         reason_code,
+         description,
+         amount_cents,
+         metadata_json,
+         stripe_invoice_item_id,
+         invoiced_at,
+         created_by_type,
+         created_by_id,
+         created_at
+       FROM billing_period_adjustments
+       WHERE billing_period_id = $1
+       ORDER BY created_at DESC, billing_period_adjustment_id DESC`,
+      [billingPeriodId]
+    ),
+    sumBillingPeriodAdjustments(pool, billingPeriodId)
+    ,
+    pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE charge_bucket = 'included')::int AS included_call_count_used,
+         COUNT(*) FILTER (WHERE charge_bucket = 'overage')::int AS overage_call_count,
+         COUNT(*) FILTER (WHERE charge_bucket = 'excluded')::int AS excluded_call_count
+       FROM billing_period_call_assignments
+       WHERE billing_period_id = $1`,
+      [billingPeriodId]
+    )
+  ]);
+
+  const usageSummary = usageSummaryResult.rows[0] || {};
+  const creditAmountCents = Number(adjustmentTotals.credit_amount_cents || 0);
+  const debitAmountCents = Number(adjustmentTotals.debit_amount_cents || 0);
+  const netAdjustmentAmountCents = debitAmountCents - creditAmountCents;
+  const invoiceEstimate = computeCallInvoiceEstimate({
+    baseAmountCents: Number(period.monthly_amount_cents || 0),
+    eligibleCallCount: Number(period.eligible_call_count || 0)
+  }, {
+    includedCallCount: Number(period.included_call_count || 0),
+    callOverageRateCents: Number(period.call_overage_rate_cents || 0)
+  });
+
+  return {
+    billingPeriodId: Number(period.billing_period_id || 0),
+    tenantKey: period.tenant_key,
+    status: period.status,
+    source: period.source,
+    billingRuleVersion: period.billing_rule_version,
+    periodStart: period.period_start,
+    periodEnd: period.period_end,
+    planCode: period.plan_code || null,
+    currentPeriod: {
+      label: "Current billing period",
+      start: new Date(period.period_start).toISOString(),
+      end: new Date(period.period_end).toISOString()
+    },
+    callPricing: {
+      includedCallCount: Number(period.included_call_count || 0),
+      callOverageRateCents: Number(period.call_overage_rate_cents || 0)
+    },
+    callUsage: {
+      eligibleCallCount: Number(period.eligible_call_count || 0),
+      includedCallCountUsed: Number(usageSummary.included_call_count_used || period.included_call_count_used || 0),
+      overageCallCount: Number(usageSummary.overage_call_count || period.overage_call_count || 0),
+      excludedCallCount: Number(usageSummary.excluded_call_count || 0),
+      recentCalls: callsResult.rows || []
+    },
+    adjustments: {
+      creditAmountCents,
+      debitAmountCents,
+      netAdjustmentAmountCents,
+      items: adjustmentsResult.rows || []
+    },
+    invoiceEstimate: {
+      ...invoiceEstimate,
+      adjustmentCreditCents: creditAmountCents,
+      adjustmentDebitCents: debitAmountCents,
+      netAdjustmentAmountCents,
+      totalEstimatedInvoiceCents: invoiceEstimate.totalEstimatedInvoiceCents + netAdjustmentAmountCents
+    },
+    stripe: {
+      subscriptionId: period.stripe_subscription_id || null,
+      invoiceId: period.stripe_invoice_id || null,
+      invoiceItemId: period.stripe_invoice_item_id || null,
+      finalizedAt: period.finalized_at || null,
+      invoicedAt: period.invoiced_at || null
+    }
+  };
+}
+
 export async function syncCurrentBillingPeriod(pool, tenantKey) {
   const current = await ensureCurrentBillingPeriod(pool, tenantKey);
   if (!current?.period?.billing_period_id) {
@@ -470,86 +642,290 @@ export async function summarizeCurrentBillingPeriod(pool, tenantKey) {
     return null;
   }
 
-  const result = await pool.query(
-    `SELECT
-       p.billing_period_id,
-       p.period_start,
-       p.period_end,
-       p.status,
-       p.source,
-       p.billing_rule_version,
-       p.plan_code,
-       p.monthly_amount_cents,
-       p.included_call_count,
-       p.call_overage_rate_cents,
-       p.eligible_call_count,
-       p.included_call_count_used,
-       p.overage_call_count,
-       p.overage_amount_cents,
-       COUNT(*) FILTER (WHERE a.charge_bucket = 'excluded')::int AS excluded_call_count
-     FROM billing_periods p
-     LEFT JOIN billing_period_call_assignments a
-       ON a.billing_period_id = p.billing_period_id
-     WHERE p.billing_period_id = $1
-     GROUP BY p.billing_period_id`,
-    [current.period.billing_period_id]
-  );
-  const period = result.rows[0] || current.period;
-  const invoiceEstimate = computeCallInvoiceEstimate({
-    baseAmountCents: Number(period.monthly_amount_cents || 0),
-    eligibleCallCount: Number(period.eligible_call_count || 0)
-  }, {
-    includedCallCount: Number(period.included_call_count || 0),
-    callOverageRateCents: Number(period.call_overage_rate_cents || 0)
-  });
-
-  const recentCallsResult = await pool.query(
-    `SELECT
-       a.call_sid,
-       a.charge_bucket,
-       a.sequence_number,
-       bct.code AS billing_call_type_code,
-       bct.label AS billing_call_type_label,
-       c.created_at,
-       c.summary,
-       c.status,
-       d.caller_first_name,
-       d.caller_last_name,
-       d.callback_number,
-       d.service_required
-     FROM billing_period_call_assignments a
-     LEFT JOIN billing_call_types bct
-       ON bct.billing_call_type_id = a.billing_call_type_id
-     LEFT JOIN calls c
-       ON c.call_sid = a.call_sid
-     LEFT JOIN call_details d
-       ON d.call_sid = a.call_sid
-     WHERE a.billing_period_id = $1
-     ORDER BY c.created_at DESC, a.call_sid DESC
-     LIMIT 25`,
-    [current.period.billing_period_id]
-  );
-
+  const detail = await getBillingPeriodDetail(pool, current.period.billing_period_id, { callLimit: 25 });
+  if (!detail) return null;
   return {
-    billingPeriodId: Number(period.billing_period_id || 0),
+    ...detail,
     currentPeriod: {
       label: current.window.label,
-      start: new Date(period.period_start || current.window.start).toISOString(),
-      end: new Date(period.period_end || current.window.end).toISOString()
-    },
-    source: period.source || current.period.source || "internal",
-    billingRuleVersion: period.billing_rule_version || CALL_BILLING_RULE_VERSION,
-    callPricing: {
-      includedCallCount: Number(period.included_call_count || 0),
-      callOverageRateCents: Number(period.call_overage_rate_cents || 0)
-    },
-    callUsage: {
-      eligibleCallCount: Number(period.eligible_call_count || 0),
-      includedCallCountUsed: Number(period.included_call_count_used || 0),
-      overageCallCount: Number(period.overage_call_count || 0),
-      excludedCallCount: Number(period.excluded_call_count || 0),
-      recentCalls: recentCallsResult.rows || []
-    },
-    invoiceEstimate
+      start: detail.currentPeriod.start,
+      end: detail.currentPeriod.end
+    }
+  };
+}
+
+export async function setManualCallBillingExclusion(pool, {
+  tenantKey,
+  callSid,
+  billingPeriodId,
+  exclude = true,
+  createdById = null
+}) {
+  const normalizedPeriodId = Number(billingPeriodId || 0);
+  if (!tenantKey || !callSid || !normalizedPeriodId) {
+    throw new Error("billing_manual_exclusion_missing_fields");
+  }
+  const period = await getBillingPeriodDetail(pool, normalizedPeriodId, { callLimit: 1 });
+  if (!period || period.tenantKey !== tenantKey) {
+    throw new Error("billing_period_not_found");
+  }
+
+  if (exclude) {
+    const manualType = await getBillingCallTypeByCode(pool, BILLING_CALL_TYPE_CODES.manualExclusion);
+    if (!manualType?.billing_call_type_id) {
+      throw new Error("manual_exclusion_type_missing");
+    }
+    await pool.query(
+      `UPDATE calls
+       SET billing_call_type_id = $3,
+           billing_evaluated_at = NOW(),
+           billing_notes_json = jsonb_build_object(
+             'classifier', $4,
+             'reason', 'manual_exclusion',
+             'updatedBy', $5
+           )
+       WHERE tenant_key = $1
+         AND call_sid = $2`,
+      [tenantKey, callSid, manualType.billing_call_type_id, CALL_BILLING_RULE_VERSION, createdById || null]
+    );
+  } else {
+    await classifyAndPersistCallBilling(pool, {
+      tenantKey,
+      callSid,
+      force: true
+    });
+  }
+
+  await rateBillingPeriod(pool, normalizedPeriodId);
+  return getBillingPeriodDetail(pool, normalizedPeriodId);
+}
+
+export async function createBillingPeriodAdjustment(pool, {
+  tenantKey,
+  billingPeriodId,
+  adjustmentType,
+  reasonCode = null,
+  description,
+  amountCents,
+  createdByType = "admin",
+  createdById = null
+}) {
+  const normalizedPeriodId = Number(billingPeriodId || 0);
+  const normalizedType = normalizeText(adjustmentType).toLowerCase();
+  const normalizedDescription = normalizeText(description);
+  const normalizedAmount = Number(amountCents);
+  if (!tenantKey || !normalizedPeriodId || !["credit", "debit"].includes(normalizedType) || !normalizedDescription) {
+    throw new Error("billing_adjustment_invalid");
+  }
+  if (!Number.isInteger(normalizedAmount) || normalizedAmount <= 0) {
+    throw new Error("billing_adjustment_amount_invalid");
+  }
+  const period = await getBillingPeriodDetail(pool, normalizedPeriodId, { callLimit: 1 });
+  if (!period || period.tenantKey !== tenantKey) {
+    throw new Error("billing_period_not_found");
+  }
+
+  await pool.query(
+    `INSERT INTO billing_period_adjustments (
+       billing_period_id,
+       adjustment_type,
+       reason_code,
+       description,
+       amount_cents,
+       metadata_json,
+       created_by_type,
+       created_by_id,
+       created_at
+     )
+     VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, $6, $7, NOW())`,
+    [
+      normalizedPeriodId,
+      normalizedType,
+      normalizeReasonCode(reasonCode) || null,
+      normalizedDescription,
+      normalizedAmount,
+      createdByType,
+      createdById
+    ]
+  );
+
+  return getBillingPeriodDetail(pool, normalizedPeriodId);
+}
+
+export async function ensureBillingPeriodsForActiveTenants(pool) {
+  const tenants = await pool.query(
+    `SELECT tenant_key
+     FROM tenants
+     WHERE billing_status IN ('trialing', 'active', 'past_due', 'unpaid')`
+  );
+  let ensured = 0;
+  for (const row of tenants.rows || []) {
+    const ensuredPeriod = await ensureCurrentBillingPeriod(pool, row.tenant_key);
+    if (ensuredPeriod?.period?.billing_period_id) {
+      ensured += 1;
+    }
+  }
+  return ensured;
+}
+
+async function createOverageInvoiceItemForPeriod(pool, period) {
+  if (period.stripe_invoice_item_id || Number(period.overage_amount_cents || 0) <= 0) {
+    return null;
+  }
+  const billingState = await ensureTenantBillingAccount(pool, period.tenant_key);
+  if (!billingState?.stripe_customer_id || !billingState?.stripe_subscription_id) {
+    return null;
+  }
+  if (String(billingState.billing_status || "").toLowerCase() === "trialing") {
+    return null;
+  }
+  const item = await createInvoiceItem({
+    customerId: billingState.stripe_customer_id,
+    subscriptionId: billingState.stripe_subscription_id,
+    amountCents: Number(period.overage_amount_cents || 0),
+    description: `${Number(period.overage_call_count || 0)} call overages × $${(Number(period.call_overage_rate_cents || 0) / 100).toFixed(2)} = $${(Number(period.overage_amount_cents || 0) / 100).toFixed(2)} (included limit: ${Number(period.included_call_count || 0)})`,
+    metadata: {
+      tenant_key: period.tenant_key,
+      billing_period_id: String(period.billing_period_id),
+      item_type: "call_overage"
+    }
+  });
+  await pool.query(
+    `UPDATE billing_periods
+     SET stripe_invoice_item_id = $2,
+         stripe_subscription_id = COALESCE(stripe_subscription_id, $3),
+         status = 'invoiced',
+         invoiced_at = COALESCE(invoiced_at, NOW()),
+         updated_at = NOW()
+     WHERE billing_period_id = $1`,
+    [period.billing_period_id, item?.id || null, billingState.stripe_subscription_id]
+  );
+  return item || null;
+}
+
+async function createAdjustmentInvoiceItemsForPeriod(pool, period) {
+  const billingState = await ensureTenantBillingAccount(pool, period.tenant_key);
+  if (!billingState?.stripe_customer_id || !billingState?.stripe_subscription_id) {
+    return 0;
+  }
+  if (String(billingState.billing_status || "").toLowerCase() === "trialing") {
+    return 0;
+  }
+  const pending = await pool.query(
+    `SELECT billing_period_adjustment_id, adjustment_type, description, amount_cents
+     FROM billing_period_adjustments
+     WHERE billing_period_id = $1
+       AND stripe_invoice_item_id IS NULL
+     ORDER BY created_at ASC, billing_period_adjustment_id ASC`,
+    [period.billing_period_id]
+  );
+  let created = 0;
+  for (const row of pending.rows || []) {
+    const signedAmountCents = String(row.adjustment_type || "").toLowerCase() === "credit"
+      ? -Math.abs(Number(row.amount_cents || 0))
+      : Math.abs(Number(row.amount_cents || 0));
+    const item = await createInvoiceItem({
+      customerId: billingState.stripe_customer_id,
+      subscriptionId: billingState.stripe_subscription_id,
+      amountCents: signedAmountCents,
+      description: `Billing adjustment: ${row.description}`,
+      metadata: {
+        tenant_key: period.tenant_key,
+        billing_period_id: String(period.billing_period_id),
+        billing_period_adjustment_id: String(row.billing_period_adjustment_id),
+        item_type: "billing_adjustment"
+      }
+    });
+    await pool.query(
+      `UPDATE billing_period_adjustments
+       SET stripe_invoice_item_id = $2,
+           invoiced_at = NOW()
+       WHERE billing_period_adjustment_id = $1`,
+      [row.billing_period_adjustment_id, item?.id || null]
+    );
+    created += 1;
+  }
+  return created;
+}
+
+export async function finalizeDueBillingPeriods(pool) {
+  await ensureBillingPeriodsForActiveTenants(pool);
+  const due = await pool.query(
+    `SELECT *
+     FROM billing_periods
+     WHERE period_end <= NOW()
+       AND status IN ('open', 'finalized')
+     ORDER BY period_end ASC, billing_period_id ASC`
+  );
+  let finalizedPeriods = 0;
+  let invoicedPeriods = 0;
+  let createdInvoiceItems = 0;
+
+  for (const period of due.rows || []) {
+    await rateBillingPeriod(pool, period.billing_period_id);
+    await pool.query(
+      `UPDATE billing_periods
+       SET status = CASE WHEN status = 'open' THEN 'finalized' ELSE status END,
+           finalized_at = COALESCE(finalized_at, NOW()),
+           updated_at = NOW()
+       WHERE billing_period_id = $1`,
+      [period.billing_period_id]
+    );
+    finalizedPeriods += 1;
+
+    const refreshedResult = await pool.query(
+      `SELECT *
+       FROM billing_periods
+       WHERE billing_period_id = $1
+       LIMIT 1`,
+      [period.billing_period_id]
+    );
+    const refreshed = refreshedResult.rows[0] || period;
+    const overageItem = await createOverageInvoiceItemForPeriod(pool, refreshed);
+    const adjustmentCount = await createAdjustmentInvoiceItemsForPeriod(pool, refreshed);
+    if (overageItem) {
+      createdInvoiceItems += 1;
+    }
+    createdInvoiceItems += adjustmentCount;
+
+    if (
+      refreshed.source !== "stripe"
+      || String((await ensureTenantBillingAccount(pool, refreshed.tenant_key))?.billing_status || "").toLowerCase() === "trialing"
+      || refreshed.stripe_invoice_item_id
+      || Number(refreshed.overage_amount_cents || 0) <= 0
+    ) {
+      await pool.query(
+        `UPDATE billing_periods
+         SET status = CASE
+           WHEN status = 'finalized' AND ($2::boolean = TRUE) THEN 'invoiced'
+           ELSE status
+         END,
+             invoiced_at = CASE
+               WHEN status = 'finalized' AND ($2::boolean = TRUE) THEN COALESCE(invoiced_at, NOW())
+               ELSE invoiced_at
+             END,
+             updated_at = NOW()
+         WHERE billing_period_id = $1`,
+        [refreshed.billing_period_id, refreshed.source !== "stripe" || Number(refreshed.overage_amount_cents || 0) <= 0]
+      );
+    }
+
+    const finalState = await pool.query(
+      `SELECT status
+       FROM billing_periods
+       WHERE billing_period_id = $1
+       LIMIT 1`,
+      [refreshed.billing_period_id]
+    );
+    if (String(finalState.rows[0]?.status || "") === "invoiced") {
+      invoicedPeriods += 1;
+    }
+  }
+
+  return {
+    ensuredPeriods: Number(due.rowCount || 0),
+    finalizedPeriods,
+    invoicedPeriods,
+    createdInvoiceItems
   };
 }

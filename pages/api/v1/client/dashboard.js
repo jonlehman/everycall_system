@@ -5,8 +5,10 @@ import {
   ensureTenantBillingAccount,
   getSystemBillingConfig,
   requireTenantBillingAccess,
+  resolveEffectiveCallPricing,
   resolveEffectiveLeadPricing
 } from "../../_lib/billing.js";
+import { syncCurrentBillingPeriod } from "../../_lib/callBilling.js";
 import { listKnowledgeReceptionistBuilds } from "../../_lib/knowledgeReceptionistBuilds.js";
 import { loadTenantBusinessHours } from "../../_lib/tenantBusinessHours.js";
 import {
@@ -269,6 +271,12 @@ export default async function handler(req, res) {
       currentPeriodEnd: billingState.current_period_end
     });
     const leadPricing = resolveEffectiveLeadPricing(billingState, billingConfig);
+    let callBilling = null;
+    try {
+      callBilling = await syncCurrentBillingPeriod(pool, tenantKey);
+    } catch {
+      callBilling = null;
+    }
 
     let transcriptAnalysisBackfill = { enqueued: 0 };
     try {
@@ -501,7 +509,10 @@ export default async function handler(req, res) {
           end: billingWindow.end.toISOString()
         },
         invoiceEstimate,
-        leadPricing
+        leadPricing,
+        callPricing: callBilling?.callPricing || resolveEffectiveCallPricing(billingState, billingConfig),
+        callUsage: callBilling?.callUsage || null,
+        callInvoiceEstimate: callBilling?.invoiceEstimate || null
       },
       setup: {
         publishedBuildCount: publishedBuilds.length,

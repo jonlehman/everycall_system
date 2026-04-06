@@ -385,18 +385,23 @@ export function buildPlanDisplay(row, billingConfig = null) {
 export function buildPricingOverride(row) {
   if (!hasCustomPricing(row)) return null;
   const monthlyAmountOverrideCents = Number(row?.monthly_amount_override_cents);
-  const leadRateOverrideCents = Number(row?.lead_rate_override_cents);
+  const leadRateOverrideCents = Number(
+    row?.call_overage_rate_override_cents ?? row?.lead_rate_override_cents
+  );
   const hasMonthlyOverride = row?.monthly_amount_override_cents !== null
     && row?.monthly_amount_override_cents !== undefined
     && Number.isFinite(monthlyAmountOverrideCents)
     && monthlyAmountOverrideCents >= 0;
-  const hasLeadOverride = row?.lead_rate_override_cents !== null
-    && row?.lead_rate_override_cents !== undefined
+  const hasLeadOverride = ((row?.call_overage_rate_override_cents !== null
+    && row?.call_overage_rate_override_cents !== undefined)
+    || (row?.lead_rate_override_cents !== null
+    && row?.lead_rate_override_cents !== undefined))
     && Number.isFinite(leadRateOverrideCents)
     && leadRateOverrideCents >= 0;
   return {
     monthlyAmountCents: hasMonthlyOverride ? monthlyAmountOverrideCents : null,
     leadRateCents: hasLeadOverride ? leadRateOverrideCents : null,
+    callOverageRateCents: hasLeadOverride ? leadRateOverrideCents : null,
     reason: row?.price_override_reason || null,
     cyclesRemaining: row?.price_override_cycles_remaining ?? null
   };
@@ -416,10 +421,14 @@ export function buildAdminPricingState(row, billingConfig = null) {
     selectedPlanLabel: basePlan.label,
     effectiveMonthlyAmountCents: planDisplay.monthlyAmountCents,
     effectiveLeadRateCents: planDisplay.leadRateCents,
+    effectiveCallOverageRateCents: planDisplay.callOverageRateCents,
     includedCount: planDisplay.includedCount,
+    includedCallCount: planDisplay.includedCallCount,
     baseMonthlyAmountCents: basePlan.monthlyAmountCents,
     baseLeadRateCents: basePlan.leadRateCents,
+    baseCallOverageRateCents: basePlan.callOverageRateCents,
     baseIncludedCount: basePlan.includedCount,
+    baseIncludedCallCount: basePlan.includedCallCount,
     subscriptionDisplayId: planDisplay.isCustom ? "Custom" : (row?.stripe_subscription_id || null),
     stripeSubscriptionId: row?.stripe_subscription_id || null,
     stripeCustomerId: row?.stripe_customer_id || null,

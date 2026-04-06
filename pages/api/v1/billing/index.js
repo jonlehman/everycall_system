@@ -185,6 +185,12 @@ export default async function handler(req, res) {
           excludedCallCount: 0,
           recentCalls: []
         },
+        callAdjustments: callBilling?.adjustments || {
+          creditAmountCents: 0,
+          debitAmountCents: 0,
+          netAdjustmentAmountCents: 0,
+          items: []
+        },
         callInvoiceEstimate: callBilling?.invoiceEstimate || null,
         callBillingPeriod: callBilling?.currentPeriod || null,
         leadPricing,

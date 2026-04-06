@@ -38,7 +38,8 @@ function buildPlanDrafts(plans) {
     code: String(plan?.code || '').trim(),
     label: String(plan?.label || '').trim(),
     monthlyAmount: formatMoneyInput(plan?.monthlyAmountCents),
-    leadRate: formatMoneyInput(plan?.leadRateCents)
+    includedCalls: String(Number(plan?.includedCallCount ?? plan?.includedCount ?? 0)),
+    callOverageRate: formatMoneyInput(plan?.callOverageRateCents ?? plan?.leadRateCents)
   }));
 }
 
@@ -176,16 +177,18 @@ export default function AdminSystemPage() {
     const normalizedPlans = [];
     for (const plan of billingPlans) {
       const monthlyAmountCents = parseMoneyInput(plan.monthlyAmount);
-      const leadRateCents = parseMoneyInput(plan.leadRate, { allowZero: true });
-      if (!plan?.code || !plan?.label?.trim() || monthlyAmountCents === null || leadRateCents === null) {
-        setConfigStatus({ message: 'Each billing tier needs a label, monthly amount, and per-lead amount.', tone: 'bad' });
+      const includedCallCount = Number(plan.includedCalls || 0);
+      const callOverageRateCents = parseMoneyInput(plan.callOverageRate, { allowZero: true });
+      if (!plan?.code || !plan?.label?.trim() || monthlyAmountCents === null || callOverageRateCents === null || !Number.isInteger(includedCallCount) || includedCallCount < 0) {
+        setConfigStatus({ message: 'Each billing tier needs a label, monthly amount, included calls, and overage per call.', tone: 'bad' });
         return;
       }
       normalizedPlans.push({
         code: plan.code,
         label: plan.label.trim(),
         monthlyAmountCents,
-        leadRateCents
+        includedCallCount,
+        callOverageRateCents
       });
     }
     setConfigStatus({ message: 'Saving system config...', tone: 'warn' });
@@ -315,14 +318,23 @@ export default function AdminSystemPage() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700">Per Lead</label>
+                    <label className="block text-sm font-medium text-slate-700">Included Calls</label>
+                    <input
+                      inputMode="numeric"
+                      className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={plan.includedCalls}
+                      onChange={(event) => updateBillingPlanField(index, 'includedCalls', event.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700">Overage Per Call</label>
                     <div className="mt-2 flex items-center rounded-lg border border-slate-300 bg-white px-3">
                       <span className="text-sm text-slate-500">$</span>
                       <input
                         inputMode="decimal"
                         className="w-full border-0 bg-transparent px-2 py-2 text-sm focus:outline-none"
-                        value={plan.leadRate}
-                        onChange={(event) => updateBillingPlanField(index, 'leadRate', event.target.value)}
+                        value={plan.callOverageRate}
+                        onChange={(event) => updateBillingPlanField(index, 'callOverageRate', event.target.value)}
                       />
                     </div>
                   </div>

@@ -90,7 +90,13 @@ export default async function handler(req, res) {
     const requestedPlanCode = String(body.planCode || "").trim().toLowerCase();
     const selectedPlan = billingConfig.plans.find((plan) => String(plan.code || "").trim().toLowerCase() === requestedPlanCode);
     const monthlyAmountCents = normalizeMoneyCents(body.monthlyAmountCents);
-    const leadRateCents = normalizeMoneyCents(body.leadRateCents, { allowZero: true });
+    const callOverageRateCents = normalizeMoneyCents(
+      body.callOverageRateCents ?? body.leadRateCents,
+      { allowZero: true }
+    );
+    const includedCallCount = Number.isFinite(Number(body.includedCallCount))
+      ? Math.max(0, Math.round(Number(body.includedCallCount)))
+      : Number(selectedPlan?.includedCallCount ?? selectedPlan?.includedCount ?? 0);
 
     if (!selectedPlan) {
       return res.status(400).json({ error: "invalid_plan_code" });
@@ -98,8 +104,11 @@ export default async function handler(req, res) {
     if (monthlyAmountCents === null) {
       return res.status(400).json({ error: "invalid_monthly_amount" });
     }
-    if (leadRateCents === null) {
-      return res.status(400).json({ error: "invalid_lead_rate" });
+    if (callOverageRateCents === null) {
+      return res.status(400).json({ error: "invalid_call_overage_rate" });
+    }
+    if (!Number.isInteger(includedCallCount) || includedCallCount < 0) {
+      return res.status(400).json({ error: "invalid_included_call_count" });
     }
 
     let row = await ensureTenantBillingAccount(pool, tenantKey, { plan_code: selectedPlan.code });
@@ -107,10 +116,13 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "tenant_not_found" });
     }
 
+    const selectedPlanIncludedCallCount = Number(selectedPlan.includedCallCount ?? selectedPlan.includedCount ?? 0);
+    const selectedPlanCallOverageRateCents = Number(selectedPlan.callOverageRateCents ?? selectedPlan.leadRateCents ?? 0);
     const nextIsCustom = monthlyAmountCents !== selectedPlan.monthlyAmountCents
-      || leadRateCents !== selectedPlan.leadRateCents;
+      || callOverageRateCents !== selectedPlanCallOverageRateCents
+      || includedCallCount !== selectedPlanIncludedCallCount;
     const monthlyAmountOverrideCents = nextIsCustom ? monthlyAmountCents : null;
-    const leadRateOverrideCents = nextIsCustom ? leadRateCents : null;
+    const leadRateOverrideCents = nextIsCustom ? callOverageRateCents : null;
 
     const activeSubscription = await findActiveStripeSubscription(row, tenantKey);
     let syncedRow = row;
@@ -175,8 +187,8 @@ export default async function handler(req, res) {
       [
         tenantKey,
         selectedPlan.monthlyAmountCents,
-        selectedPlan.leadRateCents,
-        selectedPlan.includedCount,
+        selectedPlanCallOverageRateCents,
+        selectedPlanIncludedCallCount,
         monthlyAmountOverrideCents,
         leadRateOverrideCents,
         nextIsCustom ? "custom_pricing" : null
@@ -193,9 +205,9 @@ export default async function handler(req, res) {
       `INSERT INTO audit_log (tenant_key, actor, action, details)
        VALUES ($1, $2, 'billing.pricing.updated', $3)`,
       [
-        tenantKey,
-        `admin:${admin.id}`,
-        `plan_code=${selectedPlan.code} monthly_amount_cents=${monthlyAmountCents} lead_rate_cents=${leadRateCents} custom=${nextIsCustom}`
+          tenantKey,
+          `admin:${admin.id}`,
+        `plan_code=${selectedPlan.code} monthly_amount_cents=${monthlyAmountCents} call_overage_rate_cents=${callOverageRateCents} included_call_count=${includedCallCount} custom=${nextIsCustom}`
       ]
     );
 
@@ -206,8 +218,10 @@ export default async function handler(req, res) {
       metadata: {
         planCode: selectedPlan.code,
         monthlyAmountCents,
-        leadRateCents,
-        includedCount: selectedPlan.includedCount,
+        leadRateCents: callOverageRateCents,
+        callOverageRateCents,
+        includedCount: includedCallCount,
+        includedCallCount,
         custom: nextIsCustom
       },
       createdByType: "admin",

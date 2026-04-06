@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '../../../../components/ui/button';
+import { formatBillingCallTypeLabel, getChargeBucketMeta } from '../../../../lib/callBilling';
 import { formatPhoneDisplay } from '../../../../lib/phoneDisplay';
 
 const FIELD_SECTIONS = [
@@ -172,7 +173,8 @@ function buildPricingDraft(billing = null, pricingCatalog = null) {
   return {
     planCode: selectedPlanCode,
     monthlyAmount: formatMoneyInput(billing?.pricing?.effectiveMonthlyAmountCents),
-    leadRate: formatMoneyInput(billing?.pricing?.effectiveLeadRateCents)
+    includedCalls: String(Number(billing?.pricing?.includedCallCount ?? billing?.pricing?.includedCount ?? 0)),
+    callOverageRate: formatMoneyInput(billing?.pricing?.effectiveCallOverageRateCents ?? billing?.pricing?.effectiveLeadRateCents)
   };
 }
 
@@ -447,6 +449,9 @@ export default function TenantManagePage() {
   const [billingReview, setBillingReview] = useState({ billing: null, pricingCatalog: { plans: [], defaultTrialDays: null } });
   const [pricingDraft, setPricingDraft] = useState(buildPricingDraft(null, null));
   const [pricingSaving, setPricingSaving] = useState(false);
+  const [billingCallActionBusy, setBillingCallActionBusy] = useState('');
+  const [adjustmentDraft, setAdjustmentDraft] = useState({ adjustmentType: 'credit', amount: '', description: '' });
+  const [adjustmentSaving, setAdjustmentSaving] = useState(false);
   const [notificationReview, setNotificationReview] = useState({ channelHealth: [], smsFailovers: [] });
   const [status, setStatus] = useState('Loading tenant...');
   const [loading, setLoading] = useState(false);
@@ -503,7 +508,7 @@ export default function TenantManagePage() {
     [primaryUserDraft, savedPrimaryUserDraft]
   );
   const pricingChangedCount = useMemo(
-    () => countChangedFields(pricingDraft, savedPricingDraft, ['planCode', 'monthlyAmount', 'leadRate']),
+    () => countChangedFields(pricingDraft, savedPricingDraft, ['planCode', 'monthlyAmount', 'includedCalls', 'callOverageRate']),
     [pricingDraft, savedPricingDraft]
   );
   const hasPrimaryUserChanges = primaryUserChangedCount > 0;
@@ -713,7 +718,8 @@ export default function TenantManagePage() {
     const selectedPlan = (Array.isArray(billingReview.pricingCatalog?.plans) ? billingReview.pricingCatalog.plans : [])
       .find((plan) => plan.code === pricingDraft.planCode);
     const monthlyAmountCents = parseMoneyInput(pricingDraft.monthlyAmount);
-    const leadRateCents = parseMoneyInput(pricingDraft.leadRate, { allowZero: true });
+    const callOverageRateCents = parseMoneyInput(pricingDraft.callOverageRate, { allowZero: true });
+    const includedCallCount = Number(pricingDraft.includedCalls || 0);
 
     if (!selectedPlan) {
       setStatus('Select a pricing tier first.');
@@ -723,8 +729,12 @@ export default function TenantManagePage() {
       setStatus('Enter a valid monthly amount.');
       return;
     }
-    if (leadRateCents === null) {
-      setStatus('Enter a valid per-lead amount.');
+    if (callOverageRateCents === null) {
+      setStatus('Enter a valid overage-per-call amount.');
+      return;
+    }
+    if (!Number.isInteger(includedCallCount) || includedCallCount < 0) {
+      setStatus('Enter a valid included-call count.');
       return;
     }
 
@@ -737,7 +747,8 @@ export default function TenantManagePage() {
         body: JSON.stringify({
           planCode: pricingDraft.planCode,
           monthlyAmountCents,
-          leadRateCents
+          includedCallCount,
+          callOverageRateCents
         })
       });
       setBillingReview((current) => ({
@@ -750,6 +761,80 @@ export default function TenantManagePage() {
       setStatus(error?.message || 'Tenant pricing update failed.');
     } finally {
       setPricingSaving(false);
+    }
+  };
+
+  const toggleCallBillingExclusion = async (call) => {
+    const billingPeriodId = Number(billingReview.billing?.currentBillingPeriod?.billingPeriodId || 0);
+    if (!call?.call_sid || !billingPeriodId) return;
+    const action = String(call.charge_bucket || '').toLowerCase() === 'excluded' ? 'reinclude' : 'exclude';
+    setBillingCallActionBusy(call.call_sid);
+    setStatus(action === 'exclude' ? 'Excluding call from billing...' : 'Re-including call in billing...');
+    try {
+      const data = await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/billing/calls/${encodeURIComponent(call.call_sid)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          billingPeriodId,
+          action
+        })
+      });
+      setBillingReview((current) => ({
+        ...current,
+        billing: {
+          ...(current?.billing || {}),
+          currentBillingPeriod: data?.currentBillingPeriod || current?.billing?.currentBillingPeriod
+        }
+      }));
+      setStatus(action === 'exclude' ? 'Call excluded from billing.' : 'Call restored to automatic billing.');
+    } catch (error) {
+      setStatus(error?.message || 'Could not update call billing.');
+    } finally {
+      setBillingCallActionBusy('');
+    }
+  };
+
+  const saveBillingAdjustment = async () => {
+    const billingPeriodId = Number(billingReview.billing?.currentBillingPeriod?.billingPeriodId || 0);
+    const amountCents = parseMoneyInput(adjustmentDraft.amount);
+    if (!billingPeriodId) {
+      setStatus('No current billing period is available.');
+      return;
+    }
+    if (!amountCents) {
+      setStatus('Enter a valid adjustment amount.');
+      return;
+    }
+    if (!adjustmentDraft.description.trim()) {
+      setStatus('Enter an adjustment description.');
+      return;
+    }
+    setAdjustmentSaving(true);
+    setStatus('Saving billing adjustment...');
+    try {
+      const data = await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/billing/adjustments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          billingPeriodId,
+          adjustmentType: adjustmentDraft.adjustmentType,
+          amountCents,
+          description: adjustmentDraft.description.trim()
+        })
+      });
+      setBillingReview((current) => ({
+        ...current,
+        billing: {
+          ...(current?.billing || {}),
+          currentBillingPeriod: data?.currentBillingPeriod || current?.billing?.currentBillingPeriod
+        }
+      }));
+      setAdjustmentDraft({ adjustmentType: 'credit', amount: '', description: '' });
+      setStatus('Billing adjustment saved.');
+    } catch (error) {
+      setStatus(error?.message || 'Could not save billing adjustment.');
+    } finally {
+      setAdjustmentSaving(false);
     }
   };
 
@@ -1077,6 +1162,7 @@ export default function TenantManagePage() {
   const availablePricingPlans = Array.isArray(billingReview.pricingCatalog?.plans) ? billingReview.pricingCatalog.plans : [];
   const selectedPricingPlan = availablePricingPlans.find((plan) => plan.code === pricingDraft.planCode) || availablePricingPlans[0] || null;
   const pricingState = billingReview.billing?.pricing || null;
+  const currentBillingPeriod = billingReview.billing?.currentBillingPeriod || null;
   const pricingSubscriptionDisplayId = billingReview.billing?.stripeSubscriptionDisplayId
     || pricingState?.subscriptionDisplayId
     || '—';
@@ -1249,7 +1335,7 @@ export default function TenantManagePage() {
               <div>
                 <h2 className="m-0 text-lg font-semibold">Billing Pricing</h2>
                 <div className="mt-1 text-sm text-slate-500">
-                  Choose a standard tier or set tenant-specific monthly and per-lead pricing.
+                  Choose a standard tier or set tenant-specific monthly and per-call pricing.
                 </div>
               </div>
               <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
@@ -1265,13 +1351,13 @@ export default function TenantManagePage() {
                 value={billingReview.billing?.plan ? formatMoney(billingReview.billing.plan.monthlyAmountCents) : '-'}
               />
               <RuntimeStat
-                label="Current Per Lead"
-                value={billingReview.billing?.plan ? formatMoney(billingReview.billing.plan.leadRateCents) : '-'}
+                label="Current Overage / Call"
+                value={billingReview.billing?.plan ? formatMoney(billingReview.billing.plan.callOverageRateCents) : '-'}
               />
             </div>
 
             <div className="mt-4 grid gap-3">
-              <Field label="Pricing Tier" hint="Changing tiers resets the monthly and per-lead fields to that tier’s defaults.">
+              <Field label="Pricing Tier" hint="Changing tiers resets the monthly amount, included calls, and overage-per-call fields to that tier’s defaults.">
                 <SelectInput
                   value={pricingDraft.planCode}
                   options={availablePricingPlans.map((plan) => plan.code)}
@@ -1281,7 +1367,8 @@ export default function TenantManagePage() {
                       ...current,
                       planCode: event.target.value,
                       monthlyAmount: nextPlan ? formatMoneyInput(nextPlan.monthlyAmountCents) : current.monthlyAmount,
-                      leadRate: nextPlan ? formatMoneyInput(nextPlan.leadRateCents) : current.leadRate
+                      includedCalls: String(Number(nextPlan?.includedCallCount ?? nextPlan?.includedCount ?? 0)),
+                      callOverageRate: nextPlan ? formatMoneyInput(nextPlan.callOverageRateCents ?? nextPlan.leadRateCents) : current.callOverageRate
                     }));
                   }}
                 />
@@ -1289,11 +1376,11 @@ export default function TenantManagePage() {
 
               {selectedPricingPlan ? (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-                  Tier default: {selectedPricingPlan.label} · {formatMoney(selectedPricingPlan.monthlyAmountCents)} / month · {formatMoney(selectedPricingPlan.leadRateCents)} / lead
+                  Tier default: {selectedPricingPlan.label} · {formatMoney(selectedPricingPlan.monthlyAmountCents)} / month · {Number(selectedPricingPlan.includedCallCount ?? selectedPricingPlan.includedCount ?? 0)} included calls · {formatMoney(selectedPricingPlan.callOverageRateCents ?? selectedPricingPlan.leadRateCents)} / overage call
                 </div>
               ) : null}
 
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-3">
                 <Field label="Monthly Amount" hint="Override the monthly base for this tenant if needed.">
                   <div className="flex items-center rounded-md border border-slate-300 bg-white px-3">
                     <span className="text-sm text-slate-500">$</span>
@@ -1305,13 +1392,21 @@ export default function TenantManagePage() {
                     />
                   </div>
                 </Field>
-                <Field label="Per Lead" hint="Used for billing estimates and tenant-level lead pricing.">
+                <Field label="Included Calls" hint="Calls included before overages begin.">
+                  <input
+                    inputMode="numeric"
+                    value={pricingDraft.includedCalls}
+                    onChange={(event) => updatePricingField('includedCalls', event.target.value)}
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                  />
+                </Field>
+                <Field label="Overage Per Call" hint="Used for billing estimates and Stripe overage pricing.">
                   <div className="flex items-center rounded-md border border-slate-300 bg-white px-3">
                     <span className="text-sm text-slate-500">$</span>
                     <input
                       inputMode="decimal"
-                      value={pricingDraft.leadRate}
-                      onChange={(event) => updatePricingField('leadRate', event.target.value)}
+                      value={pricingDraft.callOverageRate}
+                      onChange={(event) => updatePricingField('callOverageRate', event.target.value)}
                       className="w-full border-0 bg-transparent px-2 py-2 text-sm focus:outline-none"
                     />
                   </div>
@@ -1334,6 +1429,120 @@ export default function TenantManagePage() {
                 <Button variant="outline" onClick={resetPricingDraft} disabled={pricingSaving || !hasPricingChanges}>
                   Reset
                 </Button>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="m-0 text-lg font-semibold">Current Billing Period</h2>
+                <div className="mt-1 text-sm text-slate-500">
+                  Exclude calls from usage, add credits or debits, and review the current call-usage ledger.
+                </div>
+              </div>
+              <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                {currentBillingPeriod?.currentPeriod?.start ? `${formatDateTimeDisplay(currentBillingPeriod.currentPeriod.start)} → ${formatDateTimeDisplay(currentBillingPeriod.currentPeriod.end)}` : 'No active period'}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <RuntimeStat label="Eligible Calls" value={currentBillingPeriod?.callUsage?.eligibleCallCount ?? '-'} />
+              <RuntimeStat label="Included Used" value={currentBillingPeriod?.callUsage?.includedCallCountUsed ?? '-'} />
+              <RuntimeStat label="Overage Calls" value={currentBillingPeriod?.callUsage?.overageCallCount ?? '-'} />
+              <RuntimeStat label="Estimate" value={currentBillingPeriod ? formatMoney(currentBillingPeriod.invoiceEstimate?.totalEstimatedInvoiceCents) : '-'} />
+            </div>
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-slate-50">
+                    <tr className="border-b border-slate-200 text-slate-500">
+                      <th className="px-3 py-2 font-medium">Time</th>
+                      <th className="px-3 py-2 font-medium">Caller</th>
+                      <th className="px-3 py-2 font-medium">Charge Bucket</th>
+                      <th className="px-3 py-2 font-medium">Type</th>
+                      <th className="px-3 py-2 font-medium">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.isArray(currentBillingPeriod?.callUsage?.recentCalls) && currentBillingPeriod.callUsage.recentCalls.length ? currentBillingPeriod.callUsage.recentCalls.map((call) => {
+                      const bucketMeta = getChargeBucketMeta(call?.charge_bucket);
+                      const busy = billingCallActionBusy === call.call_sid;
+                      return (
+                        <tr key={call.call_sid} className="border-b border-slate-100 align-top last:border-b-0">
+                          <td className="px-3 py-2 text-slate-700">{formatDateTimeDisplay(call.created_at)}</td>
+                          <td className="px-3 py-2 text-slate-700">
+                            <div className="font-medium text-slate-900">{[call.caller_first_name, call.caller_last_name].filter(Boolean).join(' ') || 'Unknown caller'}</div>
+                            <div className="text-xs text-slate-500">{call.callback_number || '-'}</div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${bucketMeta.tone === 'ok' ? 'bg-emerald-50 text-emerald-700' : bucketMeta.tone === 'warn' ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
+                              {bucketMeta.label}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            <div>{call.billing_call_type_label || formatBillingCallTypeLabel(call.billing_call_type_code)}</div>
+                            <div className="text-xs text-slate-500">{call.summary || call.service_required || 'No summary available.'}</div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <Button
+                              variant="outline"
+                              onClick={() => toggleCallBillingExclusion(call)}
+                              disabled={busy}
+                            >
+                              {busy ? 'Saving...' : String(call?.charge_bucket || '').toLowerCase() === 'excluded' ? 'Re-include' : 'Exclude'}
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    }) : (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-slate-500">No calls are assigned to the current billing period yet.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div>
+                  <h3 className="m-0 text-base font-semibold text-slate-900">Adjustment</h3>
+                  <div className="mt-1 text-sm text-slate-500">
+                    Add a manual credit or debit for the current billing period.
+                  </div>
+                </div>
+                <Field label="Type">
+                  <SelectInput
+                    value={adjustmentDraft.adjustmentType}
+                    options={['credit', 'debit']}
+                    onChange={(event) => setAdjustmentDraft((current) => ({ ...current, adjustmentType: event.target.value }))}
+                  />
+                </Field>
+                <Field label="Amount">
+                  <div className="flex items-center rounded-md border border-slate-300 bg-white px-3">
+                    <span className="text-sm text-slate-500">$</span>
+                    <input
+                      inputMode="decimal"
+                      value={adjustmentDraft.amount}
+                      onChange={(event) => setAdjustmentDraft((current) => ({ ...current, amount: event.target.value }))}
+                      className="w-full border-0 bg-transparent px-2 py-2 text-sm focus:outline-none"
+                    />
+                  </div>
+                </Field>
+                <Field label="Description">
+                  <TextInput
+                    value={adjustmentDraft.description}
+                    onChange={(event) => setAdjustmentDraft((current) => ({ ...current, description: event.target.value }))}
+                    placeholder="Reason for the adjustment"
+                  />
+                </Field>
+                <Button onClick={saveBillingAdjustment} disabled={adjustmentSaving}>
+                  {adjustmentSaving ? 'Saving...' : 'Add Adjustment'}
+                </Button>
+                <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+                  Net adjustments: {formatMoney(currentBillingPeriod?.adjustments?.netAdjustmentAmountCents || 0)}
+                </div>
               </div>
             </div>
           </section>

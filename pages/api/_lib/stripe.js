@@ -280,6 +280,32 @@ export async function updateSubscriptionPrice({
   });
 }
 
+export async function createInvoiceItem({
+  customerId,
+  subscriptionId = null,
+  amountCents,
+  currency,
+  description,
+  metadata = {}
+}) {
+  if (!customerId) {
+    throw new Error("customer_id_required");
+  }
+  const normalizedAmount = Math.round(Number(amountCents || 0));
+  if (!Number.isInteger(normalizedAmount) || normalizedAmount === 0) {
+    throw new Error("invalid_invoice_item_amount");
+  }
+  const stripe = getStripe();
+  return stripe.invoiceItems.create({
+    customer: customerId,
+    ...(subscriptionId ? { subscription: subscriptionId } : {}),
+    amount: normalizedAmount,
+    currency: (currency || getStripeDefaultCurrency()).toLowerCase(),
+    description: description || undefined,
+    metadata
+  });
+}
+
 export function constructWebhookEvent(rawBody, signature) {
   const stripe = getStripe();
   return stripe.webhooks.constructEvent(rawBody, signature, getStripeWebhookSecret());

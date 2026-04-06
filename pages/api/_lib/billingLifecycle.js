@@ -1,4 +1,5 @@
 import { recordBillingLifecycleEvent } from "./billing.js";
+import { finalizeDueBillingPeriods } from "./callBilling.js";
 import { getSharedSmsNumber } from "./alerts.js";
 import { sendTransactionalEmail } from "./mail.js";
 import { sendTelnyxSms, releaseVoiceNumber } from "./telnyx.js";
@@ -370,12 +371,14 @@ async function deactivateExpiredPostTrial(pool, today) {
 
 export async function runBillingLifecycleJobs(pool) {
   const today = startOfTodayUtc();
+  const billingPeriods = await finalizeDueBillingPeriods(pool);
   const remindersSent = await runTrialReminders(pool, today);
   const trialsExpired = await expireTrials(pool, today);
   const shutdownWarningsSent = await runShutdownWarnings(pool, today);
   const postTrialDeactivated = await deactivateExpiredPostTrial(pool, today);
 
   return {
+    billingPeriods,
     remindersSent,
     trialsExpired,
     shutdownWarningsSent,

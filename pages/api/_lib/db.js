@@ -830,12 +830,16 @@ export async function ensureTables(pool) {
       description TEXT NOT NULL,
       amount_cents INTEGER NOT NULL,
       metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      stripe_invoice_item_id TEXT,
+      invoiced_at TIMESTAMPTZ,
       created_by_type TEXT,
       created_by_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
   await pool.query(`ALTER TABLE billing_period_adjustments ADD COLUMN IF NOT EXISTS metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE billing_period_adjustments ADD COLUMN IF NOT EXISTS stripe_invoice_item_id TEXT;`);
+  await pool.query(`ALTER TABLE billing_period_adjustments ADD COLUMN IF NOT EXISTS invoiced_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE billing_period_adjustments ADD COLUMN IF NOT EXISTS created_by_type TEXT;`);
   await pool.query(`ALTER TABLE billing_period_adjustments ADD COLUMN IF NOT EXISTS created_by_id TEXT;`);
   await pool.query(`ALTER TABLE billing_period_adjustments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
