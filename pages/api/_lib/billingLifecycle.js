@@ -1,4 +1,5 @@
 import { recordBillingLifecycleEvent } from "./billing.js";
+import { refreshTenantCouponState, syncTenantCouponSubscriptionPricing } from "./billingCoupons.js";
 import { finalizeDueBillingPeriods } from "./callBilling.js";
 import { getSharedSmsNumber } from "./alerts.js";
 import { sendTransactionalEmail } from "./mail.js";
@@ -369,8 +370,24 @@ async function deactivateExpiredPostTrial(pool, today) {
   return deactivated;
 }
 
+async function runCouponSync(pool) {
+  const tenants = await pool.query(
+    `SELECT tenant_key
+     FROM tenant_billing_accounts
+     WHERE active_coupon_redemption_id IS NOT NULL`
+  );
+  let syncedTenants = 0;
+  for (const row of tenants.rows || []) {
+    await refreshTenantCouponState(pool, row.tenant_key).catch(() => null);
+    await syncTenantCouponSubscriptionPricing(pool, row.tenant_key).catch(() => null);
+    syncedTenants += 1;
+  }
+  return syncedTenants;
+}
+
 export async function runBillingLifecycleJobs(pool) {
   const today = startOfTodayUtc();
+  const couponSyncTenants = await runCouponSync(pool);
   const billingPeriods = await finalizeDueBillingPeriods(pool);
   const remindersSent = await runTrialReminders(pool, today);
   const trialsExpired = await expireTrials(pool, today);
@@ -378,6 +395,7 @@ export async function runBillingLifecycleJobs(pool) {
   const postTrialDeactivated = await deactivateExpiredPostTrial(pool, today);
 
   return {
+    couponSyncTenants,
     billingPeriods,
     remindersSent,
     trialsExpired,

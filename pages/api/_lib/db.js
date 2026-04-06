@@ -678,6 +678,10 @@ export async function ensureTables(pool) {
       cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
       canceled_at TIMESTAMPTZ,
       trial_end TIMESTAMPTZ,
+      active_coupon_redemption_id BIGINT,
+      coupon_trial_ends_at TIMESTAMPTZ,
+      coupon_discount_starts_at TIMESTAMPTZ,
+      coupon_discount_ends_at TIMESTAMPTZ,
       last_invoice_id TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -701,7 +705,104 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS canceled_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS trial_end TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS active_coupon_redemption_id BIGINT;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS coupon_trial_ends_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS coupon_discount_starts_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS coupon_discount_ends_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS last_invoice_id TEXT;`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS tenant_billing_accounts_active_coupon_idx ON tenant_billing_accounts (active_coupon_redemption_id);`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS billing_coupons (
+      billing_coupon_id BIGSERIAL PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'active',
+      monthly_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+      overage_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+      discount_duration_days INTEGER NOT NULL DEFAULT 0,
+      free_trial_days INTEGER NOT NULL DEFAULT 0,
+      single_use_global BOOLEAN NOT NULL DEFAULT TRUE,
+      max_redemptions INTEGER NOT NULL DEFAULT 1,
+      redeem_by TIMESTAMPTZ,
+      notes TEXT,
+      created_by_admin_user_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE billing_coupons ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';`);
+  await pool.query(`ALTER TABLE billing_coupons ADD COLUMN IF NOT EXISTS monthly_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_coupons ADD COLUMN IF NOT EXISTS overage_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_coupons ADD COLUMN IF NOT EXISTS discount_duration_days INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_coupons ADD COLUMN IF NOT EXISTS free_trial_days INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_coupons ADD COLUMN IF NOT EXISTS single_use_global BOOLEAN NOT NULL DEFAULT TRUE;`);
+  await pool.query(`ALTER TABLE billing_coupons ADD COLUMN IF NOT EXISTS max_redemptions INTEGER NOT NULL DEFAULT 1;`);
+  await pool.query(`ALTER TABLE billing_coupons ADD COLUMN IF NOT EXISTS redeem_by TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE billing_coupons ADD COLUMN IF NOT EXISTS notes TEXT;`);
+  await pool.query(`ALTER TABLE billing_coupons ADD COLUMN IF NOT EXISTS created_by_admin_user_id TEXT;`);
+  await pool.query(`ALTER TABLE billing_coupons ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`ALTER TABLE billing_coupons ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS billing_coupons_status_idx ON billing_coupons (status, created_at DESC);`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS billing_coupon_plan_scopes (
+      billing_coupon_plan_scope_id BIGSERIAL PRIMARY KEY,
+      billing_coupon_id BIGINT NOT NULL REFERENCES billing_coupons(billing_coupon_id) ON DELETE CASCADE,
+      plan_code TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (billing_coupon_id, plan_code)
+    );
+  `);
+  await pool.query(`ALTER TABLE billing_coupon_plan_scopes ADD COLUMN IF NOT EXISTS plan_code TEXT;`);
+  await pool.query(`ALTER TABLE billing_coupon_plan_scopes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS billing_coupon_plan_scopes_coupon_idx ON billing_coupon_plan_scopes (billing_coupon_id, plan_code);`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS billing_coupon_redemptions (
+      billing_coupon_redemption_id BIGSERIAL PRIMARY KEY,
+      billing_coupon_id BIGINT NOT NULL REFERENCES billing_coupons(billing_coupon_id) ON DELETE RESTRICT,
+      tenant_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      redeemed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      trial_starts_at TIMESTAMPTZ,
+      trial_ends_at TIMESTAMPTZ,
+      discount_starts_at TIMESTAMPTZ,
+      discount_ends_at TIMESTAMPTZ,
+      snapshot_plan_code TEXT,
+      snapshot_monthly_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+      snapshot_overage_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+      snapshot_discount_duration_days INTEGER NOT NULL DEFAULT 0,
+      snapshot_free_trial_days INTEGER NOT NULL DEFAULT 0,
+      stripe_discount_id TEXT,
+      stripe_coupon_id TEXT,
+      metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_by_type TEXT,
+      created_by_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (billing_coupon_id)
+    );
+  `);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS redeemed_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS trial_starts_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS discount_starts_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS discount_ends_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS snapshot_plan_code TEXT;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS snapshot_monthly_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS snapshot_overage_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS snapshot_discount_duration_days INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS snapshot_free_trial_days INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS stripe_discount_id TEXT;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS stripe_coupon_id TEXT;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS created_by_type TEXT;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS created_by_id TEXT;`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`ALTER TABLE billing_coupon_redemptions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS billing_coupon_redemptions_tenant_idx ON billing_coupon_redemptions (tenant_key, status, redeemed_at DESC);`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS billing_coupon_redemptions_active_tenant_idx ON billing_coupon_redemptions (tenant_key) WHERE status = 'active';`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS billing_events (
@@ -748,6 +849,11 @@ export async function ensureTables(pool) {
       monthly_amount_cents INTEGER NOT NULL DEFAULT 0,
       included_call_count INTEGER NOT NULL DEFAULT 0,
       call_overage_rate_cents INTEGER NOT NULL DEFAULT 0,
+      billing_coupon_redemption_id BIGINT REFERENCES billing_coupon_redemptions(billing_coupon_redemption_id),
+      billing_coupon_id BIGINT REFERENCES billing_coupons(billing_coupon_id),
+      coupon_code TEXT,
+      monthly_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+      overage_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
       eligible_call_count INTEGER NOT NULL DEFAULT 0,
       included_call_count_used INTEGER NOT NULL DEFAULT 0,
       overage_call_count INTEGER NOT NULL DEFAULT 0,
@@ -768,6 +874,11 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS monthly_amount_cents INTEGER NOT NULL DEFAULT 0;`);
   await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS included_call_count INTEGER NOT NULL DEFAULT 0;`);
   await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS call_overage_rate_cents INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS billing_coupon_redemption_id BIGINT REFERENCES billing_coupon_redemptions(billing_coupon_redemption_id);`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS billing_coupon_id BIGINT REFERENCES billing_coupons(billing_coupon_id);`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS coupon_code TEXT;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS monthly_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS overage_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0;`);
   await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS eligible_call_count INTEGER NOT NULL DEFAULT 0;`);
   await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS included_call_count_used INTEGER NOT NULL DEFAULT 0;`);
   await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS overage_call_count INTEGER NOT NULL DEFAULT 0;`);
@@ -780,6 +891,7 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
   await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
   await pool.query(`CREATE INDEX IF NOT EXISTS billing_periods_tenant_status_idx ON billing_periods (tenant_key, status, period_start DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS billing_periods_coupon_idx ON billing_periods (billing_coupon_redemption_id, period_start DESC);`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS billing_period_call_assignments (

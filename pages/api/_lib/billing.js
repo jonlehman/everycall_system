@@ -312,6 +312,10 @@ export async function getTenantBillingState(pool, tenantKey) {
        b.cancel_at_period_end,
        b.canceled_at,
        b.trial_end AS stripe_trial_end,
+       b.active_coupon_redemption_id,
+       b.coupon_trial_ends_at,
+       b.coupon_discount_starts_at,
+       b.coupon_discount_ends_at,
        b.last_invoice_id,
        b.updated_at AS billing_account_updated_at
      FROM tenants t

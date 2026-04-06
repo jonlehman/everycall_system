@@ -95,6 +95,8 @@ export default function AccountBillingPage() {
   const [selectedBillingPeriod, setSelectedBillingPeriod] = useState(null);
   const [selectedBillingPeriodId, setSelectedBillingPeriodId] = useState(null);
   const [selectedBillingPeriodLoading, setSelectedBillingPeriodLoading] = useState(false);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponBusy, setCouponBusy] = useState(false);
   const [status, setStatus] = useState({ tone: 'warn', message: 'Loading billing status...' });
 
   const loadBilling = async ({ keepStatus = false } = {}) => {
@@ -212,10 +214,35 @@ export default function AccountBillingPage() {
     }
   };
 
+  const applyCoupon = async () => {
+    const normalizedCode = String(couponCode || '').trim().toUpperCase();
+    if (!normalizedCode) {
+      setStatus({ tone: 'bad', message: 'Enter a coupon code first.' });
+      return;
+    }
+    setCouponBusy(true);
+    setStatus({ tone: 'warn', message: 'Applying coupon...' });
+    try {
+      const data = await fetchJson('/api/v1/billing/coupons/redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: normalizedCode })
+      });
+      setCouponCode('');
+      await loadBilling({ keepStatus: true });
+      setStatus({ tone: 'ok', message: data?.message || 'Coupon applied.' });
+    } catch (error) {
+      setStatus({ tone: 'bad', message: error?.message || 'Could not apply coupon.' });
+    } finally {
+      setCouponBusy(false);
+    }
+  };
+
   const callUsage = billing?.callUsage || {};
   const callInvoiceEstimate = billing?.callInvoiceEstimate || {};
   const callPricing = billing?.callPricing || {};
   const callAdjustments = billing?.callAdjustments || {};
+  const activeCoupon = billing?.activeCoupon || null;
   const recentCalls = Array.isArray(callUsage.recentCalls) ? callUsage.recentCalls : [];
   const billingPeriodHistory = Array.isArray(billing?.billingPeriodHistory) ? billing.billingPeriodHistory : [];
   const canReactivate = viewer.canManage && billing?.status === 'deactivated';
@@ -236,7 +263,7 @@ export default function AccountBillingPage() {
       : null;
 
   const invoiceCards = useMemo(() => ([
-    { label: 'Base Subscription', value: formatMoney(callInvoiceEstimate.baseAmountCents) },
+    { label: 'Base Subscription', value: formatMoney(callInvoiceEstimate.discountedBaseAmountCents ?? callInvoiceEstimate.baseAmountCents) },
     { label: 'Eligible Calls', value: `${Number(callUsage.eligibleCallCount || 0)}` },
     { label: 'Overage Rate', value: `${formatMoney(callPricing.callOverageRateCents)} / call` },
     { label: 'Overage Charges', value: formatMoney(callInvoiceEstimate.overageAmountCents) },
@@ -284,6 +311,47 @@ export default function AccountBillingPage() {
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
+                <h2 className="mt-0 text-lg font-semibold">Coupon</h2>
+                <p className="m-0 mt-1 text-sm text-slate-500">Apply a one-time code here. Checkout itself will stay coupon-free.</p>
+              </div>
+            </div>
+            {activeCoupon ? (
+              <div className="mt-4 grid gap-2 text-sm md:grid-cols-[220px_1fr]">
+                <div>Active code</div><div>{activeCoupon.code}</div>
+                <div>Monthly discount</div><div>{Number(activeCoupon.monthlyDiscountPercent || 0)}%</div>
+                <div>Overage discount</div><div>{Number(activeCoupon.overageDiscountPercent || 0)}%</div>
+                <div>Free trial</div><div>{Number(activeCoupon.freeTrialDays || 0)} day(s)</div>
+                <div>Discount duration</div><div>{Number(activeCoupon.discountDurationDays || 0) === 0 ? 'Unlimited' : `${activeCoupon.discountDurationDays} day(s)`}</div>
+                <div>Trial ends</div><div>{activeCoupon.trialEndsAt ? formatDateTime(activeCoupon.trialEndsAt) : '—'}</div>
+                <div>Discount starts</div><div>{activeCoupon.discountStartsAt ? formatDateTime(activeCoupon.discountStartsAt) : (activeCoupon.pendingPaidDiscountStart ? 'When paid billing begins' : '—')}</div>
+                <div>Discount ends</div><div>{activeCoupon.discountEndsAt ? formatDateTime(activeCoupon.discountEndsAt) : 'Unlimited / pending'}</div>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-500">No coupon is active for this account.</p>
+            )}
+
+            {!viewer.canManage ? (
+              <p className="mt-4 text-sm text-slate-500">Only the account owner can apply or replace a coupon.</p>
+            ) : billing?.plan?.isCustom ? (
+              <p className="mt-4 text-sm text-slate-500">Coupons are not available for custom-priced accounts.</p>
+            ) : (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <input
+                  className="w-full max-w-xs rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                  value={couponCode}
+                  onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
+                  placeholder="Coupon code"
+                />
+                <Button type="button" onClick={applyCoupon} disabled={couponBusy}>
+                  {couponBusy ? 'Applying...' : (activeCoupon ? 'Replace Code' : 'Apply Code')}
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
                 <h2 className="mt-0 text-lg font-semibold">Call Billing</h2>
                 <p className="m-0 mt-1 text-sm text-slate-500">Included calls are consumed in chronological order. Calls above the included allowance become overages for this billing period.</p>
               </div>
@@ -302,6 +370,8 @@ export default function AccountBillingPage() {
             <div className="mt-4 grid gap-2 text-sm md:grid-cols-[220px_1fr]">
               <div>Included calls</div><div>{Number(callPricing.includedCallCount || 0)}</div>
               <div>Excluded calls</div><div>{Number(callUsage.excludedCallCount || 0)}</div>
+              <div>Monthly discount</div><div>{Number(callInvoiceEstimate.monthlyDiscountPercent || 0)}%</div>
+              <div>Overage discount</div><div>{Number(callInvoiceEstimate.overageDiscountPercent || 0)}%</div>
               <div>Manual adjustments</div><div>{formatMoney(callAdjustments.netAdjustmentAmountCents || 0)}</div>
             </div>
           </div>
@@ -407,9 +477,6 @@ export default function AccountBillingPage() {
                 </thead>
                 <tbody>
                   {billingPeriodHistory.length ? billingPeriodHistory.map((period) => {
-                    const estimatedTotal = Number(period.monthlyAmountCents || 0)
-                      + Number(period.overageAmountCents || 0)
-                      + Number(period.netAdjustmentAmountCents || 0);
                     const isSelected = Number(selectedBillingPeriodId || 0) === Number(period.billingPeriodId || 0);
                     const isCurrent = Number(period.billingPeriodId || 0) === Number(billing?.currentBillingPeriodId || 0);
                     return (
@@ -430,7 +497,7 @@ export default function AccountBillingPage() {
                           </div>
                         </td>
                         <td className="px-2 py-3 text-sm text-slate-700">{formatMoney(period.overageAmountCents || 0)}</td>
-                        <td className="px-2 py-3 text-sm font-medium text-slate-900">{formatMoney(estimatedTotal)}</td>
+                        <td className="px-2 py-3 text-sm font-medium text-slate-900">{formatMoney(period.totalEstimatedInvoiceCents || 0)}</td>
                         <td className="px-2 py-3 text-right">
                           <Button
                             variant={isSelected ? 'default' : 'outline'}
@@ -465,7 +532,7 @@ export default function AccountBillingPage() {
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="text-xs normal-case tracking-normal text-slate-500">Base Subscription</div>
-                  <div className="mt-1 text-xl font-semibold">{formatMoney(selectedPeriodInvoiceEstimate.baseAmountCents)}</div>
+                  <div className="mt-1 text-xl font-semibold">{formatMoney(selectedPeriodInvoiceEstimate.discountedBaseAmountCents ?? selectedPeriodInvoiceEstimate.baseAmountCents)}</div>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="text-xs normal-case tracking-normal text-slate-500">Eligible Calls</div>
@@ -489,6 +556,8 @@ export default function AccountBillingPage() {
                 <div>Included used</div><div>{Number(selectedPeriodCallUsage.includedCallCountUsed || 0)}</div>
                 <div>Excluded calls</div><div>{Number(selectedPeriodCallUsage.excludedCallCount || 0)}</div>
                 <div>Overage rate</div><div>{formatMoney(selectedBillingPeriod?.callPricing?.callOverageRateCents || 0)} / call</div>
+                <div>Monthly discount</div><div>{Number(selectedPeriodInvoiceEstimate.monthlyDiscountPercent || 0)}%</div>
+                <div>Overage discount</div><div>{Number(selectedPeriodInvoiceEstimate.overageDiscountPercent || 0)}%</div>
               </div>
 
               <div className="mt-6">

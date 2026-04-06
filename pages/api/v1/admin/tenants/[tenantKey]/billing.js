@@ -8,6 +8,7 @@ import {
   ensureTenantBillingAccount,
   getSystemBillingConfig
 } from "../../../../_lib/billing.js";
+import { getTenantActiveCouponRedemption } from "../../../../_lib/billingCoupons.js";
 import { syncCurrentBillingPeriod } from "../../../../_lib/callBilling.js";
 
 export default async function handler(req, res) {
@@ -43,6 +44,7 @@ export default async function handler(req, res) {
     const plan = buildPlanDisplay(row, billingConfig);
     const pricing = buildAdminPricingState(row, billingConfig);
     const currentBillingPeriod = await syncCurrentBillingPeriod(pool, tenantKey).catch(() => null);
+    const activeCoupon = await getTenantActiveCouponRedemption(pool, tenantKey).catch(() => null);
 
     const lifecycle = await pool.query(
       `SELECT event_type, from_billing_status, to_billing_status, reason, created_by_type, created_at
@@ -105,6 +107,7 @@ export default async function handler(req, res) {
         plan,
         pricing,
         override: buildPricingOverride(row),
+        activeCoupon,
         currentBillingPeriod
       },
       pricingCatalog: {

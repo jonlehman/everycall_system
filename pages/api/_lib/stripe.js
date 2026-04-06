@@ -146,7 +146,7 @@ export function buildRecurringPriceData({
   metadata = {}
 }) {
   const normalizedAmount = Number(unitAmount);
-  if (!Number.isInteger(normalizedAmount) || normalizedAmount <= 0) {
+  if (!Number.isInteger(normalizedAmount) || normalizedAmount < 0) {
     throw new Error("invalid_unit_amount");
   }
 

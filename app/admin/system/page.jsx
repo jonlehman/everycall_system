@@ -17,6 +17,14 @@ function formatTimestamp(value) {
   return parsed.toLocaleString();
 }
 
+function formatDateTimeInput(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
 function formatMoneyInput(amountCents) {
   const amount = Number(amountCents || 0) / 100;
   return Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
@@ -31,6 +39,21 @@ function parseMoneyInput(value, { allowZero = false } = {}) {
   if (rounded < 0) return null;
   if (!allowZero && rounded <= 0) return null;
   return rounded;
+}
+
+function buildCouponDraft(coupon = null) {
+  return {
+    billingCouponId: coupon?.billingCouponId || '',
+    code: coupon?.code || '',
+    status: coupon?.status || 'active',
+    monthlyDiscountPercent: coupon ? String(Number(coupon.monthlyDiscountPercent || 0)) : '0',
+    overageDiscountPercent: coupon ? String(Number(coupon.overageDiscountPercent || 0)) : '0',
+    freeTrialDays: coupon ? String(Number(coupon.freeTrialDays || 0)) : '0',
+    discountDurationDays: coupon ? String(Number(coupon.discountDurationDays || 0)) : '0',
+    redeemBy: formatDateTimeInput(coupon?.redeemBy),
+    notes: coupon?.notes || '',
+    planScopes: Array.isArray(coupon?.planScopes) && coupon.planScopes.length ? coupon.planScopes : ['growth']
+  };
 }
 
 function buildPlanDrafts(plans) {
@@ -100,6 +123,7 @@ export default function AdminSystemPage() {
   const [telnyxSmsNumberId, setTelnyxSmsNumberId] = useState('');
   const [telnyxSmsMessagingProfileId, setTelnyxSmsMessagingProfileId] = useState('');
   const [configStatus, setConfigStatus] = useState({ message: 'Loading system config...', tone: 'warn' });
+  const [couponStatus, setCouponStatus] = useState({ message: 'Loading coupons...', tone: 'warn' });
   const [debugStatus, setDebugStatus] = useState({ message: 'Loading SMS diagnostics...', tone: 'warn' });
   const [testStatus, setTestStatus] = useState(null);
   const [testPhone, setTestPhone] = useState('');
@@ -114,6 +138,9 @@ export default function AdminSystemPage() {
     recentFailovers: [],
     recentDeliveries: []
   });
+  const [coupons, setCoupons] = useState([]);
+  const [couponDraft, setCouponDraft] = useState(buildCouponDraft());
+  const [couponSaving, setCouponSaving] = useState(false);
 
   const loadConfig = async () => {
     setConfigStatus({ message: 'Loading system config...', tone: 'warn' });
@@ -133,6 +160,22 @@ export default function AdminSystemPage() {
       setConfigStatus({ message: 'System config loaded.', tone: 'ok' });
     } catch {
       setConfigStatus({ message: 'Failed to load system config.', tone: 'bad' });
+    }
+  };
+
+  const loadCoupons = async () => {
+    setCouponStatus({ message: 'Loading coupons...', tone: 'warn' });
+    try {
+      const resp = await fetch('/api/v1/admin/billing/coupons');
+      const data = resp.ok ? await resp.json() : null;
+      if (!data) {
+        setCouponStatus({ message: 'Failed to load coupons.', tone: 'bad' });
+        return;
+      }
+      setCoupons(Array.isArray(data.coupons) ? data.coupons : []);
+      setCouponStatus({ message: 'Coupons loaded.', tone: 'ok' });
+    } catch {
+      setCouponStatus({ message: 'Failed to load coupons.', tone: 'bad' });
     }
   };
 
@@ -163,6 +206,7 @@ export default function AdminSystemPage() {
 
   useEffect(() => {
     loadConfig();
+    loadCoupons();
     loadDiagnostics();
   }, []);
 
@@ -225,6 +269,89 @@ export default function AdminSystemPage() {
     setBillingPlans((current) => current.map((plan, planIndex) => (
       planIndex === index ? { ...plan, [key]: value } : plan
     )));
+  };
+
+  const resetCouponDraft = () => {
+    setCouponDraft(buildCouponDraft());
+  };
+
+  const toggleCouponPlanScope = (planCode) => {
+    setCouponDraft((current) => {
+      const currentScopes = Array.isArray(current.planScopes) ? current.planScopes : [];
+      return {
+        ...current,
+        planScopes: currentScopes.includes(planCode)
+          ? currentScopes.filter((item) => item !== planCode)
+          : [...currentScopes, planCode]
+      };
+    });
+  };
+
+  const saveCoupon = async () => {
+    const normalizedCode = String(couponDraft.code || '').trim().toUpperCase();
+    const monthlyDiscountPercent = Number(couponDraft.monthlyDiscountPercent || 0);
+    const overageDiscountPercent = Number(couponDraft.overageDiscountPercent || 0);
+    const freeTrialDays = Number(couponDraft.freeTrialDays || 0);
+    const discountDurationDays = Number(couponDraft.discountDurationDays || 0);
+    const planScopes = Array.isArray(couponDraft.planScopes) ? couponDraft.planScopes.filter(Boolean) : [];
+
+    if (!normalizedCode) {
+      setCouponStatus({ message: 'Coupon code is required.', tone: 'bad' });
+      return;
+    }
+    if (!planScopes.length) {
+      setCouponStatus({ message: 'Select at least one plan for the coupon.', tone: 'bad' });
+      return;
+    }
+    if ([monthlyDiscountPercent, overageDiscountPercent].some((value) => !Number.isFinite(value) || value < 0 || value > 100)) {
+      setCouponStatus({ message: 'Discount percentages must be between 0 and 100.', tone: 'bad' });
+      return;
+    }
+    if (!Number.isInteger(freeTrialDays) || freeTrialDays < 0 || !Number.isInteger(discountDurationDays) || discountDurationDays < 0) {
+      setCouponStatus({ message: 'Trial and duration days must be 0 or higher whole numbers.', tone: 'bad' });
+      return;
+    }
+    if (monthlyDiscountPercent <= 0 && overageDiscountPercent <= 0 && freeTrialDays <= 0) {
+      setCouponStatus({ message: 'Add at least one benefit before saving the coupon.', tone: 'bad' });
+      return;
+    }
+
+    setCouponSaving(true);
+    setCouponStatus({ message: 'Saving coupon...', tone: 'warn' });
+    try {
+      const payload = {
+        code: normalizedCode,
+        status: couponDraft.status,
+        monthlyDiscountPercent,
+        overageDiscountPercent,
+        freeTrialDays,
+        discountDurationDays,
+        redeemBy: couponDraft.redeemBy ? new Date(couponDraft.redeemBy).toISOString() : null,
+        notes: couponDraft.notes,
+        planScopes
+      };
+      const isEditing = Boolean(couponDraft.billingCouponId);
+      const resp = await fetch(
+        isEditing ? `/api/v1/admin/billing/coupons/${encodeURIComponent(couponDraft.billingCouponId)}` : '/api/v1/admin/billing/coupons',
+        {
+          method: isEditing ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }
+      );
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        setCouponStatus({ message: data?.message || 'Coupon save failed.', tone: 'bad' });
+        return;
+      }
+      setCouponStatus({ message: isEditing ? 'Coupon updated.' : 'Coupon created.', tone: 'ok' });
+      resetCouponDraft();
+      loadCoupons();
+    } catch {
+      setCouponStatus({ message: 'Coupon save failed.', tone: 'bad' });
+    } finally {
+      setCouponSaving(false);
+    }
   };
 
   const sendTestSms = async () => {
@@ -363,6 +490,184 @@ export default function AdminSystemPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <h2 className="m-0 text-lg font-semibold text-slate-900">Coupons</h2>
+          <div className="mt-1 text-sm text-slate-500">
+            Create one-time codes that can discount the base subscription, call overages, and optionally open a no-card free trial.
+          </div>
+          <div className={`mt-4 ${toneClass(couponStatus.tone)}`}>
+            {couponStatus.message}
+          </div>
+
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Code</label>
+                <input
+                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={couponDraft.code}
+                  onChange={(event) => setCouponDraft((current) => ({ ...current, code: event.target.value.toUpperCase() }))}
+                  placeholder="SPRING100"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Status</label>
+                <select
+                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={couponDraft.status}
+                  onChange={(event) => setCouponDraft((current) => ({ ...current, status: event.target.value }))}
+                >
+                  <option value="active">active</option>
+                  <option value="disabled">disabled</option>
+                  <option value="redeemed">redeemed</option>
+                  <option value="expired">expired</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Monthly Discount %</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={couponDraft.monthlyDiscountPercent}
+                  onChange={(event) => setCouponDraft((current) => ({ ...current, monthlyDiscountPercent: event.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Overage Discount %</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={couponDraft.overageDiscountPercent}
+                  onChange={(event) => setCouponDraft((current) => ({ ...current, overageDiscountPercent: event.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Free Trial Days</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={couponDraft.freeTrialDays}
+                  onChange={(event) => setCouponDraft((current) => ({ ...current, freeTrialDays: event.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Discount Duration Days</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={couponDraft.discountDurationDays}
+                  onChange={(event) => setCouponDraft((current) => ({ ...current, discountDurationDays: event.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Redeem By</label>
+                <input
+                  type="datetime-local"
+                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={couponDraft.redeemBy}
+                  onChange={(event) => setCouponDraft((current) => ({ ...current, redeemBy: event.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Applies To Plans</label>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {billingPlans.map((plan) => {
+                    const checked = couponDraft.planScopes.includes(plan.code);
+                    return (
+                      <label key={plan.code} className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleCouponPlanScope(plan.code)}
+                        />
+                        {plan.label || plan.code}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-slate-700">Notes</label>
+              <textarea
+                className="mt-2 min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={couponDraft.notes}
+                onChange={(event) => setCouponDraft((current) => ({ ...current, notes: event.target.value }))}
+              />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button onClick={saveCoupon} disabled={couponSaving}>
+                {couponSaving ? 'Saving...' : (couponDraft.billingCouponId ? 'Update Coupon' : 'Create Coupon')}
+              </Button>
+              <Button variant="outline" onClick={resetCouponDraft} disabled={couponSaving}>
+                Reset
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-slate-50">
+                <tr className="border-b border-slate-200 text-slate-500">
+                  <th className="px-3 py-2 font-medium">Code</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 font-medium">Plans</th>
+                  <th className="px-3 py-2 font-medium">Monthly</th>
+                  <th className="px-3 py-2 font-medium">Overage</th>
+                  <th className="px-3 py-2 font-medium">Trial</th>
+                  <th className="px-3 py-2 font-medium">Duration</th>
+                  <th className="px-3 py-2 font-medium">Redeemed</th>
+                  <th className="px-3 py-2 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {coupons.length ? coupons.map((coupon) => (
+                  <tr key={coupon.billingCouponId} className="border-b border-slate-100 last:border-b-0">
+                    <td className="px-3 py-2 font-medium text-slate-900">{coupon.code}</td>
+                    <td className="px-3 py-2 text-slate-700">{coupon.status}</td>
+                    <td className="px-3 py-2 text-slate-700">{Array.isArray(coupon.planScopes) && coupon.planScopes.length ? coupon.planScopes.join(', ') : '—'}</td>
+                    <td className="px-3 py-2 text-slate-700">{Number(coupon.monthlyDiscountPercent || 0)}%</td>
+                    <td className="px-3 py-2 text-slate-700">{Number(coupon.overageDiscountPercent || 0)}%</td>
+                    <td className="px-3 py-2 text-slate-700">{Number(coupon.freeTrialDays || 0)} day(s)</td>
+                    <td className="px-3 py-2 text-slate-700">{Number(coupon.discountDurationDays || 0) === 0 ? 'Unlimited' : `${coupon.discountDurationDays} day(s)`}</td>
+                    <td className="px-3 py-2 text-slate-700">
+                      {coupon.redemption
+                        ? (
+                          <div>
+                            <div>{coupon.redemption.tenantKey}</div>
+                            <div className="text-xs text-slate-500">{formatTimestamp(coupon.redemption.redeemedAt)}</div>
+                          </div>
+                        )
+                        : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setCouponDraft(buildCouponDraft(coupon));
+                          setCouponStatus({ message: `Editing ${coupon.code}.`, tone: 'warn' });
+                        }}
+                      >
+                        Edit
+                      </Button>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={9} className="px-3 py-6 text-slate-500">No coupons created yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 

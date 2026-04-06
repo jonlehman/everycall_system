@@ -4,6 +4,7 @@ import {
   classifyCallBillingType,
   computeCallInvoiceEstimate
 } from "../../../lib/callBilling.js";
+import { getTenantActiveCouponRedemption, refreshTenantCouponState } from "./billingCoupons.js";
 import {
   buildPlanDisplay,
   ensureTenantBillingAccount,
@@ -22,6 +23,25 @@ function normalizeReasonCode(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+function normalizeDate(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function couponAppliesToPeriod(coupon, periodStart) {
+  if (!coupon) return false;
+  const normalizedStart = normalizeDate(periodStart);
+  if (!normalizedStart || !coupon.discountStartsAt) return false;
+  const discountStartsAt = normalizeDate(coupon.discountStartsAt);
+  const discountEndsAt = normalizeDate(coupon.discountEndsAt);
+  if (!discountStartsAt) return false;
+  if (normalizedStart.getTime() < discountStartsAt.getTime()) return false;
+  if (discountEndsAt && normalizedStart.getTime() >= discountEndsAt.getTime()) return false;
+  return true;
 }
 
 const BILLING_CALL_TYPE_SEED = [
@@ -209,6 +229,11 @@ export async function ensureBillingPeriodForWindow(pool, {
 
   const plan = buildPlanDisplay(billingState, normalizedBillingConfig);
   const callPricing = resolveEffectiveCallPricing(billingState, normalizedBillingConfig);
+  await refreshTenantCouponState(pool, tenantKey);
+  const activeCoupon = await getTenantActiveCouponRedemption(pool, tenantKey);
+  const appliedCoupon = couponAppliesToPeriod(activeCoupon, periodStart)
+    ? activeCoupon
+    : null;
 
   await pool.query(
     `INSERT INTO billing_periods (
@@ -222,11 +247,16 @@ export async function ensureBillingPeriodForWindow(pool, {
        monthly_amount_cents,
        included_call_count,
        call_overage_rate_cents,
+       billing_coupon_redemption_id,
+       billing_coupon_id,
+       coupon_code,
+       monthly_discount_percent,
+       overage_discount_percent,
        stripe_subscription_id,
        created_at,
        updated_at
      )
-     VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+     VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
      ON CONFLICT (tenant_key, period_start, period_end)
      DO NOTHING`,
     [
@@ -239,6 +269,11 @@ export async function ensureBillingPeriodForWindow(pool, {
       plan.monthlyAmountCents,
       callPricing.includedCallCount,
       callPricing.callOverageRateCents,
+      appliedCoupon?.billingCouponRedemptionId || null,
+      appliedCoupon?.billingCouponId || null,
+      appliedCoupon?.code || null,
+      Number(appliedCoupon?.monthlyDiscountPercent || 0),
+      Number(appliedCoupon?.overageDiscountPercent || 0),
       billingState?.stripe_subscription_id || null
     ]
   );
@@ -252,7 +287,47 @@ export async function ensureBillingPeriodForWindow(pool, {
      LIMIT 1`,
     [tenantKey, periodStart.toISOString(), periodEnd.toISOString()]
   );
-  return result.rows[0] || null;
+  const existingPeriod = result.rows[0] || null;
+  if (
+    existingPeriod
+    && String(existingPeriod.status || "").toLowerCase() === "open"
+    && Number(existingPeriod.eligible_call_count || 0) === 0
+    && Number(existingPeriod.included_call_count_used || 0) === 0
+    && Number(existingPeriod.overage_call_count || 0) === 0
+    && (
+      Number(existingPeriod.billing_coupon_redemption_id || 0) !== Number(appliedCoupon?.billingCouponRedemptionId || 0)
+      || Number(existingPeriod.monthly_discount_percent || 0) !== Number(appliedCoupon?.monthlyDiscountPercent || 0)
+      || Number(existingPeriod.overage_discount_percent || 0) !== Number(appliedCoupon?.overageDiscountPercent || 0)
+    )
+  ) {
+    await pool.query(
+      `UPDATE billing_periods
+       SET billing_coupon_redemption_id = $2,
+           billing_coupon_id = $3,
+           coupon_code = $4,
+           monthly_discount_percent = $5,
+           overage_discount_percent = $6,
+           updated_at = NOW()
+       WHERE billing_period_id = $1`,
+      [
+        existingPeriod.billing_period_id,
+        appliedCoupon?.billingCouponRedemptionId || null,
+        appliedCoupon?.billingCouponId || null,
+        appliedCoupon?.code || null,
+        Number(appliedCoupon?.monthlyDiscountPercent || 0),
+        Number(appliedCoupon?.overageDiscountPercent || 0)
+      ]
+    );
+    const refreshed = await pool.query(
+      `SELECT *
+       FROM billing_periods
+       WHERE billing_period_id = $1
+       LIMIT 1`,
+      [existingPeriod.billing_period_id]
+    );
+    return refreshed.rows[0] || existingPeriod;
+  }
+  return existingPeriod;
 }
 
 export async function ensureCurrentBillingPeriod(pool, tenantKey) {
@@ -435,7 +510,21 @@ export async function rateBillingPeriod(pool, periodId) {
     const eligibleCallCount = eligibleSequence;
     const includedCallCountUsed = Math.min(eligibleCallCount, includedLimit);
     const overageCallCount = Math.max(0, eligibleCallCount - includedLimit);
-    const overageAmountCents = overageCallCount * Math.max(0, Number(period.call_overage_rate_cents || 0));
+    const invoiceEstimate = computeCallInvoiceEstimate(
+      {
+        baseAmountCents: Number(period.monthly_amount_cents || 0),
+        eligibleCallCount
+      },
+      {
+        includedCallCount: Number(period.included_call_count || 0),
+        callOverageRateCents: Number(period.call_overage_rate_cents || 0)
+      },
+      {
+        monthlyDiscountPercent: Number(period.monthly_discount_percent || 0),
+        overageDiscountPercent: Number(period.overage_discount_percent || 0)
+      }
+    );
+    const overageAmountCents = Number(invoiceEstimate.overageAmountCents || 0);
 
     await client.query(
       `UPDATE billing_periods
@@ -499,6 +588,12 @@ export async function listBillingPeriods(pool, tenantKey, { limit = 12 } = {}) {
        p.plan_code,
        p.monthly_amount_cents,
        p.included_call_count,
+       p.call_overage_rate_cents,
+       p.billing_coupon_redemption_id,
+       p.billing_coupon_id,
+       p.coupon_code,
+       p.monthly_discount_percent,
+       p.overage_discount_percent,
        p.eligible_call_count,
        p.included_call_count_used,
        p.overage_call_count,
@@ -527,6 +622,20 @@ export async function listBillingPeriods(pool, tenantKey, { limit = 12 } = {}) {
   return (result.rows || []).map((row) => {
     const creditAmountCents = Number(row.credit_amount_cents || 0);
     const debitAmountCents = Number(row.debit_amount_cents || 0);
+    const invoiceEstimate = computeCallInvoiceEstimate(
+      {
+        baseAmountCents: Number(row.monthly_amount_cents || 0),
+        eligibleCallCount: Number(row.eligible_call_count || 0)
+      },
+      {
+        includedCallCount: Number(row.included_call_count || 0),
+        callOverageRateCents: Number(row.call_overage_rate_cents || 0)
+      },
+      {
+        monthlyDiscountPercent: Number(row.monthly_discount_percent || 0),
+        overageDiscountPercent: Number(row.overage_discount_percent || 0)
+      }
+    );
     return {
       billingPeriodId: Number(row.billing_period_id || 0),
       status: row.status || "open",
@@ -537,13 +646,21 @@ export async function listBillingPeriods(pool, tenantKey, { limit = 12 } = {}) {
       planCode: row.plan_code || null,
       monthlyAmountCents: Number(row.monthly_amount_cents || 0),
       includedCallCount: Number(row.included_call_count || 0),
+      callOverageRateCents: Number(row.call_overage_rate_cents || 0),
+      billingCouponRedemptionId: Number(row.billing_coupon_redemption_id || 0) || null,
+      billingCouponId: Number(row.billing_coupon_id || 0) || null,
+      couponCode: row.coupon_code || null,
+      monthlyDiscountPercent: Number(row.monthly_discount_percent || 0),
+      overageDiscountPercent: Number(row.overage_discount_percent || 0),
       eligibleCallCount: Number(row.eligible_call_count || 0),
       includedCallCountUsed: Number(row.included_call_count_used || 0),
       overageCallCount: Number(row.overage_call_count || 0),
       overageAmountCents: Number(row.overage_amount_cents || 0),
+      discountedMonthlyAmountCents: Number(invoiceEstimate.discountedBaseAmountCents || 0),
       creditAmountCents,
       debitAmountCents,
       netAdjustmentAmountCents: debitAmountCents - creditAmountCents,
+      totalEstimatedInvoiceCents: Number(invoiceEstimate.totalEstimatedInvoiceCents || 0) + (debitAmountCents - creditAmountCents),
       stripeInvoiceId: row.stripe_invoice_id || null,
       stripeInvoiceItemId: row.stripe_invoice_item_id || null,
       finalizedAt: row.finalized_at || null,
@@ -636,6 +753,9 @@ export async function getBillingPeriodDetail(pool, billingPeriodId, { callLimit 
   }, {
     includedCallCount: Number(period.included_call_count || 0),
     callOverageRateCents: Number(period.call_overage_rate_cents || 0)
+  }, {
+    monthlyDiscountPercent: Number(period.monthly_discount_percent || 0),
+    overageDiscountPercent: Number(period.overage_discount_percent || 0)
   });
 
   return {
@@ -647,6 +767,15 @@ export async function getBillingPeriodDetail(pool, billingPeriodId, { callLimit 
     periodStart: period.period_start,
     periodEnd: period.period_end,
     planCode: period.plan_code || null,
+    coupon: period.coupon_code
+      ? {
+          billingCouponRedemptionId: Number(period.billing_coupon_redemption_id || 0) || null,
+          billingCouponId: Number(period.billing_coupon_id || 0) || null,
+          code: period.coupon_code,
+          monthlyDiscountPercent: Number(period.monthly_discount_percent || 0),
+          overageDiscountPercent: Number(period.overage_discount_percent || 0)
+        }
+      : null,
     currentPeriod: {
       label: "Current billing period",
       start: new Date(period.period_start).toISOString(),
@@ -846,11 +975,16 @@ async function createOverageInvoiceItemForPeriod(pool, period) {
   if (String(billingState.billing_status || "").toLowerCase() === "trialing") {
     return null;
   }
+  const rawOverageAmountCents = Math.max(0, Number(period.overage_call_count || 0)) * Math.max(0, Number(period.call_overage_rate_cents || 0));
+  const overageDiscountPercent = Number(period.overage_discount_percent || 0);
+  const description = overageDiscountPercent > 0
+    ? `${Number(period.overage_call_count || 0)} call overages × $${(Number(period.call_overage_rate_cents || 0) / 100).toFixed(2)} = $${(rawOverageAmountCents / 100).toFixed(2)}, discounted ${overageDiscountPercent}% = $${(Number(period.overage_amount_cents || 0) / 100).toFixed(2)} (included limit: ${Number(period.included_call_count || 0)})`
+    : `${Number(period.overage_call_count || 0)} call overages × $${(Number(period.call_overage_rate_cents || 0) / 100).toFixed(2)} = $${(Number(period.overage_amount_cents || 0) / 100).toFixed(2)} (included limit: ${Number(period.included_call_count || 0)})`;
   const item = await createInvoiceItem({
     customerId: billingState.stripe_customer_id,
     subscriptionId: billingState.stripe_subscription_id,
     amountCents: Number(period.overage_amount_cents || 0),
-    description: `${Number(period.overage_call_count || 0)} call overages × $${(Number(period.call_overage_rate_cents || 0) / 100).toFixed(2)} = $${(Number(period.overage_amount_cents || 0) / 100).toFixed(2)} (included limit: ${Number(period.included_call_count || 0)})`,
+    description,
     metadata: {
       tenant_key: period.tenant_key,
       billing_period_id: String(period.billing_period_id),

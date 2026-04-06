@@ -450,6 +450,8 @@ export default function TenantManagePage() {
   const [pricingDraft, setPricingDraft] = useState(buildPricingDraft(null, null));
   const [pricingSaving, setPricingSaving] = useState(false);
   const [billingCallActionBusy, setBillingCallActionBusy] = useState('');
+  const [billingCouponCode, setBillingCouponCode] = useState('');
+  const [billingCouponBusy, setBillingCouponBusy] = useState(false);
   const [adjustmentDraft, setAdjustmentDraft] = useState({ adjustmentType: 'credit', amount: '', description: '' });
   const [adjustmentSaving, setAdjustmentSaving] = useState(false);
   const [notificationReview, setNotificationReview] = useState({ channelHealth: [], smsFailovers: [] });
@@ -761,6 +763,48 @@ export default function TenantManagePage() {
       setStatus(error?.message || 'Tenant pricing update failed.');
     } finally {
       setPricingSaving(false);
+    }
+  };
+
+  const applyBillingCoupon = async () => {
+    const code = String(billingCouponCode || '').trim().toUpperCase();
+    if (!code) {
+      setStatus('Enter a coupon code first.');
+      return;
+    }
+    setBillingCouponBusy(true);
+    setStatus('Applying coupon...');
+    try {
+      await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/billing/coupons/redeem`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      setBillingCouponCode('');
+      await loadTenant();
+      setStatus('Coupon applied.');
+    } catch (error) {
+      setStatus(error?.message || 'Could not apply coupon.');
+    } finally {
+      setBillingCouponBusy(false);
+    }
+  };
+
+  const revokeBillingCoupon = async () => {
+    const confirmed = window.confirm('Revoke the active coupon for this tenant?');
+    if (!confirmed) return;
+    setBillingCouponBusy(true);
+    setStatus('Revoking coupon...');
+    try {
+      await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/billing/coupons/revoke`, {
+        method: 'POST'
+      });
+      await loadTenant();
+      setStatus('Coupon revoked.');
+    } catch (error) {
+      setStatus(error?.message || 'Could not revoke coupon.');
+    } finally {
+      setBillingCouponBusy(false);
     }
   };
 
@@ -1162,6 +1206,7 @@ export default function TenantManagePage() {
   const availablePricingPlans = Array.isArray(billingReview.pricingCatalog?.plans) ? billingReview.pricingCatalog.plans : [];
   const selectedPricingPlan = availablePricingPlans.find((plan) => plan.code === pricingDraft.planCode) || availablePricingPlans[0] || null;
   const pricingState = billingReview.billing?.pricing || null;
+  const activeBillingCoupon = billingReview.billing?.activeCoupon || null;
   const currentBillingPeriod = billingReview.billing?.currentBillingPeriod || null;
   const pricingSubscriptionDisplayId = billingReview.billing?.stripeSubscriptionDisplayId
     || pricingState?.subscriptionDisplayId
@@ -1420,6 +1465,41 @@ export default function TenantManagePage() {
                 {billingReview.billing?.pricing?.stripeSubscriptionId
                   ? ` Stripe record: ${billingReview.billing.pricing.stripeSubscriptionId}.`
                   : ' No Stripe subscription is linked yet.'}
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-900">Coupon</div>
+                {activeBillingCoupon ? (
+                  <div className="mt-2 grid gap-2 md:grid-cols-[220px_1fr]">
+                    <div>Active code</div><div>{activeBillingCoupon.code}</div>
+                    <div>Monthly discount</div><div>{Number(activeBillingCoupon.monthlyDiscountPercent || 0)}%</div>
+                    <div>Overage discount</div><div>{Number(activeBillingCoupon.overageDiscountPercent || 0)}%</div>
+                    <div>Free trial</div><div>{Number(activeBillingCoupon.freeTrialDays || 0)} day(s)</div>
+                    <div>Discount duration</div><div>{Number(activeBillingCoupon.discountDurationDays || 0) === 0 ? 'Unlimited' : `${activeBillingCoupon.discountDurationDays} day(s)`}</div>
+                    <div>Trial ends</div><div>{activeBillingCoupon.trialEndsAt ? formatDateTimeDisplay(activeBillingCoupon.trialEndsAt) : '—'}</div>
+                    <div>Discount starts</div><div>{activeBillingCoupon.discountStartsAt ? formatDateTimeDisplay(activeBillingCoupon.discountStartsAt) : (activeBillingCoupon.pendingPaidDiscountStart ? 'When paid billing begins' : '—')}</div>
+                    <div>Discount ends</div><div>{activeBillingCoupon.discountEndsAt ? formatDateTimeDisplay(activeBillingCoupon.discountEndsAt) : 'Unlimited / pending'}</div>
+                  </div>
+                ) : (
+                  <div className="mt-2">No active coupon is attached to this tenant.</div>
+                )}
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <input
+                    className="w-full max-w-xs rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                    value={billingCouponCode}
+                    onChange={(event) => setBillingCouponCode(event.target.value.toUpperCase())}
+                    placeholder="Coupon code"
+                  />
+                  <Button onClick={applyBillingCoupon} disabled={billingCouponBusy}>
+                    {billingCouponBusy ? 'Saving...' : (activeBillingCoupon ? 'Replace Coupon' : 'Apply Coupon')}
+                  </Button>
+                  {activeBillingCoupon ? (
+                    <Button variant="outline" onClick={revokeBillingCoupon} disabled={billingCouponBusy}>
+                      Remove Coupon
+                    </Button>
+                  ) : null}
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2">

@@ -2,6 +2,7 @@ import { readRawBody } from "../../_lib/telnyx.js";
 import { constructWebhookEvent, retrieveSubscription } from "../../_lib/stripe.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { syncTenantStripeSubscription } from "../../_lib/billing.js";
+import { activatePendingCouponDiscountWindow } from "../../_lib/billingCoupons.js";
 
 export const config = {
   api: {
@@ -126,6 +127,9 @@ export default async function handler(req, res) {
         if (object.subscription) {
           const subscription = await retrieveSubscription(String(object.subscription));
           await syncTenantStripeSubscription(pool, tenantRow.tenant_key, tenantRow, subscription, event.type);
+          if (String(subscription?.status || "").trim().toLowerCase() !== "trialing") {
+            await activatePendingCouponDiscountWindow(pool, tenantRow.tenant_key, { subscription }).catch(() => null);
+          }
         }
       }
     }
@@ -142,6 +146,9 @@ export default async function handler(req, res) {
       });
       if (tenantRow) {
         await syncTenantStripeSubscription(pool, tenantRow.tenant_key, tenantRow, object, event.type);
+        if (String(object?.status || "").trim().toLowerCase() !== "trialing") {
+          await activatePendingCouponDiscountWindow(pool, tenantRow.tenant_key, { subscription: object }).catch(() => null);
+        }
       }
     }
 

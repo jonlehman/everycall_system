@@ -11,6 +11,7 @@ import {
   resolveEffectiveCallPricing,
   syncTenantStripeSubscription
 } from "../../_lib/billing.js";
+import { activatePendingCouponDiscountWindow, getTenantActiveCouponRedemption } from "../../_lib/billingCoupons.js";
 import { listBillingPeriods, syncCurrentBillingPeriod } from "../../_lib/callBilling.js";
 import { findCurrentSubscriptionForCustomer, findCurrentSubscriptionForTenantKey, retrieveSubscription } from "../../_lib/stripe.js";
 
@@ -47,6 +48,8 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "tenant_not_found" });
     }
     const billingConfig = await getSystemBillingConfig(pool);
+    const priorCurrentPeriodStart = row.current_period_start || null;
+    const priorStripeSubscriptionId = row.stripe_subscription_id || null;
 
     let stripeSubscription = null;
     let stripeSubscriptionSource = "none";
@@ -89,6 +92,16 @@ export default async function handler(req, res) {
     });
     if (tenantSubscription) {
       row = await syncTenantStripeSubscription(pool, tenantKey, row, tenantSubscription, "billing.summary.sync");
+      const nextCurrentPeriodStart = row.current_period_start || null;
+      const shouldActivatePendingDiscount = String(tenantSubscription?.status || "").trim().toLowerCase() !== "trialing"
+        && (
+          !priorStripeSubscriptionId
+          || String(priorStripeSubscriptionId) !== String(row.stripe_subscription_id || "")
+          || String(priorCurrentPeriodStart || "") !== String(nextCurrentPeriodStart || "")
+        );
+      if (shouldActivatePendingDiscount) {
+        await activatePendingCouponDiscountWindow(pool, tenantKey, { subscription: tenantSubscription }).catch(() => null);
+      }
     }
 
     const invoices = row.last_invoice_id ? [{ id: row.last_invoice_id }] : [];
@@ -104,6 +117,7 @@ export default async function handler(req, res) {
     }
     const callPricing = callBilling?.callPricing || resolveEffectiveCallPricing(row, billingConfig);
     let billingPeriodHistory = [];
+    let activeCoupon = null;
     try {
       billingPeriodHistory = await listBillingPeriods(pool, tenantKey, { limit: 12 });
     } catch (historyError) {
@@ -112,6 +126,15 @@ export default async function handler(req, res) {
         message: historyError?.message || "unknown"
       });
       billingPeriodHistory = [];
+    }
+    try {
+      activeCoupon = await getTenantActiveCouponRedemption(pool, tenantKey);
+    } catch (couponError) {
+      console.error("billing_coupon_summary_failed", {
+        tenantKey,
+        message: couponError?.message || "unknown"
+      });
+      activeCoupon = null;
     }
 
     return res.status(200).json({
@@ -163,6 +186,7 @@ export default async function handler(req, res) {
           stripeInvoiceId: canViewStripeDetails ? period.stripeInvoiceId : null,
           stripeInvoiceItemId: canViewStripeDetails ? period.stripeInvoiceItemId : null
         })),
+        activeCoupon,
         override: buildPricingOverride(row),
         invoices
       },

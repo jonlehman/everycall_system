@@ -9,6 +9,7 @@ import {
   resolveEffectiveMonthlyAmount,
   syncTenantStripeSubscription
 } from "../../_lib/billing.js";
+import { computeDiscountedAmountCents, getTenantActiveCouponRedemption } from "../../_lib/billingCoupons.js";
 import { createCheckoutSession, findCurrentSubscriptionForCustomer, findCurrentSubscriptionForTenantKey, findOrCreateCustomer, retrieveSubscription } from "../../_lib/stripe.js";
 
 function getTenantKey(req) {
@@ -94,7 +95,12 @@ export default async function handler(req, res) {
     });
     const planDisplay = buildPlanDisplay(row, billingConfig);
     const selectedPlan = getBillingPlanByCode(billingConfig.plans, planDisplay.basePlanCode);
-    const standardStripePriceId = !planDisplay.isCustom ? (selectedPlan?.stripePriceId || null) : null;
+    const activeCoupon = await getTenantActiveCouponRedemption(pool, tenantKey).catch(() => null);
+    const couponMonthlyDiscountPercent = Number(activeCoupon?.monthlyDiscountPercent || 0);
+    const discountedMonthlyAmountCents = couponMonthlyDiscountPercent > 0
+      ? computeDiscountedAmountCents(resolveEffectiveMonthlyAmount(row), couponMonthlyDiscountPercent)
+      : resolveEffectiveMonthlyAmount(row);
+    const standardStripePriceId = (!planDisplay.isCustom && couponMonthlyDiscountPercent <= 0) ? (selectedPlan?.stripePriceId || null) : null;
     const standardStripeProductId = !planDisplay.isCustom ? (selectedPlan?.stripeProductId || null) : null;
 
     await pool.query(
@@ -138,7 +144,7 @@ export default async function handler(req, res) {
       customerId: customer.id,
       customerEmail: customer.email || owner.email || row.owner_email || undefined,
       priceId: standardStripePriceId,
-      unitAmount: resolveEffectiveMonthlyAmount(row),
+      unitAmount: discountedMonthlyAmountCents,
       productId: standardStripeProductId || row.stripe_product_id || null,
       productName: `${row.name || "EveryCall"} Subscription`,
       trialEnd,
@@ -146,7 +152,9 @@ export default async function handler(req, res) {
       planCode: planDisplay.code,
       metadata: {
         tenant_key: tenantKey,
-        actor_user_id: String(session.user_id || "")
+        actor_user_id: String(session.user_id || ""),
+        billing_coupon_code: activeCoupon?.code || "",
+        billing_coupon_monthly_discount_percent: String(couponMonthlyDiscountPercent || 0)
       }
     });
 

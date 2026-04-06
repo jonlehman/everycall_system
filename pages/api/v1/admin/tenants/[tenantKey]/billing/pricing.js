@@ -9,6 +9,7 @@ import {
   recordBillingLifecycleEvent,
   syncTenantStripeSubscription
 } from "../../../../../_lib/billing.js";
+import { syncTenantCouponSubscriptionPricing } from "../../../../../_lib/billingCoupons.js";
 import {
   findCurrentSubscriptionForCustomer,
   findCurrentSubscriptionForTenantKey,
@@ -205,7 +206,8 @@ export default async function handler(req, res) {
     );
 
     const updatedRowResult = await ensureTenantBillingAccount(pool, tenantKey, { plan_code: selectedPlan.code });
-    const updatedRow = updatedRowResult || syncedRow;
+    let updatedRow = updatedRowResult || syncedRow;
+    updatedRow = await syncTenantCouponSubscriptionPricing(pool, tenantKey).catch(() => updatedRow);
     const plan = buildPlanDisplay(updatedRow, billingConfig);
     const pricing = buildAdminPricingState(updatedRow, billingConfig);
     const override = buildPricingOverride(updatedRow);
