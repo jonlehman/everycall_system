@@ -4,18 +4,18 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const items = [
-  { label: 'Overview', href: '/admin/overview', group: 'Platform' },
-  { label: 'Tenants', href: '/admin/tenants', group: 'Platform' },
-  { label: 'Monitoring', href: '/admin/monitoring', group: 'Platform' },
-  { label: 'Support', href: '/admin/support', group: 'Platform' },
-  { label: 'Provisioning Jobs', href: '/admin/jobs', group: 'Platform' },
-  { label: 'Phone Numbers', href: '/admin/phone-numbers', group: 'Platform' },
-  { label: 'Costs', href: '/admin/usage', group: 'Platform' },
-  { label: 'Admin Users', href: '/admin/users', group: 'Controls' },
+  { label: 'Overview', href: '/admin/overview', group: 'Operations' },
+  { label: 'Support', href: '/admin/support', group: 'Operations' },
+  { label: 'Monitoring', href: '/admin/monitoring', group: 'Operations' },
+  { label: 'Provisioning Jobs', href: '/admin/jobs', group: 'Operations' },
+  { label: 'Phone Numbers', href: '/admin/phone-numbers', group: 'Operations' },
+  { label: 'Tenants', href: '/admin/tenants', group: 'Tenants' },
+  { label: 'Costs', href: '/admin/usage', group: 'Finance' },
+  { label: 'Admin Users', href: '/admin/users', group: 'Platform' },
   {
     label: 'System Config',
     href: '/admin/system',
-    group: 'Controls',
+    group: 'Platform',
     children: [
       { label: 'General', href: '/admin/system/general' },
       { label: 'Billing', href: '/admin/system/billing' },
@@ -24,12 +24,12 @@ const items = [
       { label: 'Prompts', href: '/admin/system/prompts' }
     ]
   },
-  { label: 'Audit Log', href: '/admin/audit', group: 'Controls' }
+  { label: 'Audit Log', href: '/admin/audit', group: 'Platform' }
 ];
 
 export default function AdminSidebar() {
   const pathname = usePathname();
-  const groups = ['Platform', 'Controls'];
+  const groups = ['Operations', 'Tenants', 'Finance', 'Platform'];
 
   return (
     <aside className="sidebar">
