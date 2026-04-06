@@ -33,6 +33,12 @@ export default function AdminSidebar() {
   const pathname = usePathname();
   const groups = ['Operations', 'Tenants', 'Finance', 'Platform'];
   const [expandedItems, setExpandedItems] = useState({});
+  const [expandedGroups, setExpandedGroups] = useState({
+    Operations: true,
+    Tenants: true,
+    Finance: true,
+    Platform: true
+  });
 
   useEffect(() => {
     setExpandedItems((current) => {
@@ -56,13 +62,30 @@ export default function AdminSidebar() {
     }));
   };
 
+  const toggleGroup = (group) => {
+    setExpandedGroups((current) => ({
+      ...current,
+      [group]: !current[group]
+    }));
+  };
+
   return (
     <aside className="sidebar">
       <div className="logo">every<span>call</span> admin</div>
       {groups.map((group) => (
         <div className="nav-group" key={group}>
-          <div className="nav-label">{group}</div>
-          {items.filter((item) => item.group === group).map((item) => (
+          <button
+            type="button"
+            className="nav-group-toggle"
+            aria-expanded={Boolean(expandedGroups[group])}
+            onClick={() => toggleGroup(group)}
+          >
+            <span className="nav-label">{group}</span>
+            <span className="material-symbols-outlined text-[18px]">
+              {expandedGroups[group] ? 'expand_more' : 'chevron_right'}
+            </span>
+          </button>
+          {expandedGroups[group] ? items.filter((item) => item.group === group).map((item) => (
             <div key={item.href}>
               {item.children ? (
                 <div className={`nav-parent-row${pathname === item.href || pathname.startsWith(`${item.href}/`) ? ' active' : ''}`}>
@@ -109,7 +132,7 @@ export default function AdminSidebar() {
                 </div>
               ) : null}
             </div>
-          ))}
+          )) : null}
         </div>
       ))}
       <div style={{ marginTop: 'auto', paddingTop: 12 }}>
