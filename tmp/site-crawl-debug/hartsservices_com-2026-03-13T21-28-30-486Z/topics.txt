@@ -1,0 +1,48 @@
+- Company Commitment and Values [type=page | risk=normal | source=https://hartsservices.com/about]
+  Harts commits to professional, respectful service with licensed, certified technicians using eco-friendly methods and advanced technology to provide high-quality plumbing, electrical, and HVAC work at competitive rates.
+- Contact Harts - 24/7 Support [type=page | risk=normal | source=https://hartsservices.com/contact-us]
+  Customers can reach Harts 24/7 by phone to speak directly with a real person for scheduling, service questions, or assistance. Main hub and billing operations are based in Tacoma, with other locations serving multiple communities.
+- Frequently Asked Questions [type=page | risk=normal | source=https://hartsservices.com/about/faqs]
+  Answers to common customer questions including how landscaping affects sewer repairs, trenchless sewer repair methods, clean outs, and plumbing use during sewer replacement.
+- Goodleap Financing Options [type=page | risk=high | source=https://hartsservices.com/about/financing]
+  Financing options available through Goodleap to support sustainable home upgrades with flexible payments and quick approval processes. Further details available by contacting Harts directly.
+- Harts Home Care Plan Membership [type=page | risk=normal | source=https://hartsservices.com/home-care-plan]
+  A monthly membership plan offering preventative maintenance benefits such as bi-annual HVAC tune-ups, no trip fees except to islands, and a one-year warranty on all repairs. Designed to help avoid emergencies and reduce repair costs.
+- Service Areas - Puget Sound Region [type=group | risk=normal | source=https://hartsservices.com/about/service-areas]
+  Harts serves multiple communities throughout the Puget Sound region including Tacoma, Olympia, Renton, Seattle, and Silverdale, with detailed local service information available for each city and coverage of corresponding zip codes.
+- Comprehensive Home Services [type=group | risk=high | source=https://hartsservices.com]
+  Harts offers a broad range of home services including plumbing, sewer, electrical, and HVAC repairs, installations, maintenance, and emergency services across the Puget Sound region including Tacoma, Olympia, Renton, Seattle, and Silverdale.
+- Harts Forever Warranty [type=page | risk=high | source=https://hartsservices.com/forever-warranty]
+  A lifetime warranty on equipment and services backed by a third-party insurer, requiring documented proper maintenance per Harts specifications. This warranty is tied to the equipment and is transferable within the first 60 months for a nominal fee.
+  - Services in Olympia and South Sound [type=page | risk=high | source=https://hartsservices.com/locations/olympia]
+    Licensed home service technicians providing plumbing, electrical, sewer/drain, and HVAC services in Olympia and the greater South Sound area emphasizing professional and trusted service.
+  - Services in Renton and Tukwila [type=page | risk=high | source=https://hartsservices.com/locations/renton]
+    Home service providers with over a decade of experience serving Renton, Tukwila, and South King County with plumbing, electrical, and HVAC services backed by the 'We Care More' philosophy.
+  - Services in Seattle [type=page | risk=high | source=https://hartsservices.com/locations/seattle]
+    Licensed plumbers, electricians, and HVAC technicians providing tailored home services across Seattle neighborhoods including historic and modern properties, with same-day availability and transparent pricing.
+  - Services in Silverdale and Kitsap County [type=page | risk=high | source=https://hartsservices.com/locations/silverdale]
+    Home services including plumbing, electrical, HVAC, and sewer/drain solutions available in Silverdale and surrounding Kitsap County communities, emphasizing fast, reliable, and honest service.
+  - Services in Tacoma and Greater Pacific Northwest [type=page | risk=high | source=https://hartsservices.com/locations/tacoma]
+    Comprehensive plumbing, electrical, sewer, and HVAC services with a focus on dependable, customer-centered solutions for homes in Tacoma and surrounding Pacific Northwest communities.
+  - Electrical Services [type=page | risk=high | source=https://hartsservices.com/services]
+    Electrical services including repairs, panel upgrades, and electrical system maintenance delivered by licensed electricians serving residential and commercial customers in the Puget Sound region.
+  - Emergency Plumbing [type=group | risk=high]
+  - Gas Piping [type=group | risk=normal]
+  - Home Waterproofing [type=group | risk=normal]
+  - HVAC Services [type=page | risk=high | source=https://hartsservices.com/services/hvac]
+    HVAC repair, installation, and maintenance services performed by licensed HVAC technicians, covering heating and cooling systems for homes across Western Washington and the Puget Sound area.
+  - Plumbing Services [type=page | risk=high | source=https://hartsservices.com/services/plumbing]
+    Full plumbing services for residential and commercial properties throughout Puget Sound, handling minor leaks, full system replacements, and diagnostics performed by licensed, insured plumbers with over a decade of experience.
+  - Sewer & Drain Services [type=page | risk=high | source=https://hartsservices.com/services]
+    Sewer and drain services including trenchless sewer repair technologies such as pipe bursting and pipe lining to minimize yard disruption, especially addressing root intrusion issues common in the Tacoma area.
+  - Sump Pump [type=group | risk=normal]
+    - Emergency Plumbing Services in Tacoma [type=page | risk=critical | source=https://hartsservices.com/emergency-plumbing-tacoma]
+      Provides 24-hour emergency plumbing services including urgent repairs for leaks, clogged toilets, and burst pipes with fast response to prevent home damage.
+    - Gas Pipe Plumbing Services in Olympia, WA [type=page | risk=high | source=https://hartsservices.com/gas-piping-olympia]
+      Provides gas pipe installation, repair, and replacement services in Olympia with a focus on safe execution to prevent leaks and explosions. Includes various gas piping needs and appliance connections.
+    - Gas Pipe Plumbing Services in Tacoma, WA [type=page | risk=high | source=https://hartsservices.com/gas-piping-tacoma]
+      Professional gas line installation, repair, and replacement to ensure safe and reliable gas piping systems in Tacoma, preventing leaks and explosions.
+    - Home Waterproofing Services in Tacoma, WA [type=page | risk=high | source=https://hartsservices.com/waterproofing-tacoma]
+      Waterproofing services to prevent flooding and water damage in Tacoma homes caused by severe weather or plumbing faults, helping to avoid costly repairs and health risks.
+    - Tacoma Sump Pump Services - Installation & Repairs [type=page | risk=high | source=https://hartsservices.com/sump-pump-tacoma]
+      Offers sump pump installation and repair services to manage water accumulation in sump basins, critical for flood prevention in the wet Tacoma area.
