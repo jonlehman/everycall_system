@@ -11,6 +11,7 @@ const items = [
   { label: 'Phone Numbers', href: '/admin/phone-numbers', group: 'Operations' },
   { label: 'Tenants', href: '/admin/tenants', group: 'Tenants' },
   { label: 'Costs', href: '/admin/usage', group: 'Finance' },
+  { label: 'Billing Report', href: '/admin/billing-report', group: 'Finance' },
   { label: 'Admin Users', href: '/admin/users', group: 'Platform' },
   {
     label: 'System Config',
