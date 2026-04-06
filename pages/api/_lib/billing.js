@@ -57,12 +57,22 @@ export function normalizeBillingPlans(value) {
   const source = Array.isArray(value) ? value : [];
   return DEFAULT_BILLING_PLANS.map((fallbackPlan) => {
     const configured = source.find((item) => normalizePlanCode(item?.code) === fallbackPlan.code) || {};
+    const normalizedLeadRate = normalizeMoneyCents(
+      configured.leadRateCents ?? configured.callOverageRateCents,
+      fallbackPlan.leadRateCents
+    );
+    const normalizedIncludedCount = normalizeCount(
+      configured.includedCount ?? configured.includedCallCount,
+      fallbackPlan.includedCount
+    );
     return {
       code: fallbackPlan.code,
       label: normalizePlanLabel(configured.label, fallbackPlan.label),
       monthlyAmountCents: normalizeMoneyCents(configured.monthlyAmountCents, fallbackPlan.monthlyAmountCents),
-      leadRateCents: normalizeMoneyCents(configured.leadRateCents, fallbackPlan.leadRateCents),
-      includedCount: normalizeCount(configured.includedCount, fallbackPlan.includedCount)
+      leadRateCents: normalizedLeadRate,
+      includedCount: normalizedIncludedCount,
+      callOverageRateCents: normalizedLeadRate,
+      includedCallCount: normalizedIncludedCount
     };
   });
 }
@@ -176,9 +186,11 @@ export function resolveEffectiveMonthlyAmount(row) {
 export function hasCustomPricing(row) {
   const monthlyOverrideSet = row?.monthly_amount_override_cents !== null
     && row?.monthly_amount_override_cents !== undefined;
-  const leadOverrideSet = row?.lead_rate_override_cents !== null
-    && row?.lead_rate_override_cents !== undefined;
-  return monthlyOverrideSet || leadOverrideSet;
+  const usageOverrideSet = (row?.lead_rate_override_cents !== null
+    && row?.lead_rate_override_cents !== undefined)
+    || (row?.call_overage_rate_override_cents !== null
+      && row?.call_overage_rate_override_cents !== undefined);
+  return monthlyOverrideSet || usageOverrideSet;
 }
 
 export function resolveEffectiveLeadPricing(row, billingConfig = null) {
@@ -196,6 +208,40 @@ export function resolveEffectiveLeadPricing(row, billingConfig = null) {
   return {
     rateCents: hasLeadRateOverride ? Math.round(overrideRate) : (baseRate > 0 ? Math.round(baseRate) : plan.leadRateCents),
     includedCount: Number.isFinite(includedCount) && includedCount >= 0 ? Math.round(includedCount) : plan.includedCount
+  };
+}
+
+export function resolveEffectiveCallPricing(row, billingConfig = null) {
+  const plan = getBillingPlanByCode(
+    billingConfig?.plans || DEFAULT_BILLING_PLANS,
+    row?.plan_code || DEFAULT_PLAN_CODE
+  );
+  const overrideRate = Number(
+    row?.call_overage_rate_override_cents ?? row?.lead_rate_override_cents
+  );
+  const baseRate = Number(
+    row?.call_overage_rate_cents ?? row?.lead_rate_cents ?? 0
+  );
+  const includedCount = Number(
+    row?.included_call_count ?? row?.included_lead_count
+  );
+  const hasRateOverride = (row?.call_overage_rate_override_cents !== null
+    && row?.call_overage_rate_override_cents !== undefined
+    && Number.isFinite(Number(row?.call_overage_rate_override_cents))
+    && Number(row.call_overage_rate_override_cents) >= 0)
+    || (row?.lead_rate_override_cents !== null
+      && row?.lead_rate_override_cents !== undefined
+      && Number.isFinite(Number(row?.lead_rate_override_cents))
+      && Number(row.lead_rate_override_cents) >= 0);
+  const defaultRate = Number(plan.callOverageRateCents ?? plan.leadRateCents ?? 0);
+  const defaultIncludedCount = Number(plan.includedCallCount ?? plan.includedCount ?? 0);
+  return {
+    callOverageRateCents: hasRateOverride
+      ? Math.round(overrideRate)
+      : (baseRate > 0 ? Math.round(baseRate) : defaultRate),
+    includedCallCount: Number.isFinite(includedCount) && includedCount >= 0
+      ? Math.round(includedCount)
+      : defaultIncludedCount
   };
 }
 
@@ -228,8 +274,11 @@ export async function getTenantBillingState(pool, tenantKey) {
        b.monthly_amount_cents,
        b.lead_rate_cents,
        b.included_lead_count,
+       b.call_overage_rate_cents,
+       b.included_call_count,
        b.monthly_amount_override_cents,
        b.lead_rate_override_cents,
+       b.call_overage_rate_override_cents,
        b.price_override_reason,
        b.price_override_cycles_remaining,
        b.current_period_start,
@@ -285,15 +334,19 @@ export async function ensureTenantBillingAccount(pool, tenantKey, values = {}) {
        monthly_amount_cents,
        lead_rate_cents,
        included_lead_count,
+       call_overage_rate_cents,
+       included_call_count,
        stripe_product_id,
        updated_at
      )
-     VALUES ($1, $2, $3, $4, $5, NOW())
+     VALUES ($1, $2, $3, $4, $3, $4, $5, NOW())
      ON CONFLICT (tenant_key)
      DO UPDATE SET
        monthly_amount_cents = COALESCE(tenant_billing_accounts.monthly_amount_cents, EXCLUDED.monthly_amount_cents),
        lead_rate_cents = COALESCE(tenant_billing_accounts.lead_rate_cents, EXCLUDED.lead_rate_cents),
        included_lead_count = COALESCE(tenant_billing_accounts.included_lead_count, EXCLUDED.included_lead_count),
+       call_overage_rate_cents = COALESCE(tenant_billing_accounts.call_overage_rate_cents, EXCLUDED.call_overage_rate_cents),
+       included_call_count = COALESCE(tenant_billing_accounts.included_call_count, EXCLUDED.included_call_count),
        stripe_product_id = COALESCE(tenant_billing_accounts.stripe_product_id, EXCLUDED.stripe_product_id),
        updated_at = NOW()`,
     [
@@ -323,6 +376,8 @@ export function buildPlanDisplay(row, billingConfig = null) {
     monthlyAmountCents: resolveEffectiveMonthlyAmount(row),
     leadRateCents: effectiveLeadPricing.rateCents,
     includedCount: effectiveLeadPricing.includedCount,
+    callOverageRateCents: effectiveLeadPricing.rateCents,
+    includedCallCount: effectiveLeadPricing.includedCount,
     isCustom
   };
 }

@@ -8,9 +8,11 @@ import {
   getSystemBillingConfig,
   requireActiveTenantUser,
   requireTenantOwner,
+  resolveEffectiveCallPricing,
   resolveEffectiveLeadPricing,
   syncTenantStripeSubscription
 } from "../../_lib/billing.js";
+import { syncCurrentBillingPeriod } from "../../_lib/callBilling.js";
 import { findCurrentSubscriptionForCustomer, findCurrentSubscriptionForTenantKey, retrieveSubscription } from "../../_lib/stripe.js";
 import { computeLeadInvoiceEstimate, resolveBillingWindow } from "../../../../lib/leadBilling.js";
 
@@ -138,6 +140,17 @@ export default async function handler(req, res) {
       baseAmountCents: buildPlanDisplay(row, billingConfig).monthlyAmountCents,
       billableLeadCount: Number(leadSummary.billable_lead_count || 0)
     }, leadPricing);
+    let callBilling = null;
+    try {
+      callBilling = await syncCurrentBillingPeriod(pool, tenantKey);
+    } catch (callBillingError) {
+      console.error("call_billing_summary_failed", {
+        tenantKey,
+        message: callBillingError?.message || "unknown"
+      });
+      callBilling = null;
+    }
+    const callPricing = callBilling?.callPricing || resolveEffectiveCallPricing(row, billingConfig);
 
     return res.status(200).json({
       ok: true,
@@ -164,6 +177,16 @@ export default async function handler(req, res) {
           start: billingWindow.start.toISOString(),
           end: billingWindow.end.toISOString()
         },
+        callPricing,
+        callUsage: callBilling?.callUsage || {
+          eligibleCallCount: 0,
+          includedCallCountUsed: 0,
+          overageCallCount: 0,
+          excludedCallCount: 0,
+          recentCalls: []
+        },
+        callInvoiceEstimate: callBilling?.invoiceEstimate || null,
+        callBillingPeriod: callBilling?.currentPeriod || null,
         leadPricing,
         leadUsage: {
           validLeadCount: Number(leadSummary.valid_lead_count || 0),

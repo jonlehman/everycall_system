@@ -149,20 +149,26 @@ export default async function handler(req, res) {
          monthly_amount_cents,
          lead_rate_cents,
          included_lead_count,
+         call_overage_rate_cents,
+         included_call_count,
          monthly_amount_override_cents,
          lead_rate_override_cents,
+         call_overage_rate_override_cents,
          price_override_reason,
          price_override_cycles_remaining,
          updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, NOW())
+       VALUES ($1, $2, $3, $4, $3, $4, $5, $6, $6, $7, NULL, NOW())
        ON CONFLICT (tenant_key)
        DO UPDATE SET
          monthly_amount_cents = EXCLUDED.monthly_amount_cents,
          lead_rate_cents = EXCLUDED.lead_rate_cents,
          included_lead_count = EXCLUDED.included_lead_count,
+         call_overage_rate_cents = EXCLUDED.call_overage_rate_cents,
+         included_call_count = EXCLUDED.included_call_count,
          monthly_amount_override_cents = EXCLUDED.monthly_amount_override_cents,
          lead_rate_override_cents = EXCLUDED.lead_rate_override_cents,
+         call_overage_rate_override_cents = EXCLUDED.call_overage_rate_override_cents,
          price_override_reason = EXCLUDED.price_override_reason,
          price_override_cycles_remaining = NULL,
          updated_at = NOW()`,

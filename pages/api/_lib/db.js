@@ -93,6 +93,30 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS lead_alert_sms_categories_json JSONB NOT NULL DEFAULT '[]'::jsonb;`);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS lead_alert_email_categories_json JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS billing_call_types (
+      billing_call_type_id BIGSERIAL PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      short_description TEXT,
+      long_description TEXT,
+      counts_toward_usage BOOLEAN NOT NULL DEFAULT FALSE,
+      display_order INTEGER NOT NULL DEFAULT 100,
+      is_system BOOLEAN NOT NULL DEFAULT TRUE,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE billing_call_types ADD COLUMN IF NOT EXISTS short_description TEXT;`);
+  await pool.query(`ALTER TABLE billing_call_types ADD COLUMN IF NOT EXISTS long_description TEXT;`);
+  await pool.query(`ALTER TABLE billing_call_types ADD COLUMN IF NOT EXISTS counts_toward_usage BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE billing_call_types ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 100;`);
+  await pool.query(`ALTER TABLE billing_call_types ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT TRUE;`);
+  await pool.query(`ALTER TABLE billing_call_types ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;`);
+  await pool.query(`ALTER TABLE billing_call_types ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`ALTER TABLE billing_call_types ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS billing_call_types_active_idx ON billing_call_types (active, display_order ASC);`);
   const duplicateUserPhones = await pool.query(
     `SELECT phone_number
      FROM tenant_users
@@ -119,6 +143,9 @@ export async function ensureTables(pool) {
       lead_is_billable BOOLEAN NOT NULL DEFAULT FALSE,
       lead_decision_reason TEXT,
       lead_duplicate_of_call_sid TEXT,
+      billing_call_type_id BIGINT REFERENCES billing_call_types(billing_call_type_id),
+      billing_evaluated_at TIMESTAMPTZ,
+      billing_notes_json JSONB,
       ai_model TEXT,
       ai_input_tokens BIGINT,
       ai_output_tokens BIGINT,
@@ -153,6 +180,9 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS lead_is_billable BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS lead_decision_reason TEXT;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS lead_duplicate_of_call_sid TEXT;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS billing_call_type_id BIGINT REFERENCES billing_call_types(billing_call_type_id);`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS billing_evaluated_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS billing_notes_json JSONB;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_input_tokens BIGINT;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_output_tokens BIGINT;`);
   await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_cached_input_tokens BIGINT;`);
@@ -658,8 +688,11 @@ export async function ensureTables(pool) {
       monthly_amount_cents INTEGER,
       lead_rate_cents INTEGER,
       included_lead_count INTEGER,
+      call_overage_rate_cents INTEGER,
+      included_call_count INTEGER,
       monthly_amount_override_cents INTEGER,
       lead_rate_override_cents INTEGER,
+      call_overage_rate_override_cents INTEGER,
       price_override_reason TEXT,
       price_override_cycles_remaining INTEGER,
       current_period_start TIMESTAMPTZ,
@@ -678,8 +711,11 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS monthly_amount_cents INTEGER;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS lead_rate_cents INTEGER;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS included_lead_count INTEGER;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS call_overage_rate_cents INTEGER;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS included_call_count INTEGER;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS monthly_amount_override_cents INTEGER;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS lead_rate_override_cents INTEGER;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS call_overage_rate_override_cents INTEGER;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS price_override_reason TEXT;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS price_override_cycles_remaining INTEGER;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS current_period_start TIMESTAMPTZ;`);
@@ -720,6 +756,90 @@ export async function ensureTables(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS billing_periods (
+      billing_period_id BIGSERIAL PRIMARY KEY,
+      tenant_key TEXT NOT NULL,
+      period_start TIMESTAMPTZ NOT NULL,
+      period_end TIMESTAMPTZ NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      source TEXT NOT NULL DEFAULT 'internal',
+      billing_rule_version TEXT NOT NULL DEFAULT 'call_billing_v1',
+      plan_code TEXT,
+      monthly_amount_cents INTEGER NOT NULL DEFAULT 0,
+      included_call_count INTEGER NOT NULL DEFAULT 0,
+      call_overage_rate_cents INTEGER NOT NULL DEFAULT 0,
+      eligible_call_count INTEGER NOT NULL DEFAULT 0,
+      included_call_count_used INTEGER NOT NULL DEFAULT 0,
+      overage_call_count INTEGER NOT NULL DEFAULT 0,
+      overage_amount_cents INTEGER NOT NULL DEFAULT 0,
+      stripe_subscription_id TEXT,
+      stripe_invoice_id TEXT,
+      stripe_invoice_item_id TEXT,
+      finalized_at TIMESTAMPTZ,
+      invoiced_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (tenant_key, period_start, period_end)
+    );
+  `);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'internal';`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS billing_rule_version TEXT NOT NULL DEFAULT 'call_billing_v1';`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS plan_code TEXT;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS monthly_amount_cents INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS included_call_count INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS call_overage_rate_cents INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS eligible_call_count INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS included_call_count_used INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS overage_call_count INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS overage_amount_cents INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS stripe_invoice_id TEXT;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS stripe_invoice_item_id TEXT;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS finalized_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS invoiced_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`ALTER TABLE billing_periods ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS billing_periods_tenant_status_idx ON billing_periods (tenant_key, status, period_start DESC);`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS billing_period_call_assignments (
+      billing_period_call_assignment_id BIGSERIAL PRIMARY KEY,
+      billing_period_id BIGINT NOT NULL REFERENCES billing_periods(billing_period_id) ON DELETE CASCADE,
+      call_sid TEXT NOT NULL REFERENCES calls(call_sid) ON DELETE CASCADE,
+      billing_call_type_id BIGINT REFERENCES billing_call_types(billing_call_type_id),
+      charge_bucket TEXT NOT NULL,
+      sequence_number INTEGER,
+      assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (billing_period_id, call_sid)
+    );
+  `);
+  await pool.query(`ALTER TABLE billing_period_call_assignments ADD COLUMN IF NOT EXISTS billing_call_type_id BIGINT REFERENCES billing_call_types(billing_call_type_id);`);
+  await pool.query(`ALTER TABLE billing_period_call_assignments ADD COLUMN IF NOT EXISTS charge_bucket TEXT NOT NULL DEFAULT 'excluded';`);
+  await pool.query(`ALTER TABLE billing_period_call_assignments ADD COLUMN IF NOT EXISTS sequence_number INTEGER;`);
+  await pool.query(`ALTER TABLE billing_period_call_assignments ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS billing_period_call_assignments_period_idx ON billing_period_call_assignments (billing_period_id, charge_bucket, sequence_number);`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS billing_period_adjustments (
+      billing_period_adjustment_id BIGSERIAL PRIMARY KEY,
+      billing_period_id BIGINT NOT NULL REFERENCES billing_periods(billing_period_id) ON DELETE CASCADE,
+      adjustment_type TEXT NOT NULL,
+      reason_code TEXT,
+      description TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_by_type TEXT,
+      created_by_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE billing_period_adjustments ADD COLUMN IF NOT EXISTS metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE billing_period_adjustments ADD COLUMN IF NOT EXISTS created_by_type TEXT;`);
+  await pool.query(`ALTER TABLE billing_period_adjustments ADD COLUMN IF NOT EXISTS created_by_id TEXT;`);
+  await pool.query(`ALTER TABLE billing_period_adjustments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS billing_period_adjustments_period_idx ON billing_period_adjustments (billing_period_id, created_at DESC);`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS notification_channel_health (

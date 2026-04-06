@@ -348,6 +348,25 @@ export default async function handler(req, res) {
 
         try {
           await enqueueAsyncJob(pool, {
+            jobType: ASYNC_JOB_TYPES.callBillingSync,
+            tenantKey: effectiveTenantKey,
+            dedupeKey: `call_billing:${callId}`,
+            payload: {
+              tenantKey: effectiveTenantKey,
+              callSid: callId
+            },
+            maxAttempts: 5
+          });
+        } catch (billingErr) {
+          console.error("call_billing_enqueue_failed", {
+            tenantKey: effectiveTenantKey,
+            callId,
+            message: billingErr?.message || "unknown"
+          });
+        }
+
+        try {
+          await enqueueAsyncJob(pool, {
             jobType: ASYNC_JOB_TYPES.leadNotificationSend,
             tenantKey: effectiveTenantKey,
             dedupeKey: `lead_notification:${callId}`,
