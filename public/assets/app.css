@@ -81,11 +81,28 @@ a { color: inherit; }
 .nav-group { margin: 12px 0; }
 
 .nav-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: .18em;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
   color: #737686;
   margin: 10px 10px 8px;
+}
+
+.sub-menu {
+  margin: 2px 0 8px 14px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(195,198,215,.7);
+}
+
+.sub-menu .nav-btn {
+  margin: 2px 0;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.sub-menu .nav-btn.active {
+  border-left: none;
 }
 
 .nav-btn {

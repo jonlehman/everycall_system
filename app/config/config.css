@@ -35,7 +35,7 @@
 .config-wrap h1 { margin: 0; font-size: 22px; }
 .config-wrap h2 { margin: 0 0 10px; font-size: 15px; }
 .config-wrap p { margin: 6px 0; color: var(--muted); font-size: 14px; }
-.config-wrap label { display: block; margin: 10px 0 6px; font-size: 12px; text-transform: uppercase; color: var(--muted); letter-spacing: .03em; }
+.config-wrap label { display: block; margin: 10px 0 6px; font-size: 14px; font-weight: 500; text-transform: none; color: var(--muted); letter-spacing: 0; }
 .config-wrap input, .config-wrap textarea, .config-wrap button {
   width: 100%;
   border: 1px solid var(--line);

@@ -12,8 +12,18 @@ const items = [
   { label: 'Phone Numbers', href: '/admin/phone-numbers', group: 'Platform' },
   { label: 'Costs', href: '/admin/usage', group: 'Platform' },
   { label: 'Admin Users', href: '/admin/users', group: 'Controls' },
-  { label: 'System Config', href: '/admin/system', group: 'Controls' },
-  { label: 'Prompt Config', href: '/admin/system/prompts', group: 'Controls' },
+  {
+    label: 'System Config',
+    href: '/admin/system',
+    group: 'Controls',
+    children: [
+      { label: 'General', href: '/admin/system/general' },
+      { label: 'Billing', href: '/admin/system/billing' },
+      { label: 'Coupons', href: '/admin/system/coupons' },
+      { label: 'SMS', href: '/admin/system/sms' },
+      { label: 'Prompts', href: '/admin/system/prompts' }
+    ]
+  },
   { label: 'Audit Log', href: '/admin/audit', group: 'Controls' }
 ];
 
@@ -28,14 +38,29 @@ export default function AdminSidebar() {
         <div className="nav-group" key={group}>
           <div className="nav-label">{group}</div>
           {items.filter((item) => item.group === group).map((item) => (
-            <Link
-              key={item.href}
-              className={`nav-btn${pathname === item.href || pathname.startsWith(`${item.href}/`) ? ' active' : ''}`}
-              href={item.href}
-              style={{ display: 'block' }}
-            >
-              {item.label}
-            </Link>
+            <div key={item.href}>
+              <Link
+                className={`nav-btn${pathname === item.href || pathname.startsWith(`${item.href}/`) ? ' active' : ''}`}
+                href={item.href}
+                style={{ display: 'block' }}
+              >
+                {item.label}
+              </Link>
+              {item.children && pathname.startsWith(`${item.href}/`) ? (
+                <div className="sub-menu">
+                  {item.children.map((child) => (
+                    <Link
+                      key={child.href}
+                      className={`nav-btn${pathname === child.href ? ' active' : ''}`}
+                      href={child.href}
+                      style={{ display: 'block' }}
+                    >
+                      {child.label}
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           ))}
         </div>
       ))}
