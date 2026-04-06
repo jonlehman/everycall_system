@@ -29,13 +29,6 @@ function hasOwn(body, key) {
   return Object.prototype.hasOwnProperty.call(body, key);
 }
 
-const DEFAULT_NOTIFICATION_SETTINGS = {
-  lead_alerts_enabled: true,
-  lead_alert_sms_enabled: true,
-  lead_alert_email_enabled: true,
-  lead_alert_email_include_transcript: true
-};
-
 export default async function handler(req, res) {
   const fail = (status, error, message) => res.status(status).json({ ok: false, error, message });
 
@@ -66,11 +59,7 @@ export default async function handler(req, res) {
         `SELECT tenant_key,
                 timezone,
                 notes,
-                caller_id_name,
-                lead_alerts_enabled,
-                lead_alert_sms_enabled,
-                lead_alert_email_enabled,
-                lead_alert_email_include_transcript
+                caller_id_name
          FROM tenant_settings
          WHERE tenant_key = $1`,
         [tenantKey]
@@ -87,7 +76,7 @@ export default async function handler(req, res) {
         salesReceptionistReadiness,
         settings: settings.rows[0]
           ? settings.rows[0]
-          : { ...DEFAULT_NOTIFICATION_SETTINGS }
+          : {}
       });
     }
 
@@ -108,11 +97,7 @@ export default async function handler(req, res) {
       const settingsResult = await pool.query(
         `SELECT timezone,
                 notes,
-                caller_id_name,
-                lead_alerts_enabled,
-                lead_alert_sms_enabled,
-                lead_alert_email_enabled,
-                lead_alert_email_include_transcript
+                caller_id_name
          FROM tenant_settings
          WHERE tenant_key = $1
          LIMIT 1`,
@@ -129,21 +114,6 @@ export default async function handler(req, res) {
       const notes = hasOwn(body, "notes")
         ? String(body.notes || "")
         : String(existingSettings?.notes || "");
-      const leadAlertsEnabled = hasOwn(body, "leadAlertsEnabled")
-        ? Boolean(body.leadAlertsEnabled)
-        : Boolean(existingSettings?.lead_alerts_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.lead_alerts_enabled);
-      const leadAlertSmsEnabled = hasOwn(body, "leadAlertSmsEnabled")
-        ? Boolean(body.leadAlertSmsEnabled)
-        : Boolean(existingSettings?.lead_alert_sms_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.lead_alert_sms_enabled);
-      const leadAlertEmailEnabled = hasOwn(body, "leadAlertEmailEnabled")
-        ? Boolean(body.leadAlertEmailEnabled)
-        : Boolean(existingSettings?.lead_alert_email_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.lead_alert_email_enabled);
-      const leadAlertEmailIncludeTranscript = hasOwn(body, "leadAlertEmailIncludeTranscript")
-        ? Boolean(body.leadAlertEmailIncludeTranscript)
-        : Boolean(
-          existingSettings?.lead_alert_email_include_transcript
-          ?? DEFAULT_NOTIFICATION_SETTINGS.lead_alert_email_include_transcript
-        );
       const callerIdName = hasOwn(body, "callerIdName")
         ? normalizeCallerIdName(body.callerIdName)
         : storedCallerIdName;
@@ -163,32 +133,20 @@ export default async function handler(req, res) {
            tenant_key,
            timezone,
            notes,
-           caller_id_name,
-           lead_alerts_enabled,
-           lead_alert_sms_enabled,
-           lead_alert_email_enabled,
-           lead_alert_email_include_transcript
+           caller_id_name
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         VALUES ($1, $2, $3, $4)
          ON CONFLICT (tenant_key)
          DO UPDATE SET
            timezone = EXCLUDED.timezone,
            notes = EXCLUDED.notes,
            caller_id_name = EXCLUDED.caller_id_name,
-           lead_alerts_enabled = EXCLUDED.lead_alerts_enabled,
-           lead_alert_sms_enabled = EXCLUDED.lead_alert_sms_enabled,
-           lead_alert_email_enabled = EXCLUDED.lead_alert_email_enabled,
-           lead_alert_email_include_transcript = EXCLUDED.lead_alert_email_include_transcript,
            updated_at = NOW()`,
         [
           tenantKey,
           timezone,
           notes,
-          callerIdName,
-          leadAlertsEnabled,
-          leadAlertSmsEnabled,
-          leadAlertEmailEnabled,
-          leadAlertEmailIncludeTranscript
+          callerIdName
         ]
       );
 
@@ -246,10 +204,6 @@ export default async function handler(req, res) {
           timezone,
           caller_id_name: callerIdName,
           primary_number: hasOwn(body, "primaryNumber") ? (primaryNumber || null) : undefined,
-          lead_alerts_enabled: leadAlertsEnabled,
-          lead_alert_sms_enabled: leadAlertSmsEnabled,
-          lead_alert_email_enabled: leadAlertEmailEnabled,
-          lead_alert_email_include_transcript: leadAlertEmailIncludeTranscript,
           provider_sync_ok: providerSync?.ok === true,
           provider_sync_pending: providerSync?.pending === true
         }

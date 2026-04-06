@@ -439,27 +439,10 @@ export async function ensureTables(pool) {
       timezone TEXT DEFAULT 'America/Los_Angeles',
       notes TEXT,
       caller_id_name TEXT,
-      lead_alerts_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      lead_alert_sms_quiet_hours_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      lead_alert_sms_quiet_hours_start TEXT NOT NULL DEFAULT '21:00',
-      lead_alert_sms_quiet_hours_end TEXT NOT NULL DEFAULT '08:00',
-      lead_alert_email_include_transcript BOOLEAN NOT NULL DEFAULT TRUE,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
   await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS caller_id_name TEXT;`);
-  await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alerts_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
-  await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
-  await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_email_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
-  await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_sms_quiet_hours_enabled BOOLEAN NOT NULL DEFAULT TRUE;`);
-  await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_sms_quiet_hours_start TEXT NOT NULL DEFAULT '21:00';`);
-  await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_sms_quiet_hours_end TEXT NOT NULL DEFAULT '08:00';`);
-  await pool.query(`ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS lead_alert_email_include_transcript BOOLEAN NOT NULL DEFAULT TRUE;`);
-  await pool.query(`ALTER TABLE tenant_settings ALTER COLUMN lead_alerts_enabled SET DEFAULT TRUE;`);
-  await pool.query(`ALTER TABLE tenant_settings ALTER COLUMN lead_alert_sms_enabled SET DEFAULT TRUE;`);
-  await pool.query(`ALTER TABLE tenant_settings ALTER COLUMN lead_alert_email_enabled SET DEFAULT TRUE;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_intake (

@@ -358,11 +358,7 @@ async function loadLeadNotificationContext(pool, tenantKey, callSid) {
       [tenantKey]
     ),
     pool.query(
-      `SELECT timezone,
-              lead_alerts_enabled,
-              lead_alert_sms_enabled,
-              lead_alert_email_enabled,
-              lead_alert_email_include_transcript
+      `SELECT timezone
        FROM tenant_settings
        WHERE tenant_key = $1
        LIMIT 1`,
@@ -396,11 +392,7 @@ async function loadLeadNotificationContext(pool, tenantKey, callSid) {
   return {
     tenantName: normalizeText(tenantRes.rows[0]?.name) || tenantKey,
     settings: {
-      timezone: normalizeText(settingsRes.rows[0]?.timezone) || "America/Los_Angeles",
-      lead_alerts_enabled: settingsRes.rows[0]?.lead_alerts_enabled ?? true,
-      lead_alert_sms_enabled: settingsRes.rows[0]?.lead_alert_sms_enabled ?? true,
-      lead_alert_email_enabled: settingsRes.rows[0]?.lead_alert_email_enabled ?? true,
-      lead_alert_email_include_transcript: settingsRes.rows[0]?.lead_alert_email_include_transcript ?? true
+      timezone: normalizeText(settingsRes.rows[0]?.timezone) || "America/Los_Angeles"
     },
     callRow: callRes.rows[0] || null,
     recipients: recipientsRes.rows || []
@@ -418,29 +410,24 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
     context.callRow.lead_outcome_type,
     context.callRow.lead_is_valid
   );
-  const alertsEnabled = settings.lead_alerts_enabled !== false;
-  const smsRecipients = alertsEnabled && settings.lead_alert_sms_enabled
-    ? context.recipients.filter((row) => (
-      row.lead_alert_sms_enabled
-      && normalizeText(row.phone_number)
-      && row.sms_opt_in_status === "opted_in"
-      && getEffectiveRecipientCategories(row.lead_alert_sms_categories, row.lead_alert_sms_enabled).includes(normalizedCallCategory)
-    ))
-    : [];
-  const emailRecipients = alertsEnabled && settings.lead_alert_email_enabled
-    ? context.recipients.filter((row) => (
-      row.lead_alert_email_enabled
-      && normalizeText(row.email)
-      && getEffectiveRecipientCategories(row.lead_alert_email_categories, row.lead_alert_email_enabled).includes(normalizedCallCategory)
-    ))
-    : [];
+  const smsRecipients = context.recipients.filter((row) => (
+    row.lead_alert_sms_enabled
+    && normalizeText(row.phone_number)
+    && row.sms_opt_in_status === "opted_in"
+    && getEffectiveRecipientCategories(row.lead_alert_sms_categories, row.lead_alert_sms_enabled).includes(normalizedCallCategory)
+  ));
+  const emailRecipients = context.recipients.filter((row) => (
+    row.lead_alert_email_enabled
+    && normalizeText(row.email)
+    && getEffectiveRecipientCategories(row.lead_alert_email_categories, row.lead_alert_email_enabled).includes(normalizedCallCategory)
+  ));
 
   if (!smsRecipients.length && !emailRecipients.length) {
     await updateCallNotificationEstimatedCost(pool, { callSid });
     return { ok: true, skipped: "no_recipients" };
   }
 
-  const transcript = settings.lead_alert_email_enabled && settings.lead_alert_email_include_transcript
+  const transcript = emailRecipients.length
     ? await loadCombinedTranscript(pool, callSid, context.callRow)
     : "";
   const appBaseUrl = getCallAlertBaseUrl();
@@ -471,7 +458,7 @@ export async function sendLeadNotifications(pool, { tenantKey, callSid }) {
         callSid,
         callRow: context.callRow,
         transcript,
-        includeTranscript: Boolean(settings.lead_alert_email_include_transcript),
+        includeTranscript: true,
         timezone: normalizeText(settings.timezone) || "America/Los_Angeles"
       })
     : null;
