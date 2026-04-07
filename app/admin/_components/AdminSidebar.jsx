@@ -19,6 +19,7 @@ const sections = [
   {
     key: 'tenants',
     label: 'Tenants',
+    standalone: true,
     items: [
       { label: 'Tenants', href: '/admin/tenants' }
     ]
@@ -80,20 +81,32 @@ export default function AdminSidebar() {
 
       {sections.map((section) => {
         const expanded = openSection === section.key;
+        const singleItem = section.items.length === 1;
+        const primaryItem = singleItem ? section.items[0] : null;
         return (
           <div className="nav-group" key={section.key}>
-            <button
-              type="button"
-              className="nav-group-toggle"
-              aria-expanded={expanded}
-              onClick={() => toggleSection(section.key)}
-            >
-              <span className="nav-label">{section.label}</span>
-              <span className="material-symbols-outlined text-[18px]">
-                {expanded ? 'expand_more' : 'chevron_right'}
-              </span>
-            </button>
-            {expanded ? (
+            {section.standalone && primaryItem ? (
+              <Link
+                className={`nav-group-link${matchesPath(pathname, primaryItem.href) ? ' active' : ''}`}
+                href={primaryItem.href}
+                style={{ display: 'flex' }}
+              >
+                <span className="nav-label">{section.label}</span>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                className="nav-group-toggle"
+                aria-expanded={expanded}
+                onClick={() => toggleSection(section.key)}
+              >
+                <span className="nav-label">{section.label}</span>
+                <span className="material-symbols-outlined text-[18px]">
+                  {expanded ? 'expand_more' : 'chevron_right'}
+                </span>
+              </button>
+            )}
+            {!section.standalone && expanded ? (
               <div className="sub-menu">
                 {section.items.map((item) => (
                   <Link

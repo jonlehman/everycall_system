@@ -96,8 +96,30 @@ a { color: inherit; }
   transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, color .18s ease;
 }
 
+.nav-group-link {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--nav-ink);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 4px 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, color .18s ease;
+}
+
 .nav-group-toggle:hover {
   background: rgba(217,227,246,.72);
+}
+
+.nav-group-link:hover {
+  background: rgba(217,227,246,.72);
+}
+
+.nav-group-link.active {
+  color: var(--brand);
 }
 
 .nav-label {
