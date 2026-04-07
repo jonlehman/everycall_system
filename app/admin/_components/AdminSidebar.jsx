@@ -80,12 +80,11 @@ export default function AdminSidebar() {
 
       {sections.map((section) => {
         const expanded = openSection === section.key;
-        const sectionActive = section.items.some((item) => matchesPath(pathname, item.href));
         return (
           <div className="nav-group" key={section.key}>
             <button
               type="button"
-              className={`nav-group-toggle${sectionActive ? ' active' : ''}`}
+              className="nav-group-toggle"
               aria-expanded={expanded}
               onClick={() => toggleSection(section.key)}
             >

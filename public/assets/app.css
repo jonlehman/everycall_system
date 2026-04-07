@@ -100,12 +100,6 @@ a { color: inherit; }
   background: rgba(217,227,246,.72);
 }
 
-.nav-group-toggle.active {
-  background: #ffffff;
-  color: var(--brand);
-  box-shadow: var(--shadow-soft);
-}
-
 .nav-label {
   font-size: 12px;
   font-weight: 600;
