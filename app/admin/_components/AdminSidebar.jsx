@@ -2,139 +2,129 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-const items = [
-  { label: 'Overview', href: '/admin/overview', group: 'Operations' },
-  { label: 'Support', href: '/admin/support', group: 'Operations' },
-  { label: 'Monitoring', href: '/admin/monitoring', group: 'Operations' },
-  { label: 'Provisioning Jobs', href: '/admin/jobs', group: 'Operations' },
-  { label: 'Phone Numbers', href: '/admin/phone-numbers', group: 'Operations' },
-  { label: 'Tenants', href: '/admin/tenants', group: 'Tenants' },
-  { label: 'Costs', href: '/admin/usage', group: 'Finance' },
-  { label: 'Billing Report', href: '/admin/billing-report', group: 'Finance' },
-  { label: 'Admin Users', href: '/admin/users', group: 'Platform' },
+const sections = [
   {
+    key: 'operations',
+    label: 'Operations',
+    items: [
+      { label: 'Overview', href: '/admin/overview' },
+      { label: 'Support', href: '/admin/support' },
+      { label: 'Monitoring', href: '/admin/monitoring' },
+      { label: 'Provisioning Jobs', href: '/admin/jobs' },
+      { label: 'Phone Numbers', href: '/admin/phone-numbers' }
+    ]
+  },
+  {
+    key: 'tenants',
+    label: 'Tenants',
+    items: [
+      { label: 'Tenants', href: '/admin/tenants' }
+    ]
+  },
+  {
+    key: 'finance',
+    label: 'Finance',
+    items: [
+      { label: 'Costs', href: '/admin/usage' },
+      { label: 'Billing Report', href: '/admin/billing-report' }
+    ]
+  },
+  {
+    key: 'system',
     label: 'System Config',
-    href: '/admin/system',
-    group: 'Platform',
-    children: [
+    items: [
       { label: 'General', href: '/admin/system/general' },
       { label: 'Billing', href: '/admin/system/billing' },
       { label: 'Coupons', href: '/admin/system/coupons' },
       { label: 'SMS', href: '/admin/system/sms' },
-      { label: 'Prompts', href: '/admin/system/prompts' }
+      { label: 'Prompts', href: '/admin/system/prompts' },
+      { label: 'Admin Users', href: '/admin/users' }
     ]
-  },
-  { label: 'Audit Log', href: '/admin/audit', group: 'Platform' }
+  }
 ];
+
+const standaloneItems = [
+  { label: 'Audit Log', href: '/admin/audit' }
+];
+
+function matchesPath(pathname, href) {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function findSectionForPath(pathname) {
+  const matched = sections.find((section) => section.items.some((item) => matchesPath(pathname, item.href)));
+  return matched?.key || null;
+}
 
 export default function AdminSidebar() {
   const pathname = usePathname();
-  const groups = ['Operations', 'Tenants', 'Finance', 'Platform'];
-  const [expandedItems, setExpandedItems] = useState({});
-  const [expandedGroups, setExpandedGroups] = useState({
-    Operations: true,
-    Tenants: true,
-    Finance: true,
-    Platform: true
-  });
+  const initialOpen = useMemo(() => findSectionForPath(pathname), [pathname]);
+  const [openSection, setOpenSection] = useState(initialOpen);
 
   useEffect(() => {
-    setExpandedItems((current) => {
-      const next = { ...current };
-      for (const item of items) {
-        if (!item.children) continue;
-        if (pathname === item.href || pathname.startsWith(`${item.href}/`)) {
-          next[item.href] = true;
-        } else if (!(item.href in next)) {
-          next[item.href] = false;
-        }
-      }
-      return next;
-    });
+    const matchedSection = findSectionForPath(pathname);
+    if (matchedSection) {
+      setOpenSection(matchedSection);
+    }
   }, [pathname]);
 
-  const toggleExpanded = (href) => {
-    setExpandedItems((current) => ({
-      ...current,
-      [href]: !current[href]
-    }));
-  };
-
-  const toggleGroup = (group) => {
-    setExpandedGroups((current) => ({
-      ...current,
-      [group]: !current[group]
-    }));
+  const toggleSection = (sectionKey) => {
+    setOpenSection((current) => current === sectionKey ? null : sectionKey);
   };
 
   return (
     <aside className="sidebar">
       <div className="logo">every<span>call</span> admin</div>
-      {groups.map((group) => (
-        <div className="nav-group" key={group}>
-          <button
-            type="button"
-            className="nav-group-toggle"
-            aria-expanded={Boolean(expandedGroups[group])}
-            onClick={() => toggleGroup(group)}
-          >
-            <span className="nav-label">{group}</span>
-            <span className="material-symbols-outlined text-[18px]">
-              {expandedGroups[group] ? 'expand_more' : 'chevron_right'}
-            </span>
-          </button>
-          {expandedGroups[group] ? items.filter((item) => item.group === group).map((item) => (
-            <div key={item.href}>
-              {item.children ? (
-                <div className={`nav-parent-row${pathname === item.href || pathname.startsWith(`${item.href}/`) ? ' active' : ''}`}>
+
+      {sections.map((section) => {
+        const expanded = openSection === section.key;
+        const sectionActive = section.items.some((item) => matchesPath(pathname, item.href));
+        return (
+          <div className="nav-group" key={section.key}>
+            <button
+              type="button"
+              className={`nav-group-toggle${sectionActive ? ' active' : ''}`}
+              aria-expanded={expanded}
+              onClick={() => toggleSection(section.key)}
+            >
+              <span className="nav-label">{section.label}</span>
+              <span className="material-symbols-outlined text-[18px]">
+                {expanded ? 'expand_more' : 'chevron_right'}
+              </span>
+            </button>
+            {expanded ? (
+              <div className="sub-menu">
+                {section.items.map((item) => (
                   <Link
-                    className={`nav-btn${pathname === item.href || pathname.startsWith(`${item.href}/`) ? ' active' : ''}`}
+                    key={item.href}
+                    className={`nav-btn${matchesPath(pathname, item.href) ? ' active' : ''}`}
                     href={item.href}
                     style={{ display: 'block' }}
                   >
                     {item.label}
                   </Link>
-                  <button
-                    type="button"
-                    className="nav-toggle"
-                    aria-label={expandedItems[item.href] ? `Collapse ${item.label}` : `Expand ${item.label}`}
-                    aria-expanded={Boolean(expandedItems[item.href])}
-                    onClick={() => toggleExpanded(item.href)}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">
-                      {expandedItems[item.href] ? 'expand_more' : 'chevron_right'}
-                    </span>
-                  </button>
-                </div>
-              ) : (
-                <Link
-                  className={`nav-btn${pathname === item.href || pathname.startsWith(`${item.href}/`) ? ' active' : ''}`}
-                  href={item.href}
-                  style={{ display: 'block' }}
-                >
-                  {item.label}
-                </Link>
-              )}
-              {item.children && expandedItems[item.href] ? (
-                <div className="sub-menu">
-                  {item.children.map((child) => (
-                    <Link
-                      key={child.href}
-                      className={`nav-btn${pathname === child.href ? ' active' : ''}`}
-                      href={child.href}
-                      style={{ display: 'block' }}
-                    >
-                      {child.label}
-                    </Link>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          )) : null}
-        </div>
-      ))}
+                ))}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+
+      <div className="nav-group">
+        {standaloneItems.map((item) => (
+          <Link
+            key={item.href}
+            className={`nav-btn${matchesPath(pathname, item.href) ? ' active' : ''}`}
+            href={item.href}
+            style={{ display: 'block' }}
+          >
+            {item.label}
+          </Link>
+        ))}
+      </div>
+
       <div style={{ marginTop: 'auto', paddingTop: 12 }}>
         <button
           className="nav-btn"
