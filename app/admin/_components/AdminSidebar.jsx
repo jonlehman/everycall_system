@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import BrandLogo from '../../_components/BrandLogo';
 
 const sections = [
   {
@@ -77,7 +78,15 @@ export default function AdminSidebar() {
 
   return (
     <aside className="sidebar">
-      <div className="logo">every<span>call</span> admin</div>
+      <div className="logo">
+        <BrandLogo
+          href="/admin/overview"
+          label="EveryCall Admin"
+          className="mx-auto h-10 w-[176px]"
+          imageClassName="h-full w-full object-contain"
+          priority
+        />
+      </div>
 
       {sections.map((section) => {
         const expanded = openSection === section.key;

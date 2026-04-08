@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import BrandLogo from '../../_components/BrandLogo';
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
@@ -31,6 +32,14 @@ export default function AdminLoginPage() {
   return (
     <div className="auth-wrap">
       <section className="hero">
+        <div className="mb-6 flex justify-center">
+          <BrandLogo
+            label="EveryCall Admin"
+            className="h-16 w-[260px]"
+            imageClassName="h-full w-full object-contain"
+            priority
+          />
+        </div>
         <h1>EveryCall Admin</h1>
         <p>Sign in to platform operations and tenant management.</p>
       </section>

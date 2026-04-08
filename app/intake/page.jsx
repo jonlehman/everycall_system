@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import BrandLogo from '../_components/BrandLogo';
 import './intake.css';
 
 const BUSINESS_CATEGORIES = [
@@ -245,7 +246,13 @@ export function IntakePageClient({ qaMode = false } = {}) {
     <div className="intake-shell">
       <header className="intake-topbar">
         <div className="intake-topbar-inner">
-          <div className="intake-brand">EveryCall</div>
+          <div className="intake-brand">
+            <BrandLogo
+              className="h-10 w-[172px]"
+              imageClassName="h-full w-full object-contain"
+              priority
+            />
+          </div>
           <div className="intake-topbar-label">Onboarding</div>
         </div>
       </header>

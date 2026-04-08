@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import BrandLogo from '../_components/BrandLogo';
 
 function resolveClientRedirect(nextPath, tenantKey) {
   const fallback = `/client/calls?tenantKey=${encodeURIComponent(tenantKey || 'default')}`;
@@ -50,6 +51,13 @@ export default function LoginPage() {
   return (
     <div className="auth-wrap">
       <section className="hero">
+        <div className="mb-6 flex justify-center">
+          <BrandLogo
+            className="h-16 w-[260px]"
+            imageClassName="h-full w-full object-contain"
+            priority
+          />
+        </div>
         <h1>EveryCall Workspace</h1>
         <p>Use the client workspace to run calls, knowledge review, and team settings.</p>
       </section>

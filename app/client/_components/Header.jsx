@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import BrandLogo from '../../_components/BrandLogo';
 
 export default function Header() {
   const [billing, setBilling] = useState({
@@ -85,9 +86,12 @@ export default function Header() {
     <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/70 bg-white/80 shadow-sm backdrop-blur-md">
       <div className="flex h-16 items-center justify-between px-4 md:px-6">
         <div className="flex items-center gap-8">
-          <Link href="/client/dashboard" className="text-xl font-bold tracking-[-0.02em] text-slate-900">
-            EveryCall
-          </Link>
+          <BrandLogo
+            href="/client/dashboard"
+            className="h-9 w-[156px] md:h-10 md:w-[172px]"
+            imageClassName="h-full w-full object-contain"
+            priority
+          />
           {showTrialBadge ? (
             <div className="hidden md:flex items-center">
               <Link href="/client/account/billing" className="border-b-2 border-[#004ac6] py-5 text-sm font-semibold text-[#004ac6]">
