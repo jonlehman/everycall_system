@@ -10,7 +10,7 @@ export default function BrandLogo({
   const logo = (
     <div className={className.trim()}>
       <img
-        src="/branding/everycall-logo.svg"
+        src="/branding/everycall-logo.png"
         alt={label}
         className={`object-cover object-center ${imageClassName}`.trim()}
         loading={priority ? 'eager' : 'lazy'}

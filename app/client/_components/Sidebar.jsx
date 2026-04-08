@@ -67,7 +67,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         {collapsed ? (
           <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md bg-white p-1 shadow-sm">
             <img
-              src="/branding/everycall-mark.svg"
+              src="/branding/everycall-mark.png"
               alt="EveryCall"
               className="h-full w-full object-contain"
               loading="eager"
