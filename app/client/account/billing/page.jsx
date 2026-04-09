@@ -241,6 +241,7 @@ export default function AccountBillingPage() {
   const [selectedBillingPeriodId, setSelectedBillingPeriodId] = useState(null);
   const [selectedBillingPeriodLoading, setSelectedBillingPeriodLoading] = useState(false);
   const [showCurrentBillDetails, setShowCurrentBillDetails] = useState(false);
+  const [showManagementDetails, setShowManagementDetails] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [couponBusy, setCouponBusy] = useState(false);
   const [status, setStatus] = useState({ tone: 'warn', message: 'Loading billing status...' });
@@ -711,11 +712,13 @@ export default function AccountBillingPage() {
         <div className="grid min-w-0 gap-3 xl:sticky xl:top-24">
           <SectionCard
             title="Manage Billing"
-            description="Use this area for owner actions, account access state, and service recovery."
           >
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <DetailDisclosure
+              open={showManagementDetails}
+              onToggle={() => setShowManagementDetails((current) => !current)}
+            >
               <KeyValueGrid items={managementDetails} className="md:grid-cols-[150px_1fr]" />
-            </div>
+            </DetailDisclosure>
 
             <div className="mt-4 border-t border-slate-200 pt-4">
               <h3 className="m-0 text-base font-semibold text-slate-900">Coupon</h3>
