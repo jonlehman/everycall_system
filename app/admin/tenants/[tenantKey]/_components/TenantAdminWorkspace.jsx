@@ -142,6 +142,18 @@ function formatDateTimeDisplay(value) {
   return date.toLocaleString();
 }
 
+function formatDurationDisplay(value) {
+  const totalSeconds = Number(value || 0);
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '0s';
+  const roundedSeconds = Math.max(0, Math.round(totalSeconds));
+  const hours = Math.floor(roundedSeconds / 3600);
+  const minutes = Math.floor((roundedSeconds % 3600) / 60);
+  const seconds = roundedSeconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
 function formatMoney(amountCents) {
   const value = Number(amountCents || 0) / 100;
   return new Intl.NumberFormat('en-US', {
@@ -1549,6 +1561,7 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
                   <thead className="bg-slate-50">
                     <tr className="border-b border-slate-200 text-slate-500">
                       <th className="px-3 py-2 font-medium">Time</th>
+                      <th className="px-3 py-2 font-medium">Duration</th>
                       <th className="px-3 py-2 font-medium">Caller</th>
                       <th className="px-3 py-2 font-medium">Charge Bucket</th>
                       <th className="px-3 py-2 font-medium">Type</th>
@@ -1562,6 +1575,7 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
                       return (
                         <tr key={call.call_sid} className="border-b border-slate-100 align-top last:border-b-0">
                           <td className="px-3 py-2 text-slate-700">{formatDateTimeDisplay(call.created_at)}</td>
+                          <td className="px-3 py-2 text-slate-700">{formatDurationDisplay(call.duration_seconds)}</td>
                           <td className="px-3 py-2 text-slate-700">
                             <div className="font-medium text-slate-900">{[call.caller_first_name, call.caller_last_name].filter(Boolean).join(' ') || 'Unknown caller'}</div>
                             <div className="text-xs text-slate-500">{call.callback_number || '-'}</div>
@@ -1588,7 +1602,7 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
                       );
                     }) : (
                       <tr>
-                        <td colSpan={5} className="px-3 py-6 text-slate-500">No calls are assigned to the current billing period yet.</td>
+                        <td colSpan={6} className="px-3 py-6 text-slate-500">No calls are assigned to the current billing period yet.</td>
                       </tr>
                     )}
                   </tbody>

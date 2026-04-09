@@ -741,7 +741,6 @@ export default function AccountBillingPage() {
 
             <div className="mt-4 border-t border-slate-200 pt-4">
               <h3 className="m-0 text-base font-semibold text-slate-900">Coupon</h3>
-              <p className="m-0 mt-1 text-sm text-slate-500">Apply a one-time code here.</p>
 
               {activeCoupon ? (
                 <>
@@ -783,7 +782,13 @@ export default function AccountBillingPage() {
                     onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
                     placeholder="Coupon code"
                   />
-                  <Button type="button" onClick={applyCoupon} disabled={couponBusy}>
+                  <Button
+                    variant="outline"
+                    className="border-[#004ac6] bg-white text-[#004ac6] hover:bg-[#eff4ff] hover:text-[#004ac6]"
+                    type="button"
+                    onClick={applyCoupon}
+                    disabled={couponBusy}
+                  >
                     {couponBusy ? 'Applying...' : (activeCoupon ? 'Replace Code' : 'Apply Code')}
                   </Button>
                 </div>
