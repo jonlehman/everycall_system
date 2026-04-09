@@ -67,6 +67,7 @@ export default async function handler(req, res) {
     res.setHeader("Allow", "GET, POST");
     return fail(res, 405, "method_not_allowed", "Method not allowed.");
   } catch (err) {
+    const errorCode = String(err?.code || "").trim();
     const message = String(err?.message || "unknown");
     if (message === "knowledge_receptionist_migrations_not_applied") {
       return fail(res, 503, "migrations_required", "Knowledge receptionist migrations have not been applied.");
@@ -92,7 +93,7 @@ export default async function handler(req, res) {
     if (message === "setup_interview_session_not_found") {
       return fail(res, 404, "setup_interview_session_not_found", "One or more setup interview sessions were not found for this tenant.");
     }
-    if (message === "website_fetch_failed") {
+    if (errorCode === "website_fetch_failed" || message === "website_fetch_failed") {
       return fail(res, 502, "website_fetch_failed", "Unable to fetch the approved website for this build.");
     }
     return fail(res, 500, "knowledge_build_error", message);

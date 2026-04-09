@@ -19,6 +19,8 @@ const MAX_WEBSITE_FILES = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_WEBSITE_FILES"
 const CRAWL_BATCH_SIZE = readPositiveIntEnv("KNOWLEDGE_BUILD_CRAWL_BATCH_SIZE", 4);
 const FETCH_TIMEOUT_MS = readPositiveIntEnv("KNOWLEDGE_BUILD_FETCH_TIMEOUT_MS", 5000);
 const WEBSITE_CRAWL_DEADLINE_MS = readPositiveIntEnv("KNOWLEDGE_BUILD_CRAWL_DEADLINE_MS", 90000);
+const INITIAL_WEBSITE_FETCH_MAX_ATTEMPTS = readPositiveIntEnv("KNOWLEDGE_BUILD_INITIAL_FETCH_MAX_ATTEMPTS", 3);
+const INITIAL_WEBSITE_FETCH_RETRY_DELAY_MS = readPositiveIntEnv("KNOWLEDGE_BUILD_INITIAL_FETCH_RETRY_DELAY_MS", 750);
 const MAX_WEBSITE_PAGE_BYTES = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_WEBSITE_PAGE_BYTES", 2 * 1024 * 1024);
 const MAX_WEBSITE_DOWNLOAD_BYTES = readPositiveIntEnv("KNOWLEDGE_BUILD_MAX_WEBSITE_DOWNLOAD_BYTES", 6 * 1024 * 1024);
 const SOURCE_DISCOVERY_BATCH_SIZE = 25;
@@ -113,6 +115,16 @@ function truncateText(value, limit = 320) {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
+function formatReasonLabel(value) {
+  const text = normalizeText(value);
+  if (!text) return "";
+  return text
+    .split(/[_\s]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function uniqueValues(values) {
   const seen = new Set();
   const output = [];
@@ -137,6 +149,47 @@ function stableHash(value) {
 
 function createId(prefix) {
   return `${prefix}_${Date.now()}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms || 0))));
+}
+
+function createKnowledgeBuildError(code, message, extra = {}) {
+  const error = new Error(normalizeText(message) || code || "knowledge_build_error");
+  error.code = normalizeText(code) || "knowledge_build_error";
+  Object.assign(error, extra);
+  return error;
+}
+
+function formatWebsiteFetchFailureReason(failure = {}) {
+  const reason = normalizeText(failure.failureReason || "").toLowerCase();
+  const status = Number(failure.status || 0);
+  if (reason.startsWith("http_")) {
+    const code = Number.parseInt(reason.slice(5), 10);
+    return Number.isFinite(code) ? `HTTP ${code}` : reason;
+  }
+  if (Number.isFinite(status) && status > 0) {
+    return `HTTP ${status}`;
+  }
+  if (reason === "aborterror") return "Request timed out";
+  if (reason === "website_target_not_public") return "Target is not publicly reachable";
+  if (reason === "website_target_unresolvable") return "Target hostname could not be resolved";
+  if (reason === "website_redirect_origin_not_allowed") return "Redirect left the approved website origin";
+  if (reason === "website_redirect_limit_exceeded") return "Redirect limit exceeded";
+  if (reason === "website_redirect_missing_location") return "Redirect response missing location";
+  if (reason === "website_response_too_large") return "Response exceeded the website fetch size limit";
+  if (reason === "website_url_invalid_protocol") return "Website URL protocol is not allowed";
+  if (reason === "typeerror") return "Network request failed";
+  return formatReasonLabel(reason || "fetch_failed") || "Fetch failed";
+}
+
+function extractKnowledgeBuildFailureMessages(err) {
+  const primary = normalizeText(err?.displayMessage || err?.message || "build_failed") || "build_failed";
+  const attemptMessages = Array.isArray(err?.failureMessages)
+    ? err.failureMessages
+    : [];
+  return uniqueValues([primary, ...attemptMessages]);
 }
 
 function createStableId(prefix, key) {
@@ -878,6 +931,54 @@ async function fetchWebsiteDownloadable(url, options = {}) {
   }
 }
 
+async function fetchInitialWebsitePageWithRetry(url) {
+  const failures = [];
+  const maxAttempts = Math.max(1, Number(INITIAL_WEBSITE_FETCH_MAX_ATTEMPTS || 1));
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const result = await fetchWebsitePage(url);
+    if (result.ok) {
+      if (attempt > 1) {
+        logBuildProgress("crawl_root_retry_recovered", {
+          url: result.url,
+          attempts: attempt
+        });
+      }
+      return result;
+    }
+
+    const failure = {
+      attempt,
+      status: Number.isFinite(Number(result.status)) ? Number(result.status) : null,
+      failureReason: normalizeText(result.failureReason || "fetch_failed") || "fetch_failed",
+      url: normalizeText(result.url || url) || normalizeText(url)
+    };
+    failures.push(failure);
+    logBuildProgress("crawl_root_retry_failed", {
+      attempt,
+      url: failure.url,
+      status: failure.status,
+      failureReason: failure.failureReason
+    });
+
+    if (attempt < maxAttempts) {
+      await sleep(INITIAL_WEBSITE_FETCH_RETRY_DELAY_MS * attempt);
+    }
+  }
+
+  const summaryReasons = uniqueValues(
+    failures.map((failure) => formatWebsiteFetchFailureReason(failure))
+  );
+  const displayMessage = `Website fetch failed after ${failures.length} attempt${failures.length === 1 ? "" : "s"}: ${summaryReasons.join("; ")}`;
+  throw createKnowledgeBuildError("website_fetch_failed", displayMessage, {
+    displayMessage,
+    failureMessages: failures.map((failure) => (
+      `Attempt ${failure.attempt}: ${formatWebsiteFetchFailureReason(failure)}`
+    )),
+    failures
+  });
+}
+
 async function crawlWebsiteSources(rootUrl) {
   const normalizedRootUrl = normalizeWebsiteUrl(rootUrl);
   if (!normalizedRootUrl) {
@@ -887,10 +988,7 @@ async function crawlWebsiteSources(rootUrl) {
   const crawlDeadlineAt = crawlStartedAt + WEBSITE_CRAWL_DEADLINE_MS;
   const truncationReasons = [];
 
-  const firstPage = await fetchWebsitePage(normalizedRootUrl);
-  if (!firstPage.ok) {
-    throw new Error("website_fetch_failed");
-  }
+  const firstPage = await fetchInitialWebsitePageWithRetry(normalizedRootUrl);
   const crawlOrigin = new URL(firstPage.url).origin;
 
   const pages = [firstPage];
@@ -4785,13 +4883,14 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
       resumed: Boolean(resumableState)
     };
   } catch (err) {
+    const failureMessages = extractKnowledgeBuildFailureMessages(err);
     await db.query(
       `UPDATE knowledge_builds
        SET status = 'failed',
            warnings_json = $2::jsonb,
            updated_at = NOW()
        WHERE build_id = $1`,
-      [buildId, JSON.stringify([normalizeText(err?.message || "build_failed")])]
+      [buildId, JSON.stringify(failureMessages)]
     );
     await db.query(
       `UPDATE source_intake_sessions
@@ -4800,7 +4899,7 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
            completed_at = NOW(),
            updated_at = NOW()
        WHERE source_intake_session_id = $1`,
-      [intakeSessionId, JSON.stringify([normalizeText(err?.message || "build_failed")])]
+      [intakeSessionId, JSON.stringify(failureMessages)]
     );
     throw err;
   }
