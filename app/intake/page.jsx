@@ -1,6 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import {
+  INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY,
+  isEmptyMarketingAttribution,
+  normalizeMarketingAttribution
+} from '../../lib/intakeMarketingAttribution';
 import BrandLogo from '../_components/BrandLogo';
 import './intake.css';
 
@@ -124,6 +129,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const [status, setStatus] = useState(defaultStatusForStep(0));
   const [busy, setBusy] = useState(false);
   const [activation, setActivation] = useState(null);
+  const [marketingAttribution, setMarketingAttribution] = useState({});
   const nextHref = '/client/knowledge';
   const provisioningFailed = activation?.voiceProvisioning?.ok === false;
   const step = INTAKE_STEPS[currentStep];
@@ -135,6 +141,46 @@ export function IntakePageClient({ qaMode = false } = {}) {
     }, 1200);
     return () => window.clearTimeout(timer);
   }, [activation, provisioningFailed]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const searchParams = new URLSearchParams(window.location.search || '');
+    const hasQueryParams = Array.from(searchParams.keys()).length > 0;
+
+    if (hasQueryParams) {
+      const normalized = normalizeMarketingAttribution(searchParams);
+      setMarketingAttribution(normalized);
+      try {
+        if (isEmptyMarketingAttribution(normalized)) {
+          window.sessionStorage.removeItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
+        } else {
+          window.sessionStorage.setItem(
+            INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY,
+            JSON.stringify(normalized)
+          );
+        }
+      } catch {
+        // Ignore session storage failures.
+      }
+      return undefined;
+    }
+
+    try {
+      const stored = window.sessionStorage.getItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
+      if (!stored) return undefined;
+      const normalized = normalizeMarketingAttribution(JSON.parse(stored));
+      if (isEmptyMarketingAttribution(normalized)) {
+        window.sessionStorage.removeItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
+        return undefined;
+      }
+      setMarketingAttribution(normalized);
+    } catch {
+      window.sessionStorage.removeItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
+    }
+
+    return undefined;
+  }, []);
 
   const setFormValue = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
@@ -207,26 +253,38 @@ export function IntakePageClient({ qaMode = false } = {}) {
     setBusy(true);
     setStatus({ message: 'Creating account, provisioning phone number, and starting the website build...', tone: 'warn' });
     try {
+      const requestBody = {
+        businessName: form.businessName,
+        businessCategory: form.businessCategory,
+        ownerName: form.ownerName,
+        ownerEmail: form.ownerEmail,
+        ownerPhone: form.ownerPhone,
+        businessPhone: form.businessPhone,
+        password: form.password,
+        website: normalizeWebsiteUrl(form.website),
+        companyDescription: form.companyDescription
+      };
+
+      if (!isEmptyMarketingAttribution(marketingAttribution)) {
+        requestBody.marketingAttribution = marketingAttribution;
+      }
+
       const data = await fetchJson('/api/v1/tenants/onboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          businessName: form.businessName,
-          businessCategory: form.businessCategory,
-          ownerName: form.ownerName,
-          ownerEmail: form.ownerEmail,
-          ownerPhone: form.ownerPhone,
-          businessPhone: form.businessPhone,
-          password: form.password,
-          website: normalizeWebsiteUrl(form.website),
-          companyDescription: form.companyDescription
-        })
+        body: JSON.stringify(requestBody)
       });
       if (!data?.ok) {
         setStatus({ message: data?.message || 'Could not create account.', tone: 'bad' });
         return;
       }
       setActivation(data);
+      try {
+        window.sessionStorage.removeItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
+      } catch {
+        // Ignore session storage failures.
+      }
+      setMarketingAttribution({});
       if (data?.voiceProvisioning?.ok === false) {
         setStatus({
           message: `Account created, but phone number provisioning needs follow-up: ${data.voiceProvisioning.errorMessage || 'unknown error'}`,

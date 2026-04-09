@@ -22,6 +22,7 @@ import { enqueueKnowledgeBuild } from "../../_lib/knowledgeReceptionistBuilds.js
 import { normalizePhoneNumber } from "../../_lib/phone.js";
 import { createDefaultTenantBusinessHours, saveTenantBusinessHours } from "../../_lib/tenantBusinessHours.js";
 import { normalizeCallerIdName, provisionTenantVoiceNumber } from "../../_lib/voiceProvisioning.js";
+import { normalizeMarketingAttribution } from "../../../../lib/intakeMarketingAttribution.js";
 
 function slugify(input) {
   return String(input || "")
@@ -63,6 +64,7 @@ function parsePayload(body) {
   const website = normalizeText(body.website);
   const companyDescription = normalizeText(body.companyDescription || body.company_description);
   const bootstrapMode = normalizeText(body.bootstrapMode || body.bootstrap_mode) || (website ? "website_first" : "setup_interview");
+  const marketingAttribution = normalizeMarketingAttribution(body.marketingAttribution || body.marketing_attribution);
 
   return {
     businessName,
@@ -76,7 +78,8 @@ function parsePayload(body) {
     companyDescription,
     primaryGoal: "Answer callers briefly and move them to the correct next step.",
     bootstrapMode,
-    greetingText: normalizeText(body.greetingText || body.greeting_text)
+    greetingText: normalizeText(body.greetingText || body.greeting_text),
+    marketingAttribution
   };
 }
 
@@ -292,7 +295,8 @@ export default async function handler(req, res) {
         websiteUrl: payload.website,
         companyDescription: payload.companyDescription,
         businessCategory: payload.businessCategory,
-        sourceMode: payload.bootstrapMode
+        sourceMode: payload.bootstrapMode,
+        marketingAttribution: payload.marketingAttribution
       });
 
       const assignments = await resolveTenantDomainAssignments(

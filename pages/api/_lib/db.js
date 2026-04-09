@@ -472,10 +472,12 @@ export async function ensureTables(pool) {
       company_description TEXT,
       business_category TEXT,
       source_mode TEXT NOT NULL DEFAULT 'website_first',
+      marketing_attribution_json JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE tenant_bootstrap_profiles ADD COLUMN IF NOT EXISTS marketing_attribution_json JSONB NOT NULL DEFAULT '{}'::jsonb;`);
 
   await pool.query(`ALTER TABLE IF EXISTS tenant_domain_assignments ALTER COLUMN subdomain_id DROP NOT NULL;`);
 
