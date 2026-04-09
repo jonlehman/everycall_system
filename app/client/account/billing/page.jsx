@@ -479,12 +479,22 @@ export default function AccountBillingPage() {
     { label: 'Overage rate', value: `${formatMoney(callPricing.callOverageRateCents)} / call` }
   ];
 
+  const currentNetAdjustmentAmountCents = Number(callAdjustments.netAdjustmentAmountCents || 0);
+  const currentMonthlyDiscountPercent = Number(callInvoiceEstimate.monthlyDiscountPercent || 0);
+  const currentOverageDiscountPercent = Number(callInvoiceEstimate.overageDiscountPercent || 0);
+
   const usageDetails = [
     { label: 'Base subscription', value: formatMoney(callInvoiceEstimate.discountedBaseAmountCents ?? callInvoiceEstimate.baseAmountCents) },
     { label: 'Overage charges', value: formatMoney(callInvoiceEstimate.overageAmountCents) },
-    { label: 'Manual adjustments', value: formatMoney(callAdjustments.netAdjustmentAmountCents || 0) },
-    { label: 'Monthly discount', value: `${Number(callInvoiceEstimate.monthlyDiscountPercent || 0)}%` },
-    { label: 'Overage discount', value: `${Number(callInvoiceEstimate.overageDiscountPercent || 0)}%` },
+    ...(currentNetAdjustmentAmountCents !== 0
+      ? [{ label: 'Manual adjustments', value: formatMoney(currentNetAdjustmentAmountCents) }]
+      : []),
+    ...(currentMonthlyDiscountPercent !== 0
+      ? [{ label: 'Monthly discount', value: `${currentMonthlyDiscountPercent}%` }]
+      : []),
+    ...(currentOverageDiscountPercent !== 0
+      ? [{ label: 'Overage discount', value: `${currentOverageDiscountPercent}%` }]
+      : []),
     { label: 'Estimated total', value: formatMoney(callInvoiceEstimate.totalEstimatedInvoiceCents) }
   ];
 
@@ -515,14 +525,21 @@ export default function AccountBillingPage() {
     }
   ] : [];
 
+  const selectedPeriodMonthlyDiscountPercent = Number(selectedPeriodInvoiceEstimate.monthlyDiscountPercent || 0);
+  const selectedPeriodOverageDiscountPercent = Number(selectedPeriodInvoiceEstimate.overageDiscountPercent || 0);
+
   const selectedPeriodDetails = [
     { label: 'Included calls', value: `${Number(selectedBillingPeriod?.callPricing?.includedCallCount || 0)}` },
     { label: 'Included used', value: `${Number(selectedPeriodCallUsage.includedCallCountUsed || 0)}` },
     { label: 'Eligible calls', value: `${Number(selectedPeriodCallUsage.eligibleCallCount || 0)}` },
     { label: 'Excluded calls', value: `${Number(selectedPeriodCallUsage.excludedCallCount || 0)}` },
     { label: 'Overage rate', value: `${formatMoney(selectedBillingPeriod?.callPricing?.callOverageRateCents || 0)} / call` },
-    { label: 'Monthly discount', value: `${Number(selectedPeriodInvoiceEstimate.monthlyDiscountPercent || 0)}%` },
-    { label: 'Overage discount', value: `${Number(selectedPeriodInvoiceEstimate.overageDiscountPercent || 0)}%` }
+    ...(selectedPeriodMonthlyDiscountPercent !== 0
+      ? [{ label: 'Monthly discount', value: `${selectedPeriodMonthlyDiscountPercent}%` }]
+      : []),
+    ...(selectedPeriodOverageDiscountPercent !== 0
+      ? [{ label: 'Overage discount', value: `${selectedPeriodOverageDiscountPercent}%` }]
+      : [])
   ];
 
   return (
@@ -722,6 +739,57 @@ export default function AccountBillingPage() {
               <KeyValueGrid items={managementDetails} className="md:grid-cols-[150px_1fr]" />
             </div>
 
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              <h3 className="m-0 text-base font-semibold text-slate-900">Coupon</h3>
+              <p className="m-0 mt-1 text-sm text-slate-500">Apply a one-time code here.</p>
+
+              {activeCoupon ? (
+                <>
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <MetricCard label="Active Code" value={activeCoupon.code} detail="Currently applied to this account" />
+                    <MetricCard
+                      label="Monthly Discount"
+                      value={`${Number(activeCoupon.monthlyDiscountPercent || 0)}%`}
+                      detail={`${Number(activeCoupon.overageDiscountPercent || 0)}% overage discount`}
+                      tone="brand"
+                    />
+                  </div>
+                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <KeyValueGrid
+                      items={[
+                        { label: 'Free trial', value: `${Number(activeCoupon.freeTrialDays || 0)} day(s)` },
+                        { label: 'Discount duration', value: Number(activeCoupon.discountDurationDays || 0) === 0 ? 'Unlimited' : `${activeCoupon.discountDurationDays} day(s)` },
+                        { label: 'Trial ends', value: activeCoupon.trialEndsAt ? formatDateTime(activeCoupon.trialEndsAt) : '—' },
+                        { label: 'Discount starts', value: activeCoupon.discountStartsAt ? formatDateTime(activeCoupon.discountStartsAt) : (activeCoupon.pendingPaidDiscountStart ? 'When paid billing begins' : '—') },
+                        { label: 'Discount ends', value: activeCoupon.discountEndsAt ? formatDateTime(activeCoupon.discountEndsAt) : 'Unlimited / pending' }
+                      ]}
+                      className="md:grid-cols-[150px_1fr]"
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="mt-4 text-sm text-slate-500">No coupon is active for this account.</p>
+              )}
+
+              {!viewer.canManage ? (
+                <p className="mt-4 text-sm text-slate-500">Only the account owner can apply or replace a coupon.</p>
+              ) : billing?.plan?.isCustom ? (
+                <p className="mt-4 text-sm text-slate-500">Coupons are not available for custom-priced accounts.</p>
+              ) : (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <input
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm sm:max-w-xs"
+                    value={couponCode}
+                    onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
+                    placeholder="Coupon code"
+                  />
+                  <Button type="button" onClick={applyCoupon} disabled={couponBusy}>
+                    {couponBusy ? 'Applying...' : (activeCoupon ? 'Replace Code' : 'Apply Code')}
+                  </Button>
+                </div>
+              )}
+            </div>
+
             {!viewer.canManage ? (
               <p className="mt-4 text-sm text-slate-500">Only the account owner can change billing or restart service.</p>
             ) : billing?.status === 'deactivated' ? (
@@ -758,57 +826,6 @@ export default function AccountBillingPage() {
                 This subscription is set to cancel at the end of the current period.
               </div>
             ) : null}
-          </SectionCard>
-
-          <SectionCard
-            title="Coupon"
-            description="Apply a one-time code here."
-          >
-            {activeCoupon ? (
-              <>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <MetricCard label="Active Code" value={activeCoupon.code} detail="Currently applied to this account" />
-                  <MetricCard
-                    label="Monthly Discount"
-                    value={`${Number(activeCoupon.monthlyDiscountPercent || 0)}%`}
-                    detail={`${Number(activeCoupon.overageDiscountPercent || 0)}% overage discount`}
-                    tone="brand"
-                  />
-                </div>
-                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <KeyValueGrid
-                    items={[
-                      { label: 'Free trial', value: `${Number(activeCoupon.freeTrialDays || 0)} day(s)` },
-                      { label: 'Discount duration', value: Number(activeCoupon.discountDurationDays || 0) === 0 ? 'Unlimited' : `${activeCoupon.discountDurationDays} day(s)` },
-                      { label: 'Trial ends', value: activeCoupon.trialEndsAt ? formatDateTime(activeCoupon.trialEndsAt) : '—' },
-                      { label: 'Discount starts', value: activeCoupon.discountStartsAt ? formatDateTime(activeCoupon.discountStartsAt) : (activeCoupon.pendingPaidDiscountStart ? 'When paid billing begins' : '—') },
-                      { label: 'Discount ends', value: activeCoupon.discountEndsAt ? formatDateTime(activeCoupon.discountEndsAt) : 'Unlimited / pending' }
-                    ]}
-                    className="md:grid-cols-[150px_1fr]"
-                  />
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-slate-500">No coupon is active for this account.</p>
-            )}
-
-            {!viewer.canManage ? (
-              <p className="mt-4 text-sm text-slate-500">Only the account owner can apply or replace a coupon.</p>
-            ) : billing?.plan?.isCustom ? (
-              <p className="mt-4 text-sm text-slate-500">Coupons are not available for custom-priced accounts.</p>
-            ) : (
-              <div className="mt-4 flex flex-wrap gap-2">
-                <input
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm sm:max-w-xs"
-                  value={couponCode}
-                  onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
-                  placeholder="Coupon code"
-                />
-                <Button type="button" onClick={applyCoupon} disabled={couponBusy}>
-                  {couponBusy ? 'Applying...' : (activeCoupon ? 'Replace Code' : 'Apply Code')}
-                </Button>
-              </div>
-            )}
           </SectionCard>
 
           <GuidePanel title="Billing Guide" eyebrow="How pricing works" icon="payments">
