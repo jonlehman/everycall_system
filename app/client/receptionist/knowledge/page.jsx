@@ -660,7 +660,7 @@ export default function ReceptionistKnowledgePage() {
       subtitle="Manage website and document sources, create a live build, and test customer questions."
       status={status}
       statusChip={statusChip}
-      headerAside={<SalesReceptionistNumberHeaderAside onHelpClick={openSalesReceptionistNumberGuide} />}
+      headerAside={<SalesReceptionistNumberHeaderAside onHelpClick={openSalesReceptionistNumberGuide} showBadge={false} />}
     >
       <div className="mt-[36px] grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
         <div className="grid min-w-0 gap-3">

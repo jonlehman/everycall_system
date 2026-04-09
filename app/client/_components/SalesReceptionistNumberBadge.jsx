@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
+import { cn } from '../../../lib/utils';
 
-export default function SalesReceptionistNumberBadge() {
+export default function SalesReceptionistNumberBadge({ className = '' }) {
   const [readiness, setReadiness] = useState({
     showSalesReceptionistNumber: false,
     phoneNumber: '',
@@ -40,7 +41,10 @@ export default function SalesReceptionistNumberBadge() {
   return (
     <Link
       href="/client/account/general"
-      className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-[#eff4ff] px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-[#dfe9fc]"
+      className={cn(
+        'inline-flex items-center gap-2 rounded-md border border-slate-200 bg-[#eff4ff] px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-[#dfe9fc]',
+        className
+      )}
     >
       <span className="text-[10px] font-bold normal-case tracking-normal text-slate-500">Sales Receptionist Number</span>
       <span className="font-semibold text-slate-900">

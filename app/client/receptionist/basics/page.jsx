@@ -325,7 +325,7 @@ export default function ReceptionistBasicsPage() {
       subtitle="Set the business identity, greeting, and voice used by your sales receptionist."
       status={status}
       statusChip={knowledgeStatusChip}
-      headerAside={<SalesReceptionistNumberHeaderAside onHelpClick={openSalesReceptionistNumberGuide} />}
+      headerAside={<SalesReceptionistNumberHeaderAside onHelpClick={openSalesReceptionistNumberGuide} showBadge={false} />}
     >
       <div className="grid grid-cols-1 items-start gap-4 pb-[288px] xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
         <div className="grid min-w-0 gap-3">

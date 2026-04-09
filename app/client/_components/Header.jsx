@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import BrandLogo from '../../_components/BrandLogo';
+import SalesReceptionistNumberBadge from './SalesReceptionistNumberBadge';
 
 export default function Header() {
   const [billing, setBilling] = useState({
@@ -109,6 +110,8 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-2 md:gap-4">
+          <SalesReceptionistNumberBadge className="hidden lg:inline-flex" />
+
           <Link
             href="/client/account/support"
             className="flex h-9 w-9 items-center justify-center rounded text-slate-700 transition-colors hover:bg-[#eff4ff]"

@@ -2,10 +2,10 @@
 
 import SalesReceptionistNumberBadge from './SalesReceptionistNumberBadge';
 
-export default function SalesReceptionistNumberHeaderAside({ onHelpClick }) {
+export default function SalesReceptionistNumberHeaderAside({ onHelpClick, showBadge = true }) {
   return (
     <div className="flex items-center gap-2">
-      <SalesReceptionistNumberBadge />
+      {showBadge ? <SalesReceptionistNumberBadge /> : null}
       <button
         type="button"
         onClick={onHelpClick}
