@@ -43,7 +43,6 @@ export default function SalesReceptionistNumberBadge({ className = '' }) {
   return (
     <Link
       href="/client/account/general"
-      title={SALES_RECEPTIONIST_NUMBER_TOOLTIP}
       className={cn(
         'group relative inline-flex items-center gap-2 rounded-md border border-slate-200 bg-[#eff4ff] px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-[#dfe9fc] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004ac6] focus-visible:ring-offset-2',
         className
