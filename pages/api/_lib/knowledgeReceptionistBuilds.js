@@ -981,7 +981,8 @@ async function fetchInitialWebsitePageWithRetry(url) {
   const summaryReasons = uniqueValues(
     failures.map((failure) => formatWebsiteFetchFailureReason(failure))
   );
-  const displayMessage = `Website fetch failed after ${failures.length} attempt${failures.length === 1 ? "" : "s"}: ${summaryReasons.join("; ")}`;
+  const hasHttp403 = failures.some((failure) => Number(failure.status || 0) === 403);
+  const displayMessage = `Website fetch failed after ${failures.length} attempt${failures.length === 1 ? "" : "s"}: ${summaryReasons.join("; ")}${hasHttp403 ? " (your site is either down or is preventing EveryCall from crawling it)" : ""}`;
   throw createKnowledgeBuildError("website_fetch_failed", displayMessage, {
     displayMessage,
     failureMessages: failures.map((failure) => (

@@ -229,13 +229,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
   };
 
   const submit = async () => {
-    const confirmed = window.confirm(
-      'Create this account, provision a Sales Receptionist Number, and start the website knowledge build? This will create the tenant and may incur provider charges.'
-    );
-    if (!confirmed) {
-      return;
-    }
-
     const accountError = validateAccountStep(form);
     if (accountError) {
       setCurrentStep(0);
