@@ -317,6 +317,16 @@ export default function ReceptionistBasicsPage() {
     setActiveGuideKey('salesReceptionistNumber');
     guidePanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+  const saveControls = (
+    <div className="mt-4 flex gap-2">
+      <Button onClick={saveBasics} disabled={saving || loading}>
+        {saving ? 'Saving...' : 'Save'}
+      </Button>
+      <Button variant="outline" onClick={loadBasics} disabled={saving}>
+        Reload
+      </Button>
+    </div>
+  );
 
   return (
     <SectionPage
@@ -420,6 +430,8 @@ export default function ReceptionistBasicsPage() {
                   Times use your local time zone set in Account.
                 </div>
               </div>
+
+              {saveControls}
             </StepSection>
           </div>
 
@@ -441,6 +453,8 @@ export default function ReceptionistBasicsPage() {
                 style={{ minHeight: 72 }}
                 placeholder="Thanks for calling..."
               />
+
+              {saveControls}
             </StepSection>
           </div>
 
@@ -475,14 +489,7 @@ export default function ReceptionistBasicsPage() {
               {sampleStatus ? <div className="mt-3 text-sm text-slate-500">{sampleStatus}</div> : null}
               <audio ref={sampleAudioRef} preload="none" />
 
-              <div className="mt-4 flex gap-2">
-                <Button onClick={saveBasics} disabled={saving || loading}>
-                  {saving ? 'Saving...' : 'Save'}
-                </Button>
-                <Button variant="outline" onClick={loadBasics} disabled={saving}>
-                  Reload
-                </Button>
-              </div>
+              {saveControls}
             </StepSection>
           </div>
 
