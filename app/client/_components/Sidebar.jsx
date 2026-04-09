@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import BrandLogo from '../../_components/BrandLogo';
 import { clientPrimaryNavItems, pathMatches } from './navigation';
 
 function iconName(kind) {
@@ -63,29 +62,6 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         collapsed ? 'md:w-24' : 'md:w-64'
       }`}
     >
-      <div className={`mb-6 ${collapsed ? 'px-0 text-center' : 'px-2'}`}>
-        {collapsed ? (
-          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md bg-white p-1 shadow-sm">
-            <img
-              src="/branding/everycall-mark.png"
-              alt="EveryCall"
-              className="h-full w-full object-contain"
-              loading="eager"
-              decoding="async"
-            />
-          </div>
-        ) : (
-          <>
-            <BrandLogo
-              href="/client/dashboard"
-              className="h-10 w-[168px] rounded-lg bg-white shadow-sm"
-              imageClassName="h-full w-full rounded-lg object-contain"
-            />
-            <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Client Workspace</p>
-          </>
-        )}
-      </div>
-
       <nav className="flex flex-1 flex-col gap-1">
         {clientPrimaryNavItems.map((item) => {
           const active = pathMatches(pathname, item);
