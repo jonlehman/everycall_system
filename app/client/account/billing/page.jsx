@@ -45,12 +45,19 @@ function formatBillingPeriodStatus(value) {
     .join(' ');
 }
 
+function getStatusTone(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['active', 'paid', 'trialing'].includes(normalized)) return 'ok';
+  if (['deactivated', 'trial_expired', 'unpaid'].includes(normalized)) return 'bad';
+  return 'warn';
+}
+
 function BillingPeriodStatusBadge({ status }) {
-  const normalized = String(status || '').trim().toLowerCase();
-  const toneClass = normalized === 'invoiced'
+  const tone = getStatusTone(status);
+  const toneClass = tone === 'ok'
     ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-    : normalized === 'finalized'
-      ? 'border-blue-200 bg-blue-50 text-blue-800'
+    : tone === 'bad'
+      ? 'border-rose-200 bg-rose-50 text-rose-800'
       : 'border-amber-200 bg-amber-50 text-amber-800';
   return (
     <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${toneClass}`}>
@@ -82,6 +89,121 @@ function CallChargeBadge({ call }) {
         {bucket.label}
       </span>
       <div className="text-xs text-slate-500">{call?.billing_call_type_label || formatBillingCallTypeLabel(call?.billing_call_type_code)}</div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, detail = '', tone = 'default' }) {
+  const toneClass = tone === 'brand'
+    ? 'border-blue-200 bg-blue-50'
+    : tone === 'ok'
+      ? 'border-emerald-200 bg-emerald-50'
+      : tone === 'warn'
+        ? 'border-amber-200 bg-amber-50'
+        : 'border-slate-200 bg-slate-50';
+  return (
+    <div className={`rounded-lg border p-3 ${toneClass}`}>
+      <div className="text-xs normal-case tracking-normal text-slate-500">{label}</div>
+      <div className="mt-1 text-xl font-semibold text-slate-950">{value}</div>
+      {detail ? <div className="mt-1 text-xs text-slate-500">{detail}</div> : null}
+    </div>
+  );
+}
+
+function KeyValueGrid({ items, className = 'md:grid-cols-[200px_1fr]' }) {
+  return (
+    <div className={`grid gap-2 text-sm ${className}`}>
+      {items.map((item) => (
+        <div key={item.label} className="contents">
+          <div className="text-slate-500">{item.label}</div>
+          <div className="text-slate-900">{item.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SectionCard({ title, description = '', action = null, children, className = '' }) {
+  return (
+    <section className={`rounded-xl border border-border bg-card p-4 shadow-sm ${className}`.trim()}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="mt-0 text-lg font-semibold">{title}</h2>
+          {description ? <p className="m-0 mt-1 text-sm text-slate-500">{description}</p> : null}
+        </div>
+        {action}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function CallsLedgerTable({ calls, emptyMessage }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-left">
+        <thead>
+          <tr className="border-b border-slate-200">
+            <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Time</th>
+            <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Caller</th>
+            <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Summary</th>
+            <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Billing Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {calls.length ? calls.map((call) => (
+            <tr key={call.call_sid} className="border-b border-slate-100 align-top">
+              <td className="px-2 py-3 text-sm text-slate-600">{formatDateTime(call.created_at)}</td>
+              <td className="px-2 py-3 text-sm text-slate-900">
+                <div>{[call.caller_first_name, call.caller_last_name].filter(Boolean).join(' ') || 'Unknown caller'}</div>
+                <div className="text-xs text-slate-500">{call.callback_number || '-'}</div>
+              </td>
+              <td className="px-2 py-3 text-sm text-slate-700">
+                <div>{call.summary || 'No summary available yet.'}</div>
+                <div className="mt-1 text-xs text-slate-500">{call.service_required || 'No service summary available.'}</div>
+              </td>
+              <td className="px-2 py-3 text-sm text-slate-700">
+                <CallChargeBadge call={call} />
+              </td>
+            </tr>
+          )) : (
+            <tr>
+              <td colSpan={4} className="px-2 py-6 text-sm text-slate-500">{emptyMessage}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AdjustmentsTable({ items }) {
+  if (!Array.isArray(items) || !items.length) return null;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-left">
+        <thead>
+          <tr className="border-b border-slate-200">
+            <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Created</th>
+            <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Type</th>
+            <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Description</th>
+            <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.billing_period_adjustment_id} className="border-b border-slate-100 align-top">
+              <td className="px-2 py-3 text-sm text-slate-600">{formatDateTime(item.created_at)}</td>
+              <td className="px-2 py-3 text-sm text-slate-700">{formatBillingPeriodStatus(item.adjustment_type)}</td>
+              <td className="px-2 py-3 text-sm text-slate-700">{item.description || '-'}</td>
+              <td className="px-2 py-3 text-sm font-medium text-slate-900">
+                {String(item.adjustment_type || '').toLowerCase() === 'credit' ? '-' : ''}
+                {formatMoney(item.amount_cents)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -139,7 +261,7 @@ export default function AccountBillingPage() {
   };
 
   useEffect(() => {
-    loadBilling();
+    void loadBilling();
   }, []);
 
   useEffect(() => {
@@ -262,208 +384,224 @@ export default function AccountBillingPage() {
         }
       : null;
 
-  const invoiceCards = useMemo(() => ([
-    { label: 'Base Subscription', value: formatMoney(callInvoiceEstimate.discountedBaseAmountCents ?? callInvoiceEstimate.baseAmountCents) },
-    { label: 'Eligible Calls', value: `${Number(callUsage.eligibleCallCount || 0)}` },
-    { label: 'Overage Rate', value: `${formatMoney(callPricing.callOverageRateCents)} / call` },
-    { label: 'Overage Charges', value: formatMoney(callInvoiceEstimate.overageAmountCents) },
-    { label: 'Current Estimate', value: formatMoney(callInvoiceEstimate.totalEstimatedInvoiceCents) }
-  ]), [callInvoiceEstimate, callPricing.callOverageRateCents, callUsage.eligibleCallCount]);
   const selectedPeriodCallUsage = selectedBillingPeriod?.callUsage || {};
   const selectedPeriodInvoiceEstimate = selectedBillingPeriod?.invoiceEstimate || {};
   const selectedPeriodAdjustments = selectedBillingPeriod?.adjustments || {};
   const selectedPeriodRecentCalls = Array.isArray(selectedPeriodCallUsage.recentCalls) ? selectedPeriodCallUsage.recentCalls : [];
 
+  const overviewMetrics = useMemo(() => ([
+    {
+      label: 'Plan',
+      value: billing?.plan?.label || '-',
+      detail: billing?.plan?.isCustom ? 'Custom pricing is active.' : `${formatMoney(billing?.plan?.monthlyAmountCents)} base subscription`
+    },
+    {
+      label: 'Current Estimate',
+      value: formatMoney(callInvoiceEstimate.totalEstimatedInvoiceCents),
+      detail: `${formatMoney(callInvoiceEstimate.overageAmountCents)} in overages this window`,
+      tone: 'brand'
+    },
+    {
+      label: 'Included Usage',
+      value: `${Number(callUsage.includedCallCountUsed || 0)} / ${Number(callPricing.includedCallCount || 0)}`,
+      detail: `${Number(callUsage.overageCallCount || 0)} overage calls so far`
+    },
+    {
+      label: billing?.status === 'trialing' && !billing?.hasStripeSubscription ? 'Trial Remaining' : 'Period Ends',
+      value: billing?.status === 'trialing' && !billing?.hasStripeSubscription
+        ? `${typeof billing?.trialDaysRemaining === 'number' ? billing.trialDaysRemaining : 0} day(s)`
+        : formatDate(billing?.currentPeriodEnd),
+      detail: billing?.currentPeriod?.label || 'Current billing window'
+    }
+  ]), [
+    billing?.currentPeriod?.label,
+    billing?.currentPeriodEnd,
+    billing?.hasStripeSubscription,
+    billing?.plan?.isCustom,
+    billing?.plan?.label,
+    billing?.plan?.monthlyAmountCents,
+    billing?.status,
+    billing?.trialDaysRemaining,
+    callInvoiceEstimate.overageAmountCents,
+    callInvoiceEstimate.totalEstimatedInvoiceCents,
+    callPricing.includedCallCount,
+    callUsage.includedCallCountUsed,
+    callUsage.overageCallCount
+  ]);
+
+  const usageMetrics = useMemo(() => ([
+    {
+      label: 'Eligible Calls',
+      value: `${Number(callUsage.eligibleCallCount || 0)}`,
+      detail: 'Calls that count toward included usage or overages'
+    },
+    {
+      label: 'Included Used',
+      value: `${Number(callUsage.includedCallCountUsed || 0)}`,
+      detail: `of ${Number(callPricing.includedCallCount || 0)} included calls`
+    },
+    {
+      label: 'Overage Calls',
+      value: `${Number(callUsage.overageCallCount || 0)}`,
+      detail: `${formatMoney(callPricing.callOverageRateCents)} per call`,
+      tone: Number(callUsage.overageCallCount || 0) > 0 ? 'warn' : 'default'
+    },
+    {
+      label: 'Excluded Calls',
+      value: `${Number(callUsage.excludedCallCount || 0)}`,
+      detail: 'Under one minute, unanswered, failed, test, or excluded'
+    }
+  ]), [
+    callPricing.callOverageRateCents,
+    callPricing.includedCallCount,
+    callUsage.eligibleCallCount,
+    callUsage.excludedCallCount,
+    callUsage.includedCallCountUsed,
+    callUsage.overageCallCount
+  ]);
+
+  const currentWindowValue = [
+    billing?.currentPeriod?.label || '',
+    billing?.currentPeriod?.start || billing?.currentPeriod?.end
+      ? formatPeriodRange(billing?.currentPeriod?.start, billing?.currentPeriod?.end)
+      : ''
+  ].filter(Boolean).join(' · ') || '-';
+
+  const overviewDetails = [
+    {
+      label: 'Current billing window',
+      value: currentWindowValue
+    },
+    { label: 'Billing status', value: formatBillingPeriodStatus(billing?.status) },
+    { label: 'Application access', value: formatBillingPeriodStatus(billing?.appAccessStatus) },
+    { label: 'Service access', value: formatBillingPeriodStatus(billing?.serviceAccessStatus) },
+    { label: 'Included calls', value: `${Number(callPricing.includedCallCount || 0)}` },
+    { label: 'Overage rate', value: `${formatMoney(callPricing.callOverageRateCents)} / call` }
+  ];
+
+  const usageDetails = [
+    { label: 'Base subscription', value: formatMoney(callInvoiceEstimate.discountedBaseAmountCents ?? callInvoiceEstimate.baseAmountCents) },
+    { label: 'Overage charges', value: formatMoney(callInvoiceEstimate.overageAmountCents) },
+    { label: 'Manual adjustments', value: formatMoney(callAdjustments.netAdjustmentAmountCents || 0) },
+    { label: 'Monthly discount', value: `${Number(callInvoiceEstimate.monthlyDiscountPercent || 0)}%` },
+    { label: 'Overage discount', value: `${Number(callInvoiceEstimate.overageDiscountPercent || 0)}%` },
+    { label: 'Estimated total', value: formatMoney(callInvoiceEstimate.totalEstimatedInvoiceCents) }
+  ];
+
+  const managementDetails = [
+    { label: 'Workspace access', value: formatBillingPeriodStatus(billing?.appAccessStatus) },
+    { label: 'Receptionist service', value: formatBillingPeriodStatus(billing?.serviceAccessStatus) },
+    { label: 'Stripe subscription', value: billing?.hasStripeSubscription ? 'Connected' : 'Not active yet' },
+    { label: 'Cancel at period end', value: billing?.cancelAtPeriodEnd ? 'Yes' : 'No' }
+  ];
+
+  const selectedPeriodSummaryMetrics = selectedBillingPeriod ? [
+    {
+      label: 'Base Subscription',
+      value: formatMoney(selectedPeriodInvoiceEstimate.discountedBaseAmountCents ?? selectedPeriodInvoiceEstimate.baseAmountCents)
+    },
+    {
+      label: 'Estimated Total',
+      value: formatMoney(selectedPeriodInvoiceEstimate.totalEstimatedInvoiceCents),
+      tone: 'brand'
+    },
+    {
+      label: 'Overage Charges',
+      value: formatMoney(selectedPeriodInvoiceEstimate.overageAmountCents)
+    },
+    {
+      label: 'Adjustments',
+      value: formatMoney(selectedPeriodAdjustments.netAdjustmentAmountCents || 0)
+    }
+  ] : [];
+
+  const selectedPeriodDetails = [
+    { label: 'Included calls', value: `${Number(selectedBillingPeriod?.callPricing?.includedCallCount || 0)}` },
+    { label: 'Included used', value: `${Number(selectedPeriodCallUsage.includedCallCountUsed || 0)}` },
+    { label: 'Eligible calls', value: `${Number(selectedPeriodCallUsage.eligibleCallCount || 0)}` },
+    { label: 'Excluded calls', value: `${Number(selectedPeriodCallUsage.excludedCallCount || 0)}` },
+    { label: 'Overage rate', value: `${formatMoney(selectedBillingPeriod?.callPricing?.callOverageRateCents || 0)} / call` },
+    { label: 'Monthly discount', value: `${Number(selectedPeriodInvoiceEstimate.monthlyDiscountPercent || 0)}%` },
+    { label: 'Overage discount', value: `${Number(selectedPeriodInvoiceEstimate.overageDiscountPercent || 0)}%` }
+  ];
+
   return (
     <SectionPage
       tabs={accountNavItems}
       title="Billing"
-      subtitle="Review subscription state, included call usage, overages, and the current invoice estimate."
+      subtitle="Track your current bill, see how call usage is being counted, and manage the account’s billing state."
       status={status}
       primaryAction={primaryAction}
+      statusChip={{
+        tone: loadState === 'ready' && getStatusTone(billing?.status) === 'ok' ? 'ok' : 'warn',
+        label: loadState === 'ready' ? formatBillingPeriodStatus(billing?.status) : 'Loading billing'
+      }}
     >
-      <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,.8fr)]">
+      <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
         <div className="grid min-w-0 gap-3">
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Status</h2>
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs normal-case tracking-normal text-slate-500">Billing Status</div>
-                <div className="mt-1 text-xl font-semibold">{billing?.status || '-'}</div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs normal-case tracking-normal text-slate-500">Monthly Base</div>
-                <div className="mt-1 text-xl font-semibold">{formatMoney(billing?.plan?.monthlyAmountCents)}</div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs normal-case tracking-normal text-slate-500">Trial Days Left</div>
-                <div className="mt-1 text-xl font-semibold">{typeof billing?.trialDaysRemaining === 'number' ? billing.trialDaysRemaining : '-'}</div>
-              </div>
-            </div>
-            <div className="mt-4 grid gap-2 text-sm md:grid-cols-[220px_1fr]">
-              <div>Current billing window</div><div>{billing?.currentPeriod?.label || '-'} · {formatDate(billing?.currentPeriod?.start)} to {formatDate(billing?.currentPeriod?.end)}</div>
-              <div>Current period end</div><div>{formatDate(billing?.currentPeriodEnd)}</div>
-              <div>Application access</div><div>{billing?.appAccessStatus || '-'}</div>
-              <div>Service access</div><div>{billing?.serviceAccessStatus || '-'}</div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="mt-0 text-lg font-semibold">Coupon</h2>
-                <p className="m-0 mt-1 text-sm text-slate-500">Apply a one-time code here. Checkout itself will stay coupon-free.</p>
-              </div>
-            </div>
-            {activeCoupon ? (
-              <div className="mt-4 grid gap-2 text-sm md:grid-cols-[220px_1fr]">
-                <div>Active code</div><div>{activeCoupon.code}</div>
-                <div>Monthly discount</div><div>{Number(activeCoupon.monthlyDiscountPercent || 0)}%</div>
-                <div>Overage discount</div><div>{Number(activeCoupon.overageDiscountPercent || 0)}%</div>
-                <div>Free trial</div><div>{Number(activeCoupon.freeTrialDays || 0)} day(s)</div>
-                <div>Discount duration</div><div>{Number(activeCoupon.discountDurationDays || 0) === 0 ? 'Unlimited' : `${activeCoupon.discountDurationDays} day(s)`}</div>
-                <div>Trial ends</div><div>{activeCoupon.trialEndsAt ? formatDateTime(activeCoupon.trialEndsAt) : '—'}</div>
-                <div>Discount starts</div><div>{activeCoupon.discountStartsAt ? formatDateTime(activeCoupon.discountStartsAt) : (activeCoupon.pendingPaidDiscountStart ? 'When paid billing begins' : '—')}</div>
-                <div>Discount ends</div><div>{activeCoupon.discountEndsAt ? formatDateTime(activeCoupon.discountEndsAt) : 'Unlimited / pending'}</div>
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-slate-500">No coupon is active for this account.</p>
-            )}
-
-            {!viewer.canManage ? (
-              <p className="mt-4 text-sm text-slate-500">Only the account owner can apply or replace a coupon.</p>
-            ) : billing?.plan?.isCustom ? (
-              <p className="mt-4 text-sm text-slate-500">Coupons are not available for custom-priced accounts.</p>
-            ) : (
-              <div className="mt-4 flex flex-wrap gap-2">
-                <input
-                  className="w-full max-w-xs rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
-                  value={couponCode}
-                  onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
-                  placeholder="Coupon code"
-                />
-                <Button type="button" onClick={applyCoupon} disabled={couponBusy}>
-                  {couponBusy ? 'Applying...' : (activeCoupon ? 'Replace Code' : 'Apply Code')}
+          <SectionCard
+            title="Current Billing Snapshot"
+            description="This is the fastest read on what the account is costing right now and where the current billing window stands."
+            action={(
+              <div className="flex flex-wrap items-center gap-2">
+                <BillingPeriodStatusBadge status={billing?.status} />
+                <Button variant="outline" type="button" onClick={() => loadBilling()} disabled={loadState === 'loading'}>
+                  Refresh
                 </Button>
               </div>
             )}
-          </div>
-
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="mt-0 text-lg font-semibold">Call Billing</h2>
-                <p className="m-0 mt-1 text-sm text-slate-500">Included calls are consumed in chronological order. Calls above the included allowance become overages for this billing period.</p>
-              </div>
-              <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                {Number(callUsage.includedCallCountUsed || 0)} included · {Number(callUsage.overageCallCount || 0)} overage
-              </div>
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
-              {invoiceCards.map((card) => (
-                <div key={card.label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-xs normal-case tracking-normal text-slate-500">{card.label}</div>
-                  <div className="mt-1 text-xl font-semibold">{card.value}</div>
-                </div>
+          >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {overviewMetrics.map((metric) => (
+                <MetricCard
+                  key={metric.label}
+                  label={metric.label}
+                  value={metric.value}
+                  detail={metric.detail}
+                  tone={metric.tone}
+                />
               ))}
             </div>
-            <div className="mt-4 grid gap-2 text-sm md:grid-cols-[220px_1fr]">
-              <div>Included calls</div><div>{Number(callPricing.includedCallCount || 0)}</div>
-              <div>Excluded calls</div><div>{Number(callUsage.excludedCallCount || 0)}</div>
-              <div>Monthly discount</div><div>{Number(callInvoiceEstimate.monthlyDiscountPercent || 0)}%</div>
-              <div>Overage discount</div><div>{Number(callInvoiceEstimate.overageDiscountPercent || 0)}%</div>
-              <div>Manual adjustments</div><div>{formatMoney(callAdjustments.netAdjustmentAmountCents || 0)}</div>
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <KeyValueGrid items={overviewDetails} />
             </div>
-          </div>
+          </SectionCard>
 
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="mt-0 text-lg font-semibold">Recent Calls In This Billing Window</h2>
-                <p className="m-0 mt-1 text-sm text-slate-500">This is the call-usage ledger for the current billing period.</p>
-              </div>
-              <Button variant="outline" type="button" onClick={() => loadBilling()} disabled={loadState === 'loading'}>
-                Refresh
-              </Button>
+          <SectionCard
+            title="Current Usage And Charges"
+            description="Included calls are consumed in chronological order. Calls above the included allowance become overages in the current billing period."
+          >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {usageMetrics.map((metric) => (
+                <MetricCard
+                  key={metric.label}
+                  label={metric.label}
+                  value={metric.value}
+                  detail={metric.detail}
+                  tone={metric.tone}
+                />
+              ))}
             </div>
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full border-collapse text-left">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Time</th>
-                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Caller</th>
-                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Summary</th>
-                    <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Billing Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentCalls.length ? recentCalls.map((call) => (
-                    <tr key={call.call_sid} className="border-b border-slate-100 align-top">
-                      <td className="px-2 py-3 text-sm text-slate-600">{formatDateTime(call.created_at)}</td>
-                      <td className="px-2 py-3 text-sm text-slate-900">
-                        <div>{[call.caller_first_name, call.caller_last_name].filter(Boolean).join(' ') || 'Unknown caller'}</div>
-                        <div className="text-xs text-slate-500">{call.callback_number || '-'}</div>
-                      </td>
-                      <td className="px-2 py-3 text-sm text-slate-700">
-                        <div>{call.summary || 'No summary available yet.'}</div>
-                        <div className="mt-1 text-xs text-slate-500">{call.service_required || 'No service summary available.'}</div>
-                      </td>
-                      <td className="px-2 py-3 text-sm text-slate-700">
-                        <CallChargeBadge call={call} />
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={4} className="px-2 py-6 text-sm text-slate-500">No calls have landed in this billing window yet.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <KeyValueGrid items={usageDetails} />
             </div>
-          </div>
+          </SectionCard>
 
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Actions</h2>
-            {!viewer.canManage ? (
-              <p className="text-sm text-slate-500">Only the account owner can change billing or restart service.</p>
-            ) : billing?.status === 'deactivated' ? (
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" onClick={reactivateAccount} disabled={actionState.reactivating}>
-                  {actionState.reactivating ? 'Restarting...' : 'Restart Account'}
-                </Button>
-                <Button variant="outline" type="button" onClick={() => loadBilling()} disabled={actionState.reactivating}>
-                  Refresh
-                </Button>
-              </div>
-            ) : billing?.hasStripeSubscription ? (
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" type="button" onClick={openPortal} disabled={actionState.checkout || actionState.portal || !billing?.hasStripeCustomer}>
-                  {actionState.portal ? 'Opening portal...' : 'Open Billing Portal'}
-                </Button>
-                <Button variant="outline" type="button" onClick={() => loadBilling()} disabled={actionState.checkout || actionState.portal}>
-                  Refresh
-                </Button>
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" onClick={startCheckout} disabled={actionState.checkout || actionState.portal}>
-                  {actionState.checkout ? 'Opening checkout...' : 'Activate Billing'}
-                </Button>
-                <Button variant="outline" type="button" onClick={() => loadBilling()} disabled={actionState.checkout || actionState.portal}>
-                  Refresh
-                </Button>
-              </div>
-            )}
-          </div>
+          <SectionCard
+            title="Calls In The Current Billing Window"
+            description="This is the live call ledger for the current billing period."
+          >
+            <CallsLedgerTable
+              calls={recentCalls}
+              emptyMessage="No calls have landed in this billing window yet."
+            />
+          </SectionCard>
 
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="mt-0 text-lg font-semibold">Billing History</h2>
-                <p className="m-0 mt-1 text-sm text-slate-500">Open a billing period to review its calls, overages, and adjustments.</p>
-              </div>
-            </div>
-            <div className="mt-4 overflow-x-auto">
+          <SectionCard
+            title="Billing History"
+            description="Open a prior billing period to review its calls, overages, and adjustments."
+          >
+            <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="border-b border-slate-200">
@@ -518,134 +656,176 @@ export default function AccountBillingPage() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </SectionCard>
+
+          {selectedBillingPeriodLoading && !selectedBillingPeriod ? (
+            <SectionCard
+              title="Billing Period Detail"
+              description="Loading the selected billing period."
+            >
+              <div className="text-sm text-slate-500">Loading period details...</div>
+            </SectionCard>
+          ) : null}
 
           {selectedBillingPeriod ? (
-            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="mt-0 text-lg font-semibold">Billing Period Detail</h2>
-                  <p className="m-0 mt-1 text-sm text-slate-500">{formatPeriodRange(selectedBillingPeriod.periodStart, selectedBillingPeriod.periodEnd)}</p>
-                </div>
-                <BillingPeriodStatusBadge status={selectedBillingPeriod.status} />
+            <SectionCard
+              title="Billing Period Detail"
+              description={formatPeriodRange(selectedBillingPeriod.periodStart, selectedBillingPeriod.periodEnd)}
+              action={<BillingPeriodStatusBadge status={selectedBillingPeriod.status} />}
+            >
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {selectedPeriodSummaryMetrics.map((metric) => (
+                  <MetricCard
+                    key={metric.label}
+                    label={metric.label}
+                    value={metric.value}
+                    tone={metric.tone}
+                  />
+                ))}
               </div>
-              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-xs normal-case tracking-normal text-slate-500">Base Subscription</div>
-                  <div className="mt-1 text-xl font-semibold">{formatMoney(selectedPeriodInvoiceEstimate.discountedBaseAmountCents ?? selectedPeriodInvoiceEstimate.baseAmountCents)}</div>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-xs normal-case tracking-normal text-slate-500">Eligible Calls</div>
-                  <div className="mt-1 text-xl font-semibold">{Number(selectedPeriodCallUsage.eligibleCallCount || 0)}</div>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-xs normal-case tracking-normal text-slate-500">Overage Charges</div>
-                  <div className="mt-1 text-xl font-semibold">{formatMoney(selectedPeriodInvoiceEstimate.overageAmountCents)}</div>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-xs normal-case tracking-normal text-slate-500">Adjustments</div>
-                  <div className="mt-1 text-xl font-semibold">{formatMoney(selectedPeriodAdjustments.netAdjustmentAmountCents || 0)}</div>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-xs normal-case tracking-normal text-slate-500">Estimated Total</div>
-                  <div className="mt-1 text-xl font-semibold">{formatMoney(selectedPeriodInvoiceEstimate.totalEstimatedInvoiceCents)}</div>
-                </div>
-              </div>
-              <div className="mt-4 grid gap-2 text-sm md:grid-cols-[220px_1fr]">
-                <div>Included calls</div><div>{Number(selectedBillingPeriod?.callPricing?.includedCallCount || 0)}</div>
-                <div>Included used</div><div>{Number(selectedPeriodCallUsage.includedCallCountUsed || 0)}</div>
-                <div>Excluded calls</div><div>{Number(selectedPeriodCallUsage.excludedCallCount || 0)}</div>
-                <div>Overage rate</div><div>{formatMoney(selectedBillingPeriod?.callPricing?.callOverageRateCents || 0)} / call</div>
-                <div>Monthly discount</div><div>{Number(selectedPeriodInvoiceEstimate.monthlyDiscountPercent || 0)}%</div>
-                <div>Overage discount</div><div>{Number(selectedPeriodInvoiceEstimate.overageDiscountPercent || 0)}%</div>
+
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <KeyValueGrid items={selectedPeriodDetails} />
               </div>
 
               <div className="mt-6">
                 <h3 className="m-0 text-base font-semibold text-slate-900">Calls In This Period</h3>
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full border-collapse text-left">
-                    <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Time</th>
-                        <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Caller</th>
-                        <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Summary</th>
-                        <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Billing Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedPeriodRecentCalls.length ? selectedPeriodRecentCalls.map((call) => (
-                        <tr key={`${selectedBillingPeriod.billingPeriodId}-${call.call_sid}`} className="border-b border-slate-100 align-top">
-                          <td className="px-2 py-3 text-sm text-slate-600">{formatDateTime(call.created_at)}</td>
-                          <td className="px-2 py-3 text-sm text-slate-900">
-                            <div>{[call.caller_first_name, call.caller_last_name].filter(Boolean).join(' ') || 'Unknown caller'}</div>
-                            <div className="text-xs text-slate-500">{call.callback_number || '-'}</div>
-                          </td>
-                          <td className="px-2 py-3 text-sm text-slate-700">
-                            <div>{call.summary || 'No summary available yet.'}</div>
-                            <div className="mt-1 text-xs text-slate-500">{call.service_required || 'No service summary available.'}</div>
-                          </td>
-                          <td className="px-2 py-3 text-sm text-slate-700">
-                            <CallChargeBadge call={call} />
-                          </td>
-                        </tr>
-                      )) : (
-                        <tr>
-                          <td colSpan={4} className="px-2 py-6 text-sm text-slate-500">No calls are recorded for this billing period.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                <div className="mt-3">
+                  <CallsLedgerTable
+                    calls={selectedPeriodRecentCalls.map((call) => ({
+                      ...call,
+                      call_sid: `${selectedBillingPeriod.billingPeriodId}-${call.call_sid}`
+                    }))}
+                    emptyMessage="No calls are recorded for this billing period."
+                  />
                 </div>
               </div>
 
               {Array.isArray(selectedPeriodAdjustments.items) && selectedPeriodAdjustments.items.length ? (
                 <div className="mt-6">
                   <h3 className="m-0 text-base font-semibold text-slate-900">Adjustments</h3>
-                  <div className="mt-3 overflow-x-auto">
-                    <table className="w-full border-collapse text-left">
-                      <thead>
-                        <tr className="border-b border-slate-200">
-                          <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Created</th>
-                          <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Type</th>
-                          <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Description</th>
-                          <th className="px-2 py-3 text-xs font-semibold normal-case tracking-normal text-slate-500">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedPeriodAdjustments.items.map((item) => (
-                          <tr key={item.billing_period_adjustment_id} className="border-b border-slate-100 align-top">
-                            <td className="px-2 py-3 text-sm text-slate-600">{formatDateTime(item.created_at)}</td>
-                            <td className="px-2 py-3 text-sm text-slate-700">{formatBillingPeriodStatus(item.adjustment_type)}</td>
-                            <td className="px-2 py-3 text-sm text-slate-700">{item.description || '-'}</td>
-                            <td className="px-2 py-3 text-sm font-medium text-slate-900">
-                              {String(item.adjustment_type || '').toLowerCase() === 'credit' ? '-' : ''}
-                              {formatMoney(item.amount_cents)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="mt-3">
+                    <AdjustmentsTable items={selectedPeriodAdjustments.items} />
                   </div>
                 </div>
               ) : null}
-            </div>
+            </SectionCard>
           ) : null}
         </div>
 
-        <GuidePanel title="Billing Guide" eyebrow="How pricing works" icon="payments">
-          <div>Your monthly bill has two parts: the base subscription and any call overages above the included allowance in the current billing period.</div>
-          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="font-semibold text-slate-900">What counts toward usage</div>
-            <ul className="mb-0 mt-2 list-disc pl-5 text-sm text-slate-600">
-              <li>Calls the receptionist answers and handles for one minute or longer count toward usage.</li>
-              <li>Answered calls that end in under one minute stay off the invoice.</li>
-              <li>Unanswered calls, technical failures, test calls, and manual exclusions do not count toward usage.</li>
-            </ul>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-            If service is ever deactivated after the trial window, the owner can restart it here without waiting on support.
-          </div>
-        </GuidePanel>
+        <div className="grid min-w-0 gap-3 xl:sticky xl:top-24">
+          <SectionCard
+            title="Manage Billing"
+            description="Use this area for owner actions, account access state, and service recovery."
+          >
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <KeyValueGrid items={managementDetails} className="md:grid-cols-[150px_1fr]" />
+            </div>
+
+            {!viewer.canManage ? (
+              <p className="mt-4 text-sm text-slate-500">Only the account owner can change billing or restart service.</p>
+            ) : billing?.status === 'deactivated' ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button type="button" onClick={reactivateAccount} disabled={actionState.reactivating}>
+                  {actionState.reactivating ? 'Restarting...' : 'Restart Account'}
+                </Button>
+                <Button variant="outline" type="button" onClick={() => loadBilling()} disabled={actionState.reactivating}>
+                  Refresh
+                </Button>
+              </div>
+            ) : billing?.hasStripeSubscription ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button variant="outline" type="button" onClick={openPortal} disabled={actionState.checkout || actionState.portal || !billing?.hasStripeCustomer}>
+                  {actionState.portal ? 'Opening portal...' : 'Open Billing Portal'}
+                </Button>
+                <Button variant="outline" type="button" onClick={() => loadBilling()} disabled={actionState.checkout || actionState.portal}>
+                  Refresh
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button type="button" onClick={startCheckout} disabled={actionState.checkout || actionState.portal}>
+                  {actionState.checkout ? 'Opening checkout...' : 'Activate Billing'}
+                </Button>
+                <Button variant="outline" type="button" onClick={() => loadBilling()} disabled={actionState.checkout || actionState.portal}>
+                  Refresh
+                </Button>
+              </div>
+            )}
+
+            {billing?.cancelAtPeriodEnd ? (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                This subscription is set to cancel at the end of the current period.
+              </div>
+            ) : null}
+          </SectionCard>
+
+          <SectionCard
+            title="Coupon"
+            description="Apply a one-time code here. Checkout itself stays coupon-free."
+          >
+            {activeCoupon ? (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <MetricCard label="Active Code" value={activeCoupon.code} detail="Currently applied to this account" />
+                  <MetricCard
+                    label="Monthly Discount"
+                    value={`${Number(activeCoupon.monthlyDiscountPercent || 0)}%`}
+                    detail={`${Number(activeCoupon.overageDiscountPercent || 0)}% overage discount`}
+                    tone="brand"
+                  />
+                </div>
+                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <KeyValueGrid
+                    items={[
+                      { label: 'Free trial', value: `${Number(activeCoupon.freeTrialDays || 0)} day(s)` },
+                      { label: 'Discount duration', value: Number(activeCoupon.discountDurationDays || 0) === 0 ? 'Unlimited' : `${activeCoupon.discountDurationDays} day(s)` },
+                      { label: 'Trial ends', value: activeCoupon.trialEndsAt ? formatDateTime(activeCoupon.trialEndsAt) : '—' },
+                      { label: 'Discount starts', value: activeCoupon.discountStartsAt ? formatDateTime(activeCoupon.discountStartsAt) : (activeCoupon.pendingPaidDiscountStart ? 'When paid billing begins' : '—') },
+                      { label: 'Discount ends', value: activeCoupon.discountEndsAt ? formatDateTime(activeCoupon.discountEndsAt) : 'Unlimited / pending' }
+                    ]}
+                    className="md:grid-cols-[150px_1fr]"
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">No coupon is active for this account.</p>
+            )}
+
+            {!viewer.canManage ? (
+              <p className="mt-4 text-sm text-slate-500">Only the account owner can apply or replace a coupon.</p>
+            ) : billing?.plan?.isCustom ? (
+              <p className="mt-4 text-sm text-slate-500">Coupons are not available for custom-priced accounts.</p>
+            ) : (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <input
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm sm:max-w-xs"
+                  value={couponCode}
+                  onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
+                  placeholder="Coupon code"
+                />
+                <Button type="button" onClick={applyCoupon} disabled={couponBusy}>
+                  {couponBusy ? 'Applying...' : (activeCoupon ? 'Replace Code' : 'Apply Code')}
+                </Button>
+              </div>
+            )}
+          </SectionCard>
+
+          <GuidePanel title="Billing Guide" eyebrow="How pricing works" icon="payments">
+            <div>Your monthly bill has two parts: the base subscription and any call overages above the included allowance in the current billing period.</div>
+            <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+              <div className="font-semibold text-slate-900">What counts toward usage</div>
+              <ul className="mb-0 mt-2 list-disc pl-5 text-sm text-slate-600">
+                <li>Calls the receptionist answers and handles for one minute or longer count toward usage.</li>
+                <li>Answered calls that end in under one minute stay off the invoice.</li>
+                <li>Unanswered calls, technical failures, test calls, and manual exclusions do not count toward usage.</li>
+              </ul>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+              If service is ever deactivated after the trial window, the owner can restart it here without waiting on support.
+            </div>
+          </GuidePanel>
+        </div>
       </div>
     </SectionPage>
   );
