@@ -138,6 +138,29 @@ function SectionCard({ title, description = '', action = null, children, classNa
   );
 }
 
+function DetailDisclosure({ label = 'Details', open = false, onToggle, children }) {
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        aria-expanded={open}
+      >
+        <span className="text-sm font-semibold text-slate-900">{label}</span>
+        <span className="material-symbols-outlined text-[20px] text-slate-500">
+          {open ? 'expand_more' : 'chevron_right'}
+        </span>
+      </button>
+      {open ? (
+        <div className="border-t border-slate-200 px-4 py-4">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function CallsLedgerTable({ calls, emptyMessage }) {
   return (
     <div className="overflow-x-auto">
@@ -217,6 +240,7 @@ export default function AccountBillingPage() {
   const [selectedBillingPeriod, setSelectedBillingPeriod] = useState(null);
   const [selectedBillingPeriodId, setSelectedBillingPeriodId] = useState(null);
   const [selectedBillingPeriodLoading, setSelectedBillingPeriodLoading] = useState(false);
+  const [showCurrentBillDetails, setShowCurrentBillDetails] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [couponBusy, setCouponBusy] = useState(false);
   const [status, setStatus] = useState({ tone: 'warn', message: 'Loading billing status...' });
@@ -389,7 +413,11 @@ export default function AccountBillingPage() {
   const selectedPeriodAdjustments = selectedBillingPeriod?.adjustments || {};
   const selectedPeriodRecentCalls = Array.isArray(selectedPeriodCallUsage.recentCalls) ? selectedPeriodCallUsage.recentCalls : [];
 
-  const overviewMetrics = useMemo(() => ([
+  const currentWindowRange = billing?.currentPeriod?.start || billing?.currentPeriod?.end
+    ? formatPeriodRange(billing?.currentPeriod?.start, billing?.currentPeriod?.end)
+    : '-';
+
+  const currentBillMetrics = useMemo(() => ([
     {
       label: 'Plan',
       value: billing?.plan?.label || '-',
@@ -411,10 +439,9 @@ export default function AccountBillingPage() {
       value: billing?.status === 'trialing' && !billing?.hasStripeSubscription
         ? `${typeof billing?.trialDaysRemaining === 'number' ? billing.trialDaysRemaining : 0} day(s)`
         : formatDate(billing?.currentPeriodEnd),
-      detail: billing?.currentPeriod?.label || 'Current billing window'
+      detail: currentWindowRange
     }
   ]), [
-    billing?.currentPeriod?.label,
     billing?.currentPeriodEnd,
     billing?.hasStripeSubscription,
     billing?.plan?.isCustom,
@@ -426,64 +453,27 @@ export default function AccountBillingPage() {
     callInvoiceEstimate.totalEstimatedInvoiceCents,
     callPricing.includedCallCount,
     callUsage.includedCallCountUsed,
-    callUsage.overageCallCount
+    callUsage.overageCallCount,
+    currentWindowRange
   ]);
-
-  const usageMetrics = useMemo(() => ([
-    {
-      label: 'Eligible Calls',
-      value: `${Number(callUsage.eligibleCallCount || 0)}`,
-      detail: 'Calls that count toward included usage or overages'
-    },
-    {
-      label: 'Included Used',
-      value: `${Number(callUsage.includedCallCountUsed || 0)}`,
-      detail: `of ${Number(callPricing.includedCallCount || 0)} included calls`
-    },
-    {
-      label: 'Overage Calls',
-      value: `${Number(callUsage.overageCallCount || 0)}`,
-      detail: `${formatMoney(callPricing.callOverageRateCents)} per call`,
-      tone: Number(callUsage.overageCallCount || 0) > 0 ? 'warn' : 'default'
-    },
-    {
-      label: 'Excluded Calls',
-      value: `${Number(callUsage.excludedCallCount || 0)}`,
-      detail: 'Under one minute, unanswered, failed, test, or excluded'
-    }
-  ]), [
-    callPricing.callOverageRateCents,
-    callPricing.includedCallCount,
-    callUsage.eligibleCallCount,
-    callUsage.excludedCallCount,
-    callUsage.includedCallCountUsed,
-    callUsage.overageCallCount
-  ]);
-
-  const currentWindowValue = [
-    billing?.currentPeriod?.label || '',
-    billing?.currentPeriod?.start || billing?.currentPeriod?.end
-      ? formatPeriodRange(billing?.currentPeriod?.start, billing?.currentPeriod?.end)
-      : ''
-  ].filter(Boolean).join(' · ') || '-';
-
-  const overviewDetails = [
-    {
-      label: 'Current billing window',
-      value: currentWindowValue
-    },
-    { label: 'Billing status', value: formatBillingPeriodStatus(billing?.status) },
-    { label: 'Application access', value: formatBillingPeriodStatus(billing?.appAccessStatus) },
-    { label: 'Service access', value: formatBillingPeriodStatus(billing?.serviceAccessStatus) },
-    { label: 'Included calls', value: `${Number(callPricing.includedCallCount || 0)}` },
-    { label: 'Overage rate', value: `${formatMoney(callPricing.callOverageRateCents)} / call` }
-  ];
 
   const currentNetAdjustmentAmountCents = Number(callAdjustments.netAdjustmentAmountCents || 0);
   const currentMonthlyDiscountPercent = Number(callInvoiceEstimate.monthlyDiscountPercent || 0);
   const currentOverageDiscountPercent = Number(callInvoiceEstimate.overageDiscountPercent || 0);
 
-  const usageDetails = [
+  const currentBillDetails = [
+    {
+      label: 'Current billing window',
+      value: [
+        billing?.currentPeriod?.label || '',
+        currentWindowRange !== '-' ? currentWindowRange : ''
+      ].filter(Boolean).join(' · ') || '-'
+    },
+    { label: 'Billing status', value: formatBillingPeriodStatus(billing?.status) },
+    { label: 'Included calls', value: `${Number(callPricing.includedCallCount || 0)}` },
+    { label: 'Overage rate', value: `${formatMoney(callPricing.callOverageRateCents)} / call` },
+    { label: 'Eligible calls', value: `${Number(callUsage.eligibleCallCount || 0)}` },
+    { label: 'Excluded calls', value: `${Number(callUsage.excludedCallCount || 0)}` },
     { label: 'Base subscription', value: formatMoney(callInvoiceEstimate.discountedBaseAmountCents ?? callInvoiceEstimate.baseAmountCents) },
     { label: 'Overage charges', value: formatMoney(callInvoiceEstimate.overageAmountCents) },
     ...(currentNetAdjustmentAmountCents !== 0
@@ -557,8 +547,8 @@ export default function AccountBillingPage() {
       <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
         <div className="grid min-w-0 gap-3">
           <SectionCard
-            title="Current Billing Snapshot"
-            description="This is the fastest read on what the account is costing right now and where the current billing window stands."
+            title="Current Bill"
+            description="This is the fastest read on the current billing window, included usage, and estimated charges."
             action={(
               <div className="flex flex-wrap items-center gap-2">
                 <BillingPeriodStatusBadge status={billing?.status} />
@@ -569,7 +559,7 @@ export default function AccountBillingPage() {
             )}
           >
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {overviewMetrics.map((metric) => (
+              {currentBillMetrics.map((metric) => (
                 <MetricCard
                   key={metric.label}
                   label={metric.label}
@@ -579,29 +569,17 @@ export default function AccountBillingPage() {
                 />
               ))}
             </div>
-            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <KeyValueGrid items={overviewDetails} />
-            </div>
-          </SectionCard>
-
-          <SectionCard
-            title="Current Usage And Charges"
-            description="Included calls are consumed in chronological order. Calls above the included allowance become overages in the current billing period."
-          >
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {usageMetrics.map((metric) => (
-                <MetricCard
-                  key={metric.label}
-                  label={metric.label}
-                  value={metric.value}
-                  detail={metric.detail}
-                  tone={metric.tone}
-                />
-              ))}
-            </div>
-            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <KeyValueGrid items={usageDetails} />
-            </div>
+            <DetailDisclosure
+              open={showCurrentBillDetails}
+              onToggle={() => setShowCurrentBillDetails((current) => !current)}
+            >
+              <div className="space-y-3">
+                <p className="m-0 text-sm text-slate-500">
+                  Included calls are consumed in chronological order. Calls above the included allowance become overages in the current billing period.
+                </p>
+                <KeyValueGrid items={currentBillDetails} />
+              </div>
+            </DetailDisclosure>
           </SectionCard>
 
           <SectionCard
