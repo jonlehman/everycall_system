@@ -438,7 +438,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                 </div>
 
                 <div className="intake-stack">
-                  <label>What Does The Business Do?</label>
+                  <label>What Does The Business Do? (This is what your new Sales Receptionist will say when asked this by a caller)</label>
                   <textarea
                     value={form.companyDescription}
                     onChange={(event) => setFormValue('companyDescription', event.target.value)}
