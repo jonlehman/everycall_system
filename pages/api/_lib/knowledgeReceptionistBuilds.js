@@ -52,6 +52,10 @@ const PLANNER_RUNTIME_HARD_MS = 6000;
 const STAGE_A_SIMULATED_FAILURE_AFTER_BATCHES = Number.parseInt(String(process.env.KNOWLEDGE_STAGE_A_FAIL_AFTER_PERSIST_BATCHES || ""), 10) || 0;
 const KNOWLEDGE_BUILD_JOB_MAX_BUILDS_PER_RUN = readPositiveIntEnv("KNOWLEDGE_BUILD_JOB_MAX_BUILDS_PER_RUN", 1);
 const KNOWLEDGE_BUILD_JOB_MAX_AUTO_RESUME_AGE_MINUTES = readPositiveIntEnv("KNOWLEDGE_BUILD_JOB_MAX_AUTO_RESUME_AGE_MINUTES", 360);
+const DEFAULT_WEBSITE_FETCH_USER_AGENT = String(
+  process.env.KNOWLEDGE_BUILD_FETCH_USER_AGENT
+  || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+).trim();
 
 const buildAssetCache = new Map();
 
@@ -629,7 +633,15 @@ async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT_MS) {
     return await fetch(url, {
       method: "GET",
       redirect: "manual",
-      headers: { "user-agent": "EveryCall Knowledge Build" },
+      headers: {
+        "user-agent": DEFAULT_WEBSITE_FETCH_USER_AGENT,
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-language": "en-US,en;q=0.9",
+        "cache-control": "no-cache",
+        "pragma": "no-cache",
+        "upgrade-insecure-requests": "1",
+        "x-everycall-knowledge-build": "1"
+      },
       signal: controller.signal
     });
   } finally {
