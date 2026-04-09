@@ -80,7 +80,7 @@ export default function Header() {
   const showTrialBadge = !billing.loading && billing.status === 'trialing' && !billing.hasStripeSubscription;
   const showBillingBadge = !billing.loading && !showTrialBadge && (billing.appAccessStatus === 'billing_locked' || billing.status === 'deactivated');
   const trialLabel = billing.trialDaysRemaining === 1 ? 'Trial: 1 Day Left' : `Trial: ${billing.trialDaysRemaining ?? 0} Days Left`;
-  const accountActionLabel = showTrialBadge || showBillingBadge ? 'Upgrade Plan' : (billing.canManage ? 'Billing' : 'Account');
+  const showActivateBillingAction = billing.canManage && (showTrialBadge || showBillingBadge);
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/70 bg-white/80 shadow-sm backdrop-blur-md">
@@ -117,12 +117,14 @@ export default function Header() {
             <span className="material-symbols-outlined text-[20px]">help_outline</span>
           </Link>
 
-          <Link
-            href="/client/account/billing"
-            className="hidden rounded-md bg-[#004ac6] px-4 py-2 text-sm font-semibold text-white transition-all hover:opacity-90 md:inline-flex"
-          >
-            {accountActionLabel}
-          </Link>
+          {showActivateBillingAction ? (
+            <Link
+              href="/client/account/billing"
+              className="hidden rounded-md bg-[#004ac6] px-4 py-2 text-sm font-semibold text-white transition-all hover:opacity-90 md:inline-flex"
+            >
+              Activate Billing
+            </Link>
+          ) : null}
 
           <div
             className="relative"

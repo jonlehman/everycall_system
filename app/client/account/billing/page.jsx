@@ -762,7 +762,7 @@ export default function AccountBillingPage() {
 
           <SectionCard
             title="Coupon"
-            description="Apply a one-time code here. Checkout itself stays coupon-free."
+            description="Apply a one-time code here."
           >
             {activeCoupon ? (
               <>
