@@ -583,7 +583,7 @@ export default function AccountBillingPage() {
           </SectionCard>
 
           <SectionCard
-            title="Calls In The Current Billing Window"
+            title="Current Bill: Call Detail"
             description="This is the live call ledger for the current billing period."
           >
             <CallsLedgerTable
