@@ -48,8 +48,8 @@ const BILLING_CALL_TYPE_SEED = [
   {
     code: BILLING_CALL_TYPE_CODES.answeredHandled,
     label: "Answered & Handled",
-    shortDescription: "Receptionist answered and handled the call.",
-    longDescription: "The receptionist answered the call and handled the interaction long enough to count toward included or overage usage.",
+    shortDescription: "Answered call lasting one minute or longer.",
+    longDescription: "The receptionist answered the call and the interaction lasted at least one minute, so it counts toward included or overage usage.",
     countsTowardUsage: true,
     displayOrder: 10,
     isSystem: true
@@ -57,8 +57,8 @@ const BILLING_CALL_TYPE_SEED = [
   {
     code: BILLING_CALL_TYPE_CODES.shortAbandon,
     label: "Short Abandon",
-    shortDescription: "Very short answered call.",
-    longDescription: "The call connected briefly but ended too quickly to count toward usage.",
+    shortDescription: "Answered call lasting under one minute.",
+    longDescription: "The call connected and was answered, but it ended before one minute elapsed, so it does not count toward usage.",
     countsTowardUsage: false,
     displayOrder: 20,
     isSystem: true

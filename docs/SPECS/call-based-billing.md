@@ -24,11 +24,12 @@ Each pricing tier has:
 ### 2.2 Billable call definition
 For v1, a call counts toward usage when:
 - the receptionist actually answered and handled the call
+- the call lasted at least one minute
 
 For v1, a call does **not** count toward usage when:
 - it was never answered
 - it was a technical failure
-- it was a very short abandon / immediate hangup
+- it was an answered call that ended in under one minute
 - it was an internal test call
 - it was manually excluded by ops
 

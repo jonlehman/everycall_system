@@ -637,9 +637,9 @@ export default function AccountBillingPage() {
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">What counts toward usage</div>
             <ul className="mb-0 mt-2 list-disc pl-5 text-sm text-slate-600">
-              <li>Calls the receptionist answered and handled.</li>
-              <li>Excluded calls stay off the invoice.</li>
-              <li>Short abandons and technical failures do not count toward usage.</li>
+              <li>Calls the receptionist answers and handles for one minute or longer count toward usage.</li>
+              <li>Answered calls that end in under one minute stay off the invoice.</li>
+              <li>Unanswered calls, technical failures, test calls, and manual exclusions do not count toward usage.</li>
             </ul>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
