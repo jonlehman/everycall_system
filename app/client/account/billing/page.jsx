@@ -463,7 +463,7 @@ export default function AccountBillingPage() {
 
   const currentBillDetails = [
     {
-      label: 'Current billing window',
+      label: 'Current period',
       value: [
         billing?.currentPeriod?.label || '',
         currentWindowRange !== '-' ? currentWindowRange : ''
@@ -617,7 +617,7 @@ export default function AccountBillingPage() {
                         <td className="px-2 py-3 text-sm text-slate-700">
                           <div className="font-medium text-slate-900">{formatPeriodRange(period.periodStart, period.periodEnd)}</div>
                           <div className="mt-1 text-xs text-slate-500">
-                            {isCurrent ? 'Current billing window' : (period.planCode || 'Plan')}
+                            {isCurrent ? 'Current period' : (period.planCode || 'Plan')}
                           </div>
                         </td>
                         <td className="px-2 py-3 text-sm text-slate-700">
