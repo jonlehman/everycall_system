@@ -586,6 +586,9 @@ export default function ReceptionistKnowledgePage() {
   const approvedUploadedDocuments = uploadedDocuments.filter((document) => String(document?.status || '').trim() === 'approved');
   const activeBuildId = String(buildState.activeBuild?.active_build_id || '').trim();
   const latestLiveBuild = buildState.builds.find((build) => String(build?.build_id || '').trim() === activeBuildId) || null;
+  const activeWebsiteBuild = buildState.builds.find((build) => {
+    return isWebsiteBuildKind(build?.build_kind) && isBuildActive(build);
+  }) || null;
   const latestWebsiteBuild = buildState.builds.find((build) => {
     return isWebsiteBuildKind(build?.build_kind);
   }) || null;
@@ -612,6 +615,7 @@ export default function ReceptionistKnowledgePage() {
   const websiteBuildSummary = websitePublished
     ? 'This website crawl is part of the current live knowledge base.'
     : renderBuildProgress(latestWebsiteBuild);
+  const websiteBuildInProgress = Boolean(activeWebsiteBuild);
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewAnswer = preview?.spokenAnswerEstimate || buildRepresentativeAnswer(previewAnswerPacket);
   const previewAnswerDisplay = previewBusy
@@ -659,6 +663,10 @@ export default function ReceptionistKnowledgePage() {
       [normalizedId]: !current[normalizedId]
     }));
   };
+
+  useEffect(() => {
+    setWebsiteSectionExpanded(websiteBuildInProgress);
+  }, [websiteBuildInProgress]);
 
   return (
     <SectionPage
