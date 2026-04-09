@@ -585,7 +585,7 @@ export default function ReceptionistKnowledgePage() {
   const latestBuild = buildState.builds[0] || null;
   const approvedUploadedDocuments = uploadedDocuments.filter((document) => String(document?.status || '').trim() === 'approved');
   const activeBuildId = String(buildState.activeBuild?.active_build_id || '').trim();
-  const latestLiveBuild = buildState.builds.find((build) => String(build?.build_id || '').trim() === activeBuildId) || latestBuild;
+  const latestLiveBuild = buildState.builds.find((build) => String(build?.build_id || '').trim() === activeBuildId) || null;
   const latestWebsiteBuild = buildState.builds.find((build) => {
     return isWebsiteBuildKind(build?.build_kind);
   }) || null;
@@ -594,11 +594,18 @@ export default function ReceptionistKnowledgePage() {
   const hasPendingDocumentChanges = documentPendingState.hasPendingChanges;
   const canApplyDocuments = approvedUploadedDocuments.length > 0 || documentPendingState.removedLiveDocumentIds.length > 0;
   const latestLiveBuildKind = String(latestLiveBuild?.build_kind || '').trim().toLowerCase();
+  const activeBuildStatus = String(latestLiveBuild?.status || '').trim().toLowerCase();
   const latestWebsiteBuildId = String(latestWebsiteBuild?.build_id || '').trim();
   const latestDocumentBuildId = String(latestDocumentBuild?.build_id || '').trim();
   const liveWebsiteBuildId = resolveWebsiteAncestorBuildId(buildState.builds, latestLiveBuild);
-  const websitePublished = Boolean(latestWebsiteBuildId) && latestWebsiteBuildId === liveWebsiteBuildId;
-  const documentsPublished = latestLiveBuildKind === 'document_overlay' && Boolean(latestDocumentBuildId) && latestDocumentBuildId === activeBuildId;
+  const websitePublished = Boolean(activeBuildId)
+    && activeBuildStatus === 'published'
+    && Boolean(latestWebsiteBuildId)
+    && latestWebsiteBuildId === liveWebsiteBuildId;
+  const documentsPublished = activeBuildStatus === 'published'
+    && latestLiveBuildKind === 'document_overlay'
+    && Boolean(latestDocumentBuildId)
+    && latestDocumentBuildId === activeBuildId;
   const websiteBuildStatusLabel = websitePublished ? 'Published' : buildStatusLabel(latestWebsiteBuild?.status);
   const websiteBuildStatusTone = websitePublished ? 'ok' : buildBadgeTone(latestWebsiteBuild?.status);
   const showWebsiteBuildProgress = latestWebsiteBuild && !websitePublished;
@@ -612,7 +619,7 @@ export default function ReceptionistKnowledgePage() {
     : (preview
         ? previewAnswer
         : 'Your answer preview will appear here after you test a customer question.');
-  const latestBuildStatus = String(latestLiveBuild?.status || '').trim().toLowerCase();
+  const latestBuildStatus = activeBuildStatus || String(latestBuild?.status || '').trim().toLowerCase();
   const statusChip = buildState.builds.some((build) => isBuildActive(build))
     ? { tone: 'warn', label: 'Build In Progress' }
     : hasPendingDocumentChanges
