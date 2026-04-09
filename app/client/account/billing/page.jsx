@@ -547,7 +547,7 @@ export default function AccountBillingPage() {
       <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
         <div className="grid min-w-0 gap-3">
           <SectionCard
-            title="Current Bill"
+            title="Current Period"
             description="This is the fastest read on the current billing window, included usage, and estimated charges."
             action={(
               <div className="flex flex-wrap items-center gap-2">
@@ -583,7 +583,7 @@ export default function AccountBillingPage() {
           </SectionCard>
 
           <SectionCard
-            title="Current Bill: Call Detail"
+            title="Current Period: Call Detail"
             description="This is the live call ledger for the current billing period."
           >
             <CallsLedgerTable
