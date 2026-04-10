@@ -164,15 +164,11 @@ export default function ClientGetStartedPage() {
   return (
     <ClientPage
       title="Get Started"
-      subtitle="These are the first things to do to get EveryCall ready for live calls."
     >
       <div className="grid min-w-0 gap-3">
         <section className={panelClassName('p-5')}>
           <div>
             <h2 className="m-0 text-lg font-semibold text-slate-900">What To Do</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-500">
-              Work through these items in order. Once they are done, EveryCall is ready to handle real calls.
-            </p>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <SetupStepCard
