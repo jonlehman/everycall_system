@@ -6,64 +6,61 @@ import {
   isEmptyMarketingAttribution,
   normalizeMarketingAttribution
 } from '../../lib/intakeMarketingAttribution';
+import { formatPhoneDisplay } from '../../lib/phoneDisplay';
 import BrandLogo from '../_components/BrandLogo';
 import './intake.css';
 
-const BUSINESS_CATEGORIES = [
-  { value: 'professional_services', label: 'Professional Services' },
-  { value: 'service_business', label: 'Service Business' },
-  { value: 'medical', label: 'Medical' },
-  { value: 'dental', label: 'Dental' },
-  { value: 'therapy_practice', label: 'Therapy Practice' },
-  { value: 'legal', label: 'Legal' },
-  { value: 'accounting', label: 'Accounting' },
-  { value: 'wellness_beauty', label: 'Wellness & Beauty' },
-  { value: 'real_estate_property', label: 'Real Estate & Property' },
-  { value: 'education_training', label: 'Education & Training' },
-  { value: 'retail_showroom', label: 'Retail Showroom' }
-];
-
 const INTAKE_STEPS = [
   {
-    key: 'account',
+    key: 'website',
     number: '01',
-    title: 'Account Setup',
-    navTitle: 'Account Setup',
-    heroTitle: 'Just moments away...',
-    heroCopy: '... from capturing more leads than you thought possible.'
+    title: 'Website',
+    heroTitle: 'Start with your website',
+    heroCopy: 'If you have a public website, EveryCall can use it to start your first knowledge base automatically.'
   },
   {
-    key: 'context',
+    key: 'business',
     number: '02',
-    title: 'Business Context',
-    navTitle: 'Business Context',
-    heroTitle: 'Just moments away...',
-    heroCopy: '... from capturing more leads than you thought possible.'
+    title: 'Business Name',
+    heroTitle: 'Tell us the business name',
+    heroCopy: 'This becomes the name of the workspace and the business identity used across setup.'
   },
   {
-    key: 'knowledge',
+    key: 'lead-destination',
     number: '03',
-    title: 'Knowledge Base Setup',
-    navTitle: 'Knowledge Base Setup',
-    heroTitle: 'Just moments away...',
-    heroCopy: '... from capturing more leads than you thought possible.'
+    title: 'Send Leads To',
+    heroTitle: 'Choose where new leads should go',
+    heroCopy: 'This is where EveryCall will send new lead alerts once calls start coming in.'
+  },
+  {
+    key: 'login',
+    number: '04',
+    title: 'Create Login',
+    heroTitle: 'Create your login',
+    heroCopy: 'Use this login to open the EveryCall workspace and finish the rest of setup.'
   }
 ];
 
+function FieldLabel({ htmlFor, badge = 'required', children }) {
+  return (
+    <label htmlFor={htmlFor} className="intake-label-row">
+      <span className="intake-label-text">{children}</span>
+      <span className={`intake-label-badge ${badge}`}>{badge === 'optional' ? 'Optional' : 'Required'}</span>
+    </label>
+  );
+}
+
 function createInitialForm(qaMode = false) {
+  const qaLeadEmail = qaMode ? 'qa-owner@example.com' : '';
   return {
     businessName: qaMode ? 'Knowledge Receptionist QA Tenant' : '',
-    businessCategory: 'professional_services',
-    ownerName: qaMode ? 'QA Owner' : '',
-    ownerEmail: qaMode ? 'qa-owner@example.com' : '',
-    ownerPhone: qaMode ? '4255550101' : '',
-    businessPhone: qaMode ? '4255550100' : '',
+    leadEmail: qaLeadEmail,
+    leadPhone: qaMode ? '+12065550199' : '',
+    loginEmail: qaLeadEmail,
     password: qaMode ? 'Password123!' : '',
     confirmPassword: qaMode ? 'Password123!' : '',
-    website: '',
-    companyDescription: qaMode
-      ? 'We build custom software and automation systems for businesses.'
-      : ''
+    website: qaMode ? 'https://example.com' : '',
+    hasNoWebsite: false
   };
 }
 
@@ -78,18 +75,49 @@ function normalizeWebsiteUrl(value) {
   return `https://${trimmed}`;
 }
 
-function hasReasonablePhoneNumber(value) {
-  const digits = String(value || '').replace(/[^\d]/g, '');
-  return digits.length >= 10 && digits.length <= 15;
-}
-
 function defaultStatusForStep() {
   return { message: '', tone: 'normal' };
 }
 
-function validateAccountStep(form) {
-  if (!form.businessName.trim() || !form.ownerName.trim() || !form.ownerEmail.trim() || !form.ownerPhone.trim() || !form.businessPhone.trim()) {
-    return 'Business name, owner name, owner email, owner phone, and business phone are required.';
+function firstFieldErrorMessage(fieldErrors, fallbackMessage) {
+  if (!fieldErrors || typeof fieldErrors !== 'object') {
+    return fallbackMessage;
+  }
+  return Object.values(fieldErrors).find(Boolean) || fallbackMessage;
+}
+
+function validateWebsiteStep(form) {
+  if (form.hasNoWebsite) return '';
+  if (!form.website.trim()) {
+    return 'Website URL is required unless you select "I don\'t have a website."';
+  }
+  return '';
+}
+
+function validateBusinessStep(form) {
+  if (!form.businessName.trim()) {
+    return 'Business name is required.';
+  }
+  return '';
+}
+
+function validateLeadDestinationStep(form) {
+  if (!String(form.leadEmail || '').trim()) {
+    return 'Lead email is required.';
+  }
+  const normalizedPhone = String(form.leadPhone || '').trim();
+  if (normalizedPhone) {
+    const digits = normalizedPhone.replace(/[^\d]/g, '');
+    if (digits.length < 10 || digits.length > 15) {
+      return 'Enter a valid mobile number for SMS alerts, or leave it blank.';
+    }
+  }
+  return '';
+}
+
+function validateLoginStep(form) {
+  if (!String(form.loginEmail || '').trim()) {
+    return 'Login email is required.';
   }
   if (!form.password || form.password.length < 8) {
     return 'Password must be at least 8 characters.';
@@ -97,29 +125,36 @@ function validateAccountStep(form) {
   if (form.password !== form.confirmPassword) {
     return 'Passwords do not match.';
   }
-  if (form.ownerPhone.trim() && !hasReasonablePhoneNumber(form.ownerPhone)) {
-    return 'Enter a valid owner phone number.';
-  }
-  if (!hasReasonablePhoneNumber(form.businessPhone)) {
-    return 'Enter a valid business phone number.';
-  }
-  return '';
-}
-
-function validateContextStep(form) {
-  if (!form.website.trim()) {
-    return 'Website URL is required.';
-  }
-  if (!form.companyDescription.trim()) {
-    return 'Add a short description of what the business does.';
-  }
   return '';
 }
 
 function validateStep(stepIndex, form) {
-  if (stepIndex === 0) return validateAccountStep(form);
-  if (stepIndex === 1) return validateContextStep(form);
+  if (stepIndex === 0) return validateWebsiteStep(form);
+  if (stepIndex === 1) return validateBusinessStep(form);
+  if (stepIndex === 2) return validateLeadDestinationStep(form);
+  if (stepIndex === 3) return validateLoginStep(form);
   return '';
+}
+
+function resolveStepForFieldErrors(fieldErrors) {
+  if (fieldErrors?.website) return 0;
+  if (fieldErrors?.businessName) return 1;
+  if (fieldErrors?.leadEmail || fieldErrors?.leadPhone) return 2;
+  if (fieldErrors?.loginEmail || fieldErrors?.password) return 3;
+  return 3;
+}
+
+function buildSuccessMessage({ hasWebsite, smsOptInRequested }) {
+  if (hasWebsite && smsOptInRequested) {
+    return 'Account created. Your website build is starting now, and a confirmation text was sent for SMS alerts.';
+  }
+  if (hasWebsite) {
+    return 'Account created. Your website build is starting now.';
+  }
+  if (smsOptInRequested) {
+    return 'Account created. A confirmation text was sent for SMS alerts.';
+  }
+  return 'Account created.';
 }
 
 export function IntakePageClient({ qaMode = false } = {}) {
@@ -130,17 +165,18 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const [busy, setBusy] = useState(false);
   const [activation, setActivation] = useState(null);
   const [marketingAttribution, setMarketingAttribution] = useState({});
-  const nextHref = '/client/knowledge';
+  const [showNoWebsiteSetupModal, setShowNoWebsiteSetupModal] = useState(false);
+  const [loginEmailTouched, setLoginEmailTouched] = useState(false);
+  const getStartedHref = '/client/get-started';
+  const receptionistHref = '/client/receptionist/basics';
+  const knowledgeHref = '/client/receptionist/knowledge';
+  const sendLeadsHref = '/client/team';
+  const noWebsiteSetupHref = 'https://calendly.com/jonlehman/everycall-setup';
   const provisioningFailed = activation?.voiceProvisioning?.ok === false;
   const step = INTAKE_STEPS[currentStep];
-
-  useEffect(() => {
-    if (!activation?.ok || provisioningFailed) return undefined;
-    const timer = window.setTimeout(() => {
-      window.location.assign(nextHref);
-    }, 1200);
-    return () => window.clearTimeout(timer);
-  }, [activation, provisioningFailed]);
+  const formattedReceptionistNumber = formatPhoneDisplay(activation?.voiceProvisioning?.phoneNumber)
+    || String(activation?.voiceProvisioning?.phoneNumber || '').trim()
+    || 'Setting things up';
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -182,33 +218,25 @@ export function IntakePageClient({ qaMode = false } = {}) {
     return undefined;
   }, []);
 
+  useEffect(() => {
+    if (activation?.ok && form.hasNoWebsite) {
+      setShowNoWebsiteSetupModal(true);
+    }
+  }, [activation, form.hasNoWebsite]);
+
   const setFormValue = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+
+  const setLeadEmail = (value) => {
+    setForm((current) => ({
+      ...current,
+      leadEmail: value,
+      loginEmail: loginEmailTouched ? current.loginEmail : value
+    }));
+  };
 
   const setStepAndResetStatus = (stepIndex) => {
     setCurrentStep(stepIndex);
     setStatus(defaultStatusForStep(stepIndex));
-  };
-
-  const canDirectlyNavigateToStep = (targetStepIndex) => {
-    if (targetStepIndex <= currentStep) return true;
-    if (targetStepIndex !== currentStep + 1) return false;
-    return !validateStep(currentStep, form);
-  };
-
-  const handleStepNavigation = (targetStepIndex) => {
-    if (targetStepIndex <= currentStep) {
-      setStepAndResetStatus(targetStepIndex);
-      return;
-    }
-    if (targetStepIndex !== currentStep + 1) {
-      return;
-    }
-    const error = validateStep(currentStep, form);
-    if (error) {
-      setStatus({ message: error, tone: 'bad' });
-      return;
-    }
-    setStepAndResetStatus(targetStepIndex);
   };
 
   const moveToNextStep = () => {
@@ -229,33 +257,33 @@ export function IntakePageClient({ qaMode = false } = {}) {
   };
 
   const submit = async () => {
-    const accountError = validateAccountStep(form);
-    if (accountError) {
-      setCurrentStep(0);
-      setStatus({ message: accountError, tone: 'bad' });
-      return;
+    for (let stepIndex = 0; stepIndex < INTAKE_STEPS.length; stepIndex += 1) {
+      const error = validateStep(stepIndex, form);
+      if (error) {
+        setCurrentStep(stepIndex);
+        setStatus({ message: error, tone: 'bad' });
+        return;
+      }
     }
 
-    const contextError = validateContextStep(form);
-    if (contextError) {
-      setCurrentStep(1);
-      setStatus({ message: contextError, tone: 'bad' });
-      return;
-    }
-
+    const hasWebsite = !form.hasNoWebsite && Boolean(form.website.trim());
     setBusy(true);
-    setStatus({ message: 'Creating account, provisioning phone number, and starting the website build...', tone: 'warn' });
+    setStatus({
+      message: hasWebsite
+        ? 'Creating your account and starting the website build...'
+        : 'Creating your account and setting up your workspace...',
+      tone: 'warn'
+    });
     try {
       const requestBody = {
         businessName: form.businessName,
-        businessCategory: form.businessCategory,
-        ownerName: form.ownerName,
-        ownerEmail: form.ownerEmail,
-        ownerPhone: form.ownerPhone,
-        businessPhone: form.businessPhone,
+        leadEmail: form.leadEmail,
+        leadPhone: form.leadPhone,
+        loginEmail: form.loginEmail,
         password: form.password,
-        website: normalizeWebsiteUrl(form.website),
-        companyDescription: form.companyDescription
+        website: form.hasNoWebsite ? '' : normalizeWebsiteUrl(form.website),
+        noWebsite: form.hasNoWebsite,
+        bootstrapMode: form.hasNoWebsite ? 'setup_interview' : 'website_first'
       };
 
       if (!isEmptyMarketingAttribution(marketingAttribution)) {
@@ -268,8 +296,22 @@ export function IntakePageClient({ qaMode = false } = {}) {
         body: JSON.stringify(requestBody)
       });
       if (!data?.ok) {
-        setStatus({ message: data?.message || 'Could not create account.', tone: 'bad' });
+        if (data?.fieldErrors) {
+          setCurrentStep(resolveStepForFieldErrors(data.fieldErrors));
+        }
+        setStatus({
+          message: firstFieldErrorMessage(data?.fieldErrors, data?.message || 'Could not create account.'),
+          tone: 'bad'
+        });
         return;
+      }
+      const initialBuildId = String(data?.initialKnowledgeBuild?.build_id || '').trim();
+      if (initialBuildId) {
+        void fetch(`/api/v1/knowledge/builds/${encodeURIComponent(initialBuildId)}/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        }).catch(() => {});
       }
       setActivation(data);
       try {
@@ -284,7 +326,13 @@ export function IntakePageClient({ qaMode = false } = {}) {
           tone: 'warn'
         });
       } else {
-        setStatus({ message: 'Account created. Setting things up and redirecting to the Knowledge Workspace...', tone: 'ok' });
+        setStatus({
+          message: buildSuccessMessage({
+            hasWebsite,
+            smsOptInRequested: data?.smsOptInRequest?.ok === true
+          }),
+          tone: 'ok'
+        });
       }
     } catch {
       setStatus({ message: 'Could not create account.', tone: 'bad' });
@@ -292,6 +340,12 @@ export function IntakePageClient({ qaMode = false } = {}) {
       setBusy(false);
     }
   };
+
+  const heroEyebrow = activation ? 'Account Created' : `Step ${step.number} of ${INTAKE_STEPS.length}`;
+  const heroTitle = activation ? 'Your workspace is ready' : step.heroTitle;
+  const heroCopy = activation
+    ? 'Use the guided setup below to finish the few things EveryCall needs before you start forwarding calls.'
+    : step.heroCopy;
 
   return (
     <div className="intake-shell">
@@ -308,218 +362,319 @@ export function IntakePageClient({ qaMode = false } = {}) {
         </div>
       </header>
 
-      <aside className="intake-sidebar">
-        <div className="intake-sidebar-head">
-          <h2>Onboarding</h2>
-        </div>
-        <nav className="intake-step-list" aria-label="Onboarding steps">
-          {INTAKE_STEPS.map((item, index) => {
-            const active = index === currentStep;
-            const complete = index < currentStep || Boolean(activation?.ok);
-            const locked = index > currentStep && !canDirectlyNavigateToStep(index);
-            return (
-              <button
-                key={item.key}
-                type="button"
-                className={`intake-step-link ${active ? 'active' : ''} ${complete ? 'complete' : ''} ${locked ? 'locked' : ''}`}
-                onClick={() => handleStepNavigation(index)}
-                aria-current={active ? 'step' : undefined}
-                disabled={locked}
-              >
-                <span className="intake-step-number">{item.number}</span>
-                <span>{item.navTitle}</span>
-              </button>
-            );
-          })}
-        </nav>
-      </aside>
-
       <main className="intake-main">
         <div className="intake-canvas">
-          <div className="intake-mobile-steps" aria-hidden="true">
-            {INTAKE_STEPS.map((item, index) => {
-              const locked = index > currentStep && !canDirectlyNavigateToStep(index);
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  className={`intake-mobile-step ${index === currentStep ? 'active' : ''} ${index < currentStep || Boolean(activation?.ok) ? 'complete' : ''} ${locked ? 'locked' : ''}`}
-                  onClick={() => handleStepNavigation(index)}
-                  disabled={locked}
-                >
-                  {item.number}
-                </button>
-              );
-            })}
-          </div>
-
           <section className="intake-hero">
-            <p className="intake-eyebrow">Step {step.number}</p>
-            <h1>{step.heroTitle}</h1>
-            <p>{step.heroCopy}</p>
-          </section>
-
-          <form className="intake-card" onSubmit={(event) => event.preventDefault()}>
-            {status.message ? (
-              <div className={`intake-status ${status.tone || 'normal'}`}>
-                {status.message}
+            <p className="intake-eyebrow">{heroEyebrow}</p>
+            <h1>{heroTitle}</h1>
+            <p>{heroCopy}</p>
+            {!activation ? (
+              <div className="intake-progress">
+                <span className="intake-progress-step">{step.title}</span>
+                <span className="intake-progress-count">{`${currentStep + 1} of ${INTAKE_STEPS.length}`}</span>
               </div>
             ) : null}
+          </section>
 
-            {currentStep === 0 ? (
-              <section className="intake-panel">
-                <div className="intake-panel-header">
-                  <span className="intake-panel-step">01</span>
-                  <div>
-                    <h2 className="intake-panel-title">Account Setup</h2>
-                    <p className="intake-panel-copy">Create the business record and the first owner login.</p>
-                  </div>
+          {!activation ? (
+            <form className="intake-card" onSubmit={(event) => event.preventDefault()}>
+              {status.message ? (
+                <div className={`intake-status ${status.tone || 'normal'}`}>
+                  {status.message}
                 </div>
+              ) : null}
 
-                <div className="intake-grid">
-                  <div className="intake-stack intake-full">
-                    <label>Business Name</label>
-                    <input value={form.businessName} onChange={(event) => setFormValue('businessName', event.target.value)} />
+              {currentStep === 0 ? (
+                <section className="intake-panel">
+                  <div className="intake-panel-header">
+                    <span className="intake-panel-step">01</span>
+                    <div>
+                      <h2 className="intake-panel-title">Website</h2>
+                      <p className="intake-panel-copy">Add your main public website so EveryCall can start building your knowledge base right away.</p>
+                    </div>
                   </div>
-                  <div className="intake-stack intake-full">
-                    <label>Business Category</label>
-                    <select value={form.businessCategory} onChange={(event) => setFormValue('businessCategory', event.target.value)}>
-                      {BUSINESS_CATEGORIES.map((category) => (
-                        <option key={category.value} value={category.value}>{category.label}</option>
-                      ))}
-                    </select>
-                  </div>
+
                   <div className="intake-stack">
-                    <label>Owner Name</label>
-                    <input value={form.ownerName} onChange={(event) => setFormValue('ownerName', event.target.value)} />
+                    <FieldLabel htmlFor="website" badge="required">What is your business website?</FieldLabel>
+                    <input
+                      id="website"
+                      type="url"
+                      value={form.website}
+                      onChange={(event) => setFormValue('website', event.target.value)}
+                      placeholder="https://example.com"
+                      disabled={form.hasNoWebsite}
+                      autoComplete="url"
+                    />
+                    <div className="intake-muted">
+                      EveryCall uses your website to start the first knowledge build automatically.
+                    </div>
                   </div>
+
+                  <label className="intake-checkbox-card" htmlFor="has-no-website">
+                    <input
+                      id="has-no-website"
+                      type="checkbox"
+                      checked={form.hasNoWebsite}
+                      onChange={(event) => setFormValue('hasNoWebsite', event.target.checked)}
+                    />
+                    <span>
+                      <strong>I don&apos;t have a website</strong>
+                      <small>Support will help you create the first knowledge source after the account is created.</small>
+                    </span>
+                  </label>
+                </section>
+              ) : null}
+
+              {currentStep === 1 ? (
+                <section className="intake-panel">
+                  <div className="intake-panel-header">
+                    <span className="intake-panel-step">02</span>
+                    <div>
+                      <h2 className="intake-panel-title">Business Name</h2>
+                      <p className="intake-panel-copy">This is the business name callers and team members will see throughout the workspace.</p>
+                    </div>
+                  </div>
+
                   <div className="intake-stack">
-                    <label>Owner Email</label>
-                    <input type="email" value={form.ownerEmail} onChange={(event) => setFormValue('ownerEmail', event.target.value)} />
+                    <FieldLabel htmlFor="business-name" badge="required">What is your business name?</FieldLabel>
+                    <input
+                      id="business-name"
+                      value={form.businessName}
+                      onChange={(event) => setFormValue('businessName', event.target.value)}
+                      autoComplete="organization"
+                    />
                   </div>
-                  <div className="intake-stack">
-                    <label>Owner Phone</label>
-                    <input type="tel" value={form.ownerPhone} onChange={(event) => setFormValue('ownerPhone', event.target.value)} />
+                </section>
+              ) : null}
+
+              {currentStep === 2 ? (
+                <section className="intake-panel">
+                  <div className="intake-panel-header">
+                    <span className="intake-panel-step">03</span>
+                    <div>
+                      <h2 className="intake-panel-title">Send Leads To</h2>
+                      <p className="intake-panel-copy">Choose where EveryCall should send new lead alerts once calls start coming in.</p>
+                    </div>
                   </div>
-                  <div className="intake-stack">
-                    <label>Business Phone</label>
-                    <input type="tel" value={form.businessPhone} onChange={(event) => setFormValue('businessPhone', event.target.value)} />
+
+                  <div className="intake-form-stack">
+                    <div className="intake-stack">
+                      <FieldLabel htmlFor="lead-email" badge="required">What email should receive new leads?</FieldLabel>
+                      <input
+                        id="lead-email"
+                        type="email"
+                        value={form.leadEmail}
+                        onChange={(event) => setLeadEmail(event.target.value)}
+                        autoComplete="email"
+                        placeholder="you@company.com"
+                      />
+                    </div>
+
+                    <div className="intake-stack">
+                      <FieldLabel htmlFor="lead-phone" badge="optional">What mobile number should receive text alerts?</FieldLabel>
+                      <input
+                        id="lead-phone"
+                        type="tel"
+                        value={form.leadPhone}
+                        onChange={(event) => setFormValue('leadPhone', event.target.value)}
+                        autoComplete="tel"
+                        placeholder="+1XXXXXXXXXX"
+                      />
+                      <div className="intake-muted">
+                        If you add a mobile number, EveryCall will send a confirmation text before SMS alerts are turned on.
+                      </div>
+                    </div>
                   </div>
-                  <div className="intake-stack">
-                    <label>Password</label>
-                    <input type="password" value={form.password} onChange={(event) => setFormValue('password', event.target.value)} />
+                </section>
+              ) : null}
+
+              {currentStep === 3 ? (
+                <section className="intake-panel">
+                  <div className="intake-panel-header">
+                    <span className="intake-panel-step">04</span>
+                    <div>
+                      <h2 className="intake-panel-title">Create Login</h2>
+                      <p className="intake-panel-copy">Use this login to open the workspace after the account is created. You can keep it the same as the lead email or change it.</p>
+                    </div>
                   </div>
-                  <div className="intake-stack">
-                    <label>Confirm Password</label>
-                    <input type="password" value={form.confirmPassword} onChange={(event) => setFormValue('confirmPassword', event.target.value)} />
+
+                  <div className="intake-form-stack">
+                    <div className="intake-stack">
+                      <FieldLabel htmlFor="login-email" badge="required">What is your email address?</FieldLabel>
+                      <input
+                        id="login-email"
+                        type="email"
+                        value={form.loginEmail}
+                        onChange={(event) => {
+                          setLoginEmailTouched(true);
+                          setFormValue('loginEmail', event.target.value);
+                        }}
+                        autoComplete="email"
+                        placeholder="you@company.com"
+                      />
+                      <div className="intake-muted">
+                        This starts pre-filled from the lead email above, but you can change it.
+                      </div>
+                    </div>
+
+                    <div className="intake-stack">
+                      <FieldLabel htmlFor="password" badge="required">Password</FieldLabel>
+                      <input
+                        id="password"
+                        type="password"
+                        value={form.password}
+                        onChange={(event) => setFormValue('password', event.target.value)}
+                        autoComplete="new-password"
+                      />
+                    </div>
+
+                    <div className="intake-stack">
+                      <FieldLabel htmlFor="confirm-password" badge="required">Confirm Password</FieldLabel>
+                      <input
+                        id="confirm-password"
+                        type="password"
+                        value={form.confirmPassword}
+                        onChange={(event) => setFormValue('confirmPassword', event.target.value)}
+                        autoComplete="new-password"
+                      />
+                    </div>
                   </div>
-                </div>
-              </section>
-            ) : null}
+                </section>
+              ) : null}
 
-            {currentStep === 1 ? (
-              <section className="intake-panel">
-                <div className="intake-panel-header">
-                  <span className="intake-panel-step">02</span>
-                  <div>
-                    <h2 className="intake-panel-title">Business Context</h2>
-                    <p className="intake-panel-copy">Add the minimum context needed for the first knowledge build.</p>
-                  </div>
-                </div>
+              <div className="intake-actions">
+                {currentStep > 0 ? (
+                  <button type="button" className="btn secondary" onClick={moveToPreviousStep} disabled={busy}>
+                    Back
+                  </button>
+                ) : <span className="intake-actions-spacer" />}
 
-                <div className="intake-stack">
-                  <label>Website URL</label>
-                  <input
-                    type="url"
-                    value={form.website}
-                    onChange={(event) => setFormValue('website', event.target.value)}
-                    placeholder="https://example.com"
-                  />
-                </div>
-
-                <div className="intake-stack">
-                  <label>What Does The Business Do? (This is what your new Sales Receptionist will say when asked this by a caller)</label>
-                  <textarea
-                    value={form.companyDescription}
-                    onChange={(event) => setFormValue('companyDescription', event.target.value)}
-                    placeholder="Describe the business in one or two short sentences."
-                  />
-                </div>
-              </section>
-            ) : null}
-
-            {currentStep === 2 ? (
-              <section className="intake-panel">
-                <div className="intake-panel-header">
-                  <span className="intake-panel-step">03</span>
-                  <div>
-                    <h2 className="intake-panel-title">What Comes Next</h2>
-                  </div>
-                </div>
-
-                <div className="intake-note-card">
-                  <h3>Once your account is created, please visit:</h3>
-                  <ul className="intake-followup-list">
-                    <li><strong>Knowledge</strong> to upload documents if needed.</li>
-                    <li><strong>Team</strong> to confirm who should receive completed call alerts.</li>
-                  </ul>
-                </div>
-              </section>
-            ) : null}
-
-            <div className="intake-actions">
-              {currentStep > 0 ? (
-                <button type="button" className="btn secondary" onClick={moveToPreviousStep} disabled={busy}>
-                  Back
-                </button>
-              ) : <span className="intake-actions-spacer" />}
-
-              {currentStep < INTAKE_STEPS.length - 1 ? (
-                <button type="button" className="btn primary" onClick={moveToNextStep} disabled={busy}>
-                  Continue
-                </button>
-              ) : (
-                <button type="button" className="btn primary" onClick={submit} disabled={busy}>
-                  {busy ? 'Creating...' : 'Create Account'}
-                </button>
-              )}
-            </div>
-          </form>
-
-          {activation ? (
+                {currentStep < INTAKE_STEPS.length - 1 ? (
+                  <button type="button" className="btn primary" onClick={moveToNextStep} disabled={busy}>
+                    Continue
+                  </button>
+                ) : (
+                  <button type="button" className="btn primary" onClick={submit} disabled={busy}>
+                    {busy ? 'Creating...' : 'Create Account'}
+                  </button>
+                )}
+              </div>
+            </form>
+          ) : (
             <section className="intake-card intake-success-card">
-              <p className="intake-eyebrow">Account Created</p>
-              <h2 className="intake-success-title">Workspace ready</h2>
+              {status.message ? (
+                <div className={`intake-status ${status.tone || 'normal'}`}>
+                  {status.message}
+                </div>
+              ) : null}
+
               <div className="intake-success-grid">
                 <div>
                   <span className="intake-success-label">Tenant Key</span>
                   <div>{activation.tenantKey || 'created'}</div>
                 </div>
                 <div>
-                  <span className="intake-success-label">Prompt Profile</span>
-                  <div>{activation.promptProfile?.business_name || form.businessName}</div>
+                  <span className="intake-success-label">EveryCall Number</span>
+                  <div>{formattedReceptionistNumber}</div>
                 </div>
                 <div>
-                  <span className="intake-success-label">Sales Receptionist Number</span>
-                  <div>Setting things up</div>
+                  <span className="intake-success-label">Knowledge Setup</span>
+                  <div>
+                    {form.hasNoWebsite
+                      ? 'Support-assisted setup'
+                      : (activation.initialKnowledgeBuild?.build_id ? 'Website build queued' : 'Website build pending')}
+                  </div>
                 </div>
                 <div>
-                  <span className="intake-success-label">Provisioning</span>
-                  <div>{activation.voiceProvisioning?.ok === false ? 'Needs follow-up' : 'In progress'}</div>
+                  <span className="intake-success-label">Lead Alerts</span>
+                  <div>{form.leadEmail}</div>
+                  {form.leadPhone ? (
+                    <div className="intake-success-subvalue">
+                      {formatPhoneDisplay(form.leadPhone) || form.leadPhone}
+                      {activation?.smsOptInRequest?.ok ? ' • confirmation text sent' : ''}
+                    </div>
+                  ) : null}
                 </div>
               </div>
-              <p className="intake-success-copy">
-                {provisioningFailed
-                  ? `The account was created, but number provisioning needs follow-up before the receptionist can start handling calls. ${activation.voiceProvisioning?.errorMessage || ''}`.trim()
-                  : 'Continue to the Knowledge Workspace to review the website build and upload documents if needed.'}
-              </p>
-              <div className="intake-actions">
-                <a className="btn primary" href={nextHref}>Continue to Knowledge Workspace</a>
+
+              <div className="intake-setup-list">
+                <div className="intake-setup-item">
+                  <div className="intake-setup-number">1</div>
+                  <div>
+                    <h3>Open Get Started</h3>
+                    <p>Use the guided setup page to see what is ready, what still needs attention, and what to do next.</p>
+                  </div>
+                </div>
+                <div className="intake-setup-item">
+                  <div className="intake-setup-number">2</div>
+                  <div>
+                    <h3>Forward your calls</h3>
+                    <p>
+                      Forward desired calls from your business phone system to{' '}
+                      <strong>{formattedReceptionistNumber}</strong>.
+                    </p>
+                  </div>
+                </div>
+                <div className="intake-setup-item">
+                  <div className="intake-setup-number">3</div>
+                  <div>
+                    <h3>Review knowledge and lead destinations</h3>
+                    <p>
+                      {form.hasNoWebsite
+                        ? 'Support will help create the first knowledge source. In the meantime, confirm where lead alerts should go.'
+                        : 'Watch the website build, then confirm your receptionist details and where lead alerts should go.'}
+                    </p>
+                  </div>
+                </div>
               </div>
+
+              <div className="intake-actions intake-success-actions">
+                <a className="btn primary" href={getStartedHref}>Open Get Started</a>
+                <a className="btn secondary" href={knowledgeHref}>Open Knowledge</a>
+                <a className="btn secondary" href={sendLeadsHref}>Open Send Leads To</a>
+                <a className="btn secondary" href={receptionistHref}>Open Receptionist</a>
+              </div>
+
+              {provisioningFailed ? (
+                <div className="intake-muted">
+                  Phone number provisioning needs follow-up before calls can be forwarded.
+                </div>
+              ) : null}
             </section>
-          ) : null}
+          )}
         </div>
       </main>
+
+      {showNoWebsiteSetupModal ? (
+        <div className="intake-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="no-website-setup-title">
+          <div className="intake-modal">
+            <div className="intake-modal-content">
+              <h2 id="no-website-setup-title" className="intake-modal-title">No website? We&apos;ll help you get set up.</h2>
+              <p className="intake-modal-copy">
+                Since you do not have a website yet, the fastest path is a short setup call with support. Pick a time that works for you and we&apos;ll help configure your sales receptionist correctly.
+              </p>
+            </div>
+
+            <div className="intake-actions intake-modal-actions">
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => setShowNoWebsiteSetupModal(false)}
+              >
+                I&apos;ll do this later
+              </button>
+              <a
+                className="btn primary"
+                href={noWebsiteSetupHref}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Schedule Setup Call
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

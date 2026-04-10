@@ -48,7 +48,8 @@ export default async function handler(req, res) {
 
     if (req.method === "GET") {
       const tenant = await pool.query(
-        `SELECT tenant_key, name, plan, data_region, status, primary_number, telnyx_voice_number, telnyx_voice_number_id, telnyx_voice_status
+        `SELECT tenant_key, name, plan, data_region, status, primary_number, telnyx_voice_number, telnyx_voice_number_id, telnyx_voice_status,
+                forwarding_setup_status, forwarding_acknowledged_at, forwarding_configured_at
          FROM tenants
          WHERE tenant_key = $1`,
         [tenantKey]

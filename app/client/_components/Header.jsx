@@ -88,7 +88,7 @@ export default function Header() {
       <div className="flex h-16 items-center justify-between px-4 md:px-6">
         <div className="flex items-center gap-8">
           <BrandLogo
-            href="/client/dashboard"
+            href="/client/get-started"
             className="h-9 w-[156px] md:h-10 md:w-[172px]"
             imageClassName="h-full w-full object-contain"
             priority

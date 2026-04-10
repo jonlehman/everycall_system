@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { createSession, setSessionCookie } from "../../_lib/auth.js";
+import { getSharedSmsNumber } from "../../_lib/alerts.js";
 import { ensureTenantBillingAccount } from "../../_lib/billing.js";
 import {
   DEFAULT_RUNTIME_BEHAVIOR_DEFAULTS,
@@ -21,6 +22,7 @@ import { saveTenantBootstrapProfile } from "../../_lib/tenantBootstrapProfiles.j
 import { enqueueKnowledgeBuild } from "../../_lib/knowledgeReceptionistBuilds.js";
 import { normalizePhoneNumber } from "../../_lib/phone.js";
 import { createDefaultTenantBusinessHours, saveTenantBusinessHours } from "../../_lib/tenantBusinessHours.js";
+import { sendTelnyxSms } from "../../_lib/telnyx.js";
 import { normalizeCallerIdName, provisionTenantVoiceNumber } from "../../_lib/voiceProvisioning.js";
 import { normalizeMarketingAttribution } from "../../../../lib/intakeMarketingAttribution.js";
 
@@ -45,6 +47,10 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function normalizeEmail(value) {
+  return normalizeText(value).toLowerCase();
+}
+
 function isValidPhoneNumber(value) {
   const normalized = String(value || "").trim();
   if (!normalized) return false;
@@ -52,30 +58,152 @@ function isValidPhoneNumber(value) {
   return digits.length >= 10 && digits.length <= 15;
 }
 
+function titleCaseWords(value) {
+  return String(value || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildDefaultUserName(email, fallback) {
+  const localPart = String(email || "").split("@")[0] || "";
+  const humanized = titleCaseWords(localPart.replace(/[._-]+/g, " "));
+  return humanized || fallback;
+}
+
+async function findExistingUserByEmail(client, email) {
+  if (!email) return null;
+  const result = await client.query(
+    `SELECT id
+     FROM tenant_users
+     WHERE email = $1
+     LIMIT 1`,
+    [email]
+  );
+  return result.rows[0] || null;
+}
+
+async function findExistingUserByPhone(client, phoneNumber) {
+  if (!phoneNumber) return null;
+  const result = await client.query(
+    `SELECT id
+     FROM tenant_users
+     WHERE phone_number = $1
+     LIMIT 1`,
+    [phoneNumber]
+  );
+  return result.rows[0] || null;
+}
+
+async function createTenantUser(client, {
+  tenantKey,
+  name,
+  email,
+  phoneNumber = null,
+  passwordHash = null,
+  role = "owner",
+  status = "active",
+  leadAlertEmailEnabled = false,
+  leadAlertSmsEnabled = false
+}) {
+  const result = await client.query(
+    `INSERT INTO tenant_users (
+       tenant_key,
+       name,
+       email,
+       phone_number,
+       password_hash,
+       role,
+       status,
+       lead_alert_sms_enabled,
+       lead_alert_email_enabled
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING id`,
+    [
+      tenantKey,
+      name,
+      email,
+      phoneNumber || null,
+      passwordHash,
+      role,
+      status,
+      Boolean(leadAlertSmsEnabled),
+      Boolean(leadAlertEmailEnabled)
+    ]
+  );
+  return result.rows[0]?.id || null;
+}
+
+async function sendInitialSmsOptInRequest(pool, { tenantKey, userId, phoneNumber }) {
+  const normalizedPhone = normalizePhoneNumber(phoneNumber);
+  if (!pool || !tenantKey || !userId || !normalizedPhone) {
+    return { ok: false, skipped: true };
+  }
+
+  const fromNumber = await getSharedSmsNumber(pool);
+  if (!fromNumber) {
+    return { ok: false, skipped: true, reason: "sms_number_missing" };
+  }
+
+  const text = "EveryCall by Creative Dynamic: Reply YES to confirm SMS new lead alerts. Message frequency may vary. Msg&data rates may apply. Consent is not a condition of purchase. Reply HELP for help. Reply STOP to opt out.";
+  const smsResult = await sendTelnyxSms({ from: fromNumber, to: normalizedPhone, text });
+  const providerMessageId = String(smsResult?.data?.id || smsResult?.id || "").trim() || null;
+
+  await pool.query(
+    `UPDATE tenant_users
+     SET sms_opt_in_status = 'pending',
+         sms_opt_in_requested_at = NOW(),
+         sms_opt_in_confirmed_at = NULL,
+         updated_at = NOW()
+     WHERE tenant_key = $1
+       AND id = $2`,
+    [tenantKey, userId]
+  );
+
+  await pool.query(
+    `INSERT INTO audit_log (tenant_key, actor, action, details)
+     VALUES ($1, 'system:onboard', 'onboarding.sms_opt_in_requested', $2)`,
+    [
+      tenantKey,
+      `user_id=${userId} phone_number=${normalizedPhone} provider_message_id=${providerMessageId || ""}`
+    ]
+  );
+
+  return {
+    ok: true,
+    providerMessageId
+  };
+}
+
 function parsePayload(body) {
   const businessName = normalizeText(body.businessName);
   const businessCategory = normalizeText(body.businessCategory || body.business_category || body.industry)
     || "professional_services";
-  const ownerName = normalizeText(body.ownerName);
-  const ownerEmail = normalizeText(body.ownerEmail).toLowerCase();
-  const ownerPhone = normalizePhoneNumber(body.ownerPhone || body.owner_phone);
-  const businessPhone = normalizePhoneNumber(body.businessPhone || body.business_phone);
+  const leadEmail = normalizeEmail(body.leadEmail || body.lead_email);
+  const leadPhone = normalizePhoneNumber(body.leadPhone || body.lead_phone || body.smsAlertPhone || body.sms_alert_phone);
+  const loginEmail = normalizeEmail(body.loginEmail || body.login_email || body.ownerEmail || body.owner_email);
   const password = String(body.password || "");
-  const website = normalizeText(body.website);
-  const companyDescription = normalizeText(body.companyDescription || body.company_description);
-  const bootstrapMode = normalizeText(body.bootstrapMode || body.bootstrap_mode) || (website ? "website_first" : "setup_interview");
+  const requestedBootstrapMode = normalizeText(body.bootstrapMode || body.bootstrap_mode);
+  const noWebsite = Boolean(
+    body.noWebsite === true
+    || body.no_website === true
+    || String(body.noWebsite || body.no_website || "").trim().toLowerCase() === "true"
+  );
+  const website = noWebsite ? "" : normalizeText(body.website);
+  const bootstrapMode = requestedBootstrapMode || (website ? "website_first" : "setup_interview");
   const marketingAttribution = normalizeMarketingAttribution(body.marketingAttribution || body.marketing_attribution);
 
   return {
     businessName,
     businessCategory,
-    ownerName,
-    ownerEmail,
-    ownerPhone,
-    businessPhone,
+    leadEmail,
+    leadPhone,
+    loginEmail,
     password,
     website,
-    companyDescription,
+    companyDescription: "",
     primaryGoal: "Answer callers briefly and move them to the correct next step.",
     bootstrapMode,
     greetingText: normalizeText(body.greetingText || body.greeting_text),
@@ -87,15 +215,13 @@ function validatePayload(payload) {
   const fieldErrors = {};
   if (!payload.businessName) fieldErrors.businessName = "Business name is required.";
   if (!payload.businessCategory) fieldErrors.businessCategory = "Business category is required.";
-  if (!payload.ownerName) fieldErrors.ownerName = "Owner name is required.";
-  if (!payload.ownerEmail) fieldErrors.ownerEmail = "Owner email is required.";
-  if (!payload.ownerPhone) fieldErrors.ownerPhone = "Owner phone is required.";
-  if (!payload.businessPhone) fieldErrors.businessPhone = "Business phone is required.";
+  if (!payload.leadEmail) fieldErrors.leadEmail = "Lead email is required.";
+  if (!payload.loginEmail) fieldErrors.loginEmail = "Login email is required.";
   if (!payload.password || payload.password.length < 8) fieldErrors.password = "Password must be at least 8 characters.";
-  if (!payload.website) fieldErrors.website = "Website URL is required.";
-  if (!payload.companyDescription) fieldErrors.companyDescription = "A short business description is required.";
-  if (payload.ownerPhone && !isValidPhoneNumber(payload.ownerPhone)) fieldErrors.ownerPhone = "Enter a valid owner phone number.";
-  if (payload.businessPhone && !isValidPhoneNumber(payload.businessPhone)) fieldErrors.businessPhone = "Enter a valid business phone number.";
+  if (payload.bootstrapMode !== "setup_interview" && !payload.website) {
+    fieldErrors.website = "Website URL is required unless you choose the no-website path.";
+  }
+  if (payload.leadPhone && !isValidPhoneNumber(payload.leadPhone)) fieldErrors.leadPhone = "Enter a valid mobile number for SMS alerts.";
   if (!inferKnowledgeAssignmentsForIndustry(payload.businessCategory).length) {
     fieldErrors.businessCategory = "Choose the business category that fits best.";
   }
@@ -201,6 +327,8 @@ export default async function handler(req, res) {
     const client = await pool.connect();
     let tenantKey = "";
     let ownerUserId = null;
+    let leadRecipientUserId = null;
+    let smsOptInTargetUserId = null;
     try {
       await client.query("BEGIN");
       await syncCanonicalKnowledgePacks(client);
@@ -214,7 +342,7 @@ export default async function handler(req, res) {
           await client.query(
             `INSERT INTO tenants (tenant_key, name, status, data_region, plan, primary_number, industry)
              VALUES ($1, $2, 'active', 'US', 'Growth', $3, $4)`,
-            [tenantKey, payload.businessName, payload.businessPhone || null, payload.businessCategory]
+            [tenantKey, payload.businessName, null, payload.businessCategory]
           );
           break;
         } catch (err) {
@@ -224,45 +352,64 @@ export default async function handler(req, res) {
         }
       }
 
-      const existingOwner = await client.query(
-        `SELECT id
-         FROM tenant_users
-         WHERE email = $1
-         LIMIT 1`,
-        [payload.ownerEmail]
-      );
-      if (existingOwner.rowCount) {
-        throw new Error("owner_email_already_exists");
+      const existingLoginUser = await findExistingUserByEmail(client, payload.loginEmail);
+      if (existingLoginUser) {
+        throw new Error("login_email_already_exists");
       }
-      if (payload.ownerPhone) {
-        const existingOwnerPhone = await client.query(
-          `SELECT id
-           FROM tenant_users
-           WHERE phone_number = $1
-           LIMIT 1`,
-          [payload.ownerPhone]
-        );
-        if (existingOwnerPhone.rowCount) {
-          throw new Error("owner_phone_already_exists");
+      if (payload.leadEmail && payload.leadEmail !== payload.loginEmail) {
+        const existingLeadUser = await findExistingUserByEmail(client, payload.leadEmail);
+        if (existingLeadUser) {
+          throw new Error("lead_email_already_exists");
+        }
+      }
+      if (payload.leadPhone) {
+        const existingLeadPhone = await findExistingUserByPhone(client, payload.leadPhone);
+        if (existingLeadPhone) {
+          throw new Error("lead_phone_already_exists");
         }
       }
 
-      const userRes = await client.query(
-        `INSERT INTO tenant_users (
-           tenant_key,
-           name,
-           email,
-           phone_number,
-           password_hash,
-           role,
-           status,
-           lead_alert_sms_enabled
-         )
-         VALUES ($1, $2, $3, $4, $5, 'owner', 'active', TRUE)
-         RETURNING id`,
-        [tenantKey, payload.ownerName, payload.ownerEmail, payload.ownerPhone || null, passwordHash]
+      const sharedLeadDestination = payload.loginEmail === payload.leadEmail;
+      const ownerName = buildDefaultUserName(payload.loginEmail, "Primary Contact");
+      ownerUserId = await createTenantUser(client, {
+        tenantKey,
+        name: ownerName,
+        email: payload.loginEmail,
+        phoneNumber: sharedLeadDestination ? payload.leadPhone : null,
+        passwordHash,
+        role: "owner",
+        status: "active",
+        leadAlertEmailEnabled: sharedLeadDestination,
+        leadAlertSmsEnabled: sharedLeadDestination && Boolean(payload.leadPhone)
+      });
+
+      if (!sharedLeadDestination) {
+        const recipientName = buildDefaultUserName(payload.leadEmail, "Lead Alerts");
+        leadRecipientUserId = await createTenantUser(client, {
+          tenantKey,
+          name: recipientName,
+          email: payload.leadEmail,
+          phoneNumber: payload.leadPhone || null,
+          passwordHash: null,
+          role: "viewer",
+          status: "active",
+          leadAlertEmailEnabled: true,
+          leadAlertSmsEnabled: Boolean(payload.leadPhone)
+        });
+      }
+
+      smsOptInTargetUserId = sharedLeadDestination
+        ? ownerUserId
+        : leadRecipientUserId;
+
+      await client.query(
+        `INSERT INTO audit_log (tenant_key, actor, action, details)
+         VALUES ($1, 'system:onboard', 'onboarding.lead_destination_initialized', $2)`,
+        [
+          tenantKey,
+          `lead_email=${payload.leadEmail} sms_phone=${payload.leadPhone || ""} shared_destination=${sharedLeadDestination ? "true" : "false"}`
+        ]
       );
-      ownerUserId = userRes.rows[0]?.id || null;
 
       await client.query(
         `INSERT INTO routing_rules (tenant_key, primary_queue, emergency_behavior, after_hours_behavior, business_hours)
@@ -352,7 +499,7 @@ export default async function handler(req, res) {
       const voiceProvisioning = await provisionTenantVoiceNumber({
         pool,
         tenantKey,
-        primaryNumber: payload.businessPhone,
+        primaryNumber: payload.leadPhone,
         callerIdName: payload.businessName,
         actor: ownerUserId ? `tenant:${ownerUserId}` : "system:onboard",
         stage: "number_setup",
@@ -377,6 +524,26 @@ export default async function handler(req, res) {
         }
       }
 
+      let smsOptInRequest = null;
+      if (payload.leadPhone && smsOptInTargetUserId) {
+        try {
+          smsOptInRequest = await sendInitialSmsOptInRequest(pool, {
+            tenantKey,
+            userId: smsOptInTargetUserId,
+            phoneNumber: payload.leadPhone
+          });
+        } catch (smsError) {
+          smsOptInRequest = {
+            ok: false,
+            error: String(smsError?.message || "unknown")
+          };
+          console.error("initial_sms_opt_in_request_failed", {
+            tenantKey,
+            error: smsOptInRequest.error
+          });
+        }
+      }
+
       return res.status(200).json({
         ok: true,
         tenantKey,
@@ -389,7 +556,14 @@ export default async function handler(req, res) {
         callOutcomeSchema,
         setupInterviewIntent,
         voiceProvisioning,
-        initialKnowledgeBuild
+        initialKnowledgeBuild,
+        leadDestination: {
+          email: payload.leadEmail,
+          phoneNumber: payload.leadPhone || null,
+          loginEmail: payload.loginEmail,
+          separateRecipientCreated: payload.leadEmail !== payload.loginEmail
+        },
+        smsOptInRequest
       });
     } catch (err) {
       await client.query("ROLLBACK");
@@ -399,11 +573,20 @@ export default async function handler(req, res) {
     }
   } catch (err) {
     const message = String(err?.message || "unknown");
-    if (message === "owner_email_already_exists") {
-      return jsonError(res, 409, "owner_email_already_exists", "That owner email is already in use.");
+    if (message === "login_email_already_exists") {
+      return jsonError(res, 409, "login_email_already_exists", "That login email is already in use.", {
+        loginEmail: "That login email is already in use."
+      });
     }
-    if (message === "owner_phone_already_exists") {
-      return jsonError(res, 409, "owner_phone_already_exists", "That owner phone number is already in use.");
+    if (message === "lead_email_already_exists") {
+      return jsonError(res, 409, "lead_email_already_exists", "That lead email is already in use.", {
+        leadEmail: "That lead email is already in use."
+      });
+    }
+    if (message === "lead_phone_already_exists") {
+      return jsonError(res, 409, "lead_phone_already_exists", "That mobile number is already in use.", {
+        leadPhone: "That mobile number is already in use."
+      });
     }
     if (message === "domain_assignment_required") {
       return jsonError(res, 400, "domain_assignment_required", "A canonical domain/subdomain assignment is required.");

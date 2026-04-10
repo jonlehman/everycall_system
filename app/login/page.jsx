@@ -4,7 +4,7 @@ import { useState } from 'react';
 import BrandLogo from '../_components/BrandLogo';
 
 function resolveClientRedirect(nextPath, tenantKey) {
-  const fallback = `/client/calls?tenantKey=${encodeURIComponent(tenantKey || 'default')}`;
+  const fallback = `/client/get-started?tenantKey=${encodeURIComponent(tenantKey || 'default')}`;
   const normalized = String(nextPath || '').trim();
   if (!normalized.startsWith('/client')) return fallback;
   if (normalized.startsWith('//')) return fallback;

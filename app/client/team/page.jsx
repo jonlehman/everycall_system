@@ -52,7 +52,7 @@ export default function TeamPage() {
       .then((resp) => (resp.ok ? resp.json() : null))
       .then((data) => {
         if (!data) {
-          setStatus({ message: 'Could not load team users.', tone: 'bad' });
+          setStatus({ message: 'Could not load recipients and access settings.', tone: 'bad' });
           setLoading(false);
           return;
         }
@@ -60,7 +60,7 @@ export default function TeamPage() {
         setLoading(false);
       })
       .catch(() => {
-        setStatus({ message: 'Could not load team users.', tone: 'bad' });
+        setStatus({ message: 'Could not load recipients and access settings.', tone: 'bad' });
         setLoading(false);
       });
   };
@@ -159,13 +159,13 @@ export default function TeamPage() {
   };
 
   const deleteUser = async (id) => {
-    if (!window.confirm('Delete this user?')) return;
+    if (!window.confirm('Delete this entry?')) return;
     const resp = await fetch(`/api/v1/tenant/users?id=${id}`, { method: 'DELETE' });
     if (!resp.ok) {
       setStatus({ message: 'Delete failed.', tone: 'bad' });
       return;
     }
-    setStatus({ message: 'User deleted.', tone: 'ok' });
+    setStatus({ message: 'Entry deleted.', tone: 'ok' });
     if (editingUserId === id) closeForm();
     loadUsers();
   };
@@ -199,7 +199,7 @@ export default function TeamPage() {
     }
 
     setSavingForm(true);
-    setStatus({ message: formMode === 'edit' ? 'Saving user...' : 'Creating user...', tone: 'warn' });
+    setStatus({ message: formMode === 'edit' ? 'Saving changes...' : 'Creating recipient...', tone: 'warn' });
     const resp = await fetch('/api/v1/tenant/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -217,7 +217,7 @@ export default function TeamPage() {
       return;
     }
 
-    setStatus({ message: formMode === 'edit' ? 'User updated.' : 'User created.', tone: 'ok' });
+    setStatus({ message: formMode === 'edit' ? 'Entry updated.' : 'Recipient created.', tone: 'ok' });
     closeForm();
     loadUsers();
   };
@@ -404,11 +404,11 @@ export default function TeamPage() {
 
   return (
     <ClientPage
-      title="Users"
-      subtitle="Invite teammates, edit their details, and control who receives call alerts."
+      title="Send Leads To"
+      subtitle="Choose which people and inboxes receive EveryCall alerts. Advanced workspace access controls still live here too."
       status={status}
       primaryAction={{
-        label: formMode === 'create' ? 'Close User Form' : 'Add User',
+        label: formMode === 'create' ? 'Close Form' : 'Add Recipient',
         brand: true,
         onClick: () => (formMode === 'create' ? closeForm() : openCreateForm())
       }}
@@ -420,10 +420,10 @@ export default function TeamPage() {
               <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-8 py-6">
                 <div className="space-y-1">
                   <h2 className="mt-0 font-['Space_Grotesk'] text-lg font-bold text-slate-900">
-                    {formMode === 'edit' ? 'Edit User' : 'Add User'}
+                    {formMode === 'edit' ? 'Edit Recipient' : 'Add Recipient'}
                   </h2>
                   <div className="text-sm text-slate-500">
-                    Update access, alerts, and SMS permission settings for this teammate.
+                    Update alert destinations here. Access settings are still available below when you need them.
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -597,7 +597,7 @@ export default function TeamPage() {
                     Cancel
                   </Button>
                   <Button type="submit" disabled={savingForm}>
-                    {savingForm ? (formMode === 'edit' ? 'Saving...' : 'Creating...') : (formMode === 'edit' ? 'Save Changes' : 'Create User')}
+                    {savingForm ? (formMode === 'edit' ? 'Saving...' : 'Creating...') : (formMode === 'edit' ? 'Save Changes' : 'Create Recipient')}
                   </Button>
                 </div>
               </form>
@@ -605,7 +605,7 @@ export default function TeamPage() {
           ) : null}
 
           <div className="min-w-0 rounded-xl border border-border bg-card p-3 shadow-sm">
-            <h2 className="mt-0 text-lg font-semibold">Users</h2>
+            <h2 className="mt-0 text-lg font-semibold">Recipients And Access</h2>
             <div style={{ height: rows.length ? 'auto' : 300 }}>
               <DataGrid
                 rows={rows}
@@ -615,7 +615,7 @@ export default function TeamPage() {
                 disableRowSelectionOnClick
                 pageSizeOptions={[10, 25, 50]}
                 initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
-                localeText={{ noRowsLabel: loading ? 'Loading users...' : 'No users yet.' }}
+                localeText={{ noRowsLabel: loading ? 'Loading recipients...' : 'No recipients or access records yet.' }}
                 sx={{
                   border: 'none',
                   '& .MuiDataGrid-cell': {
@@ -643,15 +643,15 @@ export default function TeamPage() {
           </div>
         </div>
 
-        <GuidePanel title="Users Guide" eyebrow="How it works" icon="groups">
-          <div>Use Users to manage access, alert recipients, invitation state, and SMS opt-in status.</div>
+        <GuidePanel title="Send Leads To Guide" eyebrow="How it works" icon="groups">
+          <div>Use this page to control who receives EveryCall alerts by email or SMS. Advanced workspace access settings also live here.</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Lead SMS requirements</div>
             <div className="mt-1 text-sm text-slate-600">SMS alerts can be turned on in advance, but they stay pending and will not send until the user replies YES.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="font-semibold text-slate-900">Use Edit for</div>
-            <div className="mt-1 text-sm text-slate-600">Name, email, phone, role, status, SMS setup, and call-category alert preferences.</div>
+            <div className="font-semibold text-slate-900">What to use this for</div>
+            <div className="mt-1 text-sm text-slate-600">Confirm lead emails, text-alert numbers, and any advanced access or invitation settings for your workspace.</div>
           </div>
         </GuidePanel>
       </div>

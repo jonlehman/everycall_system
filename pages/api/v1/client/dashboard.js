@@ -444,8 +444,8 @@ export default async function handler(req, res) {
     }
     nextSteps.push({
       href: "/client/team",
-      title: "Confirm alert recipients",
-      body: "Use Team to decide which users should receive email or SMS call alerts."
+      title: "Confirm where leads go",
+      body: "Use Send Leads To to decide which email addresses or mobile numbers should receive new lead alerts."
     });
     nextSteps.push({
       href: "/client/calls",

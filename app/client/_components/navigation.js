@@ -1,9 +1,9 @@
 export const clientPrimaryNavItems = [
   {
-    href: '/client/dashboard',
-    label: 'Dashboard',
+    href: '/client/get-started',
+    label: 'Get Started',
     icon: 'dashboard',
-    matchPrefixes: ['/client/dashboard', '/client/overview']
+    matchPrefixes: ['/client/get-started', '/client/overview', '/client/dashboard']
   },
   {
     href: '/client/calls',
@@ -13,13 +13,13 @@ export const clientPrimaryNavItems = [
   },
   {
     href: '/client/receptionist/basics',
-    label: 'Sales Receptionist',
+    label: 'Receptionist',
     icon: 'receptionist',
     matchPrefixes: ['/client/receptionist', '/client/setup', '/client/knowledge', '/client/routing']
   },
   {
     href: '/client/team',
-    label: 'Users',
+    label: 'Send Leads To',
     icon: 'team',
     matchPrefixes: ['/client/team']
   },
