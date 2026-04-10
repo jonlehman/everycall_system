@@ -362,7 +362,7 @@ export default function ClientGetStartedPage() {
   return (
     <ClientPage className="gap-4 pt-2 md:pt-3">
       <div className="mx-auto w-full max-w-5xl">
-        <header className="mt-12 mb-7 lg:-ml-24 md:mb-8">
+        <header className="mt-12 mb-7 md:mb-8">
           <h1 className="mb-2 font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.05em] text-[#121c2a] md:text-5xl">
             Get Started.
             <br />
@@ -370,13 +370,13 @@ export default function ClientGetStartedPage() {
           </h1>
         </header>
 
-        <div className="mb-5 lg:-ml-24 md:mb-6">
+        <div className="mb-5 md:mb-6">
           <h2 className="flex items-center gap-2 font-['Space_Grotesk'] text-lg font-bold text-[#121c2a]">
             What To Do
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-12">
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
           <SetupStepCard
             step="1"
             title="Teach EveryCall About Your Business"
@@ -388,7 +388,7 @@ export default function ClientGetStartedPage() {
               tone: websiteTraining.tone,
               message: websiteTraining.description
             }}
-            className="md:col-span-12 lg:col-span-7 lg:-ml-24"
+            className="md:col-span-12 lg:col-span-7"
             action={(
               websiteTraining.done ? (
                 <Link
@@ -438,7 +438,7 @@ export default function ClientGetStartedPage() {
               value: forwarding.statusValue,
               tone: forwarding.numberReady ? 'processing' : 'bad'
             }}
-            className="md:col-span-6 lg:col-span-7 lg:-ml-24"
+            className="md:col-span-6 lg:col-span-7"
             action={forwarding.numberReady ? (
               <button
                 type="button"
