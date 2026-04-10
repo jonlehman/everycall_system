@@ -21,7 +21,7 @@ export const clientPrimaryNavItems = [
     href: '/client/team',
     label: 'Send Leads To',
     icon: 'team',
-    matchPrefixes: ['/client/team']
+    matchPrefixes: ['/client/team', '/client/team/integrations']
   },
   {
     href: '/client/account/general',
@@ -44,9 +44,13 @@ export const receptionistNavItems = [
 
 export const accountNavItems = [
   { href: '/client/account/general', label: 'General' },
-  { href: '/client/account/integrations', label: 'Integrations' },
   { href: '/client/account/billing', label: 'Billing' },
   { href: '/client/account/support', label: 'Support' }
+];
+
+export const sendLeadsNavItems = [
+  { href: '/client/team', label: 'People' },
+  { href: '/client/team/integrations', label: 'Integrations' }
 ];
 
 export function pathMatches(pathname, item) {

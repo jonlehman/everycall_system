@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import { Button } from '../../../components/ui/button';
 import GuidePanel from '../_components/GuidePanel';
-import ClientPage from '../_components/ClientPage';
+import SectionPage from '../_components/SectionPage';
+import { sendLeadsNavItems } from '../_components/navigation';
 import {
   CALL_CATEGORY_OPTIONS,
   formatCallCategoryLabel,
@@ -462,7 +463,8 @@ export default function TeamPage() {
   ];
 
   return (
-    <ClientPage
+    <SectionPage
+      tabs={sendLeadsNavItems}
       title="Send Leads To"
       subtitle="Choose which people and inboxes receive EveryCall alerts. Advanced workspace access controls still live here too."
       status={status}
@@ -805,6 +807,6 @@ export default function TeamPage() {
           </div>
         </GuidePanel>
       </div>
-    </ClientPage>
+    </SectionPage>
   );
 }
