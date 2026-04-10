@@ -94,6 +94,11 @@ function SetupStepCard({ step, title, description = '', subdescription = '', sta
               <span className="text-xs font-semibold text-slate-700">{statusBox.label}:</span>
               <span className={`text-xs font-semibold ${toneClasses(statusBox.tone).value}`}>{statusBox.value}</span>
             </div>
+            {statusBox.message ? (
+              <div className="mt-3 text-sm leading-7 text-slate-600">
+                {statusBox.message}
+              </div>
+            ) : null}
             {statusBox.lines?.length ? (
               <div className="mt-3 space-y-1.5">
                 {statusBox.lines.map((line) => (
@@ -145,14 +150,18 @@ function ProgressPanel({ items }) {
             style={{ width: `${progressPercent}%` }}
           />
         </div>
-        <div className="mt-8 space-y-4">
+        <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {items.map((item) => (
-            <div className="flex items-center gap-3" key={item.label}>
+            <Link
+              key={item.label}
+              href={item.href}
+              className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-3 transition-colors hover:bg-white/10"
+            >
               <span className={`material-symbols-outlined text-lg ${item.done ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {item.done ? 'check_circle' : 'radio_button_unchecked'}
               </span>
               <span className={`text-sm font-medium ${item.done ? 'text-white' : 'text-slate-300'}`}>{item.label}</span>
-            </div>
+            </Link>
           ))}
         </div>
       </div>
@@ -322,13 +331,13 @@ export default function ClientGetStartedPage() {
   );
 
   const progressItems = useMemo(() => [
-    { label: 'Crawl website', done: websiteTraining.done },
-    { label: 'Upload document', done: approvedDocumentCount > 0 },
-    { label: 'Add send-to user', done: leadDestinations.activeDestinations.length > 1 },
-    { label: 'Forward calls', done: forwarding.forwardingConfigured },
-    { label: 'Set up integration', done: enabledConnectionCount > 0 },
-    { label: 'Add additional user', done: leadDestinations.activeUsers.length > 1 },
-    { label: 'Activate billing', done: Boolean(packet.billing?.hasStripeSubscription) }
+    { label: 'Crawl website', done: websiteTraining.done, href: '/client/receptionist/knowledge' },
+    { label: 'Upload document', done: approvedDocumentCount > 0, href: '/client/receptionist/knowledge' },
+    { label: 'Add send-to user', done: leadDestinations.activeDestinations.length > 1, href: '/client/team' },
+    { label: 'Forward calls', done: forwarding.forwardingConfigured, href: '/client/receptionist/go-live' },
+    { label: 'Set up integration', done: enabledConnectionCount > 0, href: '/client/team/integrations' },
+    { label: 'Add additional user', done: leadDestinations.activeUsers.length > 1, href: '/client/account/users' },
+    { label: 'Activate billing', done: Boolean(packet.billing?.hasStripeSubscription), href: '/client/account/billing' }
   ], [
     approvedDocumentCount,
     enabledConnectionCount,
@@ -354,12 +363,13 @@ export default function ClientGetStartedPage() {
               <SetupStepCard
                 step="1"
                 title="Teach EveryCall About Your Business"
-                description={websiteTraining.description}
+                description=""
                 subdescription={websiteTraining.subdescription}
                 statusBox={{
                   label: 'Website crawl status',
                   value: websiteTraining.statusValue,
-                  tone: websiteTraining.tone
+                  tone: websiteTraining.tone,
+                  message: websiteTraining.description
                 }}
                 className="md:col-span-12 lg:col-span-7"
                 action={(
