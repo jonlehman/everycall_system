@@ -69,61 +69,86 @@ function toneClasses(tone) {
 
 function actionButtonClass(disabled = false) {
   if (disabled) {
-    return 'inline-flex items-center rounded-xl border-2 border-slate-200 bg-slate-100 px-5 py-3 text-sm font-semibold text-slate-400';
+    return 'inline-flex items-center justify-center rounded-lg border-2 border-slate-200 bg-slate-100 px-8 py-3 text-xs font-bold tracking-[0.18em] text-slate-400 shadow-sm';
   }
-  return 'inline-flex items-center rounded-xl border-2 border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-[#121c2a] shadow-sm transition-all hover:border-[#2563eb] hover:text-[#2563eb]';
+  return 'inline-flex items-center justify-center rounded-lg border-2 border-slate-200 bg-white px-8 py-3 text-xs font-bold tracking-[0.18em] text-[#121c2a] shadow-sm transition-all hover:border-[#2563eb] hover:text-[#2563eb] active:scale-95';
 }
 
-function SetupStepCard({ step, title, description = '', subdescription = '', statusBox = null, action = null, className = '' }) {
+function SetupStepCard({
+  step,
+  title,
+  description = '',
+  subdescription = '',
+  statusBox = null,
+  action = null,
+  className = '',
+  actionFullWidth = false
+}) {
   return (
-    <section className={`overflow-hidden rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.35)] md:p-8 ${className}`.trim()}>
+    <section className={`rounded-xl border border-slate-200 bg-white p-8 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)] transition-all ${className}`.trim()}>
       <div className="flex h-full flex-col">
-        <div className="flex items-start gap-4">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#121c2a] text-sm font-bold text-white">
-            {step}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="font-['Space_Grotesk'] text-xl font-bold tracking-[-0.03em] text-[#121c2a]">{title}</div>
+        <div className="flex-1">
+          <div className="mb-6 flex items-center gap-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#121c2a] text-xs font-bold text-white">
+              {step}
+            </span>
+            <h2 className="font-['Space_Grotesk'] text-xl font-bold text-[#121c2a]">{title}</h2>
           </div>
-        </div>
 
-        {statusBox ? (
-          <div className={`mt-6 rounded-[18px] border p-4 ${toneClasses(statusBox.tone).panel}`}>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`h-2.5 w-2.5 rounded-full ${toneClasses(statusBox.tone).dot}`} />
-              <span className="text-xs font-semibold text-slate-700">{statusBox.label}:</span>
-              <span className={`text-xs font-semibold ${toneClasses(statusBox.tone).value}`}>{statusBox.value}</span>
+          {statusBox ? (
+            <div className={`mb-6 rounded-lg border p-4 ${toneClasses(statusBox.tone).panel}`}>
+              {statusBox.heading ? (
+                <div className="mb-3">
+                  <span className="block text-[10px] font-bold tracking-[0.15em] text-[#121c2a]">
+                    {statusBox.heading}
+                  </span>
+                </div>
+              ) : null}
+              {statusBox.label ? (
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className={`flex h-2 w-2 rounded-full ${toneClasses(statusBox.tone).dot}`} />
+                  <span className="text-[10px] font-bold tracking-[0.15em] text-[#121c2a]">
+                    {statusBox.label}
+                    {statusBox.value ? ':' : ''}
+                  </span>
+                  {statusBox.value ? (
+                    <span className={`text-[10px] font-bold tracking-[0.15em] ${toneClasses(statusBox.tone).value}`}>
+                      {statusBox.value}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+              {statusBox.message ? (
+                <p className="text-sm leading-relaxed text-slate-600">
+                  {statusBox.message}
+                </p>
+              ) : null}
+              {statusBox.lines?.length ? (
+                <div className="space-y-1">
+                  {statusBox.lines.map((line) => (
+                    <p className="flex flex-wrap items-center gap-2 text-sm leading-relaxed text-slate-600" key={`${line.label}-${line.value}`}>
+                      <span className="font-medium">{line.label}:</span>
+                      <span>{line.value}</span>
+                    </p>
+                  ))}
+                </div>
+              ) : null}
             </div>
-            {statusBox.message ? (
-              <div className="mt-3 text-sm leading-7 text-slate-600">
-                {statusBox.message}
-              </div>
-            ) : null}
-            {statusBox.lines?.length ? (
-              <div className="mt-3 space-y-1.5">
-                {statusBox.lines.map((line) => (
-                  <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600" key={`${line.label}-${line.value}`}>
-                    <span className="font-semibold text-slate-900">{line.label}:</span>
-                    <span>{line.value}</span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+          ) : null}
 
-        <div className="mt-6 min-w-0">
           {description ? (
-            <div className="text-sm leading-7 text-slate-600">{description}</div>
+            <p className="text-sm leading-relaxed text-slate-600">{description}</p>
           ) : null}
           {subdescription ? (
-            <div className="mt-3 text-sm leading-7 text-slate-600">{subdescription}</div>
+            <p className="mt-4 text-sm leading-relaxed text-slate-600">{subdescription}</p>
           ) : null}
         </div>
 
         {action ? (
-          <div className="mt-8 flex flex-wrap gap-3">
-            {action}
+          <div className={actionFullWidth ? 'mt-auto pt-6' : 'mt-10'}>
+            <div className={actionFullWidth ? 'w-full' : ''}>
+              {action}
+            </div>
           </div>
         ) : null}
       </div>
@@ -135,35 +160,36 @@ function ProgressPanel({ items }) {
   const totalCount = items.length || 1;
   const completedCount = items.filter((item) => item.done).length;
   const progressPercent = Math.round((completedCount / totalCount) * 100);
+  const nextMilestone = items.find((item) => !item.done)?.label || 'Core setup complete';
+  const phaseLabel = progressPercent >= 100
+    ? 'Ready for live calls'
+    : progressPercent > 0
+      ? 'Setup in progress'
+      : 'Setup not started';
 
   return (
-    <section className="relative overflow-hidden rounded-[24px] bg-[linear-gradient(135deg,#121c2a_0%,#1e293b_100%)] p-8 text-white shadow-[0_22px_55px_-28px_rgba(15,23,42,0.8)]">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.2),transparent_45%)]" />
-      <div className="relative">
+    <section className="relative overflow-hidden rounded-xl bg-[linear-gradient(135deg,#121c2a_0%,#1e293b_100%)] p-8 text-white shadow-lg">
+      <div className="relative z-10">
+        <h4 className="mb-2 text-[10px] font-bold tracking-[0.2em] text-blue-300">Onboarding Progress</h4>
         <div className="flex items-baseline gap-3">
-          <span className="font-['Space_Grotesk'] text-5xl font-bold tracking-[-0.05em] text-white">{progressPercent}%</span>
-          <span className="text-sm font-medium text-slate-300">{completedCount} of {totalCount} complete</span>
+          <span className="font-['Space_Grotesk'] text-5xl font-bold tracking-[-0.05em]">{progressPercent}%</span>
+          <span className="text-xs font-medium italic text-blue-200/60">{phaseLabel}</span>
         </div>
-        <div className="mt-6 h-2 rounded-full bg-white/10">
+        <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
           <div
-            className="h-2 rounded-full bg-[#2563eb] shadow-[0_0_12px_rgba(37,99,235,0.8)]"
+            className="h-full bg-[#2563eb] shadow-[0_0_12px_rgba(37,99,235,0.8)]"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
-        <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {items.map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-3 transition-colors hover:bg-white/10"
-            >
-              <span className={`material-symbols-outlined text-lg ${item.done ? 'text-emerald-400' : 'text-slate-500'}`}>
-                {item.done ? 'check_circle' : 'radio_button_unchecked'}
-              </span>
-              <span className={`text-sm font-medium ${item.done ? 'text-white' : 'text-slate-300'}`}>{item.label}</span>
-            </Link>
-          ))}
+        <div className="mt-8 border-t border-white/10 pt-6">
+          <p className="mb-1 text-[10px] font-bold tracking-[0.2em] text-blue-300/80">Next Milestone</p>
+          <p className="font-['Space_Grotesk'] text-lg font-semibold text-white">{nextMilestone}</p>
         </div>
+      </div>
+      <div className="absolute right-[-10px] top-[-10px] opacity-10">
+        <span className="material-symbols-outlined text-[140px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+          architecture
+        </span>
       </div>
     </section>
   );
@@ -321,29 +347,14 @@ export default function ClientGetStartedPage() {
     };
   }, [packet.settings]);
 
-  const approvedDocumentCount = useMemo(
-    () => packet.documents.filter((document) => String(document?.status || '').trim().toLowerCase() === 'approved').length,
-    [packet.documents]
-  );
-  const enabledConnectionCount = useMemo(
-    () => packet.connections.filter((connection) => String(connection?.status || '').trim().toLowerCase() === 'enabled').length,
-    [packet.connections]
-  );
-
   const progressItems = useMemo(() => [
-    { label: 'Train from website', done: websiteTraining.done, href: '/client/receptionist/knowledge' },
-    { label: 'Review lead destinations', done: leadDestinations.activeDestinations.length > 0, href: '/client/team' },
-    { label: 'Forward calls to EveryCall', done: forwarding.forwardingConfigured, href: '/client/receptionist/go-live' },
-    { label: 'Activate billing', done: Boolean(packet.billing?.hasStripeSubscription), href: '/client/account/billing' },
-    { label: 'Add supporting document', done: approvedDocumentCount > 0, href: '/client/receptionist/knowledge' },
-    { label: 'Connect another tool', done: enabledConnectionCount > 0, href: '/client/team/integrations' },
-    { label: 'Invite another user', done: leadDestinations.activeUsers.length > 1, href: '/client/account/users' }
+    { label: 'Teach EveryCall about your business', done: websiteTraining.done },
+    { label: 'Choose where leads go', done: leadDestinations.activeDestinations.length > 0 },
+    { label: 'Forward your calls', done: forwarding.forwardingConfigured },
+    { label: 'Activate billing', done: Boolean(packet.billing?.hasStripeSubscription) }
   ], [
-    approvedDocumentCount,
-    enabledConnectionCount,
     forwarding.forwardingConfigured,
     leadDestinations.activeDestinations.length,
-    leadDestinations.activeUsers.length,
     packet.billing?.hasStripeSubscription,
     websiteTraining.done
   ]);
@@ -351,92 +362,98 @@ export default function ClientGetStartedPage() {
   return (
     <ClientPage title="Get Started">
       <div className="mx-auto w-full max-w-5xl">
-        <section className="relative overflow-hidden rounded-[32px] border border-slate-200/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-6 shadow-[0_28px_80px_-40px_rgba(15,23,42,0.45)] md:p-10">
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.12),transparent_55%)]" />
-          <div className="relative">
-            <div className="mb-10 flex items-center gap-3">
-              <div className="h-1.5 w-10 rounded-full bg-[#2563eb]" />
-              <h2 className="font-['Space_Grotesk'] text-lg font-bold tracking-[-0.03em] text-[#121c2a]">What To Do</h2>
-            </div>
+        <header className="mb-12">
+          <h1 className="mb-4 font-['Space_Grotesk'] text-5xl font-bold tracking-[-0.05em] text-[#121c2a]">
+            Get Started.
+            <br />
+            <span className="font-medium text-[#2563eb]">Configure your operations.</span>
+          </h1>
+        </header>
 
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-12">
-              <SetupStepCard
-                step="1"
-                title="Teach EveryCall About Your Business"
-                description=""
-                subdescription={websiteTraining.subdescription}
-                statusBox={{
-                  label: 'Website crawl status',
-                  value: websiteTraining.statusValue,
-                  tone: websiteTraining.tone,
-                  message: websiteTraining.description
-                }}
-                className="md:col-span-12 lg:col-span-7"
-                action={(
-                  websiteTraining.done ? (
-                    <Link
-                      href="/client/receptionist/knowledge"
-                      className={actionButtonClass(false)}
-                    >
-                      Upload Documents
-                    </Link>
-                  ) : (
-                    <button type="button" disabled className={actionButtonClass(true)}>
-                      Upload Documents
-                    </button>
-                  )
-                )}
-              />
+        <div className="mb-8">
+          <h2 className="flex items-center gap-2 font-['Space_Grotesk'] text-lg font-bold text-[#121c2a]">
+            What To Do
+          </h2>
+        </div>
 
-              <SetupStepCard
-                step="2"
-                title="Choose Where Leads Go"
-                description={leadDestinations.description}
-                subdescription={leadDestinations.subdescription}
-                statusBox={{
-                  label: 'Leads currently go to',
-                  value: leadDestinations.lines.length ? 'Configured' : 'Not configured',
-                  tone: leadDestinations.lines.length ? 'processing' : 'bad',
-                  lines: leadDestinations.lines
-                }}
-                className="md:col-span-6 lg:col-span-5"
-                action={(
-                  <Link
-                    href="/client/team"
-                    className={actionButtonClass(false)}
-                  >
-                    Add Additional Send-To Users
-                  </Link>
-                )}
-              />
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
+          <SetupStepCard
+            step="1"
+            title="Teach EveryCall About Your Business"
+            description=""
+            subdescription={websiteTraining.subdescription}
+            statusBox={{
+              label: 'Website Crawl Status',
+              value: websiteTraining.statusValue,
+              tone: websiteTraining.tone,
+              message: websiteTraining.description
+            }}
+            className="md:col-span-12 lg:col-span-7"
+            action={(
+              websiteTraining.done ? (
+                <Link
+                  href="/client/receptionist/knowledge"
+                  className={actionButtonClass(false)}
+                >
+                  Upload Documents
+                </Link>
+              ) : (
+                <button type="button" disabled className={actionButtonClass(true)}>
+                  Upload Documents
+                </button>
+              )
+            )}
+          />
 
-              <SetupStepCard
-                step="3"
-                title="Forward Your Calls"
-                description={forwarding.description}
-                statusBox={{
-                  label: 'Receptionist number',
-                  value: forwarding.statusValue,
-                  tone: forwarding.numberReady ? 'processing' : 'bad'
-                }}
-                className="md:col-span-6 lg:col-span-7"
-                action={forwarding.numberReady ? (
-                  <button
-                    type="button"
-                    className={actionButtonClass(false)}
-                    onClick={() => navigator.clipboard?.writeText(forwarding.number).catch(() => {})}
-                  >
-                    Copy Number
-                  </button>
-                ) : null}
-              />
+          <SetupStepCard
+            step="2"
+            title="Choose Where Leads Go"
+            description=""
+            subdescription={leadDestinations.subdescription}
+            statusBox={{
+              heading: 'Leads currently go to',
+              tone: leadDestinations.lines.length ? 'processing' : 'bad',
+              lines: leadDestinations.lines.length ? leadDestinations.lines : [
+                { label: 'Status', value: 'No lead destinations configured yet' }
+              ]
+            }}
+            className="md:col-span-6 lg:col-span-5"
+            actionFullWidth
+            action={(
+              <Link
+                href="/client/team"
+                className={`${actionButtonClass(false)} w-full`}
+              >
+                Add Additional Send-To Users
+              </Link>
+            )}
+          />
 
-              <div className="md:col-span-12 lg:col-span-5">
-                <ProgressPanel items={progressItems} />
-              </div>
-            </div>
+          <SetupStepCard
+            step="3"
+            title="Forward Your Calls"
+            description={forwarding.description}
+            statusBox={{
+              label: 'Receptionist Number',
+              value: forwarding.statusValue,
+              tone: forwarding.numberReady ? 'processing' : 'bad'
+            }}
+            className="md:col-span-6 lg:col-span-7"
+            action={forwarding.numberReady ? (
+              <button
+                type="button"
+                className={actionButtonClass(false)}
+                onClick={() => navigator.clipboard?.writeText(forwarding.number).catch(() => {})}
+              >
+                Copy Number
+              </button>
+            ) : null}
+          />
+
+          <div className="md:col-span-12 lg:col-span-5">
+            <ProgressPanel items={progressItems} />
           </div>
-        </section>
+        </div>
       </div>
     </ClientPage>
   );
