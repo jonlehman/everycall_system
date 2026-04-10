@@ -7,6 +7,7 @@ import { clientPrimaryNavItems, pathMatches } from './navigation';
 
 function iconName(kind) {
   if (kind === 'dashboard') return 'dashboard';
+  if (kind === 'reports') return 'query_stats';
   if (kind === 'calls') return 'phone_in_talk';
   if (kind === 'team') return 'groups';
   if (kind === 'account') return 'settings';

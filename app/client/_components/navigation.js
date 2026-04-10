@@ -3,7 +3,7 @@ export const clientPrimaryNavItems = [
     href: '/client/get-started',
     label: 'Get Started',
     icon: 'dashboard',
-    matchPrefixes: ['/client/get-started', '/client/overview', '/client/dashboard']
+    matchPrefixes: ['/client/get-started', '/client/overview']
   },
   {
     href: '/client/calls',
@@ -28,6 +28,12 @@ export const clientPrimaryNavItems = [
     label: 'Account',
     icon: 'account',
     matchPrefixes: ['/client/account', '/client/settings', '/client/billing']
+  },
+  {
+    href: '/client/dashboard',
+    label: 'Reports',
+    icon: 'reports',
+    matchPrefixes: ['/client/dashboard']
   }
 ];
 

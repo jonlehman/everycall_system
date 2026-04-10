@@ -194,7 +194,7 @@ function buildCallMixGradient(items) {
 
 export default function ClientDashboardPage() {
   const [dashboard, setDashboard] = useState(null);
-  const [status, setStatus] = useState({ tone: 'warn', message: 'Loading dashboard...' });
+  const [status, setStatus] = useState({ tone: 'warn', message: 'Loading reports...' });
   const [expandedKnowledgeList, setExpandedKnowledgeList] = useState(null);
   const [retryingTranscriptAnalysis, setRetryingTranscriptAnalysis] = useState(false);
 
@@ -208,7 +208,7 @@ export default function ClientDashboardPage() {
       })
       .catch((error) => {
         if (!mounted) return;
-        setStatus({ tone: 'bad', message: error?.message || 'Could not load dashboard.' });
+        setStatus({ tone: 'bad', message: error?.message || 'Could not load reports.' });
       });
     return () => {
       mounted = false;
@@ -284,7 +284,7 @@ export default function ClientDashboardPage() {
 
   return (
     <ClientPage
-      title="Dashboard"
+      title="Reports"
       subtitle=""
       status={status}
       headerAside={(
@@ -536,7 +536,7 @@ export default function ClientDashboardPage() {
               <ActionRow href="/client/calls" icon="visibility" title="Review Calls" />
               <ActionRow href="/client/receptionist/knowledge" icon="edit_note" title="Update Knowledge Base" />
               <ActionRow href="/client/receptionist/basics" icon="settings_input_component" title="Adjust Basics" />
-              <ActionRow href="/client/team" icon="notifications_active" title="Manage Users" />
+              <ActionRow href="/client/team" icon="notifications_active" title="Manage Lead Destinations" />
             </div>
           </section>
         </div>

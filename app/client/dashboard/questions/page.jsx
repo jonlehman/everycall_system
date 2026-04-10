@@ -106,7 +106,7 @@ export default function DashboardQuestionsPage() {
           className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
           <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-          <span>Dashboard</span>
+          <span>Reports</span>
         </Link>
       )}
     >
