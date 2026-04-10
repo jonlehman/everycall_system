@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import ClientPage from '../_components/ClientPage';
+import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
 function fetchJson(url, options) {
   return fetch(url, options).then(async (resp) => {
@@ -69,21 +70,21 @@ function SetupStepCard({ title, description, subdescription = '', action = null 
 
 export default function ClientGetStartedPage() {
   const [buildState, setBuildState] = useState({ builds: [], activeBuild: null });
+  const [users, setUsers] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
-    void fetchJson('/api/v1/knowledge/builds')
-      .then((data) => {
-        if (cancelled) return;
-        setBuildState({
-          builds: Array.isArray(data?.builds) ? data.builds : [],
-          activeBuild: data?.activeBuild || null
-        });
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setBuildState({ builds: [], activeBuild: null });
+    void Promise.all([
+      fetchJson('/api/v1/knowledge/builds').catch(() => null),
+      fetchJson('/api/v1/tenant/users').catch(() => null)
+    ]).then(([buildsData, usersData]) => {
+      if (cancelled) return;
+      setBuildState({
+        builds: Array.isArray(buildsData?.builds) ? buildsData.builds : [],
+        activeBuild: buildsData?.activeBuild || null
       });
+      setUsers(Array.isArray(usersData?.users) ? usersData.users : []);
+    });
     return () => {
       cancelled = true;
     };
@@ -124,6 +125,42 @@ export default function ClientGetStartedPage() {
     };
   }, [buildState]);
 
+  const leadDestinations = useMemo(() => {
+    const activeUsers = Array.isArray(users)
+      ? users.filter((user) => String(user?.status || '').trim().toLowerCase() === 'active')
+      : [];
+    const emailDestinations = activeUsers
+      .filter((user) => Boolean(user?.lead_alert_email_enabled) && String(user?.email || '').trim())
+      .map((user) => String(user.email || '').trim());
+    const smsDestinations = activeUsers
+      .filter((user) => (
+        Boolean(user?.lead_alert_sms_enabled)
+        && String(user?.phone_number || '').trim()
+        && String(user?.sms_opt_in_status || '').trim().toLowerCase() === 'opted_in'
+      ))
+      .map((user) => formatPhoneDisplay(user.phone_number) || String(user.phone_number || '').trim());
+    const pendingSmsDestinations = activeUsers
+      .filter((user) => (
+        Boolean(user?.lead_alert_sms_enabled)
+        && String(user?.phone_number || '').trim()
+        && String(user?.sms_opt_in_status || '').trim().toLowerCase() !== 'opted_in'
+      ))
+      .map((user) => formatPhoneDisplay(user.phone_number) || String(user.phone_number || '').trim());
+
+    const activeDestinations = [...emailDestinations, ...smsDestinations];
+    const description = activeDestinations.length
+      ? `Leads are already being sent to ${new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' }).format(activeDestinations)}.`
+      : 'Open Send Leads To and choose which people should receive new lead alerts by email or text.';
+    const subdescription = pendingSmsDestinations.length
+      ? `Text alerts to ${new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' }).format(pendingSmsDestinations)} will start after SMS confirmation.`
+      : '';
+
+    return {
+      description,
+      subdescription
+    };
+  }, [users]);
+
   return (
     <ClientPage
       title="Get Started"
@@ -163,13 +200,14 @@ export default function ClientGetStartedPage() {
             />
             <SetupStepCard
               title="2. Choose Where Leads Go"
-              description="Open Send Leads To and choose which people should receive new lead alerts by email or text."
+              description={leadDestinations.description}
+              subdescription={leadDestinations.subdescription}
               action={(
                 <Link
                   href="/client/team"
                   className="inline-flex items-center rounded-md border border-[#004ac6] bg-white px-3 py-2 text-sm font-semibold text-[#004ac6] transition-colors hover:bg-[#eff4ff]"
                 >
-                  Open Send Leads To
+                  Add Additional Send-To Users
                 </Link>
               )}
             />
