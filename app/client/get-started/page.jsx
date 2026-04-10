@@ -360,23 +360,23 @@ export default function ClientGetStartedPage() {
   ]);
 
   return (
-    <ClientPage title="Get Started">
+    <ClientPage className="gap-4 pt-2 md:pt-3">
       <div className="mx-auto w-full max-w-5xl">
-        <header className="mb-12">
-          <h1 className="mb-4 font-['Space_Grotesk'] text-5xl font-bold tracking-[-0.05em] text-[#121c2a]">
+        <header className="mb-7 md:mb-8">
+          <h1 className="mb-2 font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.05em] text-[#121c2a] md:text-5xl">
             Get Started.
             <br />
             <span className="font-medium text-[#2563eb]">Configure your operations.</span>
           </h1>
         </header>
 
-        <div className="mb-8">
+        <div className="mb-5 md:mb-6">
           <h2 className="flex items-center gap-2 font-['Space_Grotesk'] text-lg font-bold text-[#121c2a]">
             What To Do
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-12 md:gap-8">
           <SetupStepCard
             step="1"
             title="Teach EveryCall About Your Business"

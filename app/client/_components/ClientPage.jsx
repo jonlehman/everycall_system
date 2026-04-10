@@ -9,7 +9,17 @@ function toneClass(tone) {
   return 'rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700';
 }
 
-export default function ClientPage({ title, subtitle = '', status = null, primaryAction = null, headerAside = null, children }) {
+export default function ClientPage({
+  title,
+  subtitle = '',
+  status = null,
+  primaryAction = null,
+  headerAside = null,
+  className = '',
+  children
+}) {
+  const hasHeader = Boolean(title || subtitle || primaryAction || headerAside);
+
   const renderPrimaryAction = () => {
     if (!primaryAction) return null;
     if (primaryAction.onClick) {
@@ -35,17 +45,19 @@ export default function ClientPage({ title, subtitle = '', status = null, primar
   };
 
   return (
-    <section className="grid gap-6 px-4 py-6 md:px-8 md:py-8">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="m-0 text-[2rem] font-semibold tracking-[-0.02em] text-slate-950">{title}</h1>
-          {subtitle ? <p className="m-0 mt-2 max-w-3xl text-sm leading-6 text-slate-500">{subtitle}</p> : null}
+    <section className={cn('grid gap-6 px-4 py-6 md:px-8 md:py-8', className)}>
+      {hasHeader ? (
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            {title ? <h1 className="m-0 text-[2rem] font-semibold tracking-[-0.02em] text-slate-950">{title}</h1> : null}
+            {subtitle ? <p className="m-0 mt-2 max-w-3xl text-sm leading-6 text-slate-500">{subtitle}</p> : null}
+          </div>
+          <div className="flex gap-2">
+            {headerAside}
+            {renderPrimaryAction()}
+          </div>
         </div>
-        <div className="flex gap-2">
-          {headerAside}
-          {renderPrimaryAction()}
-        </div>
-      </div>
+      ) : null}
 
       {status?.message ? (
         <div className={toneClass(status.tone)}>
