@@ -331,13 +331,13 @@ export default function ClientGetStartedPage() {
   );
 
   const progressItems = useMemo(() => [
-    { label: 'Crawl website', done: websiteTraining.done, href: '/client/receptionist/knowledge' },
-    { label: 'Upload document', done: approvedDocumentCount > 0, href: '/client/receptionist/knowledge' },
-    { label: 'Add send-to user', done: leadDestinations.activeDestinations.length > 1, href: '/client/team' },
-    { label: 'Forward calls', done: forwarding.forwardingConfigured, href: '/client/receptionist/go-live' },
-    { label: 'Set up integration', done: enabledConnectionCount > 0, href: '/client/team/integrations' },
-    { label: 'Add additional user', done: leadDestinations.activeUsers.length > 1, href: '/client/account/users' },
-    { label: 'Activate billing', done: Boolean(packet.billing?.hasStripeSubscription), href: '/client/account/billing' }
+    { label: 'Train from website', done: websiteTraining.done, href: '/client/receptionist/knowledge' },
+    { label: 'Review lead destinations', done: leadDestinations.activeDestinations.length > 0, href: '/client/team' },
+    { label: 'Forward calls to EveryCall', done: forwarding.forwardingConfigured, href: '/client/receptionist/go-live' },
+    { label: 'Activate billing', done: Boolean(packet.billing?.hasStripeSubscription), href: '/client/account/billing' },
+    { label: 'Add supporting document', done: approvedDocumentCount > 0, href: '/client/receptionist/knowledge' },
+    { label: 'Connect another tool', done: enabledConnectionCount > 0, href: '/client/team/integrations' },
+    { label: 'Invite another user', done: leadDestinations.activeUsers.length > 1, href: '/client/account/users' }
   ], [
     approvedDocumentCount,
     enabledConnectionCount,
