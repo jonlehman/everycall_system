@@ -32,23 +32,6 @@ function StatusBadge({ tone, children }) {
   );
 }
 
-function ActionLink({ href, icon, title, body }) {
-  return (
-    <Link
-      href={href}
-      className="group rounded-xl border border-slate-200/70 p-4 transition-all hover:bg-[#f7f9ff]"
-    >
-      <div className="flex items-start gap-3">
-        <span className="material-symbols-outlined text-[#205cb5]">{icon}</span>
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-slate-900">{title}</div>
-          <div className="mt-1 text-sm leading-6 text-slate-500">{body}</div>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
 function SetupStepCard({ title, badge, description, action = null, secondaryAction = null }) {
   return (
     <section className={panelClassName('p-5')}>
@@ -271,162 +254,85 @@ export default function ClientGetStartedPage() {
       status={status}
       primaryAction={{ label: 'Refresh', onClick: () => loadPage(true), disabled: savingForwarding }}
     >
-      <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
-        <div className="grid min-w-0 gap-3">
-          <section className={panelClassName('p-5')}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="m-0 text-lg font-semibold text-slate-900">Setup Progress</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">Get these four things in place and EveryCall is ready for real calls.</p>
-              </div>
-              <StatusBadge tone={setupCompleteCount === 4 ? 'ok' : 'warn'}>
-                {setupCompleteCount} of 4 complete
-              </StatusBadge>
+      <div className="grid min-w-0 gap-3">
+        <section className={panelClassName('p-5')}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="m-0 text-lg font-semibold text-slate-900">Setup Progress</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-500">Get these four things in place and EveryCall is ready for real calls.</p>
             </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <SetupStepCard
-                title="EveryCall number"
-                badge={<StatusBadge tone={numberState.tone}>{numberState.label}</StatusBadge>}
-                description={numberState.description}
-                action={assignedPhoneNumber ? (
-                  <button
-                    type="button"
-                    className="inline-flex items-center rounded-md border border-[#004ac6] bg-white px-3 py-2 text-sm font-semibold text-[#004ac6] transition-colors hover:bg-[#eff4ff]"
-                    onClick={() => navigator.clipboard?.writeText(String(tenant.telnyx_voice_number || readiness.phoneNumber || '').trim()).catch(() => {})}
-                  >
-                    Copy Number
-                  </button>
-                ) : null}
-              />
-              <SetupStepCard
-                title="Knowledge base"
-                badge={<StatusBadge tone={knowledgeState.tone}>{knowledgeState.label}</StatusBadge>}
-                description={knowledgeState.description}
-                action={(
-                  <Link
-                    href="/client/receptionist/knowledge"
-                    className="inline-flex items-center rounded-md border border-[#004ac6] bg-white px-3 py-2 text-sm font-semibold text-[#004ac6] transition-colors hover:bg-[#eff4ff]"
-                  >
-                    Open Knowledge
-                  </Link>
-                )}
-              />
-              <SetupStepCard
-                title="Lead destinations"
-                badge={<StatusBadge tone={leadState.tone}>{leadState.label}</StatusBadge>}
-                description={leadState.description}
-                action={(
-                  <Link
-                    href="/client/team"
-                    className="inline-flex items-center rounded-md border border-[#004ac6] bg-white px-3 py-2 text-sm font-semibold text-[#004ac6] transition-colors hover:bg-[#eff4ff]"
-                  >
-                    Open Send Leads To
-                  </Link>
-                )}
-              />
-              <SetupStepCard
-                title="Call forwarding"
-                badge={<StatusBadge tone={forwardingState.tone}>{forwardingState.label}</StatusBadge>}
-                description={forwardingState.description}
-                action={forwardingStatus === 'not_started' && assignedPhoneNumber ? (
-                  <button
-                    type="button"
-                    className="inline-flex items-center rounded-md border border-[#004ac6] bg-white px-3 py-2 text-sm font-semibold text-[#004ac6] transition-colors hover:bg-[#eff4ff]"
-                    onClick={() => updateForwardingStatus('acknowledged')}
-                    disabled={savingForwarding}
-                  >
-                    I Have The Number
-                  </button>
-                ) : null}
-                secondaryAction={assignedPhoneNumber && forwardingStatus !== 'configured' ? (
-                  <button
-                    type="button"
-                    className="inline-flex items-center rounded-md bg-[#004ac6] px-3 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60"
-                    onClick={() => updateForwardingStatus('configured')}
-                    disabled={savingForwarding}
-                  >
-                    I Forwarded Calls Here
-                  </button>
-                ) : null}
-              />
-            </div>
-          </section>
-
-          <section className={panelClassName('p-5')}>
-            <h2 className="m-0 text-lg font-semibold text-slate-900">What To Do Next</h2>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <ActionLink
-                href="/client/receptionist/basics"
-                icon="person_4"
-                title="Review receptionist basics"
-                body="Confirm the business name, greeting, and voice EveryCall will use on calls."
-              />
-              <ActionLink
-                href="/client/receptionist/knowledge"
-                icon="menu_book"
-                title="Check your knowledge build"
-                body="Make sure EveryCall has enough approved business information to answer basic questions."
-              />
-              <ActionLink
-                href="/client/team"
-                icon="alternate_email"
-                title="Confirm where leads go"
-                body="Choose which email addresses and mobile numbers should receive new lead alerts."
-              />
-              <ActionLink
-                href="/client/calls"
-                icon="phone_in_talk"
-                title="Review calls"
-                body="Once calls start forwarding, this is where you will review summaries and follow-up details."
-              />
-            </div>
-          </section>
-        </div>
-
-        <div className="grid gap-3">
-          <section className={panelClassName('p-5')}>
-            <h2 className="m-0 text-lg font-semibold text-slate-900">Current Setup</h2>
-            <div className="mt-4 grid gap-3 text-sm">
-              <div>
-                <div className="font-semibold text-slate-900">Lead email</div>
-                <div className="mt-1 text-slate-500">
-                  {emailRecipients.length
-                    ? emailRecipients.map((user) => user.email).join(', ')
-                    : 'No email lead destination yet'}
-                </div>
-              </div>
-              <div>
-                <div className="font-semibold text-slate-900">SMS alerts</div>
-                <div className="mt-1 text-slate-500">
-                  {smsRecipients.length
-                    ? smsRecipients.map((user) => `${formatPhoneDisplay(user.phone_number) || user.phone_number} (${String(user.sms_opt_in_status || 'not_requested').replaceAll('_', ' ')})`).join(', ')
-                    : 'No SMS destination yet'}
-                </div>
-              </div>
-              <div>
-                <div className="font-semibold text-slate-900">EveryCall number</div>
-                <div className="mt-1 text-slate-500">{assignedPhoneNumber || 'Still being assigned'}</div>
-              </div>
-            </div>
-          </section>
-
-          <section className={panelClassName('p-5')}>
-            <h2 className="m-0 text-lg font-semibold text-slate-900">Forwarding Reminder</h2>
-            <p className="mt-3 text-sm leading-6 text-slate-500">
-              When you are ready for EveryCall to answer, forward desired calls from your business phone system to your EveryCall number.
-            </p>
-            {assignedPhoneNumber ? (
-              <div className="mt-4 rounded-xl border border-slate-200 bg-[#eff4ff] p-4">
-                <div className="text-sm font-semibold text-slate-900">{assignedPhoneNumber}</div>
-                <div className="mt-1 text-sm text-slate-600">This is the number your phone system should forward calls to.</div>
-              </div>
-            ) : (
-              <div className="mt-4 text-sm text-slate-500">
-                The EveryCall number is still being assigned. Refresh this page if it has been a few minutes.
-              </div>
-            )}
-          </section>
-        </div>
+            <StatusBadge tone={setupCompleteCount === 4 ? 'ok' : 'warn'}>
+              {setupCompleteCount} of 4 complete
+            </StatusBadge>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <SetupStepCard
+              title="EveryCall number"
+              badge={<StatusBadge tone={numberState.tone}>{numberState.label}</StatusBadge>}
+              description={numberState.description}
+              action={assignedPhoneNumber ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center rounded-md border border-[#004ac6] bg-white px-3 py-2 text-sm font-semibold text-[#004ac6] transition-colors hover:bg-[#eff4ff]"
+                  onClick={() => navigator.clipboard?.writeText(String(tenant.telnyx_voice_number || readiness.phoneNumber || '').trim()).catch(() => {})}
+                >
+                  Copy Number
+                </button>
+              ) : null}
+            />
+            <SetupStepCard
+              title="Knowledge base"
+              badge={<StatusBadge tone={knowledgeState.tone}>{knowledgeState.label}</StatusBadge>}
+              description={knowledgeState.description}
+              action={(
+                <Link
+                  href="/client/receptionist/knowledge"
+                  className="inline-flex items-center rounded-md border border-[#004ac6] bg-white px-3 py-2 text-sm font-semibold text-[#004ac6] transition-colors hover:bg-[#eff4ff]"
+                >
+                  Open Knowledge
+                </Link>
+              )}
+            />
+            <SetupStepCard
+              title="Lead destinations"
+              badge={<StatusBadge tone={leadState.tone}>{leadState.label}</StatusBadge>}
+              description={leadState.description}
+              action={(
+                <Link
+                  href="/client/team"
+                  className="inline-flex items-center rounded-md border border-[#004ac6] bg-white px-3 py-2 text-sm font-semibold text-[#004ac6] transition-colors hover:bg-[#eff4ff]"
+                >
+                  Open Send Leads To
+                </Link>
+              )}
+            />
+            <SetupStepCard
+              title="Call forwarding"
+              badge={<StatusBadge tone={forwardingState.tone}>{forwardingState.label}</StatusBadge>}
+              description={forwardingState.description}
+              action={forwardingStatus === 'not_started' && assignedPhoneNumber ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center rounded-md border border-[#004ac6] bg-white px-3 py-2 text-sm font-semibold text-[#004ac6] transition-colors hover:bg-[#eff4ff]"
+                  onClick={() => updateForwardingStatus('acknowledged')}
+                  disabled={savingForwarding}
+                >
+                  I Have The Number
+                </button>
+              ) : null}
+              secondaryAction={assignedPhoneNumber && forwardingStatus !== 'configured' ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center rounded-md bg-[#004ac6] px-3 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60"
+                  onClick={() => updateForwardingStatus('configured')}
+                  disabled={savingForwarding}
+                >
+                  I Forwarded Calls Here
+                </button>
+              ) : null}
+            />
+          </div>
+        </section>
       </div>
     </ClientPage>
   );
