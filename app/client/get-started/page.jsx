@@ -170,7 +170,7 @@ export default function ClientGetStartedPage() {
           <div>
             <h2 className="m-0 text-lg font-semibold text-slate-900">What To Do</h2>
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="mt-4 grid gap-3">
             <SetupStepCard
               title="1. Teach EveryCall About Your Business"
               description={websiteTraining.description}
