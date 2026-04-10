@@ -44,6 +44,7 @@ export const receptionistNavItems = [
 
 export const accountNavItems = [
   { href: '/client/account/general', label: 'General' },
+  { href: '/client/account/users', label: 'Users' },
   { href: '/client/account/billing', label: 'Billing' },
   { href: '/client/account/support', label: 'Support' }
 ];

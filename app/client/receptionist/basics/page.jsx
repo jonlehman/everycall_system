@@ -503,7 +503,7 @@ export default function ReceptionistBasicsPage() {
                 Open Knowledge
               </Link>
               <Link href="/client/team" className="inline-flex rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm">
-                Open Users
+                Open Send Leads To
               </Link>
             </div>
           </section>

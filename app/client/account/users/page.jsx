@@ -1,19 +1,18 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
-import { Button } from '../../../components/ui/button';
-import GuidePanel from '../_components/GuidePanel';
-import SectionPage from '../_components/SectionPage';
-import { sendLeadsNavItems } from '../_components/navigation';
+import { Button } from '../../../../components/ui/button';
+import GuidePanel from '../../_components/GuidePanel';
+import SectionPage from '../../_components/SectionPage';
+import { accountNavItems } from '../../_components/navigation';
 import {
   CALL_CATEGORY_OPTIONS,
   formatCallCategoryLabel,
   getDefaultCallCategorySelection,
   sanitizeCallCategorySelection
-} from '../../../lib/callCategories';
-import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
+} from '../../../../lib/callCategories';
+import { formatPhoneDisplay } from '../../../../lib/phoneDisplay';
 
 function createEmptyForm() {
   return {
@@ -39,17 +38,51 @@ function summarizeCategories(categories) {
   return `${count} categories`;
 }
 
-function accessMeta(status) {
-  if (status === 'active') {
-    return { label: 'enabled', badgeClass: 'ok', helper: 'Lead alerts can send if enabled below.' };
-  }
-  if (status === 'invited') {
-    return { label: 'invite pending', badgeClass: 'warn', helper: 'Lead alerts stay paused until system access is enabled.' };
-  }
-  return { label: 'disabled', badgeClass: 'bad', helper: 'Lead alerts are paused while system access is off.' };
+function formatRoleLabel(role) {
+  if (role === 'member') return 'Standard User';
+  if (role === 'owner') return 'Owner';
+  if (role === 'admin') return 'Admin';
+  if (role === 'viewer') return 'Viewer';
+  return String(role || '').trim() || '-';
 }
 
-export default function TeamPage() {
+function accessMeta(status) {
+  if (status === 'active') {
+    return {
+      label: 'enabled',
+      badgeClass: 'ok',
+      helper: 'This person can use the workspace. Lead alerts can send if enabled.'
+    };
+  }
+  if (status === 'invited') {
+    return {
+      label: 'invite pending',
+      badgeClass: 'warn',
+      helper: 'This person has not finished accepting access yet. Lead alerts stay paused until then.'
+    };
+  }
+  if (status === 'suspended') {
+    return {
+      label: 'suspended',
+      badgeClass: 'bad',
+      helper: 'Workspace access is suspended. Lead alerts are paused.'
+    };
+  }
+  return {
+    label: 'disabled',
+    badgeClass: 'bad',
+    helper: 'Workspace access is disabled. Lead alerts are paused.'
+  };
+}
+
+function statusSelectLabel(status) {
+  if (status === 'active') return 'Enabled';
+  if (status === 'invited') return 'Invite Pending';
+  if (status === 'suspended') return 'Suspended';
+  return 'Disabled';
+}
+
+export default function AccountUsersPage() {
   const [users, setUsers] = useState([]);
   const [formMode, setFormMode] = useState(null);
   const [editingUserId, setEditingUserId] = useState(null);
@@ -64,7 +97,7 @@ export default function TeamPage() {
       .then((resp) => (resp.ok ? resp.json() : null))
       .then((data) => {
         if (!data) {
-          setStatus({ message: 'Could not load lead destinations.', tone: 'bad' });
+          setStatus({ message: 'Could not load users.', tone: 'bad' });
           setLoading(false);
           return;
         }
@@ -72,7 +105,7 @@ export default function TeamPage() {
         setLoading(false);
       })
       .catch(() => {
-        setStatus({ message: 'Could not load lead destinations.', tone: 'bad' });
+        setStatus({ message: 'Could not load users.', tone: 'bad' });
         setLoading(false);
       });
   };
@@ -145,6 +178,16 @@ export default function TeamPage() {
     }));
   };
 
+  const resendInvite = async (id) => {
+    const resp = await fetch('/api/v1/tenant/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'resend', id })
+    });
+    setStatus(resp.ok ? { message: 'Invite resent.', tone: 'ok' } : { message: 'Invite resend failed.', tone: 'bad' });
+    loadUsers();
+  };
+
   const requestSmsOptIn = async (id) => {
     const resp = await fetch('/api/v1/tenant/users', {
       method: 'POST',
@@ -162,14 +205,35 @@ export default function TeamPage() {
   };
 
   const deleteUser = async (id) => {
-    if (!window.confirm('Delete this lead destination?')) return;
+    if (!window.confirm('Delete this user?')) return;
     const resp = await fetch(`/api/v1/tenant/users?id=${id}`, { method: 'DELETE' });
     if (!resp.ok) {
       setStatus({ message: 'Delete failed.', tone: 'bad' });
       return;
     }
-    setStatus({ message: 'Lead destination deleted.', tone: 'ok' });
+    setStatus({ message: 'User deleted.', tone: 'ok' });
     if (editingUserId === id) closeForm();
+    loadUsers();
+  };
+
+  const setUserStatus = async (id, nextStatus) => {
+    const resp = await fetch('/api/v1/tenant/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'status', id, status: nextStatus })
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      setStatus({ message: body?.message || 'Could not update system access.', tone: 'bad' });
+      return;
+    }
+    setStatus({
+      message: nextStatus === 'active' ? 'System access enabled.' : 'System access disabled. Lead alerts are now paused for this user.',
+      tone: 'ok'
+    });
+    if (editingUserId === id) {
+      setFormState((current) => ({ ...current, status: nextStatus }));
+    }
     loadUsers();
   };
 
@@ -202,14 +266,14 @@ export default function TeamPage() {
     }
 
     setSavingForm(true);
-    setStatus({ message: formMode === 'edit' ? 'Saving lead destination...' : 'Creating lead destination...', tone: 'warn' });
+    setStatus({ message: formMode === 'edit' ? 'Saving user...' : 'Creating user...', tone: 'warn' });
     const resp = await fetch('/api/v1/tenant/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(
         formMode === 'edit'
           ? { action: 'update_user', id: editingUserId, ...payload }
-          : { ...payload, role: 'member', status: 'active' }
+          : payload
       )
     });
     setSavingForm(false);
@@ -220,7 +284,7 @@ export default function TeamPage() {
       return;
     }
 
-    setStatus({ message: formMode === 'edit' ? 'Lead destination updated.' : 'Lead destination created.', tone: 'ok' });
+    setStatus({ message: formMode === 'edit' ? 'User updated.' : 'User created.', tone: 'ok' });
     closeForm();
     loadUsers();
   };
@@ -300,21 +364,32 @@ export default function TeamPage() {
     </div>
   );
 
-  const recipientColumns = [
-    { field: 'name', headerName: 'Name', flex: 0.9, minWidth: 110 },
-    { field: 'email', headerName: 'Email', flex: 1.2, minWidth: 160 },
+  const userColumns = [
+    { field: 'name', headerName: 'Name', flex: 0.85, minWidth: 110 },
+    { field: 'email', headerName: 'Email', flex: 1.1, minWidth: 160 },
     {
       field: 'phone',
       headerName: 'Phone',
-      flex: 0.85,
+      flex: 0.75,
       minWidth: 115,
       renderCell: (params) => formatPhoneDisplay(params.value) || ''
     },
     {
+      field: 'role',
+      headerName: 'Role',
+      flex: 0.8,
+      minWidth: 120,
+      renderCell: (params) => (
+        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-700">
+          {formatRoleLabel(params.value)}
+        </span>
+      )
+    },
+    {
       field: 'status',
-      headerName: 'Access',
-      flex: 0.72,
-      minWidth: 108,
+      headerName: 'System Access',
+      flex: 0.95,
+      minWidth: 135,
       renderCell: (params) => {
         const meta = accessMeta(params.value);
         return (
@@ -328,70 +403,44 @@ export default function TeamPage() {
     {
       field: 'leadAlertEmailEnabled',
       headerName: 'Email Alerts',
-      flex: 0.8,
-      minWidth: 108,
-      renderCell: (params) => {
-        if (params.row.status !== 'active') {
-          return (
-            <div className="flex flex-col py-1">
-              <span className="badge warn">paused</span>
-              <span className="mt-1 text-[11px] text-slate-500">Enable access on Users first.</span>
-            </div>
-          );
-        }
-        return (
-          <div className="flex flex-col py-1">
-            <span className={`badge ${params.value ? 'ok' : 'bad'}`}>
-              {params.value ? 'enabled' : 'off'}
-            </span>
-            {params.value ? (
-              <span className="mt-1 text-[11px] text-slate-500">
-                {summarizeCategories(params.row.leadAlertEmailCategories)}
-              </span>
-            ) : null}
-          </div>
-        );
-      }
+      flex: 0.75,
+      minWidth: 104,
+      renderCell: (params) => (
+        <div className="flex flex-col py-1">
+          <span className={`badge ${params.value ? 'ok' : 'bad'}`}>
+            {params.value ? 'on' : 'off'}
+          </span>
+          {params.value ? (
+            <span className="mt-1 text-[11px] text-slate-500">{summarizeCategories(params.row.leadAlertEmailCategories)}</span>
+          ) : null}
+        </div>
+      )
     },
     {
       field: 'leadAlertSmsEnabled',
       headerName: 'SMS Alerts',
-      flex: 0.8,
-      minWidth: 108,
-      renderCell: (params) => {
-        if (params.row.status !== 'active') {
-          return (
-            <div className="flex flex-col py-1">
-              <span className="badge warn">paused</span>
-              <span className="mt-1 text-[11px] text-slate-500">Enable access on Users first.</span>
-            </div>
-          );
-        }
-        return (
-          <div className="flex flex-col py-1">
-            <span
-              className={`badge ${
-                !params.row.leadAlertSmsEnabled
-                  ? 'bad'
-                  : params.row.smsOptIn === 'opted_in'
-                    ? 'ok'
-                    : 'warn'
-              }`}
-            >
-              {!params.row.leadAlertSmsEnabled
-                ? 'off'
-                : params.row.smsOptIn === 'opted_in'
-                  ? 'enabled'
-                  : 'pending'}
-            </span>
-            {params.row.leadAlertSmsEnabled ? (
-              <span className="mt-1 text-[11px] text-slate-500">
-                {summarizeCategories(params.row.leadAlertSmsCategories)}
-              </span>
-            ) : null}
-          </div>
-        );
-      }
+      flex: 0.75,
+      minWidth: 104,
+      renderCell: (params) => (
+        <div className="flex flex-col py-1">
+          <span className={`badge ${
+            !params.row.leadAlertSmsEnabled
+              ? 'bad'
+              : params.row.smsOptIn === 'opted_in'
+                ? 'ok'
+                : 'warn'
+          }`}>
+            {!params.row.leadAlertSmsEnabled
+              ? 'off'
+              : params.row.smsOptIn === 'opted_in'
+                ? 'on'
+                : 'pending'}
+          </span>
+          {params.row.leadAlertSmsEnabled ? (
+            <span className="mt-1 text-[11px] text-slate-500">{summarizeCategories(params.row.leadAlertSmsCategories)}</span>
+          ) : null}
+        </div>
+      )
     },
     {
       field: 'actions',
@@ -400,8 +449,8 @@ export default function TeamPage() {
       filterable: false,
       align: 'right',
       headerAlign: 'right',
-      flex: 0.85,
-      minWidth: 132,
+      flex: 1.25,
+      minWidth: 220,
       renderCell: (params) => (
         <div className="flex w-full justify-end gap-1.5">
           <button
@@ -410,6 +459,20 @@ export default function TeamPage() {
           >
             Edit
           </button>
+          <button
+            className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted"
+            onClick={() => setUserStatus(params.row.id, params.row.status === 'active' ? 'disabled' : 'active')}
+          >
+            {params.row.status === 'active' ? 'Disable Access' : 'Enable Access'}
+          </button>
+          {params.row.status === 'invited' ? (
+            <button
+              className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted"
+              onClick={() => resendInvite(params.row.id)}
+            >
+              Resend Invite
+            </button>
+          ) : null}
           <button
             className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted"
             onClick={() => deleteUser(params.row.id)}
@@ -423,10 +486,15 @@ export default function TeamPage() {
 
   return (
     <SectionPage
-      tabs={sendLeadsNavItems}
-      title="Send Leads To"
-      subtitle="Choose which people receive EveryCall lead alerts. Workspace access is managed separately under Account > Users."
+      tabs={accountNavItems}
+      title="Users"
+      subtitle="Manage workspace access and roles. Disabling access also pauses lead delivery for that user."
       status={status}
+      primaryAction={{
+        label: formMode ? 'Close Form' : 'Add User',
+        brand: true,
+        onClick: () => (formMode ? closeForm() : openCreateForm())
+      }}
     >
       <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
         <div className="grid min-w-0 gap-3">
@@ -435,10 +503,10 @@ export default function TeamPage() {
               <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-8 py-6">
                 <div className="space-y-1">
                   <h2 className="mt-0 font-['Space_Grotesk'] text-lg font-bold text-slate-900">
-                    {formMode === 'edit' ? 'Edit Lead Destination' : 'Add Lead Destination'}
+                    {formMode === 'edit' ? 'Edit User' : 'Add User'}
                   </h2>
                   <div className="text-sm text-slate-500">
-                    Use this form for lead delivery only. Workspace access and role changes live on the Users page.
+                    Manage who can enter the workspace here. Lead alert settings are visible too, but access is the master gate.
                   </div>
                 </div>
                 <Button variant="outline" type="button" onClick={closeForm} disabled={savingForm}>
@@ -480,21 +548,46 @@ export default function TeamPage() {
                       placeholder="+1XXXXXXXXXX"
                     />
                     <div className="ml-1 text-xs text-slate-500">
-                      Changing the phone number resets SMS opt-in for this person.
+                      Changing the phone number resets SMS opt-in for this user.
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className={fieldLabelClass}>Role</label>
+                    <select
+                      className={fieldControlClass}
+                      value={formState.role}
+                      onChange={(event) => updateFormField('role', event.target.value)}
+                    >
+                      <option value="owner">Owner</option>
+                      <option value="admin">Admin</option>
+                      <option value="member">Standard User</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className={fieldLabelClass}>System Access</label>
+                    <select
+                      className={fieldControlClass}
+                      value={formState.status}
+                      onChange={(event) => updateFormField('status', event.target.value)}
+                    >
+                      <option value="active">Enabled</option>
+                      <option value="invited">Invite Pending</option>
+                      <option value="disabled">Disabled</option>
+                      <option value="suspended">Suspended</option>
+                    </select>
+                    <div className="ml-1 text-xs text-slate-500">
+                      If access is not enabled, lead delivery pauses for this user automatically.
                     </div>
                   </div>
                 </div>
 
-                {formMode === 'edit' && formState.status !== 'active' ? (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                    This person&apos;s system access is currently off on the <Link className="font-semibold underline" href="/client/account/users">Users</Link> page, so lead alerts are paused until access is re-enabled there.
-                  </div>
-                ) : null}
-
                 <div className="space-y-4 border-t border-slate-100 pt-5">
                   <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
                     <span className="material-symbols-outlined text-lg text-blue-700">notifications_active</span>
-                    Notification Preferences
+                    Lead Alert Preferences
                   </h3>
                   <div className="flex flex-col gap-3">
                     {renderCategorySelector(
@@ -524,13 +617,12 @@ export default function TeamPage() {
                       </div>
 
                       <div className="text-xs leading-6 text-slate-600">
-                        To keep lead texting compliant, the subscriber must explicitly consent before EveryCall sends SMS alerts.
-                        After you save these settings, you can send the opt-in request from this workspace.
+                        The subscriber must explicitly consent before EveryCall sends SMS alerts. Saving a user does not automatically opt them in.
                       </div>
 
                       <div className="text-xs leading-6 text-slate-600">
                         If <span className="font-semibold text-slate-700">Receive SMS alerts</span> is checked before the subscriber replies YES,
-                        the lead SMS status will stay pending and no text alerts will be sent yet.
+                        the SMS status stays pending and no text alerts will be sent yet.
                       </div>
 
                       <div className="text-xs leading-6 text-slate-600">
@@ -571,7 +663,7 @@ export default function TeamPage() {
                         </div>
                       ) : (
                         <div className="text-xs text-slate-500">
-                          Save this lead destination first, then reopen the form to send the SMS opt-in request.
+                          Save this user first, then reopen the form to send the SMS opt-in request.
                         </div>
                       )}
                     </div>
@@ -583,7 +675,7 @@ export default function TeamPage() {
                     Cancel
                   </Button>
                   <Button type="submit" disabled={savingForm}>
-                    {savingForm ? (formMode === 'edit' ? 'Saving...' : 'Creating...') : (formMode === 'edit' ? 'Save Lead Destination' : 'Create Lead Destination')}
+                    {savingForm ? (formMode === 'edit' ? 'Saving...' : 'Creating...') : (formMode === 'edit' ? 'Save User' : 'Create User')}
                   </Button>
                 </div>
               </form>
@@ -592,21 +684,21 @@ export default function TeamPage() {
 
           <div className="min-w-0 rounded-xl border border-border bg-card p-3 shadow-sm">
             <div className="mb-3">
-              <h2 className="mt-0 text-lg font-semibold">Lead Destinations</h2>
+              <h2 className="mt-0 text-lg font-semibold">Users</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Every user record appears here. Email and SMS switches control lead delivery only. Account access is managed under Users.
+                Use this page to control workspace access. Disabling access also pauses email and SMS lead delivery for that person.
               </p>
             </div>
             <div style={{ height: rows.length ? 'auto' : 300 }}>
               <DataGrid
                 rows={rows}
-                columns={recipientColumns}
+                columns={userColumns}
                 autoHeight
                 getRowHeight={() => 'auto'}
                 disableRowSelectionOnClick
                 pageSizeOptions={[10, 25, 50]}
                 initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
-                localeText={{ noRowsLabel: loading ? 'Loading lead destinations...' : 'No lead destinations yet.' }}
+                localeText={{ noRowsLabel: loading ? 'Loading users...' : 'No users yet.' }}
                 sx={{
                   border: 'none',
                   '& .MuiDataGrid-cell': {
@@ -631,23 +723,18 @@ export default function TeamPage() {
                 }}
               />
             </div>
-            <div className="mt-4 flex justify-end">
-              <Button type="button" onClick={() => (formMode ? closeForm() : openCreateForm())}>
-                {formMode ? 'Close Form' : 'Add'}
-              </Button>
-            </div>
           </div>
         </div>
 
-        <GuidePanel title="Send Leads To Guide" eyebrow="How it works" icon="groups">
-          <div>Use this page only for lead delivery. Turn email and SMS alerts on or off here without changing workspace access.</div>
+        <GuidePanel title="Users Guide" eyebrow="How it works" icon="manage_accounts">
+          <div>Use this page for workspace access and roles. It is the system-of-record for who is allowed into the account.</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="font-semibold text-slate-900">Users and access</div>
-            <div className="mt-1 text-sm text-slate-600">If someone&apos;s access is disabled on the Users page, lead alerts pause automatically even if their alert switches stay on here.</div>
+            <div className="font-semibold text-slate-900">System access</div>
+            <div className="mt-1 text-sm text-slate-600">Disabling access also pauses email and SMS lead delivery for that person, even if their lead switches stay on.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="font-semibold text-slate-900">Lead SMS requirements</div>
-            <div className="mt-1 text-sm text-slate-600">SMS alerts can be turned on in advance, but they stay pending and will not send until the person replies YES.</div>
+            <div className="font-semibold text-slate-900">Standard users</div>
+            <div className="mt-1 text-sm text-slate-600">Lead destinations created from Send Leads To appear here as Standard Users by default so access can be managed later if needed.</div>
           </div>
         </GuidePanel>
       </div>
