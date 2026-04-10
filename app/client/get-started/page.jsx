@@ -218,7 +218,6 @@ export default function ClientGetStartedPage() {
       };
 
   const setupCompleteCount = [
-    carrierNumberReady,
     setup.runtimeReady,
     leadDestinationReady,
     forwardingStatus === 'configured'
@@ -259,29 +258,38 @@ export default function ClientGetStartedPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="m-0 text-lg font-semibold text-slate-900">Setup Progress</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">Get these four things in place and EveryCall is ready for real calls.</p>
+              <p className="mt-2 text-sm leading-6 text-slate-500">Get these three things in place and EveryCall is ready for real calls.</p>
             </div>
-            <StatusBadge tone={setupCompleteCount === 4 ? 'ok' : 'warn'}>
-              {setupCompleteCount} of 4 complete
+            <StatusBadge tone={setupCompleteCount === 3 ? 'ok' : 'warn'}>
+              {setupCompleteCount} of 3 complete
             </StatusBadge>
+          </div>
+          <div className="mt-4 rounded-xl border border-slate-200/70 bg-[#f7f9ff] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-slate-900">Your EveryCall number</div>
+                <div className="mt-1 text-sm leading-6 text-slate-500">{numberState.description}</div>
+                {assignedPhoneNumber ? (
+                  <div className="mt-3 text-base font-semibold text-slate-900">{assignedPhoneNumber}</div>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge tone={numberState.tone}>{numberState.label}</StatusBadge>
+                {assignedPhoneNumber ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center rounded-md border border-[#004ac6] bg-white px-3 py-2 text-sm font-semibold text-[#004ac6] transition-colors hover:bg-[#eff4ff]"
+                    onClick={() => navigator.clipboard?.writeText(String(tenant.telnyx_voice_number || readiness.phoneNumber || '').trim()).catch(() => {})}
+                  >
+                    Copy Number
+                  </button>
+                ) : null}
+              </div>
+            </div>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <SetupStepCard
-              title="EveryCall number"
-              badge={<StatusBadge tone={numberState.tone}>{numberState.label}</StatusBadge>}
-              description={numberState.description}
-              action={assignedPhoneNumber ? (
-                <button
-                  type="button"
-                  className="inline-flex items-center rounded-md border border-[#004ac6] bg-white px-3 py-2 text-sm font-semibold text-[#004ac6] transition-colors hover:bg-[#eff4ff]"
-                  onClick={() => navigator.clipboard?.writeText(String(tenant.telnyx_voice_number || readiness.phoneNumber || '').trim()).catch(() => {})}
-                >
-                  Copy Number
-                </button>
-              ) : null}
-            />
-            <SetupStepCard
-              title="Knowledge base"
+              title="Teach EveryCall about your business"
               badge={<StatusBadge tone={knowledgeState.tone}>{knowledgeState.label}</StatusBadge>}
               description={knowledgeState.description}
               action={(
@@ -294,7 +302,7 @@ export default function ClientGetStartedPage() {
               )}
             />
             <SetupStepCard
-              title="Lead destinations"
+              title="Choose where leads go"
               badge={<StatusBadge tone={leadState.tone}>{leadState.label}</StatusBadge>}
               description={leadState.description}
               action={(
@@ -307,7 +315,7 @@ export default function ClientGetStartedPage() {
               )}
             />
             <SetupStepCard
-              title="Call forwarding"
+              title="Forward your calls"
               badge={<StatusBadge tone={forwardingState.tone}>{forwardingState.label}</StatusBadge>}
               description={forwardingState.description}
               action={forwardingStatus === 'not_started' && assignedPhoneNumber ? (
