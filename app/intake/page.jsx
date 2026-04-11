@@ -13,28 +13,28 @@ import './intake.css';
 const INTAKE_STEPS = [
   {
     key: 'website',
-    number: '01',
+    number: '1',
     title: 'Website',
     heroTitle: 'Start with your website',
     heroCopy: 'If you have a public website, EveryCall can use it to start your first knowledge base automatically.'
   },
   {
     key: 'business',
-    number: '02',
+    number: '2',
     title: 'Business Name',
     heroTitle: 'Tell us the business name',
     heroCopy: 'This becomes the name of the workspace and the business identity used across setup.'
   },
   {
     key: 'lead-destination',
-    number: '03',
+    number: '3',
     title: 'Send Leads To',
     heroTitle: 'Choose where new leads should go',
     heroCopy: 'This is where EveryCall will send new lead alerts once calls start coming in.'
   },
   {
     key: 'login',
-    number: '04',
+    number: '4',
     title: 'Create Login',
     heroTitle: 'Create your login',
     heroCopy: 'Use this login to open the EveryCall workspace and finish the rest of setup.'
@@ -58,7 +58,6 @@ function createInitialForm(qaMode = false) {
     leadPhone: qaMode ? '+12065550199' : '',
     loginEmail: qaLeadEmail,
     password: qaMode ? 'Password123!' : '',
-    confirmPassword: qaMode ? 'Password123!' : '',
     website: qaMode ? 'https://example.com' : '',
     hasNoWebsite: false
   };
@@ -122,9 +121,6 @@ function validateLoginStep(form) {
   if (!form.password || form.password.length < 8) {
     return 'Password must be at least 8 characters.';
   }
-  if (form.password !== form.confirmPassword) {
-    return 'Passwords do not match.';
-  }
   return '';
 }
 
@@ -167,6 +163,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const [marketingAttribution, setMarketingAttribution] = useState({});
   const [showNoWebsiteSetupModal, setShowNoWebsiteSetupModal] = useState(false);
   const [loginEmailTouched, setLoginEmailTouched] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const getStartedHref = '/client/get-started';
   const receptionistHref = '/client/receptionist/basics';
   const knowledgeHref = '/client/receptionist/knowledge';
@@ -387,10 +384,9 @@ export function IntakePageClient({ qaMode = false } = {}) {
               {currentStep === 0 ? (
                 <section className="intake-panel">
                   <div className="intake-panel-header">
-                    <span className="intake-panel-step">01</span>
+                    <span className="intake-panel-step">Step 1</span>
                     <div>
                       <h2 className="intake-panel-title">Website</h2>
-                      <p className="intake-panel-copy">Add your main public website so EveryCall can start building your knowledge base right away.</p>
                     </div>
                   </div>
 
@@ -405,9 +401,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
                       disabled={form.hasNoWebsite}
                       autoComplete="url"
                     />
-                    <div className="intake-muted">
-                      EveryCall uses your website to start the first knowledge build automatically.
-                    </div>
                   </div>
 
                   <label className="intake-checkbox-card" htmlFor="has-no-website">
@@ -419,7 +412,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
                     />
                     <span>
                       <strong>I don&apos;t have a website</strong>
-                      <small>Support will help you create the first knowledge source after the account is created.</small>
                     </span>
                   </label>
                 </section>
@@ -428,7 +420,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
               {currentStep === 1 ? (
                 <section className="intake-panel">
                   <div className="intake-panel-header">
-                    <span className="intake-panel-step">02</span>
+                    <span className="intake-panel-step">Step 2</span>
                     <div>
                       <h2 className="intake-panel-title">Business Name</h2>
                       <p className="intake-panel-copy">This is the business name callers and team members will see throughout the workspace.</p>
@@ -450,10 +442,9 @@ export function IntakePageClient({ qaMode = false } = {}) {
               {currentStep === 2 ? (
                 <section className="intake-panel">
                   <div className="intake-panel-header">
-                    <span className="intake-panel-step">03</span>
+                    <span className="intake-panel-step">Step 3</span>
                     <div>
                       <h2 className="intake-panel-title">Send Leads To</h2>
-                      <p className="intake-panel-copy">Choose where EveryCall should send new lead alerts once calls start coming in.</p>
                     </div>
                   </div>
 
@@ -491,7 +482,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
               {currentStep === 3 ? (
                 <section className="intake-panel">
                   <div className="intake-panel-header">
-                    <span className="intake-panel-step">04</span>
+                    <span className="intake-panel-step">Step 4</span>
                     <div>
                       <h2 className="intake-panel-title">Create Login</h2>
                       <p className="intake-panel-copy">Use this login to open the workspace after the account is created. You can keep it the same as the lead email or change it.</p>
@@ -512,31 +503,28 @@ export function IntakePageClient({ qaMode = false } = {}) {
                         autoComplete="email"
                         placeholder="you@company.com"
                       />
-                      <div className="intake-muted">
-                        This starts pre-filled from the lead email above, but you can change it.
-                      </div>
                     </div>
 
                     <div className="intake-stack">
                       <FieldLabel htmlFor="password" badge="required">Password</FieldLabel>
-                      <input
-                        id="password"
-                        type="password"
-                        value={form.password}
-                        onChange={(event) => setFormValue('password', event.target.value)}
-                        autoComplete="new-password"
-                      />
-                    </div>
-
-                    <div className="intake-stack">
-                      <FieldLabel htmlFor="confirm-password" badge="required">Confirm Password</FieldLabel>
-                      <input
-                        id="confirm-password"
-                        type="password"
-                        value={form.confirmPassword}
-                        onChange={(event) => setFormValue('confirmPassword', event.target.value)}
-                        autoComplete="new-password"
-                      />
+                      <div className="intake-input-with-action">
+                        <input
+                          id="password"
+                          type={showPassword ? 'text' : 'password'}
+                          value={form.password}
+                          onChange={(event) => setFormValue('password', event.target.value)}
+                          autoComplete="new-password"
+                        />
+                        <button
+                          type="button"
+                          className="intake-input-action"
+                          onClick={() => setShowPassword((current) => !current)}
+                          aria-pressed={showPassword}
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showPassword ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </section>

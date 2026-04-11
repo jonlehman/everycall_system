@@ -156,8 +156,8 @@
 }
 
 .intake-panel-step {
-  width: 36px;
   height: 36px;
+  min-width: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -167,6 +167,8 @@
   font-family: "Space Grotesk", sans-serif;
   font-size: 13px;
   font-weight: 700;
+  padding: 0 12px;
+  white-space: nowrap;
 }
 
 .intake-panel-title,
@@ -253,6 +255,27 @@
 .intake-stack input:disabled {
   background: #f8fafc;
   color: #94a3b8;
+}
+
+.intake-input-with-action {
+  position: relative;
+}
+
+.intake-input-with-action input {
+  padding-right: 78px;
+}
+
+.intake-input-action {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  color: #004ac6;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .intake-stack textarea {
