@@ -13,7 +13,7 @@ export const clientPrimaryNavItems = [
   },
   {
     href: '/client/receptionist/basics',
-    label: 'Receptionist',
+    label: 'Receiptionist Setup',
     icon: 'receptionist',
     matchPrefixes: ['/client/receptionist', '/client/setup', '/client/knowledge', '/client/routing']
   },
