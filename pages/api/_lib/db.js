@@ -537,6 +537,52 @@ export async function ensureTables(pool) {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS demo_sessions (
+      demo_session_id TEXT PRIMARY KEY,
+      normalized_website_url TEXT NOT NULL,
+      website_origin TEXT NOT NULL,
+      website_hostname TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'created',
+      business_name TEXT,
+      preview_summary TEXT,
+      demo_bundle_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      scrape_page_count INTEGER NOT NULL DEFAULT 0,
+      scrape_pages_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      failure_code TEXT,
+      failure_message TEXT,
+      request_ip_hash TEXT,
+      user_agent TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours')
+    );
+  `);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS website_hostname TEXT;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS business_name TEXT;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS preview_summary TEXT;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS demo_bundle_json JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS scrape_page_count INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS scrape_pages_json JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS failure_code TEXT;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS failure_message TEXT;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS request_ip_hash TEXT;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS user_agent TEXT;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours');`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS demo_session_events (
+      demo_session_event_id BIGSERIAL PRIMARY KEY,
+      demo_session_id TEXT NOT NULL REFERENCES demo_sessions(demo_session_id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`ALTER TABLE demo_session_events ADD COLUMN IF NOT EXISTS payload_json JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE demo_session_events ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS inbound_webhook_events (
       id BIGSERIAL PRIMARY KEY,
       provider TEXT NOT NULL,
@@ -1269,6 +1315,11 @@ export async function ensureTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS sms_failover_events_tenant_created_idx ON sms_failover_events (tenant_key, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS sms_failover_events_destination_created_idx ON sms_failover_events (destination, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS request_rate_limits_updated_idx ON request_rate_limits (updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_status_updated_idx ON demo_sessions (status, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_website_url_updated_idx ON demo_sessions (normalized_website_url, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_origin_updated_idx ON demo_sessions (website_origin, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_expires_idx ON demo_sessions (expires_at ASC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS demo_session_events_session_created_idx ON demo_session_events (demo_session_id, created_at ASC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS inbound_webhook_events_provider_seen_idx ON inbound_webhook_events (provider, last_seen_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS incidents_tenant_created_idx ON incidents (tenant_key, created_at DESC);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS tenant_users_email_unique ON tenant_users (email);`);

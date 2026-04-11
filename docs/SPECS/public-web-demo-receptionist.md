@@ -9,6 +9,8 @@
 - [PRD](/home/jonle/everycall/docs/PRD.md)
 - [System Overview](/home/jonle/everycall/docs/architecture/001-system-overview.md)
 - [Decisions](/home/jonle/everycall/docs/DECISIONS.md)
+- [Public Web Demo API Contract](/home/jonle/everycall/docs/SPECS/public-web-demo-api.md)
+- [Public Web Demo Data Model](/home/jonle/everycall/docs/SPECS/public-web-demo-data-model.md)
 - [Realtime Audio](/home/jonle/everycall/docs/SPECS/realtime-audio.md)
 - [Realtime Gateway Prompt Contract](/home/jonle/everycall/docs/SPECS/realtime-gateway-prompt-contract.md)
 - [Knowledge System V1](/home/jonle/everycall/docs/SPECS/knowledge-system-v1.md)
