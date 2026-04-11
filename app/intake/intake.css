@@ -79,29 +79,6 @@
   color: #555f6f;
 }
 
-.intake-progress {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  width: fit-content;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(195, 198, 215, 0.42);
-  padding: 10px 14px;
-}
-
-.intake-progress-step {
-  font-size: 13px;
-  font-weight: 700;
-  color: #121c2a;
-}
-
-.intake-progress-count {
-  font-size: 12px;
-  font-weight: 600;
-  color: #64748b;
-}
-
 .intake-card {
   display: grid;
   gap: 24px;

@@ -23,21 +23,21 @@ const INTAKE_STEPS = [
     number: '2',
     title: 'Business Name',
     heroTitle: 'Tell us the business name',
-    heroCopy: 'This becomes the name of the workspace and the business identity used across setup.'
+    heroCopy: ''
   },
   {
     key: 'lead-destination',
     number: '3',
     title: 'Send Leads To',
-    heroTitle: 'Choose where new leads should go',
-    heroCopy: 'This is where EveryCall will send new lead alerts once calls start coming in.'
+    heroTitle: 'Send new leads to:',
+    heroCopy: ''
   },
   {
     key: 'login',
     number: '4',
     title: 'Create Login',
     heroTitle: 'Create your login',
-    heroCopy: 'Use this login to open the EveryCall workspace and finish the rest of setup.'
+    heroCopy: ''
   }
 ];
 
@@ -364,13 +364,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
           <section className="intake-hero">
             <p className="intake-eyebrow">{heroEyebrow}</p>
             <h1>{heroTitle}</h1>
-            <p>{heroCopy}</p>
-            {!activation ? (
-              <div className="intake-progress">
-                <span className="intake-progress-step">{step.title}</span>
-                <span className="intake-progress-count">{`${currentStep + 1} of ${INTAKE_STEPS.length}`}</span>
-              </div>
-            ) : null}
+            {heroCopy ? <p>{heroCopy}</p> : null}
           </section>
 
           {!activation ? (
@@ -485,7 +479,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
                     <span className="intake-panel-step">Step 4</span>
                     <div>
                       <h2 className="intake-panel-title">Create Login</h2>
-                      <p className="intake-panel-copy">Use this login to open the workspace after the account is created. You can keep it the same as the lead email or change it.</p>
                     </div>
                   </div>
 
