@@ -482,7 +482,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
 
                   <div className="intake-form-stack">
                     <div className="intake-stack">
-                      <FieldLabel htmlFor="login-email" badge="required">What is your email address?</FieldLabel>
+                      <FieldLabel htmlFor="login-email" badge="required">Username:</FieldLabel>
                       <div id="login-email" className="intake-readonly-value">
                         {form.loginEmail || form.leadEmail || ''}
                       </div>
