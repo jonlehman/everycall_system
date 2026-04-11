@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { callOpenAiJsonModel } from "@everycall/contracts";
 
-export const DEMO_BUNDLE_EXTRACTION_VERSION = "ai_v1";
+export const DEMO_BUNDLE_EXTRACTION_VERSION = "ai_v2";
 
 const DEMO_EXTRACTION_MODEL = String(
   process.env.OPENAI_DEMO_EXTRACTION_MODEL
@@ -161,6 +161,75 @@ function looksLikeMarketingCopy(value) {
   return false;
 }
 
+function looksLikeHostnameDecoratedTitle(value, hostnameLabel) {
+  const text = normalizeText(value);
+  const label = normalizeText(hostnameLabel).toLowerCase();
+  if (!text || !label) return false;
+  const lowered = text.toLowerCase();
+  return (
+    lowered.endsWith(`- ${label}`)
+    || lowered.endsWith(`– ${label}`)
+    || lowered.endsWith(`— ${label}`)
+    || lowered.endsWith(`| ${label}`)
+    || lowered.endsWith(`: ${label}`)
+    || lowered === label
+    || lowered === `- ${label}`
+    || lowered === `– ${label}`
+    || lowered === `— ${label}`
+    || lowered === `| ${label}`
+  );
+}
+
+function looksLikeCorporateOrBrandStructureCopy(value) {
+  const text = normalizeText(value);
+  if (!text) return false;
+  return /\b(customer-facing brand|dba|doing business as|llc|inc\.?|corp\.?|corporation|licensed and insured contractor)\b/i.test(text);
+}
+
+function looksLikeFormTitleNoise(value) {
+  const text = normalizeText(value);
+  if (!text) return false;
+  return /\b(service request form|request form|contact form|estimate request|schedule service|book service)\b/i.test(text);
+}
+
+function looksLikeEmergencyMarketingSlogan(value) {
+  const text = normalizeText(value);
+  if (!text) return false;
+  return /\b(always ready when you need us most|we'?re always ready when you need us most)\b/i.test(text);
+}
+
+function shouldRejectDemoFact(value, { hostnameLabel = "" } = {}) {
+  const text = normalizeText(value);
+  if (!text) return true;
+  if (looksLikeMarketingCopy(text)) return true;
+  if (looksLikeFormTitleNoise(text)) return true;
+  if (looksLikeCorporateOrBrandStructureCopy(text)) return true;
+  if (looksLikeEmergencyMarketingSlogan(text)) return true;
+  if (looksLikeHostnameDecoratedTitle(text, hostnameLabel)) return true;
+  return false;
+}
+
+function sanitizeDemoList(values, options = {}) {
+  return uniqueValues(values).filter((value) => !shouldRejectDemoFact(value, options));
+}
+
+function sanitizeSummary(summary, fallbackSummary, options = {}) {
+  const text = normalizeText(summary);
+  if (!text) return normalizeText(fallbackSummary);
+  if (shouldRejectDemoFact(text, options)) return normalizeText(fallbackSummary);
+  return text;
+}
+
+function sanitizeHours(value) {
+  const text = normalizeText(value);
+  if (!text) return "";
+  if (shouldRejectDemoFact(text)) return "";
+  if (/\b24\/7\b/i.test(text) && !/\b(hours?|open|available|daily)\b/i.test(text)) {
+    return "";
+  }
+  return text;
+}
+
 function cleanBusinessNameCandidate(value) {
   return normalizeText(value)
     .replace(/^welcome to\s+/i, "")
@@ -284,6 +353,7 @@ function extractHours(lines) {
 }
 
 function extractTitleDescriptors(scrape, businessName) {
+  const hostnameLabel = getHostnameLabel(scrape.websiteHostname || scrape.normalizedWebsiteUrl);
   const candidates = [];
   for (const page of scrape.pages || []) {
     const pathname = getPathname(page.url);
@@ -292,6 +362,7 @@ function extractTitleDescriptors(scrape, businessName) {
       const cleaned = cleanBusinessNameCandidate(segment);
       if (!looksLikeBusinessDescriptor(cleaned)) continue;
       if (sameIgnoringCase(cleaned, businessName)) continue;
+      if (shouldRejectDemoFact(cleaned, { hostnameLabel })) continue;
       candidates.push(cleaned);
     }
   }
@@ -299,6 +370,7 @@ function extractTitleDescriptors(scrape, businessName) {
 }
 
 function extractTopServices(scrape, businessName) {
+  const hostnameLabel = getHostnameLabel(scrape.websiteHostname || scrape.normalizedWebsiteUrl);
   const titleDescriptors = extractTitleDescriptors(scrape, businessName);
   const headings = uniqueValues(
     (scrape.pages || [])
@@ -316,6 +388,7 @@ function extractTopServices(scrape, businessName) {
       const text = cleanBusinessNameCandidate(heading);
       if (!looksLikeBusinessDescriptor(text)) continue;
       if (sameIgnoringCase(text, businessName)) continue;
+      if (shouldRejectDemoFact(text, { hostnameLabel })) continue;
       const wordCount = text.split(/\s+/).length;
       if (wordCount > 8) continue;
       candidates.push(text);
@@ -329,7 +402,7 @@ function extractTopServices(scrape, businessName) {
 function extractContactFacts(lines) {
   const facts = [];
   for (const line of lines || []) {
-    if (looksLikeMarketingCopy(line)) continue;
+    if (shouldRejectDemoFact(line)) continue;
     if (/\b(free estimate|free estimates|residential|commercial|licensed|insured|same-day|family-owned|locally owned|emergency service|financing)\b/i.test(line)) {
       facts.push(line);
     }
@@ -390,7 +463,7 @@ function collectGroundingFacts({ rootMeta, topServices, serviceArea, hours, cont
   return candidates.filter((value) => {
     const text = normalizeText(value);
     if (!text) return false;
-    if (looksLikeMarketingCopy(text)) return false;
+    if (shouldRejectDemoFact(text)) return false;
     if (/\b(cookie|privacy|terms|copyright|log in|sign in)\b/i.test(text)) return false;
     if (/^(new lead:|free call\b|live right now\b)/i.test(text)) return false;
     if (/^\w+,\s+\w+\s+\d{1,2}\b/.test(text)) return false;
@@ -412,15 +485,20 @@ function buildHeuristicDemoKnowledgeBundle(scrape) {
   }
 
   const businessName = extractBusinessNameHeuristic(scrape);
+  const hostnameLabel = getHostnameLabel(scrape.websiteHostname || scrape.normalizedWebsiteUrl);
   const rootMeta = getRootMeta(scrape);
   const allLines = collectAllLines(scrape);
   const rootLines = Array.isArray(pages[0]?.lines) ? pages[0].lines : [];
-  const topServices = extractTopServices(scrape, businessName);
+  const topServices = sanitizeDemoList(extractTopServices(scrape, businessName), { hostnameLabel }).slice(0, 4);
   const serviceArea = extractServiceArea(allLines);
-  const hours = extractHours(allLines);
-  const contactFacts = extractContactFacts(allLines);
-  const summary = selectSummaryLine(rootMeta, rootLines, allLines)
-    || buildFallbackSummary({ businessName, topServices, serviceArea });
+  const hours = sanitizeHours(extractHours(allLines));
+  const contactFacts = sanitizeDemoList(extractContactFacts(allLines), { hostnameLabel }).slice(0, 4);
+  const fallbackSummary = buildFallbackSummary({ businessName, topServices, serviceArea });
+  const summary = sanitizeSummary(
+    selectSummaryLine(rootMeta, rootLines, allLines),
+    fallbackSummary,
+    { hostnameLabel }
+  ) || fallbackSummary;
   const groundingFacts = collectGroundingFacts({
     rootMeta,
     topServices,
@@ -498,6 +576,7 @@ function buildExtractionSystemPrompt() {
     "Do not guess from the domain name alone.",
     "Prefer official business name wording shown in page titles, hero headings, logos referenced in metadata, and repeated branded headings.",
     "Ignore CTA copy, signup prompts, privacy-policy text, blog chrome, admin text, and unrelated marketing widgets.",
+    "Do not use page-form titles, hostname-decorated page titles, legal-entity ownership statements, or generic emergency slogans as services, summaries, or approved facts.",
     "For anything not clearly supported by the website, return an empty string or empty array instead of guessing.",
     "Write short receptionist-safe outputs that can be used directly in a prompt."
   ].join("\n");
@@ -539,16 +618,18 @@ async function extractDemoKnowledgeWithAi(scrape) {
     promptCacheKey: `demo_extract:${DEMO_BUNDLE_EXTRACTION_VERSION}:${normalizeText(scrape.websiteHostname || scrape.normalizedWebsiteUrl).toLowerCase()}`
   });
 
+  const hostnameLabel = getHostnameLabel(scrape.websiteHostname || scrape.normalizedWebsiteUrl);
+  const fallbackBundle = buildHeuristicDemoKnowledgeBundle(scrape);
   const parsed = result.parsed;
   const businessName = normalizeText(parsed.businessName) || extractBusinessNameHeuristic(scrape);
-  const summary = normalizeText(parsed.businessSummary) || buildHeuristicDemoKnowledgeBundle(scrape).previewSummary;
-  const topServices = uniqueValues(parsed.topServices || []).slice(0, 6);
+  const summary = sanitizeSummary(parsed.businessSummary, fallbackBundle.previewSummary, { hostnameLabel }) || fallbackBundle.previewSummary;
+  const topServices = sanitizeDemoList(parsed.topServices || [], { hostnameLabel }).slice(0, 6);
   const serviceArea = normalizeText(parsed.serviceArea);
-  const hours = normalizeText(parsed.hours);
+  const hours = sanitizeHours(parsed.hours);
   const emergencyAvailability = normalizeText(parsed.emergencyAvailability);
   const customerTypes = uniqueValues(parsed.customerTypes || []).slice(0, 3);
-  const contactFacts = uniqueValues(parsed.contactFacts || []).slice(0, 5);
-  const approvedFacts = uniqueValues(parsed.approvedFacts || []).slice(0, 10);
+  const contactFacts = sanitizeDemoList(parsed.contactFacts || [], { hostnameLabel }).slice(0, 5);
+  const approvedFacts = sanitizeDemoList(parsed.approvedFacts || [], { hostnameLabel }).slice(0, 10);
   const unsupportedTopics = uniqueValues(parsed.unsupportedTopics || []).slice(0, 8);
 
   return {
