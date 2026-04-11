@@ -35,6 +35,17 @@ function decodeHtmlEntities(text) {
     .replace(/&nbsp;/g, " ");
 }
 
+function parseHtmlAttributes(tagText) {
+  const attributes = {};
+  for (const match of String(tagText || "").matchAll(/([a-zA-Z_:.-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g)) {
+    const key = String(match[1] || "").toLowerCase();
+    const value = match[3] ?? match[4] ?? match[5] ?? "";
+    if (!key || !value) continue;
+    attributes[key] = decodeHtmlEntities(normalizeText(value));
+  }
+  return attributes;
+}
+
 function cleanLineText(value) {
   return decodeHtmlEntities(normalizeText(value))
     .replace(/\s+/g, " ")
@@ -89,6 +100,37 @@ function extractTagTextList(html, tagName) {
     .filter(Boolean);
 }
 
+function extractMetaMap(html) {
+  const meta = {
+    description: "",
+    ogTitle: "",
+    ogDescription: "",
+    ogSiteName: "",
+    applicationName: "",
+    twitterTitle: "",
+    twitterDescription: ""
+  };
+
+  for (const match of String(html || "").matchAll(/<meta\b[^>]*>/gi)) {
+    const attributes = parseHtmlAttributes(match[0]);
+    const content = cleanLineText(attributes.content || "");
+    if (!content) continue;
+
+    const nameKey = String(attributes.name || "").toLowerCase();
+    const propertyKey = String(attributes.property || "").toLowerCase();
+
+    if (nameKey === "description" && !meta.description) meta.description = content;
+    if (nameKey === "application-name" && !meta.applicationName) meta.applicationName = content;
+    if (nameKey === "twitter:title" && !meta.twitterTitle) meta.twitterTitle = content;
+    if (nameKey === "twitter:description" && !meta.twitterDescription) meta.twitterDescription = content;
+    if (propertyKey === "og:title" && !meta.ogTitle) meta.ogTitle = content;
+    if (propertyKey === "og:description" && !meta.ogDescription) meta.ogDescription = content;
+    if (propertyKey === "og:site_name" && !meta.ogSiteName) meta.ogSiteName = content;
+  }
+
+  return meta;
+}
+
 function looksLikeBoilerplate(line) {
   const text = normalizeText(line).toLowerCase();
   if (!text) return true;
@@ -99,9 +141,21 @@ function looksLikeBoilerplate(line) {
   return text.split(/\s+/).length < 4 && !/\d/.test(text);
 }
 
+function looksLikeStructuredShortFact(line) {
+  const text = normalizeText(line);
+  if (!text) return false;
+  return /\b\d{1,2}:\d{2}\s?(?:am|pm)\b/i.test(text)
+    || /\b\d{1,2}\s?(?:am|pm)\b/i.test(text)
+    || /\b(mon|monday|tue|tuesday|wed|wednesday|thu|thursday|fri|friday|sat|saturday|sun|sunday)\b/i.test(text)
+    || /\b(?:phone|call|text|email|hours|open|closed)\b/i.test(text)
+    || /\b\d{3}[-.)\s]\d{3}[-.\s]\d{4}\b/.test(text)
+    || /@/.test(text);
+}
+
 function extractStructuredPageContent(html) {
   const source = String(html || "");
   const title = cleanLineText(source.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "");
+  const meta = extractMetaMap(source);
   const body = source.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] || source;
   const stripped = body
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -129,10 +183,11 @@ function extractStructuredPageContent(html) {
   )
     .split(/\n+/)
     .map(cleanLineText)
-    .filter((line) => line.length >= 24 && !looksLikeBoilerplate(line));
+    .filter((line) => (line.length >= 24 || looksLikeStructuredShortFact(line)) && !looksLikeBoilerplate(line));
 
   return {
     title,
+    meta,
     headings,
     lines,
     text: lines.join(" ")
@@ -146,7 +201,10 @@ function normalizeCrawlUrl(baseOrigin, href) {
     if (resolved.origin !== new URL(baseOrigin).origin) return null;
     resolved.hash = "";
     resolved.search = "";
-    return `${resolved.origin}${resolved.pathname.replace(/\/{2,}/g, "/").replace(/\/$/, "") || "/"}`;
+    let pathname = resolved.pathname.replace(/\/{2,}/g, "/");
+    pathname = pathname.replace(/\/index\.(html?|php|asp|aspx)$/i, "/");
+    pathname = pathname.replace(/\/$/, "") || "/";
+    return `${resolved.origin}${pathname}`;
   } catch {
     return null;
   }
@@ -318,6 +376,7 @@ async function fetchDemoWebsitePage(url, options = {}) {
         url: finalUrl,
         html: "",
         title: "",
+        meta: {},
         headings: [],
         lines: [],
         text: ""
@@ -333,6 +392,7 @@ async function fetchDemoWebsitePage(url, options = {}) {
         url: finalUrl,
         html: "",
         title: "",
+        meta: {},
         headings: [],
         lines: [],
         text: ""
@@ -347,6 +407,7 @@ async function fetchDemoWebsitePage(url, options = {}) {
       url: finalUrl,
       html,
       title: structured.title,
+      meta: structured.meta,
       headings: structured.headings,
       lines: structured.lines,
       text: structured.text
@@ -359,6 +420,7 @@ async function fetchDemoWebsitePage(url, options = {}) {
       url: String(url || ""),
       html: "",
       title: "",
+      meta: {},
       headings: [],
       lines: [],
       text: ""
@@ -370,6 +432,7 @@ function createStoredPageSummary(page) {
   return {
     url: page.url,
     title: page.title,
+    description: normalizeText(page.meta?.description || page.meta?.ogDescription || ""),
     headings: Array.isArray(page.headings) ? page.headings.slice(0, 6) : [],
     excerpt: Array.isArray(page.lines) ? page.lines.slice(0, 2).join(" ") : ""
   };
