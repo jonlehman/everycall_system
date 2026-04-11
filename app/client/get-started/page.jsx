@@ -389,11 +389,11 @@ export default function ClientGetStartedPage() {
                   href="/client/receptionist/knowledge"
                   className={actionButtonClass(false)}
                 >
-                  Upload Documents
+                  Upload Documents (optional)
                 </Link>
               ) : (
                 <button type="button" disabled className={actionButtonClass(true)}>
-                  Upload Documents
+                  Upload Documents (optional)
                 </button>
               )
             )}
