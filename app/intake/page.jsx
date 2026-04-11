@@ -162,7 +162,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const [activation, setActivation] = useState(null);
   const [marketingAttribution, setMarketingAttribution] = useState({});
   const [showNoWebsiteSetupModal, setShowNoWebsiteSetupModal] = useState(false);
-  const [loginEmailTouched, setLoginEmailTouched] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const getStartedHref = '/client/get-started';
   const receptionistHref = '/client/receptionist/basics';
@@ -227,7 +226,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
     setForm((current) => ({
       ...current,
       leadEmail: value,
-      loginEmail: loginEmailTouched ? current.loginEmail : value
+      loginEmail: value
     }));
   };
 
@@ -484,17 +483,9 @@ export function IntakePageClient({ qaMode = false } = {}) {
                   <div className="intake-form-stack">
                     <div className="intake-stack">
                       <FieldLabel htmlFor="login-email" badge="required">What is your email address?</FieldLabel>
-                      <input
-                        id="login-email"
-                        type="email"
-                        value={form.loginEmail}
-                        onChange={(event) => {
-                          setLoginEmailTouched(true);
-                          setFormValue('loginEmail', event.target.value);
-                        }}
-                        autoComplete="email"
-                        placeholder="you@company.com"
-                      />
+                      <div id="login-email" className="intake-readonly-value">
+                        {form.loginEmail || form.leadEmail || ''}
+                      </div>
                     </div>
 
                     <div className="intake-stack">
