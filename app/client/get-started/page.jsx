@@ -430,7 +430,7 @@ export default function ClientGetStartedPage() {
             href="https://calendly.com/jonlehman/everycall-setup"
             target="_blank"
             rel="noreferrer"
-            className="inline-flex flex-col self-start rounded-2xl border border-[#dbeafe] bg-[#eff6ff] px-4 py-3 text-sm font-semibold leading-tight text-[#2563eb] shadow-sm transition-colors hover:bg-[#dbeafe] hover:text-[#1d4ed8] md:text-right"
+            className="inline-flex flex-col items-start self-start rounded-3xl border border-[#dbeafe] bg-[#eff6ff] px-4 py-3 text-left text-sm font-semibold leading-tight text-[#2563eb] shadow-sm transition-colors hover:bg-[#dbeafe] hover:text-[#1d4ed8]"
           >
             <span>Get Help</span>
             <span className="mt-1 text-xs font-medium text-[#1d4ed8]">Schedule Onboarding Session</span>
