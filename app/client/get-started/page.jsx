@@ -428,11 +428,10 @@ export default function ClientGetStartedPage() {
               ]
             }}
             className="md:col-span-6 lg:col-span-5"
-            actionFullWidth
             action={(
               <Link
                 href="/client/team"
-                className={`${actionButtonClass(false)} w-full`}
+                className={actionButtonClass(false)}
               >
                 Edit
               </Link>
