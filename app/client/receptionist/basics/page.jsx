@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import { Button } from '../../../../components/ui/button';
 import GuidePanel from '../../_components/GuidePanel';
 import SalesReceptionistNumberHeaderAside from '../../_components/SalesReceptionistNumberHeaderAside';
@@ -493,20 +492,6 @@ export default function ReceptionistBasicsPage() {
             </StepSection>
           </div>
 
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <h2 className="m-0 text-lg font-semibold">Next Steps</h2>
-            <p className="m-0 mt-2 text-sm text-slate-600">
-              Once the business identity, greeting, and voice feel right, move into Knowledge so the Sales Receptionist can answer specific business questions more confidently.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link href="/client/receptionist/knowledge" className="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-[0_8px_20px_rgba(0,74,198,0.16)]">
-                Open Knowledge
-              </Link>
-              <Link href="/client/team" className="inline-flex rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm">
-                Open Send Leads To
-              </Link>
-            </div>
-          </section>
         </div>
 
         <div ref={guidePanelRef}>
