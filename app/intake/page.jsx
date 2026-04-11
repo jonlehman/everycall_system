@@ -313,7 +313,8 @@ export function IntakePageClient({ qaMode = false } = {}) {
           message: 'Account created. Opening Get Started...',
           tone: 'ok'
         });
-        window.location.assign(getStartedHref);
+        const nextGetStartedHref = form.hasNoWebsite ? `${getStartedHref}?support_setup=1` : getStartedHref;
+        window.location.assign(nextGetStartedHref);
       }
     } catch {
       setStatus({ message: 'Could not create account.', tone: 'bad' });

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import ClientPage from '../_components/ClientPage';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
@@ -203,6 +204,9 @@ function ProgressPanel({ items }) {
 }
 
 export default function ClientGetStartedPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [packet, setPacket] = useState({
     buildState: { builds: [], activeBuild: null },
     users: [],
@@ -212,6 +216,15 @@ export default function ClientGetStartedPage() {
     documents: []
   });
   const [savingForwardingStatus, setSavingForwardingStatus] = useState(false);
+  const [showSupportSetupModal, setShowSupportSetupModal] = useState(false);
+
+  const dismissSupportSetupModal = () => {
+    const nextParams = new URLSearchParams(searchParams?.toString() || '');
+    nextParams.delete('support_setup');
+    const nextQuery = nextParams.toString();
+    setShowSupportSetupModal(false);
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -240,6 +253,12 @@ export default function ClientGetStartedPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (searchParams?.get('support_setup') === '1') {
+      setShowSupportSetupModal(true);
+    }
+  }, [searchParams]);
 
   const websiteTraining = useMemo(() => {
     const builds = Array.isArray(packet.buildState.builds) ? packet.buildState.builds : [];
@@ -418,8 +437,9 @@ export default function ClientGetStartedPage() {
   ]);
 
   return (
-    <ClientPage className="gap-4 pt-2 md:pt-3">
-      <div className="mx-auto w-full max-w-5xl">
+    <>
+      <ClientPage className="gap-4 pt-2 md:pt-3">
+        <div className="mx-auto w-full max-w-5xl">
         <header className="mt-12 mb-7 flex flex-col gap-3 md:mb-8 md:flex-row md:items-start md:justify-between">
           <h1 className="mb-2 font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.05em] text-[#121c2a] md:text-5xl">
             Get Started.
@@ -437,7 +457,7 @@ export default function ClientGetStartedPage() {
           </a>
         </header>
 
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
           <SetupStepCard
             step="1"
             title="Teach EveryCall About Your Business"
@@ -529,8 +549,43 @@ export default function ClientGetStartedPage() {
           <div className="md:col-span-12 lg:col-span-5">
             <ProgressPanel items={progressItems} />
           </div>
+          </div>
         </div>
-      </div>
-    </ClientPage>
+      </ClientPage>
+
+      {showSupportSetupModal ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/35 px-5 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_28px_80px_rgba(15,23,42,0.18)]">
+            <div className="grid gap-3">
+              <h2 className="font-['Space_Grotesk'] text-3xl font-bold tracking-[-0.04em] text-[#121c2a]">
+                No website? We&apos;ll help you get set up.
+              </h2>
+              <p className="text-sm leading-7 text-slate-600">
+                Since you do not have a website yet, the fastest path is a short setup call with support. Pick a time that works for you and we&apos;ll help configure your sales receptionist correctly.
+              </p>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                onClick={dismissSupportSetupModal}
+              >
+                I&apos;ll do this later
+              </button>
+              <a
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[#004ac6] px-5 text-sm font-semibold text-white shadow-[0_16px_30px_rgba(0,74,198,0.18)] transition-opacity hover:opacity-95"
+                href="https://calendly.com/jonlehman/everycall-setup"
+                target="_blank"
+                rel="noreferrer"
+                onClick={dismissSupportSetupModal}
+              >
+                Schedule Setup Call
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
