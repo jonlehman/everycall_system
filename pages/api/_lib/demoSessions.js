@@ -21,9 +21,9 @@ function createDemoSessionId() {
   return `demo_${Date.now()}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
 }
 
-function asJsonValue(value, fallback) {
-  if (value === undefined) return fallback;
-  return value ?? fallback;
+function serializeJsonValue(value, fallback) {
+  if (value === undefined) return JSON.stringify(fallback);
+  return JSON.stringify(value ?? fallback);
 }
 
 function hashRequestIp(value) {
@@ -119,9 +119,9 @@ async function updateDemoSession(pool, demoSessionId, changes = {}) {
   if (changes.websiteHostname !== undefined) assign("website_hostname", normalizeText(changes.websiteHostname));
   if (changes.businessName !== undefined) assign("business_name", normalizeText(changes.businessName) || null);
   if (changes.previewSummary !== undefined) assign("preview_summary", normalizeText(changes.previewSummary) || null);
-  if (changes.demoBundle !== undefined) assign("demo_bundle_json", asJsonValue(changes.demoBundle, {}));
+  if (changes.demoBundle !== undefined) assign("demo_bundle_json", serializeJsonValue(changes.demoBundle, {}));
   if (changes.scrapePageCount !== undefined) assign("scrape_page_count", Number(changes.scrapePageCount || 0));
-  if (changes.scrapePages !== undefined) assign("scrape_pages_json", asJsonValue(changes.scrapePages, []));
+  if (changes.scrapePages !== undefined) assign("scrape_pages_json", serializeJsonValue(changes.scrapePages, []));
   if (changes.failureCode !== undefined) assign("failure_code", normalizeText(changes.failureCode) || null);
   if (changes.failureMessage !== undefined) assign("failure_message", normalizeText(changes.failureMessage) || null);
   if (changes.expiresAt !== undefined) assign("expires_at", changes.expiresAt);
@@ -148,7 +148,7 @@ export async function recordDemoSessionEvent(pool, demoSessionId, eventType, pay
        payload_json
      )
      VALUES ($1, $2, $3::jsonb)`,
-    [demoSessionId, normalizeText(eventType), asJsonValue(payload, {})]
+    [demoSessionId, normalizeText(eventType), serializeJsonValue(payload, {})]
   );
 }
 
