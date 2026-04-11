@@ -366,15 +366,9 @@ export default function ClientGetStartedPage() {
           <h1 className="mb-2 font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.05em] text-[#121c2a] md:text-5xl">
             Get Started.
             <br />
-            <span className="font-medium text-[#2563eb]">Configure your operations.</span>
+            <span className="font-medium text-[#2563eb]">Prepare EveryCall for live calls.</span>
           </h1>
         </header>
-
-        <div className="mb-5 md:mb-6">
-          <h2 className="flex items-center gap-2 font-['Space_Grotesk'] text-lg font-bold text-[#121c2a]">
-            What To Do
-          </h2>
-        </div>
 
         <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
           <SetupStepCard
