@@ -10,7 +10,7 @@ const DEMO_MAX_HTML_BYTES = readPositiveIntEnv("DEMO_MAX_HTML_BYTES", 750 * 1024
 const DEMO_MAX_REDIRECTS = 5;
 const DEFAULT_DEMO_FETCH_USER_AGENT = String(
   process.env.DEMO_FETCH_USER_AGENT
-  || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+  || "EveryCall Demo Build"
 ).trim();
 
 function readPositiveIntEnv(name, fallback) {
@@ -256,12 +256,7 @@ async function fetchWithTimeout(url, timeoutMs = DEMO_FETCH_TIMEOUT_MS) {
       redirect: "manual",
       headers: {
         "user-agent": DEFAULT_DEMO_FETCH_USER_AGENT,
-        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "accept-language": "en-US,en;q=0.9",
-        "cache-control": "no-cache",
-        "pragma": "no-cache",
-        "upgrade-insecure-requests": "1",
-        "x-everycall-demo-build": "1"
+        "accept": "text/html,application/xhtml+xml"
       },
       signal: controller.signal
     });
