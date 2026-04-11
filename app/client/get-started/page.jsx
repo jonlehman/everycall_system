@@ -77,6 +77,7 @@ function actionButtonClass(disabled = false) {
 function SetupStepCard({
   step,
   title,
+  headerAside = null,
   description = '',
   subdescription = '',
   statusBox = null,
@@ -88,11 +89,14 @@ function SetupStepCard({
     <section className={`rounded-xl border border-slate-200 bg-white p-8 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)] transition-all ${className}`.trim()}>
       <div className="flex h-full flex-col">
         <div className="flex-1">
-          <div className="mb-6 flex items-center gap-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#121c2a] text-xs font-bold text-white">
-              {step}
-            </span>
-            <h2 className="font-['Space_Grotesk'] text-xl font-bold text-[#121c2a]">{title}</h2>
+          <div className="mb-6 flex items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#121c2a] text-xs font-bold text-white">
+                {step}
+              </span>
+              <h2 className="font-['Space_Grotesk'] text-xl font-bold text-[#121c2a]">{title}</h2>
+            </div>
+            {headerAside ? <div className="shrink-0">{headerAside}</div> : null}
           </div>
 
           {statusBox ? (
@@ -206,6 +210,7 @@ export default function ClientGetStartedPage() {
     connections: [],
     documents: []
   });
+  const [savingForwardingStatus, setSavingForwardingStatus] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -361,6 +366,39 @@ export default function ClientGetStartedPage() {
     };
   }, [packet.settings]);
 
+  const updateForwardingStatus = async (checked) => {
+    if (savingForwardingStatus) return;
+    const nextStatus = checked ? 'configured' : 'not_started';
+    setSavingForwardingStatus(true);
+    try {
+      const response = await fetch('/api/v1/tenants/forwarding-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus })
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(body?.message || 'forwarding_status_update_failed');
+      }
+      setPacket((current) => ({
+        ...current,
+        settings: {
+          ...(current.settings || {}),
+          tenant: {
+            ...((current.settings && current.settings.tenant) || {}),
+            forwarding_setup_status: body?.forwarding?.status || nextStatus,
+            forwarding_configured_at: body?.forwarding?.configuredAt || null,
+            forwarding_acknowledged_at: body?.forwarding?.acknowledgedAt || null
+          }
+        }
+      }));
+    } catch (error) {
+      window.alert('Could not update forwarding completion right now.');
+    } finally {
+      setSavingForwardingStatus(false);
+    }
+  };
+
   const progressItems = useMemo(() => [
     { label: 'Teach EveryCall about your business', done: websiteTraining.done },
     { label: 'Choose where leads go', done: leadDestinations.activeDestinations.length > 0 },
@@ -439,6 +477,18 @@ export default function ClientGetStartedPage() {
           <SetupStepCard
             step="3"
             title="Forward Your Calls"
+            headerAside={(
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                <span>Mark Complete</span>
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-[#2563eb] focus:ring-[#2563eb]"
+                  checked={forwarding.forwardingConfigured}
+                  disabled={savingForwardingStatus}
+                  onChange={(event) => updateForwardingStatus(event.target.checked)}
+                />
+              </label>
+            )}
             description={forwarding.description}
             statusBox={{
               label: 'Receptionist Number',
