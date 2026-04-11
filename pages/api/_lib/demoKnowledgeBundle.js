@@ -27,6 +27,15 @@ function splitTitleSegments(value) {
   );
 }
 
+function getHostnameLabel(value) {
+  const hostname = normalizeText(value)
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .split("/")[0]
+    .split(".")[0];
+  return normalizeText(hostname).toLowerCase();
+}
+
 function getPathname(value) {
   try {
     return new URL(String(value || "")).pathname.toLowerCase();
@@ -65,6 +74,15 @@ function looksLikeMarketingCopy(value) {
   return false;
 }
 
+function cleanBusinessNameCandidate(value) {
+  return normalizeText(value)
+    .replace(/^welcome to\s+/i, "")
+    .replace(/^about(?: us)?\s*[|\-•:–—]?\s*/i, "")
+    .replace(/^contact(?: us)?\s*[|\-•:–—]?\s*/i, "")
+    .replace(/\s+[|\-•:–—]\s+(home|contact|about|services)$/i, "")
+    .trim();
+}
+
 function looksLikeBusinessDescriptor(value) {
   const text = normalizeText(value);
   if (!text) return false;
@@ -87,22 +105,52 @@ function sameIgnoringCase(left, right) {
 function extractBusinessName(scrape) {
   const rootPage = scrape.pages?.[0] || {};
   const rootMeta = getRootMeta(scrape);
-  const candidates = uniqueValues([
-    rootMeta.ogSiteName,
-    rootMeta.applicationName,
-    ...splitTitleSegments(rootPage.title),
-    ...splitTitleSegments(rootMeta.ogTitle),
-    ...(Array.isArray(rootPage.headings) ? rootPage.headings.slice(0, 3) : []),
-    ...((scrape.pages || []).flatMap((page) => splitTitleSegments(page.title)).slice(0, 6))
-  ]);
+  const hostnameLabel = getHostnameLabel(scrape.websiteHostname || scrape.normalizedWebsiteUrl);
+  const rawCandidates = [
+    { value: rootMeta.ogSiteName, sourceWeight: 100 },
+    { value: rootMeta.applicationName, sourceWeight: 95 },
+    ...splitTitleSegments(rootPage.title).map((value) => ({ value, sourceWeight: 80 })),
+    ...splitTitleSegments(rootMeta.ogTitle).map((value) => ({ value, sourceWeight: 76 })),
+    ...((Array.isArray(rootPage.headings) ? rootPage.headings.slice(0, 3) : []).map((value) => ({ value, sourceWeight: 90 }))),
+    ...((scrape.pages || []).flatMap((page) => splitTitleSegments(page.title)).slice(0, 6).map((value) => ({ value, sourceWeight: 60 })))
+  ];
 
-  for (const candidate of candidates) {
+  const normalizedCandidates = [];
+  const seen = new Set();
+  for (const entry of rawCandidates) {
+    const cleaned = cleanBusinessNameCandidate(entry.value);
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalizedCandidates.push({
+      value: cleaned,
+      sourceWeight: Number(entry.sourceWeight || 0)
+    });
+  }
+
+  let bestCandidate = "";
+  let bestScore = -Infinity;
+
+  for (const candidateEntry of normalizedCandidates) {
+    const candidate = candidateEntry.value;
     const wordCount = candidate.split(/\s+/).length;
     if (wordCount < 1 || wordCount > 8) continue;
     if (looksGenericHeading(candidate)) continue;
     if (looksLikeMarketingCopy(candidate)) continue;
-    return candidate;
+    let score = candidateEntry.sourceWeight;
+    if (wordCount >= 2) score += 25;
+    if (wordCount >= 3 && wordCount <= 6) score += 10;
+    if (wordCount === 1) score -= 10;
+    if (candidate.toLowerCase() === hostnameLabel) score -= 40;
+    if (candidate.toLowerCase().replace(/\s+/g, "") === hostnameLabel) score -= 35;
+    if (score > bestScore) {
+      bestScore = score;
+      bestCandidate = candidate;
+    }
   }
+
+  if (bestCandidate) return bestCandidate;
 
   const hostname = normalizeText(scrape.websiteHostname || new URL(scrape.normalizedWebsiteUrl).hostname);
   return hostname
@@ -154,9 +202,10 @@ function extractTitleDescriptors(scrape, businessName) {
     const pathname = getPathname(page.url);
     if (/\/(pricing|impact|call-demo|demo|blog|privacy|terms)\b/.test(pathname)) continue;
     for (const segment of splitTitleSegments(page.title)) {
-      if (!looksLikeBusinessDescriptor(segment)) continue;
-      if (sameIgnoringCase(segment, businessName)) continue;
-      candidates.push(segment);
+      const cleaned = cleanBusinessNameCandidate(segment);
+      if (!looksLikeBusinessDescriptor(cleaned)) continue;
+      if (sameIgnoringCase(cleaned, businessName)) continue;
+      candidates.push(cleaned);
     }
   }
   return uniqueValues(candidates);
@@ -177,7 +226,7 @@ function extractTopServices(scrape, businessName) {
 
   if (candidates.length < 2) {
     for (const heading of headings) {
-      const text = normalizeText(heading);
+      const text = cleanBusinessNameCandidate(heading);
       if (!looksLikeBusinessDescriptor(text)) continue;
       if (sameIgnoringCase(text, businessName)) continue;
       const wordCount = text.split(/\s+/).length;
