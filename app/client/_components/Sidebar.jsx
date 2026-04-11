@@ -117,7 +117,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
                 ) : null}
               </Link>
 
-              {!collapsed && Array.isArray(item.children) && item.children.length ? (
+              {!collapsed && active && Array.isArray(item.children) && item.children.length ? (
                 <div className="mt-1 ml-10 flex flex-col gap-1">
                   {item.children.map((child) => {
                     const childActive = pathMatches(pathname, child);
