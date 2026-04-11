@@ -170,9 +170,6 @@ export function buildDemoRealtimeSessionPayload(bundle = {}) {
         output: {
           voice
         }
-      },
-      input_audio_noise_reduction: {
-        type: "far_field"
       }
     },
     model,
