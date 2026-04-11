@@ -27,7 +27,10 @@ function buildFactList(bundle = {}) {
     ...(Array.isArray(bundle.topServices) ? bundle.topServices : []),
     normalizeText(bundle.serviceArea),
     normalizeText(bundle.hours),
+    normalizeText(bundle.emergencyAvailability),
+    ...(Array.isArray(bundle.customerTypes) ? bundle.customerTypes : []),
     ...(Array.isArray(bundle.contactFacts) ? bundle.contactFacts : []),
+    ...(Array.isArray(bundle.approvedFacts) ? bundle.approvedFacts : []),
     ...(Array.isArray(bundle.groundingFacts) ? bundle.groundingFacts : [])
   ]).slice(0, 12);
 }
@@ -98,8 +101,14 @@ function buildDemoFactPack(bundle = {}) {
   if (normalizeText(bundle.hours)) {
     lines.push(`Hours: ${normalizeText(bundle.hours)}`);
   }
+  if (normalizeText(bundle.emergencyAvailability)) {
+    lines.push(`Emergency or after-hours availability: ${normalizeText(bundle.emergencyAvailability)}`);
+  }
   if (facts.length) {
     lines.push(`Known facts: ${facts.join("; ")}`);
+  }
+  if (Array.isArray(bundle.unsupportedTopics) && bundle.unsupportedTopics.length) {
+    lines.push(`Unsupported or unconfirmed topics: ${bundle.unsupportedTopics.join("; ")}`);
   }
 
   return lines.join("\n");

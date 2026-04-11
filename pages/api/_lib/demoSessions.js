@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { scrapeDemoWebsite } from "./demoWebsiteScraper.js";
-import { buildDemoKnowledgeBundle } from "./demoKnowledgeBundle.js";
+import { buildDemoKnowledgeBundle, DEMO_BUNDLE_EXTRACTION_VERSION } from "./demoKnowledgeBundle.js";
 
 const DEMO_SESSION_TTL_HOURS = readPositiveIntEnv("DEMO_SESSION_TTL_HOURS", 24);
 
@@ -243,10 +243,11 @@ async function findReusableReadyDemoSession(pool, normalizedWebsiteUrl) {
      FROM demo_sessions
      WHERE normalized_website_url = $1
        AND status = 'ready'
+       AND COALESCE(demo_bundle_json->>'extractionVersion', '') = $2
        AND expires_at > NOW()
      ORDER BY updated_at DESC
      LIMIT 1`,
-    [normalizeText(normalizedWebsiteUrl)]
+    [normalizeText(normalizedWebsiteUrl), DEMO_BUNDLE_EXTRACTION_VERSION]
   );
   return result.rows[0] || null;
 }
@@ -353,7 +354,7 @@ export async function createAndBuildDemoSession(pool, {
   });
 
   try {
-    const bundle = buildDemoKnowledgeBundle(scrape);
+    const bundle = await buildDemoKnowledgeBundle(scrape);
     await updateDemoSession(pool, demoSessionId, {
       status: "ready",
       businessName: bundle.businessName,
@@ -364,7 +365,9 @@ export async function createAndBuildDemoSession(pool, {
     });
     await recordDemoSessionEvent(pool, demoSessionId, "ready", {
       businessName: bundle.businessName,
-      sourcePageCount: scrape.pageCount
+      sourcePageCount: scrape.pageCount,
+      extractionMethod: normalizeText(bundle.demoBundle?.extractionMethod),
+      extractionVersion: normalizeText(bundle.demoBundle?.extractionVersion)
     });
   } catch (err) {
     const failureCode = normalizeText(err?.code) || "demo_bundle_failed";

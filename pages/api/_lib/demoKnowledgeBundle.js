@@ -1,3 +1,90 @@
+import { z } from "zod";
+import { callOpenAiJsonModel } from "@everycall/contracts";
+
+export const DEMO_BUNDLE_EXTRACTION_VERSION = "ai_v1";
+
+const DEMO_EXTRACTION_MODEL = String(
+  process.env.OPENAI_DEMO_EXTRACTION_MODEL
+  || process.env.OPENAI_BUILD_JSON_MODEL
+  || "gpt-5-mini"
+).trim();
+
+const DEMO_EXTRACTION_QUESTIONS = [
+  "What is the official business name shown on the website?",
+  "In one short sentence, what does this business do?",
+  "What are the main services or job types clearly offered?",
+  "What service area or locations are clearly mentioned?",
+  "What hours or availability are clearly stated?",
+  "Does the site clearly say anything about emergency or after-hours service?",
+  "Does the site clearly indicate residential, commercial, or both?",
+  "What contact methods or contact facts are clearly shown?",
+  "What receptionist-safe facts can be stated confidently to a caller?",
+  "What topics should the receptionist avoid claiming because the website does not clearly support them?"
+];
+
+const demoExtractionSchema = z.object({
+  businessName: z.string().min(1),
+  businessSummary: z.string().min(1),
+  topServices: z.array(z.string().min(1)).max(6),
+  serviceArea: z.string(),
+  hours: z.string(),
+  emergencyAvailability: z.string(),
+  customerTypes: z.array(z.string().min(1)).max(3),
+  contactFacts: z.array(z.string().min(1)).max(5),
+  approvedFacts: z.array(z.string().min(1)).min(3).max(10),
+  unsupportedTopics: z.array(z.string().min(1)).max(8)
+});
+
+const demoExtractionJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    businessName: { type: "string" },
+    businessSummary: { type: "string" },
+    topServices: {
+      type: "array",
+      items: { type: "string" },
+      maxItems: 6
+    },
+    serviceArea: { type: "string" },
+    hours: { type: "string" },
+    emergencyAvailability: { type: "string" },
+    customerTypes: {
+      type: "array",
+      items: { type: "string" },
+      maxItems: 3
+    },
+    contactFacts: {
+      type: "array",
+      items: { type: "string" },
+      maxItems: 5
+    },
+    approvedFacts: {
+      type: "array",
+      items: { type: "string" },
+      minItems: 3,
+      maxItems: 10
+    },
+    unsupportedTopics: {
+      type: "array",
+      items: { type: "string" },
+      maxItems: 8
+    }
+  },
+  required: [
+    "businessName",
+    "businessSummary",
+    "topServices",
+    "serviceArea",
+    "hours",
+    "emergencyAvailability",
+    "customerTypes",
+    "contactFacts",
+    "approvedFacts",
+    "unsupportedTopics"
+  ]
+};
+
 function normalizeText(value) {
   return String(value || "")
     .replace(/\u0000/g, " ")
@@ -102,7 +189,7 @@ function sameIgnoringCase(left, right) {
   return normalizeText(left).toLowerCase() === normalizeText(right).toLowerCase();
 }
 
-function extractBusinessName(scrape) {
+function extractBusinessNameHeuristic(scrape) {
   const rootPage = scrape.pages?.[0] || {};
   const rootMeta = getRootMeta(scrape);
   const hostnameLabel = getHostnameLabel(scrape.websiteHostname || scrape.normalizedWebsiteUrl);
@@ -111,7 +198,7 @@ function extractBusinessName(scrape) {
     { value: rootMeta.applicationName, sourceWeight: 95 },
     ...splitTitleSegments(rootPage.title).map((value) => ({ value, sourceWeight: 80 })),
     ...splitTitleSegments(rootMeta.ogTitle).map((value) => ({ value, sourceWeight: 76 })),
-    ...((Array.isArray(rootPage.headings) ? rootPage.headings.slice(0, 3) : []).map((value) => ({ value, sourceWeight: 90 }))),
+    ...((Array.isArray(rootPage.headings) ? rootPage.headings.slice(0, 3) : []).map((value) => ({ value, sourceWeight: 70 }))),
     ...((scrape.pages || []).flatMap((page) => splitTitleSegments(page.title)).slice(0, 6).map((value) => ({ value, sourceWeight: 60 })))
   ];
 
@@ -316,7 +403,7 @@ function collectGroundingFacts({ rootMeta, topServices, serviceArea, hours, cont
   }).slice(0, 12);
 }
 
-export function buildDemoKnowledgeBundle(scrape) {
+function buildHeuristicDemoKnowledgeBundle(scrape) {
   const pages = Array.isArray(scrape?.pages) ? scrape.pages : [];
   if (!pages.length) {
     throw Object.assign(new Error("No website pages were available for the demo."), {
@@ -324,7 +411,7 @@ export function buildDemoKnowledgeBundle(scrape) {
     });
   }
 
-  const businessName = extractBusinessName(scrape);
+  const businessName = extractBusinessNameHeuristic(scrape);
   const rootMeta = getRootMeta(scrape);
   const allLines = collectAllLines(scrape);
   const rootLines = Array.isArray(pages[0]?.lines) ? pages[0].lines : [];
@@ -344,6 +431,9 @@ export function buildDemoKnowledgeBundle(scrape) {
   });
 
   const demoBundle = {
+    extractionVersion: DEMO_BUNDLE_EXTRACTION_VERSION,
+    extractionMethod: "heuristic_fallback",
+    extractionQuestions: DEMO_EXTRACTION_QUESTIONS,
     businessName,
     websiteUrl: scrape.normalizedWebsiteUrl,
     websiteOrigin: scrape.websiteOrigin,
@@ -353,6 +443,7 @@ export function buildDemoKnowledgeBundle(scrape) {
     hours,
     contactFacts,
     groundingFacts,
+    unsupportedTopics: [],
     sourcePages: pages.map((page) => ({
       url: page.url,
       title: normalizeText(page.title) || new URL(page.url).hostname
@@ -364,4 +455,136 @@ export function buildDemoKnowledgeBundle(scrape) {
     previewSummary: summary,
     demoBundle
   };
+}
+
+function truncateLineList(lines, maxItems) {
+  return uniqueValues(lines).slice(0, maxItems);
+}
+
+function buildExtractionSourceDocument(scrape) {
+  const pages = Array.isArray(scrape?.pages) ? scrape.pages : [];
+  const blocks = [];
+
+  for (let index = 0; index < pages.length; index += 1) {
+    const page = pages[index];
+    const isRoot = index === 0;
+    const headings = truncateLineList(page.headings || [], isRoot ? 8 : 5);
+    const lines = truncateLineList(page.lines || [], isRoot ? 30 : 18);
+    const metaParts = [
+      normalizeText(page.meta?.description),
+      normalizeText(page.meta?.ogTitle),
+      normalizeText(page.meta?.ogDescription),
+      normalizeText(page.meta?.ogSiteName),
+      normalizeText(page.meta?.applicationName)
+    ].filter(Boolean);
+
+    blocks.push([
+      `PAGE ${index + 1}${isRoot ? " (homepage)" : ""}`,
+      `URL: ${normalizeText(page.url)}`,
+      `TITLE: ${normalizeText(page.title) || "-"}`,
+      metaParts.length ? `META: ${metaParts.join(" | ")}` : "META: -",
+      headings.length ? `HEADINGS:\n- ${headings.join("\n- ")}` : "HEADINGS: -",
+      lines.length ? `BODY LINES:\n- ${lines.join("\n- ")}` : "BODY LINES: -"
+    ].join("\n"));
+  }
+
+  return blocks.join("\n\n");
+}
+
+function buildExtractionSystemPrompt() {
+  return [
+    "You extract receptionist-ready business facts from a small crawl of a company's public website.",
+    "Answer only from the provided source material.",
+    "Do not guess from the domain name alone.",
+    "Prefer official business name wording shown in page titles, hero headings, logos referenced in metadata, and repeated branded headings.",
+    "Ignore CTA copy, signup prompts, privacy-policy text, blog chrome, admin text, and unrelated marketing widgets.",
+    "For anything not clearly supported by the website, return an empty string or empty array instead of guessing.",
+    "Write short receptionist-safe outputs that can be used directly in a prompt."
+  ].join("\n");
+}
+
+function buildExtractionUserPrompt(scrape) {
+  return [
+    `Website URL: ${normalizeText(scrape.normalizedWebsiteUrl)}`,
+    "",
+    "Answer this questionnaire from the website content below:",
+    ...DEMO_EXTRACTION_QUESTIONS.map((question, index) => `${index + 1}. ${question}`),
+    "",
+    "Return structured JSON with these rules:",
+    "- businessName: official business name",
+    "- businessSummary: one short sentence, 12-30 words",
+    "- topServices: short list of clearly offered services or job types",
+    "- serviceArea: short phrase or empty string",
+    "- hours: short phrase or empty string",
+    "- emergencyAvailability: short phrase or empty string",
+    "- customerTypes: any of residential, commercial, both, or empty array",
+    "- contactFacts: short contact-related facts clearly shown on the site",
+    "- approvedFacts: 3-10 receptionist-safe facts clearly supported by the site",
+    "- unsupportedTopics: things the receptionist should avoid claiming because they are not clearly supported",
+    "",
+    "Website source:",
+    buildExtractionSourceDocument(scrape)
+  ].join("\n");
+}
+
+async function extractDemoKnowledgeWithAi(scrape) {
+  const result = await callOpenAiJsonModel({
+    model: DEMO_EXTRACTION_MODEL,
+    system: buildExtractionSystemPrompt(),
+    user: buildExtractionUserPrompt(scrape),
+    schema: demoExtractionSchema,
+    jsonSchemaName: "demo_website_business_extract",
+    jsonSchema: demoExtractionJsonSchema,
+    maxOutputTokens: 1800,
+    promptCacheKey: `demo_extract:${DEMO_BUNDLE_EXTRACTION_VERSION}:${normalizeText(scrape.websiteHostname || scrape.normalizedWebsiteUrl).toLowerCase()}`
+  });
+
+  const parsed = result.parsed;
+  const businessName = normalizeText(parsed.businessName) || extractBusinessNameHeuristic(scrape);
+  const summary = normalizeText(parsed.businessSummary) || buildHeuristicDemoKnowledgeBundle(scrape).previewSummary;
+  const topServices = uniqueValues(parsed.topServices || []).slice(0, 6);
+  const serviceArea = normalizeText(parsed.serviceArea);
+  const hours = normalizeText(parsed.hours);
+  const emergencyAvailability = normalizeText(parsed.emergencyAvailability);
+  const customerTypes = uniqueValues(parsed.customerTypes || []).slice(0, 3);
+  const contactFacts = uniqueValues(parsed.contactFacts || []).slice(0, 5);
+  const approvedFacts = uniqueValues(parsed.approvedFacts || []).slice(0, 10);
+  const unsupportedTopics = uniqueValues(parsed.unsupportedTopics || []).slice(0, 8);
+
+  return {
+    businessName,
+    previewSummary: summary,
+    demoBundle: {
+      extractionVersion: DEMO_BUNDLE_EXTRACTION_VERSION,
+      extractionMethod: "ai_questionnaire",
+      extractionModel: result.model,
+      extractionQuestions: DEMO_EXTRACTION_QUESTIONS,
+      extractionUsage: result.usage,
+      businessName,
+      websiteUrl: scrape.normalizedWebsiteUrl,
+      websiteOrigin: scrape.websiteOrigin,
+      summary,
+      topServices,
+      serviceArea,
+      hours,
+      emergencyAvailability,
+      customerTypes,
+      contactFacts,
+      groundingFacts: approvedFacts,
+      approvedFacts,
+      unsupportedTopics,
+      sourcePages: (scrape.pages || []).map((page) => ({
+        url: page.url,
+        title: normalizeText(page.title) || new URL(page.url).hostname
+      }))
+    }
+  };
+}
+
+export async function buildDemoKnowledgeBundle(scrape) {
+  try {
+    return await extractDemoKnowledgeWithAi(scrape);
+  } catch {
+    return buildHeuristicDemoKnowledgeBundle(scrape);
+  }
 }
