@@ -140,19 +140,6 @@ function resolveStepForFieldErrors(fieldErrors) {
   return 3;
 }
 
-function buildSuccessMessage({ hasWebsite, smsOptInRequested }) {
-  if (hasWebsite && smsOptInRequested) {
-    return 'Account created. Your website build is starting now, and a confirmation text was sent for SMS alerts.';
-  }
-  if (hasWebsite) {
-    return 'Account created. Your website build is starting now.';
-  }
-  if (smsOptInRequested) {
-    return 'Account created. A confirmation text was sent for SMS alerts.';
-  }
-  return 'Account created.';
-}
-
 export function IntakePageClient({ qaMode = false } = {}) {
   const initialForm = useMemo(() => createInitialForm(Boolean(qaMode)), [qaMode]);
   const [form, setForm] = useState(initialForm);
@@ -323,12 +310,10 @@ export function IntakePageClient({ qaMode = false } = {}) {
         });
       } else {
         setStatus({
-          message: buildSuccessMessage({
-            hasWebsite,
-            smsOptInRequested: data?.smsOptInRequest?.ok === true
-          }),
+          message: 'Account created. Opening Get Started...',
           tone: 'ok'
         });
+        window.location.assign(getStartedHref);
       }
     } catch {
       setStatus({ message: 'Could not create account.', tone: 'bad' });
