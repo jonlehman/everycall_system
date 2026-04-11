@@ -305,8 +305,12 @@ export default function ClientGetStartedPage() {
     const pendingSmsDestinations = smsConfiguredDestinations
       .filter((entry) => !entry.isConfirmed)
       .map((entry) => entry.rawPhone);
+    const confirmedSmsDestinations = smsConfiguredDestinations
+      .filter((entry) => entry.isConfirmed)
+      .map((entry) => entry.rawPhone);
 
     const configuredDestinations = [...emailDestinations, ...smsConfiguredDestinations.map((entry) => entry.display)];
+    const workingDestinations = [...emailDestinations, ...confirmedSmsDestinations];
     const lines = [
       emailDestinations.length
         ? {
@@ -334,7 +338,8 @@ export default function ClientGetStartedPage() {
 
     return {
       activeUsers: configuredUsers.filter((user) => String(user?.status || '').trim().toLowerCase() === 'active'),
-      activeDestinations: configuredDestinations,
+      activeDestinations: workingDestinations,
+      configuredDestinations,
       pendingSmsDestinations,
       description: configuredDestinations.length
         ? 'Lead alerts are configured for the destinations shown here.'
@@ -458,7 +463,11 @@ export default function ClientGetStartedPage() {
             subdescription={leadDestinations.subdescription}
             statusBox={{
               heading: 'Leads currently go to',
-              tone: leadDestinations.lines.length ? 'processing' : 'bad',
+              tone: leadDestinations.activeDestinations.length
+                ? 'ok'
+                : leadDestinations.configuredDestinations.length
+                  ? 'processing'
+                  : 'bad',
               lines: leadDestinations.lines.length ? leadDestinations.lines : [
                 { label: 'Status', value: 'No lead destinations configured yet' }
               ]
