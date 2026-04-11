@@ -221,15 +221,18 @@
   transition: box-shadow 140ms ease, background-color 140ms ease, opacity 140ms ease;
 }
 
-.intake-readonly-value {
-  width: 100%;
-  border-radius: 12px;
-  background: #f8fafc;
-  box-shadow: inset 0 0 0 1px rgba(195, 198, 215, 0.55);
-  padding: 14px 15px;
+.intake-inline-display {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   font-size: 14px;
   line-height: 1.4;
   color: #121c2a;
+}
+
+.intake-inline-label {
+  font-weight: 700;
+  color: #243041;
 }
 
 .intake-stack input:focus,
