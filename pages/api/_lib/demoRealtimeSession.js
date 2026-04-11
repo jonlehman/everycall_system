@@ -168,9 +168,9 @@ export function buildDemoRealtimeSessionPayload(bundle = {}) {
           },
           turn_detection: {
             type: "server_vad",
-            threshold: 0.75,
+            threshold: 0.85,
             prefix_padding_ms: 300,
-            silence_duration_ms: 500,
+            silence_duration_ms: 650,
             idle_timeout_ms: null,
             create_response: true,
             interrupt_response: true
