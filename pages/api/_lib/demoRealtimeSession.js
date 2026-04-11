@@ -158,12 +158,21 @@ export function buildDemoRealtimeSessionPayload(bundle = {}) {
             language: "en"
           },
           turn_detection: {
-            type: "server_vad"
+            type: "server_vad",
+            threshold: 0.75,
+            prefix_padding_ms: 300,
+            silence_duration_ms: 500,
+            idle_timeout_ms: null,
+            create_response: true,
+            interrupt_response: true
           }
         },
         output: {
           voice
         }
+      },
+      input_audio_noise_reduction: {
+        type: "far_field"
       }
     },
     model,
