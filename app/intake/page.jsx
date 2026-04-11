@@ -481,7 +481,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                   </div>
 
                   <div className="intake-form-stack">
-                    <div className="intake-stack">
+                    <div className="intake-stack intake-login-username">
                       <div className="intake-inline-display">
                         <span className="intake-inline-label">Username:</span>
                         <span>{form.loginEmail || form.leadEmail || ''}</span>

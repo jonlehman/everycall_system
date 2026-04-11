@@ -235,6 +235,10 @@
   color: #243041;
 }
 
+.intake-login-username {
+  margin-top: 72px;
+}
+
 .intake-stack input:focus,
 .intake-stack textarea:focus {
   outline: none;
