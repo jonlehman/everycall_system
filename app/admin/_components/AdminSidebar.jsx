@@ -12,6 +12,7 @@ const sections = [
     items: [
       { label: 'Overview', href: '/admin/overview' },
       { label: 'Support', href: '/admin/support' },
+      { label: 'Website Demos', href: '/admin/demo-sessions' },
       { label: 'Monitoring', href: '/admin/monitoring' },
       { label: 'Provisioning Jobs', href: '/admin/jobs' },
       { label: 'Phone Numbers', href: '/admin/phone-numbers' }

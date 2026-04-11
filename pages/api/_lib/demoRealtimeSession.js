@@ -42,7 +42,8 @@ function buildDemoTenantProfile(bundle = {}) {
     assistant_name: "Sarah",
     business_name: businessName,
     company_description: summary,
-    basic_no_tool_allowed_statement: summary
+    basic_no_tool_allowed_statement: summary,
+    opening_line: `Hi, thanks for calling ${businessName}. This is Sarah. How can I help you?`
   });
 }
 
@@ -135,9 +136,15 @@ function resolveDemoRealtimeModel() {
   return configured;
 }
 
+function resolveDemoTranscriptionModel() {
+  return normalizeText(process.env.OPENAI_DEMO_TRANSCRIPTION_MODEL || process.env.OPENAI_REALTIME_TRANSCRIPTION_MODEL)
+    || "gpt-4o-mini-transcribe";
+}
+
 export function buildDemoRealtimeSessionPayload(bundle = {}) {
   const model = resolveDemoRealtimeModel();
   const voice = normalizeText(process.env.OPENAI_DEMO_REALTIME_VOICE || process.env.OPENAI_REALTIME_VOICE) || "marin";
+  const transcriptionModel = resolveDemoTranscriptionModel();
 
   return {
     session: {
@@ -146,6 +153,10 @@ export function buildDemoRealtimeSessionPayload(bundle = {}) {
       instructions: buildDemoRealtimeInstructions(bundle),
       audio: {
         input: {
+          transcription: {
+            model: transcriptionModel,
+            language: "en"
+          },
           turn_detection: {
             type: "server_vad"
           }

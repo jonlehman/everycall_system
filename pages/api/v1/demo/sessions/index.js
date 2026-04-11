@@ -36,8 +36,20 @@ export default async function handler(req, res) {
 
     const body = typeof req.body === "object" && req.body ? req.body : {};
     const websiteInput = normalizeText(body.websiteUrl || body.website_url);
+    const contactName = normalizeText(body.fullName || body.full_name || body.name);
+    const contactPhone = normalizeText(body.phone || body.phoneNumber || body.phone_number);
+    const contactEmail = normalizeText(body.email);
     if (!websiteInput) {
       return fail(res, 400, "website_url_invalid", "A public website URL is required.");
+    }
+    if (!contactName) {
+      return fail(res, 400, "contact_name_required", "A full name is required.");
+    }
+    if (!contactPhone) {
+      return fail(res, 400, "contact_phone_required", "A phone number is required.");
+    }
+    if (!contactEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
+      return fail(res, 400, "contact_email_invalid", "A valid email address is required.");
     }
 
     const ipLimit = await enforceRateLimit(res, pool, {
@@ -75,7 +87,10 @@ export default async function handler(req, res) {
     const session = await createAndBuildDemoSession(pool, {
       websiteUrl: validatedWebsiteUrl,
       requestIp: getClientIp(req),
-      userAgent: req.headers?.["user-agent"] || ""
+      userAgent: req.headers?.["user-agent"] || "",
+      contactName,
+      contactPhone,
+      contactEmail
     });
 
     if (!session) {

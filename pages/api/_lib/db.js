@@ -543,11 +543,16 @@ export async function ensureTables(pool) {
       website_origin TEXT NOT NULL,
       website_hostname TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'created',
+      contact_name TEXT,
+      contact_phone TEXT,
+      contact_email TEXT,
+      reused_from_demo_session_id TEXT REFERENCES demo_sessions(demo_session_id) ON DELETE SET NULL,
       business_name TEXT,
       preview_summary TEXT,
       demo_bundle_json JSONB NOT NULL DEFAULT '{}'::jsonb,
       scrape_page_count INTEGER NOT NULL DEFAULT 0,
       scrape_pages_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      transcript_items_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       failure_code TEXT,
       failure_message TEXT,
       request_ip_hash TEXT,
@@ -557,12 +562,17 @@ export async function ensureTables(pool) {
       expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours')
     );
   `);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS contact_name TEXT;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS contact_phone TEXT;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS contact_email TEXT;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS reused_from_demo_session_id TEXT REFERENCES demo_sessions(demo_session_id) ON DELETE SET NULL;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS website_hostname TEXT;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS business_name TEXT;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS preview_summary TEXT;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS demo_bundle_json JSONB NOT NULL DEFAULT '{}'::jsonb;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS scrape_page_count INTEGER NOT NULL DEFAULT 0;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS scrape_pages_json JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS transcript_items_json JSONB NOT NULL DEFAULT '[]'::jsonb;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS failure_code TEXT;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS failure_message TEXT;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS request_ip_hash TEXT;`);
@@ -1318,6 +1328,8 @@ export async function ensureTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_status_updated_idx ON demo_sessions (status, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_website_url_updated_idx ON demo_sessions (normalized_website_url, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_origin_updated_idx ON demo_sessions (website_origin, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_created_idx ON demo_sessions (created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_contact_email_created_idx ON demo_sessions (contact_email, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_expires_idx ON demo_sessions (expires_at ASC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS demo_session_events_session_created_idx ON demo_session_events (demo_session_id, created_at ASC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS inbound_webhook_events_provider_seen_idx ON inbound_webhook_events (provider, last_seen_at DESC);`);
