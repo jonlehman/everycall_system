@@ -16,7 +16,7 @@ const INTAKE_STEPS = [
     number: '1',
     title: 'Website',
     heroTitle: 'Start with your website',
-    heroCopy: 'If you have a public website, EveryCall can use it to start your first knowledge base automatically.'
+    heroCopy: ''
   },
   {
     key: 'business',
@@ -417,7 +417,6 @@ export function IntakePageClient({ qaMode = false } = {}) {
                     <span className="intake-panel-step">Step 2</span>
                     <div>
                       <h2 className="intake-panel-title">Business Name</h2>
-                      <p className="intake-panel-copy">This is the business name callers and team members will see throughout the workspace.</p>
                     </div>
                   </div>
 
@@ -466,7 +465,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                         placeholder="+1XXXXXXXXXX"
                       />
                       <div className="intake-muted">
-                        If you add a mobile number, EveryCall will send a confirmation text before SMS alerts are turned on.
+                        EveryCall will send a confirmation text.
                       </div>
                     </div>
                   </div>
