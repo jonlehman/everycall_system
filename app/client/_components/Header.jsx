@@ -113,7 +113,7 @@ export default function Header() {
           <SalesReceptionistNumberBadge className="hidden lg:inline-flex" />
 
           <Link
-            href="/client/account/support"
+            href="/client/support"
             className="flex h-9 w-9 items-center justify-center rounded text-slate-700 transition-colors hover:bg-[#eff4ff]"
             aria-label="Contact support"
           >
@@ -167,7 +167,7 @@ export default function Header() {
                 <Link className="mb-1 block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-[#eff4ff]" href="/client/account/billing">
                   Open billing
                 </Link>
-                <Link className="mb-1 block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-[#eff4ff]" href="/client/account/support">
+                <Link className="mb-1 block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-[#eff4ff]" href="/client/support">
                   Support
                 </Link>
                 <div className="my-1 border-t border-slate-200" />

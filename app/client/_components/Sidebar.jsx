@@ -18,6 +18,7 @@ function iconName(kind) {
 export default function Sidebar({ collapsed = false, onToggle }) {
   const pathname = usePathname();
   const [knowledgeReady, setKnowledgeReady] = useState(false);
+  const supportActive = pathname === '/client/support' || pathname.startsWith('/client/support/');
 
   useEffect(() => {
     let mounted = true;
@@ -124,7 +125,14 @@ export default function Sidebar({ collapsed = false, onToggle }) {
 
         {!collapsed ? (
           <>
-            <Link className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-[#dfe9fc]" href="/client/account/support">
+            <Link
+              className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all ${
+                supportActive
+                  ? 'border-l-4 border-[#004ac6] bg-white font-semibold text-[#004ac6] shadow-sm'
+                  : 'text-slate-600 hover:bg-[#dfe9fc]'
+              }`}
+              href="/client/support"
+            >
               <span className="material-symbols-outlined text-[20px]">contact_support</span>
               Support
             </Link>
