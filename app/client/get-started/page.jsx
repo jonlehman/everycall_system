@@ -102,7 +102,8 @@ function SetupStepCard({
           {statusBox ? (
             <div className={`mb-6 rounded-lg border p-4 ${toneClasses(statusBox.tone).panel}`}>
               {statusBox.heading ? (
-                <div className="mb-3">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className={`flex h-2 w-2 rounded-full ${toneClasses(statusBox.tone).dot}`} />
                   <span className="block text-[10px] font-bold tracking-[0.15em] text-[#121c2a]">
                     {statusBox.heading}
                   </span>
@@ -510,7 +511,7 @@ export default function ClientGetStartedPage() {
             statusBox={{
               label: 'Receptionist Number',
               value: forwarding.statusValue,
-              tone: forwarding.numberReady ? 'processing' : 'bad'
+              tone: forwarding.forwardingConfigured ? 'ok' : forwarding.numberReady ? 'processing' : 'bad'
             }}
             className="md:col-span-6 lg:col-span-7"
             action={forwarding.numberReady ? (
