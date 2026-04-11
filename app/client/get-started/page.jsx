@@ -419,12 +419,20 @@ export default function ClientGetStartedPage() {
   return (
     <ClientPage className="gap-4 pt-2 md:pt-3">
       <div className="mx-auto w-full max-w-5xl">
-        <header className="mt-12 mb-7 md:mb-8">
+        <header className="mt-12 mb-7 flex flex-col gap-3 md:mb-8 md:flex-row md:items-start md:justify-between">
           <h1 className="mb-2 font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.05em] text-[#121c2a] md:text-5xl">
             Get Started.
             <br />
             <span className="font-medium text-[#2563eb]">Prepare EveryCall for live calls.</span>
           </h1>
+          <a
+            href="https://calendly.com/jonlehman/everycall-setup"
+            target="_blank"
+            rel="noreferrer"
+            className="pt-1 text-sm font-semibold text-[#2563eb] transition-colors hover:text-[#1d4ed8] md:text-right"
+          >
+            Get Help: Schedule Onboarding Session
+          </a>
         </header>
 
         <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
@@ -516,18 +524,8 @@ export default function ClientGetStartedPage() {
             ) : null}
           />
 
-          <div className="grid gap-4 md:col-span-12 lg:col-span-5">
+          <div className="md:col-span-12 lg:col-span-5">
             <ProgressPanel items={progressItems} />
-            <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)]">
-              <a
-                href="https://calendly.com/jonlehman/everycall-setup"
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm font-semibold text-[#2563eb] transition-colors hover:text-[#1d4ed8]"
-              >
-                Get Help: Schedule Onboarding Session
-              </a>
-            </div>
           </div>
         </div>
       </div>
