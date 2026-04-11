@@ -275,28 +275,31 @@ export default function ClientGetStartedPage() {
   }, [packet.buildState]);
 
   const leadDestinations = useMemo(() => {
-    const activeUsers = Array.isArray(packet.users)
-      ? packet.users.filter((user) => String(user?.status || '').trim().toLowerCase() === 'active')
+    const configuredUsers = Array.isArray(packet.users)
+      ? packet.users.filter((user) => String(user?.status || '').trim().toLowerCase() !== 'disabled')
       : [];
-    const emailDestinations = activeUsers
+    const emailDestinations = configuredUsers
       .filter((user) => Boolean(user?.lead_alert_email_enabled) && String(user?.email || '').trim())
       .map((user) => String(user.email || '').trim());
-    const smsDestinations = activeUsers
+    const smsConfiguredDestinations = configuredUsers
       .filter((user) => (
         Boolean(user?.lead_alert_sms_enabled)
         && String(user?.phone_number || '').trim()
-        && String(user?.sms_opt_in_status || '').trim().toLowerCase() === 'opted_in'
       ))
-      .map((user) => formatPhoneDisplay(user.phone_number) || String(user.phone_number || '').trim());
-    const pendingSmsDestinations = activeUsers
-      .filter((user) => (
-        Boolean(user?.lead_alert_sms_enabled)
-        && String(user?.phone_number || '').trim()
-        && String(user?.sms_opt_in_status || '').trim().toLowerCase() !== 'opted_in'
-      ))
-      .map((user) => formatPhoneDisplay(user.phone_number) || String(user.phone_number || '').trim());
+      .map((user) => {
+        const phone = formatPhoneDisplay(user.phone_number) || String(user.phone_number || '').trim();
+        const smsStatus = String(user?.sms_opt_in_status || '').trim().toLowerCase();
+        return {
+          display: smsStatus === 'opted_in' ? phone : `${phone} (unconfirmed)`,
+          isConfirmed: smsStatus === 'opted_in',
+          rawPhone: phone
+        };
+      });
+    const pendingSmsDestinations = smsConfiguredDestinations
+      .filter((entry) => !entry.isConfirmed)
+      .map((entry) => entry.rawPhone);
 
-    const activeDestinations = [...emailDestinations, ...smsDestinations];
+    const configuredDestinations = [...emailDestinations, ...smsConfiguredDestinations.map((entry) => entry.display)];
     const lines = [];
     if (emailDestinations.length) {
       lines.push({
@@ -304,19 +307,21 @@ export default function ClientGetStartedPage() {
         value: new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' }).format(emailDestinations)
       });
     }
-    if (smsDestinations.length) {
+    if (smsConfiguredDestinations.length) {
       lines.push({
         label: 'Phone',
-        value: new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' }).format(smsDestinations)
+        value: new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' }).format(
+          smsConfiguredDestinations.map((entry) => entry.display)
+        )
       });
     }
 
     return {
-      activeUsers,
-      activeDestinations,
+      activeUsers: configuredUsers.filter((user) => String(user?.status || '').trim().toLowerCase() === 'active'),
+      activeDestinations: configuredDestinations,
       pendingSmsDestinations,
-      description: activeDestinations.length
-        ? 'Leads are already being sent to the destinations shown here.'
+      description: configuredDestinations.length
+        ? 'Lead alerts are configured for the destinations shown here.'
         : 'Open Send Leads To and choose which people should receive new lead alerts by email or text.',
       subdescription: pendingSmsDestinations.length
         ? `Text alerts to ${new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' }).format(pendingSmsDestinations)} will start after SMS confirmation.`
