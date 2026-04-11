@@ -3,7 +3,8 @@ export const clientPrimaryNavItems = [
     href: '/client/get-started',
     label: 'Get Started',
     icon: 'dashboard',
-    matchPrefixes: ['/client/get-started', '/client/overview']
+    matchPrefixes: ['/client/get-started', '/client/overview'],
+    hideWhenBillingActive: true
   },
   {
     href: '/client/calls',
@@ -12,16 +13,10 @@ export const clientPrimaryNavItems = [
     matchPrefixes: ['/client/calls']
   },
   {
-    href: '/client/receptionist/basics',
-    label: 'Receiptionist Setup',
-    icon: 'receptionist',
-    matchPrefixes: ['/client/receptionist', '/client/setup', '/client/knowledge', '/client/routing']
-  },
-  {
-    href: '/client/team',
-    label: 'Send Leads To',
-    icon: 'team',
-    matchPrefixes: ['/client/team', '/client/team/integrations']
+    href: '/client/dashboard',
+    label: 'Reports',
+    icon: 'reports',
+    matchPrefixes: ['/client/dashboard']
   },
   {
     href: '/client/account/general',
@@ -30,16 +25,27 @@ export const clientPrimaryNavItems = [
     matchPrefixes: ['/client/account/general', '/client/account/billing', '/client/settings', '/client/billing']
   },
   {
-    href: '/client/account/users',
-    label: 'Users',
-    icon: 'users',
-    matchPrefixes: ['/client/account/users']
-  },
-  {
-    href: '/client/dashboard',
-    label: 'Reports',
-    icon: 'reports',
-    matchPrefixes: ['/client/dashboard']
+    href: '/client/setup',
+    label: 'Setup',
+    icon: 'setup',
+    matchPrefixes: ['/client/setup', '/client/receptionist', '/client/team', '/client/account/users', '/client/knowledge', '/client/routing'],
+    children: [
+      {
+        href: '/client/receptionist/basics',
+        label: 'Receptionist',
+        matchPrefixes: ['/client/receptionist', '/client/knowledge', '/client/routing']
+      },
+      {
+        href: '/client/team',
+        label: 'Send Leads To',
+        matchPrefixes: ['/client/team', '/client/team/integrations']
+      },
+      {
+        href: '/client/account/users',
+        label: 'Users',
+        matchPrefixes: ['/client/account/users']
+      }
+    ]
   }
 ];
 
@@ -60,11 +66,14 @@ export const sendLeadsNavItems = [
 
 export function pathMatches(pathname, item) {
   const current = String(pathname || '').replace(/\/+$/, '') || '/';
+  const children = Array.isArray(item?.children) ? item.children : [];
   const prefixes = Array.isArray(item?.matchPrefixes) && item.matchPrefixes.length
     ? item.matchPrefixes
     : [item?.href || ''];
-  return prefixes.some((prefix) => {
+  const directMatch = prefixes.some((prefix) => {
     const normalized = String(prefix || '').replace(/\/+$/, '') || '/';
     return current === normalized || current.startsWith(`${normalized}/`);
   });
+  if (directMatch) return true;
+  return children.some((child) => pathMatches(current, child));
 }
