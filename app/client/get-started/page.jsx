@@ -128,7 +128,11 @@ function SetupStepCard({
                   {statusBox.lines.map((line) => (
                     <p className="flex flex-wrap items-center gap-2 text-sm leading-relaxed text-slate-600" key={`${line.label}-${line.value}`}>
                       <span className="font-medium">{line.label}:</span>
-                      <span>{line.value}</span>
+                      {line.blank ? (
+                        <span className="inline-block h-8 min-w-[11rem] rounded-md border border-slate-200 bg-white/80 align-middle" />
+                      ) : (
+                        <span>{line.value}</span>
+                      )}
                     </p>
                   ))}
                 </div>
@@ -300,21 +304,30 @@ export default function ClientGetStartedPage() {
       .map((entry) => entry.rawPhone);
 
     const configuredDestinations = [...emailDestinations, ...smsConfiguredDestinations.map((entry) => entry.display)];
-    const lines = [];
-    if (emailDestinations.length) {
-      lines.push({
-        label: 'Email',
-        value: new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' }).format(emailDestinations)
-      });
-    }
-    if (smsConfiguredDestinations.length) {
-      lines.push({
-        label: 'Phone',
-        value: new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' }).format(
-          smsConfiguredDestinations.map((entry) => entry.display)
-        )
-      });
-    }
+    const lines = [
+      emailDestinations.length
+        ? {
+            label: 'Email',
+            value: new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' }).format(emailDestinations)
+          }
+        : {
+            label: 'Email',
+            value: '',
+            blank: true
+          },
+      smsConfiguredDestinations.length
+        ? {
+            label: 'Phone',
+            value: new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' }).format(
+              smsConfiguredDestinations.map((entry) => entry.display)
+            )
+          }
+        : {
+            label: 'Phone',
+            value: '',
+            blank: true
+          }
+    ];
 
     return {
       activeUsers: configuredUsers.filter((user) => String(user?.status || '').trim().toLowerCase() === 'active'),
@@ -394,11 +407,11 @@ export default function ClientGetStartedPage() {
                   href="/client/receptionist/knowledge"
                   className={actionButtonClass(false)}
                 >
-                  Upload Documents (optional)
+                  Edit
                 </Link>
               ) : (
                 <button type="button" disabled className={actionButtonClass(true)}>
-                  Upload Documents (optional)
+                  Edit
                 </button>
               )
             )}
@@ -423,7 +436,7 @@ export default function ClientGetStartedPage() {
                 href="/client/team"
                 className={`${actionButtonClass(false)} w-full`}
               >
-                Add Additional Recipients
+                Edit
               </Link>
             )}
           />
