@@ -127,12 +127,10 @@ function SetupStepCard({
                 <div className="space-y-1">
                   {statusBox.lines.map((line) => (
                     <p className="flex flex-wrap items-center gap-2 text-sm leading-relaxed text-slate-600" key={`${line.label}-${line.value}`}>
-                      <span className="font-medium">{line.label}:</span>
-                      {line.blank ? (
-                        <span className="inline-block h-8 min-w-[11rem] rounded-md border border-slate-200 bg-white/80 align-middle" />
-                      ) : (
+                      <span className="font-medium">{line.blank ? line.label : `${line.label}:`}</span>
+                      {!line.blank ? (
                         <span>{line.value}</span>
-                      )}
+                      ) : null}
                     </p>
                   ))}
                 </div>
