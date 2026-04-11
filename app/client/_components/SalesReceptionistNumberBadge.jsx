@@ -55,7 +55,7 @@ export default function SalesReceptionistNumberBadge({ className = '' }) {
         className="group relative inline-flex items-center gap-2 rounded-md border border-slate-200 bg-[#eff4ff] px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-[#dfe9fc] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004ac6] focus-visible:ring-offset-2"
         aria-label={SALES_RECEPTIONIST_NUMBER_TOOLTIP}
       >
-        <span className="text-[10px] font-bold normal-case tracking-normal text-slate-500">Sales Receptionist Number</span>
+        <span className="text-[10px] font-bold normal-case tracking-normal text-slate-500">Receptionist Number</span>
         <span className="font-semibold text-slate-900">
           {readiness.showSalesReceptionistNumber
             ? (formatPhoneDisplay(readiness.phoneNumber) || readiness.phoneNumber)

@@ -11,6 +11,7 @@ function iconName(kind) {
   if (kind === 'calls') return 'phone_in_talk';
   if (kind === 'team') return 'groups';
   if (kind === 'account') return 'settings';
+  if (kind === 'users') return 'manage_accounts';
   return 'person_4';
 }
 

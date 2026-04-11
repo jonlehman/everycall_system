@@ -27,7 +27,13 @@ export const clientPrimaryNavItems = [
     href: '/client/account/general',
     label: 'Account',
     icon: 'account',
-    matchPrefixes: ['/client/account', '/client/settings', '/client/billing']
+    matchPrefixes: ['/client/account/general', '/client/account/billing', '/client/account/support', '/client/settings', '/client/billing']
+  },
+  {
+    href: '/client/account/users',
+    label: 'Users',
+    icon: 'users',
+    matchPrefixes: ['/client/account/users']
   },
   {
     href: '/client/dashboard',
@@ -44,7 +50,6 @@ export const receptionistNavItems = [
 
 export const accountNavItems = [
   { href: '/client/account/general', label: 'General' },
-  { href: '/client/account/users', label: 'Users' },
   { href: '/client/account/billing', label: 'Billing' },
   { href: '/client/account/support', label: 'Support' }
 ];
