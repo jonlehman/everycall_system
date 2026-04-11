@@ -257,7 +257,7 @@ export default function ClientGetStartedPage() {
         tone: 'ok',
         statusValue: 'Complete',
         description: 'Your receptionist can now answer any questions about your business covered on your website.',
-        subdescription: 'To add or revise website training, upload documents.'
+        subdescription: ''
       };
     }
     if (latestWebsiteStatus === 'failed') {
@@ -266,7 +266,7 @@ export default function ClientGetStartedPage() {
         tone: 'bad',
         statusValue: 'Needs attention',
         description: 'Website training needs attention. Open Knowledge to review the issue with your website crawl.',
-        subdescription: 'To add or revise website training, upload documents.'
+        subdescription: ''
       };
     }
     return {
@@ -274,7 +274,7 @@ export default function ClientGetStartedPage() {
       tone: 'processing',
       statusValue: 'Processing',
       description: 'Training your receptionist using your website.',
-      subdescription: 'To add or revise website training, upload documents.'
+      subdescription: ''
     };
   }, [packet.buildState]);
 
@@ -336,9 +336,7 @@ export default function ClientGetStartedPage() {
       description: configuredDestinations.length
         ? 'Lead alerts are configured for the destinations shown here.'
         : 'Open Send Leads To and choose which people should receive new lead alerts by email or text.',
-      subdescription: pendingSmsDestinations.length
-        ? `Text alerts to ${new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' }).format(pendingSmsDestinations)} will start after SMS confirmation.`
-        : '',
+      subdescription: '',
       lines
     };
   }, [packet.users]);
