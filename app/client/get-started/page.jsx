@@ -418,7 +418,7 @@ export default function ClientGetStartedPage() {
                 href="/client/team"
                 className={`${actionButtonClass(false)} w-full`}
               >
-                Add Additional Send-To Users
+                Add Additional Recipients
               </Link>
             )}
           />
