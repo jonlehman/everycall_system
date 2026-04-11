@@ -507,8 +507,18 @@ export default function ClientGetStartedPage() {
             ) : null}
           />
 
-          <div className="md:col-span-12 lg:col-span-5">
+          <div className="grid gap-4 md:col-span-12 lg:col-span-5">
             <ProgressPanel items={progressItems} />
+            <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)]">
+              <a
+                href="https://calendly.com/jonlehman/everycall-setup"
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm font-semibold text-[#2563eb] transition-colors hover:text-[#1d4ed8]"
+              >
+                Get Help: Schedule Onboarding Session
+              </a>
+            </div>
           </div>
         </div>
       </div>
