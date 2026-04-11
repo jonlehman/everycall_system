@@ -1,5 +1,6 @@
 import { ensureTables, getPool } from "../../../_lib/db.js";
 import { loadDemoSession } from "../../../_lib/demoSessions.js";
+import { handleDemoCorsPreflight, applyDemoCors } from "../../../_lib/demoCors.js";
 import { enforceRateLimit, getClientIp } from "../../../_lib/rateLimit.js";
 
 function normalizeText(value) {
@@ -15,6 +16,9 @@ function fail(res, status, error, message) {
 }
 
 export default async function handler(req, res) {
+  if (handleDemoCorsPreflight(req, res)) return;
+  applyDemoCors(req, res);
+
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return fail(res, 405, "method_not_allowed", "Method not allowed.");

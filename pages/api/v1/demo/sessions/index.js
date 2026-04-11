@@ -1,4 +1,5 @@
 import { createAndBuildDemoSession } from "../../../_lib/demoSessions.js";
+import { handleDemoCorsPreflight, applyDemoCors } from "../../../_lib/demoCors.js";
 import { ensureTables, getPool } from "../../../_lib/db.js";
 import { enforceRateLimit, getClientIp } from "../../../_lib/rateLimit.js";
 import { validateDemoWebsiteUrl } from "../../../_lib/demoWebsiteScraper.js";
@@ -17,6 +18,9 @@ function fail(res, status, error, message, extra = {}) {
 }
 
 export default async function handler(req, res) {
+  if (handleDemoCorsPreflight(req, res)) return;
+  applyDemoCors(req, res);
+
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return fail(res, 405, "method_not_allowed", "Method not allowed.");

@@ -179,6 +179,20 @@ export async function loadDemoSession(pool, demoSessionId) {
   return row ? serializeDemoSession(row) : null;
 }
 
+export async function loadDemoSessionRecord(pool, demoSessionId) {
+  const normalizedId = normalizeText(demoSessionId);
+  if (!normalizedId) return null;
+  await markSessionExpiredIfNeeded(pool, normalizedId);
+  const result = await pool.query(
+    `SELECT *
+     FROM demo_sessions
+     WHERE demo_session_id = $1
+     LIMIT 1`,
+    [normalizedId]
+  );
+  return result.rows[0] || null;
+}
+
 async function findReusableReadyDemoSession(pool, normalizedWebsiteUrl) {
   const result = await pool.query(
     `SELECT *
