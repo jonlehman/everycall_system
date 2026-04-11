@@ -1,3 +1,9 @@
+import {
+  getDefaultPromptBlueprintSeed,
+  normalizeTenantPromptProfile,
+  renderPromptContext
+} from "@everycall/contracts";
+
 function normalizeText(value) {
   return String(value || "").trim();
 }
@@ -26,44 +32,111 @@ function buildFactList(bundle = {}) {
   ]).slice(0, 12);
 }
 
-export function buildDemoRealtimeInstructions(bundle = {}) {
-  const businessName = normalizeText(bundle.businessName) || "this business";
-  const summary = normalizeText(bundle.summary);
-  const serviceArea = normalizeText(bundle.serviceArea);
-  const hours = normalizeText(bundle.hours);
-  const facts = buildFactList(bundle);
+function buildDemoTenantProfile(bundle = {}) {
+  const businessName = normalizeText(bundle.businessName) || "This Business";
+  const summary = normalizeText(bundle.summary)
+    || normalizeText(bundle.previewSummary)
+    || `${businessName} provides the services described in this website demo.`;
 
+  return normalizeTenantPromptProfile({
+    assistant_name: "Sarah",
+    business_name: businessName,
+    company_description: summary,
+    basic_no_tool_allowed_statement: summary
+  });
+}
+
+function buildDemoSectionOverrides(bundle = {}) {
+  const summary = normalizeText(bundle.summary)
+    || normalizeText(bundle.previewSummary)
+    || "This quick public demo only knows what was found on the website.";
+
+  return {
+    business_context: `# Business Context
+${summary}
+
+This public demo does not use live tools or a live submission workflow.
+- Answer only from the business summary and confirmed facts included in this prompt.
+- You may still conversationally collect callback information from interested callers, just like the live receptionist would.
+- Do not act as if collected information was submitted, stored, or sent to staff.
+- If the answer is not supported here, say this quick demo only knows what was found on the website and that the full EveryCall setup would train the receptionist more deeply.`,
+    tools: `# Tools
+There are no live tools in this public demo.
+- Do not call tools.
+- Do not mention internal tools, lookups, packets, workflows, gateway calls, or system logic.
+- If you collect callback information conversationally, do not act as if it was submitted anywhere.
+- Do not act as if you sent a message, created a request, or notified staff.`,
+    knowledge_boundaries: `# Factual Boundaries & Uncertainty
+- Never answer business-specific factual questions from general intuition.
+- Never invent business facts.
+- Answer only from the business summary and confirmed facts in this prompt.
+- If a detail is not confirmed here, say this quick demo only knows what was found on the website and that the full EveryCall setup would train the receptionist more deeply.
+- Do not pretend to perform a lookup or check another system during this public demo.`,
+    closing: `# Closing
+- Close warmly and briefly.
+- Thank the caller.
+- Use this closing style when it fits: Thanks for calling. Have a great rest of your day.
+- Do not claim an action was completed unless it actually was.
+- In this public demo, never claim that a lead was sent, staff were notified, or a request was created.`
+  };
+}
+
+function buildDemoFactPack(bundle = {}) {
+  const facts = buildFactList(bundle);
   const lines = [
-    `You are an EveryCall demo receptionist for ${businessName}.`,
-    "This is only a brief public website demo.",
-    "Speak naturally, warmly, and briefly like a receptionist answering a business phone.",
-    "Speak in English by default.",
-    "Only switch to another language if the caller clearly starts speaking that language first.",
-    "Use only the business summary and facts provided here.",
-    "If the answer is not supported by the demo information, say this quick demo only knows what was found on the website and that the full EveryCall setup would train the receptionist more deeply.",
-    "Do not claim that you booked an appointment, sent a lead, contacted staff, or created any real request.",
-    "Do not collect or store sensitive information.",
-    "Keep responses short, usually one or two sentences."
+    "# Demo Fact Pack",
+    "Use only the confirmed website-derived information below when answering business-specific questions."
   ];
 
-  if (summary) {
-    lines.push(`Business summary: ${summary}`);
+  if (normalizeText(bundle.summary)) {
+    lines.push(`Business summary: ${normalizeText(bundle.summary)}`);
   }
-  if (serviceArea) {
-    lines.push(`Service area: ${serviceArea}`);
+  if (normalizeText(bundle.serviceArea)) {
+    lines.push(`Service area: ${normalizeText(bundle.serviceArea)}`);
   }
-  if (hours) {
-    lines.push(`Hours: ${hours}`);
+  if (normalizeText(bundle.hours)) {
+    lines.push(`Hours: ${normalizeText(bundle.hours)}`);
   }
   if (facts.length) {
     lines.push(`Known facts: ${facts.join("; ")}`);
   }
 
-  return lines.join(" ");
+  return lines.join("\n");
+}
+
+export function buildDemoRealtimeInstructions(bundle = {}) {
+  const blueprint = getDefaultPromptBlueprintSeed();
+  const tenantProfile = buildDemoTenantProfile(bundle);
+  const rendered = renderPromptContext(blueprint, tenantProfile, {
+    companyDescription: tenantProfile.company_description,
+    companyDescriptionSource: "tenant_override",
+    sectionOverrides: buildDemoSectionOverrides(bundle)
+  });
+
+  const lines = [
+    rendered.startupPrompt,
+    "# Demo Rules",
+    "- This is only a brief public website demo.",
+    "- Speak in English by default.",
+    "- Only switch to another language if the caller clearly starts speaking that language first.",
+    "- Do not collect or store sensitive information.",
+    "- Keep responses short, usually one or two sentences.",
+    buildDemoFactPack(bundle)
+  ];
+
+  return lines.filter(Boolean).join("\n\n");
+}
+
+function resolveDemoRealtimeModel() {
+  const configured = normalizeText(process.env.OPENAI_DEMO_REALTIME_MODEL || process.env.OPENAI_REALTIME_MODEL);
+  if (!configured || configured === "gpt-realtime") {
+    return "gpt-realtime-1.5";
+  }
+  return configured;
 }
 
 export function buildDemoRealtimeSessionPayload(bundle = {}) {
-  const model = normalizeText(process.env.OPENAI_DEMO_REALTIME_MODEL || process.env.OPENAI_REALTIME_MODEL) || "gpt-realtime";
+  const model = resolveDemoRealtimeModel();
   const voice = normalizeText(process.env.OPENAI_DEMO_REALTIME_VOICE || process.env.OPENAI_REALTIME_VOICE) || "marin";
 
   return {
