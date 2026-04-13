@@ -503,9 +503,6 @@ export default function CallsPage() {
   const pageStart = filteredRows.length ? safeQueuePage * PAGE_SIZE + 1 : 0;
   const pageEnd = filteredRows.length ? Math.min(filteredRows.length, (safeQueuePage + 1) * PAGE_SIZE) : 0;
   const transcriptTurns = useMemo(() => parseTranscriptTurns(detailTranscript), [detailTranscript]);
-  const completedCount = filteredRows.filter((row) => ['completed', 'scheduled'].includes(row.status)).length;
-  const followUpCount = filteredRows.filter((row) => !['completed', 'scheduled', 'canceled', 'spam'].includes(row.status)).length;
-  const completionRate = filteredRows.length ? Math.round((completedCount / filteredRows.length) * 100) : 0;
   const selectedLeadMeta = detailMeta ? getLeadStatusMeta(detailMeta) : null;
   const selectedCallerName = detailMeta ? buildDetailCallerName(detailMeta, detailDraft) : '';
   const selectedCallerSecondary = detailMeta
@@ -852,27 +849,6 @@ export default function CallsPage() {
               </div>
             </section>
 
-            <section className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-2'}`}>
-              <div className="relative overflow-hidden rounded-[1.75rem] bg-[#004ac6] p-6 text-white shadow-[0_24px_48px_-12px_rgba(0,74,198,0.28)]">
-                <span className="material-symbols-outlined absolute -bottom-5 -right-4 text-[7rem] opacity-10">call</span>
-                <p className="m-0 font-['Space_Grotesk'] text-xs font-bold tracking-[-0.02em] text-blue-100">Completion Rate</p>
-                <h3 className="m-0 mt-3 font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.05em]">{completionRate}%</h3>
-                <p className="m-0 mt-4 text-xs font-medium text-blue-100">
-                  {completedCount} completed or scheduled in the current view
-                </p>
-              </div>
-
-              <div className="flex flex-col justify-between rounded-[1.75rem] border border-slate-200/80 bg-white p-6 shadow-sm">
-                <div>
-                  <p className="m-0 font-['Space_Grotesk'] text-xs font-bold tracking-[-0.02em] text-slate-500">Needs Follow-Up</p>
-                  <h3 className="m-0 mt-3 font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.05em] text-slate-950">{followUpCount}</h3>
-                </div>
-                <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-emerald-700">
-                  <span className="material-symbols-outlined text-base">check_circle</span>
-                  {filteredRows.length} call(s) currently in view
-                </div>
-              </div>
-            </section>
           </div>
 
           <aside className="min-w-0">
