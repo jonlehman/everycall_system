@@ -584,8 +584,8 @@ export default function CallsPage() {
           </div>
 
           <div className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-              <div className="relative min-w-0 flex-1">
+            <div className="flex flex-col gap-3 xl:flex-row xl:flex-nowrap xl:items-center">
+              <div className="relative min-w-0 flex-1 xl:min-w-[14rem]">
                 <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">search</span>
                 <input
                   ref={searchInputRef}
@@ -599,9 +599,9 @@ export default function CallsPage() {
 
               <div className="hidden h-8 w-px bg-slate-200 xl:block" />
 
-              <div className="flex flex-1 flex-wrap items-center gap-2">
+              <div className="flex flex-1 flex-wrap items-center gap-2 xl:flex-nowrap xl:justify-end">
                 <select
-                  className="min-w-[10rem] rounded-lg border-none bg-transparent px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:bg-slate-50 focus:bg-slate-50 focus:ring-2 focus:ring-[#004ac6]/15"
+                  className="min-w-[8.25rem] rounded-lg border-none bg-transparent px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:bg-slate-50 focus:bg-slate-50 focus:ring-2 focus:ring-[#004ac6]/15"
                   value={statusFilter}
                   onChange={(event) => setStatusFilter(event.target.value)}
                   aria-label="Call Status"
@@ -618,7 +618,7 @@ export default function CallsPage() {
                 </select>
 
                 <select
-                  className="min-w-[10rem] rounded-lg border-none bg-transparent px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:bg-slate-50 focus:bg-slate-50 focus:ring-2 focus:ring-[#004ac6]/15"
+                  className="min-w-[7.5rem] rounded-lg border-none bg-transparent px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:bg-slate-50 focus:bg-slate-50 focus:ring-2 focus:ring-[#004ac6]/15"
                   value={urgencyFilter}
                   onChange={(event) => setUrgencyFilter(event.target.value)}
                   aria-label="Urgency"
@@ -633,7 +633,7 @@ export default function CallsPage() {
                 <div ref={datePopoverRef} className="relative">
                   <button
                     type="button"
-                    className="inline-flex min-w-[10rem] items-center justify-between gap-2 rounded-lg border-none bg-transparent px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50"
+                    className="inline-flex min-w-[8.5rem] items-center justify-between gap-2 rounded-lg border-none bg-transparent px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50"
                     onClick={() => {
                       setShowDatePopover((current) => !current);
                       setShowAdvancedFilters(false);
@@ -758,13 +758,19 @@ export default function CallsPage() {
           <div className="min-w-0 space-y-6">
             <section className="overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white p-4 shadow-sm">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-separate border-spacing-y-4 text-left">
+                <table className="w-full min-w-[640px] border-separate border-spacing-y-4 text-left">
+                  <colgroup>
+                    <col className="w-[38%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[34%]" />
+                  </colgroup>
                   <thead>
                     <tr>
-                      <th className="px-4 pb-2 text-xs font-semibold text-slate-500">Client / Caller</th>
-                      <th className="px-4 pb-2 text-xs font-semibold text-slate-500">Date</th>
-                      <th className="px-4 pb-2 text-xs font-semibold text-slate-500">Time</th>
-                      <th className="px-4 pb-2 text-right text-xs font-semibold text-slate-500">Status</th>
+                      <th className="px-3 pb-2 text-xs font-semibold text-slate-500">Client / Caller</th>
+                      <th className="px-3 pb-2 text-xs font-semibold text-slate-500">Date</th>
+                      <th className="px-3 pb-2 text-xs font-semibold text-slate-500">Time</th>
+                      <th className="px-3 pb-2 text-right text-xs font-semibold text-slate-500">Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -780,9 +786,9 @@ export default function CallsPage() {
                           className={`cursor-pointer transition-all ${selected ? 'bg-[#004ac6]/5' : 'hover:bg-slate-50'}`}
                           onClick={() => loadDetail(row.sid)}
                         >
-                          <td className="rounded-l-2xl px-4 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className={`flex h-11 w-11 items-center justify-center rounded-full font-bold ${selected ? 'bg-[#004ac6] text-white' : 'bg-slate-100 text-slate-700'}`}>
+                          <td className="rounded-l-2xl px-3 py-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${selected ? 'bg-[#004ac6] text-white' : 'bg-slate-100 text-slate-700'}`}>
                                 {getInitials(callerName)}
                               </div>
                               <div className="min-w-0">
@@ -791,13 +797,13 @@ export default function CallsPage() {
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-4">
+                          <td className="px-3 py-4">
                             <div className="text-sm font-semibold text-slate-900">{dateText}</div>
                           </td>
-                          <td className="px-4 py-4">
+                          <td className="px-3 py-4">
                             <div className="text-sm font-semibold text-slate-900">{timeText}</div>
                           </td>
-                          <td className="rounded-r-2xl px-4 py-4 text-right">
+                          <td className="rounded-r-2xl px-3 py-4 text-right">
                             <div className="inline-flex flex-col items-end gap-2">
                               <span className={`rounded-full px-3 py-1 text-xs font-bold ${queueStatusClass(row.status)}`}>
                                 {formatLabel(row.status)}
