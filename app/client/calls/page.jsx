@@ -755,18 +755,20 @@ export default function CallsPage() {
           <div className="min-w-0 space-y-6">
             <section className="overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white p-4 shadow-sm">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] border-separate border-spacing-y-4 text-left">
+                <table className="w-full min-w-[700px] border-separate border-spacing-y-4 text-left">
                   <colgroup>
-                    <col className="w-[38%]" />
-                    <col className="w-[14%]" />
-                    <col className="w-[14%]" />
-                    <col className="w-[34%]" />
+                    <col className="w-[28%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[28%]" />
+                    <col className="w-[20%]" />
                   </colgroup>
                   <thead>
                     <tr>
                       <th className="px-3 pb-2 text-xs font-semibold text-slate-500">Client / Caller</th>
                       <th className="px-3 pb-2 text-xs font-semibold text-slate-500">Date</th>
                       <th className="px-3 pb-2 text-xs font-semibold text-slate-500">Time</th>
+                      <th className="px-3 pb-2 text-xs font-semibold text-slate-500">AI Summary</th>
                       <th className="px-3 pb-2 text-right text-xs font-semibold text-slate-500">Status</th>
                     </tr>
                   </thead>
@@ -800,6 +802,19 @@ export default function CallsPage() {
                           <td className="px-3 py-4">
                             <div className="text-sm font-semibold text-slate-900">{timeText}</div>
                           </td>
+                          <td className="px-3 py-4">
+                            <p
+                              className="m-0 overflow-hidden text-sm leading-5 text-slate-600"
+                              title={row.summary || ''}
+                              style={{
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical'
+                              }}
+                            >
+                              {row.summary || '-'}
+                            </p>
+                          </td>
                           <td className="rounded-r-2xl px-3 py-4 text-right">
                             <div className="inline-flex flex-col items-end gap-2">
                               <span className={`rounded-full px-3 py-1 text-xs font-bold ${queueStatusClass(row.status)}`}>
@@ -815,7 +830,7 @@ export default function CallsPage() {
                       );
                     }) : (
                       <tr>
-                        <td className="rounded-2xl px-4 py-10 text-sm text-slate-500" colSpan={4}>
+                        <td className="rounded-2xl px-4 py-10 text-sm text-slate-500" colSpan={5}>
                           {loading ? 'Loading calls...' : 'No calls match the current filters.'}
                         </td>
                       </tr>
