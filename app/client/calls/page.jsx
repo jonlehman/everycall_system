@@ -73,23 +73,23 @@ function isSameCalendarDay(a, b) {
     && a.getDate() === b.getDate();
 }
 
-function formatQueueWhenParts(value) {
+function formatQueueDate(value) {
   const date = new Date(value);
   const now = new Date();
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  const timeText = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
   if (isSameCalendarDay(date, now)) {
-    return { primary: timeText, secondary: 'Today' };
+    return 'Today';
   }
   if (isSameCalendarDay(date, yesterday)) {
-    return { primary: 'Yesterday', secondary: timeText };
+    return 'Yesterday';
   }
-  return {
-    primary: date.toLocaleDateString([], { month: 'short', day: 'numeric' }),
-    secondary: timeText
-  };
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function formatQueueTime(value) {
+  return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 function queueStatusClass(value) {
@@ -210,6 +210,8 @@ export default function CallsPage() {
   const [loadError, setLoadError] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [showDatePopover, setShowDatePopover] = useState(false);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [queuePage, setQueuePage] = useState(0);
   const [detailDraft, setDetailDraft] = useState({
     status: 'new',
@@ -231,6 +233,8 @@ export default function CallsPage() {
   const [lastSavedAt, setLastSavedAt] = useState('');
   const searchInputRef = useRef(null);
   const transcriptRef = useRef(null);
+  const datePopoverRef = useRef(null);
+  const advancedPopoverRef = useRef(null);
   const requestedCallSid = String(searchParams?.get('callSid') || '').trim();
 
   const loadCalls = async ({ showLoading = true } = {}) => {
@@ -284,6 +288,21 @@ export default function CallsPage() {
   useEffect(() => {
     setQueuePage(0);
   }, [statusFilter, urgencyFilter, categoryFilter, search, dateFrom, dateTo]);
+
+  useEffect(() => {
+    const onPointerDown = (event) => {
+      const target = event.target;
+      if (showDatePopover && datePopoverRef.current && !datePopoverRef.current.contains(target)) {
+        setShowDatePopover(false);
+      }
+      if (showAdvancedFilters && advancedPopoverRef.current && !advancedPopoverRef.current.contains(target)) {
+        setShowAdvancedFilters(false);
+      }
+    };
+
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [showDatePopover, showAdvancedFilters]);
 
   const loadDetail = async (callSid) => {
     if (!callSid) return;
@@ -458,7 +477,9 @@ export default function CallsPage() {
       if (new Date(row.createdAt).getTime() < fromTime) return false;
     }
     if (dateTo) {
-      const toTime = new Date(dateTo).getTime();
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      const toTime = toDate.getTime();
       if (new Date(row.createdAt).getTime() > toTime) return false;
     }
     return true;
@@ -498,6 +519,12 @@ export default function CallsPage() {
     || Boolean(search.trim())
     || Boolean(dateFrom)
     || Boolean(dateTo);
+  const advancedFilterCount = [
+    categoryFilter !== 'all' ? 1 : 0
+  ].reduce((sum, value) => sum + value, 0);
+  const dateFilterLabel = dateFrom || dateTo
+    ? `Date: ${dateFrom || 'Start'}${dateTo ? ` to ${dateTo}` : ''}`
+    : 'Date';
 
   const hasUnsavedChanges = Boolean(detailMeta) && (
     detailDraft.status !== (detailMeta.status || 'new')
@@ -524,7 +551,7 @@ export default function CallsPage() {
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="space-y-3">
               <div>
-                <h1 className="m-0 text-4xl font-black tracking-[-0.04em] text-slate-950">Calls</h1>
+                <h1 className="m-0 font-['Space_Grotesk'] text-4xl font-black tracking-[-0.05em] text-slate-950">Calls</h1>
                 <p className="m-0 mt-2 text-sm font-medium text-slate-500">
                   Review new leads, follow-up work, and full call history in one place.
                 </p>
@@ -538,7 +565,7 @@ export default function CallsPage() {
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
                 onClick={refreshData}
               >
                 <span className="material-symbols-outlined text-base">refresh</span>
@@ -546,7 +573,7 @@ export default function CallsPage() {
               </button>
               <button
                 type="button"
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={resetFilters}
                 disabled={!hasActiveFilters}
               >
@@ -556,13 +583,13 @@ export default function CallsPage() {
             </div>
           </div>
 
-          <div className="rounded-[1.5rem] border border-slate-200/80 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
               <div className="relative min-w-0 flex-1">
                 <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">search</span>
                 <input
                   ref={searchInputRef}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition-all focus:border-[#004ac6]/30 focus:bg-white focus:ring-2 focus:ring-[#004ac6]/15"
+                  className="w-full rounded-lg border-none bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 outline-none transition-all focus:bg-white focus:ring-2 focus:ring-[#004ac6]/15"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search by number, summary, name, or location"
@@ -570,11 +597,11 @@ export default function CallsPage() {
                 />
               </div>
 
-              <div className="hidden h-9 w-px bg-slate-200 xl:block" />
+              <div className="hidden h-8 w-px bg-slate-200 xl:block" />
 
-              <div className="flex flex-1 flex-wrap gap-3">
+              <div className="flex flex-1 flex-wrap items-center gap-2">
                 <select
-                  className="min-w-[10rem] rounded-xl border border-slate-200 bg-transparent px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition-all hover:bg-slate-50 focus:border-[#004ac6]/30 focus:ring-2 focus:ring-[#004ac6]/15"
+                  className="min-w-[10rem] rounded-lg border-none bg-transparent px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:bg-slate-50 focus:bg-slate-50 focus:ring-2 focus:ring-[#004ac6]/15"
                   value={statusFilter}
                   onChange={(event) => setStatusFilter(event.target.value)}
                   aria-label="Call Status"
@@ -591,7 +618,7 @@ export default function CallsPage() {
                 </select>
 
                 <select
-                  className="min-w-[10rem] rounded-xl border border-slate-200 bg-transparent px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition-all hover:bg-slate-50 focus:border-[#004ac6]/30 focus:ring-2 focus:ring-[#004ac6]/15"
+                  className="min-w-[10rem] rounded-lg border-none bg-transparent px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition-all hover:bg-slate-50 focus:bg-slate-50 focus:ring-2 focus:ring-[#004ac6]/15"
                   value={urgencyFilter}
                   onChange={(event) => setUrgencyFilter(event.target.value)}
                   aria-label="Urgency"
@@ -603,33 +630,119 @@ export default function CallsPage() {
                   <option value="low">Low</option>
                 </select>
 
-                <select
-                  className="min-w-[11rem] rounded-xl border border-slate-200 bg-transparent px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition-all hover:bg-slate-50 focus:border-[#004ac6]/30 focus:ring-2 focus:ring-[#004ac6]/15"
-                  value={categoryFilter}
-                  onChange={(event) => setCategoryFilter(event.target.value)}
-                  aria-label="Call Category"
-                >
-                  <option value="all">All Categories</option>
-                  {CALL_CATEGORY_OPTIONS.map((value) => (
-                    <option key={value} value={value}>{formatLabel(value)}</option>
-                  ))}
-                </select>
+                <div ref={datePopoverRef} className="relative">
+                  <button
+                    type="button"
+                    className="inline-flex min-w-[10rem] items-center justify-between gap-2 rounded-lg border-none bg-transparent px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50"
+                    onClick={() => {
+                      setShowDatePopover((current) => !current);
+                      setShowAdvancedFilters(false);
+                    }}
+                  >
+                    <span className="truncate">{dateFilterLabel}</span>
+                    <span className="material-symbols-outlined text-base text-slate-500">expand_more</span>
+                  </button>
+                  {showDatePopover ? (
+                    <div className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_24px_48px_-12px_rgba(18,28,42,0.12)]">
+                      <div className="space-y-3">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-slate-500">From</label>
+                          <input
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-all focus:border-[#004ac6]/30 focus:bg-white focus:ring-2 focus:ring-[#004ac6]/15"
+                            type="date"
+                            value={dateFrom}
+                            onChange={(event) => setDateFrom(event.target.value)}
+                            aria-label="Date From"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-slate-500">To</label>
+                          <input
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-all focus:border-[#004ac6]/30 focus:bg-white focus:ring-2 focus:ring-[#004ac6]/15"
+                            type="date"
+                            value={dateTo}
+                            onChange={(event) => setDateTo(event.target.value)}
+                            aria-label="Date To"
+                          />
+                        </div>
+                        <div className="flex justify-between gap-3 pt-1">
+                          <button
+                            type="button"
+                            className="text-sm font-semibold text-slate-500 transition-colors hover:text-slate-700"
+                            onClick={() => {
+                              setDateFrom('');
+                              setDateTo('');
+                            }}
+                          >
+                            Clear
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-xl bg-[#004ac6] px-4 py-2 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(0,74,198,0.18)]"
+                            onClick={() => setShowDatePopover(false)}
+                          >
+                            Done
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
 
-                <input
-                  className="min-w-[9.5rem] rounded-xl border border-slate-200 bg-transparent px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition-all hover:bg-slate-50 focus:border-[#004ac6]/30 focus:ring-2 focus:ring-[#004ac6]/15"
-                  type="date"
-                  value={dateFrom}
-                  onChange={(event) => setDateFrom(event.target.value)}
-                  aria-label="Date From"
-                />
-
-                <input
-                  className="min-w-[9.5rem] rounded-xl border border-slate-200 bg-transparent px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition-all hover:bg-slate-50 focus:border-[#004ac6]/30 focus:ring-2 focus:ring-[#004ac6]/15"
-                  type="date"
-                  value={dateTo}
-                  onChange={(event) => setDateTo(event.target.value)}
-                  aria-label="Date To"
-                />
+                <div ref={advancedPopoverRef} className="relative">
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center rounded-lg bg-[#004ac6]/5 p-2.5 text-[#004ac6] transition-all hover:bg-[#004ac6]/10"
+                    onClick={() => {
+                      setShowAdvancedFilters((current) => !current);
+                      setShowDatePopover(false);
+                    }}
+                    aria-label="Advanced Filters"
+                  >
+                    <span className="material-symbols-outlined">tune</span>
+                  </button>
+                  {advancedFilterCount ? (
+                    <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#004ac6] px-1 text-[11px] font-bold text-white">
+                      {advancedFilterCount}
+                    </span>
+                  ) : null}
+                  {showAdvancedFilters ? (
+                    <div className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_24px_48px_-12px_rgba(18,28,42,0.12)]">
+                      <div className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-slate-500">Call Category</label>
+                          <select
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-all focus:border-[#004ac6]/30 focus:bg-white focus:ring-2 focus:ring-[#004ac6]/15"
+                            value={categoryFilter}
+                            onChange={(event) => setCategoryFilter(event.target.value)}
+                            aria-label="Call Category"
+                          >
+                            <option value="all">All Categories</option>
+                            {CALL_CATEGORY_OPTIONS.map((value) => (
+                              <option key={value} value={value}>{formatLabel(value)}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex justify-between gap-3 pt-1">
+                          <button
+                            type="button"
+                            className="text-sm font-semibold text-slate-500 transition-colors hover:text-slate-700"
+                            onClick={resetFilters}
+                          >
+                            Reset Filters
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-xl bg-[#004ac6] px-4 py-2 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(0,74,198,0.18)]"
+                            onClick={() => setShowAdvancedFilters(false)}
+                          >
+                            Done
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>
@@ -645,26 +758,21 @@ export default function CallsPage() {
           <div className="min-w-0 space-y-6">
             <section className="overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white p-4 shadow-sm">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-separate border-spacing-y-3 text-left">
+                <table className="w-full min-w-[760px] border-separate border-spacing-y-4 text-left">
                   <thead>
                     <tr>
-                      <th className="px-4 pb-2 text-xs font-semibold text-slate-500">Caller</th>
+                      <th className="px-4 pb-2 text-xs font-semibold text-slate-500">Client / Caller</th>
+                      <th className="px-4 pb-2 text-xs font-semibold text-slate-500">Date</th>
                       <th className="px-4 pb-2 text-xs font-semibold text-slate-500">Time</th>
-                      <th className="px-4 pb-2 text-xs font-semibold text-slate-500">AI Summary</th>
                       <th className="px-4 pb-2 text-right text-xs font-semibold text-slate-500">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pagedRows.length ? pagedRows.map((row) => {
-                      const whenParts = formatQueueWhenParts(row.createdAt);
                       const callerName = buildCallerName(row.firstName, row.lastName, row.from);
-                      const leadMeta = getLeadStatusMeta({
-                        lead_outcome_type: row.leadOutcomeType,
-                        lead_is_valid: row.leadIsValid,
-                        lead_is_billable: row.leadIsBillable,
-                        lead_decision_reason: row.leadDecisionReason
-                      });
                       const selected = selectedCallSid === row.sid;
+                      const dateText = formatQueueDate(row.createdAt);
+                      const timeText = formatQueueTime(row.createdAt);
 
                       return (
                         <tr
@@ -684,38 +792,17 @@ export default function CallsPage() {
                             </div>
                           </td>
                           <td className="px-4 py-4">
-                            <div className="text-sm font-semibold text-slate-900">{whenParts.primary}</div>
-                            <div className="text-xs text-slate-500">{whenParts.secondary}</div>
+                            <div className="text-sm font-semibold text-slate-900">{dateText}</div>
                           </td>
                           <td className="px-4 py-4">
-                            <div className="max-w-md">
-                              <p
-                                className="m-0 overflow-hidden text-sm text-slate-600"
-                                title={row.summary || ''}
-                                style={{
-                                  display: '-webkit-box',
-                                  WebkitLineClamp: 2,
-                                  WebkitBoxOrient: 'vertical'
-                                }}
-                              >
-                                {row.summary || '-'}
-                              </p>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${leadBadgeClass(leadMeta.tone)}`}>
-                                  {leadMeta.label}
-                                </span>
-                                <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                                  {formatLabel(row.callCategory)}
-                                </span>
-                              </div>
-                            </div>
+                            <div className="text-sm font-semibold text-slate-900">{timeText}</div>
                           </td>
                           <td className="rounded-r-2xl px-4 py-4 text-right">
                             <div className="inline-flex flex-col items-end gap-2">
                               <span className={`rounded-full px-3 py-1 text-xs font-bold ${queueStatusClass(row.status)}`}>
                                 {formatLabel(row.status)}
                               </span>
-                              <span className="inline-flex items-center gap-2 text-xs">
+                              <span className="inline-flex items-center gap-2 text-[11px]">
                                 <span className={`h-2.5 w-2.5 rounded-full ${queueUrgencyDotClass(row.urgency)}`} />
                                 <span className={queueUrgencyTextClass(row.urgency)}>{formatLabel(row.urgency)}</span>
                               </span>
@@ -762,21 +849,21 @@ export default function CallsPage() {
             <section className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-2'}`}>
               <div className="relative overflow-hidden rounded-[1.75rem] bg-[#004ac6] p-6 text-white shadow-[0_24px_48px_-12px_rgba(0,74,198,0.28)]">
                 <span className="material-symbols-outlined absolute -bottom-5 -right-4 text-[7rem] opacity-10">call</span>
-                <p className="m-0 text-xs font-semibold text-blue-100">Calls In View</p>
-                <h3 className="m-0 mt-3 text-4xl font-black tracking-[-0.04em]">{filteredRows.length}</h3>
+                <p className="m-0 font-['Space_Grotesk'] text-xs font-bold tracking-[-0.02em] text-blue-100">Completion Rate</p>
+                <h3 className="m-0 mt-3 font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.05em]">{completionRate}%</h3>
                 <p className="m-0 mt-4 text-xs font-medium text-blue-100">
-                  {rows.length} total loaded
+                  {completedCount} completed or scheduled in the current view
                 </p>
               </div>
 
               <div className="flex flex-col justify-between rounded-[1.75rem] border border-slate-200/80 bg-white p-6 shadow-sm">
                 <div>
-                  <p className="m-0 text-xs font-semibold text-slate-500">Needs Follow-Up</p>
-                  <h3 className="m-0 mt-3 text-4xl font-black tracking-[-0.04em] text-slate-950">{followUpCount}</h3>
+                  <p className="m-0 font-['Space_Grotesk'] text-xs font-bold tracking-[-0.02em] text-slate-500">Needs Follow-Up</p>
+                  <h3 className="m-0 mt-3 font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.05em] text-slate-950">{followUpCount}</h3>
                 </div>
                 <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-emerald-700">
                   <span className="material-symbols-outlined text-base">check_circle</span>
-                  {completedCount} completed or scheduled • {completionRate}% of current view
+                  {filteredRows.length} call(s) currently in view
                 </div>
               </div>
             </section>
