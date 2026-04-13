@@ -82,6 +82,7 @@ function SetupStepCard({
   description = '',
   subdescription = '',
   statusBox = null,
+  progress = null,
   action = null,
   className = '',
   actionFullWidth = false
@@ -141,6 +142,21 @@ function SetupStepCard({
                   ))}
                 </div>
               ) : null}
+            </div>
+          ) : null}
+
+          {progress ? (
+            <div className="mb-6">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="text-xs font-semibold text-slate-500">Setup progress</span>
+                <span className="text-sm font-semibold text-slate-700">{progress.percent}% done</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className="h-full rounded-full bg-[#2563eb] transition-all"
+                  style={{ width: `${progress.percent}%` }}
+                />
+              </div>
             </div>
           ) : null}
 
@@ -391,6 +407,18 @@ export default function ClientGetStartedPage() {
     };
   }, [packet.settings]);
 
+  const approvedDocumentCount = useMemo(() => {
+    return Array.isArray(packet.documents)
+      ? packet.documents.filter((document) => String(document?.status || '').trim().toLowerCase() === 'approved').length
+      : 0;
+  }, [packet.documents]);
+
+  const enabledConnectionCount = useMemo(() => {
+    return Array.isArray(packet.connections)
+      ? packet.connections.filter((connection) => String(connection?.status || '').trim().toLowerCase() === 'enabled').length
+      : 0;
+  }, [packet.connections]);
+
   const updateForwardingStatus = async (checked) => {
     if (savingForwardingStatus) return;
     const nextStatus = checked ? 'configured' : 'not_started';
@@ -428,13 +456,24 @@ export default function ClientGetStartedPage() {
     { label: 'Teach EveryCall about your business', done: websiteTraining.done },
     { label: 'Choose where leads go', done: leadDestinations.activeDestinations.length > 0 },
     { label: 'Forward your calls', done: forwarding.forwardingConfigured },
-    { label: 'Activate billing', done: Boolean(packet.billing?.hasStripeSubscription) }
+    { label: 'Activate billing', done: Boolean(packet.billing?.hasStripeSubscription) },
+    { label: 'Add supporting document', done: approvedDocumentCount > 0 },
+    { label: 'Connect another tool', done: enabledConnectionCount > 0 },
+    { label: 'Invite another user', done: leadDestinations.activeUsers.length > 1 }
   ], [
+    approvedDocumentCount,
+    enabledConnectionCount,
     forwarding.forwardingConfigured,
+    leadDestinations.activeUsers.length,
     leadDestinations.activeDestinations.length,
     packet.billing?.hasStripeSubscription,
     websiteTraining.done
   ]);
+  const progressPercent = useMemo(() => {
+    const totalCount = progressItems.length || 1;
+    const completedCount = progressItems.filter((item) => item.done).length;
+    return Math.round((completedCount / totalCount) * 100);
+  }, [progressItems]);
 
   return (
     <>
@@ -469,6 +508,7 @@ export default function ClientGetStartedPage() {
               tone: websiteTraining.tone,
               message: websiteTraining.description
             }}
+            progress={{ percent: progressPercent }}
             className="md:col-span-12 lg:col-span-7"
             action={(
               websiteTraining.done ? (
