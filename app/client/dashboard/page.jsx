@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ClientPage from '../_components/ClientPage';
-import { formatLeadOutcomeLabel, getLeadStatusMeta } from '../../../lib/leadBilling';
+import { formatLeadOutcomeLabel } from '../../../lib/leadBilling';
 
 const CATEGORY_ORDER = [
   'project_inquiry',
@@ -107,6 +107,10 @@ function formatDateTime(value) {
   return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function formatLabel(value) {
+  return String(value || '').replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function fetchJson(url, options) {
   return fetch(url, options).then(async (resp) => {
     const data = await resp.json().catch(() => null);
@@ -146,16 +150,18 @@ function KpiCard({ label, value, meta = '', progress = null }) {
   );
 }
 
-function LeadStatusPill({ call }) {
-  const meta = getLeadStatusMeta(call || {});
-  const toneClass = meta.tone === 'ok'
-    ? 'bg-[#d8e2ff] text-[#205cb5]'
-    : meta.tone === 'warn'
-      ? 'bg-amber-100 text-amber-800'
-      : 'bg-slate-100 text-slate-600';
+function LeadStatusPill({ status }) {
+  const normalized = normalizeText(status).toLowerCase();
+  const toneClass = ['completed', 'contacted', 'scheduled'].includes(normalized)
+    ? 'bg-emerald-100 text-emerald-700'
+    : ['new', 'in_progress'].includes(normalized)
+      ? 'bg-blue-100 text-blue-700'
+      : ['unable_to_reach', 'missed'].includes(normalized)
+        ? 'bg-amber-100 text-amber-700'
+        : 'bg-slate-100 text-slate-600';
   return (
     <span className={`rounded-full px-2 py-1 text-[10px] font-bold normal-case tracking-normal ${toneClass}`}>
-      {meta.label}
+      {formatLabel(status || 'unknown')}
     </span>
   );
 }
@@ -430,7 +436,7 @@ export default function ClientDashboardPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-between gap-3">
-                          <LeadStatusPill call={call} />
+                          <LeadStatusPill status={call.status} />
                           <span className="material-symbols-outlined text-sm text-slate-400">chevron_right</span>
                         </div>
                       </td>
