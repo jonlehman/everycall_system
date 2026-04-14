@@ -232,9 +232,7 @@ export default async function handler(req, res) {
                 c.lead_is_billable,
                 c.lead_decision_reason,
                 c.lead_duplicate_of_call_sid,
-                d.transcript,
                 d.transcript_combined,
-                d.extracted_json,
                 d.routing_json,
                 d.state_json,
                 d.caller_first_name,
@@ -286,8 +284,6 @@ export default async function handler(req, res) {
         { label: "Requested Time", getValue: (row) => row.requested_time },
         { label: "Client Notes", getValue: (row) => row.state_json?.client_notes || "" },
         { label: "Transcript Combined", getValue: (row) => row.transcript_combined },
-        { label: "Transcript", getValue: (row) => row.transcript },
-        { label: "Extracted JSON", getValue: (row) => row.extracted_json },
         { label: "Routing JSON", getValue: (row) => row.routing_json },
         { label: "State JSON", getValue: (row) => row.state_json }
       ];
