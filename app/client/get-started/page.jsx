@@ -207,7 +207,7 @@ function SetupStepCard({
   );
 }
 
-function ProgressPanel({ items }) {
+function ProgressPanel({ items, highlightSuccess = false }) {
   const totalCount = items.length || 1;
   const completedCount = items.filter((item) => item.done).length;
   const progressPercent = Math.round((completedCount / totalCount) * 100);
@@ -219,7 +219,7 @@ function ProgressPanel({ items }) {
       : 'Setup not started';
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-8 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)]">
+    <section className={`rounded-xl border p-8 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)] ${highlightSuccess ? 'border-emerald-100 bg-emerald-50/70' : 'border-slate-200 bg-white'}`}>
       <div>
         <h4 className="mb-2 text-[10px] font-bold tracking-[0.2em] text-slate-500">Onboarding Progress</h4>
         <div className="flex items-baseline gap-3">
@@ -548,6 +548,11 @@ export default function ClientGetStartedPage() {
     receptionistSettings.done,
     websiteTraining.done
   ]);
+  const onlyBillingRemaining = websiteTraining.done
+    && leadDestinations.activeDestinations.length > 0
+    && receptionistSettings.done
+    && forwarding.forwardingConfigured
+    && !billingSetup.done;
 
   return (
     <>
@@ -735,7 +740,7 @@ export default function ClientGetStartedPage() {
 
           <div className="lg:col-span-5">
             <div className="lg:sticky lg:top-20">
-              <ProgressPanel items={cardProgressItems} />
+              <ProgressPanel items={cardProgressItems} highlightSuccess={onlyBillingRemaining} />
             </div>
           </div>
           </div>
