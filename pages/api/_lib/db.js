@@ -217,6 +217,7 @@ export async function ensureTables(pool) {
       caller_first_name TEXT,
       caller_last_name TEXT,
       callback_number TEXT,
+      caller_email TEXT,
       service_required TEXT,
       urgency_level TEXT,
       address_line1 TEXT,
@@ -236,6 +237,7 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS caller_first_name TEXT;`);
   await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS caller_last_name TEXT;`);
   await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS callback_number TEXT;`);
+  await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS caller_email TEXT;`);
   await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS service_required TEXT;`);
   await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS urgency_level TEXT;`);
   await pool.query(`ALTER TABLE call_details ADD COLUMN IF NOT EXISTS address_line1 TEXT;`);

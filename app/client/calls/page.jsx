@@ -221,6 +221,7 @@ export default function CallsPage() {
     firstName: '',
     lastName: '',
     callbackNumber: '',
+    callerEmail: '',
     serviceRequired: '',
     addressLine1: '',
     addressLine2: '',
@@ -340,6 +341,7 @@ export default function CallsPage() {
         firstName: call?.caller_first_name || '',
         lastName: call?.caller_last_name || '',
         callbackNumber: call?.callback_number || '',
+        callerEmail: call?.caller_email || '',
         serviceRequired: call?.service_required || '',
         addressLine1: call?.address_line1 || '',
         addressLine2: call?.address_line2 || '',
@@ -375,6 +377,7 @@ export default function CallsPage() {
         firstName: detailDraft.firstName,
         lastName: detailDraft.lastName,
         callbackNumber: detailDraft.callbackNumber,
+        callerEmail: detailDraft.callerEmail,
         serviceRequired: detailDraft.serviceRequired,
         addressLine1: detailDraft.addressLine1,
         addressLine2: detailDraft.addressLine2,
@@ -531,6 +534,7 @@ export default function CallsPage() {
     || detailDraft.firstName !== (detailMeta.caller_first_name || '')
     || detailDraft.lastName !== (detailMeta.caller_last_name || '')
     || detailDraft.callbackNumber !== (detailMeta.callback_number || '')
+    || detailDraft.callerEmail !== (detailMeta.caller_email || '')
     || detailDraft.serviceRequired !== (detailMeta.service_required || '')
     || detailDraft.addressLine1 !== (detailMeta.address_line1 || '')
     || detailDraft.addressLine2 !== (detailMeta.address_line2 || '')
@@ -991,14 +995,26 @@ export default function CallsPage() {
                           placeholder="Last name"
                         />
                       </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-500">Callback Number</label>
-                        <input
-                          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-all focus:border-[#004ac6]/30 focus:bg-white focus:ring-2 focus:ring-[#004ac6]/15"
-                          value={detailDraft.callbackNumber}
-                          onChange={(event) => setDetailDraft((prev) => ({ ...prev, callbackNumber: event.target.value }))}
-                          placeholder="Callback number"
-                        />
+                      <div className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-slate-500">Callback Number</label>
+                          <input
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-all focus:border-[#004ac6]/30 focus:bg-white focus:ring-2 focus:ring-[#004ac6]/15"
+                            value={detailDraft.callbackNumber}
+                            onChange={(event) => setDetailDraft((prev) => ({ ...prev, callbackNumber: event.target.value }))}
+                            placeholder="Callback number"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-slate-500">Email Address</label>
+                          <input
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-all focus:border-[#004ac6]/30 focus:bg-white focus:ring-2 focus:ring-[#004ac6]/15"
+                            type="email"
+                            value={detailDraft.callerEmail}
+                            onChange={(event) => setDetailDraft((prev) => ({ ...prev, callerEmail: event.target.value }))}
+                            placeholder="Email address"
+                          />
+                        </div>
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold text-slate-500">Service Required</label>

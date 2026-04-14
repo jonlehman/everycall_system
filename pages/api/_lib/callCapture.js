@@ -26,6 +26,7 @@ export function normalizeCapturedCallFields(payload) {
     firstName: clipText(pickText(source, ["first_name", "firstName", "caller_first_name"]), 120),
     lastName: clipText(pickText(source, ["last_name", "lastName", "caller_last_name"]), 120),
     callbackNumber: clipText(pickText(source, ["callback_number", "callbackNumber", "caller_phone", "phone_number"]), 40),
+    callerEmail: clipText(pickText(source, ["caller_email", "callerEmail", "email", "email_address"]), 240),
     serviceRequired: clipText(pickText(source, ["service_required", "serviceRequired", "service_request", "serviceRequest", "issue_summary"]), 240),
     urgencyLevel: clipText(pickText(source, ["urgency_level", "urgencyLevel", "urgency", "priority"]), 32),
     addressLine1: clipText(pickText(source, ["address_line1", "addressLine1"]), 240),

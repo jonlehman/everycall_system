@@ -193,7 +193,7 @@ export default async function handler(req, res) {
                 c.lead_outcome_type, c.lead_is_valid, c.lead_is_billable, c.lead_decision_reason, c.lead_duplicate_of_call_sid,
                 c.created_at,
                 d.transcript, d.transcript_combined, d.extracted_json, d.routing_json, d.state_json,
-                d.caller_first_name, d.caller_last_name, d.callback_number, d.service_required, d.urgency_level,
+                d.caller_first_name, d.caller_last_name, d.callback_number, d.caller_email, d.service_required, d.urgency_level,
                 d.address_line1, d.address_line2, d.city, d.state, d.postal_code, d.requested_date, d.requested_time
          FROM calls c
          LEFT JOIN call_details d ON d.call_sid = c.call_sid
@@ -270,6 +270,7 @@ export default async function handler(req, res) {
                caller_first_name,
                caller_last_name,
                callback_number,
+               caller_email,
                service_required,
                urgency_level,
                address_line1,
@@ -281,13 +282,14 @@ export default async function handler(req, res) {
                requested_time,
                updated_at
              )
-             VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+             VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
              ON CONFLICT (call_sid)
              DO UPDATE SET extracted_json = COALESCE(call_details.extracted_json, '{}'::jsonb) || EXCLUDED.extracted_json,
                            transcript_combined = COALESCE(EXCLUDED.transcript_combined, call_details.transcript_combined),
                            caller_first_name = COALESCE(EXCLUDED.caller_first_name, call_details.caller_first_name),
                            caller_last_name = COALESCE(EXCLUDED.caller_last_name, call_details.caller_last_name),
                            callback_number = COALESCE(EXCLUDED.callback_number, call_details.callback_number),
+                           caller_email = COALESCE(EXCLUDED.caller_email, call_details.caller_email),
                            service_required = COALESCE(EXCLUDED.service_required, call_details.service_required),
                            urgency_level = COALESCE(EXCLUDED.urgency_level, call_details.urgency_level),
                            address_line1 = COALESCE(EXCLUDED.address_line1, call_details.address_line1),
@@ -305,6 +307,7 @@ export default async function handler(req, res) {
               extractedFields.firstName,
               extractedFields.lastName,
               extractedFields.callbackNumber,
+              extractedFields.callerEmail,
               extractedFields.serviceRequired,
               extractedFields.urgencyLevel,
               extractedFields.addressLine1,
@@ -498,6 +501,7 @@ export default async function handler(req, res) {
         const firstName = String(body.firstName || "").trim().slice(0, 120);
         const lastName = String(body.lastName || "").trim().slice(0, 120);
         const callbackNumber = String(body.callbackNumber || "").trim().slice(0, 40);
+        const callerEmail = String(body.callerEmail || "").trim().slice(0, 240);
         const serviceRequired = String(body.serviceRequired || "").trim().slice(0, 240);
         const addressLine1 = String(body.addressLine1 || "").trim().slice(0, 240);
         const addressLine2 = String(body.addressLine2 || "").trim().slice(0, 240);
@@ -553,15 +557,16 @@ export default async function handler(req, res) {
            SET caller_first_name = $3,
                caller_last_name = $4,
                callback_number = $5,
-               service_required = $6,
-               urgency_level = $7,
-               address_line1 = $8,
-               address_line2 = $9,
-               city = $10,
-               state = $11,
-               postal_code = $12,
-               requested_date = $13,
-               requested_time = $14,
+               caller_email = $6,
+               service_required = $7,
+               urgency_level = $8,
+               address_line1 = $9,
+               address_line2 = $10,
+               city = $11,
+               state = $12,
+               postal_code = $13,
+               requested_date = $14,
+               requested_time = $15,
                updated_at = NOW()
            WHERE call_sid = $1`,
           [
@@ -569,6 +574,7 @@ export default async function handler(req, res) {
             firstName || null,
             lastName || null,
             callbackNumber || null,
+            callerEmail || null,
             serviceRequired || null,
             urgencyValue || null,
             addressLine1 || null,
