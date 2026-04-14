@@ -687,7 +687,7 @@ export default function ReceptionistKnowledgePage() {
   return (
     <SectionPage
       tabs={receptionistNavItems}
-      title="Knowledge"
+      title="Receptionist Training"
       subtitle="Manage website and document sources, create a live build, and test customer questions."
       status={status}
       statusChip={statusChip}
