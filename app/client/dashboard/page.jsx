@@ -227,9 +227,6 @@ export default function ClientDashboardPage() {
   const knowledgeSignals = dashboard?.knowledgeSignals || {};
   const answeredKnowledgeQuestions = Array.isArray(dashboard?.answeredKnowledgeQuestions) ? dashboard.answeredKnowledgeQuestions : [];
   const knowledgeGapQuestions = Array.isArray(dashboard?.knowledgeGapQuestions) ? dashboard.knowledgeGapQuestions : [];
-  const latestBuildLabel = (setup.activeBuildStatus || setup.latestBuildStatus)
-    ? formatLeadOutcomeLabel(setup.activeBuildStatus || setup.latestBuildStatus)
-    : 'No knowledge base yet';
   const kbQuestionCount = Number(knowledgeSignals.kbQuestionCount30d || 0);
   const answeredQuestionCount = Number(
     knowledgeSignals.answeredQuestionCount30d
@@ -459,10 +456,6 @@ export default function ClientDashboardPage() {
                   </div>
                   <div className="font-['Space_Grotesk'] text-2xl font-bold text-slate-950">{unansweredQuestionCount}</div>
                 </button>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">Latest KB</span>
-                <span className="font-semibold text-slate-900">{latestBuildLabel}</span>
               </div>
               {!kbQuestionCount && pendingTranscriptAnalysisCallCount > 0 ? (
                 <div className="rounded-lg border border-slate-200/70 bg-[#f8fafc] px-3 py-2 text-xs text-slate-600">
