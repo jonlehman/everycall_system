@@ -640,14 +640,14 @@ export default function TeamPage() {
         </div>
 
         <GuidePanel title="Send Leads To Guide" eyebrow="How it works" icon="groups">
-          <div>Use this page only for lead delivery. Turn email and SMS alerts on or off here without changing workspace access.</div>
+          <div>Use this page to choose who gets lead alerts. Email and SMS settings here do not change workspace access.</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Users and access</div>
-            <div className="mt-1 text-sm text-slate-600">If someone&apos;s access is disabled on the Users page, lead alerts pause automatically even if their alert switches stay on here.</div>
+            <div className="mt-1 text-sm text-slate-600">Access is managed on the Users page. If access is disabled there, lead alerts stop automatically.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Lead SMS requirements</div>
-            <div className="mt-1 text-sm text-slate-600">SMS alerts can be turned on in advance, but they stay pending and will not send until the person replies YES.</div>
+            <div className="mt-1 text-sm text-slate-600">SMS alerts stay off until the person replies YES to confirm.</div>
           </div>
         </GuidePanel>
       </div>

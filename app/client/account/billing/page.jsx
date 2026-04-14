@@ -815,17 +815,17 @@ export default function AccountBillingPage() {
           </SectionCard>
 
           <GuidePanel title="Billing Guide" eyebrow="How pricing works" icon="payments">
-            <div>Your monthly bill has two parts: the base subscription and any call overages above the included allowance in the current billing period.</div>
+            <div>Your bill includes the base plan plus any overage calls above the included amount.</div>
             <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
               <div className="font-semibold text-slate-900">What counts toward usage</div>
               <ul className="mb-0 mt-2 list-disc pl-5 text-sm text-slate-600">
-                <li>Calls the receptionist answers and handles for one minute or longer count toward usage.</li>
-                <li>Answered calls that end in under one minute stay off the invoice.</li>
-                <li>Unanswered calls, technical failures, test calls, and manual exclusions do not count toward usage.</li>
+                <li>Handled calls of one minute or longer count.</li>
+                <li>Handled calls under one minute do not count.</li>
+                <li>Unanswered calls, technical failures, test calls, and manual exclusions do not count.</li>
               </ul>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-              If service is ever deactivated after the trial window, the owner can restart it here without waiting on support.
+              If service is deactivated after trial, the owner can restart it here.
             </div>
           </GuidePanel>
         </div>

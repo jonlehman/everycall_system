@@ -636,26 +636,26 @@ export default function AccountIntegrationsPage() {
         </div>
 
         <GuidePanel title="Integrations Guide" eyebrow="How it works" icon="settings_input_component">
-          <div>Use this page to connect EveryCall to the systems that should receive your completed calls. After you save, Support will finish the setup and validate the connection for you.</div>
+          <div>Use this page to connect EveryCall to the systems that should receive completed calls. After you save, Support reviews and finishes the setup.</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">What happens next</div>
-            <div className="mt-1 text-sm text-slate-600">Save the connector, and EveryCall Support will review the setup, run the connection test, and fix issues before you rely on live delivery.</div>
+            <div className="mt-1 text-sm text-slate-600">After you save, Support tests the connection and fixes issues before live use.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">What gets sent</div>
-            <div className="mt-1 text-sm text-slate-600">Every completed call includes a summary, structured caller details, and a classification such as valid lead, general inquiry, or support call.</div>
+            <div className="mt-1 text-sm text-slate-600">Completed calls send the summary, captured caller details, and call type.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Filters</div>
-            <div className="mt-1 text-sm text-slate-600">Use filters to decide which call types reach each connector, and whether non-billable calls or duplicates should be included.</div>
+            <div className="mt-1 text-sm text-slate-600">Choose which call types go to each connector, and whether to include duplicates or non-billable calls.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Support review</div>
-            <div className="mt-1 text-sm text-slate-600">Each integration save creates or updates a support request so setup can be verified and completed for you.</div>
+            <div className="mt-1 text-sm text-slate-600">Saving a connector creates or updates a support request for review.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Calendar booking</div>
-            <div className="mt-1 text-sm text-slate-600">If you want the receptionist tied to a calendar system, use Request Calendar Integration and Support will scope the right setup with you.</div>
+            <div className="mt-1 text-sm text-slate-600">Need calendar booking? Use Request Calendar Integration and Support will scope the setup.</div>
           </div>
         </GuidePanel>
       </div>

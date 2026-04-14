@@ -725,14 +725,14 @@ export default function AccountUsersPage() {
         </div>
 
         <GuidePanel title="Users Guide" eyebrow="How it works" icon="manage_accounts">
-          <div>Use this page for workspace access and roles. It is the system-of-record for who is allowed into the account.</div>
+          <div>Use this page to control workspace access and roles.</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">System access</div>
-            <div className="mt-1 text-sm text-slate-600">Disabling access also pauses email and SMS lead delivery for that person, even if their lead switches stay on.</div>
+            <div className="mt-1 text-sm text-slate-600">If access is disabled, email and SMS lead alerts stop for that person.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Standard users</div>
-            <div className="mt-1 text-sm text-slate-600">Lead destinations created from Send Leads To appear here as Standard Users by default so access can be managed later if needed.</div>
+            <div className="mt-1 text-sm text-slate-600">People added from Send Leads To appear here as Standard Users.</div>
           </div>
         </GuidePanel>
       </div>

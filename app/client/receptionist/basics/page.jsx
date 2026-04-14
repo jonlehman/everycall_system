@@ -55,63 +55,63 @@ const guideByContext = {
   assistantName: {
     step: '01',
     title: 'Assistant Name',
-    body: 'This is the name the sales receptionist uses for itself when speaking to callers.',
-    tip: 'Keep it short and easy to understand on the phone.'
+    body: 'This is the name the receptionist uses for itself on calls.',
+    tip: 'Use a short, easy-to-hear name.'
   },
   businessName: {
     step: '01',
     title: 'Business Name',
-    body: 'This is the company name callers should hear during the conversation.',
-    tip: 'Use the exact business name your callers already recognize.'
+    body: 'This is the business name callers should hear.',
+    tip: 'Use the name customers already know.'
   },
   companyDescription: {
     step: '01',
     title: 'Company Description',
-    body: 'This helps the sales receptionist understand what the business does, who it serves, and the kinds of calls it should expect.',
-    tip: 'Keep it factual and concise so the receptionist stays grounded in the right context.'
+    body: 'This gives the receptionist basic context about what the business does.',
+    tip: 'Keep it short, factual, and specific.'
   },
   businessPhone: {
     step: '01',
     title: 'Business Phone',
-    body: 'This is the business’s main public phone number, separate from the Sales Receptionist Number that EveryCall provisions.',
-    tip: 'Use the normal business line your callers already know or see on your website.'
+    body: 'This is your main public business number. It is separate from the EveryCall receptionist number.',
+    tip: 'Use the number customers already call.'
   },
   salesReceptionistNumber: {
     step: '01',
     title: 'Sales Receptionist Number',
-    body: 'This is the EveryCall phone number your AI sales receptionist answers live. Your business phone system should forward callers to this number when you want EveryCall to pick up the call.',
-    tip: 'Set this number as the forwarding destination in your phone system so inbound callers reach the sales receptionist.'
+    body: 'This is the EveryCall number that answers live. Forward calls here when you want EveryCall to answer.',
+    tip: 'Set this as the forwarding destination in your phone system.'
   },
   businessHours: {
     step: '01',
     title: 'Business Hours',
-    body: 'Set the weekly hours that define when calls count as business hours versus after hours.',
-    tip: 'Keep this aligned with the real hours your team can actually support.'
+    body: 'These hours tell EveryCall when calls are during business hours or after hours.',
+    tip: 'Match the hours your team can actually support.'
   },
   greeting: {
     step: '02',
     title: 'Greeting',
-    body: 'This is the first line callers hear before the receptionist starts collecting information.',
-    tip: 'Keep the greeting short so callers quickly know they reached the right business.'
+    body: 'This is the first line callers hear.',
+    tip: 'Keep it short and clear.'
   },
   voiceSelection: {
     step: '03',
     title: 'Voice Selection',
-    body: 'This chooses the live voice the sales receptionist uses during calls.',
-    tip: 'Pick the voice that best matches your business tone and pace.'
+    body: 'This is the live voice EveryCall uses.',
+    tip: 'Choose the voice that best fits your business.'
   },
   voiceSample: {
     step: '03',
     title: 'Voice Sample',
-    body: 'Play a short sample to hear the currently selected voice before saving it to the live runtime profile.',
-    tip: 'Test the voice before saving so the live experience matches your expectations.'
+    body: 'Play a short sample before you save the voice.',
+    tip: 'Listen first so the live voice matches what you want.'
   }
 };
 
 const basicsGuideOverview = {
-  title: 'What This Page Does',
-  body: 'This page sets the business identity, main business phone, greeting, and voice your sales receptionist uses every time it answers a call.',
-  detail: 'These basics help callers know they reached the right business and shape how the receptionist sounds before deeper business knowledge is added on the Knowledge page.'
+  title: 'What this page covers',
+  body: 'Set the business identity, public phone number, greeting, and voice your receptionist uses.',
+  detail: 'These settings make sure callers hear the right business name and voice before deeper knowledge is added.'
 };
 
 export default function ReceptionistBasicsPage() {

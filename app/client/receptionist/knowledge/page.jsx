@@ -235,63 +235,63 @@ const guideByContext = {
   website: {
     step: '01',
     title: 'Website',
-    body: 'Set the main website URL for the website base. Rebuilding the website refreshes crawled site content and keeps approved documents applied on top of it.',
-    tip: 'Use the main public site, not a deep page, so the website rebuild can discover the right content.'
+    body: 'Set the main website URL. Rebuild Website refreshes the crawl and keeps approved documents on top.',
+    tip: 'Use the main public website, not a deep page.'
   },
   documentsMeta: {
     step: '01',
     title: 'Document Details',
-    body: 'Name the document, choose its class, and pick the document source type before saving it.',
-    tip: 'Use clear titles so your team can recognize each saved document later.'
+    body: 'Add a clear title, choose the document type, and select the source.',
+    tip: 'Use titles your team will recognize later.'
   },
   documentsFile: {
     step: '01',
     title: 'Upload File',
-    body: 'Use file upload for .txt source documents that should override or supplement website content.',
-    tip: 'Use this for finalized plain-text reference documents that should become part of the next build.'
+    body: 'Upload a plain-text file when you want content to add to or override the website.',
+    tip: 'Use finalized reference text.'
   },
   documentsPage: {
     step: '01',
     title: 'Single Web Page',
-    body: 'Use a single web page document when one exact page should override or supplement the larger website build without crawling child pages.',
-    tip: 'Paste the exact page URL you want to import. Only that page is fetched.'
+    body: 'Use Single Web Page to import one exact page without crawling the rest of the site.',
+    tip: 'Paste the exact page URL.'
   },
   websiteBuild: {
     step: '01',
     title: 'Rebuild Website',
-    body: 'Rebuild Website refreshes the website base and publishes a new live knowledge base automatically when it is ready.',
-    tip: 'Use this after major website changes or when the base site content needs a fresh crawl.'
+    body: 'Rebuild Website refreshes the website crawl and publishes it when ready.',
+    tip: 'Use this after website changes.'
   },
   documentApply: {
     step: '01',
     title: 'Apply Documents',
-    body: 'Apply Documents reuses the current live website base and layers the approved documents on top without crawling the website again.',
-    tip: 'Use this after saving a document or single-page source so the override can go live quickly.'
+    body: 'Apply Documents adds approved documents on top of the current live website build.',
+    tip: 'Use this after saving or approving document changes.'
   },
   testQuestion: {
     step: '02',
     title: 'Test Customer Questions',
-    body: 'Ask caller-style questions against the current knowledge base to check how the sales receptionist is likely to answer.',
-    tip: 'Use the same wording real callers would use on the phone.'
+    body: 'Ask real caller-style questions to check how EveryCall is likely to answer.',
+    tip: 'Test with the words real callers would use.'
   },
   likelyAnswer: {
     step: '02',
     title: 'Likely Answer',
-    body: 'This preview shows an estimated answer based on the current live build. It helps you sanity-check the knowledge before sending live calls to it.',
-    tip: 'If the answer looks wrong, update the sources, create a new build, and test again.'
+    body: 'This is an estimated answer from the current live build.',
+    tip: 'If it is wrong, update the source and rebuild.'
   },
   salesReceptionistNumber: {
     step: '01',
     title: 'Sales Receptionist Number',
-    body: 'This is the EveryCall phone number your AI sales receptionist answers live. Your business phone system should forward callers to this number when you want EveryCall to pick up the call.',
-    tip: 'Keep this number as the forwarding destination in your phone system so callers land on the receptionist instead of voicemail or another queue.'
+    body: 'This is the EveryCall number that answers live. Forward calls here when you want EveryCall to answer.',
+    tip: 'Keep this set as the forwarding destination in your phone system.'
   }
 };
 
 const knowledgeGuideOverview = {
-  title: 'What This Page Does',
-  body: 'This page manages the website base and document overlays that make up the published knowledge base your sales receptionist uses during live calls.',
-  detail: 'Before a build is published, the sales receptionist can answer only generic questions from the business description. If a caller asks for specific business details it does not know yet, it will apologize and offer to have someone call them back.'
+  title: 'What this page covers',
+  body: 'This page controls the website and document sources used to answer business questions.',
+  detail: 'Publish a build before sending live calls here. Until then, EveryCall can answer only limited general questions.'
 };
 
 export default function ReceptionistKnowledgePage() {

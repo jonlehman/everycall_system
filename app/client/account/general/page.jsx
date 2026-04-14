@@ -143,14 +143,14 @@ export default function AccountGeneralPage() {
         </div>
 
         <GuidePanel title="Account Guide" eyebrow="How it works" icon="settings">
-          <div>Use this page for account-level details like your plan, assigned sales receptionist number, and business timezone.</div>
+          <div>Use this page for account details like your plan, receptionist number, and timezone.</div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Account Snapshot</div>
-            <div className="mt-1 text-sm text-slate-600">Review your tenant name, plan, region, and assigned sales receptionist number here.</div>
+            <div className="mt-1 text-sm text-slate-600">Review your account name, plan, region, and receptionist number.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Business Timezone</div>
-            <div className="mt-1 text-sm text-slate-600">Set the local timezone the system should use for account-level scheduling and display defaults.</div>
+            <div className="mt-1 text-sm text-slate-600">Set the local timezone used for account-level defaults.</div>
           </div>
         </GuidePanel>
       </div>
