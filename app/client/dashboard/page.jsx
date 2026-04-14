@@ -93,6 +93,13 @@ function formatTimeOnly(value) {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+function formatShortDate(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 function formatDateTime(value) {
   if (!value) return '-';
   const date = new Date(value);
@@ -391,7 +398,7 @@ export default function ClientDashboardPage() {
             <table className="w-full min-w-[720px] text-left">
               <thead className="bg-[#f1f4f6]">
                 <tr>
-                  <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Time</th>
+                  <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Date / Time</th>
                   <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Caller</th>
                   <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Summary</th>
                   <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Category</th>
@@ -409,7 +416,10 @@ export default function ClientDashboardPage() {
                       className="cursor-pointer transition-colors hover:bg-[#f7fafc]"
                       onClick={() => { window.location.href = `/client/calls?callSid=${encodeURIComponent(call.call_sid || '')}`; }}
                     >
-                      <td className="px-6 py-4 text-xs text-slate-500 whitespace-nowrap">{formatTimeOnly(call.created_at)}</td>
+                      <td className="px-6 py-4 text-xs text-slate-500 whitespace-nowrap">
+                        <div className="font-medium text-slate-700">{formatShortDate(call.created_at)}</div>
+                        <div className="mt-1">{formatTimeOnly(call.created_at)}</div>
+                      </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-bold text-slate-900">{callerName}</div>
                         <div className="text-[10px] text-slate-500">{call.callback_number || 'No callback number'}</div>
