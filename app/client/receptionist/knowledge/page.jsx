@@ -680,7 +680,6 @@ export default function ReceptionistKnowledgePage() {
             <StepSection
               step="01"
               title="Training Materials"
-              description="Manage the website base and document overlays that make up your live knowledge base."
               contentClassName={`border-0 bg-transparent p-0 ${activeStep === '01' ? activeCardClassName : ''}`}
             >
               <div className="space-y-4">
