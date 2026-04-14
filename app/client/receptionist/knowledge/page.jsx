@@ -313,7 +313,7 @@ const knowledgeGuideOverview = {
 };
 
 const WEBSITE_TOOLTIP = 'Crawl the main website and refresh the base knowledge layer.';
-const DOCUMENTS_TOOLTIP = 'Uploaded documents and single web pages override any conflicting information from the website.';
+const DOCUMENTS_TOOLTIP = 'Upload documents or single web pages to override or add to information scraped from your website.';
 const TEST_CUSTOMER_QUESTIONS_TOOLTIP = 'Ask a caller-style question to see an approximate answer based on the current knowledge base.';
 
 export default function ReceptionistKnowledgePage() {
