@@ -709,7 +709,7 @@ export default function ClientGetStartedPage() {
           </div>
 
           <div className="lg:col-span-5">
-            <div className="lg:sticky lg:top-4">
+            <div className="lg:sticky lg:top-20">
               <ProgressPanel items={cardProgressItems} />
             </div>
           </div>
