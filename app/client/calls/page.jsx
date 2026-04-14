@@ -1149,10 +1149,11 @@ export default function CallsPage() {
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold text-slate-500">Service Required</label>
-                        <input
-                          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-all focus:border-[#004ac6]/30 focus:bg-white focus:ring-2 focus:ring-[#004ac6]/15"
+                        <textarea
+                          className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-all focus:border-[#004ac6]/30 focus:bg-white focus:ring-2 focus:ring-[#004ac6]/15"
                           value={detailDraft.serviceRequired}
                           onChange={(event) => setDetailDraft((prev) => ({ ...prev, serviceRequired: event.target.value }))}
+                          style={{ minHeight: isMobile ? 72 : 122 }}
                           placeholder="Service required"
                         />
                       </div>
