@@ -985,20 +985,6 @@ export default function ReceptionistKnowledgePage() {
             </StepSection>
           </div>
 
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <h2 className="m-0 text-lg font-semibold">Next Steps</h2>
-            <p className="m-0 mt-2 text-sm text-slate-600">
-              After your latest build finishes and your test questions look right, make sure the right people are set to receive call alerts on the Send Leads To page.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link href="/client/team" className="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-[0_8px_20px_rgba(0,74,198,0.16)]">
-                Open Send Leads To
-              </Link>
-              <Link href="/client/calls" className="inline-flex rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm">
-                Open Calls
-              </Link>
-            </div>
-          </section>
         </div>
 
         <div ref={guidePanelRef}>
