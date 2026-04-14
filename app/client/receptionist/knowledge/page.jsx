@@ -622,11 +622,11 @@ export default function ReceptionistKnowledgePage() {
     ? { tone: 'warn', label: 'Build In Progress' }
     : hasPendingDocumentChanges
       ? { tone: 'warn', label: 'Documents Pending' }
-    : latestBuildStatus === 'published'
-      ? { tone: 'ok', label: 'Knowledge Base Active' }
       : latestBuildStatus === 'ready_to_publish'
         ? { tone: 'warn', label: 'Publishing Soon' }
-        : { tone: 'warn', label: 'Create Knowledge Base' };
+        : latestBuildStatus === 'published'
+          ? null
+          : { tone: 'warn', label: 'Create Knowledge Base' };
   const activeGuide = guideByContext[activeGuideKey] || guideByContext.website;
   const activeStep = activeGuide.step || '01';
   const activeCardClassName = 'ring-2 ring-[#2563EB]/20 shadow-[0_0_0_1px_rgba(37,99,235,0.05)]';
