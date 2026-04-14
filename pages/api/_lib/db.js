@@ -51,6 +51,7 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS forwarding_setup_status TEXT NOT NULL DEFAULT 'not_started';`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS forwarding_acknowledged_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS forwarding_configured_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS receptionist_basics_reviewed_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_status TEXT NOT NULL DEFAULT 'trialing';`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS plan_code TEXT;`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ;`);

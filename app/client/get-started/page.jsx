@@ -228,10 +228,12 @@ export default function ClientGetStartedPage() {
     buildState: { builds: [], activeBuild: null },
     users: [],
     settings: null,
+    billing: null,
     promptProfile: null,
     runtimeProfile: null
   });
   const [savingForwardingStatus, setSavingForwardingStatus] = useState(false);
+  const [savingReceptionistReviewStatus, setSavingReceptionistReviewStatus] = useState(false);
   const [showSupportSetupModal, setShowSupportSetupModal] = useState(false);
 
   const dismissSupportSetupModal = () => {
@@ -248,9 +250,10 @@ export default function ClientGetStartedPage() {
       fetchJson('/api/v1/knowledge/builds').catch(() => null),
       fetchJson('/api/v1/tenant/users').catch(() => null),
       fetchJson('/api/v1/settings').catch(() => null),
+      fetchJson('/api/v1/billing').catch(() => null),
       fetchJson('/api/v1/knowledge/prompt-profile').catch(() => null),
       fetchJson('/api/v1/knowledge/runtime-profile').catch(() => null)
-    ]).then(([buildsData, usersData, settingsData, promptProfileData, runtimeProfileData]) => {
+    ]).then(([buildsData, usersData, settingsData, billingData, promptProfileData, runtimeProfileData]) => {
       if (cancelled) return;
       setPacket({
         buildState: {
@@ -259,6 +262,7 @@ export default function ClientGetStartedPage() {
         },
         users: Array.isArray(usersData?.users) ? usersData.users : [],
         settings: settingsData || null,
+        billing: billingData?.billing || null,
         promptProfile: promptProfileData?.profile || null,
         runtimeProfile: runtimeProfileData?.profile || null
       });
@@ -410,17 +414,39 @@ export default function ClientGetStartedPage() {
   const receptionistSettings = useMemo(() => {
     const profile = packet.promptProfile || {};
     const runtimeProfile = packet.runtimeProfile || {};
+    const tenant = packet.settings?.tenant || {};
     const businessName = String(profile?.business_name || profile?.businessName || '').trim();
     const openingLine = String(profile?.opening_line || profile?.openingLine || '').trim();
+    const businessPhone = String(tenant?.primary_number || '').trim();
     const voice = String(runtimeProfile?.session_config?.voice || '').trim();
-    const done = Boolean(businessName && openingLine && voice);
+    const ready = Boolean(businessName && openingLine && voice && businessPhone);
+    const reviewed = Boolean(tenant?.receptionist_basics_reviewed_at);
+    const done = ready && reviewed;
 
     return {
       done,
-      tone: done ? 'ok' : 'processing',
-      statusValue: done ? 'Ready' : 'Needs review'
+      ready,
+      reviewed,
+      tone: done ? 'ok' : ready ? 'processing' : 'bad',
+      statusValue: done ? 'Reviewed' : ready ? 'Ready to review' : 'Needs attention'
     };
-  }, [packet.promptProfile, packet.runtimeProfile]);
+  }, [packet.promptProfile, packet.runtimeProfile, packet.settings]);
+
+  const billingSetup = useMemo(() => {
+    const billing = packet.billing || null;
+    const hasStripeSubscription = Boolean(billing?.hasStripeSubscription);
+    const normalizedStatus = String(billing?.status || '').trim().toLowerCase();
+    const trialDaysRemaining = typeof billing?.trialDaysRemaining === 'number' ? billing.trialDaysRemaining : null;
+
+    return {
+      done: hasStripeSubscription,
+      tone: hasStripeSubscription ? 'ok' : ['trial_expired', 'deactivated', 'unpaid', 'past_due'].includes(normalizedStatus) ? 'bad' : 'processing',
+      statusValue: hasStripeSubscription ? 'Activated' : 'Not active yet',
+      trialMessage: !hasStripeSubscription && trialDaysRemaining !== null
+        ? `${trialDaysRemaining} day(s) left in trial.`
+        : ''
+    };
+  }, [packet.billing]);
 
   const updateForwardingStatus = async (checked) => {
     if (savingForwardingStatus) return;
@@ -455,12 +481,44 @@ export default function ClientGetStartedPage() {
     }
   };
 
+  const updateReceptionistReviewStatus = async (checked) => {
+    if (savingReceptionistReviewStatus) return;
+    setSavingReceptionistReviewStatus(true);
+    try {
+      const response = await fetch('/api/v1/tenants/receptionist-basics-review-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewed: checked })
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(body?.message || 'receptionist_review_status_update_failed');
+      }
+      setPacket((current) => ({
+        ...current,
+        settings: {
+          ...(current.settings || {}),
+          tenant: {
+            ...((current.settings && current.settings.tenant) || {}),
+            receptionist_basics_reviewed_at: body?.review?.reviewedAt || null
+          }
+        }
+      }));
+    } catch (error) {
+      window.alert('Could not update receptionist review status right now.');
+    } finally {
+      setSavingReceptionistReviewStatus(false);
+    }
+  };
+
   const cardProgressItems = useMemo(() => [
     { label: 'Teach EveryCall about your business', done: websiteTraining.done },
     { label: 'Choose where leads go', done: leadDestinations.activeDestinations.length > 0 },
     { label: 'Review receptionist settings', done: receptionistSettings.done },
-    { label: 'How to use this number', done: forwarding.forwardingConfigured }
+    { label: 'How to use this number', done: forwarding.forwardingConfigured },
+    { label: 'Activate billing', done: billingSetup.done }
   ], [
+    billingSetup.done,
     forwarding.forwardingConfigured,
     leadDestinations.activeDestinations.length,
     receptionistSettings.done,
@@ -550,6 +608,18 @@ export default function ClientGetStartedPage() {
             <SetupStepCard
               step="3"
               title="Review Receptionist Settings"
+              headerAside={(
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                  <span>Reviewed</span>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-[#2563eb] focus:ring-[#2563eb]"
+                    checked={receptionistSettings.reviewed}
+                    disabled={savingReceptionistReviewStatus}
+                    onChange={(event) => updateReceptionistReviewStatus(event.target.checked)}
+                  />
+                </label>
+              )}
               statusBox={{
                 label: 'Current status',
                 value: receptionistSettings.statusValue,
@@ -558,6 +628,7 @@ export default function ClientGetStartedPage() {
               descriptionContent={(
                 <ul className="list-disc space-y-2 pl-5">
                   <li>Business name callers hear</li>
+                  <li>Main business phone number</li>
                   <li>Opening greeting</li>
                   <li>Voice selection</li>
                 </ul>
@@ -608,6 +679,32 @@ export default function ClientGetStartedPage() {
                   Copy Number
                 </button>
               ) : null}
+            />
+
+            <SetupStepCard
+              step="5"
+              title="Activate Billing"
+              statusBox={{
+                label: 'Current status',
+                value: billingSetup.statusValue,
+                tone: billingSetup.tone,
+                message: billingSetup.trialMessage
+              }}
+              descriptionContent={(
+                <ul className="list-disc space-y-2 pl-5">
+                  <li>Add a payment method now</li>
+                  <li>No charges start until your trial ends</li>
+                  <li>Review plan, usage, and billing history</li>
+                </ul>
+              )}
+              action={(
+                <Link
+                  href="/client/account/billing"
+                  className={actionButtonClass(false)}
+                >
+                  {billingSetup.done ? 'Billing' : 'Activate Billing'}
+                </Link>
+              )}
             />
           </div>
 
