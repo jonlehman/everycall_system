@@ -4,6 +4,7 @@ export const DEFAULT_PLAN_CODE = "growth";
 export const DEFAULT_MONTHLY_AMOUNT_CENTS = Number(process.env.DEFAULT_PLAN_MONTHLY_AMOUNT_CENTS || "50000");
 export const DEFAULT_STRIPE_PRODUCT_ID = String(process.env.STRIPE_DEFAULT_PRODUCT_ID || "").trim() || null;
 export const DEFAULT_TRIAL_DAYS = Number(process.env.DEFAULT_TRIAL_DAYS || "30");
+export const DEFAULT_BILLING_INTERVAL = "month";
 
 function normalizeOptionalId(value) {
   const text = String(value || "").trim();
@@ -15,8 +16,36 @@ function getDefaultPlanStripeCatalog(planCode) {
   return {
     stripeProductId: normalizeOptionalId(process.env[`STRIPE_${normalizedCode}_PRODUCT_ID`])
       || (normalizedCode === String(DEFAULT_PLAN_CODE).trim().toUpperCase() ? DEFAULT_STRIPE_PRODUCT_ID : null),
-    stripePriceId: normalizeOptionalId(process.env[`STRIPE_${normalizedCode}_PRICE_ID`])
+    stripePriceId: normalizeOptionalId(process.env[`STRIPE_${normalizedCode}_PRICE_ID`]),
+    stripeAnnualPriceId: normalizeOptionalId(process.env[`STRIPE_${normalizedCode}_ANNUAL_PRICE_ID`])
   };
+}
+
+function deriveAnnualAmountCents(monthlyAmountCents) {
+  const normalizedMonthlyAmount = Number(monthlyAmountCents || 0);
+  if (!Number.isFinite(normalizedMonthlyAmount) || normalizedMonthlyAmount <= 0) {
+    return 0;
+  }
+  return Math.round(normalizedMonthlyAmount * 12 * 0.85);
+}
+
+export function normalizeBillingInterval(value, fallback = DEFAULT_BILLING_INTERVAL) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["month", "monthly"].includes(normalized)) return "month";
+  if (["year", "annual", "annually", "yearly"].includes(normalized)) return "year";
+  return fallback;
+}
+
+export function formatBillingIntervalLabel(value) {
+  return normalizeBillingInterval(value) === "year" ? "Annual" : "Monthly";
+}
+
+export function getPlanStripePriceIdForInterval(plan, interval = DEFAULT_BILLING_INTERVAL) {
+  const normalizedInterval = normalizeBillingInterval(interval);
+  if (normalizedInterval === "year") {
+    return normalizeOptionalId(plan?.stripeAnnualPriceId ?? plan?.stripe_annual_price_id);
+  }
+  return normalizeOptionalId(plan?.stripePriceId ?? plan?.stripe_price_id);
 }
 
 export const DEFAULT_BILLING_PLANS = [
@@ -24,6 +53,7 @@ export const DEFAULT_BILLING_PLANS = [
     code: "starter",
     label: "Starter",
     monthlyAmountCents: 30000,
+    annualAmountCents: deriveAnnualAmountCents(30000),
     leadRateCents: 1200,
     includedCount: 0,
     ...getDefaultPlanStripeCatalog("starter")
@@ -32,6 +62,7 @@ export const DEFAULT_BILLING_PLANS = [
     code: "growth",
     label: "Growth",
     monthlyAmountCents: 50000,
+    annualAmountCents: deriveAnnualAmountCents(50000),
     leadRateCents: 700,
     includedCount: 0,
     ...getDefaultPlanStripeCatalog("growth")
@@ -40,6 +71,7 @@ export const DEFAULT_BILLING_PLANS = [
     code: "pro",
     label: "Pro",
     monthlyAmountCents: 90000,
+    annualAmountCents: deriveAnnualAmountCents(90000),
     leadRateCents: 400,
     includedCount: 0,
     ...getDefaultPlanStripeCatalog("pro")
@@ -75,6 +107,10 @@ export function normalizeBillingPlans(value) {
   const source = Array.isArray(value) ? value : [];
   return DEFAULT_BILLING_PLANS.map((fallbackPlan) => {
     const configured = source.find((item) => normalizePlanCode(item?.code) === fallbackPlan.code) || {};
+    const normalizedMonthlyAmountCents = normalizeMoneyCents(
+      configured.monthlyAmountCents,
+      fallbackPlan.monthlyAmountCents
+    );
     const normalizedLeadRate = normalizeMoneyCents(
       configured.leadRateCents ?? configured.callOverageRateCents,
       fallbackPlan.leadRateCents
@@ -83,22 +119,31 @@ export function normalizeBillingPlans(value) {
       configured.includedCount ?? configured.includedCallCount,
       fallbackPlan.includedCount
     );
+    const normalizedAnnualAmountCents = normalizeMoneyCents(
+      configured.annualAmountCents ?? configured.annual_amount_cents,
+      deriveAnnualAmountCents(normalizedMonthlyAmountCents || fallbackPlan.monthlyAmountCents)
+    );
     const stripeProductId = normalizeOptionalId(
       configured.stripeProductId ?? configured.stripe_product_id ?? fallbackPlan.stripeProductId
     );
     const stripePriceId = normalizeOptionalId(
       configured.stripePriceId ?? configured.stripe_price_id ?? fallbackPlan.stripePriceId
     );
+    const stripeAnnualPriceId = normalizeOptionalId(
+      configured.stripeAnnualPriceId ?? configured.stripe_annual_price_id ?? fallbackPlan.stripeAnnualPriceId
+    );
     return {
       code: fallbackPlan.code,
       label: normalizePlanLabel(configured.label, fallbackPlan.label),
-      monthlyAmountCents: normalizeMoneyCents(configured.monthlyAmountCents, fallbackPlan.monthlyAmountCents),
+      monthlyAmountCents: normalizedMonthlyAmountCents,
+      annualAmountCents: normalizedAnnualAmountCents,
       leadRateCents: normalizedLeadRate,
       includedCount: normalizedIncludedCount,
       callOverageRateCents: normalizedLeadRate,
       includedCallCount: normalizedIncludedCount,
       stripeProductId,
-      stripePriceId
+      stripePriceId,
+      stripeAnnualPriceId
     };
   });
 }
@@ -209,6 +254,29 @@ export function resolveEffectiveMonthlyAmount(row) {
   return DEFAULT_MONTHLY_AMOUNT_CENTS;
 }
 
+export function resolveEffectiveBillingInterval(row) {
+  return normalizeBillingInterval(row?.billing_interval);
+}
+
+export function resolveEffectiveAnnualAmount(row, billingConfig = null) {
+  const plan = getBillingPlanByCode(
+    billingConfig?.plans || DEFAULT_BILLING_PLANS,
+    row?.plan_code || DEFAULT_PLAN_CODE
+  );
+  if (hasCustomPricing(row)) {
+    return deriveAnnualAmountCents(resolveEffectiveMonthlyAmount(row));
+  }
+  const annualAmount = Number(plan?.annualAmountCents || 0);
+  if (annualAmount > 0) return Math.round(annualAmount);
+  return deriveAnnualAmountCents(resolveEffectiveMonthlyAmount(row));
+}
+
+export function resolveEffectiveBaseAmount(row, billingConfig = null) {
+  return resolveEffectiveBillingInterval(row) === "year"
+    ? resolveEffectiveAnnualAmount(row, billingConfig)
+    : resolveEffectiveMonthlyAmount(row);
+}
+
 export function hasCustomPricing(row) {
   const monthlyOverrideSet = row?.monthly_amount_override_cents !== null
     && row?.monthly_amount_override_cents !== undefined;
@@ -297,6 +365,7 @@ export async function getTenantBillingState(pool, tenantKey) {
        b.stripe_subscription_id,
        b.stripe_product_id,
        b.stripe_price_id,
+       b.billing_interval,
        b.monthly_amount_cents,
        b.lead_rate_cents,
        b.included_lead_count,
@@ -343,13 +412,17 @@ export async function ensureTenantBillingAccount(pool, tenantKey, values = {}) {
     billingConfig.plans,
     values.plan_code || current?.plan_code || DEFAULT_PLAN_CODE
   );
+  const billingInterval = normalizeBillingInterval(values.billing_interval ?? current?.billing_interval);
   await pool.query(
     `UPDATE tenants
      SET trial_started_at = COALESCE(trial_started_at, created_at),
          trial_end = COALESCE(trial_end, created_at + ($2::text || ' days')::interval),
          billing_status_updated_at = COALESCE(billing_status_updated_at, NOW()),
          plan_code = COALESCE(plan_code, $3),
-         plan = COALESCE(plan, $4)
+         plan = CASE
+           WHEN plan_code IS NULL OR TRIM(plan_code) = '' THEN $4
+           ELSE COALESCE(plan, $4)
+         END
      WHERE tenant_key = $1`,
     [
       tenantKey,
@@ -361,6 +434,7 @@ export async function ensureTenantBillingAccount(pool, tenantKey, values = {}) {
   await pool.query(
     `INSERT INTO tenant_billing_accounts (
        tenant_key,
+       billing_interval,
        monthly_amount_cents,
        lead_rate_cents,
        included_lead_count,
@@ -370,9 +444,10 @@ export async function ensureTenantBillingAccount(pool, tenantKey, values = {}) {
        stripe_price_id,
        updated_at
      )
-     VALUES ($1, $2, $3, $4, $3, $4, $5, $6, NOW())
+     VALUES ($1, $2, $3, $4, $5, $4, $5, $6, $7, NOW())
      ON CONFLICT (tenant_key)
      DO UPDATE SET
+       billing_interval = COALESCE(tenant_billing_accounts.billing_interval, EXCLUDED.billing_interval),
        monthly_amount_cents = COALESCE(tenant_billing_accounts.monthly_amount_cents, EXCLUDED.monthly_amount_cents),
        lead_rate_cents = COALESCE(tenant_billing_accounts.lead_rate_cents, EXCLUDED.lead_rate_cents),
        included_lead_count = COALESCE(tenant_billing_accounts.included_lead_count, EXCLUDED.included_lead_count),
@@ -383,11 +458,12 @@ export async function ensureTenantBillingAccount(pool, tenantKey, values = {}) {
        updated_at = NOW()`,
     [
       tenantKey,
+      billingInterval,
       Number(values.monthly_amount_cents || plan.monthlyAmountCents || DEFAULT_MONTHLY_AMOUNT_CENTS),
       Number(values.lead_rate_cents || plan.leadRateCents || 0),
       Number(values.included_lead_count ?? plan.includedCount ?? 0),
       values.stripe_product_id || plan.stripeProductId || DEFAULT_STRIPE_PRODUCT_ID,
-      values.stripe_price_id || plan.stripePriceId || null
+      values.stripe_price_id || getPlanStripePriceIdForInterval(plan, billingInterval) || null
     ]
   );
   return getTenantBillingState(pool, tenantKey);
@@ -399,14 +475,21 @@ export function buildPlanDisplay(row, billingConfig = null) {
     row?.plan_code || DEFAULT_PLAN_CODE
   );
   const effectiveLeadPricing = resolveEffectiveLeadPricing(row, billingConfig);
+  const billingInterval = resolveEffectiveBillingInterval(row);
   const isCustom = hasCustomPricing(row);
+  const monthlyAmountCents = resolveEffectiveMonthlyAmount(row);
+  const annualAmountCents = resolveEffectiveAnnualAmount(row, billingConfig);
   return {
     code: isCustom ? "custom" : plan.code,
     label: isCustom ? "Custom" : normalizePlanLabel(row?.plan, plan.label),
     basePlanCode: plan.code,
     basePlanLabel: normalizePlanLabel(row?.plan, plan.label),
     legacyLabel: row?.plan || null,
-    monthlyAmountCents: resolveEffectiveMonthlyAmount(row),
+    monthlyAmountCents,
+    annualAmountCents,
+    baseAmountCents: billingInterval === "year" ? annualAmountCents : monthlyAmountCents,
+    billingInterval,
+    billingIntervalLabel: formatBillingIntervalLabel(billingInterval),
     leadRateCents: effectiveLeadPricing.rateCents,
     includedCount: effectiveLeadPricing.includedCount,
     callOverageRateCents: effectiveLeadPricing.rateCents,
@@ -452,12 +535,16 @@ export function buildAdminPricingState(row, billingConfig = null) {
     defaultTrialDays: Number(normalizedBillingConfig.defaultTrialDays || DEFAULT_TRIAL_DAYS),
     selectedPlanCode: basePlan.code,
     selectedPlanLabel: basePlan.label,
+    selectedBillingInterval: resolveEffectiveBillingInterval(row),
     effectiveMonthlyAmountCents: planDisplay.monthlyAmountCents,
+    effectiveAnnualAmountCents: planDisplay.annualAmountCents,
+    effectiveBaseAmountCents: planDisplay.baseAmountCents,
     effectiveLeadRateCents: planDisplay.leadRateCents,
     effectiveCallOverageRateCents: planDisplay.callOverageRateCents,
     includedCount: planDisplay.includedCount,
     includedCallCount: planDisplay.includedCallCount,
     baseMonthlyAmountCents: basePlan.monthlyAmountCents,
+    baseAnnualAmountCents: basePlan.annualAmountCents,
     baseLeadRateCents: basePlan.leadRateCents,
     baseCallOverageRateCents: basePlan.callOverageRateCents,
     baseIncludedCount: basePlan.includedCount,
@@ -549,6 +636,7 @@ export async function syncTenantStripeSubscription(pool, tenantKey, currentRow, 
   }
 
   const item = subscription?.items?.data?.[0] || {};
+  const billingInterval = normalizeBillingInterval(item?.price?.recurring?.interval || currentRow?.billing_interval);
   const mapped = mapStripeSubscriptionToTenantState(subscription.status, currentRow);
 
   await pool.query(
@@ -558,6 +646,7 @@ export async function syncTenantStripeSubscription(pool, tenantKey, currentRow, 
        stripe_subscription_id,
        stripe_product_id,
        stripe_price_id,
+       billing_interval,
        current_period_start,
        current_period_end,
        cancel_at_period_end,
@@ -565,13 +654,14 @@ export async function syncTenantStripeSubscription(pool, tenantKey, currentRow, 
        trial_end,
        updated_at
      )
-     VALUES ($1, $2, $3, $4, $5, to_timestamp(NULLIF($6, 0)), to_timestamp(NULLIF($7, 0)), $8, $9, $10, NOW())
+     VALUES ($1, $2, $3, $4, $5, $6, to_timestamp(NULLIF($7, 0)), to_timestamp(NULLIF($8, 0)), $9, $10, $11, NOW())
      ON CONFLICT (tenant_key)
      DO UPDATE SET
        stripe_customer_id = EXCLUDED.stripe_customer_id,
        stripe_subscription_id = EXCLUDED.stripe_subscription_id,
        stripe_product_id = EXCLUDED.stripe_product_id,
        stripe_price_id = EXCLUDED.stripe_price_id,
+       billing_interval = EXCLUDED.billing_interval,
        current_period_start = EXCLUDED.current_period_start,
        current_period_end = EXCLUDED.current_period_end,
        cancel_at_period_end = EXCLUDED.cancel_at_period_end,
@@ -584,6 +674,7 @@ export async function syncTenantStripeSubscription(pool, tenantKey, currentRow, 
       subscription.id || null,
       item.price?.product ? String(item.price.product) : null,
       item.price?.id || null,
+      billingInterval,
       subscription.current_period_start || 0,
       subscription.current_period_end || 0,
       Boolean(subscription.cancel_at_period_end),

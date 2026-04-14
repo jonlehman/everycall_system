@@ -56,10 +56,12 @@ export function buildPlanDrafts(plans) {
     code: String(plan?.code || '').trim(),
     label: String(plan?.label || '').trim(),
     monthlyAmount: formatMoneyInput(plan?.monthlyAmountCents),
+    annualAmount: formatMoneyInput(plan?.annualAmountCents),
     includedCalls: String(Number(plan?.includedCallCount ?? plan?.includedCount ?? 0)),
     callOverageRate: formatMoneyInput(plan?.callOverageRateCents ?? plan?.leadRateCents),
     stripeProductId: String(plan?.stripeProductId || plan?.stripe_product_id || '').trim(),
-    stripePriceId: String(plan?.stripePriceId || plan?.stripe_price_id || '').trim()
+    stripePriceId: String(plan?.stripePriceId || plan?.stripe_price_id || '').trim(),
+    stripeAnnualPriceId: String(plan?.stripeAnnualPriceId || plan?.stripe_annual_price_id || '').trim()
   }));
 }
 

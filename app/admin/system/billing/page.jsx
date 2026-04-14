@@ -59,20 +59,23 @@ export default function AdminSystemBillingPage() {
     const normalizedPlans = [];
     for (const plan of billingPlans) {
       const monthlyAmountCents = parseMoneyInput(plan.monthlyAmount);
+      const annualAmountCents = parseMoneyInput(plan.annualAmount);
       const includedCallCount = Number(plan.includedCalls || 0);
       const callOverageRateCents = parseMoneyInput(plan.callOverageRate, { allowZero: true });
-      if (!plan?.code || !plan?.label?.trim() || monthlyAmountCents === null || callOverageRateCents === null || !Number.isInteger(includedCallCount) || includedCallCount < 0) {
-        setStatus({ message: 'Each billing tier needs a label, monthly amount, included calls, and overage per call.', tone: 'bad' });
+      if (!plan?.code || !plan?.label?.trim() || monthlyAmountCents === null || annualAmountCents === null || callOverageRateCents === null || !Number.isInteger(includedCallCount) || includedCallCount < 0) {
+        setStatus({ message: 'Each billing tier needs a label, monthly amount, annual amount, included calls, and overage per call.', tone: 'bad' });
         return;
       }
       normalizedPlans.push({
         code: plan.code,
         label: plan.label.trim(),
         monthlyAmountCents,
+        annualAmountCents,
         includedCallCount,
         callOverageRateCents,
         stripeProductId: String(plan.stripeProductId || '').trim(),
-        stripePriceId: String(plan.stripePriceId || '').trim()
+        stripePriceId: String(plan.stripePriceId || '').trim(),
+        stripeAnnualPriceId: String(plan.stripeAnnualPriceId || '').trim()
       });
     }
 
@@ -151,6 +154,18 @@ export default function AdminSystemBillingPage() {
                   </div>
                 </div>
                 <div>
+                  <label className="block">Annual Amount</label>
+                  <div className="mt-2 flex items-center rounded-lg border border-slate-300 bg-white px-3">
+                    <span className="text-sm text-slate-500">$</span>
+                    <input
+                      inputMode="decimal"
+                      className="w-full border-0 bg-transparent px-2 py-2 text-sm focus:outline-none"
+                      value={plan.annualAmount}
+                      onChange={(event) => updateBillingPlanField(index, 'annualAmount', event.target.value)}
+                    />
+                  </div>
+                </div>
+                <div>
                   <label className="block">Included Calls</label>
                   <input
                     inputMode="numeric"
@@ -186,6 +201,15 @@ export default function AdminSystemBillingPage() {
                     className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                     value={plan.stripePriceId}
                     onChange={(event) => updateBillingPlanField(index, 'stripePriceId', event.target.value)}
+                    placeholder="price_..."
+                  />
+                </div>
+                <div>
+                  <label className="block">Stripe Annual Price ID</label>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    value={plan.stripeAnnualPriceId}
+                    onChange={(event) => updateBillingPlanField(index, 'stripeAnnualPriceId', event.target.value)}
                     placeholder="price_..."
                   />
                 </div>

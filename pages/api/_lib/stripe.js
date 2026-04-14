@@ -172,6 +172,7 @@ export async function createCheckoutSession({
   customerEmail,
   priceId,
   unitAmount,
+  interval = "month",
   productId,
   productName,
   trialEnd,
@@ -203,6 +204,7 @@ export async function createCheckoutSession({
               productId,
               productName,
               currency,
+              interval,
               metadata: {
                 tenant_key: tenantKey,
                 plan_code: planCode,

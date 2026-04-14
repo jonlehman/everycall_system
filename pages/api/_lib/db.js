@@ -721,6 +721,7 @@ export async function ensureTables(pool) {
       stripe_subscription_id TEXT UNIQUE,
       stripe_product_id TEXT,
       stripe_price_id TEXT,
+      billing_interval TEXT NOT NULL DEFAULT 'month',
       monthly_amount_cents INTEGER,
       lead_rate_cents INTEGER,
       included_lead_count INTEGER,
@@ -748,6 +749,7 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS stripe_product_id TEXT;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS stripe_price_id TEXT;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS billing_interval TEXT NOT NULL DEFAULT 'month';`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS monthly_amount_cents INTEGER;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS lead_rate_cents INTEGER;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS included_lead_count INTEGER;`);

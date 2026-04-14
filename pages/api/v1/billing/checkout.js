@@ -4,8 +4,11 @@ import {
   buildPlanDisplay,
   ensureTenantBillingAccount,
   getBillingPlanByCode,
+  getPlanStripePriceIdForInterval,
   getSystemBillingConfig,
   requireTenantOwner,
+  resolveEffectiveBaseAmount,
+  resolveEffectiveBillingInterval,
   resolveEffectiveMonthlyAmount,
   syncTenantStripeSubscription
 } from "../../_lib/billing.js";
@@ -95,25 +98,31 @@ export default async function handler(req, res) {
     });
     const planDisplay = buildPlanDisplay(row, billingConfig);
     const selectedPlan = getBillingPlanByCode(billingConfig.plans, planDisplay.basePlanCode);
+    const billingInterval = resolveEffectiveBillingInterval(row);
     const activeCoupon = await getTenantActiveCouponRedemption(pool, tenantKey).catch(() => null);
     const couponMonthlyDiscountPercent = Number(activeCoupon?.monthlyDiscountPercent || 0);
-    const discountedMonthlyAmountCents = couponMonthlyDiscountPercent > 0
-      ? computeDiscountedAmountCents(resolveEffectiveMonthlyAmount(row), couponMonthlyDiscountPercent)
-      : resolveEffectiveMonthlyAmount(row);
-    const standardStripePriceId = (!planDisplay.isCustom && couponMonthlyDiscountPercent <= 0) ? (selectedPlan?.stripePriceId || null) : null;
+    const baseAmountCents = resolveEffectiveBaseAmount(row, billingConfig);
+    const discountedBaseAmountCents = couponMonthlyDiscountPercent > 0
+      ? computeDiscountedAmountCents(baseAmountCents, couponMonthlyDiscountPercent)
+      : baseAmountCents;
+    const standardStripePriceId = (!planDisplay.isCustom && couponMonthlyDiscountPercent <= 0)
+      ? (getPlanStripePriceIdForInterval(selectedPlan, billingInterval) || null)
+      : null;
     const standardStripeProductId = !planDisplay.isCustom ? (selectedPlan?.stripeProductId || null) : null;
 
     await pool.query(
-      `INSERT INTO tenant_billing_accounts (tenant_key, stripe_customer_id, monthly_amount_cents, stripe_product_id, stripe_price_id, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
+      `INSERT INTO tenant_billing_accounts (tenant_key, stripe_customer_id, billing_interval, monthly_amount_cents, stripe_product_id, stripe_price_id, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
        ON CONFLICT (tenant_key)
        DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id,
+                     billing_interval = EXCLUDED.billing_interval,
                      stripe_product_id = COALESCE(tenant_billing_accounts.stripe_product_id, EXCLUDED.stripe_product_id),
                      stripe_price_id = COALESCE(tenant_billing_accounts.stripe_price_id, EXCLUDED.stripe_price_id),
                      updated_at = NOW()`,
       [
         tenantKey,
         customer.id,
+        billingInterval,
         Number(row.monthly_amount_cents || resolveEffectiveMonthlyAmount(row)),
         standardStripeProductId || row.stripe_product_id || null,
         standardStripePriceId || row.stripe_price_id || null
@@ -144,7 +153,8 @@ export default async function handler(req, res) {
       customerId: customer.id,
       customerEmail: customer.email || owner.email || row.owner_email || undefined,
       priceId: standardStripePriceId,
-      unitAmount: discountedMonthlyAmountCents,
+      unitAmount: discountedBaseAmountCents,
+      interval: billingInterval,
       productId: standardStripeProductId || row.stripe_product_id || null,
       productName: `${row.name || "EveryCall"} Subscription`,
       trialEnd,
@@ -153,6 +163,7 @@ export default async function handler(req, res) {
       metadata: {
         tenant_key: tenantKey,
         actor_user_id: String(session.user_id || ""),
+        billing_interval: billingInterval,
         billing_coupon_code: activeCoupon?.code || "",
         billing_coupon_monthly_discount_percent: String(couponMonthlyDiscountPercent || 0)
       }

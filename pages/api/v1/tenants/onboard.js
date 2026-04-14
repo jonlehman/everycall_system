@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { createSession, setSessionCookie } from "../../_lib/auth.js";
 import { getSharedSmsNumber } from "../../_lib/alerts.js";
-import { ensureTenantBillingAccount } from "../../_lib/billing.js";
+import { ensureTenantBillingAccount, normalizeBillingInterval } from "../../_lib/billing.js";
 import {
   DEFAULT_RUNTIME_BEHAVIOR_DEFAULTS,
   DEFAULT_RUNTIME_TOOL_POLICY,
@@ -264,6 +264,15 @@ function defaultBusinessIntent(payload) {
   };
 }
 
+function resolveInitialBillingSelection(marketingAttribution = {}) {
+  const planCode = normalizeText(marketingAttribution?.planInterest || marketingAttribution?.plan_interest).toLowerCase();
+  const billingCycle = normalizeText(marketingAttribution?.billingCycle || marketingAttribution?.billing_cycle).toLowerCase();
+  return {
+    planCode: planCode || null,
+    billingInterval: billingCycle ? normalizeBillingInterval(billingCycle) : null
+  };
+}
+
 function defaultRuntimeProfile(payload) {
   return {
     companyDescription: payload.companyDescription,
@@ -436,7 +445,11 @@ export default async function handler(req, res) {
         { timezone: "America/Los_Angeles", syncRoutingDisplayText: true }
       );
 
-      await ensureTenantBillingAccount(client, tenantKey);
+      const initialBillingSelection = resolveInitialBillingSelection(payload.marketingAttribution);
+      await ensureTenantBillingAccount(client, tenantKey, {
+        ...(initialBillingSelection.planCode ? { plan_code: initialBillingSelection.planCode } : {}),
+        ...(initialBillingSelection.billingInterval ? { billing_interval: initialBillingSelection.billingInterval } : {})
+      });
 
       const bootstrapProfile = await saveTenantBootstrapProfile(client, tenantKey, {
         websiteUrl: payload.website,

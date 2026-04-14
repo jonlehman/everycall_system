@@ -422,11 +422,13 @@ export default function AccountBillingPage() {
     {
       label: 'Plan',
       value: billing?.plan?.label || '-',
-      detail: billing?.plan?.isCustom ? 'Custom pricing is active.' : `${formatMoney(billing?.plan?.monthlyAmountCents)} base subscription`
+      detail: billing?.plan?.isCustom
+        ? 'Custom pricing is active.'
+        : `${formatMoney(billing?.plan?.baseAmountCents)} billed ${String(billing?.plan?.billingIntervalLabel || 'Monthly').toLowerCase()}`
     },
     {
       label: 'Current Estimate',
-      value: formatMoney(callInvoiceEstimate.totalEstimatedInvoiceCents),
+      value: formatMoney(currentDisplayedTotalEstimateCents),
       detail: `${formatMoney(callInvoiceEstimate.overageAmountCents)} in overages this window`,
       tone: 'brand'
     },
@@ -445,22 +447,31 @@ export default function AccountBillingPage() {
   ]), [
     billing?.currentPeriodEnd,
     billing?.hasStripeSubscription,
+    billing?.plan?.baseAmountCents,
+    billing?.plan?.billingIntervalLabel,
     billing?.plan?.isCustom,
     billing?.plan?.label,
-    billing?.plan?.monthlyAmountCents,
     billing?.status,
     billing?.trialDaysRemaining,
     callInvoiceEstimate.overageAmountCents,
-    callInvoiceEstimate.totalEstimatedInvoiceCents,
     callPricing.includedCallCount,
     callUsage.includedCallCountUsed,
     callUsage.overageCallCount,
+    currentDisplayedTotalEstimateCents,
     currentWindowRange
   ]);
 
   const currentNetAdjustmentAmountCents = Number(callAdjustments.netAdjustmentAmountCents || 0);
   const currentMonthlyDiscountPercent = Number(callInvoiceEstimate.monthlyDiscountPercent || 0);
   const currentOverageDiscountPercent = Number(callInvoiceEstimate.overageDiscountPercent || 0);
+  const currentDisplayedBaseAmountCents = billing?.plan?.baseAmountCents
+    ? (currentMonthlyDiscountPercent > 0
+        ? Math.round(Number(billing.plan.baseAmountCents || 0) * ((100 - currentMonthlyDiscountPercent) / 100))
+        : Number(billing.plan.baseAmountCents || 0))
+    : Number(callInvoiceEstimate.discountedBaseAmountCents ?? callInvoiceEstimate.baseAmountCents ?? 0);
+  const currentDisplayedTotalEstimateCents = currentDisplayedBaseAmountCents
+    + Number(callInvoiceEstimate.overageAmountCents || 0)
+    + currentNetAdjustmentAmountCents;
 
   const currentBillDetails = [
     {
@@ -471,11 +482,12 @@ export default function AccountBillingPage() {
       ].filter(Boolean).join(' · ') || '-'
     },
     { label: 'Billing status', value: formatBillingPeriodStatus(billing?.status) },
+    { label: 'Billing cadence', value: billing?.plan?.billingIntervalLabel || 'Monthly' },
     { label: 'Included calls', value: `${Number(callPricing.includedCallCount || 0)}` },
     { label: 'Overage rate', value: `${formatMoney(callPricing.callOverageRateCents)} / call` },
     { label: 'Eligible calls', value: `${Number(callUsage.eligibleCallCount || 0)}` },
     { label: 'Excluded calls', value: `${Number(callUsage.excludedCallCount || 0)}` },
-    { label: 'Base subscription', value: formatMoney(callInvoiceEstimate.discountedBaseAmountCents ?? callInvoiceEstimate.baseAmountCents) },
+    { label: 'Base subscription', value: formatMoney(currentDisplayedBaseAmountCents) },
     { label: 'Overage charges', value: formatMoney(callInvoiceEstimate.overageAmountCents) },
     ...(currentNetAdjustmentAmountCents !== 0
       ? [{ label: 'Manual adjustments', value: formatMoney(currentNetAdjustmentAmountCents) }]
@@ -486,7 +498,7 @@ export default function AccountBillingPage() {
     ...(currentOverageDiscountPercent !== 0
       ? [{ label: 'Overage discount', value: `${currentOverageDiscountPercent}%` }]
       : []),
-    { label: 'Estimated total', value: formatMoney(callInvoiceEstimate.totalEstimatedInvoiceCents) }
+    { label: 'Estimated total', value: formatMoney(currentDisplayedTotalEstimateCents) }
   ];
 
   const managementDetails = [
