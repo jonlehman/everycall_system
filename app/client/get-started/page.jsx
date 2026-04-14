@@ -80,6 +80,7 @@ function SetupStepCard({
   title,
   headerAside = null,
   description = '',
+  descriptionContent = null,
   subdescription = '',
   statusBox = null,
   progress = null,
@@ -162,6 +163,11 @@ function SetupStepCard({
 
           {description ? (
             <p className="text-sm leading-relaxed text-slate-600">{description}</p>
+          ) : null}
+          {descriptionContent ? (
+            <div className={`${description ? 'mt-3' : ''} text-sm leading-relaxed text-slate-600`}>
+              {descriptionContent}
+            </div>
           ) : null}
           {subdescription ? (
             <p className="mt-4 text-sm leading-relaxed text-slate-600">{subdescription}</p>
@@ -402,7 +408,7 @@ export default function ClientGetStartedPage() {
       statusValue: formattedNumber || 'Setting up',
       tone: formattedNumber ? 'processing' : 'bad',
       description: formattedNumber
-        ? 'Set your business phone system so that it forwards desired calls to the receptionist number.'
+        ? 'You have two options:'
         : 'Your receptionist number is still being assigned. It will appear here as soon as it is ready.'
     };
   }, [packet.settings]);
@@ -558,7 +564,7 @@ export default function ClientGetStartedPage() {
 
           <SetupStepCard
             step="3"
-            title="Forward Your Calls"
+            title="How to Use This Number"
             headerAside={(
               <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
                 <span>Calls Forwarded</span>
@@ -572,6 +578,12 @@ export default function ClientGetStartedPage() {
               </label>
             )}
             description={forwarding.description}
+            descriptionContent={forwarding.numberReady ? (
+              <ul className="list-disc space-y-2 pl-5">
+                <li>Set your business phone system or cell phone so that it forwards desired calls to the receptionist number.</li>
+                <li>Use this number as your primary business number and have it answer all incoming calls. EveryCall cannot forward calls currently. It only texts and emails call summaries.</li>
+              </ul>
+            ) : null}
             statusBox={{
               label: 'Receptionist Number',
               value: forwarding.statusValue,
