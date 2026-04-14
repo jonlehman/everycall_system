@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import GuidePanel from '../../_components/GuidePanel';
-import SalesReceptionistNumberHeaderAside from '../../_components/SalesReceptionistNumberHeaderAside';
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
 import StepSection from '../../_components/StepSection';
@@ -312,10 +311,6 @@ export default function ReceptionistBasicsPage() {
       };
     });
   };
-  const openSalesReceptionistNumberGuide = () => {
-    setActiveGuideKey('salesReceptionistNumber');
-    guidePanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
   const saveControls = (
     <div className="mt-4 flex gap-2">
       <Button onClick={saveBasics} disabled={saving || loading}>
@@ -334,7 +329,6 @@ export default function ReceptionistBasicsPage() {
       subtitle="Set the business identity, greeting, and voice used by your sales receptionist."
       status={status}
       statusChip={knowledgeStatusChip}
-      headerAside={<SalesReceptionistNumberHeaderAside onHelpClick={openSalesReceptionistNumberGuide} showBadge={false} />}
     >
       <div className="grid grid-cols-1 items-start gap-4 pb-[288px] xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
         <div className="grid min-w-0 gap-3">
