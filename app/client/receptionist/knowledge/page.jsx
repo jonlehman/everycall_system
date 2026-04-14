@@ -197,6 +197,24 @@ function CollapseToggleButton({ expanded, onClick, expandedLabel, collapsedLabel
   );
 }
 
+function InlineInfoButton({ message }) {
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-[#eff4ff] hover:text-[#205cb5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#205cb5] focus-visible:ring-offset-2"
+        aria-label={message}
+        onClick={(event) => event.preventDefault()}
+      >
+        <span className="material-symbols-outlined text-[16px]">info</span>
+      </button>
+      <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-72 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg group-hover:block group-focus-within:block">
+        {message}
+      </span>
+    </span>
+  );
+}
+
 function ensureSentence(value) {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -293,6 +311,8 @@ const knowledgeGuideOverview = {
   body: 'This page controls the website and document sources used to answer business questions.',
   detail: 'Publish a build before sending live calls here. Until then, EveryCall can answer only limited general questions.'
 };
+
+const TEST_CUSTOMER_QUESTIONS_TOOLTIP = 'Ask a caller-style question to see an approximate answer based on the current knowledge base.';
 
 export default function ReceptionistKnowledgePage() {
   const [loading, setLoading] = useState(true);
@@ -692,11 +712,11 @@ export default function ReceptionistKnowledgePage() {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website</h4>
+                        <span className="text-sm text-slate-500">Crawl the main website and refresh the base knowledge layer.</span>
                         {websitePublished ? (
                           <span className="badge ok">Published</span>
                         ) : null}
                       </div>
-                      <p className="mt-1 text-sm text-slate-500">Crawl the main website and refresh the base knowledge layer.</p>
                     </div>
                     <CollapseToggleButton
                       expanded={websiteSectionExpanded}
@@ -742,13 +762,11 @@ export default function ReceptionistKnowledgePage() {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Documents</h4>
+                        <span className="text-sm text-slate-500">Uploaded documents and single web pages override any conflicting information from the website.</span>
                         {documentsPublished ? (
                           <span className="badge ok">Published</span>
                         ) : null}
                       </div>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Uploaded documents and single web pages override any conflicting information from the website.
-                      </p>
                     </div>
                     <CollapseToggleButton
                       expanded={documentsSectionExpanded}
@@ -948,8 +966,12 @@ export default function ReceptionistKnowledgePage() {
             <StepSection
               className="mt-24"
               step="02"
-              title="Test Customer Questions"
-              description="Ask a caller-style question to see an approximate answer based on the current knowledge base."
+              title={(
+                <span className="inline-flex items-center gap-2">
+                  <span>Test Customer Questions</span>
+                  <InlineInfoButton message={TEST_CUSTOMER_QUESTIONS_TOOLTIP} />
+                </span>
+              )}
               contentClassName={activeStep === '02' ? activeCardClassName : ''}
             >
               <label className="mt-2.5">Test Question</label>
