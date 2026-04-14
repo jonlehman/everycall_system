@@ -27,7 +27,7 @@ const CATEGORY_COLOR = {
   other_non_billable: '#d7dadc'
 };
 
-const QUESTION_HANDLING_TOOLTIP = 'Review these periodically and update Knowledge Base documents so that your receptionist can answer caller questions properly.';
+const QUESTION_HANDLING_TOOLTIP = 'Review these periodically and update training materials so that your receptionist can answer caller questions properly.';
 
 function normalizeText(value) {
   return String(value || '').trim();
@@ -543,9 +543,9 @@ export default function ClientDashboardPage() {
             <h2 className="mb-4 font-['Space_Grotesk'] text-lg font-bold text-slate-950">Quick Actions</h2>
             <div className="grid gap-2">
               <ActionRow href="/client/calls" icon="visibility" title="Review Calls" />
-              <ActionRow href="/client/receptionist/knowledge" icon="edit_note" title="Update Knowledge Base" />
-              <ActionRow href="/client/receptionist/basics" icon="settings_input_component" title="Adjust Basics" />
-              <ActionRow href="/client/team" icon="notifications_active" title="Manage Lead Destinations" />
+              <ActionRow href="/client/receptionist/knowledge" icon="edit_note" title="Train Your Receptionist" />
+              <ActionRow href="/client/receptionist/basics" icon="settings_input_component" title="Review Receptionist Settings" />
+              <ActionRow href="/client/team" icon="notifications_active" title="Manage Send Leads To" />
             </div>
           </section>
         </div>
