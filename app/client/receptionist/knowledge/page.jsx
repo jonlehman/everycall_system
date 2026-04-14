@@ -314,7 +314,7 @@ const knowledgeGuideOverview = {
 
 const WEBSITE_TOOLTIP = 'Train your receptionist on the basics of your business by scraping the first 500 pages of your website.';
 const DOCUMENTS_TOOLTIP = 'Upload documents or single web pages to override or add to information scraped from your website.';
-const TEST_CUSTOMER_QUESTIONS_TOOLTIP = 'Ask a caller-style question to see an approximate answer based on the current knowledge base.';
+const TEST_CUSTOMER_QUESTIONS_TOOLTIP = 'Ask a caller-style question to see an approximate answer based on the current training materials.';
 
 export default function ReceptionistKnowledgePage() {
   const [loading, setLoading] = useState(true);
