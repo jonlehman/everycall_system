@@ -46,7 +46,7 @@ export const clientPrimaryNavItems = [
 
 export const receptionistNavItems = [
   { href: '/client/receptionist/basics', label: 'Basics' },
-  { href: '/client/receptionist/knowledge', label: 'Knowledge Base' }
+  { href: '/client/receptionist/knowledge', label: 'Train your receptionist' }
 ];
 
 export const accountNavItems = [
