@@ -1248,10 +1248,12 @@ export default function CallsPage() {
                         Copy To Clipboard
                       </Button>
                     </div>
-                    <div className="mt-3 text-xs text-slate-500">
-                      {saveStatus || (hasUnsavedChanges ? 'Unsaved changes' : 'No changes')}
-                      {lastSavedAt ? ` • Last saved ${lastSavedAt}` : ''}
-                    </div>
+                    {(saveStatus || hasUnsavedChanges || lastSavedAt) ? (
+                      <div className="mt-3 text-xs text-slate-500">
+                        {saveStatus || (hasUnsavedChanges ? 'Unsaved changes' : '')}
+                        {lastSavedAt ? `${saveStatus || hasUnsavedChanges ? ' • ' : ''}Last saved ${lastSavedAt}` : ''}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
