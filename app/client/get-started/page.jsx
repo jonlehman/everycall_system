@@ -559,7 +559,7 @@ export default function ClientGetStartedPage() {
                 tone: websiteTraining.tone,
                 message: websiteTraining.description
               }}
-              progress={{ label: 'Knowledge base progress', percent: websiteTraining.progressPercent }}
+              progress={{ label: 'Receptionist Training Progress', percent: websiteTraining.progressPercent }}
               action={(
                 websiteTraining.done ? (
                   <Link
