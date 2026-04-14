@@ -12,7 +12,10 @@ export default function Header() {
     trialDaysRemaining: null,
     appAccessStatus: null,
     hasStripeSubscription: false,
-    canManage: false
+    canManage: false,
+    includedCallCount: 0,
+    eligibleCallCount: 0,
+    overageCallCount: 0
   });
   const [open, setOpen] = useState(false);
   const timerRef = useRef(null);
@@ -65,7 +68,10 @@ export default function Header() {
           trialDaysRemaining: typeof billingData?.billing?.trialDaysRemaining === 'number' ? billingData.billing.trialDaysRemaining : null,
           appAccessStatus: billingData?.billing?.appAccessStatus || null,
           hasStripeSubscription: Boolean(billingData?.billing?.hasStripeSubscription),
-          canManage: Boolean(billingData?.viewer?.canManage)
+          canManage: Boolean(billingData?.viewer?.canManage),
+          includedCallCount: Number(billingData?.billing?.callPricing?.includedCallCount || 0),
+          eligibleCallCount: Number(billingData?.billing?.callUsage?.eligibleCallCount || 0),
+          overageCallCount: Number(billingData?.billing?.callUsage?.overageCallCount || 0)
         });
       }).catch(() => {
         if (!mounted) return;
@@ -82,6 +88,8 @@ export default function Header() {
   const showBillingBadge = !billing.loading && !showTrialBadge && (billing.appAccessStatus === 'billing_locked' || billing.status === 'deactivated');
   const trialLabel = billing.trialDaysRemaining === 1 ? 'Trial: 1 Day Left' : `Trial: ${billing.trialDaysRemaining ?? 0} Days Left`;
   const showActivateBillingAction = billing.canManage && (showTrialBadge || showBillingBadge);
+  const showCallUsageBadge = !billing.loading;
+  const callUsageLabel = `Calls: ${billing.eligibleCallCount}/${billing.includedCallCount}${billing.overageCallCount > 0 ? ` (+${billing.overageCallCount})` : ''}`;
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/70 bg-white/80 shadow-sm backdrop-blur-md">
@@ -104,6 +112,13 @@ export default function Header() {
             <div className="hidden md:flex items-center">
               <Link href="/client/account/billing" className="border-b-2 border-amber-500 py-5 text-sm font-semibold text-amber-700">
                 Billing Required
+              </Link>
+            </div>
+          ) : null}
+          {showCallUsageBadge ? (
+            <div className="hidden md:flex items-center">
+              <Link href="/client/account/billing" className="py-5 text-sm font-medium text-slate-700">
+                {callUsageLabel}
               </Link>
             </div>
           ) : null}
