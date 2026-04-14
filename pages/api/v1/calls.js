@@ -72,6 +72,22 @@ function normalizeSummary(rawText) {
   return `${leftWords.join(" ")}: ${rightWords.join(" ")}`;
 }
 
+function formatCsvCell(value) {
+  if (value === null || value === undefined) return "";
+  const text = typeof value === "string"
+    ? value
+    : typeof value === "object"
+      ? JSON.stringify(value)
+      : String(value);
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function buildCsv(rows, columns) {
+  const header = columns.map((column) => formatCsvCell(column.label)).join(",");
+  const body = rows.map((row) => columns.map((column) => formatCsvCell(column.getValue(row))).join(","));
+  return [header, ...body].join("\n");
+}
+
 async function generateSummaryFromTranscript(transcript) {
   const trimmed = String(transcript || "").trim();
   if (!trimmed || !openAiKey) return null;
@@ -185,6 +201,105 @@ export default async function handler(req, res) {
       );
       const resolved = await resolveCombined(latest.rows[0]);
       return res.status(200).json(resolved);
+    }
+
+    if (req.method === "GET" && mode === "export") {
+      const dateFrom = String(req.query?.dateFrom || "").trim();
+      const dateTo = String(req.query?.dateTo || "").trim();
+      const params = [tenantKey];
+      const where = [`c.tenant_key = $1`];
+
+      if (dateFrom) {
+        params.push(dateFrom);
+        where.push(`c.created_at >= $${params.length}::date`);
+      }
+      if (dateTo) {
+        params.push(dateTo);
+        where.push(`c.created_at < ($${params.length}::date + interval '1 day')`);
+      }
+
+      const exportRows = await pool.query(
+        `SELECT c.call_sid,
+                c.created_at,
+                c.from_number,
+                c.to_number,
+                c.status,
+                c.urgency,
+                c.summary,
+                c.disposition,
+                c.lead_outcome_type,
+                c.lead_is_valid,
+                c.lead_is_billable,
+                c.lead_decision_reason,
+                c.lead_duplicate_of_call_sid,
+                d.transcript,
+                d.transcript_combined,
+                d.extracted_json,
+                d.routing_json,
+                d.state_json,
+                d.caller_first_name,
+                d.caller_last_name,
+                d.callback_number,
+                d.caller_email,
+                d.service_required,
+                d.urgency_level,
+                d.address_line1,
+                d.address_line2,
+                d.city,
+                d.state,
+                d.postal_code,
+                d.requested_date,
+                d.requested_time
+         FROM calls c
+         LEFT JOIN call_details d ON d.call_sid = c.call_sid
+         WHERE ${where.join(" AND ")}
+         ORDER BY c.created_at DESC`,
+        params
+      );
+
+      const columns = [
+        { label: "Call SID", getValue: (row) => row.call_sid },
+        { label: "Created At", getValue: (row) => row.created_at },
+        { label: "From Number", getValue: (row) => row.from_number },
+        { label: "To Number", getValue: (row) => row.to_number },
+        { label: "Status", getValue: (row) => row.status },
+        { label: "Urgency", getValue: (row) => row.urgency },
+        { label: "Summary", getValue: (row) => row.summary },
+        { label: "Disposition", getValue: (row) => row.disposition },
+        { label: "Lead Outcome Type", getValue: (row) => row.lead_outcome_type },
+        { label: "Lead Is Valid", getValue: (row) => row.lead_is_valid },
+        { label: "Lead Is Billable", getValue: (row) => row.lead_is_billable },
+        { label: "Lead Decision Reason", getValue: (row) => row.lead_decision_reason },
+        { label: "Lead Duplicate Of Call SID", getValue: (row) => row.lead_duplicate_of_call_sid },
+        { label: "Caller First Name", getValue: (row) => row.caller_first_name },
+        { label: "Caller Last Name", getValue: (row) => row.caller_last_name },
+        { label: "Callback Number", getValue: (row) => row.callback_number },
+        { label: "Caller Email", getValue: (row) => row.caller_email },
+        { label: "Service Required", getValue: (row) => row.service_required },
+        { label: "Urgency Level", getValue: (row) => row.urgency_level },
+        { label: "Address Line 1", getValue: (row) => row.address_line1 },
+        { label: "Address Line 2", getValue: (row) => row.address_line2 },
+        { label: "City", getValue: (row) => row.city },
+        { label: "State", getValue: (row) => row.state },
+        { label: "Postal Code", getValue: (row) => row.postal_code },
+        { label: "Requested Date", getValue: (row) => row.requested_date },
+        { label: "Requested Time", getValue: (row) => row.requested_time },
+        { label: "Client Notes", getValue: (row) => row.state_json?.client_notes || "" },
+        { label: "Transcript Combined", getValue: (row) => row.transcript_combined },
+        { label: "Transcript", getValue: (row) => row.transcript },
+        { label: "Extracted JSON", getValue: (row) => row.extracted_json },
+        { label: "Routing JSON", getValue: (row) => row.routing_json },
+        { label: "State JSON", getValue: (row) => row.state_json }
+      ];
+
+      const csv = buildCsv(exportRows.rows || [], columns);
+      const safeFrom = dateFrom || "all";
+      const safeTo = dateTo || "all";
+      const filename = `everycall-calls-${safeFrom}-to-${safeTo}.csv`;
+
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.status(200).send(csv);
     }
 
     if (callSid) {

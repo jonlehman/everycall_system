@@ -212,6 +212,11 @@ export default function CallsPage() {
   const [dateTo, setDateTo] = useState('');
   const [showDatePopover, setShowDatePopover] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showExportPopover, setShowExportPopover] = useState(false);
+  const [exportDateFrom, setExportDateFrom] = useState('');
+  const [exportDateTo, setExportDateTo] = useState('');
+  const [exportStatus, setExportStatus] = useState('');
+  const [exporting, setExporting] = useState(false);
   const [queuePage, setQueuePage] = useState(0);
   const [detailDraft, setDetailDraft] = useState({
     status: 'new',
@@ -236,6 +241,7 @@ export default function CallsPage() {
   const transcriptRef = useRef(null);
   const datePopoverRef = useRef(null);
   const advancedPopoverRef = useRef(null);
+  const exportPopoverRef = useRef(null);
   const requestedCallSid = String(searchParams?.get('callSid') || '').trim();
 
   const loadCalls = async ({ showLoading = true } = {}) => {
@@ -299,11 +305,14 @@ export default function CallsPage() {
       if (showAdvancedFilters && advancedPopoverRef.current && !advancedPopoverRef.current.contains(target)) {
         setShowAdvancedFilters(false);
       }
+      if (showExportPopover && exportPopoverRef.current && !exportPopoverRef.current.contains(target)) {
+        setShowExportPopover(false);
+      }
     };
 
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
-  }, [showDatePopover, showAdvancedFilters]);
+  }, [showDatePopover, showAdvancedFilters, showExportPopover]);
 
   const loadDetail = async (callSid) => {
     if (!callSid) return;
@@ -429,6 +438,43 @@ export default function CallsPage() {
     setDateFrom('');
     setDateTo('');
     setSearch('');
+  };
+
+  const exportCallsCsv = async () => {
+    const normalizedFrom = String(exportDateFrom || '').trim();
+    const normalizedTo = String(exportDateTo || '').trim();
+    if (normalizedFrom && normalizedTo && normalizedFrom > normalizedTo) {
+      setExportStatus('The export start date must be before the end date.');
+      return;
+    }
+
+    setExporting(true);
+    setExportStatus('');
+    try {
+      const params = new URLSearchParams({ mode: 'export' });
+      if (normalizedFrom) params.set('dateFrom', normalizedFrom);
+      if (normalizedTo) params.set('dateTo', normalizedTo);
+      const response = await fetch(`/api/v1/calls?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error('export_failed');
+      }
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const filename = `everycall-calls-${normalizedFrom || 'all'}-to-${normalizedTo || 'all'}.csv`;
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+      setExportStatus('CSV exported.');
+      setShowExportPopover(false);
+    } catch {
+      setExportStatus('Could not export calls right now.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const rows = useMemo(() => calls.map((call, idx) => ({
@@ -564,6 +610,77 @@ export default function CallsPage() {
             </div>
 
             <div className="flex flex-wrap gap-3">
+              <div ref={exportPopoverRef} className="relative">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                  onClick={() => {
+                    setShowExportPopover((current) => {
+                      const nextOpen = !current;
+                      if (nextOpen) {
+                        setExportDateFrom((currentFrom) => currentFrom || dateFrom);
+                        setExportDateTo((currentTo) => currentTo || dateTo);
+                        setShowDatePopover(false);
+                        setShowAdvancedFilters(false);
+                      }
+                      return nextOpen;
+                    });
+                  }}
+                >
+                  <span className="material-symbols-outlined text-base">download</span>
+                  Export CSV
+                </button>
+                {showExportPopover ? (
+                  <div className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[20rem] rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_24px_48px_-12px_rgba(18,28,42,0.12)]">
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-500">From</label>
+                        <input
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-all focus:border-[#004ac6]/30 focus:bg-white focus:ring-2 focus:ring-[#004ac6]/15"
+                          type="date"
+                          value={exportDateFrom}
+                          onChange={(event) => setExportDateFrom(event.target.value)}
+                          aria-label="Export Date From"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-500">To</label>
+                        <input
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-all focus:border-[#004ac6]/30 focus:bg-white focus:ring-2 focus:ring-[#004ac6]/15"
+                          type="date"
+                          value={exportDateTo}
+                          onChange={(event) => setExportDateTo(event.target.value)}
+                          aria-label="Export Date To"
+                        />
+                      </div>
+                      {exportStatus ? (
+                        <div className="text-sm text-slate-500">{exportStatus}</div>
+                      ) : null}
+                      <div className="flex justify-between gap-3 pt-1">
+                        <button
+                          type="button"
+                          className="text-sm font-semibold text-slate-500 transition-colors hover:text-slate-700"
+                          onClick={() => {
+                            setExportDateFrom('');
+                            setExportDateTo('');
+                            setExportStatus('');
+                          }}
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-xl bg-[#004ac6] px-4 py-2 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(0,74,198,0.18)] disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={exportCallsCsv}
+                          disabled={exporting}
+                        >
+                          {exporting ? 'Exporting...' : 'Export'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
               <button
                 type="button"
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
