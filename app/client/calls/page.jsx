@@ -171,6 +171,17 @@ function CategoryPill({ categoryKey, label }) {
   return <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold normal-case tracking-normal text-slate-600">{label}</span>;
 }
 
+function BilledIndicator({ countsTowardUsage }) {
+  if (!countsTowardUsage) {
+    return <span className="text-slate-300">-</span>;
+  }
+  return (
+    <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 p-1 text-emerald-700">
+      <span className="material-symbols-outlined text-base">check</span>
+    </span>
+  );
+}
+
 function normalizeCallCategory(outcomeType, isValidLead) {
   const normalized = String(outcomeType || '').trim().toLowerCase();
   if (
@@ -519,6 +530,8 @@ export default function CallsPage() {
     leadOutcomeType: call.lead_outcome_type || '',
     leadIsValid: Boolean(call.lead_is_valid),
     leadIsBillable: Boolean(call.lead_is_billable),
+    countsTowardUsage: Boolean(call.counts_toward_usage),
+    billingCallTypeCode: call.billing_call_type_code || '',
     leadDecisionReason: call.lead_decision_reason || '',
     callCategory: normalizeCallCategory(call.lead_outcome_type, call.lead_is_valid),
     firstName: call.caller_first_name || '',
@@ -913,10 +926,11 @@ export default function CallsPage() {
                 <table className="w-full min-w-[720px] text-left">
                   <colgroup>
                     <col className="w-[16%]" />
+                    <col className="w-[22%]" />
                     <col className="w-[24%]" />
-                    <col className="w-[28%]" />
                     <col className="w-[14%]" />
-                    <col className="w-[18%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[10%]" />
                   </colgroup>
                   <thead className="bg-[#f1f4f6]">
                     <tr>
@@ -925,6 +939,7 @@ export default function CallsPage() {
                       <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Summary</th>
                       <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Category</th>
                       <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Status</th>
+                      <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Billed</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -971,11 +986,14 @@ export default function CallsPage() {
                               <span className="material-symbols-outlined text-sm text-slate-400">chevron_right</span>
                             </div>
                           </td>
+                          <td className="px-6 py-4 text-center">
+                            <BilledIndicator countsTowardUsage={row.countsTowardUsage} />
+                          </td>
                         </tr>
                       );
                     }) : (
                       <tr>
-                        <td className="px-6 py-10 text-sm text-slate-500" colSpan={5}>
+                        <td className="px-6 py-10 text-sm text-slate-500" colSpan={6}>
                           {loading ? 'Loading calls...' : 'No calls match the current filters.'}
                         </td>
                       </tr>

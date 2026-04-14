@@ -717,6 +717,8 @@ export default async function handler(req, res) {
               c.lead_is_billable,
               c.lead_decision_reason,
               c.created_at,
+              bct.code AS billing_call_type_code,
+              bct.counts_toward_usage,
               d.caller_first_name,
               d.caller_last_name,
               d.address_line1,
@@ -725,6 +727,8 @@ export default async function handler(req, res) {
               d.state,
               d.postal_code
        FROM calls c
+       LEFT JOIN billing_call_types bct
+         ON bct.billing_call_type_id = c.billing_call_type_id
        LEFT JOIN call_details d ON d.call_sid = c.call_sid
        WHERE c.tenant_key = $1
        ORDER BY created_at DESC
