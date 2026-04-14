@@ -979,15 +979,15 @@ export default function CallsPage() {
                             <CategoryPill categoryKey={row.callCategory} label={categoryLabel} />
                           </td>
                           <td className="px-6 py-4">
+                            <span className={`rounded-full px-3 py-1 text-xs font-bold ${queueStatusClass(row.status)}`}>
+                              {formatLabel(row.status)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
                             <div className="flex items-center justify-between gap-3">
-                              <span className={`rounded-full px-3 py-1 text-xs font-bold ${queueStatusClass(row.status)}`}>
-                                {formatLabel(row.status)}
-                              </span>
+                              <BilledIndicator countsTowardUsage={row.countsTowardUsage} />
                               <span className="material-symbols-outlined text-sm text-slate-400">chevron_right</span>
                             </div>
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            <BilledIndicator countsTowardUsage={row.countsTowardUsage} />
                           </td>
                         </tr>
                       );
