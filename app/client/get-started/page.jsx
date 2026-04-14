@@ -198,28 +198,23 @@ function ProgressPanel({ items }) {
       : 'Setup not started';
 
   return (
-    <section className="relative overflow-hidden rounded-xl bg-[linear-gradient(135deg,#121c2a_0%,#1e293b_100%)] p-8 text-white shadow-lg">
-      <div className="relative z-10">
-        <h4 className="mb-2 text-[10px] font-bold tracking-[0.2em] text-blue-300">Onboarding Progress</h4>
+    <section className="rounded-xl border border-slate-200 bg-white p-8 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)]">
+      <div>
+        <h4 className="mb-2 text-[10px] font-bold tracking-[0.2em] text-slate-500">Onboarding Progress</h4>
         <div className="flex items-baseline gap-3">
-          <span className="font-['Space_Grotesk'] text-5xl font-bold tracking-[-0.05em]">{progressPercent}%</span>
-          <span className="text-xs font-medium italic text-blue-200/60">{phaseLabel}</span>
+          <span className="font-['Space_Grotesk'] text-5xl font-bold tracking-[-0.05em] text-[#121c2a]">{progressPercent}%</span>
+          <span className="text-xs font-medium italic text-slate-500">{phaseLabel}</span>
         </div>
-        <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+        <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
           <div
-            className="h-full bg-[#2563eb] shadow-[0_0_12px_rgba(37,99,235,0.8)]"
+            className="h-full bg-[#2563eb]"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
-        <div className="mt-8 border-t border-white/10 pt-6">
-          <p className="mb-1 text-[10px] font-bold tracking-[0.2em] text-blue-300/80">Next Milestone</p>
-          <p className="font-['Space_Grotesk'] text-lg font-semibold text-white">{nextMilestone}</p>
+        <div className="mt-8 border-t border-slate-200 pt-6">
+          <p className="mb-1 text-[10px] font-bold tracking-[0.2em] text-slate-500">Next Milestone</p>
+          <p className="font-['Space_Grotesk'] text-lg font-semibold text-[#121c2a]">{nextMilestone}</p>
         </div>
-      </div>
-      <div className="absolute right-[-10px] top-[-10px] opacity-10">
-        <span className="material-symbols-outlined text-[140px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-          architecture
-        </span>
       </div>
     </section>
   );
@@ -233,9 +228,8 @@ export default function ClientGetStartedPage() {
     buildState: { builds: [], activeBuild: null },
     users: [],
     settings: null,
-    billing: null,
-    connections: [],
-    documents: []
+    promptProfile: null,
+    runtimeProfile: null
   });
   const [savingForwardingStatus, setSavingForwardingStatus] = useState(false);
   const [showSupportSetupModal, setShowSupportSetupModal] = useState(false);
@@ -254,10 +248,9 @@ export default function ClientGetStartedPage() {
       fetchJson('/api/v1/knowledge/builds').catch(() => null),
       fetchJson('/api/v1/tenant/users').catch(() => null),
       fetchJson('/api/v1/settings').catch(() => null),
-      fetchJson('/api/v1/billing').catch(() => null),
-      fetchJson('/api/v1/integrations/connectors').catch(() => null),
-      fetchJson('/api/v1/knowledge/uploaded-documents').catch(() => null)
-    ]).then(([buildsData, usersData, settingsData, billingData, integrationsData, documentsData]) => {
+      fetchJson('/api/v1/knowledge/prompt-profile').catch(() => null),
+      fetchJson('/api/v1/knowledge/runtime-profile').catch(() => null)
+    ]).then(([buildsData, usersData, settingsData, promptProfileData, runtimeProfileData]) => {
       if (cancelled) return;
       setPacket({
         buildState: {
@@ -266,9 +259,8 @@ export default function ClientGetStartedPage() {
         },
         users: Array.isArray(usersData?.users) ? usersData.users : [],
         settings: settingsData || null,
-        billing: billingData?.billing || null,
-        connections: Array.isArray(integrationsData?.connections) ? integrationsData.connections : [],
-        documents: Array.isArray(documentsData?.documents) ? documentsData.documents : []
+        promptProfile: promptProfileData?.profile || null,
+        runtimeProfile: runtimeProfileData?.profile || null
       });
     });
     return () => {
@@ -415,6 +407,21 @@ export default function ClientGetStartedPage() {
     };
   }, [packet.settings]);
 
+  const receptionistSettings = useMemo(() => {
+    const profile = packet.promptProfile || {};
+    const runtimeProfile = packet.runtimeProfile || {};
+    const businessName = String(profile?.business_name || profile?.businessName || '').trim();
+    const openingLine = String(profile?.opening_line || profile?.openingLine || '').trim();
+    const voice = String(runtimeProfile?.session_config?.voice || '').trim();
+    const done = Boolean(businessName && openingLine && voice);
+
+    return {
+      done,
+      tone: done ? 'ok' : 'processing',
+      statusValue: done ? 'Ready' : 'Needs review'
+    };
+  }, [packet.promptProfile, packet.runtimeProfile]);
+
   const updateForwardingStatus = async (checked) => {
     if (savingForwardingStatus) return;
     const nextStatus = checked ? 'configured' : 'not_started';
@@ -451,10 +458,12 @@ export default function ClientGetStartedPage() {
   const cardProgressItems = useMemo(() => [
     { label: 'Teach EveryCall about your business', done: websiteTraining.done },
     { label: 'Choose where leads go', done: leadDestinations.activeDestinations.length > 0 },
+    { label: 'Review receptionist settings', done: receptionistSettings.done },
     { label: 'How to use this number', done: forwarding.forwardingConfigured }
   ], [
     forwarding.forwardingConfigured,
     leadDestinations.activeDestinations.length,
+    receptionistSettings.done,
     websiteTraining.done
   ]);
 
@@ -479,107 +488,133 @@ export default function ClientGetStartedPage() {
           </a>
         </header>
 
-          <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
-          <SetupStepCard
-            step="1"
-            title="Teach EveryCall About Your Business"
-            description=""
-            subdescription={websiteTraining.subdescription}
-            statusBox={{
-              label: 'Website Crawl Status',
-              value: websiteTraining.statusValue,
-              tone: websiteTraining.tone,
-              message: websiteTraining.description
-            }}
-            progress={{ label: 'Knowledge base progress', percent: websiteTraining.progressPercent }}
-            className="md:col-span-12 lg:col-span-7"
-            action={(
-              websiteTraining.done ? (
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+          <div className="flex flex-col gap-8 lg:col-span-7">
+            <SetupStepCard
+              step="1"
+              title="Teach EveryCall About Your Business"
+              description=""
+              subdescription={websiteTraining.subdescription}
+              statusBox={{
+                label: 'Website Crawl Status',
+                value: websiteTraining.statusValue,
+                tone: websiteTraining.tone,
+                message: websiteTraining.description
+              }}
+              progress={{ label: 'Knowledge base progress', percent: websiteTraining.progressPercent }}
+              action={(
+                websiteTraining.done ? (
+                  <Link
+                    href="/client/receptionist/knowledge"
+                    className={actionButtonClass(false)}
+                  >
+                    Edit
+                  </Link>
+                ) : (
+                  <button type="button" disabled className={actionButtonClass(true)}>
+                    Edit
+                  </button>
+                )
+              )}
+            />
+
+            <SetupStepCard
+              step="2"
+              title="Choose Where Leads Go"
+              description=""
+              subdescription={leadDestinations.subdescription}
+              statusBox={{
+                heading: 'Leads currently go to',
+                tone: leadDestinations.activeDestinations.length
+                  ? 'ok'
+                  : leadDestinations.configuredDestinations.length
+                    ? 'processing'
+                    : 'bad',
+                lines: leadDestinations.lines.length ? leadDestinations.lines : [
+                  { label: 'Status', value: 'No lead destinations configured yet' }
+                ]
+              }}
+              action={(
+                <div className="flex items-center gap-3">
+                  <Link
+                    href="/client/team"
+                    className={actionButtonClass(false)}
+                  >
+                    Edit
+                  </Link>
+                  <span className="text-sm font-medium text-slate-500">(add more people)</span>
+                </div>
+              )}
+            />
+
+            <SetupStepCard
+              step="3"
+              title="Review Receptionist Settings"
+              statusBox={{
+                label: 'Current status',
+                value: receptionistSettings.statusValue,
+                tone: receptionistSettings.tone
+              }}
+              descriptionContent={(
+                <ul className="list-disc space-y-2 pl-5">
+                  <li>Business name callers hear</li>
+                  <li>Opening greeting</li>
+                  <li>Voice selection</li>
+                </ul>
+              )}
+              action={(
                 <Link
-                  href="/client/receptionist/knowledge"
+                  href="/client/receptionist/basics"
                   className={actionButtonClass(false)}
                 >
                   Edit
                 </Link>
-              ) : (
-                <button type="button" disabled className={actionButtonClass(true)}>
-                  Edit
+              )}
+            />
+
+            <SetupStepCard
+              step="4"
+              title="How to Use This Number"
+              headerAside={(
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                  <span>Calls Forwarded</span>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-[#2563eb] focus:ring-[#2563eb]"
+                    checked={forwarding.forwardingConfigured}
+                    disabled={savingForwardingStatus}
+                    onChange={(event) => updateForwardingStatus(event.target.checked)}
+                  />
+                </label>
+              )}
+              description={forwarding.description}
+              descriptionContent={forwarding.numberReady ? (
+                <ul className="list-disc space-y-2 pl-5">
+                  <li>Set your business phone system or cell phone so that it forwards desired calls to the Receptionist Number.</li>
+                  <li>Use this number as your primary business number and have it answer all incoming calls. (Note that EveryCall cannot forward calls currently. It only texts and emails call summaries.)</li>
+                </ul>
+              ) : null}
+              statusBox={{
+                label: 'Receptionist Number',
+                value: forwarding.statusValue,
+                tone: forwarding.forwardingConfigured ? 'ok' : forwarding.numberReady ? 'processing' : 'bad'
+              }}
+              action={forwarding.numberReady ? (
+                <button
+                  type="button"
+                  className={actionButtonClass(false)}
+                  onClick={() => navigator.clipboard?.writeText(forwarding.number).catch(() => {})}
+                >
+                  Copy Number
                 </button>
-              )
-            )}
-          />
+              ) : null}
+            />
+          </div>
 
-          <SetupStepCard
-            step="2"
-            title="Choose Where Leads Go"
-            description=""
-            subdescription={leadDestinations.subdescription}
-            statusBox={{
-              heading: 'Leads currently go to',
-              tone: leadDestinations.activeDestinations.length
-                ? 'ok'
-                : leadDestinations.configuredDestinations.length
-                  ? 'processing'
-                  : 'bad',
-              lines: leadDestinations.lines.length ? leadDestinations.lines : [
-                { label: 'Status', value: 'No lead destinations configured yet' }
-              ]
-            }}
-            className="md:col-span-6 lg:col-span-5"
-            action={(
-              <div className="flex items-center gap-3">
-                <Link
-                  href="/client/team"
-                  className={actionButtonClass(false)}
-                >
-                  Edit
-                </Link>
-                <span className="text-sm font-medium text-slate-500">(add more people)</span>
-              </div>
-            )}
-          />
-
-          <SetupStepCard
-            step="3"
-            title="How to Use This Number"
-            headerAside={(
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                <span>Calls Forwarded</span>
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 text-[#2563eb] focus:ring-[#2563eb]"
-                  checked={forwarding.forwardingConfigured}
-                  disabled={savingForwardingStatus}
-                  onChange={(event) => updateForwardingStatus(event.target.checked)}
-                />
-              </label>
-            )}
-            description={forwarding.description}
-            descriptionContent={forwarding.numberReady ? (
-              <ul className="list-disc space-y-2 pl-5">
-                <li>Set your business phone system or cell phone so that it forwards desired calls to the Receptionist Number.</li>
-                <li>Use this number as your primary business number and have it answer all incoming calls. (Note that EveryCall cannot forward calls currently. It only texts and emails call summaries.)</li>
-              </ul>
-            ) : null}
-            statusBox={{
-              label: 'Receptionist Number',
-              value: forwarding.statusValue,
-              tone: forwarding.forwardingConfigured ? 'ok' : forwarding.numberReady ? 'processing' : 'bad'
-            }}
-            className="md:col-span-6 lg:col-span-7"
-            action={forwarding.numberReady ? (
-              <button
-                type="button"
-                className={actionButtonClass(false)}
-                onClick={() => navigator.clipboard?.writeText(forwarding.number).catch(() => {})}
-              >
-                Copy Number
-              </button>
-            ) : null}
-          />
-
-          <div className="md:col-span-12 lg:col-span-5">
-            <ProgressPanel items={cardProgressItems} />
+          <div className="lg:col-span-5">
+            <div className="lg:sticky lg:top-4">
+              <ProgressPanel items={cardProgressItems} />
+            </div>
           </div>
           </div>
         </div>
