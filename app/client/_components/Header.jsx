@@ -14,6 +14,7 @@ export default function Header() {
     hasStripeSubscription: false,
     canManage: false,
     includedCallCount: 0,
+    includedCallCountUsed: 0,
     eligibleCallCount: 0,
     overageCallCount: 0
   });
@@ -70,6 +71,7 @@ export default function Header() {
           hasStripeSubscription: Boolean(billingData?.billing?.hasStripeSubscription),
           canManage: Boolean(billingData?.viewer?.canManage),
           includedCallCount: Number(billingData?.billing?.callPricing?.includedCallCount || 0),
+          includedCallCountUsed: Number(billingData?.billing?.callUsage?.includedCallCountUsed || 0),
           eligibleCallCount: Number(billingData?.billing?.callUsage?.eligibleCallCount || 0),
           overageCallCount: Number(billingData?.billing?.callUsage?.overageCallCount || 0)
         });
@@ -89,7 +91,7 @@ export default function Header() {
   const trialLabel = billing.trialDaysRemaining === 1 ? 'Trial: 1 Day Left' : `Trial: ${billing.trialDaysRemaining ?? 0} Days Left`;
   const showActivateBillingAction = billing.canManage && (showTrialBadge || showBillingBadge);
   const showCallUsageBadge = !billing.loading;
-  const callUsageLabel = `Calls: ${billing.eligibleCallCount}/${billing.includedCallCount}${billing.overageCallCount > 0 ? ` (+${billing.overageCallCount})` : ''}`;
+  const callUsageLabel = `Calls: ${billing.includedCallCountUsed}/${billing.includedCallCount}${billing.overageCallCount > 0 ? ` Overage: ${billing.overageCallCount}` : ''}${showTrialBadge ? ' (No charge during trial)' : ''}`;
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/70 bg-white/80 shadow-sm backdrop-blur-md">
