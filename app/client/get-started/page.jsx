@@ -581,7 +581,7 @@ export default function ClientGetStartedPage() {
             descriptionContent={forwarding.numberReady ? (
               <ul className="list-disc space-y-2 pl-5">
                 <li>Set your business phone system or cell phone so that it forwards desired calls to the receptionist number.</li>
-                <li>Use this number as your primary business number and have it answer all incoming calls. EveryCall cannot forward calls currently. It only texts and emails call summaries.</li>
+                <li>Use this number as your primary business number and have it answer all incoming calls. (Note that EveryCall cannot forward calls currently. It only texts and emails call summaries.)</li>
               </ul>
             ) : null}
             statusBox={{
