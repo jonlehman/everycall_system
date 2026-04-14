@@ -238,7 +238,6 @@ export default function CallsPage() {
   });
   const [lastSavedAt, setLastSavedAt] = useState('');
   const searchInputRef = useRef(null);
-  const transcriptRef = useRef(null);
   const datePopoverRef = useRef(null);
   const advancedPopoverRef = useRef(null);
   const exportPopoverRef = useRef(null);
@@ -474,6 +473,21 @@ export default function CallsPage() {
       setExportStatus('Could not export calls right now.');
     } finally {
       setExporting(false);
+    }
+  };
+
+  const copyTranscriptToClipboard = async () => {
+    const transcriptText = String(detailTranscript || '').trim();
+    if (!transcriptText) {
+      setSaveStatus('No transcript to copy.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(transcriptText);
+      setSaveStatus('Transcript copied.');
+    } catch {
+      setSaveStatus('Could not copy transcript.');
     }
   };
 
@@ -1220,17 +1234,18 @@ export default function CallsPage() {
                   </div>
 
                   <div className="border-t border-slate-200 pt-2">
-                    <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row">
                       <Button type="button" className="w-full" onClick={() => saveDetail('all')} disabled={!hasUnsavedChanges}>
-                        Save Call Log
+                        Save
                       </Button>
                       <Button
                         variant="outline"
                         type="button"
                         className="w-full border-[#004ac6]/20 text-[#004ac6] hover:bg-[#004ac6]/5"
-                        onClick={() => transcriptRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                        onClick={copyTranscriptToClipboard}
+                        disabled={!detailTranscript.trim()}
                       >
-                        View Full Transcript
+                        Copy To Clipboard
                       </Button>
                     </div>
                     <div className="mt-3 text-xs text-slate-500">
@@ -1239,7 +1254,7 @@ export default function CallsPage() {
                     </div>
                   </div>
 
-                  <div ref={transcriptRef} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-3 text-sm font-semibold text-slate-900">Transcript</div>
                     <div className="max-h-[24rem] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                       {transcriptTurns.length ? (
