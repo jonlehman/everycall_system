@@ -15,6 +15,8 @@ import {
 } from '../../../lib/callCategories';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
+const ACTIVE_LEAD_DESTINATION_LIMIT = 10;
+
 function createEmptyForm() {
   return {
     name: '',
@@ -88,6 +90,10 @@ export default function TeamPage() {
   };
 
   const openCreateForm = () => {
+    if (activeRecipientLimitReached) {
+      setStatus({ message: 'You can have up to 10 active people here. Disable one before adding another.', tone: 'bad' });
+      return;
+    }
     setFormMode('create');
     setEditingUserId(null);
     setFormState(createEmptyForm());
@@ -175,6 +181,10 @@ export default function TeamPage() {
 
   const saveUser = async (event) => {
     event.preventDefault();
+    if (formMode !== 'edit' && activeRecipientLimitReached) {
+      setStatus({ message: 'You can have up to 10 active people here. Disable one before adding another.', tone: 'bad' });
+      return;
+    }
     if (!formState.name.trim() || !formState.email.trim()) {
       setStatus({ message: 'Name and email are required.', tone: 'bad' });
       return;
@@ -238,6 +248,11 @@ export default function TeamPage() {
     leadAlertSmsCategories: sanitizeCallCategorySelection(user.lead_alert_sms_categories, { fallbackToAll: Boolean(user.lead_alert_sms_enabled) }),
     leadAlertEmailCategories: sanitizeCallCategorySelection(user.lead_alert_email_categories, { fallbackToAll: Boolean(user.lead_alert_email_enabled) })
   })), [users]);
+  const activeRecipientCount = useMemo(
+    () => rows.filter((row) => row.status === 'active').length,
+    [rows]
+  );
+  const activeRecipientLimitReached = activeRecipientCount >= ACTIVE_LEAD_DESTINATION_LIMIT;
 
   const fieldLabelClass = 'mb-1.5 ml-1 block text-[10px] font-bold normal-case tracking-normal text-slate-500';
   const fieldControlClass = 'w-full rounded-xl border border-slate-200/70 bg-[#eff4ff] px-3 py-3 text-sm font-medium text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition focus:border-sky-300 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-100';
@@ -596,6 +611,14 @@ export default function TeamPage() {
               <p className="mt-1 text-sm text-slate-500">
                 Every user record appears here. Email and SMS switches control lead delivery only. Account access is managed under Users.
               </p>
+              <p className="mt-2 text-sm text-slate-500">
+                Active people: {activeRecipientCount} / {ACTIVE_LEAD_DESTINATION_LIMIT}
+              </p>
+              {activeRecipientLimitReached ? (
+                <p className="mt-1 text-sm text-amber-700">
+                  The active limit is reached. Disable one on Users before adding another.
+                </p>
+              ) : null}
             </div>
             <div style={{ height: rows.length ? 'auto' : 300 }}>
               <DataGrid
@@ -632,7 +655,11 @@ export default function TeamPage() {
               />
             </div>
             <div className="mt-4 flex justify-end">
-              <Button type="button" onClick={() => (formMode ? closeForm() : openCreateForm())}>
+              <Button
+                type="button"
+                onClick={() => (formMode ? closeForm() : openCreateForm())}
+                disabled={!formMode && activeRecipientLimitReached}
+              >
                 {formMode ? 'Close Form' : 'Add'}
               </Button>
             </div>

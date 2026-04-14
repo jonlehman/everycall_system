@@ -16,6 +16,7 @@ function getTenantKey(req) {
 
 const ALLOWED_ROLES = new Set(["admin", "member", "owner", "viewer"]);
 const ALLOWED_STATUSES = new Set(["active", "invited", "suspended", "disabled"]);
+const ACTIVE_TENANT_USER_LIMIT = 10;
 
 function resolveAlertCategories(value, enabled) {
   return sanitizeCallCategorySelection(value, { fallbackToAll: Boolean(enabled) });
@@ -55,6 +56,17 @@ async function findPhoneConflict(pool, phoneNumber, excludedId = null) {
     values
   );
   return result.rows[0] || null;
+}
+
+async function countActiveTenantUsers(pool, tenantKey) {
+  const result = await pool.query(
+    `SELECT COUNT(*)::int AS count
+     FROM tenant_users
+     WHERE tenant_key = $1
+       AND status = 'active'`,
+    [tenantKey]
+  );
+  return Number(result.rows[0]?.count || 0);
 }
 
 async function createInviteToken({ email, tenantKey }) {
@@ -168,6 +180,16 @@ export default async function handler(req, res) {
           return fail(404, "not_found", "User not found.");
         }
         const existing = existingResult.rows[0];
+        if (status === "active" && existing.status !== "active") {
+          const activeCount = await countActiveTenantUsers(pool, tenantKey);
+          if (activeCount >= ACTIVE_TENANT_USER_LIMIT) {
+            return fail(
+              409,
+              "active_user_limit_reached",
+              "You can have up to 10 active people here. Disable one before enabling another."
+            );
+          }
+        }
         await pool.query(
           `UPDATE tenant_users SET status = $2, updated_at = NOW()
            WHERE tenant_key = $1 AND id = $3`,
@@ -283,6 +305,17 @@ export default async function handler(req, res) {
         const existingPhone = normalizePhoneNumber(existing.phone_number);
         const nextPhone = phoneNumber || "";
         const phoneChanged = existingPhone !== nextPhone;
+
+        if (status === "active" && existing.status !== "active") {
+          const activeCount = await countActiveTenantUsers(pool, tenantKey);
+          if (activeCount >= ACTIVE_TENANT_USER_LIMIT) {
+            return fail(
+              409,
+              "active_user_limit_reached",
+              "You can have up to 10 active people here. Disable one before enabling another."
+            );
+          }
+        }
 
         await pool.query(
           `UPDATE tenant_users
@@ -436,6 +469,16 @@ export default async function handler(req, res) {
       }
       if (!ALLOWED_STATUSES.has(status)) {
         return fail(400, "invalid_status", "Invalid user status.");
+      }
+      if (status === "active") {
+        const activeCount = await countActiveTenantUsers(pool, tenantKey);
+        if (activeCount >= ACTIVE_TENANT_USER_LIMIT) {
+          return fail(
+            409,
+            "active_user_limit_reached",
+            "You can have up to 10 active people here. Disable one before adding another."
+          );
+        }
       }
       if (await findEmailConflict(pool, email)) {
         return fail(409, "email_exists", "That email address is already in use.");

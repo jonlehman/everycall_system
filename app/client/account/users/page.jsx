@@ -13,6 +13,8 @@ import {
 } from '../../../../lib/callCategories';
 import { formatPhoneDisplay } from '../../../../lib/phoneDisplay';
 
+const ACTIVE_USER_LIMIT = 10;
+
 function createEmptyForm() {
   return {
     name: '',
@@ -122,7 +124,10 @@ export default function AccountUsersPage() {
   const openCreateForm = () => {
     setFormMode('create');
     setEditingUserId(null);
-    setFormState(createEmptyForm());
+    setFormState({
+      ...createEmptyForm(),
+      status: activeUserLimitReached ? 'invited' : 'active'
+    });
   };
 
   const openEditForm = (row) => {
@@ -216,6 +221,11 @@ export default function AccountUsersPage() {
   };
 
   const setUserStatus = async (id, nextStatus) => {
+    const targetUser = rows.find((row) => row.id === id);
+    if (nextStatus === 'active' && targetUser?.status !== 'active' && activeUserLimitReached) {
+      setStatus({ message: 'You can have up to 10 active people here. Disable one before enabling another.', tone: 'bad' });
+      return;
+    }
     const resp = await fetch('/api/v1/tenant/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -264,6 +274,21 @@ export default function AccountUsersPage() {
       return;
     }
 
+    const editingUser = formMode === 'edit'
+      ? rows.find((row) => row.id === editingUserId)
+      : null;
+    const isActivatingExistingUser = payload.status === 'active' && editingUser?.status !== 'active';
+    const isCreatingActiveUser = formMode !== 'edit' && payload.status === 'active';
+    if ((isCreatingActiveUser || isActivatingExistingUser) && activeUserLimitReached) {
+      setStatus({
+        message: isCreatingActiveUser
+          ? 'You can have up to 10 active people here. Choose Invite Pending or Disabled, or disable someone first.'
+          : 'You can have up to 10 active people here. Disable one before enabling another.',
+        tone: 'bad'
+      });
+      return;
+    }
+
     setSavingForm(true);
     setStatus({ message: formMode === 'edit' ? 'Saving user...' : 'Creating user...', tone: 'warn' });
     const resp = await fetch('/api/v1/tenant/users', {
@@ -301,6 +326,12 @@ export default function AccountUsersPage() {
     leadAlertSmsCategories: sanitizeCallCategorySelection(user.lead_alert_sms_categories, { fallbackToAll: Boolean(user.lead_alert_sms_enabled) }),
     leadAlertEmailCategories: sanitizeCallCategorySelection(user.lead_alert_email_categories, { fallbackToAll: Boolean(user.lead_alert_email_enabled) })
   })), [users]);
+  const activeUserCount = useMemo(
+    () => rows.filter((row) => row.status === 'active').length,
+    [rows]
+  );
+  const activeUserLimitReached = activeUserCount >= ACTIVE_USER_LIMIT;
+  const canSelectActiveStatus = !activeUserLimitReached || (formMode === 'edit' && formState.status === 'active');
 
   const fieldLabelClass = 'mb-1.5 ml-1 block text-[10px] font-bold normal-case tracking-normal text-slate-500';
   const fieldControlClass = 'w-full rounded-xl border border-slate-200/70 bg-[#eff4ff] px-3 py-3 text-sm font-medium text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition focus:border-sky-300 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-100';
@@ -459,8 +490,13 @@ export default function AccountUsersPage() {
             Edit
           </button>
           <button
-            className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted"
+            className={`inline-flex h-8 items-center rounded-md border border-input px-2 text-xs ${
+              params.row.status !== 'active' && activeUserLimitReached
+                ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+                : 'bg-background hover:bg-muted'
+            }`}
             onClick={() => setUserStatus(params.row.id, params.row.status === 'active' ? 'disabled' : 'active')}
+            disabled={params.row.status !== 'active' && activeUserLimitReached}
           >
             {params.row.status === 'active' ? 'Disable Access' : 'Enable Access'}
           </button>
@@ -571,7 +607,7 @@ export default function AccountUsersPage() {
                       value={formState.status}
                       onChange={(event) => updateFormField('status', event.target.value)}
                     >
-                      <option value="active">Enabled</option>
+                      <option value="active" disabled={!canSelectActiveStatus}>Enabled</option>
                       <option value="invited">Invite Pending</option>
                       <option value="disabled">Disabled</option>
                       <option value="suspended">Suspended</option>
@@ -579,6 +615,11 @@ export default function AccountUsersPage() {
                     <div className="ml-1 text-xs text-slate-500">
                       If access is not enabled, lead delivery pauses for this user automatically.
                     </div>
+                    {!canSelectActiveStatus ? (
+                      <div className="ml-1 text-xs text-amber-700">
+                        The 10 active people limit is reached. Choose another status or disable someone first.
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
@@ -686,6 +727,14 @@ export default function AccountUsersPage() {
               <p className="mt-1 text-sm text-slate-500">
                 Use this page to control workspace access. Disabling access also pauses email and SMS lead delivery for that person.
               </p>
+              <p className="mt-2 text-sm text-slate-500">
+                Active people: {activeUserCount} / {ACTIVE_USER_LIMIT}
+              </p>
+              {activeUserLimitReached ? (
+                <p className="mt-1 text-sm text-amber-700">
+                  The active limit is reached. Disable one before enabling another.
+                </p>
+              ) : null}
             </div>
             <div style={{ height: rows.length ? 'auto' : 300 }}>
               <DataGrid
