@@ -9,6 +9,7 @@ function iconName(kind) {
   if (kind === 'dashboard') return 'dashboard';
   if (kind === 'reports') return 'query_stats';
   if (kind === 'calls') return 'phone_in_talk';
+  if (kind === 'receptionist') return 'support_agent';
   if (kind === 'setup') return 'construction';
   if (kind === 'team') return 'groups';
   if (kind === 'account') return 'settings';
@@ -85,7 +86,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
           .filter((item) => !(item.hideWhenBillingActive && billingActivated))
           .map((item) => {
           const active = pathMatches(pathname, item);
-          const showReceptionistDot = !collapsed && item.icon === 'setup';
+          const showReceptionistDot = !collapsed && item.icon === 'receptionist';
           const receptionistReady = knowledgeReady;
           return (
             <div key={item.href} className="flex flex-col">

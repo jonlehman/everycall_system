@@ -19,22 +19,17 @@ export const clientPrimaryNavItems = [
     matchPrefixes: ['/client/dashboard']
   },
   {
-    href: '/client/account/general',
-    label: 'Account',
-    icon: 'account',
-    matchPrefixes: ['/client/account/general', '/client/account/billing', '/client/settings', '/client/billing']
+    href: '/client/receptionist/basics',
+    label: 'Receptionist',
+    icon: 'receptionist',
+    matchPrefixes: ['/client/setup', '/client/receptionist', '/client/knowledge', '/client/routing']
   },
   {
-    href: '/client/setup',
-    label: 'Setup',
-    icon: 'setup',
-    matchPrefixes: ['/client/setup', '/client/receptionist', '/client/team', '/client/account/users', '/client/knowledge', '/client/routing'],
+    href: '/client/account/general',
+    label: 'Account Settings',
+    icon: 'account',
+    matchPrefixes: ['/client/account/general', '/client/account/billing', '/client/settings', '/client/billing', '/client/team', '/client/account/users'],
     children: [
-      {
-        href: '/client/receptionist/basics',
-        label: 'Receptionist',
-        matchPrefixes: ['/client/receptionist', '/client/knowledge', '/client/routing']
-      },
       {
         href: '/client/team',
         label: 'Send Leads To',
