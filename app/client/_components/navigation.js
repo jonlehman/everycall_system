@@ -41,7 +41,7 @@ export const accountNavItems = [
   { href: '/client/account/general', label: 'General' },
   { href: '/client/account/billing', label: 'Billing' },
   { href: '/client/team', label: 'Send Leads To', matchPrefixes: ['/client/team', '/client/team/integrations'] },
-  { href: '/client/account/users', label: 'Users' }
+  { href: '/client/account/users', label: 'System Users' }
 ];
 
 export const sendLeadsNavItems = [
