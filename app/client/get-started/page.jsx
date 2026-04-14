@@ -149,7 +149,7 @@ function SetupStepCard({
           {progress ? (
             <div className="mb-6">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <span className="text-xs font-semibold text-slate-500">Setup progress</span>
+                <span className="text-xs font-semibold text-slate-500">{progress.label || 'Setup progress'}</span>
                 <span className="text-sm font-semibold text-slate-700">{progress.percent}% done</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
@@ -295,10 +295,15 @@ export default function ClientGetStartedPage() {
       && Boolean(latestWebsiteBuildId)
       && latestWebsiteBuildId === liveWebsiteBuildId;
     const latestWebsiteStatus = String(latestWebsiteBuild?.status || '').trim().toLowerCase();
+    const rawWebsiteBuildProgress = Number(latestWebsiteBuild?.progress?.percent);
+    const websiteBuildProgressPercent = Number.isFinite(rawWebsiteBuildProgress)
+      ? Math.max(0, Math.min(100, Math.round(rawWebsiteBuildProgress)))
+      : (websiteTrainingDone ? 100 : 0);
 
     if (websiteTrainingDone) {
       return {
         done: true,
+        progressPercent: 100,
         tone: 'ok',
         statusValue: 'Complete',
         description: 'Your receptionist can now answer any questions about your business covered on your website.',
@@ -308,6 +313,7 @@ export default function ClientGetStartedPage() {
     if (latestWebsiteStatus === 'failed') {
       return {
         done: false,
+        progressPercent: websiteBuildProgressPercent,
         tone: 'bad',
         statusValue: 'Needs attention',
         description: 'Website training needs attention. Open Knowledge to review the issue with your website crawl.',
@@ -316,6 +322,7 @@ export default function ClientGetStartedPage() {
     }
     return {
       done: false,
+      progressPercent: websiteBuildProgressPercent,
       tone: 'processing',
       statusValue: 'Processing',
       description: 'Training your receptionist using your website.',
@@ -344,9 +351,6 @@ export default function ClientGetStartedPage() {
           rawPhone: phone
         };
       });
-    const pendingSmsDestinations = smsConfiguredDestinations
-      .filter((entry) => !entry.isConfirmed)
-      .map((entry) => entry.rawPhone);
     const confirmedSmsDestinations = smsConfiguredDestinations
       .filter((entry) => entry.isConfirmed)
       .map((entry) => entry.rawPhone);
@@ -379,10 +383,8 @@ export default function ClientGetStartedPage() {
     ];
 
     return {
-      activeUsers: configuredUsers.filter((user) => String(user?.status || '').trim().toLowerCase() === 'active'),
       activeDestinations: workingDestinations,
       configuredDestinations,
-      pendingSmsDestinations,
       description: configuredDestinations.length
         ? 'Lead alerts are configured for the destinations shown here.'
         : 'Open Send Leads To and choose which people should receive new lead alerts by email or text.',
@@ -412,18 +414,6 @@ export default function ClientGetStartedPage() {
         : 'Your receptionist number is still being assigned. It will appear here as soon as it is ready.'
     };
   }, [packet.settings]);
-
-  const approvedDocumentCount = useMemo(() => {
-    return Array.isArray(packet.documents)
-      ? packet.documents.filter((document) => String(document?.status || '').trim().toLowerCase() === 'approved').length
-      : 0;
-  }, [packet.documents]);
-
-  const enabledConnectionCount = useMemo(() => {
-    return Array.isArray(packet.connections)
-      ? packet.connections.filter((connection) => String(connection?.status || '').trim().toLowerCase() === 'enabled').length
-      : 0;
-  }, [packet.connections]);
 
   const updateForwardingStatus = async (checked) => {
     if (savingForwardingStatus) return;
@@ -458,28 +448,15 @@ export default function ClientGetStartedPage() {
     }
   };
 
-  const progressItems = useMemo(() => [
+  const cardProgressItems = useMemo(() => [
     { label: 'Teach EveryCall about your business', done: websiteTraining.done },
     { label: 'Choose where leads go', done: leadDestinations.activeDestinations.length > 0 },
-    { label: 'Forward your calls', done: forwarding.forwardingConfigured },
-    { label: 'Activate billing', done: Boolean(packet.billing?.hasStripeSubscription) },
-    { label: 'Add supporting document', done: approvedDocumentCount > 0 },
-    { label: 'Connect another tool', done: enabledConnectionCount > 0 },
-    { label: 'Invite another user', done: leadDestinations.activeUsers.length > 1 }
+    { label: 'How to use this number', done: forwarding.forwardingConfigured }
   ], [
-    approvedDocumentCount,
-    enabledConnectionCount,
     forwarding.forwardingConfigured,
-    leadDestinations.activeUsers.length,
     leadDestinations.activeDestinations.length,
-    packet.billing?.hasStripeSubscription,
     websiteTraining.done
   ]);
-  const progressPercent = useMemo(() => {
-    const totalCount = progressItems.length || 1;
-    const completedCount = progressItems.filter((item) => item.done).length;
-    return Math.round((completedCount / totalCount) * 100);
-  }, [progressItems]);
 
   return (
     <>
@@ -514,7 +491,7 @@ export default function ClientGetStartedPage() {
               tone: websiteTraining.tone,
               message: websiteTraining.description
             }}
-            progress={{ percent: progressPercent }}
+            progress={{ label: 'Knowledge base progress', percent: websiteTraining.progressPercent }}
             className="md:col-span-12 lg:col-span-7"
             action={(
               websiteTraining.done ? (
@@ -602,7 +579,7 @@ export default function ClientGetStartedPage() {
           />
 
           <div className="md:col-span-12 lg:col-span-5">
-            <ProgressPanel items={progressItems} />
+            <ProgressPanel items={cardProgressItems} />
           </div>
           </div>
         </div>
