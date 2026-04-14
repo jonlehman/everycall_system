@@ -5,6 +5,7 @@ import { DataGrid } from '@mui/x-data-grid';
 import { Button } from '../../../../components/ui/button';
 import GuidePanel from '../../_components/GuidePanel';
 import SectionPage from '../../_components/SectionPage';
+import { accountNavItems } from '../../_components/navigation';
 import {
   CALL_CATEGORY_OPTIONS,
   formatCallCategoryLabel,
@@ -521,6 +522,7 @@ export default function AccountUsersPage() {
 
   return (
     <SectionPage
+      tabs={accountNavItems}
       title="Users"
       subtitle="Manage workspace access and roles. Disabling access also pauses lead delivery for that user."
       status={status}

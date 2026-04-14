@@ -28,19 +28,7 @@ export const clientPrimaryNavItems = [
     href: '/client/account/general',
     label: 'Account Settings',
     icon: 'account',
-    matchPrefixes: ['/client/account/general', '/client/account/billing', '/client/settings', '/client/billing', '/client/team', '/client/account/users'],
-    children: [
-      {
-        href: '/client/team',
-        label: 'Send Leads To',
-        matchPrefixes: ['/client/team', '/client/team/integrations']
-      },
-      {
-        href: '/client/account/users',
-        label: 'Users',
-        matchPrefixes: ['/client/account/users']
-      }
-    ]
+    matchPrefixes: ['/client/account/general', '/client/account/billing', '/client/settings', '/client/billing', '/client/team', '/client/account/users']
   }
 ];
 
@@ -51,7 +39,9 @@ export const receptionistNavItems = [
 
 export const accountNavItems = [
   { href: '/client/account/general', label: 'General' },
-  { href: '/client/account/billing', label: 'Billing' }
+  { href: '/client/account/billing', label: 'Billing' },
+  { href: '/client/team', label: 'Send Leads To', matchPrefixes: ['/client/team', '/client/team/integrations'] },
+  { href: '/client/account/users', label: 'Users' }
 ];
 
 export const sendLeadsNavItems = [

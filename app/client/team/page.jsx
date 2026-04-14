@@ -6,7 +6,8 @@ import { DataGrid } from '@mui/x-data-grid';
 import { Button } from '../../../components/ui/button';
 import GuidePanel from '../_components/GuidePanel';
 import SectionPage from '../_components/SectionPage';
-import { sendLeadsNavItems } from '../_components/navigation';
+import SectionTabs from '../_components/SectionTabs';
+import { accountNavItems, sendLeadsNavItems } from '../_components/navigation';
 import {
   CALL_CATEGORY_OPTIONS,
   formatCallCategoryLabel,
@@ -438,11 +439,16 @@ export default function TeamPage() {
 
   return (
     <SectionPage
-      tabs={sendLeadsNavItems}
+      tabs={accountNavItems}
       title="Send Leads To"
       subtitle="Choose which people receive EveryCall lead alerts. Workspace access is managed separately under Account > Users."
       status={status}
     >
+      <div className="mb-3 rounded-xl border border-slate-200/70 bg-white px-4 shadow-sm">
+        <div className="flex h-14 items-center">
+          <SectionTabs items={sendLeadsNavItems} />
+        </div>
+      </div>
       <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
         <div className="grid min-w-0 gap-3">
           {formMode ? (
