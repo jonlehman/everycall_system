@@ -27,6 +27,8 @@ const CATEGORY_COLOR = {
   other_non_billable: '#d7dadc'
 };
 
+const QUESTION_HANDLING_TOOLTIP = 'Review these periodically and update Knowledge Base documents so that your receptionist can answer caller questions properly.';
+
 function normalizeText(value) {
   return String(value || '').trim();
 }
@@ -411,7 +413,21 @@ export default function ClientDashboardPage() {
 
         <div className="space-y-6">
           <section className={panelClassName('p-6')}>
-            <h2 className="mb-4 font-['Space_Grotesk'] text-lg font-bold text-slate-950">Question Handling</h2>
+            <div className="mb-4 flex items-center gap-2">
+              <h2 className="font-['Space_Grotesk'] text-lg font-bold text-slate-950">Question Handling</h2>
+              <span className="group relative inline-flex">
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-[#eff4ff] hover:text-[#205cb5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#205cb5] focus-visible:ring-offset-2"
+                  aria-label={QUESTION_HANDLING_TOOLTIP}
+                >
+                  <span className="material-symbols-outlined text-[18px]">info</span>
+                </button>
+                <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-72 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg group-hover:block group-focus-within:block">
+                  {QUESTION_HANDLING_TOOLTIP}
+                </span>
+              </span>
+            </div>
             <div className="space-y-4">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-500">Answer Rate</span>
