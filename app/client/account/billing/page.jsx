@@ -418,6 +418,18 @@ export default function AccountBillingPage() {
     ? formatPeriodRange(billing?.currentPeriod?.start, billing?.currentPeriod?.end)
     : '-';
 
+  const currentNetAdjustmentAmountCents = Number(callAdjustments.netAdjustmentAmountCents || 0);
+  const currentMonthlyDiscountPercent = Number(callInvoiceEstimate.monthlyDiscountPercent || 0);
+  const currentOverageDiscountPercent = Number(callInvoiceEstimate.overageDiscountPercent || 0);
+  const currentDisplayedBaseAmountCents = billing?.plan?.baseAmountCents
+    ? (currentMonthlyDiscountPercent > 0
+        ? Math.round(Number(billing.plan.baseAmountCents || 0) * ((100 - currentMonthlyDiscountPercent) / 100))
+        : Number(billing.plan.baseAmountCents || 0))
+    : Number(callInvoiceEstimate.discountedBaseAmountCents ?? callInvoiceEstimate.baseAmountCents ?? 0);
+  const currentDisplayedTotalEstimateCents = currentDisplayedBaseAmountCents
+    + Number(callInvoiceEstimate.overageAmountCents || 0)
+    + currentNetAdjustmentAmountCents;
+
   const currentBillMetrics = useMemo(() => ([
     {
       label: 'Plan',
@@ -460,18 +472,6 @@ export default function AccountBillingPage() {
     currentDisplayedTotalEstimateCents,
     currentWindowRange
   ]);
-
-  const currentNetAdjustmentAmountCents = Number(callAdjustments.netAdjustmentAmountCents || 0);
-  const currentMonthlyDiscountPercent = Number(callInvoiceEstimate.monthlyDiscountPercent || 0);
-  const currentOverageDiscountPercent = Number(callInvoiceEstimate.overageDiscountPercent || 0);
-  const currentDisplayedBaseAmountCents = billing?.plan?.baseAmountCents
-    ? (currentMonthlyDiscountPercent > 0
-        ? Math.round(Number(billing.plan.baseAmountCents || 0) * ((100 - currentMonthlyDiscountPercent) / 100))
-        : Number(billing.plan.baseAmountCents || 0))
-    : Number(callInvoiceEstimate.discountedBaseAmountCents ?? callInvoiceEstimate.baseAmountCents ?? 0);
-  const currentDisplayedTotalEstimateCents = currentDisplayedBaseAmountCents
-    + Number(callInvoiceEstimate.overageAmountCents || 0)
-    + currentNetAdjustmentAmountCents;
 
   const currentBillDetails = [
     {
