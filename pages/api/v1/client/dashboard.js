@@ -41,6 +41,17 @@ const DASHBOARD_CATEGORY_LABELS = {
   other_non_billable: "Other Non-Billable"
 };
 
+const REPORTING_WINDOWS = {
+  "7d": { key: "7d", days: 7, label: "Last 7 Days" },
+  "30d": { key: "30d", days: 30, label: "Last 30 Days" },
+  "90d": { key: "90d", days: 90, label: "Last 90 Days" }
+};
+
+function resolveReportingWindow(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  return REPORTING_WINDOWS[normalized] || REPORTING_WINDOWS["30d"];
+}
+
 function normalizeCallCategory(outcomeType, isValidLead) {
   const normalized = normalizeText(outcomeType).toLowerCase();
   if (
@@ -98,7 +109,67 @@ function formatDateKeyInTimezone(value, timezone) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-async function loadKnowledgeGapQuestions(pool, tenantKey, { limit = 25 } = {}) {
+function formatTrendLabel(dateKey) {
+  const date = new Date(`${dateKey}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return dateKey;
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function formatTrendRangeLabel(startKey, endKey) {
+  if (!startKey) return "";
+  if (!endKey || startKey === endKey) return formatTrendLabel(startKey);
+  const startDate = new Date(`${startKey}T12:00:00`);
+  const endDate = new Date(`${endKey}T12:00:00`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return `${startKey} - ${endKey}`;
+  }
+
+  const startMonth = startDate.toLocaleDateString([], { month: "short" });
+  const endMonth = endDate.toLocaleDateString([], { month: "short" });
+  const startDay = startDate.getDate();
+  const endDay = endDate.getDate();
+  if (startMonth === endMonth) {
+    return `${startMonth} ${startDay}-${endDay}`;
+  }
+  return `${startMonth} ${startDay}-${endMonth} ${endDay}`;
+}
+
+function buildCallVolumeTrend(trendMap, timezone, reportingWindow) {
+  const dayKeys = Array.from({ length: reportingWindow.days }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - ((reportingWindow.days - 1) - index));
+    return formatDateKeyInTimezone(date, timezone);
+  }).filter(Boolean);
+
+  const bucketCount = Math.min(7, dayKeys.length);
+  return Array.from({ length: bucketCount }, (_, index) => {
+    const start = Math.floor((index * dayKeys.length) / bucketCount);
+    const end = Math.floor(((index + 1) * dayKeys.length) / bucketCount);
+    const bucketDayKeys = dayKeys.slice(start, end);
+    const firstKey = bucketDayKeys[0] || "";
+    const lastKey = bucketDayKeys[bucketDayKeys.length - 1] || firstKey;
+    const counts = bucketDayKeys.reduce((sum, dayKey) => {
+      const entry = trendMap.get(dayKey) || {};
+      sum.totalCount += Number(entry.totalCount || 0);
+      sum.businessHoursCount += Number(entry.businessHoursCount || 0);
+      sum.afterHoursCount += Number(entry.afterHoursCount || 0);
+      return sum;
+    }, { totalCount: 0, businessHoursCount: 0, afterHoursCount: 0 });
+
+    return {
+      key: `${firstKey}:${lastKey}`,
+      start: firstKey,
+      end: lastKey,
+      label: formatTrendRangeLabel(firstKey, lastKey),
+      count: counts.totalCount,
+      totalCount: counts.totalCount,
+      businessHoursCount: counts.businessHoursCount,
+      afterHoursCount: counts.afterHoursCount
+    };
+  });
+}
+
+async function loadKnowledgeGapQuestions(pool, tenantKey, { limit = 25, days = 30 } = {}) {
   try {
     const result = await pool.query(
       `SELECT
@@ -117,10 +188,10 @@ async function loadKnowledgeGapQuestions(pool, tenantKey, { limit = 25 } = {}) {
        LEFT JOIN calls c ON c.call_sid = q.call_sid
        LEFT JOIN call_details d ON d.call_sid = c.call_sid
        WHERE q.tenant_key = $1
-         AND c.created_at >= NOW() - interval '30 days'
+         AND c.created_at >= (CURRENT_DATE - ($2::int - 1))
        ORDER BY q.created_at DESC
-       LIMIT $2`,
-      [tenantKey, Math.max(1, Number(limit || 25))]
+       LIMIT $3`,
+      [tenantKey, Math.max(1, Number(days || 30)), Math.max(1, Number(limit || 25))]
     );
     return result.rows || [];
   } catch (error) {
@@ -129,7 +200,7 @@ async function loadKnowledgeGapQuestions(pool, tenantKey, { limit = 25 } = {}) {
   }
 }
 
-async function loadAnsweredKnowledgeQuestions(pool, tenantKey, { limit = 25 } = {}) {
+async function loadAnsweredKnowledgeQuestions(pool, tenantKey, { limit = 25, days = 30 } = {}) {
   try {
     const result = await pool.query(
       `SELECT
@@ -147,10 +218,10 @@ async function loadAnsweredKnowledgeQuestions(pool, tenantKey, { limit = 25 } = 
        LEFT JOIN calls c ON c.call_sid = q.call_sid
        LEFT JOIN call_details d ON d.call_sid = c.call_sid
        WHERE q.tenant_key = $1
-         AND c.created_at >= NOW() - interval '30 days'
+         AND c.created_at >= (CURRENT_DATE - ($2::int - 1))
        ORDER BY q.created_at DESC
-       LIMIT $2`,
-      [tenantKey, Math.max(1, Number(limit || 25))]
+       LIMIT $3`,
+      [tenantKey, Math.max(1, Number(days || 30)), Math.max(1, Number(limit || 25))]
     );
     return result.rows || [];
   } catch (error) {
@@ -159,7 +230,7 @@ async function loadAnsweredKnowledgeQuestions(pool, tenantKey, { limit = 25 } = 
   }
 }
 
-async function loadKnowledgeSignals(pool, tenantKey) {
+async function loadKnowledgeSignals(pool, tenantKey, days) {
   try {
     const result = await pool.query(
       `SELECT
@@ -170,8 +241,8 @@ async function loadKnowledgeSignals(pool, tenantKey) {
        FROM call_transcript_analyses a
        JOIN calls c ON c.call_sid = a.call_sid
        WHERE a.tenant_key = $1
-         AND c.created_at >= NOW() - interval '30 days'`,
-      [tenantKey]
+         AND c.created_at >= (CURRENT_DATE - ($2::int - 1))`,
+      [tenantKey, Math.max(1, Number(days || 30))]
     );
     return result.rows?.[0] || {
       kb_question_count_30d: 0,
@@ -192,7 +263,7 @@ async function loadKnowledgeSignals(pool, tenantKey) {
   }
 }
 
-async function countPendingTranscriptAnalysisCalls(pool, tenantKey) {
+async function countPendingTranscriptAnalysisCalls(pool, tenantKey, days) {
   try {
     const result = await pool.query(
       `SELECT COUNT(DISTINCT c.call_sid)::int AS pending_call_count_30d
@@ -204,9 +275,9 @@ async function countPendingTranscriptAnalysisCalls(pool, tenantKey) {
         AND (j.payload_json->>'callSid') = c.call_sid
         AND j.status IN ('pending', 'running')
        WHERE c.tenant_key = $1
-         AND c.created_at >= NOW() - interval '30 days'
-         AND (a.call_sid IS NULL OR a.analysis_version IS DISTINCT FROM $2)`,
-      [tenantKey, CALL_TRANSCRIPT_ANALYSIS_VERSION]
+         AND c.created_at >= (CURRENT_DATE - ($2::int - 1))
+         AND (a.call_sid IS NULL OR a.analysis_version IS DISTINCT FROM $3)`,
+      [tenantKey, Math.max(1, Number(days || 30)), CALL_TRANSCRIPT_ANALYSIS_VERSION]
     );
     return Number(result.rows?.[0]?.pending_call_count_30d || 0);
   } catch (error) {
@@ -215,7 +286,7 @@ async function countPendingTranscriptAnalysisCalls(pool, tenantKey) {
   }
 }
 
-async function countFailedTranscriptAnalysisCalls(pool, tenantKey) {
+async function countFailedTranscriptAnalysisCalls(pool, tenantKey, days) {
   try {
     const result = await pool.query(
       `SELECT COUNT(DISTINCT c.call_sid)::int AS failed_call_count_30d
@@ -227,9 +298,9 @@ async function countFailedTranscriptAnalysisCalls(pool, tenantKey) {
         AND (j.payload_json->>'callSid') = c.call_sid
         AND j.status = 'dead_letter'
        WHERE c.tenant_key = $1
-         AND c.created_at >= NOW() - interval '30 days'
-         AND (a.call_sid IS NULL OR a.analysis_version IS DISTINCT FROM $2)`,
-      [tenantKey, CALL_TRANSCRIPT_ANALYSIS_VERSION]
+         AND c.created_at >= (CURRENT_DATE - ($2::int - 1))
+         AND (a.call_sid IS NULL OR a.analysis_version IS DISTINCT FROM $3)`,
+      [tenantKey, Math.max(1, Number(days || 30)), CALL_TRANSCRIPT_ANALYSIS_VERSION]
     );
     return Number(result.rows?.[0]?.failed_call_count_30d || 0);
   } catch (error) {
@@ -254,6 +325,7 @@ export default async function handler(req, res) {
     const session = await requireSession(req, res);
     if (!session) return;
     const tenantKey = resolveTenantKey(session, String(req.query?.tenantKey || "default"));
+    const reportingWindow = resolveReportingWindow(req.query?.range);
     const access = await requireTenantBillingAccess(res, pool, session, tenantKey);
     if (!access) return;
 
@@ -291,8 +363,8 @@ export default async function handler(req, res) {
            COUNT(*) FILTER (WHERE lead_is_valid = TRUE)::int AS valid_lead_count_30d
          FROM calls
          WHERE tenant_key = $1
-           AND created_at >= NOW() - interval '30 days'`,
-        [tenantKey]
+           AND created_at >= (CURRENT_DATE - ($2::int - 1))`,
+        [tenantKey, reportingWindow.days]
       ),
       pool.query(
         `SELECT
@@ -311,10 +383,11 @@ export default async function handler(req, res) {
          FROM calls c
          LEFT JOIN call_details d ON d.call_sid = c.call_sid
          WHERE c.tenant_key = $1
+           AND c.created_at >= (CURRENT_DATE - ($2::int - 1))
            AND c.lead_is_valid = TRUE
          ORDER BY c.created_at DESC
          LIMIT 5`,
-        [tenantKey]
+        [tenantKey, reportingWindow.days]
       ),
       pool.query(
         `SELECT
@@ -333,9 +406,10 @@ export default async function handler(req, res) {
          FROM calls c
          LEFT JOIN call_details d ON d.call_sid = c.call_sid
          WHERE c.tenant_key = $1
+           AND c.created_at >= (CURRENT_DATE - ($2::int - 1))
          ORDER BY c.created_at DESC
          LIMIT 5`,
-        [tenantKey]
+        [tenantKey, reportingWindow.days]
       ),
       pool.query(
         `SELECT
@@ -344,24 +418,24 @@ export default async function handler(req, res) {
            COUNT(*)::int AS count
          FROM calls
          WHERE tenant_key = $1
-           AND created_at >= NOW() - interval '30 days'
+           AND created_at >= (CURRENT_DATE - ($2::int - 1))
          GROUP BY lead_outcome_type, lead_is_valid`,
-        [tenantKey]
+        [tenantKey, reportingWindow.days]
       ),
       pool.query(
         `SELECT
            created_at
          FROM calls
          WHERE tenant_key = $1
-           AND created_at >= NOW() - interval '6 days'
+           AND created_at >= (CURRENT_DATE - ($2::int - 1))
          ORDER BY created_at ASC`,
-        [tenantKey]
+        [tenantKey, reportingWindow.days]
       ),
-      loadKnowledgeSignals(pool, tenantKey),
-      loadAnsweredKnowledgeQuestions(pool, tenantKey),
-      loadKnowledgeGapQuestions(pool, tenantKey),
-      countPendingTranscriptAnalysisCalls(pool, tenantKey),
-      countFailedTranscriptAnalysisCalls(pool, tenantKey),
+      loadKnowledgeSignals(pool, tenantKey, reportingWindow.days),
+      loadAnsweredKnowledgeQuestions(pool, tenantKey, { days: reportingWindow.days }),
+      loadKnowledgeGapQuestions(pool, tenantKey, { days: reportingWindow.days }),
+      countPendingTranscriptAnalysisCalls(pool, tenantKey, reportingWindow.days),
+      countFailedTranscriptAnalysisCalls(pool, tenantKey, reportingWindow.days),
       loadTenantBusinessHours(pool, tenantKey),
       listKnowledgeReceptionistBuilds(pool, tenantKey)
     ]);
@@ -414,18 +488,7 @@ export default async function handler(req, res) {
       }
       trendMap.set(dayKey, current);
     }
-    const callVolumeLast7Days = Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(Date.now() - ((6 - index) * 24 * 60 * 60 * 1000));
-      const dayKey = formatDateKeyInTimezone(date, timezone);
-      const counts = trendMap.get(dayKey) || {};
-      return {
-        day: dayKey,
-        count: Number(counts.totalCount || 0),
-        totalCount: Number(counts.totalCount || 0),
-        businessHoursCount: Number(counts.businessHoursCount || 0),
-        afterHoursCount: Number(counts.afterHoursCount || 0)
-      };
-    });
+    const callVolumeTrend = buildCallVolumeTrend(trendMap, timezone, reportingWindow);
 
     const nextSteps = [];
     if (!publishedBuilds.length) {
@@ -455,6 +518,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       ok: true,
+      reportingWindow,
       summary: {
         calls30d,
         validLeadCount30d,
@@ -485,7 +549,7 @@ export default async function handler(req, res) {
       recentLeads: recentLeadsResult.rows || [],
       recentCalls: recentCallsResult.rows || [],
       classificationBreakdown,
-      callVolumeLast7Days,
+      callVolumeTrend,
       knowledgeSignals: {
         kbQuestionCount30d,
         kbCallCount30d,

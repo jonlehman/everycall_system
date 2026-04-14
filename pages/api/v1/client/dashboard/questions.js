@@ -3,9 +3,19 @@ import { ensureTables, getPool } from "../../../_lib/db.js";
 import { ensureTenantBillingAccount, requireTenantBillingAccess } from "../../../_lib/billing.js";
 
 const PAGE_SIZE = 25;
+const REPORTING_WINDOWS = {
+  "7d": { key: "7d", days: 7, label: "Last 7 Days" },
+  "30d": { key: "30d", days: 30, label: "Last 30 Days" },
+  "90d": { key: "90d", days: 90, label: "Last 90 Days" }
+};
 
 function normalizeText(value) {
   return String(value || "").trim();
+}
+
+function resolveReportingWindow(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  return REPORTING_WINDOWS[normalized] || REPORTING_WINDOWS["30d"];
 }
 
 function normalizeKind(value) {
@@ -17,7 +27,7 @@ function normalizePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-async function loadKnowledgeCounts(pool, tenantKey) {
+async function loadKnowledgeCounts(pool, tenantKey, days) {
   try {
     const result = await pool.query(
       `SELECT
@@ -27,8 +37,8 @@ async function loadKnowledgeCounts(pool, tenantKey) {
        FROM call_transcript_analyses a
        JOIN calls c ON c.call_sid = a.call_sid
        WHERE a.tenant_key = $1
-         AND c.created_at >= NOW() - interval '30 days'`,
-      [tenantKey]
+         AND c.created_at >= (CURRENT_DATE - ($2::int - 1))`,
+      [tenantKey, Math.max(1, Number(days || 30))]
     );
     return result.rows?.[0] || {
       total_question_count: 0,
@@ -47,7 +57,7 @@ async function loadKnowledgeCounts(pool, tenantKey) {
   }
 }
 
-async function loadQuestionPage(pool, tenantKey, { kind, page, pageSize }) {
+async function loadQuestionPage(pool, tenantKey, { kind, page, pageSize, days }) {
   const offset = (page - 1) * pageSize;
   if (kind === "answered") {
     const [items, total] = await Promise.all([
@@ -67,19 +77,19 @@ async function loadQuestionPage(pool, tenantKey, { kind, page, pageSize }) {
          LEFT JOIN calls c ON c.call_sid = q.call_sid
          LEFT JOIN call_details d ON d.call_sid = c.call_sid
          WHERE q.tenant_key = $1
-           AND c.created_at >= NOW() - interval '30 days'
+           AND c.created_at >= (CURRENT_DATE - ($2::int - 1))
          ORDER BY q.created_at DESC
-         LIMIT $2
-         OFFSET $3`,
-        [tenantKey, pageSize, offset]
+         LIMIT $3
+         OFFSET $4`,
+        [tenantKey, Math.max(1, Number(days || 30)), pageSize, offset]
       ),
       pool.query(
         `SELECT COUNT(*)::int AS total_count
          FROM call_answered_questions q
          LEFT JOIN calls c ON c.call_sid = q.call_sid
          WHERE q.tenant_key = $1
-           AND c.created_at >= NOW() - interval '30 days'`,
-        [tenantKey]
+           AND c.created_at >= (CURRENT_DATE - ($2::int - 1))`,
+        [tenantKey, Math.max(1, Number(days || 30))]
       )
     ]);
     return {
@@ -106,19 +116,19 @@ async function loadQuestionPage(pool, tenantKey, { kind, page, pageSize }) {
        LEFT JOIN calls c ON c.call_sid = q.call_sid
        LEFT JOIN call_details d ON d.call_sid = c.call_sid
        WHERE q.tenant_key = $1
-         AND c.created_at >= NOW() - interval '30 days'
+         AND c.created_at >= (CURRENT_DATE - ($2::int - 1))
        ORDER BY q.created_at DESC
-       LIMIT $2
-       OFFSET $3`,
-      [tenantKey, pageSize, offset]
+       LIMIT $3
+       OFFSET $4`,
+      [tenantKey, Math.max(1, Number(days || 30)), pageSize, offset]
     ),
     pool.query(
       `SELECT COUNT(*)::int AS total_count
        FROM call_unanswered_questions q
        LEFT JOIN calls c ON c.call_sid = q.call_sid
        WHERE q.tenant_key = $1
-         AND c.created_at >= NOW() - interval '30 days'`,
-      [tenantKey]
+         AND c.created_at >= (CURRENT_DATE - ($2::int - 1))`,
+      [tenantKey, Math.max(1, Number(days || 30))]
     )
   ]);
   return {
@@ -153,16 +163,18 @@ export default async function handler(req, res) {
 
     const kind = normalizeKind(req.query?.kind);
     const page = normalizePositiveInt(req.query?.page, 1);
+    const reportingWindow = resolveReportingWindow(req.query?.range);
     const pageSize = PAGE_SIZE;
 
     const [counts, pageData] = await Promise.all([
-      loadKnowledgeCounts(pool, tenantKey),
-      loadQuestionPage(pool, tenantKey, { kind, page, pageSize })
+      loadKnowledgeCounts(pool, tenantKey, reportingWindow.days),
+      loadQuestionPage(pool, tenantKey, { kind, page, pageSize, days: reportingWindow.days })
     ]);
 
     return res.status(200).json({
       ok: true,
       kind,
+      reportingWindow,
       page,
       pageSize,
       totalCount: pageData.totalCount,

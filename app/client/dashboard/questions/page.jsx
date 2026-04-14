@@ -18,6 +18,11 @@ function normalizePage(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
+function normalizeReportingRange(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  return ['7d', '30d', '90d'].includes(normalized) ? normalized : '30d';
+}
+
 function formatDateTime(value) {
   if (!value) return '-';
   const date = new Date(value);
@@ -60,12 +65,14 @@ export default function DashboardQuestionsPage() {
   const searchParams = useSearchParams();
   const kind = normalizeKind(searchParams?.get('kind'));
   const page = normalizePage(searchParams?.get('page'));
+  const selectedRange = normalizeReportingRange(searchParams?.get('range'));
   const [data, setData] = useState(null);
   const [status, setStatus] = useState({ tone: 'warn', message: 'Loading questions...' });
 
   useEffect(() => {
     let mounted = true;
-    fetchJson(`/api/v1/client/dashboard/questions?kind=${encodeURIComponent(kind)}&page=${page}`)
+    setStatus({ tone: 'warn', message: 'Loading questions...' });
+    fetchJson(`/api/v1/client/dashboard/questions?kind=${encodeURIComponent(kind)}&page=${page}&range=${encodeURIComponent(selectedRange)}`)
       .then((payload) => {
         if (!mounted) return;
         setData(payload);
@@ -78,9 +85,10 @@ export default function DashboardQuestionsPage() {
     return () => {
       mounted = false;
     };
-  }, [kind, page]);
+  }, [kind, page, selectedRange]);
 
   const counts = data?.counts || {};
+  const reportingWindow = data?.reportingWindow || { label: 'Last 30 Days' };
   const items = Array.isArray(data?.items) ? data.items : [];
   const totalPages = Math.max(1, Number(data?.totalPages || 1));
   const totalCount = Number(data?.totalCount || 0);
@@ -88,12 +96,14 @@ export default function DashboardQuestionsPage() {
   const unansweredCount = Number(counts.unansweredQuestionCount30d || 0);
   const pageLabel = totalCount ? `Showing ${Math.min((page - 1) * 25 + 1, totalCount)}-${Math.min(page * 25, totalCount)} of ${totalCount}` : 'No questions found';
   const title = kind === 'answered' ? 'Answered Questions' : 'Unable to Answer Questions';
-  const emptyMessage = kind === 'answered' ? 'No answered questions in the last 30 days.' : 'No unanswered questions in the last 30 days.';
+  const emptyMessage = kind === 'answered'
+    ? `No answered questions in ${String(reportingWindow.label || 'Last 30 Days').toLowerCase()}.`
+    : `No unanswered questions in ${String(reportingWindow.label || 'Last 30 Days').toLowerCase()}.`;
 
   const pagination = useMemo(() => ({
-    prevHref: `/client/dashboard/questions?kind=${kind}&page=${Math.max(1, page - 1)}`,
-    nextHref: `/client/dashboard/questions?kind=${kind}&page=${Math.min(totalPages, page + 1)}`
-  }), [kind, page, totalPages]);
+    prevHref: `/client/dashboard/questions?kind=${kind}&page=${Math.max(1, page - 1)}&range=${encodeURIComponent(selectedRange)}`,
+    nextHref: `/client/dashboard/questions?kind=${kind}&page=${Math.min(totalPages, page + 1)}&range=${encodeURIComponent(selectedRange)}`
+  }), [kind, page, selectedRange, totalPages]);
 
   return (
     <ClientPage
@@ -102,7 +112,7 @@ export default function DashboardQuestionsPage() {
       status={status}
       headerAside={(
         <Link
-          href="/client/dashboard"
+          href={`/client/dashboard?range=${encodeURIComponent(selectedRange)}`}
           className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
           <span className="material-symbols-outlined text-[18px]">arrow_back</span>
@@ -113,12 +123,12 @@ export default function DashboardQuestionsPage() {
       <section className={panelClassName('p-6')}>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="text-[10px] font-bold normal-case tracking-normal text-slate-500">Last 30 Days</div>
+            <div className="text-[10px] font-bold normal-case tracking-normal text-slate-500">{reportingWindow.label}</div>
             <h2 className="mt-2 font-['Space_Grotesk'] text-xl font-bold tracking-[-0.03em] text-slate-950">{title}</h2>
           </div>
           <div className="flex flex-wrap gap-2">
-            <TabLink href="/client/dashboard/questions?kind=answered&page=1" active={kind === 'answered'} label="Answered" count={answeredCount} />
-            <TabLink href="/client/dashboard/questions?kind=unanswered&page=1" active={kind === 'unanswered'} label="Unable to Answer" count={unansweredCount} />
+            <TabLink href={`/client/dashboard/questions?kind=answered&page=1&range=${encodeURIComponent(selectedRange)}`} active={kind === 'answered'} label="Answered" count={answeredCount} />
+            <TabLink href={`/client/dashboard/questions?kind=unanswered&page=1&range=${encodeURIComponent(selectedRange)}`} active={kind === 'unanswered'} label="Unable to Answer" count={unansweredCount} />
           </div>
         </div>
       </section>

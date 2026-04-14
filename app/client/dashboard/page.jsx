@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import ClientPage from '../_components/ClientPage';
 import { formatLeadOutcomeLabel, getLeadStatusMeta } from '../../../lib/leadBilling';
 
@@ -28,9 +29,19 @@ const CATEGORY_COLOR = {
 };
 
 const QUESTION_HANDLING_TOOLTIP = 'Review these periodically and update training materials so that your receptionist can answer caller questions properly.';
+const REPORTING_RANGE_OPTIONS = [
+  { value: '7d', label: 'Last 7 Days' },
+  { value: '30d', label: 'Last 30 Days' },
+  { value: '90d', label: 'Last 90 Days' }
+];
 
 function normalizeText(value) {
   return String(value || '').trim();
+}
+
+function normalizeReportingRange(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  return REPORTING_RANGE_OPTIONS.some((option) => option.value === normalized) ? normalized : '30d';
 }
 
 function normalizeCallCategory(outcomeType, isValidLead) {
@@ -89,13 +100,6 @@ function formatDateTime(value) {
   return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-function formatDayLabel(value) {
-  if (!value) return '-';
-  const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleDateString([], { weekday: 'short' }).toUpperCase();
-}
-
 function fetchJson(url, options) {
   return fetch(url, options).then(async (resp) => {
     const data = await resp.json().catch(() => null);
@@ -106,8 +110,10 @@ function fetchJson(url, options) {
   });
 }
 
-async function loadDashboard() {
-  return fetchJson('/api/v1/client/dashboard');
+async function loadDashboard(range) {
+  const params = new URLSearchParams();
+  if (range) params.set('range', range);
+  return fetchJson(`/api/v1/client/dashboard${params.toString() ? `?${params.toString()}` : ''}`);
 }
 
 function panelClassName(extra = '') {
@@ -195,6 +201,9 @@ function buildCallMixGradient(items) {
 }
 
 export default function ClientDashboardPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const selectedRange = normalizeReportingRange(searchParams?.get('range'));
   const [dashboard, setDashboard] = useState(null);
   const [status, setStatus] = useState({ tone: 'warn', message: 'Loading reports...' });
   const [expandedKnowledgeList, setExpandedKnowledgeList] = useState(null);
@@ -202,7 +211,8 @@ export default function ClientDashboardPage() {
 
   useEffect(() => {
     let mounted = true;
-    loadDashboard()
+    setStatus({ tone: 'warn', message: 'Loading reports...' });
+    loadDashboard(selectedRange)
       .then((data) => {
         if (!mounted) return;
         setDashboard(data);
@@ -215,15 +225,16 @@ export default function ClientDashboardPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [selectedRange]);
 
   const summary = dashboard?.summary || {};
   const setup = dashboard?.setup || {};
   const billing = dashboard?.billing || {};
+  const reportingWindow = dashboard?.reportingWindow || REPORTING_RANGE_OPTIONS.find((option) => option.value === selectedRange) || REPORTING_RANGE_OPTIONS[1];
   const viewer = dashboard?.viewer || {};
   const classificationBreakdown = Array.isArray(dashboard?.classificationBreakdown) ? dashboard.classificationBreakdown : [];
   const recentCalls = Array.isArray(dashboard?.recentCalls) ? dashboard.recentCalls : [];
-  const callVolumeLast7Days = Array.isArray(dashboard?.callVolumeLast7Days) ? dashboard.callVolumeLast7Days : [];
+  const callVolumeTrend = Array.isArray(dashboard?.callVolumeTrend) ? dashboard.callVolumeTrend : [];
   const knowledgeSignals = dashboard?.knowledgeSignals || {};
   const answeredKnowledgeQuestions = Array.isArray(dashboard?.answeredKnowledgeQuestions) ? dashboard.answeredKnowledgeQuestions : [];
   const knowledgeGapQuestions = Array.isArray(dashboard?.knowledgeGapQuestions) ? dashboard.knowledgeGapQuestions : [];
@@ -241,7 +252,7 @@ export default function ClientDashboardPage() {
   const pendingTranscriptAnalysisCallCount = Number(knowledgeSignals.pendingTranscriptAnalysisCallCount30d || 0);
   const failedTranscriptAnalysisCallCount = Number(knowledgeSignals.failedTranscriptAnalysisCallCount30d || 0);
   const answeredQuestionRate = Number(knowledgeSignals.answeredQuestionRate30d || 0);
-  const maxTrendCount = Math.max(1, ...callVolumeLast7Days.map((day) => Number(day.totalCount || day.count || 0)));
+  const maxTrendCount = Math.max(1, ...callVolumeTrend.map((day) => Number(day.totalCount || day.count || 0)));
 
   useEffect(() => {
     if (expandedKnowledgeList === 'answered' && !answeredQuestionCount) {
@@ -280,6 +291,14 @@ export default function ClientDashboardPage() {
     });
   }, [classificationBreakdown]);
   const callMixGradient = useMemo(() => buildCallMixGradient(orderedBreakdown), [orderedBreakdown]);
+  const reportingWindowLabelLower = String(reportingWindow.label || 'Last 30 Days').toLowerCase();
+
+  const handleReportingRangeChange = (event) => {
+    const nextRange = normalizeReportingRange(event.target.value);
+    const nextParams = new URLSearchParams(searchParams?.toString() || '');
+    nextParams.set('range', nextRange);
+    router.replace(`/client/dashboard?${nextParams.toString()}`, { scroll: false });
+  };
 
   return (
     <ClientPage
@@ -287,9 +306,18 @@ export default function ClientDashboardPage() {
       subtitle=""
       status={status}
       headerAside={(
-        <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-[#f1f4f6] px-4 py-2 text-sm font-medium text-slate-700">
-          <span>Last 30 Days</span>
-          <span className="material-symbols-outlined text-[18px]">expand_more</span>
+        <div className="inline-flex items-center rounded-lg border border-slate-200 bg-[#f1f4f6] px-3 py-2 text-sm font-medium text-slate-700">
+          <label className="sr-only" htmlFor="dashboard-reporting-range">Reporting window</label>
+          <select
+            id="dashboard-reporting-range"
+            className="bg-transparent pr-7 text-sm font-medium text-slate-700 outline-none"
+            value={selectedRange}
+            onChange={handleReportingRangeChange}
+          >
+            {REPORTING_RANGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
         </div>
       )}
       primaryAction={{ href: '/client/calls', label: 'Open Calls', brand: true }}
@@ -499,7 +527,7 @@ export default function ClientDashboardPage() {
                     {expandedKnowledgeList === 'answered' ? 'Questions Answered' : 'Questions Unable to Answer'}
                   </div>
                   <Link
-                    href={`/client/dashboard/questions?kind=${expandedKnowledgeList === 'answered' ? 'answered' : 'unanswered'}&page=1`}
+                    href={`/client/dashboard/questions?kind=${expandedKnowledgeList === 'answered' ? 'answered' : 'unanswered'}&page=1&range=${encodeURIComponent(selectedRange)}`}
                     className="text-xs font-bold normal-case tracking-normal text-[#205cb5]"
                   >
                     View All
@@ -530,8 +558,8 @@ export default function ClientDashboardPage() {
                   }) : (
                     <div className="text-sm text-slate-500">
                       {expandedKnowledgeList === 'answered'
-                        ? 'No answered KB questions in the last 30 days.'
-                        : 'No KB gaps in the last 30 days.'}
+                        ? `No answered questions in ${reportingWindowLabelLower}.`
+                        : `No question gaps in ${reportingWindowLabelLower}.`}
                     </div>
                   )}
                 </div>
@@ -555,7 +583,7 @@ export default function ClientDashboardPage() {
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="font-['Space_Grotesk'] text-lg font-bold text-slate-950">Call Volume Trends</h2>
-            <p className="mt-1 text-xs text-slate-500">Last 7 days</p>
+            <p className="mt-1 text-xs text-slate-500">{reportingWindow.label}</p>
           </div>
           <div className="flex gap-4">
             <div className="flex items-center gap-2">
@@ -569,8 +597,8 @@ export default function ClientDashboardPage() {
           </div>
         </div>
 
-        <div className="grid h-52 grid-cols-7 items-end gap-4 px-2">
-          {callVolumeLast7Days.map((day) => {
+        <div className="grid h-52 items-end gap-4 px-2" style={{ gridTemplateColumns: `repeat(${Math.max(1, callVolumeTrend.length)}, minmax(0, 1fr))` }}>
+          {callVolumeTrend.map((day) => {
             const totalCount = Number(day.totalCount || day.count || 0);
             const businessCount = Number(day.businessHoursCount || 0);
             const afterHoursCount = Number(day.afterHoursCount || 0);
@@ -578,7 +606,7 @@ export default function ClientDashboardPage() {
             const businessShare = totalCount ? (businessCount / totalCount) * 100 : 0;
             const afterHoursShare = totalCount ? (afterHoursCount / totalCount) * 100 : 0;
             return (
-              <div key={day.day} className="flex h-full flex-col items-center justify-end gap-2">
+              <div key={day.key || `${day.start}:${day.end}`} className="flex h-full flex-col items-center justify-end gap-2">
                 <div className="text-xs font-semibold text-slate-500">{totalCount}</div>
                 <div className="flex h-[180px] w-full items-end">
                   <div className="w-full overflow-hidden rounded-t-sm bg-[#ebeef0]" style={{ height }}>
@@ -588,7 +616,7 @@ export default function ClientDashboardPage() {
                     </div>
                   </div>
                 </div>
-                <div className="text-[10px] font-bold normal-case tracking-normal text-slate-500">{formatDayLabel(day.day)}</div>
+                <div className="text-center text-[10px] font-bold normal-case tracking-normal text-slate-500">{day.label || '-'}</div>
               </div>
             );
           })}
