@@ -113,6 +113,8 @@ const basicsGuideOverview = {
   detail: 'These settings make sure callers hear the right business name and voice before deeper knowledge is added.'
 };
 
+const COMPANY_DESCRIPTION_TOOLTIP = 'This is what your receptionist should say when a caller asks what your company does. Keep it brief and conversational.';
+
 export default function ReceptionistBasicsPage() {
   const defaultHoursConfig = createBusinessHoursConfig({ timezone: 'America/Los_Angeles' });
   const [loading, setLoading] = useState(true);
@@ -364,7 +366,22 @@ export default function ReceptionistBasicsPage() {
               </div>
 
               <div className="mt-3">
-                <label>Company Description</label>
+                <div className="mb-1 flex items-center gap-2">
+                  <label className="mb-0">Company Description</label>
+                  <span className="group relative inline-flex">
+                    <button
+                      type="button"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-[#eff4ff] hover:text-[#205cb5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#205cb5] focus-visible:ring-offset-2"
+                      aria-label={COMPANY_DESCRIPTION_TOOLTIP}
+                      onClick={(event) => event.preventDefault()}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">info</span>
+                    </button>
+                    <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-72 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg group-hover:block group-focus-within:block">
+                      {COMPANY_DESCRIPTION_TOOLTIP}
+                    </span>
+                  </span>
+                </div>
                 <textarea
                   value={form.companyDescription}
                   onChange={(event) => setForm((current) => ({ ...current, companyDescription: event.target.value }))}
