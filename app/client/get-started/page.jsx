@@ -75,6 +75,24 @@ function actionButtonClass(disabled = false) {
   return 'inline-flex items-center justify-center rounded-lg border-2 border-slate-200 bg-white px-8 py-3 text-xs font-bold tracking-[0.18em] text-[#121c2a] shadow-sm transition-all hover:border-[#2563eb] hover:text-[#2563eb] active:scale-95';
 }
 
+function InlineInfoButton({ message }) {
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-[#eff4ff] hover:text-[#205cb5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#205cb5] focus-visible:ring-offset-2"
+        aria-label={message}
+        onClick={(event) => event.preventDefault()}
+      >
+        <span className="material-symbols-outlined text-[14px]">info</span>
+      </button>
+      <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-64 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg group-hover:block group-focus-within:block">
+        {message}
+      </span>
+    </span>
+  );
+}
+
 function SetupStepCard({
   step,
   title,
@@ -137,7 +155,10 @@ function SetupStepCard({
                     <p className="flex flex-wrap items-center gap-2 text-sm leading-relaxed text-slate-600" key={`${line.label}-${line.value}`}>
                       <span className="font-medium">{line.blank ? line.label : `${line.label}:`}</span>
                       {!line.blank ? (
-                        <span>{line.value}</span>
+                        <>
+                          <span>{line.value}</span>
+                          {line.infoMessage ? <InlineInfoButton message={line.infoMessage} /> : null}
+                        </>
                       ) : null}
                     </p>
                   ))}
@@ -369,7 +390,10 @@ export default function ClientGetStartedPage() {
             label: 'Phone',
             value: new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' }).format(
               smsConfiguredDestinations.map((entry) => entry.display)
-            )
+            ),
+            infoMessage: smsConfiguredDestinations.some((entry) => !entry.isConfirmed)
+              ? 'Unconfirmed means text alerts will not go to this number until it is confirmed by text.'
+              : ''
           }
         : {
             label: 'Phone',
