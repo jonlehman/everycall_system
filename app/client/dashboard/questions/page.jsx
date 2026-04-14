@@ -87,7 +87,7 @@ export default function DashboardQuestionsPage() {
   const answeredCount = Number(counts.answeredQuestionCount30d || 0);
   const unansweredCount = Number(counts.unansweredQuestionCount30d || 0);
   const pageLabel = totalCount ? `Showing ${Math.min((page - 1) * 25 + 1, totalCount)}-${Math.min(page * 25, totalCount)} of ${totalCount}` : 'No questions found';
-  const title = kind === 'answered' ? 'Answered Questions' : 'No KB Answer Questions';
+  const title = kind === 'answered' ? 'Answered Questions' : 'Unable to Answer Questions';
   const emptyMessage = kind === 'answered' ? 'No answered questions in the last 30 days.' : 'No unanswered questions in the last 30 days.';
 
   const pagination = useMemo(() => ({
@@ -118,7 +118,7 @@ export default function DashboardQuestionsPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <TabLink href="/client/dashboard/questions?kind=answered&page=1" active={kind === 'answered'} label="Answered" count={answeredCount} />
-            <TabLink href="/client/dashboard/questions?kind=unanswered&page=1" active={kind === 'unanswered'} label="No KB Answer" count={unansweredCount} />
+            <TabLink href="/client/dashboard/questions?kind=unanswered&page=1" active={kind === 'unanswered'} label="Unable to Answer" count={unansweredCount} />
           </div>
         </div>
       </section>

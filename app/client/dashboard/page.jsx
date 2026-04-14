@@ -411,7 +411,7 @@ export default function ClientDashboardPage() {
 
         <div className="space-y-6">
           <section className={panelClassName('p-6')}>
-            <h2 className="mb-4 font-['Space_Grotesk'] text-lg font-bold text-slate-950">Knowledge Base Performance</h2>
+            <h2 className="mb-4 font-['Space_Grotesk'] text-lg font-bold text-slate-950">Question Handling</h2>
             <div className="space-y-4">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-500">Answer Rate</span>
@@ -438,7 +438,7 @@ export default function ClientDashboardPage() {
                   onClick={() => unansweredQuestionCount && setExpandedKnowledgeList((current) => current === 'unanswered' ? null : 'unanswered')}
                 >
                   <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold normal-case tracking-normal text-slate-500">
-                    <span>No KB Answer</span>
+                    <span>Unable to Answer</span>
                     <span className="material-symbols-outlined text-sm text-[#205cb5]">{expandedKnowledgeList === 'unanswered' ? 'expand_less' : 'chevron_right'}</span>
                   </div>
                   <div className="font-['Space_Grotesk'] text-2xl font-bold text-slate-950">{unansweredQuestionCount}</div>
@@ -487,7 +487,7 @@ export default function ClientDashboardPage() {
               <div className="mt-5 border-t border-slate-200/70 pt-5">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div className="text-[10px] font-bold normal-case tracking-normal text-slate-500">
-                    {expandedKnowledgeList === 'answered' ? 'Questions Answered From KB' : 'Questions Not Answered From KB'}
+                    {expandedKnowledgeList === 'answered' ? 'Questions Answered' : 'Questions Unable to Answer'}
                   </div>
                   <Link
                     href={`/client/dashboard/questions?kind=${expandedKnowledgeList === 'answered' ? 'answered' : 'unanswered'}&page=1`}
