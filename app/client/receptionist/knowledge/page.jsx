@@ -312,7 +312,7 @@ const knowledgeGuideOverview = {
   detail: 'Publish a build before sending live calls here. Until then, EveryCall can answer only limited general questions.'
 };
 
-const WEBSITE_TOOLTIP = 'Crawl the main website and refresh the base knowledge layer.';
+const WEBSITE_TOOLTIP = 'Train your receptionist on the basics of your business by scraping the first 500 pages of your website.';
 const DOCUMENTS_TOOLTIP = 'Upload documents or single web pages to override or add to information scraped from your website.';
 const TEST_CUSTOMER_QUESTIONS_TOOLTIP = 'Ask a caller-style question to see an approximate answer based on the current knowledge base.';
 
