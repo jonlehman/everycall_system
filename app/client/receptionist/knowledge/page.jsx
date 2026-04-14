@@ -312,6 +312,8 @@ const knowledgeGuideOverview = {
   detail: 'Publish a build before sending live calls here. Until then, EveryCall can answer only limited general questions.'
 };
 
+const WEBSITE_TOOLTIP = 'Crawl the main website and refresh the base knowledge layer.';
+const DOCUMENTS_TOOLTIP = 'Uploaded documents and single web pages override any conflicting information from the website.';
 const TEST_CUSTOMER_QUESTIONS_TOOLTIP = 'Ask a caller-style question to see an approximate answer based on the current knowledge base.';
 
 export default function ReceptionistKnowledgePage() {
@@ -712,7 +714,7 @@ export default function ReceptionistKnowledgePage() {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website</h4>
-                        <span className="text-sm text-slate-500">Crawl the main website and refresh the base knowledge layer.</span>
+                        <InlineInfoButton message={WEBSITE_TOOLTIP} />
                         {websitePublished ? (
                           <span className="badge ok">Published</span>
                         ) : null}
@@ -762,7 +764,7 @@ export default function ReceptionistKnowledgePage() {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Documents</h4>
-                        <span className="text-sm text-slate-500">Uploaded documents and single web pages override any conflicting information from the website.</span>
+                        <InlineInfoButton message={DOCUMENTS_TOOLTIP} />
                         {documentsPublished ? (
                           <span className="badge ok">Published</span>
                         ) : null}
