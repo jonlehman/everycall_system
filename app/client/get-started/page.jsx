@@ -692,9 +692,7 @@ export default function ClientGetStartedPage() {
               }}
               descriptionContent={(
                 <ul className="list-disc space-y-2 pl-5">
-                  <li>Add a payment method now</li>
-                  <li>No charges start until your trial ends</li>
-                  <li>Review plan, usage, and billing history</li>
+                  <li>When activated, charges won&apos;t start until your trial ends</li>
                 </ul>
               )}
               action={(
