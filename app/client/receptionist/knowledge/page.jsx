@@ -235,7 +235,7 @@ const guideByContext = {
   website: {
     step: '01',
     title: 'Website',
-    body: 'Set the main website URL. Rebuild Website refreshes the crawl and keeps approved documents on top.',
+    body: 'Set the main website URL. Rescan Website refreshes the crawl and keeps approved documents on top.',
     tip: 'Use the main public website, not a deep page.'
   },
   documentsMeta: {
@@ -258,8 +258,8 @@ const guideByContext = {
   },
   websiteBuild: {
     step: '01',
-    title: 'Rebuild Website',
-    body: 'Rebuild Website refreshes the website crawl and publishes it when ready.',
+    title: 'Rescan Website',
+    body: 'Rescan Website refreshes the website crawl and publishes it when ready.',
     tip: 'Use this after website changes.'
   },
   documentApply: {
@@ -609,12 +609,6 @@ export default function ReceptionistKnowledgePage() {
     && latestLiveBuildKind === 'document_overlay'
     && Boolean(latestDocumentBuildId)
     && latestDocumentBuildId === activeBuildId;
-  const websiteBuildStatusLabel = websitePublished ? 'Published' : buildStatusLabel(latestWebsiteBuild?.status);
-  const websiteBuildStatusTone = websitePublished ? 'ok' : buildBadgeTone(latestWebsiteBuild?.status);
-  const showWebsiteBuildProgress = latestWebsiteBuild && !websitePublished;
-  const websiteBuildSummary = websitePublished
-    ? 'This website crawl is part of the current live knowledge base.'
-    : renderBuildProgress(latestWebsiteBuild);
   const websiteBuildInProgress = Boolean(activeWebsiteBuild);
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewAnswer = preview?.spokenAnswerEstimate || buildRepresentativeAnswer(previewAnswerPacket);
@@ -733,24 +727,9 @@ export default function ReceptionistKnowledgePage() {
                           onClick={() => queueBuild('website_base')}
                           disabled={buildBusyKind === 'website_base'}
                         >
-                          {buildBusyKind === 'website_base' ? 'Queueing...' : 'Rebuild Website'}
+                          {buildBusyKind === 'website_base' ? 'Queueing...' : 'Rescan Website'}
                         </Button>
                       </div>
-                      {latestWebsiteBuild ? (
-                        <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <div className="font-semibold text-slate-900">Latest Website Build</div>
-                              <div className="mt-1 text-sm text-slate-600">{buildDisplayLabel(latestWebsiteBuild, 0)}</div>
-                            </div>
-                            <span className={`badge ${websiteBuildStatusTone}`}>{websiteBuildStatusLabel}</span>
-                          </div>
-                          <div className="mt-2 text-sm text-slate-600">{websiteBuildSummary}</div>
-                          {showWebsiteBuildProgress ? (
-                            <BuildProgressMeter build={latestWebsiteBuild} compact />
-                          ) : null}
-                        </div>
-                      ) : null}
                     </>
                   ) : null}
                 </div>
