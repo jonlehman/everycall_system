@@ -544,12 +544,15 @@ export default function ClientGetStartedPage() {
             }}
             className="md:col-span-6 lg:col-span-5"
             action={(
-              <Link
-                href="/client/team"
-                className={actionButtonClass(false)}
-              >
-                Edit
-              </Link>
+              <div className="flex items-center gap-3">
+                <Link
+                  href="/client/team"
+                  className={actionButtonClass(false)}
+                >
+                  Edit
+                </Link>
+                <span className="text-sm font-medium text-slate-500">(add more people)</span>
+              </div>
             )}
           />
 
