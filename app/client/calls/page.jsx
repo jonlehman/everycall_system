@@ -92,6 +92,13 @@ function formatQueueTime(value) {
   return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+function formatShortDate(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 function queueStatusClass(value) {
   const normalized = String(value || '').trim().toLowerCase();
   if (['completed', 'contacted', 'scheduled'].includes(normalized)) return 'bg-emerald-100 text-emerald-700';
@@ -149,6 +156,19 @@ function buildDetailCallerName(detailMeta, detailDraft) {
     detailDraft?.lastName || detailMeta?.caller_last_name,
     formatPhoneDisplay(detailMeta?.from_number) || ''
   );
+}
+
+function CategoryPill({ categoryKey, label }) {
+  if (categoryKey === 'project_inquiry') {
+    return <span className="rounded-full bg-[#d6e4f9] px-2 py-1 text-[10px] font-bold normal-case tracking-normal text-[#205cb5]">Lead</span>;
+  }
+  if (categoryKey === 'existing_customer_support') {
+    return <span className="rounded-full bg-[#e5e9eb] px-2 py-1 text-[10px] font-bold normal-case tracking-normal text-slate-600">Support</span>;
+  }
+  if (categoryKey === 'spam' || categoryKey === 'vendor_or_sales') {
+    return <span className="rounded-full bg-[#ffdad6] px-2 py-1 text-[10px] font-bold normal-case tracking-normal text-[#93000a]">{label}</span>;
+  }
+  return <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold normal-case tracking-normal text-slate-600">{label}</span>;
 }
 
 function normalizeCallCategory(outcomeType, isValidLead) {
@@ -890,56 +910,46 @@ export default function CallsPage() {
           <div className="min-w-0 space-y-6">
             <section className="overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white p-4 shadow-sm">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[700px] border-separate border-spacing-y-4 text-left">
+                <table className="w-full min-w-[720px] text-left">
                   <colgroup>
+                    <col className="w-[16%]" />
+                    <col className="w-[24%]" />
                     <col className="w-[28%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[28%]" />
-                    <col className="w-[20%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[18%]" />
                   </colgroup>
-                  <thead>
+                  <thead className="bg-[#f1f4f6]">
                     <tr>
-                      <th className="px-3 pb-2 text-xs font-semibold text-slate-500">Client / Caller</th>
-                      <th className="px-3 pb-2 text-xs font-semibold text-slate-500">Date</th>
-                      <th className="px-3 pb-2 text-xs font-semibold text-slate-500">Time</th>
-                      <th className="px-3 pb-2 text-xs font-semibold text-slate-500">AI Summary</th>
-                      <th className="px-3 pb-2 text-right text-xs font-semibold text-slate-500">Status</th>
+                      <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Date / Time</th>
+                      <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Caller</th>
+                      <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Summary</th>
+                      <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Category</th>
+                      <th className="px-6 py-3 text-[10px] font-bold normal-case tracking-normal text-slate-500">Status</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {pagedRows.length ? pagedRows.map((row) => {
                       const callerName = buildCallerName(row.firstName, row.lastName, row.from);
                       const selected = selectedCallSid === row.sid;
-                      const dateText = formatQueueDate(row.createdAt);
-                      const timeText = formatQueueTime(row.createdAt);
+                      const categoryLabel = formatLabel(row.callCategory);
 
                       return (
                         <tr
                           key={row.id}
-                          className={`cursor-pointer transition-all ${selected ? 'bg-[#004ac6]/5' : 'hover:bg-slate-50'}`}
+                          className={`cursor-pointer transition-colors ${selected ? 'bg-[#eff4ff]' : 'hover:bg-[#f7fafc]'}`}
                           onClick={() => loadDetail(row.sid)}
                         >
-                          <td className="rounded-l-2xl px-3 py-4">
-                            <div className="flex items-center gap-2.5">
-                              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${selected ? 'bg-[#004ac6] text-white' : 'bg-slate-100 text-slate-700'}`}>
-                                {getInitials(callerName)}
-                              </div>
-                              <div className="min-w-0">
-                                <div className={`truncate text-sm font-bold ${selected ? 'text-[#004ac6]' : 'text-slate-900'}`}>{callerName}</div>
-                                <div className="truncate text-xs text-slate-500">{buildCallerSecondary(row)}</div>
-                              </div>
-                            </div>
+                          <td className="px-6 py-4 text-xs text-slate-500 whitespace-nowrap">
+                            <div className="font-medium text-slate-700">{formatShortDate(row.createdAt)}</div>
+                            <div className="mt-1">{formatQueueTime(row.createdAt)}</div>
                           </td>
-                          <td className="px-3 py-4">
-                            <div className="text-sm font-semibold text-slate-900">{dateText}</div>
+                          <td className="px-6 py-4">
+                            <div className="text-sm font-bold text-slate-900">{callerName}</div>
+                            <div className="text-[10px] text-slate-500">{row.from || 'No callback number'}</div>
                           </td>
-                          <td className="px-3 py-4">
-                            <div className="text-sm font-semibold text-slate-900">{timeText}</div>
-                          </td>
-                          <td className="px-3 py-4">
+                          <td className="px-6 py-4 text-xs font-medium text-slate-800">
                             <p
-                              className="m-0 overflow-hidden text-sm leading-5 text-slate-600"
+                              className="m-0 overflow-hidden"
                               title={row.summary || ''}
                               style={{
                                 display: '-webkit-box',
@@ -947,25 +957,25 @@ export default function CallsPage() {
                                 WebkitBoxOrient: 'vertical'
                               }}
                             >
-                              {row.summary || '-'}
+                              {row.summary || 'No summary yet.'}
                             </p>
                           </td>
-                          <td className="rounded-r-2xl px-3 py-4 text-right">
-                            <div className="inline-flex flex-col items-end gap-2">
+                          <td className="px-6 py-4">
+                            <CategoryPill categoryKey={row.callCategory} label={categoryLabel} />
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center justify-between gap-3">
                               <span className={`rounded-full px-3 py-1 text-xs font-bold ${queueStatusClass(row.status)}`}>
                                 {formatLabel(row.status)}
                               </span>
-                              <span className="inline-flex items-center gap-2 text-[11px]">
-                                <span className={`h-2.5 w-2.5 rounded-full ${queueUrgencyDotClass(row.urgency)}`} />
-                                <span className={queueUrgencyTextClass(row.urgency)}>{formatLabel(row.urgency)}</span>
-                              </span>
+                              <span className="material-symbols-outlined text-sm text-slate-400">chevron_right</span>
                             </div>
                           </td>
                         </tr>
                       );
                     }) : (
                       <tr>
-                        <td className="rounded-2xl px-4 py-10 text-sm text-slate-500" colSpan={5}>
+                        <td className="px-6 py-10 text-sm text-slate-500" colSpan={5}>
                           {loading ? 'Loading calls...' : 'No calls match the current filters.'}
                         </td>
                       </tr>
