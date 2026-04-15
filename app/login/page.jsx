@@ -63,7 +63,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#f8f9ff] text-[#121c2a] selection:bg-[#dbe1ff] selection:text-[#00174b]">
       <main className="flex min-h-screen flex-col items-center justify-center px-6 py-8">
-        <div className="relative translate-y-[0.5in] w-full max-w-[408px] py-12">
+        <div className="relative translate-y-[0.25in] w-full max-w-[408px] py-12">
           <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-[#eff4ff] opacity-60 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-[#d6e0f3] opacity-40 blur-3xl" />
 
@@ -97,7 +97,7 @@ export default function LoginPage() {
                   Email Address
                 </label>
                 <div className="group flex items-center rounded-lg bg-white ring-1 ring-[#c3c6d7]/40 transition-all focus-within:ring-2 focus-within:ring-[#004ac6]/20">
-                  <span className="pointer-events-none flex h-full w-16 shrink-0 items-center justify-center self-stretch rounded-l-lg bg-white">
+                  <span className="pointer-events-none flex h-full w-[3.2rem] shrink-0 items-center justify-center self-stretch rounded-l-lg bg-white">
                     <span className="material-symbols-outlined text-[20px] text-[#737686] transition-colors group-focus-within:text-[#004ac6]">
                       mail
                     </span>
@@ -125,7 +125,7 @@ export default function LoginPage() {
                   </Link>
                 </div>
                 <div className="group flex items-center rounded-lg bg-white ring-1 ring-[#c3c6d7]/40 transition-all focus-within:ring-2 focus-within:ring-[#004ac6]/20">
-                  <span className="pointer-events-none flex h-full w-16 shrink-0 items-center justify-center self-stretch rounded-l-lg bg-white">
+                  <span className="pointer-events-none flex h-full w-[3.2rem] shrink-0 items-center justify-center self-stretch rounded-l-lg bg-white">
                     <span className="material-symbols-outlined text-[20px] text-[#737686] transition-colors group-focus-within:text-[#004ac6]">
                       lock
                     </span>
