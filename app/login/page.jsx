@@ -96,8 +96,8 @@ export default function LoginPage() {
                 <label className="block text-[0.75rem] font-semibold tracking-wide text-[#434655]" htmlFor="email">
                   Email Address
                 </label>
-                <div className="group relative">
-                  <span className="pointer-events-none absolute inset-y-0 left-0 z-10 flex w-16 items-center justify-center">
+                <div className="group flex items-center rounded-lg bg-white ring-1 ring-[#c3c6d7]/40 transition-all focus-within:ring-2 focus-within:ring-[#004ac6]/20">
+                  <span className="pointer-events-none flex h-full w-16 shrink-0 items-center justify-center">
                     <span className="material-symbols-outlined text-[20px] text-[#737686] transition-colors group-focus-within:text-[#004ac6]">
                       mail
                     </span>
@@ -110,7 +110,7 @@ export default function LoginPage() {
                     placeholder="architect@everycall.com"
                     value={clientEmail}
                     onChange={(event) => setClientEmail(event.target.value)}
-                    className="w-full rounded-lg border-0 bg-white py-3 pl-24 pr-4 text-[#121c2a] ring-1 ring-[#c3c6d7]/40 transition-all placeholder:text-[#737686]/60 focus:outline-none focus:ring-2 focus:ring-[#004ac6]/20"
+                    className="min-w-0 flex-1 border-0 bg-transparent py-3 pl-2 pr-4 text-[#121c2a] placeholder:text-[#737686]/60 focus:outline-none focus:ring-0"
                   />
                 </div>
               </div>
@@ -124,8 +124,8 @@ export default function LoginPage() {
                     Forgot Password?
                   </Link>
                 </div>
-                <div className="group relative">
-                  <span className="pointer-events-none absolute inset-y-0 left-0 z-10 flex w-16 items-center justify-center">
+                <div className="group flex items-center rounded-lg bg-white ring-1 ring-[#c3c6d7]/40 transition-all focus-within:ring-2 focus-within:ring-[#004ac6]/20">
+                  <span className="pointer-events-none flex h-full w-16 shrink-0 items-center justify-center">
                     <span className="material-symbols-outlined text-[20px] text-[#737686] transition-colors group-focus-within:text-[#004ac6]">
                       lock
                     </span>
@@ -138,7 +138,7 @@ export default function LoginPage() {
                     placeholder="••••••••"
                     value={clientPassword}
                     onChange={(event) => setClientPassword(event.target.value)}
-                    className="w-full rounded-lg border-0 bg-white py-3 pl-24 pr-4 text-[#121c2a] ring-1 ring-[#c3c6d7]/40 transition-all placeholder:text-[#737686]/60 focus:outline-none focus:ring-2 focus:ring-[#004ac6]/20"
+                    className="min-w-0 flex-1 border-0 bg-transparent py-3 pl-2 pr-4 text-[#121c2a] placeholder:text-[#737686]/60 focus:outline-none focus:ring-0"
                   />
                 </div>
               </div>
