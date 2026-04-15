@@ -91,13 +91,13 @@ export default function LoginPage() {
               </p>
             </div>
 
-            <form className="space-y-6" onSubmit={submitClientLogin}>
+            <form className="space-y-6 pt-[2in]" onSubmit={submitClientLogin}>
               <div className="space-y-2">
                 <label className="block text-[0.75rem] font-semibold tracking-wide text-[#434655]" htmlFor="email">
                   Email Address
                 </label>
                 <div className="group flex items-center rounded-lg bg-white ring-1 ring-[#c3c6d7]/40 transition-all focus-within:ring-2 focus-within:ring-[#004ac6]/20">
-                  <span className="pointer-events-none flex h-full w-16 shrink-0 items-center justify-center">
+                  <span className="pointer-events-none flex h-full w-16 shrink-0 items-center justify-center self-stretch rounded-l-lg bg-white">
                     <span className="material-symbols-outlined text-[20px] text-[#737686] transition-colors group-focus-within:text-[#004ac6]">
                       mail
                     </span>
@@ -125,7 +125,7 @@ export default function LoginPage() {
                   </Link>
                 </div>
                 <div className="group flex items-center rounded-lg bg-white ring-1 ring-[#c3c6d7]/40 transition-all focus-within:ring-2 focus-within:ring-[#004ac6]/20">
-                  <span className="pointer-events-none flex h-full w-16 shrink-0 items-center justify-center">
+                  <span className="pointer-events-none flex h-full w-16 shrink-0 items-center justify-center self-stretch rounded-l-lg bg-white">
                     <span className="material-symbols-outlined text-[20px] text-[#737686] transition-colors group-focus-within:text-[#004ac6]">
                       lock
                     </span>
