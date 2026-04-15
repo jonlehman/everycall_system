@@ -62,8 +62,8 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#f8f9ff] text-[#121c2a] selection:bg-[#dbe1ff] selection:text-[#00174b]">
-      <main className="flex min-h-screen flex-col items-center justify-center px-6 py-20">
-        <div className="relative w-full max-w-[408px] py-12">
+      <main className="flex min-h-screen flex-col items-center justify-center px-6 py-8">
+        <div className="relative -translate-y-[0.75in] w-full max-w-[408px] py-12">
           <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-[#eff4ff] opacity-60 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-[#d6e0f3] opacity-40 blur-3xl" />
 
@@ -169,30 +169,6 @@ export default function LoginPage() {
                   Create an Account
                 </Link>
               </p>
-            </div>
-          </div>
-
-          <div className="mt-12 grid grid-cols-3 gap-6 opacity-40 grayscale transition-all hover:opacity-80 hover:grayscale-0">
-            <div className="flex items-center justify-center">
-              <img
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuAHUUITHzW0-NysgWBUgB_YWrG1EP4HO3SV6RV2Pl52GzOm4yluSsf9i3vjz3il8F48cWc23LnAFLTZC4PNP2FZel7B0pgADwI-Y_DW697hm4-8FEkRPek0YeQkMCUspcXit4Hjls6aIc-xx1oPj0WZpgCe0W0UArQpeKne6kwmLSStLbYJFMoGb05o2TsxKpQCrMK2TjSat5FawfHzOEqfjtNoc-DJWhxc3faFXRmWkZEFUYSlGfE6H7raV23sgk3TCDK-alg0uZ7k"
-                alt="ISO 27001 Certification"
-                className="h-8 object-contain"
-              />
-            </div>
-            <div className="flex items-center justify-center">
-              <img
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuAq7CeHrjOSgJnf4u4Mh6hk_7nkTz4V74gGJKCNtGPjPgNMuvZD8drpJuRzaMz3qehxTc7kfKCSrzxDKibQeMAXHXwsW1ERoK5_Lm4S7ffCnxEWr1R_57hRrmhugIQkEXAxXLQsv0SakV7bmcQVbaHndEJN4lChMjSKUtPVcaIQ3JwpA5JHE79unCFvQ8dDJgThMAmkCAPOjblVeP0oBqjP_n55Du9ypKkryeRbHlgojNzAM2PHpfwM8eW978uHwiNzXzc6a_GMLEdT"
-                alt="SOC2 Compliance"
-                className="h-8 object-contain"
-              />
-            </div>
-            <div className="flex items-center justify-center">
-              <img
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuAlDcCzHQ8nTpyJwh5s5paMsOPmOoMWoKj-U2tIM2dkFsojdUHepxjA8kAhBCf-_NrkI7qeJMAro5nL01EQgHdXexP_j-Wa_CmHfS_pprBNUIiEwCzJQFiu5DlRIKgybx8znhXn93usrJOGqm1XSQBYxEAalMliBQEpIBVvKEGaNw0u848BHmzrEhZf4YV_ITe5VtgD2Nj7bh_tfkKV89llnbDFyyW8a96Bn7htcgNSMMn_XZPGyfX-M-QzhKg4cz_qR1dLtZyEoNoy"
-                alt="GDPR Compliance"
-                className="h-8 object-contain"
-              />
             </div>
           </div>
         </div>
