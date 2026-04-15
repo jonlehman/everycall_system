@@ -63,7 +63,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#f8f9ff] text-[#121c2a] selection:bg-[#dbe1ff] selection:text-[#00174b]">
       <main className="flex min-h-screen flex-col items-center justify-center px-6 py-8">
-        <div className="relative -translate-y-[1.5in] w-full max-w-[408px] py-12">
+        <div className="relative translate-y-[0.5in] w-full max-w-[408px] py-12">
           <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-[#eff4ff] opacity-60 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-[#d6e0f3] opacity-40 blur-3xl" />
 
@@ -91,7 +91,7 @@ export default function LoginPage() {
               </p>
             </div>
 
-            <form className="space-y-6 pt-[2in]" onSubmit={submitClientLogin}>
+            <form className="space-y-6" onSubmit={submitClientLogin}>
               <div className="space-y-2">
                 <label className="block text-[0.75rem] font-semibold tracking-wide text-[#434655]" htmlFor="email">
                   Email Address
@@ -191,7 +191,7 @@ export default function LoginPage() {
             Support
           </a>
         </div>
-        <div className="text-xs tracking-widest text-slate-400 opacity-80">© {currentYear} EveryCall Precision Systems</div>
+        <div className="text-xs tracking-widest text-slate-400 opacity-80">EveryCall is a service of Creative Dynamic Co. © {currentYear}</div>
       </footer>
     </div>
   );
