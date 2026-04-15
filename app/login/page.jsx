@@ -63,12 +63,12 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#f8f9ff] text-[#121c2a] selection:bg-[#dbe1ff] selection:text-[#00174b]">
       <main className="flex min-h-screen flex-col items-center justify-center px-6 py-20">
-        <div className="relative w-full max-w-[336px] py-12">
+        <div className="relative w-full max-w-[408px] py-12">
           <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-[#eff4ff] opacity-60 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-[#d6e0f3] opacity-40 blur-3xl" />
 
           <div className="relative z-20 overflow-hidden rounded-xl bg-white px-8 py-10 shadow-[0_40px_80px_-15px_rgba(18,28,42,0.04)]">
-            <div className="flex justify-center pb-[0.75in] pt-[0.75in]">
+            <div className="flex justify-center pb-[0.75in] pt-[0.25in]">
               <BrandLogo
                 href="/"
                 className="h-11 w-[190px]"
@@ -108,7 +108,7 @@ export default function LoginPage() {
                     placeholder="architect@everycall.com"
                     value={clientEmail}
                     onChange={(event) => setClientEmail(event.target.value)}
-                    className="w-full rounded-lg border-0 bg-white py-3 pl-14 pr-4 text-[#121c2a] ring-1 ring-[#c3c6d7]/40 transition-all placeholder:text-[#737686]/60 focus:outline-none focus:ring-2 focus:ring-[#004ac6]/20"
+                    className="w-full rounded-lg border-0 bg-white py-3 pl-[5.25rem] pr-4 text-[#121c2a] ring-1 ring-[#c3c6d7]/40 transition-all placeholder:text-[#737686]/60 focus:outline-none focus:ring-2 focus:ring-[#004ac6]/20"
                   />
                 </div>
               </div>
@@ -134,7 +134,7 @@ export default function LoginPage() {
                     placeholder="••••••••"
                     value={clientPassword}
                     onChange={(event) => setClientPassword(event.target.value)}
-                    className="w-full rounded-lg border-0 bg-white py-3 pl-14 pr-4 text-[#121c2a] ring-1 ring-[#c3c6d7]/40 transition-all placeholder:text-[#737686]/60 focus:outline-none focus:ring-2 focus:ring-[#004ac6]/20"
+                    className="w-full rounded-lg border-0 bg-white py-3 pl-[5.25rem] pr-4 text-[#121c2a] ring-1 ring-[#c3c6d7]/40 transition-all placeholder:text-[#737686]/60 focus:outline-none focus:ring-2 focus:ring-[#004ac6]/20"
                   />
                 </div>
               </div>
