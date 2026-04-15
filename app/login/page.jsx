@@ -81,11 +81,11 @@ export default function LoginPage() {
               <h1 className="mb-3 text-3xl font-bold tracking-tight text-[#121c2a]">Login to Your Workspace</h1>
               <p className="text-sm leading-relaxed text-[#434655]">
                 By logging in, you agree to the EveryCall{' '}
-                <Link className="font-semibold text-[#004ac6] transition-colors hover:underline" href="/terms">
+                <Link className="font-semibold text-[#004ac6] transition-colors hover:underline" href="https://everycall.io/terms-and-conditions.html" target="_blank" rel="noreferrer">
                   terms and conditions
                 </Link>{' '}
                 and{' '}
-                <Link className="font-semibold text-[#004ac6] transition-colors hover:underline" href="/privacy">
+                <Link className="font-semibold text-[#004ac6] transition-colors hover:underline" href="https://everycall.io/privacy-policy.html" target="_blank" rel="noreferrer">
                   privacy policy
                 </Link>.
               </p>
@@ -171,10 +171,10 @@ export default function LoginPage() {
       <footer className="mt-auto flex w-full flex-col items-center justify-between gap-4 border-t border-slate-200/10 bg-slate-50 px-8 py-8 md:flex-row">
         <div className="text-sm font-semibold text-slate-900">EveryCall</div>
         <div className="flex gap-6">
-          <Link className="text-xs tracking-widest text-slate-400 transition-colors hover:text-[#004ac6]" href="/privacy">
+          <Link className="text-xs tracking-widest text-slate-400 transition-colors hover:text-[#004ac6]" href="https://everycall.io/privacy-policy.html" target="_blank" rel="noreferrer">
             Privacy
           </Link>
-          <Link className="text-xs tracking-widest text-slate-400 transition-colors hover:text-[#004ac6]" href="/terms">
+          <Link className="text-xs tracking-widest text-slate-400 transition-colors hover:text-[#004ac6]" href="https://everycall.io/terms-and-conditions.html" target="_blank" rel="noreferrer">
             Terms
           </Link>
           <a className="text-xs tracking-widest text-slate-400 transition-colors hover:text-[#004ac6]" href="mailto:support@everycall.io">

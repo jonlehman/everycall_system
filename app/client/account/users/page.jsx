@@ -674,9 +674,9 @@ export default function AccountUsersPage() {
                       </div>
 
                       <div className="text-xs text-slate-600">
-                        <a className="text-sky-700 underline" href="/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>
+                        <a className="text-sky-700 underline" href="https://everycall.io/privacy-policy.html" target="_blank" rel="noreferrer">Privacy Policy</a>
                         {' '}|{' '}
-                        <a className="text-sky-700 underline" href="/terms" target="_blank" rel="noreferrer">SMS Terms</a>
+                        <a className="text-sky-700 underline" href="https://everycall.io/terms-and-conditions.html" target="_blank" rel="noreferrer">SMS Terms</a>
                       </div>
 
                       <label className="flex items-start gap-3 text-xs text-slate-700">

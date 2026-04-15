@@ -34,7 +34,7 @@ export default function TermsPage() {
         <h2 className="text-lg font-semibold text-slate-900">Support</h2>
         <p>
           For help, contact <a className="text-sky-700 underline" href="mailto:support@everycall.io">support@everycall.io</a>{' '}
-          or visit <a className="text-sky-700 underline" href="/privacy">our privacy policy</a>.
+          or visit <a className="text-sky-700 underline" href="https://everycall.io/privacy-policy.html" target="_blank" rel="noreferrer">our privacy policy</a>.
         </p>
       </section>
     </main>
