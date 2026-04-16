@@ -46,6 +46,14 @@ export function getStripeCancelUrl() {
   return `${baseUrl}/client/account/billing?checkout=cancel`;
 }
 
+export function getStripeBillingPortalReturnUrl() {
+  const baseUrl = String(process.env.APP_BASE_URL || "").trim();
+  if (!baseUrl) {
+    throw new Error("APP_BASE_URL_missing");
+  }
+  return `${baseUrl}/client/account/billing`;
+}
+
 export async function findCustomerByTenantKey(tenantKey) {
   if (!tenantKey) return null;
   const stripe = getStripe();
@@ -96,10 +104,22 @@ function isCurrentSubscriptionStatus(status) {
   return ["trialing", "active", "past_due", "unpaid", "incomplete"].includes(String(status || ""));
 }
 
-export async function retrieveSubscription(subscriptionId) {
+export async function retrieveCustomer(customerId, options = {}) {
+  if (!customerId) return null;
+  const stripe = getStripe();
+  return stripe.customers.retrieve(customerId, options);
+}
+
+export async function retrieveSubscription(subscriptionId, options = {}) {
   if (!subscriptionId) return null;
   const stripe = getStripe();
-  return stripe.subscriptions.retrieve(subscriptionId);
+  return stripe.subscriptions.retrieve(subscriptionId, options);
+}
+
+export async function retrieveInvoice(invoiceId, options = {}) {
+  if (!invoiceId) return null;
+  const stripe = getStripe();
+  return stripe.invoices.retrieve(invoiceId, options);
 }
 
 export async function findCurrentSubscriptionForCustomer(customerId) {
@@ -237,7 +257,7 @@ export async function createBillingPortalSession({
   const stripe = getStripe();
   return stripe.billingPortal.sessions.create({
     customer: customerId,
-    return_url: returnUrl || getStripeSuccessUrl(),
+    return_url: returnUrl || getStripeBillingPortalReturnUrl(),
     ...(getStripeBillingPortalConfigurationId()
       ? { configuration: getStripeBillingPortalConfigurationId() }
       : {})
