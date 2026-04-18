@@ -3,26 +3,29 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import SectionPage from '../../_components/SectionPage';
-import { accountNavItems } from '../../_components/navigation';
+import { formatPhoneDisplay } from '../../../../lib/phoneDisplay';
+
+const PANEL_KEYS = {
+  plan: 'plan',
+  payment: 'payment',
+  invoices: 'invoices',
+  account: 'account'
+};
 
 function formatMoney(amountCents) {
-  const value = Number(amountCents || 0) / 100;
+  const amount = Number(amountCents || 0) / 100;
+  const normalized = Number.isFinite(amount) ? amount : 0;
+  const fractionDigits = Math.round(normalized * 100) % 100 === 0 ? 0 : 2;
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
+    minimumFractionDigits: fractionDigits,
     maximumFractionDigits: 2
-  }).format(value);
+  }).format(normalized);
 }
 
-function formatLongDate(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric'
-  });
+function formatCount(value) {
+  return new Intl.NumberFormat('en-US').format(Number(value || 0));
 }
 
 function formatShortDate(value) {
@@ -46,6 +49,11 @@ function formatCardBrand(value) {
     .join(' ');
 }
 
+function formatMaskedCard(last4) {
+  const suffix = String(last4 || '').trim();
+  return suffix ? `•••• ${suffix}` : 'None';
+}
+
 function fetchJson(url, options) {
   return fetch(url, { cache: 'no-store', ...options }).then(async (resp) => {
     const data = await resp.json().catch(() => null);
@@ -58,81 +66,119 @@ function fetchJson(url, options) {
   });
 }
 
-function SectionAction({ label, onClick, disabled = false }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="text-sm font-semibold text-slate-700 transition-colors hover:text-slate-950 disabled:cursor-not-allowed disabled:text-slate-300"
-    >
-      {label}
-    </button>
-  );
+function getBillingActionLabel(type) {
+  if (type === 'portal') return 'Manage Billing';
+  if (type === 'checkout') return 'Activate Billing';
+  if (type === 'reactivate') return 'Restart Service';
+  return 'Manage Billing';
 }
 
-function SummarySection({ label, title, detail = '', action = null, children }) {
-  return (
-    <section className="px-6 py-6 sm:px-8 sm:py-7">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</div>
-          <div className="mt-3 text-2xl font-semibold tracking-[-0.02em] text-slate-950 sm:text-[2rem]">
-            {title}
-          </div>
-          {detail ? <div className="mt-2 text-sm leading-6 text-slate-500">{detail}</div> : null}
-        </div>
-        {action}
-      </div>
-      {children ? <div className="mt-5">{children}</div> : null}
-    </section>
-  );
+function getBusyBillingActionLabel(type) {
+  if (type === 'reactivate') return 'Restarting...';
+  return 'Opening...';
 }
 
-function ChargeBreakdown({ items = [] }) {
-  if (!Array.isArray(items) || !items.length) return null;
-  return (
-    <div className="rounded-2xl bg-slate-50 px-4 py-4">
-      <div className="space-y-3">
-        {items.map((item) => (
-          <div key={item.label} className="flex items-center justify-between gap-4 text-sm">
-            <span className={`${
-              item.tone === 'total'
-                ? 'font-semibold text-slate-950'
-                : item.tone === 'credit'
-                  ? 'text-emerald-700'
-                  : 'text-slate-600'
-            }`}
-            >
-              {item.label}
-            </span>
-            <span className={`${
-              item.tone === 'total'
-                ? 'font-semibold text-slate-950'
-                : item.tone === 'credit'
-                  ? 'font-medium text-emerald-700'
-                  : 'font-medium text-slate-900'
-            }`}
-            >
-              {formatMoney(item.amountCents)}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+function getBillingBadgeTone(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'active') return 'success';
+  if (normalized === 'trialing') return 'info';
+  if (['past_due', 'unpaid', 'incomplete', 'deactivated', 'trial_expired'].includes(normalized)) return 'danger';
+  if (normalized === 'canceled') return 'neutral';
+  return 'info';
 }
 
-function buildPrimaryChargeLine(nextCharge) {
-  if (!nextCharge) return '-';
+function getPaymentBadgeTone(hasPaymentMethod) {
+  return hasPaymentMethod ? 'success' : 'danger';
+}
+
+function getInvoiceBadgeTone(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'paid') return 'success';
+  if (normalized === 'open') return 'info';
+  if (normalized === 'past due' || normalized === 'past_due') return 'danger';
+  if (!normalized) return 'neutral';
+  return 'neutral';
+}
+
+function badgeClassName(tone) {
+  if (tone === 'success') {
+    return 'bg-[#007f2f]/10 text-[#006323]';
+  }
+  if (tone === 'danger') {
+    return 'bg-[#ffdad6] text-[#93000a]';
+  }
+  if (tone === 'neutral') {
+    return 'bg-[#d9e3f6] text-[#434655]';
+  }
+  return 'bg-[#dbe1ff] text-[#003ea8]';
+}
+
+function renderStatusDot(tone) {
+  if (tone === 'success') return 'bg-[#006323]';
+  if (tone === 'danger') return 'bg-[#ba1a1a]';
+  if (tone === 'neutral') return 'bg-[#737686]';
+  return 'bg-[#004ac6]';
+}
+
+function buildPlanHeroDescription(billing) {
+  const includedCount = Number(billing?.callPricing?.includedCallCount || billing?.plan?.includedCallCount || 0);
+  const interval = String(billing?.plan?.billingIntervalLabel || '').trim().toLowerCase();
+  if (includedCount > 0 && interval === 'monthly') {
+    return `Perfect for growing teams handling up to ${formatCount(includedCount)} inbound calls monthly.`;
+  }
+  if (includedCount > 0 && interval === 'annual') {
+    return `Perfect for growing teams handling up to ${formatCount(includedCount)} inbound calls yearly.`;
+  }
+  if (includedCount > 0) {
+    return `Perfect for growing teams handling up to ${formatCount(includedCount)} inbound calls each billing cycle.`;
+  }
+  if (billing?.plan?.isCustom) {
+    return 'Custom billing terms for this EveryCall workspace.';
+  }
+  return 'Billing for this workspace is managed in Stripe and summarized here.';
+}
+
+function buildInvoiceCardSubtitle(summary) {
+  const nextChargeDate = formatShortDate(summary?.nextCharge?.date);
+  if (nextChargeDate) return `Next billing: ${nextChargeDate}`;
+  if (summary?.latestInvoice?.hasInvoice) return `Latest invoice: ${summary.latestInvoice.statusLabel}`;
+  return 'Latest invoice summary';
+}
+
+function intervalUnitLabel(label) {
+  const normalized = String(label || '').trim().toLowerCase();
+  if (normalized === 'annual') return '/ yr';
+  if (normalized === 'monthly') return '/ mo';
+  return '/ cycle';
+}
+
+function buildPlanFeatureItems(billing) {
+  const includedCount = Number(billing?.callPricing?.includedCallCount || billing?.plan?.includedCallCount || 0);
+  const interval = String(billing?.plan?.billingIntervalLabel || '').trim().toLowerCase();
+  const periodLabel = interval === 'annual' ? 'year' : 'month';
+  const overageRateCents = Number(billing?.callPricing?.callOverageRateCents || billing?.plan?.callOverageRateCents || 0);
+
+  return [
+    includedCount > 0
+      ? `${formatCount(includedCount)} Inbound Calls / ${periodLabel}`
+      : 'Custom inbound call allowance',
+    overageRateCents > 0
+      ? `${formatMoney(overageRateCents)} per additional call`
+      : 'Custom additional call pricing',
+    'Billing managed securely in Stripe'
+  ];
+}
+
+function buildNextChargeLabel(nextCharge) {
+  if (!nextCharge) return 'No charge scheduled';
   if (nextCharge.mode === 'trial_end') {
-    return nextCharge.date ? `Trial ends ${formatLongDate(nextCharge.date)}` : 'Trial active';
+    return nextCharge.date ? `Trial ends ${formatShortDate(nextCharge.date)}` : 'Trial active';
   }
   if (nextCharge.mode === 'amount_due') {
     return nextCharge.amountCents ? `${formatMoney(nextCharge.amountCents)} due` : 'Amount due';
   }
   if (nextCharge.amountCents && nextCharge.date) {
-    return `${formatMoney(nextCharge.amountCents)} on ${formatLongDate(nextCharge.date)}`;
+    return `${formatMoney(nextCharge.amountCents)} on ${formatShortDate(nextCharge.date)}`;
   }
   if (nextCharge.amountCents) {
     return formatMoney(nextCharge.amountCents);
@@ -140,66 +186,155 @@ function buildPrimaryChargeLine(nextCharge) {
   return 'No charge scheduled';
 }
 
-function buildChargeDetail(nextCharge) {
-  if (!nextCharge) return '';
-  if (nextCharge.mode === 'amount_due') {
-    const invoiceDate = formatShortDate(nextCharge.date);
-    return invoiceDate ? `${nextCharge.statusLabel} · Invoice from ${invoiceDate}` : nextCharge.statusLabel;
-  }
-  return nextCharge.statusLabel || '';
+function ActionButton({
+  tone = 'secondary',
+  label,
+  icon = null,
+  onClick,
+  disabled = false
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center justify-center gap-2 rounded-lg px-6 py-2.5 text-sm font-medium transition-all ${
+        tone === 'primary'
+          ? 'bg-gradient-to-br from-[#004ac6] to-[#2563eb] text-white shadow-[0px_8px_16px_-4px_rgba(37,99,235,0.25)] hover:-translate-y-0.5'
+          : 'border border-[#c3c6d7]/40 bg-transparent text-[#121c2a] hover:bg-[#eff4ff]'
+      } disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0`}
+    >
+      <span>{label}</span>
+      {icon ? <span className="material-symbols-outlined text-[18px]">{icon}</span> : null}
+    </button>
+  );
 }
 
-function buildPlanDetail(summaryPlan, billingPlan) {
-  if (summaryPlan?.endsAt) {
-    const dateLabel = formatLongDate(summaryPlan.endsAt);
-    return dateLabel ? `Access ends ${dateLabel}` : 'Access ends at the end of the current term.';
-  }
-  if (summaryPlan?.allowanceSummary) {
-    return summaryPlan.allowanceSummary;
-  }
-  const cadence = String(billingPlan?.billingIntervalLabel || '').trim().toLowerCase();
-  return cadence ? `Billed ${cadence}.` : '';
+function MasterCard({
+  active = false,
+  icon,
+  title,
+  subtitle,
+  badge = null,
+  onClick
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group relative flex w-full items-start gap-4 overflow-hidden rounded-lg p-5 text-left transition-all ${
+        active
+          ? 'border-l-4 border-[#004ac6] bg-white shadow-[0px_8px_16px_-4px_rgba(18,28,42,0.05)]'
+          : 'border border-[#c3c6d7]/15 bg-white hover:bg-[#eff4ff]'
+      }`}
+    >
+      {active ? <div className="absolute inset-0 bg-gradient-to-r from-[#dbe1ff]/70 to-transparent opacity-70" /> : null}
+      <div
+        className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${
+          active
+            ? 'bg-[#e6eeff] text-[#004ac6]'
+            : 'bg-[#dee9fc] text-[#434655] group-hover:text-[#004ac6]'
+        }`}
+      >
+        <span className="material-symbols-outlined text-[22px]" style={active ? { fontVariationSettings: "'FILL' 1" } : undefined}>
+          {icon}
+        </span>
+      </div>
+      <div className="relative z-10 flex min-w-0 flex-col">
+        <h3 className="text-base font-semibold text-[#121c2a]">{title}</h3>
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#434655]">
+          <span className="min-w-0 truncate">{subtitle}</span>
+          {badge ? (
+            <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${badgeClassName(badge.tone)}`}>
+              {badge.label}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </button>
+  );
 }
 
-function buildPaymentMethodTitle(paymentMethod) {
-  if (!paymentMethod?.hasPaymentMethod) return 'None on file';
-  return `${formatCardBrand(paymentMethod.brand)} ending in ${paymentMethod.last4}`;
+function DetailBadge({ label, tone = 'info' }) {
+  return (
+    <span className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-bold uppercase tracking-wider ${badgeClassName(tone)}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${renderStatusDot(tone)}`} />
+      {label}
+    </span>
+  );
 }
 
-function buildPaymentMethodDetail(paymentMethod) {
-  if (!paymentMethod?.hasPaymentMethod) {
-    return 'Add a payment method in Stripe.';
-  }
-  if (paymentMethod.expMonth && paymentMethod.expYear) {
-    return `Expires ${String(paymentMethod.expMonth).padStart(2, '0')}/${paymentMethod.expYear}`;
-  }
-  return '';
+function ContentCard({ label, children }) {
+  return (
+    <div className="flex flex-col rounded-lg border border-[#c3c6d7]/15 bg-[#f8f9ff] p-6">
+      <h4 className="mb-4 text-xs font-bold uppercase tracking-widest text-[#434655]">{label}</h4>
+      {children}
+    </div>
+  );
 }
 
-function buildInvoiceTitle(latestInvoice) {
-  if (!latestInvoice?.hasInvoice) return 'No invoices yet';
-  const invoiceDate = formatShortDate(latestInvoice.createdAt);
-  const amountLabel = formatMoney(latestInvoice.displayAmountCents);
-  return `Last invoice: ${invoiceDate || 'Recent'} · ${amountLabel} · ${latestInvoice.statusLabel}`;
+function FeatureList({ items = [] }) {
+  return (
+    <ul className="space-y-4">
+      {items.map((item) => (
+        <li key={item} className="flex items-center gap-3 text-sm text-[#121c2a]">
+          <span className="material-symbols-outlined text-[20px] text-[#006323]">check_circle</span>
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function LoadingLayout() {
+  return (
+    <div className="mx-auto w-full max-w-6xl">
+      <div className="flex flex-col gap-8 lg:flex-row">
+        <div className="w-full lg:w-1/3">
+          <div className="space-y-4">
+            {[0, 1, 2, 3].map((index) => (
+              <div key={index} className="h-[92px] animate-pulse rounded-lg border border-[#c3c6d7]/15 bg-white" />
+            ))}
+          </div>
+        </div>
+        <div className="w-full lg:w-2/3">
+          <div className="h-[540px] animate-pulse rounded-xl border border-[#c3c6d7]/10 bg-white shadow-[0px_24px_48px_-12px_rgba(18,28,42,0.04)]" />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function AccountBillingPage() {
   const searchParams = useSearchParams();
   const [billing, setBilling] = useState(null);
   const [viewer, setViewer] = useState({ canManage: false, userRole: null });
+  const [accountSnapshot, setAccountSnapshot] = useState({
+    tenant: null,
+    settings: null,
+    salesReceptionistReadiness: null
+  });
   const [loadState, setLoadState] = useState('loading');
   const [manageBusy, setManageBusy] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [flashStatus, setFlashStatus] = useState(null);
+  const [selectedPanel, setSelectedPanel] = useState(PANEL_KEYS.plan);
 
-  const loadBilling = async () => {
+  const loadPage = async () => {
     setLoadState('loading');
     try {
-      const data = await fetchJson('/api/v1/billing');
-      setBilling(data?.billing || null);
-      setViewer(data?.viewer || { canManage: false, userRole: null });
-      setLoadState(data?.billing ? 'ready' : 'error');
-      if (!data?.billing) {
+      const [billingData, settingsData] = await Promise.all([
+        fetchJson('/api/v1/billing'),
+        fetchJson('/api/v1/settings').catch(() => null)
+      ]);
+      setBilling(billingData?.billing || null);
+      setViewer(billingData?.viewer || { canManage: false, userRole: null });
+      setAccountSnapshot({
+        tenant: settingsData?.tenant || null,
+        settings: settingsData?.settings || null,
+        salesReceptionistReadiness: settingsData?.salesReceptionistReadiness || null
+      });
+      setLoadState(billingData?.billing ? 'ready' : 'error');
+      if (!billingData?.billing) {
         setFlashStatus({ tone: 'bad', message: 'Could not load billing details.' });
       }
     } catch (error) {
@@ -209,7 +344,7 @@ export default function AccountBillingPage() {
   };
 
   useEffect(() => {
-    void loadBilling();
+    void loadPage();
   }, []);
 
   useEffect(() => {
@@ -254,9 +389,9 @@ export default function AccountBillingPage() {
     }
   };
 
-  const handlePrimaryAction = async () => {
-    if (!billing?.summary?.manageAction || !viewer.canManage) return;
-    const actionType = billing.summary.manageAction.type;
+  const handleBillingAction = async () => {
+    const actionType = billing?.summary?.manageAction?.type;
+    if (!actionType || !viewer.canManage) return;
 
     if (actionType === 'reactivate') {
       const confirmed = window.confirm('Restart this account and provision a new Sales Receptionist Number?');
@@ -267,7 +402,7 @@ export default function AccountBillingPage() {
     try {
       if (actionType === 'reactivate') {
         const data = await fetchJson('/api/v1/billing/reactivate', { method: 'POST' });
-        await loadBilling();
+        await loadPage();
         setFlashStatus({ tone: 'ok', message: data?.message || 'Service restarted.' });
         return;
       }
@@ -280,90 +415,314 @@ export default function AccountBillingPage() {
     }
   };
 
+  const navigateTo = (href) => {
+    window.location.href = href;
+  };
+
   const summary = billing?.summary || null;
-  const showStripeActions = summary?.manageAction?.type !== 'reactivate';
-  const nextCharge = summary?.nextCharge || null;
   const pageStatus = flashStatus || summary?.alert || null;
-  const primaryLabel = summary?.manageAction?.type === 'reactivate'
-    ? (manageBusy ? 'Restarting...' : 'Restart service')
-    : (manageBusy ? 'Opening...' : 'Manage billing');
+  const canManage = Boolean(viewer?.canManage) && loadState === 'ready';
+  const billingActionType = summary?.manageAction?.type || null;
+  const billingActionLabel = manageBusy ? getBusyBillingActionLabel(billingActionType) : getBillingActionLabel(billingActionType);
+  const planBaseAmount = Number(billing?.plan?.baseAmountCents || 0);
+  const includedCallCount = Number(billing?.callPricing?.includedCallCount || billing?.plan?.includedCallCount || 0);
+  const totalCallsThisCycle = Number(billing?.callUsage?.includedCallCountUsed || 0) + Number(billing?.callUsage?.overageCallCount || 0);
+  const overageCalls = Number(billing?.callUsage?.overageCallCount || 0);
+  const usagePercent = includedCallCount > 0
+    ? Math.min((totalCallsThisCycle / includedCallCount) * 100, 100)
+    : 0;
+  const cycleResetLabel = formatShortDate(billing?.currentPeriod?.end || billing?.currentPeriodEnd);
+  const paymentMethod = summary?.paymentMethod || { hasPaymentMethod: false };
+  const latestInvoice = summary?.latestInvoice || { hasInvoice: false };
+  const receptionistLabel = accountSnapshot?.salesReceptionistReadiness?.showSalesReceptionistNumber
+    ? (formatPhoneDisplay(accountSnapshot?.salesReceptionistReadiness?.phoneNumber) || accountSnapshot?.salesReceptionistReadiness?.phoneNumber)
+    : (accountSnapshot?.salesReceptionistReadiness?.label || 'Setting things up');
+
+  const panels = [
+    {
+      key: PANEL_KEYS.plan,
+      icon: 'package',
+      title: 'Current Plan',
+      subtitle: billing?.plan?.label || 'Plan',
+      badge: {
+        label: summary?.statusLabel || 'Active',
+        tone: getBillingBadgeTone(billing?.status)
+      }
+    },
+    {
+      key: PANEL_KEYS.payment,
+      icon: 'credit_card',
+      title: 'Payment Methods',
+      subtitle: paymentMethod?.hasPaymentMethod
+        ? `${formatCardBrand(paymentMethod.brand)} ending in ${paymentMethod.last4}`
+        : 'No payment method on file'
+    },
+    {
+      key: PANEL_KEYS.invoices,
+      icon: 'receipt',
+      title: 'Invoice History',
+      subtitle: buildInvoiceCardSubtitle(summary)
+    },
+    {
+      key: PANEL_KEYS.account,
+      icon: 'manage_accounts',
+      title: 'Account Settings',
+      subtitle: 'Profile & Preferences'
+    }
+  ];
+
+  let detailTitle = billing?.plan?.label || 'Billing';
+  let detailDescription = '';
+  let detailMetricValue = '';
+  let detailMetricUnit = '';
+  let detailBadgeLabel = '';
+  let detailBadgeTone = 'info';
+  let detailPrimaryAction = {
+    label: billingActionLabel,
+    onClick: handleBillingAction,
+    disabled: !canManage || manageBusy,
+    icon: billingActionType === 'reactivate' ? 'autorenew' : 'arrow_forward'
+  };
+  let detailSecondaryAction = {
+    label: 'Manage Plan',
+    onClick: handleBillingAction,
+    disabled: !canManage || manageBusy
+  };
+  let detailLeft = null;
+  let detailRight = null;
+
+  if (selectedPanel === PANEL_KEYS.payment) {
+    detailTitle = 'Payment Methods';
+    detailDescription = 'Your default payment method is used for subscription renewals and invoice payments handled in Stripe.';
+    detailMetricValue = formatMaskedCard(paymentMethod?.last4);
+    detailMetricUnit = paymentMethod?.hasPaymentMethod ? 'card' : 'on file';
+    detailBadgeLabel = paymentMethod?.hasPaymentMethod ? 'On File' : 'Needs Attention';
+    detailBadgeTone = getPaymentBadgeTone(paymentMethod?.hasPaymentMethod);
+    detailSecondaryAction = {
+      label: billingActionType === 'reactivate' ? 'Current Plan' : (billingActionType === 'portal' ? 'Update Payment Method' : 'Add Payment Method'),
+      onClick: billingActionType === 'reactivate' ? () => setSelectedPanel(PANEL_KEYS.plan) : handleBillingAction,
+      disabled: billingActionType === 'reactivate' ? false : (!canManage || manageBusy)
+    };
+    detailLeft = (
+      <ContentCard label="Default Payment Method">
+        <div className="font-['Space_Grotesk'] text-2xl font-medium text-[#121c2a]">
+          {paymentMethod?.hasPaymentMethod
+            ? `${formatCardBrand(paymentMethod.brand)} ending in ${paymentMethod.last4}`
+            : 'No payment method on file'}
+        </div>
+        <p className="mt-2 text-sm text-[#434655]">
+          {paymentMethod?.hasPaymentMethod
+            ? `Expires ${String(paymentMethod.expMonth).padStart(2, '0')}/${paymentMethod.expYear}`
+            : 'Add a payment method in Stripe to keep billing current.'}
+        </p>
+      </ContentCard>
+    );
+    detailRight = (
+      <FeatureList
+        items={[
+          'Secure card storage is handled by Stripe',
+          'Use billing management to add or replace cards',
+          'Subscription renewals charge this default method'
+        ]}
+      />
+    );
+  } else if (selectedPanel === PANEL_KEYS.invoices) {
+    detailTitle = 'Invoice History';
+    detailDescription = 'Latest invoice summary and upcoming charge information. Full invoice history and downloads are handled in Stripe.';
+    detailMetricValue = latestInvoice?.hasInvoice
+      ? formatMoney(latestInvoice.displayAmountCents)
+      : (summary?.nextCharge?.amountCents ? formatMoney(summary.nextCharge.amountCents) : 'None');
+    detailMetricUnit = latestInvoice?.hasInvoice ? 'last invoice' : 'scheduled';
+    detailBadgeLabel = latestInvoice?.hasInvoice ? latestInvoice.statusLabel : 'No Invoices';
+    detailBadgeTone = getInvoiceBadgeTone(latestInvoice?.statusLabel);
+    detailSecondaryAction = {
+      label: billingActionType === 'reactivate' ? 'Current Plan' : (billingActionType === 'portal' ? 'View Invoices' : 'Activate Billing'),
+      onClick: billingActionType === 'reactivate' ? () => setSelectedPanel(PANEL_KEYS.plan) : handleBillingAction,
+      disabled: billingActionType === 'reactivate' ? false : (!canManage || manageBusy)
+    };
+    detailLeft = (
+      <ContentCard label="Latest Invoice">
+        <div className="font-['Space_Grotesk'] text-2xl font-medium text-[#121c2a]">
+          {latestInvoice?.hasInvoice ? formatMoney(latestInvoice.displayAmountCents) : 'No invoices yet'}
+        </div>
+        <p className="mt-2 text-sm text-[#434655]">
+          {latestInvoice?.hasInvoice
+            ? `${formatShortDate(latestInvoice.createdAt)} · ${latestInvoice.statusLabel}`
+            : 'Your first invoice will appear here after billing starts.'}
+        </p>
+        <div className="mt-5 space-y-3 text-sm text-[#121c2a]">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[#434655]">Next charge</span>
+            <span className="font-medium">{buildNextChargeLabel(summary?.nextCharge)}</span>
+          </div>
+        </div>
+      </ContentCard>
+    );
+    detailRight = (
+      <FeatureList
+        items={[
+          'Full invoice history and downloads live in Stripe',
+          'Upcoming charges sync back here automatically',
+          'Payment issues appear here after Stripe updates'
+        ]}
+      />
+    );
+  } else if (selectedPanel === PANEL_KEYS.account) {
+    detailTitle = 'Account Settings';
+    detailDescription = 'Profile and workspace details tied to this account and billing profile.';
+    detailMetricValue = accountSnapshot?.tenant?.data_region || 'Default';
+    detailMetricUnit = 'region';
+    detailBadgeLabel = 'Workspace';
+    detailBadgeTone = 'info';
+    detailPrimaryAction = {
+      label: 'Open Settings',
+      onClick: () => navigateTo('/client/account/general'),
+      disabled: false,
+      icon: 'arrow_forward'
+    };
+    detailSecondaryAction = {
+      label: 'System Users',
+      onClick: () => navigateTo('/client/account/users'),
+      disabled: false
+    };
+    detailLeft = (
+      <ContentCard label="Workspace Profile">
+        <div className="space-y-3 text-sm text-[#121c2a]">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[#434655]">Workspace</span>
+            <span className="font-medium">{accountSnapshot?.tenant?.name || 'EveryCall Workspace'}</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[#434655]">Timezone</span>
+            <span className="font-medium">{accountSnapshot?.settings?.timezone || 'America/Los_Angeles'}</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[#434655]">Receptionist Number</span>
+            <span className="font-medium text-right">{receptionistLabel}</span>
+          </div>
+        </div>
+      </ContentCard>
+    );
+    detailRight = (
+      <FeatureList
+        items={[
+          `Data region: ${accountSnapshot?.tenant?.data_region || 'Not set'}`,
+          `Caller ID: ${accountSnapshot?.settings?.caller_id_name || 'Not set'}`,
+          'Open settings to update profile and workspace preferences'
+        ]}
+      />
+    );
+  } else {
+    detailTitle = billing?.plan?.label || 'Current Plan';
+    detailDescription = buildPlanHeroDescription(billing);
+    detailMetricValue = formatMoney(planBaseAmount);
+    detailMetricUnit = intervalUnitLabel(billing?.plan?.billingIntervalLabel);
+    detailBadgeLabel = summary?.statusLabel || 'Active';
+    detailBadgeTone = getBillingBadgeTone(billing?.status);
+    detailSecondaryAction = {
+      label: billingActionType === 'reactivate' ? 'Current Plan' : 'Manage Plan',
+      onClick: billingActionType === 'reactivate' ? () => {} : handleBillingAction,
+      disabled: billingActionType === 'reactivate' ? true : (!canManage || manageBusy)
+    };
+    detailLeft = (
+      <ContentCard label="Current Cycle Usage">
+        <div className="mb-2 flex items-end justify-between">
+          <span className="font-['Space_Grotesk'] text-2xl font-medium text-[#121c2a]">
+            {formatCount(totalCallsThisCycle)}
+          </span>
+          <span className="text-sm text-[#434655]">
+            of {formatCount(includedCallCount)} calls handled
+          </span>
+        </div>
+        <div className="mb-3 h-2 w-full overflow-hidden rounded-full bg-[#d9e3f6]">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-[#004ac6] to-[#2563eb]"
+            style={{ width: `${usagePercent}%` }}
+          />
+        </div>
+        <p className="text-xs text-[#434655]">
+          {cycleResetLabel ? `Resets on ${cycleResetLabel}` : 'Usage resets each billing cycle'}
+        </p>
+        {overageCalls > 0 ? (
+          <p className="mt-3 text-xs font-medium text-[#93000a]">
+            {formatCount(overageCalls)} calls over plan
+          </p>
+        ) : null}
+      </ContentCard>
+    );
+    detailRight = <FeatureList items={buildPlanFeatureItems(billing)} />;
+  }
 
   return (
-    <SectionPage
-      tabs={accountNavItems}
-      title="Billing"
-      subtitle="Manage your subscription and payment details."
-      status={pageStatus}
-      primaryAction={{
-        label: primaryLabel,
-        brand: true,
-        onClick: handlePrimaryAction,
-        disabled: loadState !== 'ready' || manageBusy || !viewer.canManage
-      }}
-    >
-      <div className="mx-auto w-full max-w-[760px]">
-        {loadState !== 'ready' || !billing ? (
-          <div className="rounded-[1.5rem] border border-slate-200 bg-white px-6 py-8 text-sm text-slate-500 sm:px-8">
-            {loadState === 'error' ? 'Billing details are unavailable right now.' : 'Loading billing summary...'}
+    <SectionPage status={pageStatus}>
+      {loadState !== 'ready' || !billing ? (
+        <LoadingLayout />
+      ) : (
+        <div className="mx-auto w-full max-w-6xl">
+          <div className="flex flex-col gap-8 lg:flex-row">
+            <div className="w-full lg:w-1/3">
+              <div className="flex flex-col gap-4">
+                {panels.map((panel) => (
+                  <MasterCard
+                    key={panel.key}
+                    active={selectedPanel === panel.key}
+                    icon={panel.icon}
+                    title={panel.title}
+                    subtitle={panel.subtitle}
+                    badge={panel.badge || null}
+                    onClick={() => setSelectedPanel(panel.key)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="w-full lg:w-2/3">
+              <div className="relative flex flex-col rounded-xl border border-[#c3c6d7]/10 bg-white p-8 shadow-[0px_24px_48px_-12px_rgba(18,28,42,0.04)]">
+                <div className="mb-6 flex flex-col items-start justify-between gap-4 border-b border-[#dee9fc] pb-6 md:flex-row md:items-center">
+                  <div>
+                    <div className="mb-2 flex flex-wrap items-center gap-3">
+                      <h2 className="font-['Space_Grotesk'] text-3xl font-bold tracking-tight text-[#121c2a]">
+                        {detailTitle}
+                      </h2>
+                      <DetailBadge label={detailBadgeLabel} tone={detailBadgeTone} />
+                    </div>
+                    <p className="max-w-xl text-sm text-[#434655]">{detailDescription}</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-['Space_Grotesk'] flex items-end justify-end gap-1 text-4xl font-bold tracking-tight text-[#121c2a]">
+                      <span>{detailMetricValue}</span>
+                      <span className="mb-1 text-base font-normal text-[#434655]">{detailMetricUnit}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+                  {detailLeft}
+                  <div className="flex flex-col justify-center">
+                    {detailRight}
+                  </div>
+                </div>
+
+                <div className="mt-8 flex flex-col justify-end gap-4 border-t border-[#dee9fc] pt-6 sm:flex-row">
+                  <ActionButton
+                    tone="secondary"
+                    label={detailSecondaryAction.label}
+                    onClick={detailSecondaryAction.onClick}
+                    disabled={detailSecondaryAction.disabled}
+                  />
+                  <ActionButton
+                    tone="primary"
+                    label={detailPrimaryAction.label}
+                    icon={detailPrimaryAction.icon}
+                    onClick={detailPrimaryAction.onClick}
+                    disabled={detailPrimaryAction.disabled}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-        ) : (
-          <div className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white divide-y divide-slate-200">
-            <SummarySection
-              label="Next charge"
-              title={buildPrimaryChargeLine(nextCharge)}
-              detail={buildChargeDetail(nextCharge)}
-              action={(
-                <SectionAction
-                  label={detailsOpen ? 'Hide details' : 'View details'}
-                  onClick={() => setDetailsOpen((current) => !current)}
-                  disabled={!Array.isArray(nextCharge?.breakdown) || !nextCharge.breakdown.length}
-                />
-              )}
-            >
-              {detailsOpen ? <ChargeBreakdown items={nextCharge?.breakdown || []} /> : null}
-            </SummarySection>
-
-            <SummarySection
-              label="Plan"
-              title={summary?.plan?.name || billing?.plan?.label || 'Plan'}
-              detail={buildPlanDetail(summary?.plan, billing?.plan)}
-              action={showStripeActions ? (
-                <SectionAction
-                  label="Manage plan"
-                  onClick={handlePrimaryAction}
-                  disabled={!viewer.canManage || manageBusy}
-                />
-              ) : null}
-            />
-
-            <SummarySection
-              label="Payment method"
-              title={buildPaymentMethodTitle(summary?.paymentMethod)}
-              detail={buildPaymentMethodDetail(summary?.paymentMethod)}
-              action={showStripeActions ? (
-                <SectionAction
-                  label="Update payment method"
-                  onClick={handlePrimaryAction}
-                  disabled={!viewer.canManage || manageBusy}
-                />
-              ) : null}
-            />
-
-            <SummarySection
-              label="Invoices"
-              title={buildInvoiceTitle(summary?.latestInvoice)}
-              detail=""
-              action={showStripeActions ? (
-                <SectionAction
-                  label="View invoices"
-                  onClick={handlePrimaryAction}
-                  disabled={!viewer.canManage || manageBusy}
-                />
-              ) : null}
-            />
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </SectionPage>
   );
 }
