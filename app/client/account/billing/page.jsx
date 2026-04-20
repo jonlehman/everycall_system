@@ -3,13 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import SectionPage from '../../_components/SectionPage';
-import { formatPhoneDisplay } from '../../../../lib/phoneDisplay';
+import { accountNavItems } from '../../_components/navigation';
 
 const PANEL_KEYS = {
   plan: 'plan',
   payment: 'payment',
-  invoices: 'invoices',
-  account: 'account'
+  invoices: 'invoices'
 };
 
 function formatMoney(amountCents) {
@@ -300,7 +299,7 @@ function LoadingLayout() {
       <div className="flex flex-col gap-8 lg:flex-row">
         <div className="w-full lg:w-1/3">
           <div className="space-y-4">
-            {[0, 1, 2, 3].map((index) => (
+            {[0, 1, 2].map((index) => (
               <div key={index} className="h-[92px] animate-pulse rounded-lg border border-[#c3c6d7]/15 bg-white" />
             ))}
           </div>
@@ -317,11 +316,6 @@ export default function AccountBillingPage() {
   const searchParams = useSearchParams();
   const [billing, setBilling] = useState(null);
   const [viewer, setViewer] = useState({ canManage: false, userRole: null });
-  const [accountSnapshot, setAccountSnapshot] = useState({
-    tenant: null,
-    settings: null,
-    salesReceptionistReadiness: null
-  });
   const [loadState, setLoadState] = useState('loading');
   const [manageBusy, setManageBusy] = useState(false);
   const [flashStatus, setFlashStatus] = useState(null);
@@ -330,17 +324,9 @@ export default function AccountBillingPage() {
   const loadPage = async () => {
     setLoadState('loading');
     try {
-      const [billingData, settingsData] = await Promise.all([
-        fetchJson('/api/v1/billing'),
-        fetchJson('/api/v1/settings').catch(() => null)
-      ]);
+      const billingData = await fetchJson('/api/v1/billing');
       setBilling(billingData?.billing || null);
       setViewer(billingData?.viewer || { canManage: false, userRole: null });
-      setAccountSnapshot({
-        tenant: settingsData?.tenant || null,
-        settings: settingsData?.settings || null,
-        salesReceptionistReadiness: settingsData?.salesReceptionistReadiness || null
-      });
       setLoadState(billingData?.billing ? 'ready' : 'error');
       if (!billingData?.billing) {
         setFlashStatus({ tone: 'bad', message: 'Could not load billing details.' });
@@ -423,10 +409,6 @@ export default function AccountBillingPage() {
     }
   };
 
-  const navigateTo = (href) => {
-    window.location.href = href;
-  };
-
   const summary = billing?.summary || null;
   const pageStatus = flashStatus || summary?.alert || null;
   const canManage = Boolean(viewer?.canManage) && loadState === 'ready';
@@ -444,9 +426,6 @@ export default function AccountBillingPage() {
   const cycleResetLabel = formatShortDate(billing?.currentPeriod?.end || billing?.currentPeriodEnd);
   const paymentMethod = summary?.paymentMethod || { hasPaymentMethod: false };
   const latestInvoice = summary?.latestInvoice || { hasInvoice: false };
-  const receptionistLabel = accountSnapshot?.salesReceptionistReadiness?.showSalesReceptionistNumber
-    ? (formatPhoneDisplay(accountSnapshot?.salesReceptionistReadiness?.phoneNumber) || accountSnapshot?.salesReceptionistReadiness?.phoneNumber)
-    : (accountSnapshot?.salesReceptionistReadiness?.label || 'Setting things up');
 
   const panels = [
     {
@@ -472,12 +451,6 @@ export default function AccountBillingPage() {
       icon: 'receipt',
       title: 'Invoice History',
       subtitle: buildInvoiceCardSubtitle(summary)
-    },
-    {
-      key: PANEL_KEYS.account,
-      icon: 'manage_accounts',
-      title: 'Account Settings',
-      subtitle: 'Profile & Preferences'
     }
   ];
 
@@ -577,51 +550,6 @@ export default function AccountBillingPage() {
         ]}
       />
     );
-  } else if (selectedPanel === PANEL_KEYS.account) {
-    detailTitle = 'Account Settings';
-    detailDescription = 'Profile and workspace details tied to this account and billing profile.';
-    detailMetricValue = accountSnapshot?.tenant?.data_region || 'Default';
-    detailMetricUnit = 'region';
-    detailBadgeLabel = 'Workspace';
-    detailBadgeTone = 'info';
-    detailPrimaryAction = {
-      label: 'Open Settings',
-      onClick: () => navigateTo('/client/account/general'),
-      disabled: false,
-      icon: 'arrow_forward'
-    };
-    detailSecondaryAction = {
-      label: 'System Users',
-      onClick: () => navigateTo('/client/account/users'),
-      disabled: false
-    };
-    detailLeft = (
-      <ContentCard label="Workspace Profile">
-        <div className="space-y-3 text-sm text-[#121c2a]">
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-[#434655]">Workspace</span>
-            <span className="font-medium">{accountSnapshot?.tenant?.name || 'EveryCall Workspace'}</span>
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-[#434655]">Timezone</span>
-            <span className="font-medium">{accountSnapshot?.settings?.timezone || 'America/Los_Angeles'}</span>
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-[#434655]">Receptionist Number</span>
-            <span className="font-medium text-right">{receptionistLabel}</span>
-          </div>
-        </div>
-      </ContentCard>
-    );
-    detailRight = (
-      <FeatureList
-        items={[
-          `Data region: ${accountSnapshot?.tenant?.data_region || 'Not set'}`,
-          `Caller ID: ${accountSnapshot?.settings?.caller_id_name || 'Not set'}`,
-          'Open settings to update profile and workspace preferences'
-        ]}
-      />
-    );
   } else {
     detailTitle = billing?.plan?.label || 'Current Plan';
     detailDescription = pendingPlanLabel
@@ -678,7 +606,7 @@ export default function AccountBillingPage() {
   }
 
   return (
-    <SectionPage status={pageStatus}>
+    <SectionPage tabs={accountNavItems} status={pageStatus}>
       {loadState !== 'ready' || !billing ? (
         <LoadingLayout />
       ) : (
