@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
-import { buildPlanDrafts, parseMoneyInput, toneClass } from '../_components/systemShared';
+import { buildPlanDrafts, toneClass } from '../_components/systemShared';
 
 function emptyConfig() {
   return {
@@ -19,23 +19,23 @@ export default function AdminSystemBillingPage() {
   const [config, setConfig] = useState(emptyConfig());
   const [defaultTrialDays, setDefaultTrialDays] = useState('30');
   const [billingPlans, setBillingPlans] = useState([]);
-  const [status, setStatus] = useState({ message: 'Loading billing defaults...', tone: 'warn' });
+  const [status, setStatus] = useState({ message: 'Loading billing settings...', tone: 'warn' });
 
   const loadConfig = async () => {
-    setStatus({ message: 'Loading billing defaults...', tone: 'warn' });
+    setStatus({ message: 'Loading billing settings...', tone: 'warn' });
     try {
       const resp = await fetch('/api/v1/system/config');
       const data = resp.ok ? await resp.json() : null;
       if (!data?.config) {
-        setStatus({ message: 'Failed to load billing defaults.', tone: 'bad' });
+        setStatus({ message: 'Failed to load billing settings.', tone: 'bad' });
         return;
       }
       setConfig(data.config);
       setDefaultTrialDays(String(data.config.default_trial_days || 30));
       setBillingPlans(buildPlanDrafts(data.config.billing_plans_json || []));
-      setStatus({ message: 'Billing defaults loaded.', tone: 'ok' });
+      setStatus({ message: 'Billing settings loaded.', tone: 'ok' });
     } catch {
-      setStatus({ message: 'Failed to load billing defaults.', tone: 'bad' });
+      setStatus({ message: 'Failed to load billing settings.', tone: 'bad' });
     }
   };
 
@@ -56,30 +56,14 @@ export default function AdminSystemBillingPage() {
       return;
     }
 
-    const normalizedPlans = [];
-    for (const plan of billingPlans) {
-      const monthlyAmountCents = parseMoneyInput(plan.monthlyAmount);
-      const annualAmountCents = parseMoneyInput(plan.annualAmount);
-      const includedCallCount = Number(plan.includedCalls || 0);
-      const callOverageRateCents = parseMoneyInput(plan.callOverageRate, { allowZero: true });
-      if (!plan?.code || !plan?.label?.trim() || monthlyAmountCents === null || annualAmountCents === null || callOverageRateCents === null || !Number.isInteger(includedCallCount) || includedCallCount < 0) {
-        setStatus({ message: 'Each billing tier needs a label, monthly amount, annual amount, included calls, and overage per call.', tone: 'bad' });
-        return;
-      }
-      normalizedPlans.push({
+    const normalizedPlans = billingPlans.map((plan) => ({
         code: plan.code,
-        label: plan.label.trim(),
-        monthlyAmountCents,
-        annualAmountCents,
-        includedCallCount,
-        callOverageRateCents,
         stripeProductId: String(plan.stripeProductId || '').trim(),
         stripePriceId: String(plan.stripePriceId || '').trim(),
         stripeAnnualPriceId: String(plan.stripeAnnualPriceId || '').trim()
-      });
-    }
+      }));
 
-    setStatus({ message: 'Saving billing defaults...', tone: 'warn' });
+    setStatus({ message: 'Saving Stripe billing bindings...', tone: 'warn' });
     try {
       const resp = await fetch('/api/v1/system/config', {
         method: 'POST',
@@ -98,7 +82,7 @@ export default function AdminSystemBillingPage() {
         return;
       }
       await loadConfig();
-      setStatus({ message: 'Billing defaults saved.', tone: 'ok' });
+      setStatus({ message: 'Stripe billing bindings saved.', tone: 'ok' });
     } catch {
       setStatus({ message: 'Save failed.', tone: 'bad' });
     }
@@ -109,13 +93,17 @@ export default function AdminSystemBillingPage() {
       <div>
         <h2 className="m-0 text-xl font-semibold text-slate-900">Billing</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Standard trial length and plan pricing defaults for new tenants and plan resets.
+          Trial length and Stripe catalog bindings for the standard plans defined in code.
         </p>
       </div>
 
       <div className={toneClass(status.tone)}>{status.message}</div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          Standard plan pricing, included call counts, and overage rates are code-owned. Change those in the app code first, then update the website separately.
+        </div>
+
         <div className="max-w-xs">
           <label className="block">Global Free Trial Days</label>
           <input
@@ -131,37 +119,37 @@ export default function AdminSystemBillingPage() {
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
           {billingPlans.map((plan, index) => (
             <div key={plan.code || index} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-sm font-medium text-slate-700">{plan.code || `Plan ${index + 1}`}</div>
+              <div className="text-sm font-medium text-slate-700">{plan.label || plan.code || `Plan ${index + 1}`}</div>
               <div className="mt-3 grid gap-3">
                 <div>
                   <label className="block">Label</label>
                   <input
-                    className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="mt-2 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600"
                     value={plan.label}
-                    onChange={(event) => updateBillingPlanField(index, 'label', event.target.value)}
+                    readOnly
                   />
                 </div>
                 <div>
                   <label className="block">Monthly Amount</label>
-                  <div className="mt-2 flex items-center rounded-lg border border-slate-300 bg-white px-3">
+                  <div className="mt-2 flex items-center rounded-lg border border-slate-300 bg-slate-100 px-3">
                     <span className="text-sm text-slate-500">$</span>
                     <input
                       inputMode="decimal"
-                      className="w-full border-0 bg-transparent px-2 py-2 text-sm focus:outline-none"
+                      className="w-full border-0 bg-transparent px-2 py-2 text-sm text-slate-600 focus:outline-none"
                       value={plan.monthlyAmount}
-                      onChange={(event) => updateBillingPlanField(index, 'monthlyAmount', event.target.value)}
+                      readOnly
                     />
                   </div>
                 </div>
                 <div>
                   <label className="block">Annual Amount</label>
-                  <div className="mt-2 flex items-center rounded-lg border border-slate-300 bg-white px-3">
+                  <div className="mt-2 flex items-center rounded-lg border border-slate-300 bg-slate-100 px-3">
                     <span className="text-sm text-slate-500">$</span>
                     <input
                       inputMode="decimal"
-                      className="w-full border-0 bg-transparent px-2 py-2 text-sm focus:outline-none"
+                      className="w-full border-0 bg-transparent px-2 py-2 text-sm text-slate-600 focus:outline-none"
                       value={plan.annualAmount}
-                      onChange={(event) => updateBillingPlanField(index, 'annualAmount', event.target.value)}
+                      readOnly
                     />
                   </div>
                 </div>
@@ -169,20 +157,20 @@ export default function AdminSystemBillingPage() {
                   <label className="block">Included Calls</label>
                   <input
                     inputMode="numeric"
-                    className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="mt-2 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600"
                     value={plan.includedCalls}
-                    onChange={(event) => updateBillingPlanField(index, 'includedCalls', event.target.value)}
+                    readOnly
                   />
                 </div>
                 <div>
                   <label className="block">Overage Per Call</label>
-                  <div className="mt-2 flex items-center rounded-lg border border-slate-300 bg-white px-3">
+                  <div className="mt-2 flex items-center rounded-lg border border-slate-300 bg-slate-100 px-3">
                     <span className="text-sm text-slate-500">$</span>
                     <input
                       inputMode="decimal"
-                      className="w-full border-0 bg-transparent px-2 py-2 text-sm focus:outline-none"
+                      className="w-full border-0 bg-transparent px-2 py-2 text-sm text-slate-600 focus:outline-none"
                       value={plan.callOverageRate}
-                      onChange={(event) => updateBillingPlanField(index, 'callOverageRate', event.target.value)}
+                      readOnly
                     />
                   </div>
                 </div>
@@ -219,7 +207,7 @@ export default function AdminSystemBillingPage() {
         </div>
 
         <div className="mt-4 flex items-center gap-2">
-          <Button onClick={saveConfig}>Save Billing Defaults</Button>
+          <Button onClick={saveConfig}>Save Stripe Bindings</Button>
         </div>
       </div>
     </section>

@@ -735,6 +735,9 @@ export async function ensureTables(pool) {
       call_overage_rate_override_cents INTEGER,
       price_override_reason TEXT,
       price_override_cycles_remaining INTEGER,
+      pending_plan_code TEXT,
+      pending_billing_interval TEXT,
+      pending_plan_effective_at TIMESTAMPTZ,
       current_period_start TIMESTAMPTZ,
       current_period_end TIMESTAMPTZ,
       cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
@@ -763,6 +766,9 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS call_overage_rate_override_cents INTEGER;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS price_override_reason TEXT;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS price_override_cycles_remaining INTEGER;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS pending_plan_code TEXT;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS pending_billing_interval TEXT;`);
+  await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS pending_plan_effective_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS current_period_start TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE tenant_billing_accounts ADD COLUMN IF NOT EXISTS cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE;`);

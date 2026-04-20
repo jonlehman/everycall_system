@@ -17,8 +17,27 @@ export function getStripe() {
   return stripeClient;
 }
 
+function splitWebhookSecrets(value) {
+  return String(value || "")
+    .split(/[\n,]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+export function getStripeWebhookSecrets() {
+  const secrets = [
+    ...splitWebhookSecrets(process.env.STRIPE_WEBHOOK_SECRET),
+    ...splitWebhookSecrets(process.env.STRIPE_WEBHOOK_SECRET_PREVIOUS)
+  ];
+  const uniqueSecrets = [...new Set(secrets)];
+  if (!uniqueSecrets.length) {
+    throw new Error("STRIPE_WEBHOOK_SECRET_missing");
+  }
+  return uniqueSecrets;
+}
+
 export function getStripeWebhookSecret() {
-  return getRequiredEnv("STRIPE_WEBHOOK_SECRET");
+  return getStripeWebhookSecrets()[0];
 }
 
 export function getStripeBillingPortalConfigurationId() {
@@ -114,6 +133,12 @@ export async function retrieveSubscription(subscriptionId, options = {}) {
   if (!subscriptionId) return null;
   const stripe = getStripe();
   return stripe.subscriptions.retrieve(subscriptionId, options);
+}
+
+export async function retrieveSubscriptionSchedule(scheduleId, options = {}) {
+  if (!scheduleId) return null;
+  const stripe = getStripe();
+  return stripe.subscriptionSchedules.retrieve(scheduleId, options);
 }
 
 export async function retrieveInvoice(invoiceId, options = {}) {
@@ -281,6 +306,21 @@ export async function reactivateSubscription(subscriptionId) {
   });
 }
 
+export async function updateSubscriptionTrialEnd(subscriptionId, trialEnd, { prorationBehavior = "none" } = {}) {
+  if (!subscriptionId) {
+    throw new Error("subscription_id_required");
+  }
+  const timestamp = Math.floor(new Date(trialEnd).getTime() / 1000);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    throw new Error("invalid_trial_end");
+  }
+  const stripe = getStripe();
+  return stripe.subscriptions.update(subscriptionId, {
+    trial_end: timestamp,
+    proration_behavior: prorationBehavior
+  });
+}
+
 export async function updateSubscriptionPrice({
   subscriptionId,
   subscriptionItemId,
@@ -310,6 +350,7 @@ export async function updateSubscriptionPrice({
             })
           }
     ],
+    ...(Object.keys(metadata || {}).length ? { metadata } : {}),
     proration_behavior: "none"
   });
 }
@@ -342,5 +383,13 @@ export async function createInvoiceItem({
 
 export function constructWebhookEvent(rawBody, signature) {
   const stripe = getStripe();
-  return stripe.webhooks.constructEvent(rawBody, signature, getStripeWebhookSecret());
+  let lastError = null;
+  for (const secret of getStripeWebhookSecrets()) {
+    try {
+      return stripe.webhooks.constructEvent(rawBody, signature, secret);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("stripe_webhook_verification_failed");
 }

@@ -186,6 +186,14 @@ function buildNextChargeLabel(nextCharge) {
   return 'No charge scheduled';
 }
 
+function buildPendingPlanLabel(pendingPlan) {
+  if (!pendingPlan?.label) return null;
+  const effectiveDate = formatShortDate(pendingPlan.effectiveAt);
+  return effectiveDate
+    ? `${pendingPlan.label} starts ${effectiveDate}`
+    : `${pendingPlan.label} starts next renewal`;
+}
+
 function ActionButton({
   tone = 'secondary',
   label,
@@ -428,6 +436,8 @@ export default function AccountBillingPage() {
   const includedCallCount = Number(billing?.callPricing?.includedCallCount || billing?.plan?.includedCallCount || 0);
   const totalCallsThisCycle = Number(billing?.callUsage?.includedCallCountUsed || 0) + Number(billing?.callUsage?.overageCallCount || 0);
   const overageCalls = Number(billing?.callUsage?.overageCallCount || 0);
+  const pendingPlan = billing?.pendingPlan || summary?.plan?.pendingPlan || null;
+  const pendingPlanLabel = buildPendingPlanLabel(pendingPlan);
   const usagePercent = includedCallCount > 0
     ? Math.min((totalCallsThisCycle / includedCallCount) * 100, 100)
     : 0;
@@ -614,7 +624,9 @@ export default function AccountBillingPage() {
     );
   } else {
     detailTitle = billing?.plan?.label || 'Current Plan';
-    detailDescription = buildPlanHeroDescription(billing);
+    detailDescription = pendingPlanLabel
+      ? `${buildPlanHeroDescription(billing)} ${pendingPlanLabel}.`
+      : buildPlanHeroDescription(billing);
     detailMetricValue = formatMoney(planBaseAmount);
     detailMetricUnit = intervalUnitLabel(billing?.plan?.billingIntervalLabel);
     detailBadgeLabel = summary?.statusLabel || 'Active';
@@ -648,9 +660,21 @@ export default function AccountBillingPage() {
             {formatCount(overageCalls)} calls over plan
           </p>
         ) : null}
+        {pendingPlanLabel ? (
+          <p className="mt-3 text-xs font-medium text-[#004ac6]">
+            Scheduled change: {pendingPlanLabel}
+          </p>
+        ) : null}
       </ContentCard>
     );
-    detailRight = <FeatureList items={buildPlanFeatureItems(billing)} />;
+    detailRight = (
+      <FeatureList
+        items={[
+          ...(pendingPlanLabel ? [`Scheduled change: ${pendingPlanLabel}`] : []),
+          ...buildPlanFeatureItems(billing)
+        ]}
+      />
+    );
   }
 
   return (

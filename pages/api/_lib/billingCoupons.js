@@ -4,6 +4,7 @@ import {
   getSystemBillingConfig,
   getTenantBillingState,
   recordBillingLifecycleEvent,
+  resolveBillingPlanFromStripeSubscription,
   resolveEffectiveMonthlyAmount,
   syncTenantStripeSubscription
 } from "./billing.js";
@@ -1041,18 +1042,36 @@ export async function syncTenantCouponSubscriptionPricing(pool, tenantKey) {
 
   const billingConfig = await getSystemBillingConfig(pool);
   const plan = buildPlanDisplay(billingState, billingConfig);
+  const resolvedSubscriptionPlan = resolveBillingPlanFromStripeSubscription(billingConfig.plans, subscription);
+  const pendingPlanCode = normalizeText(billingState?.pending_plan_code).toLowerCase();
+  const targetPlanCode = normalizeText(
+    resolvedSubscriptionPlan.plan?.code
+      || plan.basePlanCode
+  ).toLowerCase();
+  const shouldUseSubscriptionPlanPricing = Boolean(
+    resolvedSubscriptionPlan.source === "price"
+      || (resolvedSubscriptionPlan.plan && pendingPlanCode && resolvedSubscriptionPlan.plan.code === pendingPlanCode)
+  );
   const activeCoupon = await getTenantActiveCouponRedemption(pool, tenantKey);
   const shouldDiscount = shouldApplyMonthlyDiscountToNextCycle(activeCoupon, billingState);
-  const baseMonthlyAmountCents = resolveEffectiveMonthlyAmount(billingState);
+  const selectedPlan = billingConfig.plans.find((item) => normalizeText(item.code).toLowerCase() === targetPlanCode) || null;
+  const baseMonthlyAmountCents = shouldUseSubscriptionPlanPricing && selectedPlan
+    ? Number(selectedPlan.monthlyAmountCents || 0)
+    : resolveEffectiveMonthlyAmount(billingState);
   const targetMonthlyAmountCents = shouldDiscount
     ? computeDiscountedAmountCents(baseMonthlyAmountCents, activeCoupon.monthlyDiscountPercent)
     : baseMonthlyAmountCents;
-  const selectedPlan = billingConfig.plans.find((item) => normalizeText(item.code).toLowerCase() === normalizeText(plan.basePlanCode).toLowerCase()) || null;
-  const standardPriceId = !plan.isCustom ? (selectedPlan?.stripePriceId || null) : null;
-  const standardProductId = !plan.isCustom ? (selectedPlan?.stripeProductId || null) : null;
+  const targetIsCustom = Boolean(plan.isCustom && !shouldUseSubscriptionPlanPricing);
+  const standardPriceId = !targetIsCustom ? (selectedPlan?.stripePriceId || null) : null;
+  const standardProductId = !targetIsCustom ? (selectedPlan?.stripeProductId || null) : null;
   const currentUnitAmount = Number(subscriptionItem.price?.unit_amount || 0);
   const currentPriceId = normalizeOptionalText(subscriptionItem.price?.id);
-  const shouldUseCatalogPrice = !shouldDiscount && !plan.isCustom && standardPriceId;
+  const shouldUseCatalogPrice = Boolean(
+    !shouldDiscount
+      && !targetIsCustom
+      && standardPriceId
+      && (currentPriceId === standardPriceId || shouldUseSubscriptionPlanPricing)
+  );
 
   if (shouldUseCatalogPrice && currentPriceId === standardPriceId) {
     return billingState;
@@ -1070,12 +1089,12 @@ export async function syncTenantCouponSubscriptionPricing(pool, tenantKey) {
       ? standardProductId
       : (standardProductId || billingState.stripe_product_id || subscriptionItem.price?.product || null),
     productName: `${billingState.name || "EveryCall"} Subscription`,
-    metadata: {
-      tenant_key: tenantKey,
-      plan_code: plan.basePlanCode,
-      billing_coupon_code: activeCoupon?.code || "",
-      billing_coupon_next_cycle_discount_percent: shouldDiscount ? String(activeCoupon.monthlyDiscountPercent) : "0"
-    }
+      metadata: {
+        tenant_key: tenantKey,
+        plan_code: targetPlanCode || plan.basePlanCode,
+        billing_coupon_code: activeCoupon?.code || "",
+        billing_coupon_next_cycle_discount_percent: shouldDiscount ? String(activeCoupon.monthlyDiscountPercent) : "0"
+      }
   });
   billingState = await syncTenantStripeSubscription(pool, tenantKey, billingState, updatedSubscription, "billing.coupon.subscription_sync");
   return billingState;

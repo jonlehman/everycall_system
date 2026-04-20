@@ -1,6 +1,7 @@
 import { ensureTables, getPool } from "../../../../_lib/db.js";
 import { getAdminActor, requireSession } from "../../../../_lib/auth.js";
 import {
+  buildPendingPlanDisplay,
   buildAdminPricingState,
   buildPlanDisplay,
   buildPricingOverride,
@@ -42,6 +43,7 @@ export default async function handler(req, res) {
     }
     const billingConfig = await getSystemBillingConfig(pool);
     const plan = buildPlanDisplay(row, billingConfig);
+    const pendingPlan = buildPendingPlanDisplay(row, billingConfig);
     const pricing = buildAdminPricingState(row, billingConfig);
     const currentBillingPeriod = await syncCurrentBillingPeriod(pool, tenantKey).catch(() => null);
     const activeCoupon = await getTenantActiveCouponRedemption(pool, tenantKey).catch(() => null);
@@ -105,6 +107,7 @@ export default async function handler(req, res) {
         canceledAt: row.canceled_at,
         stripeSubscriptionDisplayId: pricing.subscriptionDisplayId,
         plan,
+        pendingPlan,
         pricing,
         override: buildPricingOverride(row),
         activeCoupon,

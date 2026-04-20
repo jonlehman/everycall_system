@@ -57,6 +57,8 @@ const FIELD_SECTIONS = [
 ];
 
 const EDITABLE_FIELDS = FIELD_SECTIONS.flatMap((section) => section.fields);
+const ADVANCED_VISIBLE_SECTION_IDS = new Set(['core', 'forwarding']);
+const ADVANCED_FIELD_SECTIONS = FIELD_SECTIONS.filter((section) => ADVANCED_VISIBLE_SECTION_IDS.has(section.id));
 const PRIMARY_USER_FIELDS = ['name', 'email', 'phoneNumber'];
 const GUARDRAIL_TYPE_OPTIONS = ['dangerous_question', 'escalation', 'compliance'];
 const GUARDRAIL_MODE_OPTIONS = ['clarify', 'handoff', 'emergency_redirect'];
@@ -461,6 +463,8 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
   const [billingReview, setBillingReview] = useState({ billing: null, pricingCatalog: { plans: [], defaultTrialDays: null } });
   const [pricingDraft, setPricingDraft] = useState(buildPricingDraft(null, null));
   const [pricingSaving, setPricingSaving] = useState(false);
+  const [demoExtensionDays, setDemoExtensionDays] = useState('');
+  const [demoExtensionBusy, setDemoExtensionBusy] = useState(false);
   const [billingCallActionBusy, setBillingCallActionBusy] = useState('');
   const [billingCouponCode, setBillingCouponCode] = useState('');
   const [billingCouponBusy, setBillingCouponBusy] = useState(false);
@@ -544,6 +548,7 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
     setOverrideDraft(buildOverrideDraft(null));
     setWebhookDraft(buildWebhookDraft(null));
     setConnectorDraft(buildConnectorDraft(selectedConnectorType, null));
+    setDemoExtensionDays('');
   }, [tenantKey]);
 
   const loadTenant = async () => {
@@ -575,6 +580,7 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
       setActiveBuild(buildData?.activeBuild || null);
       setBillingReview(nextBillingReview);
       setPricingDraft(buildPricingDraft(nextBillingReview.billing, nextBillingReview.pricingCatalog));
+      setDemoExtensionDays((current) => current || String(nextBillingReview.pricingCatalog?.defaultTrialDays || 14));
       setNotificationReview({
         channelHealth: Array.isArray(billingData?.channelHealth) ? billingData.channelHealth : [],
         smsFailovers: Array.isArray(billingData?.smsFailovers) ? billingData.smsFailovers : []
@@ -775,6 +781,31 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
       setStatus(error?.message || 'Tenant pricing update failed.');
     } finally {
       setPricingSaving(false);
+    }
+  };
+
+  const extendDemo = async () => {
+    const additionalDays = Number(demoExtensionDays || 0);
+    if (!Number.isInteger(additionalDays) || additionalDays <= 0) {
+      setStatus('Enter a whole number of demo days to add.');
+      return;
+    }
+
+    setDemoExtensionBusy(true);
+    setStatus('Extending demo...');
+    try {
+      const data = await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/billing/extend-demo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ additionalDays })
+      });
+      await loadTenant();
+      const phoneNote = data?.provisionedPhoneNumber ? ` New number: ${formatPhoneDisplay(data.provisionedPhoneNumber)}.` : '';
+      setStatus(`${data?.message || 'Demo updated.'}${phoneNote}`);
+    } catch (error) {
+      setStatus(error?.message || 'Could not extend demo.');
+    } finally {
+      setDemoExtensionBusy(false);
     }
   };
 
@@ -1223,6 +1254,9 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
   const pricingSubscriptionDisplayId = billingReview.billing?.stripeSubscriptionDisplayId
     || pricingState?.subscriptionDisplayId
     || '—';
+  const demoBillingStatus = String(billingReview.billing?.status || tenant?.billing_status || '').trim().toLowerCase();
+  const canExtendDemo = ['trialing', 'trial_expired', 'deactivated'].includes(demoBillingStatus);
+  const extendDemoWillProvisionNumber = demoBillingStatus === 'deactivated' && !tenant?.telnyx_voice_number;
   const previewPlanner = preview?.planner || null;
   const previewAnswerPacket = preview?.answerPacket || null;
   const previewRuntimeBundle = preview?.runtimeBundle || null;
@@ -1397,6 +1431,77 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
         <div className="grid gap-4">
           {showBilling ? (
           <>
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="m-0 text-lg font-semibold">Extend Demo</h2>
+                <div className="mt-1 text-sm text-slate-500">
+                  Add demo days to an active trial, or reopen an expired demo from today.
+                </div>
+              </div>
+              <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                Status: {billingReview.billing?.status || tenant?.billing_status || 'unknown'}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <RuntimeStat label="Current Trial End" value={formatDateTimeDisplay(billingReview.billing?.trialEnd || tenant?.trial_end)} />
+              <RuntimeStat label="Days Remaining" value={billingReview.billing?.trialDaysRemaining ?? '-'} />
+              <RuntimeStat label="App Access" value={billingReview.billing?.appAccessStatus || tenant?.app_access_status || '-'} />
+              <RuntimeStat label="Voice Number" value={formatPhoneDisplay(tenant?.telnyx_voice_number) || 'Unassigned'} />
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.8fr)]">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                <div className="font-medium text-slate-900">How it works</div>
+                <div className="mt-2">
+                  If the tenant is still in trial, the new days are added to the current trial end. If the demo already expired, the trial reopens for the number of days entered starting now.
+                </div>
+                <div className="mt-2">
+                  If a Stripe subscription is already in `trialing`, Stripe’s trial end is updated too so billing stays aligned.
+                </div>
+                {extendDemoWillProvisionNumber ? (
+                  <div className="mt-2 font-medium text-amber-800">
+                    This tenant is deactivated and has no Sales Receptionist Number assigned. Extending the demo will provision a replacement number.
+                  </div>
+                ) : null}
+                {!canExtendDemo ? (
+                  <div className="mt-2 font-medium text-rose-700">
+                    Demo extension is only available while the tenant is `trialing`, `trial_expired`, or `deactivated`.
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="grid gap-3">
+                  <Field label="Additional Demo Days" hint="Enter how many days to add. For expired demos, this becomes the new trial length from today.">
+                    <TextInput
+                      inputMode="numeric"
+                      value={demoExtensionDays}
+                      onChange={(event) => setDemoExtensionDays(event.target.value)}
+                      placeholder={String(billingReview.pricingCatalog?.defaultTrialDays || 14)}
+                    />
+                  </Field>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={extendDemo} disabled={demoExtensionBusy || !canExtendDemo}>
+                      {demoExtensionBusy ? 'Extending...' : 'Extend Demo'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setDemoExtensionDays(String(billingReview.pricingCatalog?.defaultTrialDays || 14));
+                        setStatus('Reset demo extension days.');
+                      }}
+                      disabled={demoExtensionBusy}
+                    >
+                      Reset
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -2545,7 +2650,7 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
           <div>
             <h2 className="m-0 text-lg font-semibold">Advanced Tenant Record</h2>
             <div className="text-sm text-slate-500">
-              Lower-level fields for billing, provisioning, lifecycle, and other tenant metadata stored directly on the <code>tenants</code> table.
+              Lower-level fields for core tenant metadata and forwarding state stored directly on the <code>tenants</code> table.
             </div>
             <div className="mt-1 text-xs text-slate-500">
               Created {formatDateTimeDisplay(tenant?.created_at)} · Updated {formatDateTimeDisplay(tenant?.updated_at)}
@@ -2557,7 +2662,11 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
         </div>
 
         <div className="mt-4 grid gap-4">
-          {FIELD_SECTIONS.map((section) => (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            Billing lifecycle fields are intentionally hidden here. Use the Billing tab for pricing, coupons, current-period adjustments, and the dedicated `Extend Demo` workflow.
+          </div>
+
+          {ADVANCED_FIELD_SECTIONS.map((section) => (
             <section key={section.id} className="rounded-xl border border-slate-200 p-4">
               <div className="mb-3">
                 <h3 className="m-0 text-base font-semibold text-slate-900">{section.title}</h3>

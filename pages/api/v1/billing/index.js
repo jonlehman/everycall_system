@@ -1,6 +1,7 @@
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import {
+  buildPendingPlanDisplay,
   buildPricingOverride,
   buildPlanDisplay,
   computeTrialDaysRemaining,
@@ -246,12 +247,13 @@ function buildChargeBreakdown(callInvoiceEstimate, callAdjustments) {
   return rows;
 }
 
-function buildPlanSummary(row, planDisplay) {
+function buildPlanSummary(row, planDisplay, pendingPlan = null) {
   return {
     name: planDisplay?.label || "Plan",
     allowanceSummary: buildUsageAllowanceSummary(planDisplay),
     billingIntervalLabel: planDisplay?.billingIntervalLabel || null,
-    endsAt: row?.cancel_at_period_end ? (row?.current_period_end || null) : null
+    endsAt: row?.cancel_at_period_end ? (row?.current_period_end || null) : null,
+    pendingPlan
   };
 }
 
@@ -547,6 +549,7 @@ export default async function handler(req, res) {
       netAdjustmentAmountCents: 0,
       items: []
     };
+    const pendingPlan = buildPendingPlanDisplay(row, billingConfig);
     const billingSummary = {
       statusLabel: buildBillingStatusLabel(row.billing_status, {
         cancelAtPeriodEnd: Boolean(row.cancel_at_period_end)
@@ -560,7 +563,7 @@ export default async function handler(req, res) {
         callAdjustments,
         latestInvoiceSummary
       }),
-      plan: buildPlanSummary(row, planDisplay),
+      plan: buildPlanSummary(row, planDisplay, pendingPlan),
       paymentMethod: paymentMethodSummary
         ? {
             hasPaymentMethod: true,
@@ -601,6 +604,7 @@ export default async function handler(req, res) {
         cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
         canceledAt: row.canceled_at,
         plan: planDisplay,
+        pendingPlan,
         currentPeriod: {
           label: callBilling?.currentPeriod?.label || null,
           start: callBilling?.currentPeriod?.start || row.current_period_start || null,

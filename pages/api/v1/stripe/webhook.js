@@ -1,7 +1,7 @@
 import { readRawBody } from "../../_lib/telnyx.js";
-import { constructWebhookEvent, retrieveSubscription } from "../../_lib/stripe.js";
+import { constructWebhookEvent, retrieveSubscription, retrieveSubscriptionSchedule } from "../../_lib/stripe.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { syncTenantStripeSubscription } from "../../_lib/billing.js";
+import { syncTenantStripeSubscription, syncTenantStripeSubscriptionSchedule } from "../../_lib/billing.js";
 import { activatePendingCouponDiscountWindow } from "../../_lib/billingCoupons.js";
 
 export const config = {
@@ -13,8 +13,19 @@ export const config = {
 async function getTenantBillingRow(pool, { tenantKey, customerId, subscriptionId }) {
   if (tenantKey) {
     const byTenant = await pool.query(
-      `SELECT t.tenant_key, t.billing_status, t.service_access_status, t.app_access_status
+      `SELECT
+         t.tenant_key,
+         t.plan_code,
+         t.billing_status,
+         t.service_access_status,
+         t.app_access_status,
+         t.billing_lock_reason,
+         b.billing_interval,
+         b.pending_plan_code,
+         b.current_period_start,
+         b.current_period_end
        FROM tenants t
+       LEFT JOIN tenant_billing_accounts b ON b.tenant_key = t.tenant_key
        WHERE t.tenant_key = $1
        LIMIT 1`,
       [tenantKey]
@@ -24,7 +35,17 @@ async function getTenantBillingRow(pool, { tenantKey, customerId, subscriptionId
 
   if (subscriptionId) {
     const bySub = await pool.query(
-      `SELECT t.tenant_key, t.billing_status, t.service_access_status, t.app_access_status
+      `SELECT
+         t.tenant_key,
+         t.plan_code,
+         t.billing_status,
+         t.service_access_status,
+         t.app_access_status,
+         t.billing_lock_reason,
+         b.billing_interval,
+         b.pending_plan_code,
+         b.current_period_start,
+         b.current_period_end
        FROM tenant_billing_accounts b
        JOIN tenants t ON t.tenant_key = b.tenant_key
        WHERE b.stripe_subscription_id = $1
@@ -36,7 +57,17 @@ async function getTenantBillingRow(pool, { tenantKey, customerId, subscriptionId
 
   if (customerId) {
     const byCustomer = await pool.query(
-      `SELECT t.tenant_key, t.billing_status, t.service_access_status, t.app_access_status
+      `SELECT
+         t.tenant_key,
+         t.plan_code,
+         t.billing_status,
+         t.service_access_status,
+         t.app_access_status,
+         t.billing_lock_reason,
+         b.billing_interval,
+         b.pending_plan_code,
+         b.current_period_start,
+         b.current_period_end
        FROM tenant_billing_accounts b
        JOIN tenants t ON t.tenant_key = b.tenant_key
        WHERE b.stripe_customer_id = $1
@@ -139,16 +170,42 @@ export default async function handler(req, res) {
       event.type === "customer.subscription.updated" ||
       event.type === "customer.subscription.deleted"
     ) {
+      const canonicalSubscription = object.id
+        ? await retrieveSubscription(String(object.id)).catch(() => object)
+        : object;
       const tenantRow = await getTenantBillingRow(pool, {
-        tenantKey: metadataTenantKey,
-        customerId: object.customer ? String(object.customer) : null,
-        subscriptionId: object.id || null
+        tenantKey: metadataTenantKey || String(canonicalSubscription.metadata?.tenant_key || "").trim() || null,
+        customerId: canonicalSubscription.customer ? String(canonicalSubscription.customer) : null,
+        subscriptionId: canonicalSubscription.id || null
       });
       if (tenantRow) {
-        await syncTenantStripeSubscription(pool, tenantRow.tenant_key, tenantRow, object, event.type);
-        if (String(object?.status || "").trim().toLowerCase() !== "trialing") {
-          await activatePendingCouponDiscountWindow(pool, tenantRow.tenant_key, { subscription: object }).catch(() => null);
+        await syncTenantStripeSubscription(pool, tenantRow.tenant_key, tenantRow, canonicalSubscription, event.type);
+        if (String(canonicalSubscription?.status || "").trim().toLowerCase() !== "trialing") {
+          await activatePendingCouponDiscountWindow(pool, tenantRow.tenant_key, { subscription: canonicalSubscription }).catch(() => null);
         }
+      }
+    }
+
+    if (
+      event.type === "subscription_schedule.created" ||
+      event.type === "subscription_schedule.updated" ||
+      event.type === "subscription_schedule.released" ||
+      event.type === "subscription_schedule.completed" ||
+      event.type === "subscription_schedule.canceled"
+    ) {
+      const canonicalSchedule = object.id
+        ? await retrieveSubscriptionSchedule(String(object.id)).catch(() => object)
+        : object;
+      const scheduleSubscriptionId = canonicalSchedule.subscription
+        ? String(canonicalSchedule.subscription)
+        : (canonicalSchedule.released_subscription ? String(canonicalSchedule.released_subscription) : null);
+      const tenantRow = await getTenantBillingRow(pool, {
+        tenantKey: metadataTenantKey || String(canonicalSchedule.metadata?.tenant_key || "").trim() || null,
+        customerId: canonicalSchedule.customer ? String(canonicalSchedule.customer) : null,
+        subscriptionId: scheduleSubscriptionId
+      });
+      if (tenantRow) {
+        await syncTenantStripeSubscriptionSchedule(pool, tenantRow.tenant_key, tenantRow, canonicalSchedule, event.type);
       }
     }
 

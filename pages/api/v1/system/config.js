@@ -1,6 +1,11 @@
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { requireSession } from "../../_lib/auth.js";
-import { DEFAULT_BILLING_PLANS, DEFAULT_TRIAL_DAYS, normalizeBillingPlans } from "../../_lib/billing.js";
+import {
+  DEFAULT_BILLING_PLANS,
+  DEFAULT_TRIAL_DAYS,
+  normalizeBillingPlanCatalogBindings,
+  normalizeBillingPlans
+} from "../../_lib/billing.js";
 
 export default async function handler(req, res) {
   try {
@@ -43,7 +48,7 @@ export default async function handler(req, res) {
       const body = typeof req.body === "object" && req.body ? req.body : {};
       const phrase = String(body.globalEmergencyPhrase || "").trim();
       const defaultTrialDays = Number(body.defaultTrialDays || DEFAULT_TRIAL_DAYS);
-      const billingPlans = normalizeBillingPlans(body.billingPlans || DEFAULT_BILLING_PLANS);
+      const billingPlans = normalizeBillingPlanCatalogBindings(body.billingPlans || DEFAULT_BILLING_PLANS);
       const telnyxSmsNumber = String(body.telnyxSmsNumber || "").trim();
       const telnyxSmsNumberId = String(body.telnyxSmsNumberId || "").trim();
       const telnyxSmsMessagingProfileId = String(body.telnyxSmsMessagingProfileId || "").trim();

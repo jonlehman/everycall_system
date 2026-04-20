@@ -1,5 +1,12 @@
 # EveryCall Pricing Strategy
 
+## Status Note
+
+This document is pricing strategy context only.
+
+It is **not** the source of truth for the live standard plan amounts used by the EveryCall app.
+The app-owned standard billing catalog lives in [lib/standardBillingPlans.js](/home/jonle/everycall/lib/standardBillingPlans.js).
+
 ## Positioning
 
 EveryCall should not compete as a cheap AI answering bot.

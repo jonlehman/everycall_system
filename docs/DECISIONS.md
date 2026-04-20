@@ -22,3 +22,12 @@
 
 ## 2026-03-03
 - Adopt Tailwind + shadcn/ui as the default web UI foundation (see ADR `0004-tailwind-shadcn-ui-standard.md`).
+
+## 2026-04-20
+- Standard EveryCall subscription pricing is code-owned in `lib/standardBillingPlans.js`. The public website can mirror it, but the app billing catalog is the source of truth.
+- Stripe Customer Portal is the supported self-serve surface for subscription changes.
+- EveryCall enforces one active plan per billing cycle:
+  - the current cycle keeps its existing plan, included-call allowance, and overage rate
+  - a customer-initiated plan change is stored as a pending change and takes effect on the next renewal
+  - mid-cycle prorations are disabled for plan changes
+  - the app must recognize both direct Stripe subscription price swaps and Stripe-created subscription schedules for future-dated portal changes
