@@ -503,9 +503,9 @@ export default function AccountBillingPage() {
     detailRight = (
       <FeatureList
         items={[
-          'Secure card storage is handled by Stripe',
-          'Use billing management to add or replace cards',
-          'Subscription renewals charge this default method'
+          'Add or update your card anytime in billing management',
+          'Your default card is used for subscription renewals',
+          'Keeping a current payment method helps avoid service interruptions'
         ]}
       />
     );
@@ -544,9 +544,9 @@ export default function AccountBillingPage() {
     detailRight = (
       <FeatureList
         items={[
-          'Full invoice history and downloads live in Stripe',
-          'Upcoming charges sync back here automatically',
-          'Payment issues appear here after Stripe updates'
+          'Review your latest charges and payment status in one place',
+          'Use billing management to view receipts and download invoices',
+          'If a payment needs attention, you will see it here'
         ]}
       />
     );
