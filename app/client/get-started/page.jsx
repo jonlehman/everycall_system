@@ -253,9 +253,33 @@ export default function ClientGetStartedPage() {
     promptProfile: null,
     runtimeProfile: null
   });
+  const [refreshingWebsiteTraining, setRefreshingWebsiteTraining] = useState(false);
   const [savingForwardingStatus, setSavingForwardingStatus] = useState(false);
   const [savingReceptionistReviewStatus, setSavingReceptionistReviewStatus] = useState(false);
   const [showSupportSetupModal, setShowSupportSetupModal] = useState(false);
+
+  const loadWorkspace = async () => {
+    const [buildsData, usersData, settingsData, billingData, promptProfileData, runtimeProfileData] = await Promise.all([
+      fetchJson('/api/v1/knowledge/builds').catch(() => null),
+      fetchJson('/api/v1/tenant/users').catch(() => null),
+      fetchJson('/api/v1/settings').catch(() => null),
+      fetchJson('/api/v1/billing').catch(() => null),
+      fetchJson('/api/v1/knowledge/prompt-profile').catch(() => null),
+      fetchJson('/api/v1/knowledge/runtime-profile').catch(() => null)
+    ]);
+
+    return {
+      buildState: {
+        builds: Array.isArray(buildsData?.builds) ? buildsData.builds : [],
+        activeBuild: buildsData?.activeBuild || null
+      },
+      users: Array.isArray(usersData?.users) ? usersData.users : [],
+      settings: settingsData || null,
+      billing: billingData?.billing || null,
+      promptProfile: promptProfileData?.profile || null,
+      runtimeProfile: runtimeProfileData?.profile || null
+    };
+  };
 
   const dismissSupportSetupModal = () => {
     const nextParams = new URLSearchParams(searchParams?.toString() || '');
@@ -267,27 +291,14 @@ export default function ClientGetStartedPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([
-      fetchJson('/api/v1/knowledge/builds').catch(() => null),
-      fetchJson('/api/v1/tenant/users').catch(() => null),
-      fetchJson('/api/v1/settings').catch(() => null),
-      fetchJson('/api/v1/billing').catch(() => null),
-      fetchJson('/api/v1/knowledge/prompt-profile').catch(() => null),
-      fetchJson('/api/v1/knowledge/runtime-profile').catch(() => null)
-    ]).then(([buildsData, usersData, settingsData, billingData, promptProfileData, runtimeProfileData]) => {
-      if (cancelled) return;
-      setPacket({
-        buildState: {
-          builds: Array.isArray(buildsData?.builds) ? buildsData.builds : [],
-          activeBuild: buildsData?.activeBuild || null
-        },
-        users: Array.isArray(usersData?.users) ? usersData.users : [],
-        settings: settingsData || null,
-        billing: billingData?.billing || null,
-        promptProfile: promptProfileData?.profile || null,
-        runtimeProfile: runtimeProfileData?.profile || null
+    void loadWorkspace()
+      .then((nextPacket) => {
+        if (cancelled) return;
+        setPacket(nextPacket);
+      })
+      .catch(() => {
+        if (cancelled) return;
       });
-    });
     return () => {
       cancelled = true;
     };
@@ -567,6 +578,18 @@ export default function ClientGetStartedPage() {
     && forwarding.forwardingConfigured
     && !billingSetup.done;
   const showSetupIssueBanner = searchParams?.get('setup_issue') === '1' || forwarding.voiceSetupNeedsAttention;
+  const showWebsiteTrainingRefresh = websiteTraining.progressPercent < 100;
+
+  const refreshWebsiteTraining = async () => {
+    if (refreshingWebsiteTraining) return;
+    setRefreshingWebsiteTraining(true);
+    try {
+      const nextPacket = await loadWorkspace();
+      setPacket(nextPacket);
+    } finally {
+      setRefreshingWebsiteTraining(false);
+    }
+  };
 
   return (
     <>
@@ -620,19 +643,26 @@ export default function ClientGetStartedPage() {
               }}
               progress={{ label: 'Receptionist Training Progress', percent: websiteTraining.progressPercent }}
               action={(
-                websiteTraining.done ? (
+                <div className={`flex items-center gap-3 ${showWebsiteTrainingRefresh ? 'w-full justify-between' : ''}`.trim()}>
                   <Link
                     href="/client/receptionist/knowledge"
                     className={actionButtonClass(false)}
                   >
                     Edit
                   </Link>
-                ) : (
-                  <button type="button" disabled className={actionButtonClass(true)}>
-                    Edit
-                  </button>
-                )
+                  {showWebsiteTrainingRefresh ? (
+                    <button
+                      type="button"
+                      className={actionButtonClass(refreshingWebsiteTraining)}
+                      onClick={refreshWebsiteTraining}
+                      disabled={refreshingWebsiteTraining}
+                    >
+                      {refreshingWebsiteTraining ? 'Refreshing...' : 'Refresh'}
+                    </button>
+                  ) : null}
+                </div>
               )}
+              actionFullWidth={showWebsiteTrainingRefresh}
             />
 
             <SetupStepCard
