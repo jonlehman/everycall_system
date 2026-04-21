@@ -193,6 +193,27 @@ function buildPendingPlanLabel(pendingPlan) {
     : `${pendingPlan.label} starts next renewal`;
 }
 
+function buildCouponSummary(coupon) {
+  if (!coupon) return '';
+
+  const summary = [];
+  const monthlyDiscountPercent = Number(coupon.monthlyDiscountPercent || 0);
+  const overageDiscountPercent = Number(coupon.overageDiscountPercent || 0);
+  const freeTrialDays = Number(coupon.freeTrialDays || 0);
+
+  if (monthlyDiscountPercent > 0) {
+    summary.push(`${monthlyDiscountPercent}% off your monthly plan`);
+  }
+  if (overageDiscountPercent > 0) {
+    summary.push(`${overageDiscountPercent}% off overages`);
+  }
+  if (freeTrialDays > 0) {
+    summary.push(`${freeTrialDays} extra trial day${freeTrialDays === 1 ? '' : 's'}`);
+  }
+
+  return summary.join(' · ');
+}
+
 function ActionButton({
   tone = 'secondary',
   label,
@@ -318,6 +339,8 @@ export default function AccountBillingPage() {
   const [viewer, setViewer] = useState({ canManage: false, userRole: null });
   const [loadState, setLoadState] = useState('loading');
   const [manageBusy, setManageBusy] = useState(false);
+  const [billingCouponCode, setBillingCouponCode] = useState('');
+  const [billingCouponBusy, setBillingCouponBusy] = useState(false);
   const [flashStatus, setFlashStatus] = useState(null);
   const [selectedPanel, setSelectedPanel] = useState(PANEL_KEYS.plan);
 
@@ -409,17 +432,45 @@ export default function AccountBillingPage() {
     }
   };
 
+  const applyBillingCoupon = async () => {
+    const code = String(billingCouponCode || '').trim().toUpperCase();
+    if (!code) {
+      setFlashStatus({ tone: 'warn', message: 'Enter a coupon code first.' });
+      return;
+    }
+
+    setBillingCouponBusy(true);
+    try {
+      const data = await fetchJson('/api/v1/billing/coupons/redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      setBillingCouponCode('');
+      await loadPage();
+      setFlashStatus({ tone: 'ok', message: data?.message || 'Coupon applied.' });
+    } catch (error) {
+      setFlashStatus({ tone: 'bad', message: error?.message || 'Could not apply coupon.' });
+    } finally {
+      setBillingCouponBusy(false);
+    }
+  };
+
   const summary = billing?.summary || null;
   const pageStatus = flashStatus || summary?.alert || null;
   const canManage = Boolean(viewer?.canManage) && loadState === 'ready';
   const billingActionType = summary?.manageAction?.type || null;
   const billingActionLabel = manageBusy ? getBusyBillingActionLabel(billingActionType) : getBillingActionLabel(billingActionType);
+  const billingStatus = String(billing?.status || '').trim().toLowerCase();
   const planBaseAmount = Number(billing?.plan?.baseAmountCents || 0);
   const includedCallCount = Number(billing?.callPricing?.includedCallCount || billing?.plan?.includedCallCount || 0);
   const totalCallsThisCycle = Number(billing?.callUsage?.includedCallCountUsed || 0) + Number(billing?.callUsage?.overageCallCount || 0);
   const overageCalls = Number(billing?.callUsage?.overageCallCount || 0);
   const pendingPlan = billing?.pendingPlan || summary?.plan?.pendingPlan || null;
   const pendingPlanLabel = buildPendingPlanLabel(pendingPlan);
+  const activeCoupon = billing?.activeCoupon || null;
+  const couponSummary = buildCouponSummary(activeCoupon);
+  const couponEntryDisabled = !canManage || billingStatus === 'deactivated' || billingCouponBusy || manageBusy;
   const usagePercent = includedCallCount > 0
     ? Math.min((totalCallsThisCycle / includedCallCount) * 100, 100)
     : 0;
@@ -655,20 +706,57 @@ export default function AccountBillingPage() {
                   </div>
                 </div>
 
-                <div className="mt-8 flex flex-col justify-end gap-4 border-t border-[#dee9fc] pt-6 sm:flex-row">
-                  <ActionButton
-                    tone="secondary"
-                    label={detailSecondaryAction.label}
-                    onClick={detailSecondaryAction.onClick}
-                    disabled={detailSecondaryAction.disabled}
-                  />
-                  <ActionButton
-                    tone="primary"
-                    label={detailPrimaryAction.label}
-                    icon={detailPrimaryAction.icon}
-                    onClick={detailPrimaryAction.onClick}
-                    disabled={detailPrimaryAction.disabled}
-                  />
+                <div className="mt-8 flex flex-col gap-4 border-t border-[#dee9fc] pt-6 xl:flex-row xl:items-end xl:justify-between">
+                  {selectedPanel === PANEL_KEYS.plan ? (
+                    <div className="w-full xl:max-w-md">
+                      <div className="mb-2 text-xs font-bold uppercase tracking-widest text-[#434655]">Coupon Code</div>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <input
+                          type="text"
+                          value={billingCouponCode}
+                          onChange={(event) => setBillingCouponCode(event.target.value.toUpperCase())}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              void applyBillingCoupon();
+                            }
+                          }}
+                          placeholder="Enter coupon code"
+                          disabled={couponEntryDisabled}
+                          className="w-full rounded-lg border border-[#c3c6d7]/40 bg-white px-4 py-2.5 text-sm text-[#121c2a] outline-none transition-all placeholder:text-[#737686] focus:border-[#004ac6] focus:ring-2 focus:ring-[#dbe1ff] disabled:cursor-not-allowed disabled:bg-[#f4f6fb] disabled:text-[#737686]"
+                        />
+                        <ActionButton
+                          tone="secondary"
+                          label={billingCouponBusy ? 'Applying...' : (activeCoupon ? 'Replace Coupon' : 'Apply Coupon')}
+                          onClick={applyBillingCoupon}
+                          disabled={couponEntryDisabled}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs text-[#434655]">
+                        {billingStatus === 'deactivated'
+                          ? 'Restart service before applying a coupon.'
+                          : activeCoupon
+                            ? `Active coupon: ${activeCoupon.code}${couponSummary ? ` · ${couponSummary}` : ''}`
+                            : 'Have a coupon? Enter it here before you start or update billing.'}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-col justify-end gap-4 sm:flex-row xl:ml-auto">
+                    <ActionButton
+                      tone="secondary"
+                      label={detailSecondaryAction.label}
+                      onClick={detailSecondaryAction.onClick}
+                      disabled={detailSecondaryAction.disabled}
+                    />
+                    <ActionButton
+                      tone="primary"
+                      label={detailPrimaryAction.label}
+                      icon={detailPrimaryAction.icon}
+                      onClick={detailPrimaryAction.onClick}
+                      disabled={detailPrimaryAction.disabled}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
