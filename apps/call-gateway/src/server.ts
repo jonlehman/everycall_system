@@ -1,5 +1,6 @@
 import express from "express";
 import http from "node:http";
+import crypto from "node:crypto";
 import path from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
 import { readCallGatewayEnv } from "@everycall/config";
@@ -154,6 +155,38 @@ type AudioPumpTrace = {
   maxBurstFrames: number;
 };
 
+type TransferLookupMatch = {
+  target_id: string;
+  name: string;
+  extension: string | null;
+};
+
+type TransferTargetRow = {
+  id: number;
+  name: string;
+  transfer_extension: string | null;
+  forward_to_number: string;
+};
+
+type TransferState = {
+  status: "pending" | "connected";
+  targetId: string;
+  targetName: string;
+  targetExtension: string | null;
+  commandId: string;
+  requestedAt: string;
+  targetCallControlId?: string | null;
+  targetCallSessionId?: string | null;
+};
+
+type TransferLegClientState = {
+  everycall: "transfer_leg_v1";
+  source_call_control_id: string;
+  source_call_sid: string;
+  tenant_key: string;
+  target_id: string;
+};
+
 type StreamSession = {
   callControlId: string;
   callSid: string;
@@ -197,6 +230,9 @@ type StreamSession = {
   completedToolCallKeys?: Set<string>;
   pendingToolSpeechWait?: PendingToolSpeechWait | null;
   audioPumpTrace?: AudioPumpTrace | null;
+  suppressOpenAiReconnect?: boolean;
+  aiDetached?: boolean;
+  transferState?: TransferState | null;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -240,6 +276,9 @@ function createStreamSession(
     completedToolCallKeys: new Set<string>(),
     pendingToolSpeechWait: null,
     audioPumpTrace: null,
+    suppressOpenAiReconnect: false,
+    aiDetached: false,
+    transferState: null,
     ...(realtimeLogPath ? { realtimeLogPath } : {})
   };
 }
@@ -1042,6 +1081,285 @@ function normalizeOptionalText(value: unknown) {
   return text || null;
 }
 
+function normalizeTransferLookupText(value: unknown) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeDigitsOnly(value: unknown) {
+  return String(value || "").replace(/[^\d]/g, "");
+}
+
+function buildTransferTargetId(id: number) {
+  return `tenant_user_${id}`;
+}
+
+function parseTransferTargetId(value: unknown) {
+  const match = /^tenant_user_(\d+)$/.exec(String(value || "").trim());
+  return match ? Number(match[1]) : 0;
+}
+
+function serializeTransferMatch(row: TransferTargetRow): TransferLookupMatch {
+  return {
+    target_id: buildTransferTargetId(row.id),
+    name: String(row.name || "").trim(),
+    extension: normalizeOptionalText(row.transfer_extension)
+  };
+}
+
+function encodeTransferLegClientState(state: TransferLegClientState) {
+  return Buffer.from(JSON.stringify(state), "utf8").toString("base64");
+}
+
+function parseTransferLegClientState(value: unknown): TransferLegClientState | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  try {
+    const decoded = Buffer.from(raw, "base64").toString("utf8");
+    const parsed = JSON.parse(decoded);
+    if (
+      parsed?.everycall !== "transfer_leg_v1"
+      || !String(parsed?.source_call_control_id || "").trim()
+      || !String(parsed?.source_call_sid || "").trim()
+      || !String(parsed?.tenant_key || "").trim()
+      || !String(parsed?.target_id || "").trim()
+    ) {
+      return null;
+    }
+    return {
+      everycall: "transfer_leg_v1",
+      source_call_control_id: String(parsed.source_call_control_id).trim(),
+      source_call_sid: String(parsed.source_call_sid).trim(),
+      tenant_key: String(parsed.tenant_key).trim(),
+      target_id: String(parsed.target_id).trim()
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function loadTransferTargetsForTenant(tenantKey: string): Promise<TransferTargetRow[]> {
+  if (!pool) return [];
+  const result = await pool.query(
+    `SELECT id, name, transfer_extension, forward_to_number
+     FROM tenant_users
+     WHERE tenant_key = $1
+       AND status = 'active'
+       AND transfer_enabled = TRUE
+       AND forward_to_number IS NOT NULL
+       AND TRIM(forward_to_number) <> ''
+     ORDER BY name ASC, id ASC`,
+    [tenantKey]
+  );
+  return (result.rows || []).map((row: any) => ({
+    id: Number(row.id),
+    name: String(row.name || "").trim(),
+    transfer_extension: normalizeOptionalText(row.transfer_extension),
+    forward_to_number: String(row.forward_to_number || "").trim()
+  }));
+}
+
+function rankTransferMatches(targets: TransferTargetRow[], query: string) {
+  const normalizedQuery = normalizeTransferLookupText(query);
+  if (!normalizedQuery) return [];
+
+  const queryDigits = normalizeDigitsOnly(query);
+  if (queryDigits) {
+    const extensionMatches = targets.filter((target) => normalizeDigitsOnly(target.transfer_extension) === queryDigits);
+    if (extensionMatches.length) {
+      return extensionMatches;
+    }
+  }
+
+  const exactFullNameMatches = targets.filter((target) => normalizeTransferLookupText(target.name) === normalizedQuery);
+  if (exactFullNameMatches.length) {
+    return exactFullNameMatches;
+  }
+
+  const startsWithMatches = targets.filter((target) => normalizeTransferLookupText(target.name).startsWith(normalizedQuery));
+  if (startsWithMatches.length) {
+    return startsWithMatches;
+  }
+
+  const exactTokenMatches = targets.filter((target) => normalizeTransferLookupText(target.name).split(" ").includes(normalizedQuery));
+  if (exactTokenMatches.length) {
+    return exactTokenMatches;
+  }
+
+  if (normalizedQuery.length >= 3) {
+    const includesMatches = targets.filter((target) => normalizeTransferLookupText(target.name).includes(normalizedQuery));
+    if (includesMatches.length) {
+      return includesMatches;
+    }
+  }
+
+  return [];
+}
+
+async function lookupTransferTarget(tenantKey: string, query: string) {
+  const trimmedQuery = String(query || "").trim();
+  const targets = await loadTransferTargetsForTenant(tenantKey);
+  if (!targets.length) {
+    return {
+      status: "unavailable",
+      query: trimmedQuery,
+      matches: [] as TransferLookupMatch[]
+    };
+  }
+  const matches = rankTransferMatches(targets, trimmedQuery).map(serializeTransferMatch);
+  if (!matches.length) {
+    return {
+      status: "not_found",
+      query: trimmedQuery,
+      matches
+    };
+  }
+  return {
+    status: matches.length === 1 ? "match" : "ambiguous",
+    query: trimmedQuery,
+    matches,
+    ...(matches.length === 1 ? { target: matches[0] } : {})
+  };
+}
+
+async function loadTransferTargetById(tenantKey: string, targetId: string) {
+  const parsedId = parseTransferTargetId(targetId);
+  if (!parsedId || !pool) return null;
+  const result = await pool.query(
+    `SELECT id, name, transfer_extension, forward_to_number
+     FROM tenant_users
+     WHERE tenant_key = $1
+       AND id = $2
+       AND status = 'active'
+       AND transfer_enabled = TRUE
+       AND forward_to_number IS NOT NULL
+       AND TRIM(forward_to_number) <> ''
+     LIMIT 1`,
+    [tenantKey, parsedId]
+  );
+  if (!result.rowCount) return null;
+  return {
+    id: Number(result.rows[0].id),
+    name: String(result.rows[0].name || "").trim(),
+    transfer_extension: normalizeOptionalText(result.rows[0].transfer_extension),
+    forward_to_number: String(result.rows[0].forward_to_number || "").trim()
+  } satisfies TransferTargetRow;
+}
+
+async function persistTransferCallState(session: StreamSession, target: TransferTargetRow) {
+  if (!session.promptPayload) return;
+  const nextState = applyCapturedFieldsToCallState(
+    session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state,
+    {
+      outcome_type: "transfer",
+      transfer_target_name: target.name,
+      transfer_target_extension: target.transfer_extension || null
+    }
+  );
+  session.knowledgeCallState = nextState;
+  await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, nextState, {
+    source: "transfer_call",
+    transfer_target_id: buildTransferTargetId(target.id),
+    transfer_target_name: target.name,
+    transfer_target_extension: target.transfer_extension || null
+  });
+}
+
+async function detachAiForTransferredCall(session: StreamSession, source: string) {
+  if (session.aiDetached) return;
+  session.aiDetached = true;
+  session.suppressOpenAiReconnect = true;
+  session.pendingToolCall = null;
+  session.pendingToolSpeechWait = null;
+  session.outputQueue = [];
+  session.outputBuffer = Buffer.alloc(0);
+  if (session.outputTimer) {
+    clearInterval(session.outputTimer);
+    session.outputTimer = null;
+  }
+  session.outputNextFrameAtMs = null;
+
+  if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
+    session.openAiWs.close();
+  }
+  delete session.openAiWs;
+
+  try {
+    await telnyxCallAction(session.callControlId, "streaming_stop", {});
+  } catch (err) {
+    logError("telnyx_stream_stop_for_transfer_failed", {
+      callSid: session.callSid,
+      callControlId: session.callControlId,
+      source,
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
+}
+
+async function handleTransferConnected(session: StreamSession, source: string, extra: Record<string, unknown> = {}) {
+  if (!session.transferState || session.transferState.status !== "pending") return;
+  session.transferState = {
+    ...session.transferState,
+    status: "connected",
+    ...(extra.targetCallControlId ? { targetCallControlId: String(extra.targetCallControlId) } : {}),
+    ...(extra.targetCallSessionId ? { targetCallSessionId: String(extra.targetCallSessionId) } : {})
+  };
+  logInfo("call_transfer_connected", {
+    callSid: session.callSid,
+    callControlId: session.callControlId,
+    targetId: session.transferState.targetId,
+    targetName: session.transferState.targetName,
+    targetExtension: session.transferState.targetExtension || undefined,
+    source,
+    ...(extra.targetCallControlId ? { targetCallControlId: String(extra.targetCallControlId) } : {})
+  });
+  if (session.knowledgeCallState) {
+    await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
+      source: "transfer_connected",
+      transfer_target_id: session.transferState.targetId,
+      transfer_target_name: session.transferState.targetName,
+      transfer_target_extension: session.transferState.targetExtension || null
+    });
+  }
+  await detachAiForTransferredCall(session, source);
+}
+
+async function handleTransferFailed(session: StreamSession, source: string, details: Record<string, unknown> = {}) {
+  const currentTransfer = session.transferState;
+  if (!currentTransfer || currentTransfer.status !== "pending") return;
+  session.transferState = null;
+  logInfo("call_transfer_failed", {
+    callSid: session.callSid,
+    callControlId: session.callControlId,
+    targetId: currentTransfer.targetId,
+    targetName: currentTransfer.targetName,
+    targetExtension: currentTransfer.targetExtension || undefined,
+    source,
+    ...details
+  });
+  if (session.knowledgeCallState) {
+    await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
+      source: "transfer_failed",
+      transfer_target_id: currentTransfer.targetId,
+      transfer_target_name: currentTransfer.targetName,
+      transfer_target_extension: currentTransfer.targetExtension || null,
+      failure_reason: source,
+      ...details
+    });
+  }
+  requestAssistantResponse(
+    session,
+    "transfer_failed",
+    {
+      instructions: `The attempted transfer to ${currentTransfer.targetName} did not connect. Briefly apologize, then offer to take a message or try another person. Keep it to one or two short sentences.`
+    },
+    `transfer_failed:${currentTransfer.commandId}`
+  );
+}
+
 async function loadCombinedTranscriptForCall(callSid: string) {
   if (!pool) return "";
   try {
@@ -1175,6 +1493,26 @@ async function endCallSession(session: StreamSession | undefined, reason: string
 async function flushFinalAudioAndEnd(session: StreamSession | undefined, reason: string, shouldHangup: boolean) {
   if (!session) return;
   await endCallSession(session, reason, shouldHangup);
+}
+
+async function handleStreamingStoppedForSession(session: StreamSession | undefined, reason: string) {
+  if (!session) return;
+  if (session.telnyxStreamId) {
+    streamIdToCall.delete(session.telnyxStreamId);
+  }
+  delete session.telnyxStreamId;
+  delete session.telnyxWs;
+  if (session.aiDetached || session.transferState?.status === "connected") {
+    logInfo("telnyx_stream_stopped_after_transfer", {
+      callSid: session.callSid,
+      callControlId: session.callControlId,
+      reason,
+      targetId: session.transferState?.targetId || undefined,
+      targetName: session.transferState?.targetName || undefined
+    });
+    return;
+  }
+  await flushFinalAudioAndEnd(session, reason, false);
 }
 
 async function fetchPromptPayload(tenantKey: string, callSid: string, to: string, from: string): Promise<GatewayPromptPayload> {
@@ -1526,6 +1864,31 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     return;
   }
 
+  if (name === "lookup_transfer_target") {
+    const query = String((args as any).query || "").trim();
+    const lookupResult = await lookupTransferTarget(session.tenantKey, query);
+    await forwardToolResult(
+      session.callSid,
+      session.tenantKey,
+      name,
+      lookupResult,
+      { status: "accepted", errors: [] }
+    );
+    const toolResultEvent = createFunctionCallOutputEvent(callId, lookupResult);
+    const responseEvent = createAudioTextResponseEvent({});
+    sendOpenAiEvent(session.openAiWs, toolResultEvent);
+    logRealtimeToolPayloads(session, {
+      callSid: session.callSid,
+      tool: name,
+      callId,
+      toolResultEvent,
+      responseEvent
+    });
+    noteToolResponseRequested(session, name, callId);
+    requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+    return;
+  }
+
   if (name === "data_capture") {
     const schema = session.promptPayload?.field_schema || {};
     const validation = validateAgainstSchema(schema, args);
@@ -1553,6 +1916,125 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     noteToolResponseRequested(session, name, callId);
     requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
     return;
+  }
+
+  if (name === "transfer_call") {
+    const requestedTargetId = String((args as any).target_id || "").trim();
+    const target = await loadTransferTargetById(session.tenantKey, requestedTargetId);
+
+    if (session.transferState?.status === "pending") {
+      const output = {
+        status: "failed",
+        reason: "transfer_already_in_progress"
+      };
+      await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
+      const toolResultEvent = createFunctionCallOutputEvent(callId, output);
+      const responseEvent = createAudioTextResponseEvent({});
+      sendOpenAiEvent(session.openAiWs, toolResultEvent);
+      logRealtimeToolPayloads(session, {
+        callSid: session.callSid,
+        tool: name,
+        callId,
+        toolResultEvent,
+        responseEvent
+      });
+      noteToolResponseRequested(session, name, callId);
+      requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+      return;
+    }
+
+    if (!target) {
+      const output = {
+        status: "failed",
+        reason: "transfer_target_unavailable"
+      };
+      await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
+      const toolResultEvent = createFunctionCallOutputEvent(callId, output);
+      const responseEvent = createAudioTextResponseEvent({});
+      sendOpenAiEvent(session.openAiWs, toolResultEvent);
+      logRealtimeToolPayloads(session, {
+        callSid: session.callSid,
+        tool: name,
+        callId,
+        toolResultEvent,
+        responseEvent
+      });
+      noteToolResponseRequested(session, name, callId);
+      requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+      return;
+    }
+
+    const commandId = `everycall_transfer_${crypto.randomUUID()}`;
+    session.transferState = {
+      status: "pending",
+      targetId: requestedTargetId,
+      targetName: target.name,
+      targetExtension: target.transfer_extension || null,
+      commandId,
+      requestedAt: new Date().toISOString(),
+      targetCallControlId: null,
+      targetCallSessionId: null
+    };
+
+    try {
+      await telnyxCallAction(session.callControlId, "transfer", {
+        to: target.forward_to_number,
+        timeout_secs: 25,
+        command_id: commandId,
+        target_leg_client_state: encodeTransferLegClientState({
+          everycall: "transfer_leg_v1",
+          source_call_control_id: session.callControlId,
+          source_call_sid: session.callSid,
+          tenant_key: session.tenantKey,
+          target_id: requestedTargetId
+        })
+      });
+      await persistTransferCallState(session, target);
+      const output = {
+        status: "accepted",
+        target_id: requestedTargetId,
+        target_name: target.name,
+        target_extension: target.transfer_extension || null
+      };
+      await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
+      const toolResultEvent = createFunctionCallOutputEvent(callId, output);
+      sendOpenAiEvent(session.openAiWs, toolResultEvent);
+      logRealtimeToolPayloads(session, {
+        callSid: session.callSid,
+        tool: name,
+        callId,
+        toolResultEvent
+      });
+      return;
+    } catch (err) {
+      session.transferState = null;
+      const output = {
+        status: "failed",
+        reason: "transfer_command_failed"
+      };
+      logError("call_transfer_command_failed", {
+        callSid: session.callSid,
+        callControlId: session.callControlId,
+        targetId: requestedTargetId,
+        targetName: target.name,
+        targetExtension: target.transfer_extension || undefined,
+        message: err instanceof Error ? err.message : "unknown"
+      });
+      await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
+      const toolResultEvent = createFunctionCallOutputEvent(callId, output);
+      const responseEvent = createAudioTextResponseEvent({});
+      sendOpenAiEvent(session.openAiWs, toolResultEvent);
+      logRealtimeToolPayloads(session, {
+        callSid: session.callSid,
+        tool: name,
+        callId,
+        toolResultEvent,
+        responseEvent
+      });
+      noteToolResponseRequested(session, name, callId);
+      requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+      return;
+    }
   }
 
   if (name === "finish_session") {
@@ -1900,6 +2382,9 @@ function connectOpenAiRealtime(session: StreamSession) {
     }
 
     if (type === "input_audio_buffer.speech_started") {
+      if (session.transferState?.status === "pending" || session.aiDetached) {
+        return;
+      }
       await interruptAssistantForCallerSpeech(session, "caller_speech_detected_realtime");
       return;
     }
@@ -1949,6 +2434,7 @@ function connectOpenAiRealtime(session: StreamSession) {
     });
 
     if (session.isShuttingDown || !session.callActive) return;
+    if (session.suppressOpenAiReconnect || session.aiDetached) return;
 
     const wasInitialized = Boolean(session.openAiReady && session.openAiSessionUpdated);
     if (!wasInitialized) {
@@ -2017,6 +2503,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
   const eventType = payload.data?.event_type || payload.event_type || payload.data?.eventType || "";
   const eventPayload = payload.data?.payload || payload.payload || payload.data || payload;
   const providerEventId = String(payload.data?.id || payload.id || "").trim();
+  const transferLegState = parseTransferLegClientState(eventPayload.client_state);
 
   if (!pool) {
     return res.status(200).send("ok");
@@ -2037,6 +2524,26 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
     const callSid = callControlId || String(eventPayload.call_session_id || "unknown");
     const to = normalizePhone(String(eventPayload.to || ""));
     const from = normalizePhone(String(eventPayload.from || ""));
+
+    if (transferLegState) {
+      const sourceSession = streamSessions.get(transferLegState.source_call_control_id);
+      if (sourceSession?.transferState?.status === "pending" && sourceSession.transferState.targetId === transferLegState.target_id) {
+        sourceSession.transferState = {
+          ...sourceSession.transferState,
+          targetCallControlId: callControlId || null,
+          targetCallSessionId: String(eventPayload.call_session_id || "").trim() || null
+        };
+        logInfo("call_transfer_target_leg_initiated", {
+          callSid: sourceSession.callSid,
+          callControlId: sourceSession.callControlId,
+          targetCallControlId: callControlId,
+          targetId: transferLegState.target_id,
+          to,
+          from
+        });
+      }
+      return res.status(200).send("ok");
+    }
 
     logInfo("telnyx_call_control_initiated", { callSid, callControlId, to, from });
 
@@ -2118,9 +2625,43 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
     return res.status(200).send("ok");
   }
 
+  if (eventType === "call.bridged" || eventType === "call.bridged.v1") {
+    if (transferLegState) {
+      const sourceSession = streamSessions.get(transferLegState.source_call_control_id);
+      if (sourceSession?.transferState?.status === "pending" && sourceSession.transferState.targetId === transferLegState.target_id) {
+        await handleTransferConnected(sourceSession, "target_leg_bridged", {
+          targetCallControlId: eventPayload.call_control_id,
+          targetCallSessionId: eventPayload.call_session_id
+        });
+      }
+      return res.status(200).send("ok");
+    }
+
+    const callControlId = String(eventPayload.call_control_id || "");
+    const session = streamSessions.get(callControlId);
+    if (session?.transferState?.status === "pending") {
+      await handleTransferConnected(session, "source_leg_bridged", {
+        targetCallControlId: session.transferState.targetCallControlId,
+        targetCallSessionId: session.transferState.targetCallSessionId
+      });
+    }
+    return res.status(200).send("ok");
+  }
+
   if (eventType === "call.answered" || eventType === "call_answered") {
     const callControlId = String(eventPayload.call_control_id || "");
     if (!callControlId) return res.status(200).send("ok");
+
+    if (transferLegState) {
+      const sourceSession = streamSessions.get(transferLegState.source_call_control_id);
+      if (sourceSession?.transferState?.status === "pending" && sourceSession.transferState.targetId === transferLegState.target_id) {
+        await handleTransferConnected(sourceSession, "target_leg_answered", {
+          targetCallControlId: callControlId,
+          targetCallSessionId: eventPayload.call_session_id
+        });
+      }
+      return res.status(200).send("ok");
+    }
 
     let session = streamSessions.get(callControlId);
     if (!session) {
@@ -2178,7 +2719,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
     if (callControlId) {
       const session = streamSessions.get(callControlId);
       if (session) {
-        await flushFinalAudioAndEnd(session, "telnyx_streaming_stopped", false);
+        await handleStreamingStoppedForSession(session, "telnyx_streaming_stopped");
       } else {
         await markCallCompleted(callControlId);
       }
@@ -2187,6 +2728,17 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
   }
 
   if (eventType === "call.hangup" || eventType === "call.hangup.v1") {
+    if (transferLegState) {
+      const sourceSession = streamSessions.get(transferLegState.source_call_control_id);
+      if (sourceSession?.transferState?.status === "pending" && sourceSession.transferState.targetId === transferLegState.target_id) {
+        await handleTransferFailed(sourceSession, "target_leg_hangup", {
+          targetCallControlId: eventPayload.call_control_id,
+          hangupCause: normalizeOptionalText(eventPayload.hangup_cause)
+        });
+      }
+      return res.status(200).send("ok");
+    }
+
     const callControlId = String(eventPayload.call_control_id || "");
     if (callControlId) {
       const session = streamSessions.get(callControlId);
@@ -2315,6 +2867,7 @@ wss.on("connection", (ws, req) => {
       if (!callControlId) return;
       const session = streamSessions.get(callControlId);
       if (!session?.openAiWs) return;
+      if (session.transferState?.status === "pending" || session.aiDetached) return;
       const pcm = decodeInboundAudioPayload(encoded);
       sendOpenAiEvent(session.openAiWs, {
         type: "input_audio_buffer.append",
@@ -2330,7 +2883,7 @@ wss.on("connection", (ws, req) => {
       if (!callControlId) return;
       const session = streamSessions.get(callControlId);
       if (session) {
-        await flushFinalAudioAndEnd(session, "telnyx_stream_stop", false);
+        await handleStreamingStoppedForSession(session, "telnyx_stream_stop");
       } else {
         await markCallCompleted(callControlId);
       }

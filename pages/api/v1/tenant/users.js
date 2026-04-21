@@ -22,6 +22,24 @@ function resolveAlertCategories(value, enabled) {
   return sanitizeCallCategorySelection(value, { fallbackToAll: Boolean(enabled) });
 }
 
+function parseTransferExtension(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return { valid: true, value: "" };
+  }
+  const normalized = raw.replace(/\s+/g, "");
+  if (!/^\d{1,6}$/.test(normalized)) {
+    return { valid: false, value: "" };
+  }
+  return { valid: true, value: normalized };
+}
+
+function formatLast4(value) {
+  const digits = String(value || "").replace(/[^\d]/g, "");
+  if (digits.length < 4) return "";
+  return digits.slice(-4);
+}
+
 async function findEmailConflict(pool, email, excludedId = null) {
   if (!email) return false;
   const values = excludedId
@@ -56,6 +74,35 @@ async function findPhoneConflict(pool, phoneNumber, excludedId = null) {
     values
   );
   return result.rows[0] || null;
+}
+
+async function findTransferExtensionConflict(pool, tenantKey, transferExtension, excludedId = null) {
+  if (!transferExtension) return false;
+  const values = excludedId
+    ? [tenantKey, transferExtension, excludedId]
+    : [tenantKey, transferExtension];
+  const where = excludedId
+    ? `tenant_key = $1 AND transfer_extension = $2 AND id <> $3`
+    : `tenant_key = $1 AND transfer_extension = $2`;
+  const result = await pool.query(
+    `SELECT id
+     FROM tenant_users
+     WHERE ${where}
+     LIMIT 1`,
+    values
+  );
+  return result.rowCount > 0;
+}
+
+async function loadTenantVoiceNumber(pool, tenantKey) {
+  const result = await pool.query(
+    `SELECT telnyx_voice_number
+     FROM tenants
+     WHERE tenant_key = $1
+     LIMIT 1`,
+    [tenantKey]
+  );
+  return normalizePhoneNumber(result.rows[0]?.telnyx_voice_number || "");
 }
 
 async function countActiveTenantUsers(pool, tenantKey) {
@@ -145,6 +192,7 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const rows = await pool.query(
         `SELECT id, name, email, role, status, phone_number, sms_opt_in_status, sms_opt_in_requested_at, sms_opt_in_confirmed_at,
+                transfer_enabled, transfer_extension, forward_to_number,
                 lead_alert_sms_enabled, lead_alert_email_enabled,
                 lead_alert_sms_categories_json AS lead_alert_sms_categories,
                 lead_alert_email_categories_json AS lead_alert_email_categories
@@ -268,6 +316,9 @@ export default async function handler(req, res) {
         const role = String(body.role || "member");
         const status = String(body.status || "active");
         const phoneNumber = normalizePhoneNumber(body.phoneNumber);
+        const transferEnabled = Boolean(body.transferEnabled);
+        const transferExtensionResult = parseTransferExtension(body.transferExtension);
+        const forwardToNumber = normalizePhoneNumber(body.forwardToNumber);
         const leadAlertSmsEnabled = Boolean(body.leadAlertSmsEnabled);
         const leadAlertEmailEnabled = Boolean(body.leadAlertEmailEnabled);
         const leadAlertSmsCategories = resolveAlertCategories(body.leadAlertSmsCategories, leadAlertSmsEnabled);
@@ -282,9 +333,18 @@ export default async function handler(req, res) {
         if (!ALLOWED_STATUSES.has(status)) {
           return fail(400, "invalid_status", "Invalid user status.");
         }
+        if (!transferExtensionResult.valid) {
+          return fail(400, "invalid_transfer_extension", "Extension must be 1 to 6 digits.");
+        }
+        if (transferEnabled && status !== "active") {
+          return fail(400, "transfer_requires_active_user", "Call transfer can only be enabled for active users.");
+        }
+        if (transferEnabled && !forwardToNumber) {
+          return fail(400, "missing_forward_to_number", "A valid forward-to number is required before call transfer can be enabled.");
+        }
 
         const existingResult = await pool.query(
-          `SELECT id, email, phone_number, status
+          `SELECT id, email, phone_number, transfer_extension, forward_to_number, status
            FROM tenant_users
            WHERE tenant_key = $1 AND id = $2
            LIMIT 1`,
@@ -299,6 +359,14 @@ export default async function handler(req, res) {
         }
         if (phoneNumber && await findPhoneConflict(pool, phoneNumber, id)) {
           return fail(409, "phone_exists", "That phone number is already assigned to another team user.");
+        }
+        if (transferExtensionResult.value && await findTransferExtensionConflict(pool, tenantKey, transferExtensionResult.value, id)) {
+          return fail(409, "transfer_extension_exists", "That extension is already assigned to another person on this account.");
+        }
+
+        const tenantVoiceNumber = await loadTenantVoiceNumber(pool, tenantKey);
+        if (forwardToNumber && tenantVoiceNumber && forwardToNumber === tenantVoiceNumber) {
+          return fail(400, "invalid_forward_to_number", "The forward-to number cannot be the EveryCall number.");
         }
 
         const existing = existingResult.rows[0];
@@ -324,13 +392,16 @@ export default async function handler(req, res) {
                phone_number = $5,
                role = $6,
                status = $7,
-               lead_alert_sms_enabled = $8,
-               lead_alert_email_enabled = $9,
-               lead_alert_sms_categories_json = $10::jsonb,
-               lead_alert_email_categories_json = $11::jsonb,
-               sms_opt_in_status = CASE WHEN $12 THEN 'not_requested' ELSE sms_opt_in_status END,
-               sms_opt_in_requested_at = CASE WHEN $12 THEN NULL ELSE sms_opt_in_requested_at END,
-               sms_opt_in_confirmed_at = CASE WHEN $12 THEN NULL ELSE sms_opt_in_confirmed_at END,
+               transfer_enabled = $8,
+               transfer_extension = $9,
+               forward_to_number = $10,
+               lead_alert_sms_enabled = $11,
+               lead_alert_email_enabled = $12,
+               lead_alert_sms_categories_json = $13::jsonb,
+               lead_alert_email_categories_json = $14::jsonb,
+               sms_opt_in_status = CASE WHEN $15 THEN 'not_requested' ELSE sms_opt_in_status END,
+               sms_opt_in_requested_at = CASE WHEN $15 THEN NULL ELSE sms_opt_in_requested_at END,
+               sms_opt_in_confirmed_at = CASE WHEN $15 THEN NULL ELSE sms_opt_in_confirmed_at END,
                updated_at = NOW()
            WHERE tenant_key = $1 AND id = $2`,
           [
@@ -341,6 +412,9 @@ export default async function handler(req, res) {
             phoneNumber || null,
             role,
             status,
+            transferEnabled,
+            transferExtensionResult.value || null,
+            forwardToNumber || null,
             leadAlertSmsEnabled,
             leadAlertEmailEnabled,
             JSON.stringify(leadAlertSmsCategories),
@@ -355,6 +429,9 @@ export default async function handler(req, res) {
           user_id: id,
           role,
           status,
+          transfer_enabled: transferEnabled,
+          transfer_extension: transferExtensionResult.value || null,
+          forward_to_last4: formatLast4(forwardToNumber),
           lead_alert_sms_enabled: leadAlertSmsEnabled,
           lead_alert_email_enabled: leadAlertEmailEnabled,
           lead_alert_sms_categories: leadAlertSmsCategories,
@@ -455,6 +532,9 @@ export default async function handler(req, res) {
       const name = String(body.name || "").trim();
       const email = String(body.email || "").trim().toLowerCase();
       const phoneNumber = normalizePhoneNumber(body.phoneNumber);
+      const transferEnabled = Boolean(body.transferEnabled);
+      const transferExtensionResult = parseTransferExtension(body.transferExtension);
+      const forwardToNumber = normalizePhoneNumber(body.forwardToNumber);
       const leadAlertSmsEnabled = Boolean(body.leadAlertSmsEnabled);
       const leadAlertEmailEnabled = Boolean(body.leadAlertEmailEnabled);
       const leadAlertSmsCategories = resolveAlertCategories(body.leadAlertSmsCategories, leadAlertSmsEnabled);
@@ -469,6 +549,15 @@ export default async function handler(req, res) {
       }
       if (!ALLOWED_STATUSES.has(status)) {
         return fail(400, "invalid_status", "Invalid user status.");
+      }
+      if (!transferExtensionResult.valid) {
+        return fail(400, "invalid_transfer_extension", "Extension must be 1 to 6 digits.");
+      }
+      if (transferEnabled && status !== "active") {
+        return fail(400, "transfer_requires_active_user", "Call transfer can only be enabled for active users.");
+      }
+      if (transferEnabled && !forwardToNumber) {
+        return fail(400, "missing_forward_to_number", "A valid forward-to number is required before call transfer can be enabled.");
       }
       if (status === "active") {
         const activeCount = await countActiveTenantUsers(pool, tenantKey);
@@ -486,12 +575,22 @@ export default async function handler(req, res) {
       if (phoneNumber && await findPhoneConflict(pool, phoneNumber)) {
         return fail(409, "phone_exists", "That phone number is already assigned to another team user.");
       }
+      if (transferExtensionResult.value && await findTransferExtensionConflict(pool, tenantKey, transferExtensionResult.value)) {
+        return fail(409, "transfer_extension_exists", "That extension is already assigned to another person on this account.");
+      }
+      const tenantVoiceNumber = await loadTenantVoiceNumber(pool, tenantKey);
+      if (forwardToNumber && tenantVoiceNumber && forwardToNumber === tenantVoiceNumber) {
+        return fail(400, "invalid_forward_to_number", "The forward-to number cannot be the EveryCall number.");
+      }
       await pool.query(
         `INSERT INTO tenant_users (
            tenant_key,
            name,
            email,
            phone_number,
+           transfer_enabled,
+           transfer_extension,
+           forward_to_number,
            role,
            status,
            lead_alert_sms_enabled,
@@ -499,11 +598,14 @@ export default async function handler(req, res) {
            lead_alert_sms_categories_json,
            lead_alert_email_categories_json
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb)
          ON CONFLICT (email)
          DO UPDATE SET tenant_key = EXCLUDED.tenant_key,
                        name = EXCLUDED.name,
                        phone_number = EXCLUDED.phone_number,
+                       transfer_enabled = EXCLUDED.transfer_enabled,
+                       transfer_extension = EXCLUDED.transfer_extension,
+                       forward_to_number = EXCLUDED.forward_to_number,
                        role = EXCLUDED.role,
                        status = EXCLUDED.status,
                        lead_alert_sms_enabled = EXCLUDED.lead_alert_sms_enabled,
@@ -515,6 +617,9 @@ export default async function handler(req, res) {
           name,
           email,
           phoneNumber || null,
+          transferEnabled,
+          transferExtensionResult.value || null,
+          forwardToNumber || null,
           role,
           status,
           leadAlertSmsEnabled,
@@ -533,6 +638,9 @@ export default async function handler(req, res) {
         email,
         role,
         status,
+        transfer_enabled: transferEnabled,
+        transfer_extension: transferExtensionResult.value || null,
+        forward_to_last4: formatLast4(forwardToNumber),
         lead_alert_sms_enabled: leadAlertSmsEnabled,
         lead_alert_email_enabled: leadAlertEmailEnabled,
         lead_alert_sms_categories: leadAlertSmsCategories,
@@ -564,6 +672,9 @@ export default async function handler(req, res) {
   } catch (err) {
     if (err?.code === "23505" && String(err?.constraint || "").includes("tenant_users_phone_number_unique")) {
       return fail(409, "phone_exists", "That phone number is already assigned to another team user.");
+    }
+    if (err?.code === "23505" && String(err?.constraint || "").includes("tenant_users_transfer_extension_unique")) {
+      return fail(409, "transfer_extension_exists", "That extension is already assigned to another person on this account.");
     }
     if (err?.code === "23505" && String(err?.constraint || "").includes("tenant_users_email_unique")) {
       return fail(409, "email_exists", "That email address is already in use.");

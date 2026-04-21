@@ -865,6 +865,6 @@ export async function loadPromptRuntimeContext(
   };
 }
 
-export function buildPromptToolDefinitions(blueprint, fieldSchema) {
-  return buildRuntimeToolDefinitions(blueprint, fieldSchema);
+export function buildPromptToolDefinitions(blueprint, fieldSchema, options = {}) {
+  return buildRuntimeToolDefinitions(blueprint, fieldSchema, options);
 }

@@ -1,4 +1,4 @@
-import { getPool } from "../../_lib/db.js";
+import { ensureTables, getPool } from "../../_lib/db.js";
 import { INTERNAL_AUTH_PURPOSES, isValidInternalServiceToken } from "@everycall/contracts/internalAuth";
 import { assembleKnowledgeGatewayPrompt, buildFieldSchemaFromOutcomeSchema } from "../../_lib/knowledgeReceptionistPrompt.js";
 import { buildGatewayPromptResponse } from "../../_lib/gatewayPromptResponse.js";
@@ -23,6 +23,7 @@ export default async function handler(req, res) {
     if (!pool) {
       return fail(res, 500, "database_unavailable");
     }
+    await ensureTables(pool);
 
     const body = typeof req.body === "object" && req.body ? req.body : {};
     const tenantKey = String(body.tenantKey || "").trim();
@@ -36,10 +37,23 @@ export default async function handler(req, res) {
       runtimeEntryMode: String(body.runtimeEntryMode || "").trim() || "customer_call"
     });
 
+    const transferDirectoryResult = await pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM tenant_users
+       WHERE tenant_key = $1
+         AND status = 'active'
+         AND transfer_enabled = TRUE
+         AND forward_to_number IS NOT NULL
+         AND TRIM(forward_to_number) <> ''`,
+      [tenantKey]
+    );
+    const includeTransferTools = Number(transferDirectoryResult.rows[0]?.count || 0) > 0;
+
     return res.status(200).json(
       buildGatewayPromptResponse(gatewayPrompt, buildFieldSchemaFromOutcomeSchema, {
         tenantKey,
-        callSid
+        callSid,
+        includeTransferTools
       })
     );
   } catch (err) {

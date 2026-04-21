@@ -21,6 +21,9 @@ function createEmptyForm() {
     name: '',
     email: '',
     phoneNumber: '',
+    transferEnabled: false,
+    transferExtension: '',
+    forwardToNumber: '',
     role: 'member',
     status: 'active',
     leadAlertEmailEnabled: false,
@@ -138,6 +141,9 @@ export default function AccountUsersPage() {
       name: row.name || '',
       email: row.email || '',
       phoneNumber: row.phone || '',
+      transferEnabled: Boolean(row.transferEnabled),
+      transferExtension: row.transferExtension || '',
+      forwardToNumber: row.forwardToNumber || '',
       role: row.role || 'member',
       status: row.status || 'active',
       leadAlertEmailEnabled: Boolean(row.leadAlertEmailEnabled),
@@ -254,10 +260,27 @@ export default function AccountUsersPage() {
       return;
     }
 
+    const normalizedTransferExtension = formState.transferExtension.trim().replace(/\s+/g, '');
+    if (normalizedTransferExtension && !/^\d{1,6}$/.test(normalizedTransferExtension)) {
+      setStatus({ message: 'Extension must be 1 to 6 digits.', tone: 'bad' });
+      return;
+    }
+    if (formState.transferEnabled && formState.status !== 'active') {
+      setStatus({ message: 'Call transfer can only be enabled for active users.', tone: 'bad' });
+      return;
+    }
+    if (formState.transferEnabled && !formState.forwardToNumber.trim()) {
+      setStatus({ message: 'Enter a forward-to number before enabling call transfer.', tone: 'bad' });
+      return;
+    }
+
     const payload = {
       name: formState.name.trim(),
       email: formState.email.trim(),
       phoneNumber: formState.phoneNumber.trim(),
+      transferEnabled: Boolean(formState.transferEnabled),
+      transferExtension: normalizedTransferExtension,
+      forwardToNumber: formState.forwardToNumber.trim(),
       role: formState.role,
       status: formState.status,
       leadAlertEmailEnabled: Boolean(formState.leadAlertEmailEnabled),
@@ -319,6 +342,9 @@ export default function AccountUsersPage() {
     name: user.name,
     email: user.email,
     phone: user.phone_number || '',
+    transferEnabled: Boolean(user.transfer_enabled),
+    transferExtension: user.transfer_extension || '',
+    forwardToNumber: user.forward_to_number || '',
     role: user.role,
     status: user.status,
     smsOptIn: user.sms_opt_in_status || 'not_requested',
@@ -474,6 +500,31 @@ export default function AccountUsersPage() {
       )
     },
     {
+      field: 'transferEnabled',
+      headerName: 'Call Transfer',
+      flex: 0.95,
+      minWidth: 150,
+      renderCell: (params) => {
+        const details = [];
+        if (params.row.transferExtension) {
+          details.push(`Ext ${params.row.transferExtension}`);
+        }
+        if (params.row.forwardToNumber) {
+          details.push(formatPhoneDisplay(params.row.forwardToNumber) || params.row.forwardToNumber);
+        }
+        return (
+          <div className="flex flex-col py-1">
+            <span className={`badge ${params.value ? 'ok' : 'bad'}`}>
+              {params.value ? 'on' : 'off'}
+            </span>
+            <span className="mt-1 text-[11px] text-slate-500">
+              {details.join(' • ') || 'No transfer destination'}
+            </span>
+          </div>
+        );
+      }
+    },
+    {
       field: 'actions',
       headerName: '',
       sortable: false,
@@ -620,6 +671,65 @@ export default function AccountUsersPage() {
                     {!canSelectActiveStatus ? (
                       <div className="ml-1 text-xs text-amber-700">
                         The 10 active people limit is reached. Choose another status or disable someone first.
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="space-y-4 border-t border-slate-100 pt-5">
+                  <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                    <span className="material-symbols-outlined text-lg text-blue-700">call_split</span>
+                    Call Transfer
+                  </h3>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-5">
+                    <label className="flex items-start gap-3 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={formState.transferEnabled}
+                        onChange={(event) => updateFormField('transferEnabled', event.target.checked)}
+                      />
+                      <span className="normal-case font-medium tracking-normal text-slate-700">
+                        Allow EveryCall to blind-transfer callers to this person
+                      </span>
+                    </label>
+                    <div className="mt-3 ml-6 text-xs leading-6 text-slate-500">
+                      Use this only for pre-approved internal destinations. The caller can ask for this person by name or extension, and EveryCall never reads the phone number aloud.
+                    </div>
+
+                    <div className="mt-5 ml-6 grid grid-cols-1 gap-6 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className={fieldLabelClass}>Extension</label>
+                        <input
+                          className={fieldControlClass}
+                          type="text"
+                          inputMode="numeric"
+                          value={formState.transferExtension}
+                          onChange={(event) => updateFormField('transferExtension', event.target.value)}
+                          placeholder="101"
+                        />
+                        <div className="ml-1 text-xs text-slate-500">
+                          Optional. Use 1 to 6 digits if you want callers to say an extension.
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className={fieldLabelClass}>Forward To Number</label>
+                        <input
+                          className={fieldControlClass}
+                          type="tel"
+                          value={formState.forwardToNumber}
+                          onChange={(event) => updateFormField('forwardToNumber', event.target.value)}
+                          placeholder="+1XXXXXXXXXX"
+                        />
+                        <div className="ml-1 text-xs text-slate-500">
+                          Private destination number used only for transfer routing. This can be saved now and enabled when ready.
+                        </div>
+                      </div>
+                    </div>
+
+                    {formState.transferEnabled && formState.status !== 'active' ? (
+                      <div className="mt-3 ml-6 text-xs text-amber-700">
+                        Transfer stays available only for active users.
                       </div>
                     ) : null}
                   </div>
@@ -780,6 +890,10 @@ export default function AccountUsersPage() {
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">System access</div>
             <div className="mt-1 text-sm text-slate-600">If access is disabled, email and SMS lead alerts stop for that person.</div>
+          </div>
+          <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="font-semibold text-slate-900">Call transfers</div>
+            <div className="mt-1 text-sm text-slate-600">Transfers are blind and only route to active people with transfer enabled and a saved forward-to number. Callers can ask by name or extension.</div>
           </div>
           <div className="rounded-2xl border border-white/80 bg-white/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="font-semibold text-slate-900">Standard users</div>

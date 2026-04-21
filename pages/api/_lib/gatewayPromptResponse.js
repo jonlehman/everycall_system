@@ -21,7 +21,8 @@ const DEFAULT_FIELD_SCHEMA = {
 
 export function buildGatewayPromptResponse(gatewayPrompt, buildFieldSchemaFromOutcomeSchema, {
   tenantKey,
-  callSid
+  callSid,
+  includeTransferTools = false
 }) {
   const runtimeProfile = gatewayPrompt.approvedConfiguration.runtime_profile || {
     session_config: {},
@@ -33,7 +34,9 @@ export function buildGatewayPromptResponse(gatewayPrompt, buildFieldSchemaFromOu
     gatewayPrompt.approvedConfiguration.call_outcome_schema,
     DEFAULT_FIELD_SCHEMA
   );
-  const toolDefinitions = buildPromptToolDefinitions(gatewayPrompt.promptBlueprint, fieldSchema);
+  const toolDefinitions = buildPromptToolDefinitions(gatewayPrompt.promptBlueprint, fieldSchema, {
+    includeTransferTools
+  });
 
   return {
     system_prompt: gatewayPrompt.systemPrompt,
@@ -62,7 +65,8 @@ export function buildGatewayPromptResponse(gatewayPrompt, buildFieldSchemaFromOu
     session_config: runtimeProfile.session_config || {},
     metadata: {
       tenantKey,
-      callSid
+      callSid,
+      transferDirectoryEnabled: Boolean(includeTransferTools)
     }
   };
 }

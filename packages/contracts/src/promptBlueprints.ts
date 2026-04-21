@@ -32,7 +32,12 @@ export type SamplePhraseGroupId =
   | "callback_request_samples"
   | "closing_samples";
 
-export type RuntimeToolName = "knowledge_lookup" | "data_capture" | "finish_session";
+export type RuntimeToolName =
+  | "knowledge_lookup"
+  | "data_capture"
+  | "finish_session"
+  | "lookup_transfer_target"
+  | "transfer_call";
 
 export type PromptBlueprintSection = {
   section_id: PromptBlueprintSectionId;
@@ -106,6 +111,10 @@ export type RuntimeToolDefinition = {
   name: RuntimeToolName;
   description: string;
   parameters: Record<string, unknown>;
+};
+
+export type RuntimeToolBuildOptions = {
+  includeTransferTools?: boolean;
 };
 
 type PromptSectionSeed = Omit<PromptBlueprintSection, "section_order"> & {
@@ -359,7 +368,13 @@ After answering from knowledge_lookup:
 - do not treat the lookup answer by itself as the end of the interaction
 - do not let the lookup answer reset the conversation into logistics or callback capture unless the caller is clearly ready for that next step
 - if the caller is still exploratory, uncertain, or early in the conversation, continue with brief understanding or discovery after answering
-- use the lookup answer as one part of the conversation, not as a reset of the conversation`
+- use the lookup answer as one part of the conversation, not as a reset of the conversation
+
+If the caller explicitly asks for a person or extension and transfer tools are available:
+- use lookup_transfer_target before speaking as if you already know the destination
+- do not reveal or read back private phone numbers
+- if multiple people match, ask one short clarification question
+- call transfer_call only after you have already told the caller you are transferring them`
   },
   {
     section_id: "knowledge_boundaries",
@@ -540,13 +555,29 @@ const DEFAULT_TOOL_DEFINITIONS: PromptToolDefinitions = {
       reason: "Short internal reason for finishing the session."
     },
     behavior_mode: "CONFIRM_IF_AMBIGUOUS"
+  },
+  lookup_transfer_target: {
+    description: "Look up a configured transfer destination by person name or extension when the caller asks to reach someone. Never invent a match or reveal private phone numbers.",
+    parameter_descriptions: {
+      query: "The exact name, partial name, or extension the caller asked for."
+    },
+    behavior_mode: "LOOKUP_THEN_CLARIFY_IF_NEEDED"
+  },
+  transfer_call: {
+    description: "Blind-transfer the live caller to one specific configured destination only after you have already said you are transferring them. Use only a target_id returned by lookup_transfer_target.",
+    parameter_descriptions: {
+      target_id: "The exact transfer target_id returned by lookup_transfer_target for the chosen destination."
+    },
+    behavior_mode: "AFTER_SPOKEN_TRANSFER_LINE"
   }
 };
 
 const TOOL_PARAMETER_ALLOWLIST: Record<RuntimeToolName, string[]> = {
   knowledge_lookup: ["query"],
   data_capture: [],
-  finish_session: ["reason"]
+  finish_session: ["reason"],
+  lookup_transfer_target: ["query"],
+  transfer_call: ["target_id"]
 };
 
 const SECTION_TITLE_BY_ID = Object.fromEntries(
@@ -722,7 +753,9 @@ export function getDefaultPromptBlueprintSeed() {
     tool_definitions: {
       knowledge_lookup: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup.parameter_descriptions } },
       data_capture: { ...DEFAULT_TOOL_DEFINITIONS.data_capture },
-      finish_session: { ...DEFAULT_TOOL_DEFINITIONS.finish_session, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.finish_session.parameter_descriptions } }
+      finish_session: { ...DEFAULT_TOOL_DEFINITIONS.finish_session, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.finish_session.parameter_descriptions } },
+      lookup_transfer_target: { ...DEFAULT_TOOL_DEFINITIONS.lookup_transfer_target, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.lookup_transfer_target.parameter_descriptions } },
+      transfer_call: { ...DEFAULT_TOOL_DEFINITIONS.transfer_call, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.transfer_call.parameter_descriptions } }
     } satisfies PromptToolDefinitions,
     sections: getPromptSectionSeeds()
   };
@@ -779,7 +812,9 @@ export function normalizePromptBlueprintBundle(input: unknown): PromptBlueprintB
     tool_definitions: {
       knowledge_lookup: normalizeToolDefinitionText("knowledge_lookup", asObject(source.tool_definitions || source.toolDefinitions).knowledge_lookup, defaults.tool_definitions.knowledge_lookup),
       data_capture: normalizeToolDefinitionText("data_capture", asObject(source.tool_definitions || source.toolDefinitions).data_capture, defaults.tool_definitions.data_capture),
-      finish_session: normalizeToolDefinitionText("finish_session", asObject(source.tool_definitions || source.toolDefinitions).finish_session, defaults.tool_definitions.finish_session)
+      finish_session: normalizeToolDefinitionText("finish_session", asObject(source.tool_definitions || source.toolDefinitions).finish_session, defaults.tool_definitions.finish_session),
+      lookup_transfer_target: normalizeToolDefinitionText("lookup_transfer_target", asObject(source.tool_definitions || source.toolDefinitions).lookup_transfer_target, defaults.tool_definitions.lookup_transfer_target),
+      transfer_call: normalizeToolDefinitionText("transfer_call", asObject(source.tool_definitions || source.toolDefinitions).transfer_call, defaults.tool_definitions.transfer_call)
     },
     sections: normalizePromptBlueprintSections(source.sections || defaults.sections),
     created_at: normalizeText(source.created_at || source.createdAt) || null,
@@ -942,7 +977,8 @@ export function renderPromptContext(
 
 export function buildRuntimeToolDefinitions(
   blueprintInput: PromptBlueprintBundle | unknown,
-  fieldSchema: Record<string, unknown>
+  fieldSchema: Record<string, unknown>,
+  options: RuntimeToolBuildOptions = {}
 ) {
   const blueprint = normalizePromptBlueprintBundle(blueprintInput);
   const properties = asObject(asObject(fieldSchema).properties);
@@ -1007,6 +1043,40 @@ export function buildRuntimeToolDefinitions(
       }
     }
   ];
+  if (options.includeTransferTools) {
+    result.push(
+      {
+        type: "function",
+        name: "lookup_transfer_target",
+        description: blueprint.tool_definitions.lookup_transfer_target.description,
+        parameters: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: blueprint.tool_definitions.lookup_transfer_target.parameter_descriptions?.query || DEFAULT_TOOL_DEFINITIONS.lookup_transfer_target.parameter_descriptions?.query
+            }
+          },
+          required: ["query"]
+        }
+      },
+      {
+        type: "function",
+        name: "transfer_call",
+        description: blueprint.tool_definitions.transfer_call.description,
+        parameters: {
+          type: "object",
+          properties: {
+            target_id: {
+              type: "string",
+              description: blueprint.tool_definitions.transfer_call.parameter_descriptions?.target_id || DEFAULT_TOOL_DEFINITIONS.transfer_call.parameter_descriptions?.target_id
+            }
+          },
+          required: ["target_id"]
+        }
+      }
+    );
+  }
   return result;
 }
 

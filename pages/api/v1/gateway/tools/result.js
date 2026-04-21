@@ -103,6 +103,35 @@ export default async function handler(req, res) {
       );
     }
 
+    if (tool === "transfer_call") {
+      const routingJson = JSON.stringify({
+        transfer: {
+          status: String(payload.status || "").trim() || "unknown",
+          target_id: String(payload.target_id || "").trim() || null,
+          target_name: String(payload.target_name || "").trim() || null,
+          target_extension: String(payload.target_extension || "").trim() || null
+        }
+      });
+      await pool.query(
+        `INSERT INTO call_details (call_sid, routing_json, updated_at)
+         VALUES ($1, $2::jsonb, NOW())
+         ON CONFLICT (call_sid)
+         DO UPDATE SET
+           routing_json = COALESCE(call_details.routing_json, '{}'::jsonb) || EXCLUDED.routing_json,
+           updated_at = NOW()`,
+        [callId, routingJson]
+      );
+
+      if (String(payload.status || "").trim() === "accepted") {
+        await pool.query(
+          `UPDATE calls
+           SET disposition = COALESCE(disposition, 'transfer')
+           WHERE call_sid = $1`,
+          [callId]
+        );
+      }
+    }
+
     return res.status(200).json({ ok: true });
   } catch (err) {
     return res.status(500).json({ error: "tool_result_error", message: err?.message || "unknown" });

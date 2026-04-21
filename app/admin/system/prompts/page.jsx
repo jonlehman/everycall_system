@@ -32,6 +32,29 @@ function splitLines(value) {
     .filter(Boolean);
 }
 
+const TOOL_PARAMETER_META = {
+  knowledge_lookup: {
+    key: 'query',
+    label: 'Parameter Description',
+    hint: 'Admin-editable text for the fixed parameter description in the runtime-exposed tool definition.'
+  },
+  finish_session: {
+    key: 'reason',
+    label: 'Parameter Description',
+    hint: 'Admin-editable text for the fixed parameter description in the runtime-exposed tool definition.'
+  },
+  lookup_transfer_target: {
+    key: 'query',
+    label: 'Parameter Description',
+    hint: 'Admin-editable text for the caller-provided name or extension lookup input.'
+  },
+  transfer_call: {
+    key: 'target_id',
+    label: 'Parameter Description',
+    hint: 'Admin-editable text for the transfer target identifier returned by the lookup tool.'
+  }
+};
+
 function Field({ label, hint, children }) {
   return (
     <label className="grid gap-1 text-sm">
@@ -212,6 +235,8 @@ function TenantFieldBlock({ label, hint, state, draftValue, children }) {
 }
 
 function ToolDefinitionCard({ title, toolKey, draftTool, savedTool, onChange }) {
+  const parameterMeta = TOOL_PARAMETER_META[toolKey] || null;
+
   return (
     <section className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -253,16 +278,16 @@ function ToolDefinitionCard({ title, toolKey, draftTool, savedTool, onChange }) 
           </Field>
         </div>
       ) : (
-        <Field label="Parameter Description" hint="Admin-editable text for the fixed parameter description in the runtime-exposed tool definition.">
+        <Field label={parameterMeta?.label || 'Parameter Description'} hint={parameterMeta?.hint || 'Admin-editable text for the fixed parameter description in the runtime-exposed tool definition.'}>
           <TextArea
-            value={toolKey === 'knowledge_lookup'
-              ? draftTool?.parameter_descriptions?.query || ''
-              : draftTool?.parameter_descriptions?.reason || ''}
+            value={parameterMeta?.key
+              ? draftTool?.parameter_descriptions?.[parameterMeta.key] || ''
+              : ''}
             onChange={(event) => onChange({
               ...draftTool,
-              parameter_descriptions: toolKey === 'knowledge_lookup'
-                ? { ...(draftTool?.parameter_descriptions || {}), query: event.target.value }
-                : { ...(draftTool?.parameter_descriptions || {}), reason: event.target.value }
+              parameter_descriptions: parameterMeta?.key
+                ? { ...(draftTool?.parameter_descriptions || {}), [parameterMeta.key]: event.target.value }
+                : { ...(draftTool?.parameter_descriptions || {}) }
             })}
           />
         </Field>
@@ -964,6 +989,20 @@ export default function AdminPromptConfigPage() {
               draftTool={draftBlueprint.tool_definitions?.finish_session || {}}
               savedTool={savedBlueprint.tool_definitions?.finish_session || {}}
               onChange={(value) => updateToolDefinition('finish_session', value)}
+            />
+            <ToolDefinitionCard
+              title="lookup_transfer_target"
+              toolKey="lookup_transfer_target"
+              draftTool={draftBlueprint.tool_definitions?.lookup_transfer_target || {}}
+              savedTool={savedBlueprint.tool_definitions?.lookup_transfer_target || {}}
+              onChange={(value) => updateToolDefinition('lookup_transfer_target', value)}
+            />
+            <ToolDefinitionCard
+              title="transfer_call"
+              toolKey="transfer_call"
+              draftTool={draftBlueprint.tool_definitions?.transfer_call || {}}
+              savedTool={savedBlueprint.tool_definitions?.transfer_call || {}}
+              onChange={(value) => updateToolDefinition('transfer_call', value)}
             />
           </div>
         </section>

@@ -71,6 +71,9 @@ export async function ensureTables(pool) {
       name TEXT NOT NULL,
       email TEXT NOT NULL,
       phone_number TEXT,
+      transfer_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      transfer_extension TEXT,
+      forward_to_number TEXT,
       sms_opt_in_status TEXT NOT NULL DEFAULT 'not_requested',
       sms_opt_in_requested_at TIMESTAMPTZ,
       sms_opt_in_confirmed_at TIMESTAMPTZ,
@@ -87,6 +90,9 @@ export async function ensureTables(pool) {
   `);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS phone_number TEXT;`);
+  await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS transfer_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS transfer_extension TEXT;`);
+  await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS forward_to_number TEXT;`);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS sms_opt_in_status TEXT NOT NULL DEFAULT 'not_requested';`);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS sms_opt_in_requested_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS sms_opt_in_confirmed_at TIMESTAMPTZ;`);
@@ -1356,6 +1362,8 @@ export async function ensureTables(pool) {
   if (!duplicateUserPhones.rowCount) {
     await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS tenant_users_phone_number_unique ON tenant_users (phone_number) WHERE phone_number IS NOT NULL AND TRIM(phone_number) <> '';`);
   }
+  await pool.query(`CREATE INDEX IF NOT EXISTS tenant_users_transfer_lookup_idx ON tenant_users (tenant_key, status, transfer_enabled);`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS tenant_users_transfer_extension_unique ON tenant_users (tenant_key, transfer_extension) WHERE transfer_extension IS NOT NULL AND TRIM(transfer_extension) <> '';`);
 
   tablesReady = true;
 }

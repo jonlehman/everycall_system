@@ -118,6 +118,14 @@ function estimateTokenCount(value: unknown) {
   return Math.ceil(Buffer.byteLength(String(text || ""), "utf8") / 4);
 }
 
+function runtimeToolNames(toolDefinitions: Array<Record<string, unknown>> = []) {
+  return new Set(
+    toolDefinitions
+      .map((item) => normalizeText(item?.name))
+      .filter(Boolean)
+  );
+}
+
 function cacheKey(tenantKey: string, buildId: string) {
   return `${tenantKey}:${buildId}`;
 }
@@ -307,7 +315,17 @@ export function isKnowledgeReceptionistPromptPayload(payload: GatewayPromptPaylo
 }
 
 export function buildGatewaySessionInstructions(payload: GatewayPromptPayload) {
-  return payload.system_prompt;
+  const toolNames = runtimeToolNames(payload.tool_definitions);
+  const transferRules = toolNames.has("lookup_transfer_target") && toolNames.has("transfer_call")
+    ? `# Transfer Rules
+- If the caller asks for a person or extension, use lookup_transfer_target before assuming you know the destination.
+- Never reveal, read back, or hint at the private forwarding number.
+- If lookup_transfer_target returns more than one match, ask one short clarification question.
+- Only call transfer_call after you have already said you are transferring the caller.
+- Only use a target_id returned by lookup_transfer_target in this same call.
+- If a transfer attempt does not connect, apologize briefly and offer to take a message or try another person.`
+    : "";
+  return [payload.system_prompt, transferRules].filter(Boolean).join("\n\n");
 }
 
 export function initializeKnowledgeCallState(payload: GatewayPromptPayload): CallState {
