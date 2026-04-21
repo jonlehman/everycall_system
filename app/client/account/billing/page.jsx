@@ -706,57 +706,64 @@ export default function AccountBillingPage() {
                   </div>
                 </div>
 
-                <div className="mt-8 flex flex-col gap-4 border-t border-[#dee9fc] pt-6 xl:flex-row xl:items-end xl:justify-between">
-                  {selectedPanel === PANEL_KEYS.plan ? (
-                    <div className="w-full xl:max-w-md">
-                      <div className="mb-2 text-xs font-bold uppercase tracking-widest text-[#434655]">Coupon Code</div>
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                        <input
-                          type="text"
-                          value={billingCouponCode}
-                          onChange={(event) => setBillingCouponCode(event.target.value.toUpperCase())}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault();
-                              void applyBillingCoupon();
-                            }
-                          }}
-                          placeholder="Code"
-                          disabled={couponEntryDisabled}
-                          className="w-full rounded-lg border border-[#c3c6d7]/40 bg-white px-4 py-2.5 text-sm text-[#121c2a] outline-none transition-all placeholder:text-[#737686] focus:border-[#004ac6] focus:ring-2 focus:ring-[#dbe1ff] disabled:cursor-not-allowed disabled:bg-[#f4f6fb] disabled:text-[#737686] sm:w-[11ch] sm:min-w-[11ch] sm:max-w-[11ch]"
-                        />
-                        <ActionButton
-                          tone="secondary"
-                          label={billingCouponBusy ? 'Applying...' : (activeCoupon ? 'Replace Coupon' : 'Apply Coupon')}
-                          onClick={applyBillingCoupon}
-                          disabled={couponEntryDisabled}
-                        />
+                <div className="mt-8 border-t border-[#dee9fc] pt-6">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                    {selectedPanel === PANEL_KEYS.plan ? (
+                      <div className="w-full xl:max-w-md">
+                        <div className="mb-2 text-xs font-bold uppercase tracking-widest text-[#434655]">Coupon Code</div>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                          <input
+                            type="text"
+                            value={billingCouponCode}
+                            onChange={(event) => setBillingCouponCode(event.target.value.toUpperCase())}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                void applyBillingCoupon();
+                              }
+                            }}
+                            placeholder="Code"
+                            disabled={couponEntryDisabled}
+                            className="w-full rounded-lg border border-[#c3c6d7]/40 bg-white px-4 py-2.5 text-sm text-[#121c2a] outline-none transition-all placeholder:text-[#737686] focus:border-[#004ac6] focus:ring-2 focus:ring-[#dbe1ff] disabled:cursor-not-allowed disabled:bg-[#f4f6fb] disabled:text-[#737686] sm:w-[11ch] sm:min-w-[11ch] sm:max-w-[11ch]"
+                          />
+                          <ActionButton
+                            tone="secondary"
+                            label={billingCouponBusy ? 'Applying...' : (activeCoupon ? 'Replace Coupon' : 'Apply Coupon')}
+                            onClick={applyBillingCoupon}
+                            disabled={couponEntryDisabled}
+                          />
+                        </div>
                       </div>
+                    ) : null}
+
+                    <div className="flex flex-col justify-end gap-4 sm:flex-row xl:ml-auto">
+                      <ActionButton
+                        tone="secondary"
+                        label={detailSecondaryAction.label}
+                        onClick={detailSecondaryAction.onClick}
+                        disabled={detailSecondaryAction.disabled}
+                      />
+                      <ActionButton
+                        tone="primary"
+                        label={detailPrimaryAction.label}
+                        icon={detailPrimaryAction.icon}
+                        onClick={detailPrimaryAction.onClick}
+                        disabled={detailPrimaryAction.disabled}
+                      />
+                    </div>
+                  </div>
+
+                  {selectedPanel === PANEL_KEYS.plan && (billingStatus === 'deactivated' || activeCoupon) ? (
+                    <div className="mt-2 xl:max-w-md">
                       {billingStatus === 'deactivated' ? (
-                        <p className="mt-2 text-xs text-[#434655]">Restart service before applying a coupon.</p>
+                        <p className="text-xs text-[#434655]">Restart service before applying a coupon.</p>
                       ) : activeCoupon ? (
-                        <p className="mt-2 text-xs text-[#434655]">
+                        <p className="text-xs text-[#434655]">
                           {`Active coupon: ${activeCoupon.code}${couponSummary ? ` · ${couponSummary}` : ''}`}
                         </p>
                       ) : null}
                     </div>
                   ) : null}
-
-                  <div className="flex flex-col justify-end gap-4 sm:flex-row xl:ml-auto">
-                    <ActionButton
-                      tone="secondary"
-                      label={detailSecondaryAction.label}
-                      onClick={detailSecondaryAction.onClick}
-                      disabled={detailSecondaryAction.disabled}
-                    />
-                    <ActionButton
-                      tone="primary"
-                      label={detailPrimaryAction.label}
-                      icon={detailPrimaryAction.icon}
-                      onClick={detailPrimaryAction.onClick}
-                      disabled={detailPrimaryAction.disabled}
-                    />
-                  </div>
                 </div>
               </div>
             </div>
