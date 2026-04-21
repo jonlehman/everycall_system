@@ -423,6 +423,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
                     <span className="intake-panel-step">Step 3</span>
                     <div>
                       <h2 className="intake-panel-title">Send Leads To</h2>
+                      <div className="intake-muted">(You can add more recipients later.)</div>
                     </div>
                   </div>
 
