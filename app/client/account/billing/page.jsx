@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import SectionPage from '../../_components/SectionPage';
 import { accountNavItems } from '../../_components/navigation';
@@ -335,12 +335,14 @@ function LoadingLayout() {
 
 export default function AccountBillingPage() {
   const searchParams = useSearchParams();
+  const couponControlsRef = useRef(null);
   const [billing, setBilling] = useState(null);
   const [viewer, setViewer] = useState({ canManage: false, userRole: null });
   const [loadState, setLoadState] = useState('loading');
   const [manageBusy, setManageBusy] = useState(false);
   const [billingCouponCode, setBillingCouponCode] = useState('');
   const [billingCouponBusy, setBillingCouponBusy] = useState(false);
+  const [couponSummaryWidth, setCouponSummaryWidth] = useState(null);
   const [flashStatus, setFlashStatus] = useState(null);
   const [selectedPanel, setSelectedPanel] = useState(PANEL_KEYS.plan);
 
@@ -374,6 +376,27 @@ export default function AccountBillingPage() {
       setFlashStatus({ tone: 'warn', message: 'Billing checkout was canceled.' });
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const element = couponControlsRef.current;
+    if (!element) return undefined;
+
+    const updateWidth = () => {
+      const nextWidth = Math.round(element.getBoundingClientRect().width);
+      setCouponSummaryWidth(nextWidth > 0 ? nextWidth : null);
+    };
+
+    updateWidth();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateWidth);
+      return () => window.removeEventListener('resize', updateWidth);
+    }
+
+    const observer = new ResizeObserver(() => updateWidth());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [selectedPanel, billingCouponBusy, billing?.activeCoupon?.code]);
 
   const launchStripeFlow = async (preferredType) => {
     const openPortal = () => fetchJson('/api/v1/billing/portal', { method: 'POST' });
@@ -711,7 +734,7 @@ export default function AccountBillingPage() {
                     {selectedPanel === PANEL_KEYS.plan ? (
                       <div className="w-full xl:max-w-md">
                         <div className="mb-2 text-xs font-bold uppercase tracking-widest text-[#434655]">Coupon Code</div>
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <div ref={couponControlsRef} className="flex flex-col gap-3 sm:flex-row sm:items-center">
                           <input
                             type="text"
                             value={billingCouponCode}
@@ -754,7 +777,10 @@ export default function AccountBillingPage() {
                   </div>
 
                   {selectedPanel === PANEL_KEYS.plan && (billingStatus === 'deactivated' || activeCoupon) ? (
-                    <div className="mt-2 xl:max-w-md">
+                    <div
+                      className="mt-2 max-w-full"
+                      style={couponSummaryWidth ? { width: `${couponSummaryWidth}px` } : undefined}
+                    >
                       {billingStatus === 'deactivated' ? (
                         <p className="text-xs text-[#434655]">Restart service before applying a coupon.</p>
                       ) : activeCoupon ? (
