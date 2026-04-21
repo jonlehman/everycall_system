@@ -179,6 +179,12 @@ type TransferState = {
   targetCallSessionId?: string | null;
 };
 
+type PendingReconnectAssistantResponse = {
+  reason: string;
+  response: Record<string, unknown>;
+  dedupeKey: string;
+};
+
 type TransferLegClientState = {
   everycall: "transfer_leg_v1";
   source_call_control_id: string;
@@ -233,6 +239,9 @@ type StreamSession = {
   suppressOpenAiReconnect?: boolean;
   aiDetached?: boolean;
   transferState?: TransferState | null;
+  pendingReconnectAssistantResponse?: PendingReconnectAssistantResponse | null;
+  telnyxStreamBaseUrl?: string;
+  ignoreNextStreamingStopped?: boolean;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -279,6 +288,8 @@ function createStreamSession(
     suppressOpenAiReconnect: false,
     aiDetached: false,
     transferState: null,
+    pendingReconnectAssistantResponse: null,
+    ignoreNextStreamingStopped: false,
     ...(realtimeLogPath ? { realtimeLogPath } : {})
   };
 }
@@ -1093,6 +1104,49 @@ function normalizeDigitsOnly(value: unknown) {
   return String(value || "").replace(/[^\d]/g, "");
 }
 
+function levenshteinDistance(leftInput: string, rightInput: string) {
+  const left = String(leftInput || "");
+  const right = String(rightInput || "");
+  if (left === right) return 0;
+  if (!left.length) return right.length;
+  if (!right.length) return left.length;
+
+  const previous: number[] = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    let diagonal = previous[0] ?? 0;
+    previous[0] = row;
+    for (let column = 1; column <= right.length; column += 1) {
+      const temp = previous[column] ?? column;
+      const current = previous[column] ?? column;
+      const leftCost = previous[column - 1] ?? (column - 1);
+      if (left[row - 1] === right[column - 1]) {
+        previous[column] = diagonal;
+      } else {
+        previous[column] = Math.min(current + 1, leftCost + 1, diagonal + 1);
+      }
+      diagonal = temp;
+    }
+  }
+  return previous[right.length] ?? right.length;
+}
+
+function isCloseTransferNameToken(queryToken: string, targetToken: string) {
+  if (!queryToken || !targetToken) return false;
+  if (queryToken === targetToken) return true;
+  if (Math.abs(queryToken.length - targetToken.length) > 1) return false;
+  if (queryToken.charAt(0) !== targetToken.charAt(0)) return false;
+  return levenshteinDistance(queryToken, targetToken) <= 1;
+}
+
+function hasFuzzyTransferTokenMatch(targetName: string, normalizedQuery: string) {
+  const queryTokens = normalizedQuery.split(" ").filter(Boolean);
+  const targetTokens = normalizeTransferLookupText(targetName).split(" ").filter(Boolean);
+  if (!queryTokens.length || !targetTokens.length) return false;
+  return queryTokens.every((queryToken) =>
+    targetTokens.some((targetToken) => isCloseTransferNameToken(queryToken, targetToken))
+  );
+}
+
 function buildTransferTargetId(id: number) {
   return `tenant_user_${id}`;
 }
@@ -1187,6 +1241,11 @@ function rankTransferMatches(targets: TransferTargetRow[], query: string) {
   const exactTokenMatches = targets.filter((target) => normalizeTransferLookupText(target.name).split(" ").includes(normalizedQuery));
   if (exactTokenMatches.length) {
     return exactTokenMatches;
+  }
+
+  const fuzzyTokenMatches = targets.filter((target) => hasFuzzyTransferTokenMatch(target.name, normalizedQuery));
+  if (fuzzyTokenMatches.length) {
+    return fuzzyTokenMatches;
   }
 
   if (normalizedQuery.length >= 3) {
@@ -1286,6 +1345,7 @@ async function detachAiForTransferredCall(session: StreamSession, source: string
     session.openAiWs.close();
   }
   delete session.openAiWs;
+  session.ignoreNextStreamingStopped = true;
 
   try {
     await telnyxCallAction(session.callControlId, "streaming_stop", {});
@@ -1296,6 +1356,53 @@ async function detachAiForTransferredCall(session: StreamSession, source: string
       source,
       message: err instanceof Error ? err.message : "unknown"
     });
+  }
+}
+
+async function reattachAiAfterFailedTransfer(session: StreamSession, reason: string) {
+  if (!session.aiDetached) return true;
+  const streamBaseUrl = String(session.telnyxStreamBaseUrl || "").trim();
+  if (!streamBaseUrl) {
+    logError("telnyx_stream_restart_missing_url", {
+      callSid: session.callSid,
+      callControlId: session.callControlId,
+      reason
+    });
+    return false;
+  }
+
+  session.aiDetached = false;
+  session.suppressOpenAiReconnect = false;
+  session.openAiReady = false;
+  session.openAiSessionUpdated = false;
+  session.pendingToolCall = null;
+  session.pendingToolSpeechWait = null;
+  session.outputQueue = [];
+  session.outputBuffer = Buffer.alloc(0);
+  if (session.outputTimer) {
+    clearInterval(session.outputTimer);
+    session.outputTimer = null;
+  }
+  session.outputNextFrameAtMs = null;
+
+  try {
+    await telnyxCallAction(session.callControlId, "streaming_start", getTelnyxStreamingStartPayload(streamBaseUrl, session.callControlId));
+    logInfo("telnyx_stream_restart_requested_after_transfer_failure", {
+      callSid: session.callSid,
+      callControlId: session.callControlId,
+      reason
+    });
+    return true;
+  } catch (err) {
+    session.aiDetached = true;
+    session.suppressOpenAiReconnect = true;
+    logError("telnyx_stream_restart_failed_after_transfer_failure", {
+      callSid: session.callSid,
+      callControlId: session.callControlId,
+      reason,
+      message: err instanceof Error ? err.message : "unknown"
+    });
+    return false;
   }
 }
 
@@ -1350,14 +1457,21 @@ async function handleTransferFailed(session: StreamSession, source: string, deta
       ...details
     });
   }
-  requestAssistantResponse(
-    session,
-    "transfer_failed",
-    {
-      instructions: `The attempted transfer to ${currentTransfer.targetName} did not connect. Briefly apologize, then offer to take a message or try another person. Keep it to one or two short sentences.`
-    },
-    `transfer_failed:${currentTransfer.commandId}`
-  );
+  const recoveryResponse = {
+    instructions: `The attempted transfer to ${currentTransfer.targetName} did not connect. Briefly apologize, then offer to take a message or try another person. Keep it to one or two short sentences.`
+  };
+  if (session.aiDetached) {
+    const restartRequested = await reattachAiAfterFailedTransfer(session, source);
+    if (restartRequested) {
+      session.pendingReconnectAssistantResponse = {
+        reason: "transfer_failed",
+        response: recoveryResponse,
+        dedupeKey: `transfer_failed:${currentTransfer.commandId}`
+      };
+      return;
+    }
+  }
+  requestAssistantResponse(session, "transfer_failed", recoveryResponse, `transfer_failed:${currentTransfer.commandId}`);
 }
 
 async function loadCombinedTranscriptForCall(callSid: string) {
@@ -1497,6 +1611,20 @@ async function flushFinalAudioAndEnd(session: StreamSession | undefined, reason:
 
 async function handleStreamingStoppedForSession(session: StreamSession | undefined, reason: string) {
   if (!session) return;
+  if (session.ignoreNextStreamingStopped) {
+    session.ignoreNextStreamingStopped = false;
+    if (session.telnyxStreamId) {
+      streamIdToCall.delete(session.telnyxStreamId);
+    }
+    delete session.telnyxStreamId;
+    delete session.telnyxWs;
+    logInfo("telnyx_stream_stopped_expected", {
+      callSid: session.callSid,
+      callControlId: session.callControlId,
+      reason
+    });
+    return;
+  }
   if (session.telnyxStreamId) {
     streamIdToCall.delete(session.telnyxStreamId);
   }
@@ -1990,6 +2118,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
         })
       });
       await persistTransferCallState(session, target);
+      await detachAiForTransferredCall(session, "transfer_command_accepted");
       const output = {
         status: "accepted",
         target_id: requestedTargetId,
@@ -2196,6 +2325,16 @@ function connectOpenAiRealtime(session: StreamSession) {
         callSid: session.callSid,
         model: session.realtimeModel
       });
+      if (session.pendingReconnectAssistantResponse) {
+        const pendingResponse = session.pendingReconnectAssistantResponse;
+        session.pendingReconnectAssistantResponse = null;
+        requestAssistantResponse(
+          session,
+          pendingResponse.reason,
+          pendingResponse.response,
+          pendingResponse.dedupeKey
+        );
+      }
       if (!session.greetingSent) {
         session.greetingSent = true;
         logInfo("openai_realtime_greeting_requested", {
@@ -2687,6 +2826,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
       session.callAnsweredAt = session.callAnsweredAt || new Date().toISOString();
       await markCallAnswered(session.callSid);
       const streamUrl = `${toWebSocketUrl(callGatewayBaseUrl || buildBaseUrl(req))}/v1/telnyx/stream`;
+      session.telnyxStreamBaseUrl = streamUrl;
       try {
         logInfo("telnyx_stream_start_request", {
           callSid: session.callSid,
