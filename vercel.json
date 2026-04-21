@@ -9,6 +9,10 @@
       "schedule": "*/1 * * * *"
     },
     {
+      "path": "/api/cron/demo-sessions",
+      "schedule": "0 0 * * *"
+    },
+    {
       "path": "/api/cron/billing-lifecycle",
       "schedule": "15 8 * * *"
     }

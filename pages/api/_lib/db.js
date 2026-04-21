@@ -562,7 +562,7 @@ export async function ensureTables(pool) {
       user_agent TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours')
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days')
     );
   `);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS contact_name TEXT;`);
@@ -581,7 +581,14 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS request_ip_hash TEXT;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS user_agent TEXT;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
-  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours');`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days');`);
+  await pool.query(`ALTER TABLE demo_sessions ALTER COLUMN expires_at SET DEFAULT (NOW() + INTERVAL '30 days');`);
+  await pool.query(`
+    UPDATE demo_sessions
+    SET expires_at = created_at + INTERVAL '30 days'
+    WHERE status <> 'expired'
+      AND expires_at < created_at + INTERVAL '30 days'
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS demo_session_events (

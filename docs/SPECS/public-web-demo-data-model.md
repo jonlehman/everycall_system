@@ -68,9 +68,9 @@ Lightweight event log for build lifecycle and later frontend analytics.
 - `demo_session_events_session_created_idx` on `(demo_session_id, created_at ASC)`
 
 ## Retention
-- Demo sessions should be short-lived.
-- Default expiry target: 24 hours from creation.
-- Cleanup may happen later via cron or lazy expiration checks.
+- Demo sessions should remain available for up to 30 days from creation.
+- Default expiry target: 30 days from creation.
+- Expired sessions should be deleted by scheduled cleanup and may also be pruned during demo/admin access paths.
 
 ## Session State Semantics
 - `created`: row inserted, work not started

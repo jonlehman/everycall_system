@@ -2,7 +2,8 @@ import crypto from "node:crypto";
 import { scrapeDemoWebsite } from "./demoWebsiteScraper.js";
 import { buildDemoKnowledgeBundle, DEMO_BUNDLE_EXTRACTION_VERSION } from "./demoKnowledgeBundle.js";
 
-const DEMO_SESSION_TTL_HOURS = readPositiveIntEnv("DEMO_SESSION_TTL_HOURS", 24);
+const DEMO_SESSION_TTL_DAYS = readPositiveIntEnv("DEMO_SESSION_TTL_DAYS", 30);
+const DEMO_SESSION_CLEANUP_BATCH_SIZE = 500;
 
 function readPositiveIntEnv(name, fallback) {
   const value = Number.parseInt(String(process.env[name] || ""), 10);
@@ -112,7 +113,7 @@ async function insertDemoSession(pool, {
   contactEmail,
   reusedFromDemoSessionId = null
 }) {
-  const ttlHours = Math.max(1, DEMO_SESSION_TTL_HOURS);
+  const ttlDays = Math.max(1, DEMO_SESSION_TTL_DAYS);
   const result = await pool.query(
     `INSERT INTO demo_sessions (
        demo_session_id,
@@ -128,7 +129,7 @@ async function insertDemoSession(pool, {
        user_agent,
        expires_at
      )
-     VALUES ($1, $2, $3, $4, 'created', $5, $6, $7, $8, $9, $10, NOW() + ($11::text || ' hours')::interval)
+     VALUES ($1, $2, $3, $4, 'created', $5, $6, $7, $8, $9, $10, NOW() + ($11::text || ' days')::interval)
      RETURNING *`,
     [
       demoSessionId,
@@ -141,7 +142,7 @@ async function insertDemoSession(pool, {
       normalizeText(reusedFromDemoSessionId) || null,
       hashRequestIp(requestIp),
       normalizeHeaderValue(userAgent),
-      String(ttlHours)
+      String(ttlDays)
     ]
   );
   return result.rows[0] || null;
@@ -204,6 +205,42 @@ export async function recordDemoSessionEvent(pool, demoSessionId, eventType, pay
      VALUES ($1, $2, $3::jsonb)`,
     [demoSessionId, normalizeText(eventType), serializeJsonValue(payload, {})]
   );
+}
+
+export async function deleteExpiredDemoSessions(pool, { limit = DEMO_SESSION_CLEANUP_BATCH_SIZE } = {}) {
+  const safeLimit = Math.max(1, Number(limit) || DEMO_SESSION_CLEANUP_BATCH_SIZE);
+  const result = await pool.query(
+    `WITH expired_sessions AS (
+       SELECT demo_session_id
+       FROM demo_sessions
+       WHERE expires_at <= NOW()
+       ORDER BY expires_at ASC
+       LIMIT $1
+     )
+     DELETE FROM demo_sessions
+     WHERE demo_session_id IN (SELECT demo_session_id FROM expired_sessions)
+     RETURNING demo_session_id`,
+    [safeLimit]
+  );
+
+  return {
+    deletedCount: Number(result.rowCount || 0)
+  };
+}
+
+export async function runDemoSessionCleanupJobs(pool, { batchSize = DEMO_SESSION_CLEANUP_BATCH_SIZE } = {}) {
+  const safeBatchSize = Math.max(1, Number(batchSize) || DEMO_SESSION_CLEANUP_BATCH_SIZE);
+  let deletedCount = 0;
+
+  while (true) {
+    const batch = await deleteExpiredDemoSessions(pool, { limit: safeBatchSize });
+    deletedCount += Number(batch.deletedCount || 0);
+    if (Number(batch.deletedCount || 0) < safeBatchSize) break;
+  }
+
+  return {
+    deletedCount
+  };
 }
 
 async function markSessionExpiredIfNeeded(pool, demoSessionId) {
@@ -276,6 +313,7 @@ export async function createAndBuildDemoSession(pool, {
   contactPhone = "",
   contactEmail = ""
 }) {
+  await deleteExpiredDemoSessions(pool);
   const parsedUrl = new URL(String(websiteUrl || ""));
   const normalizedWebsiteUrl = parsedUrl.toString();
   const reusable = await findReusableReadyDemoSession(pool, normalizedWebsiteUrl);
@@ -387,6 +425,7 @@ export async function createAndBuildDemoSession(pool, {
 }
 
 export async function listAdminDemoSessions(pool) {
+  await deleteExpiredDemoSessions(pool);
   const result = await pool.query(
     `SELECT demo_session_id,
             normalized_website_url,
