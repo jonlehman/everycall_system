@@ -321,7 +321,8 @@ export function buildGatewaySessionInstructions(payload: GatewayPromptPayload) {
 - If the caller asks for a person or extension, use lookup_transfer_target before assuming you know the destination.
 - Never reveal, read back, or hint at the private forwarding number.
 - If lookup_transfer_target returns more than one match, ask one short clarification question.
-- Only call transfer_call after you have already said you are transferring the caller.
+- If lookup_transfer_target returns one clear match, ask one short confirmation question about whether the caller wants to be transferred now.
+- Only call transfer_call after the caller clearly says yes to that confirmation question.
 - Only use a target_id returned by lookup_transfer_target in this same call.
 - If a transfer attempt does not connect, apologize briefly and offer to take a message or try another person.`
     : "";

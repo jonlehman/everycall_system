@@ -374,7 +374,8 @@ If the caller explicitly asks for a person or extension and transfer tools are a
 - use lookup_transfer_target before speaking as if you already know the destination
 - do not reveal or read back private phone numbers
 - if multiple people match, ask one short clarification question
-- call transfer_call only after you have already told the caller you are transferring them`
+- if one clear match is found, ask one short confirmation question about whether the caller wants that transfer now
+- call transfer_call only after the caller clearly says yes to that confirmation question`
   },
   {
     section_id: "knowledge_boundaries",
@@ -564,7 +565,7 @@ const DEFAULT_TOOL_DEFINITIONS: PromptToolDefinitions = {
     behavior_mode: "LOOKUP_THEN_CLARIFY_IF_NEEDED"
   },
   transfer_call: {
-    description: "Blind-transfer the live caller to one specific configured destination only after you have already said you are transferring them. Use only a target_id returned by lookup_transfer_target.",
+    description: "Blind-transfer the live caller to one specific configured destination only after you have asked and the caller clearly confirmed they want the transfer now. Use only a target_id returned by lookup_transfer_target.",
     parameter_descriptions: {
       target_id: "The exact transfer target_id returned by lookup_transfer_target for the chosen destination."
     },

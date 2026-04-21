@@ -185,6 +185,15 @@ type PendingReconnectAssistantResponse = {
   dedupeKey: string;
 };
 
+type PendingTransferCandidate = {
+  targetId: string;
+  targetName: string;
+  targetExtension: string | null;
+  confirmed: boolean;
+  createdAt: string;
+  confirmedAt?: string | null;
+};
+
 type TransferLegClientState = {
   everycall: "transfer_leg_v1";
   source_call_control_id: string;
@@ -240,6 +249,7 @@ type StreamSession = {
   aiDetached?: boolean;
   transferState?: TransferState | null;
   pendingReconnectAssistantResponse?: PendingReconnectAssistantResponse | null;
+  pendingTransferCandidate?: PendingTransferCandidate | null;
   telnyxStreamBaseUrl?: string;
   ignoreNextStreamingStopped?: boolean;
 };
@@ -289,6 +299,7 @@ function createStreamSession(
     aiDetached: false,
     transferState: null,
     pendingReconnectAssistantResponse: null,
+    pendingTransferCandidate: null,
     ignoreNextStreamingStopped: false,
     ...(realtimeLogPath ? { realtimeLogPath } : {})
   };
@@ -1147,6 +1158,20 @@ function hasFuzzyTransferTokenMatch(targetName: string, normalizedQuery: string)
   );
 }
 
+function classifyTransferConfirmation(text: string) {
+  const normalized = normalizeTransferLookupText(text);
+  if (!normalized) return "neutral" as const;
+  if (/\b(no|nope|nah|not now|dont|don't|do not|cancel|stop|wait|hold on|never mind)\b/.test(normalized)) {
+    return "rejected" as const;
+  }
+  if (
+    /\b(yes|yeah|yep|sure|ok|okay|please|go ahead|that works|sounds good|do it|connect me|transfer me)\b/.test(normalized)
+  ) {
+    return "confirmed" as const;
+  }
+  return "neutral" as const;
+}
+
 function buildTransferTargetId(id: number) {
   return `tenant_user_${id}`;
 }
@@ -1280,7 +1305,11 @@ async function lookupTransferTarget(tenantKey: string, query: string) {
     status: matches.length === 1 ? "match" : "ambiguous",
     query: trimmedQuery,
     matches,
-    ...(matches.length === 1 ? { target: matches[0] } : {})
+    ...(matches.length === 1 ? {
+      target: matches[0],
+      requires_confirmation: true,
+      next_step: "ask_for_confirmation_before_transfer"
+    } : {})
   };
 }
 
@@ -1325,6 +1354,52 @@ async function persistTransferCallState(session: StreamSession, target: Transfer
     transfer_target_name: target.name,
     transfer_target_extension: target.transfer_extension || null
   });
+}
+
+function notePendingTransferLookup(session: StreamSession, lookupResult: {
+  status?: string;
+  target?: TransferLookupMatch;
+}) {
+  if (lookupResult.status === "match" && lookupResult.target) {
+    session.pendingTransferCandidate = {
+      targetId: lookupResult.target.target_id,
+      targetName: lookupResult.target.name,
+      targetExtension: lookupResult.target.extension || null,
+      confirmed: false,
+      createdAt: new Date().toISOString(),
+      confirmedAt: null
+    };
+    return;
+  }
+  session.pendingTransferCandidate = null;
+}
+
+function noteCallerTransferConfirmation(session: StreamSession, transcript: string) {
+  const pendingCandidate = session.pendingTransferCandidate;
+  if (!pendingCandidate || pendingCandidate.confirmed) return;
+  const classification = classifyTransferConfirmation(transcript);
+  if (classification === "confirmed") {
+    pendingCandidate.confirmed = true;
+    pendingCandidate.confirmedAt = new Date().toISOString();
+    logInfo("call_transfer_confirmation_received", {
+      callSid: session.callSid,
+      callControlId: session.callControlId,
+      targetId: pendingCandidate.targetId,
+      targetName: pendingCandidate.targetName,
+      targetExtension: pendingCandidate.targetExtension || undefined
+    });
+    return;
+  }
+  if (classification === "rejected") {
+    logInfo("call_transfer_confirmation_rejected", {
+      callSid: session.callSid,
+      callControlId: session.callControlId,
+      targetId: pendingCandidate.targetId,
+      targetName: pendingCandidate.targetName,
+      targetExtension: pendingCandidate.targetExtension || undefined
+    });
+    session.pendingTransferCandidate = null;
+  }
 }
 
 async function detachAiForTransferredCall(session: StreamSession, source: string) {
@@ -1438,6 +1513,7 @@ async function handleTransferFailed(session: StreamSession, source: string, deta
   const currentTransfer = session.transferState;
   if (!currentTransfer || currentTransfer.status !== "pending") return;
   session.transferState = null;
+  session.pendingTransferCandidate = null;
   logInfo("call_transfer_failed", {
     callSid: session.callSid,
     callControlId: session.callControlId,
@@ -1995,6 +2071,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
   if (name === "lookup_transfer_target") {
     const query = String((args as any).query || "").trim();
     const lookupResult = await lookupTransferTarget(session.tenantKey, query);
+    notePendingTransferLookup(session, lookupResult);
     await forwardToolResult(
       session.callSid,
       session.tenantKey,
@@ -2049,6 +2126,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
   if (name === "transfer_call") {
     const requestedTargetId = String((args as any).target_id || "").trim();
     const target = await loadTransferTargetById(session.tenantKey, requestedTargetId);
+    const pendingCandidate = session.pendingTransferCandidate;
 
     if (session.transferState?.status === "pending") {
       const output = {
@@ -2068,6 +2146,37 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       });
       noteToolResponseRequested(session, name, callId);
       requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+      return;
+    }
+
+    if (!pendingCandidate || pendingCandidate.targetId !== requestedTargetId || !pendingCandidate.confirmed) {
+      const confirmationOutput = {
+        status: "failed",
+        reason: "confirmation_required",
+        target_id: requestedTargetId
+      };
+      await forwardToolResult(session.callSid, session.tenantKey, name, confirmationOutput, { status: "accepted", errors: [] });
+      const toolResultEvent = createFunctionCallOutputEvent(callId, confirmationOutput);
+      const responseEvent = createAudioTextResponseEvent({});
+      sendOpenAiEvent(session.openAiWs, toolResultEvent);
+      logRealtimeToolPayloads(session, {
+        callSid: session.callSid,
+        tool: name,
+        callId,
+        toolResultEvent,
+        responseEvent
+      });
+      noteToolResponseRequested(session, name, callId);
+      requestAssistantResponse(
+        session,
+        "transfer_confirmation_required",
+        {
+          instructions: pendingCandidate && pendingCandidate.targetId === requestedTargetId
+            ? `You have identified ${pendingCandidate.targetName}${pendingCandidate.targetExtension ? ` at extension ${pendingCandidate.targetExtension}` : ""}, but the caller has not explicitly confirmed the transfer yet. Ask one short confirmation question such as whether they want to be transferred now.`
+            : "Before transferring, ask one short confirmation question to make sure the caller wants to be transferred now."
+        },
+        normalizeToolExecutionKey(name, `${callId}:confirmation_required`)
+      );
       return;
     }
 
@@ -2117,6 +2226,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
           target_id: requestedTargetId
         })
       });
+      session.pendingTransferCandidate = null;
       await persistTransferCallState(session, target);
       await detachAiForTransferredCall(session, "transfer_command_accepted");
       const output = {
@@ -2511,6 +2621,7 @@ function connectOpenAiRealtime(session: StreamSession) {
     if (type === "conversation.item.input_audio_transcription.completed" || type === "input_audio_transcription.completed") {
       const transcript = payloadMsg.transcript || payloadMsg.text || "";
       if (transcript && pool) {
+        noteCallerTransferConfirmation(session, String(transcript));
         await pool.query(
           `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
            VALUES ($1, $2, $3, $4, 'message')`,
