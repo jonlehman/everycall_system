@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
+import { Button } from '../../../components/ui/button';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
 function formatMoney(value) {
@@ -16,6 +17,7 @@ function fetchJson(url, options) {
 export default function AdminPhoneNumbersPage() {
   const [report, setReport] = useState({ rows: [], summary: null, sourceStatus: 'loading' });
   const [status, setStatus] = useState('Loading...');
+  const [releaseBusyNumber, setReleaseBusyNumber] = useState('');
 
   const loadReport = async ({ mounted = true, preserveStatus = false } = {}) => {
     try {
@@ -46,6 +48,34 @@ export default function AdminPhoneNumbersPage() {
     return () => { mounted = false; };
   }, []);
 
+  const releasePhoneNumber = async (row) => {
+    const phoneNumber = String(row?.phoneNumber || '').trim();
+    if (!phoneNumber || row?.assignmentStatus !== 'unassigned') return;
+
+    const confirmed = window.confirm(`Delete unassigned voice number ${formatPhoneDisplay(phoneNumber)}?`);
+    if (!confirmed) return;
+
+    setReleaseBusyNumber(phoneNumber);
+    setStatus(`Deleting ${formatPhoneDisplay(phoneNumber)}...`);
+    try {
+      const data = await fetchJson('/api/v1/admin/phone-numbers/release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneNumber })
+      });
+      if (!data?.ok) {
+        setStatus(data?.message || data?.error || 'Delete failed.');
+        return;
+      }
+      setStatus(`Deleted ${formatPhoneDisplay(phoneNumber)}.`);
+      await loadReport({ preserveStatus: true });
+    } catch (error) {
+      setStatus(error?.message || 'Delete failed.');
+    } finally {
+      setReleaseBusyNumber('');
+    }
+  };
+
   const rows = (report.rows || []).map((row, idx) => ({
     id: row.phoneNumber || `${row.tenantKey || 'tenant'}-${idx}`,
     phoneNumber: row.phoneNumber || '',
@@ -58,7 +88,9 @@ export default function AdminPhoneNumbersPage() {
     purchasedAt: row.purchasedAt ? new Date(row.purchasedAt).toLocaleString() : '',
     monthlyCost: typeof row.monthlyCost === 'number' ? formatMoney(row.monthlyCost) : 'Unknown',
     estimated30DayCost: typeof row.estimated30DayCost === 'number' ? formatMoney(row.estimated30DayCost) : 'Unknown',
-    costStatus: row.costStatus || 'unknown'
+    costStatus: row.costStatus || 'unknown',
+    rawAssignmentStatus: row.assignmentStatus || '',
+    releasable: row.assignmentStatus === 'unassigned'
   }));
 
   const columns = [
@@ -87,6 +119,31 @@ export default function AdminPhoneNumbersPage() {
         <span className={`badge ${params.value === 'tracked' ? 'ok' : 'warn'}`}>{params.value}</span>
       )
     },
+    {
+      field: 'actions',
+      headerName: 'Actions',
+      sortable: false,
+      filterable: false,
+      minWidth: 150,
+      flex: 0.8,
+      renderCell: (params) => {
+        const busy = releaseBusyNumber === params.row.phoneNumber;
+        if (!params.row.releasable) {
+          return <span className="text-xs text-slate-400">In use</span>;
+        }
+        return (
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            onClick={() => releasePhoneNumber(params.row)}
+            disabled={busy}
+          >
+            {busy ? 'Deleting...' : 'Delete'}
+          </Button>
+        );
+      }
+    }
   ];
 
   return (
