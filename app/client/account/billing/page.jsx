@@ -723,7 +723,7 @@ export default function AccountBillingPage() {
                           }}
                           placeholder="Enter coupon code"
                           disabled={couponEntryDisabled}
-                          className="w-full rounded-lg border border-[#c3c6d7]/40 bg-white px-4 py-2.5 text-sm text-[#121c2a] outline-none transition-all placeholder:text-[#737686] focus:border-[#004ac6] focus:ring-2 focus:ring-[#dbe1ff] disabled:cursor-not-allowed disabled:bg-[#f4f6fb] disabled:text-[#737686]"
+                          className="w-full rounded-lg border border-[#c3c6d7]/40 bg-white px-4 py-2.5 text-sm text-[#121c2a] outline-none transition-all placeholder:text-[#737686] focus:border-[#004ac6] focus:ring-2 focus:ring-[#dbe1ff] disabled:cursor-not-allowed disabled:bg-[#f4f6fb] disabled:text-[#737686] sm:w-56"
                         />
                         <ActionButton
                           tone="secondary"
@@ -732,13 +732,13 @@ export default function AccountBillingPage() {
                           disabled={couponEntryDisabled}
                         />
                       </div>
-                      <p className="mt-2 text-xs text-[#434655]">
-                        {billingStatus === 'deactivated'
-                          ? 'Restart service before applying a coupon.'
-                          : activeCoupon
-                            ? `Active coupon: ${activeCoupon.code}${couponSummary ? ` · ${couponSummary}` : ''}`
-                            : 'Have a coupon? Enter it here before you start or update billing.'}
-                      </p>
+                      {billingStatus === 'deactivated' ? (
+                        <p className="mt-2 text-xs text-[#434655]">Restart service before applying a coupon.</p>
+                      ) : activeCoupon ? (
+                        <p className="mt-2 text-xs text-[#434655]">
+                          {`Active coupon: ${activeCoupon.code}${couponSummary ? ` · ${couponSummary}` : ''}`}
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
 
