@@ -721,9 +721,9 @@ export default function AccountBillingPage() {
                               void applyBillingCoupon();
                             }
                           }}
-                          placeholder="Enter coupon code"
+                          placeholder="Code"
                           disabled={couponEntryDisabled}
-                          className="w-full rounded-lg border border-[#c3c6d7]/40 bg-white px-4 py-2.5 text-sm text-[#121c2a] outline-none transition-all placeholder:text-[#737686] focus:border-[#004ac6] focus:ring-2 focus:ring-[#dbe1ff] disabled:cursor-not-allowed disabled:bg-[#f4f6fb] disabled:text-[#737686] sm:w-56"
+                          className="w-full rounded-lg border border-[#c3c6d7]/40 bg-white px-4 py-2.5 text-sm text-[#121c2a] outline-none transition-all placeholder:text-[#737686] focus:border-[#004ac6] focus:ring-2 focus:ring-[#dbe1ff] disabled:cursor-not-allowed disabled:bg-[#f4f6fb] disabled:text-[#737686] sm:w-[11ch] sm:min-w-[11ch] sm:max-w-[11ch]"
                         />
                         <ActionButton
                           tone="secondary"
