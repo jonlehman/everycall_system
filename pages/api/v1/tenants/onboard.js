@@ -312,6 +312,17 @@ function defaultCallOutcomeSchema(payload, assignments) {
   };
 }
 
+function buildUserFacingVoiceProvisioning(voiceProvisioning) {
+  if (!voiceProvisioning || voiceProvisioning.ok !== false) {
+    return voiceProvisioning;
+  }
+
+  return {
+    ok: false,
+    errorMessage: "A problem occurred while setting up your account."
+  };
+}
+
 export default async function handler(req, res) {
   const pool = getPool();
   if (!pool) {
@@ -557,6 +568,8 @@ export default async function handler(req, res) {
         }
       }
 
+      const userFacingVoiceProvisioning = buildUserFacingVoiceProvisioning(voiceProvisioning);
+
       return res.status(200).json({
         ok: true,
         tenantKey,
@@ -568,7 +581,7 @@ export default async function handler(req, res) {
         runtimeProfile,
         callOutcomeSchema,
         setupInterviewIntent,
-        voiceProvisioning,
+        voiceProvisioning: userFacingVoiceProvisioning,
         initialKnowledgeBuild,
         leadDestination: {
           email: payload.leadEmail,

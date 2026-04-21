@@ -303,9 +303,14 @@ export function IntakePageClient({ qaMode = false } = {}) {
         // Ignore session storage failures.
       }
       setMarketingAttribution({});
+      const nextParams = new URLSearchParams();
+      if (form.hasNoWebsite) {
+        nextParams.set('support_setup', '1');
+      }
       if (data?.voiceProvisioning?.ok === false) {
+        nextParams.set('setup_issue', '1');
         setStatus({
-          message: `Account created, but phone number provisioning needs follow-up: ${data.voiceProvisioning.errorMessage || 'unknown error'}`,
+          message: 'A problem occurred while setting up your account. Opening Get Started...',
           tone: 'warn'
         });
       } else {
@@ -313,9 +318,10 @@ export function IntakePageClient({ qaMode = false } = {}) {
           message: 'Account created. Opening Get Started...',
           tone: 'ok'
         });
-        const nextGetStartedHref = form.hasNoWebsite ? `${getStartedHref}?support_setup=1` : getStartedHref;
-        window.location.assign(nextGetStartedHref);
       }
+      const nextQuery = nextParams.toString();
+      const nextGetStartedHref = nextQuery ? `${getStartedHref}?${nextQuery}` : getStartedHref;
+      window.location.assign(nextGetStartedHref);
     } catch {
       setStatus({ message: 'Could not create account.', tone: 'bad' });
     } finally {
@@ -595,7 +601,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
 
               {provisioningFailed ? (
                 <div className="intake-muted">
-                  Phone number provisioning needs follow-up before calls can be forwarded.
+                  A problem occurred while setting up your account. Use Get Started to review the remaining setup items before forwarding calls.
                 </div>
               ) : null}
             </section>

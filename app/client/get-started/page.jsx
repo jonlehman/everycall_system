@@ -299,6 +299,14 @@ export default function ClientGetStartedPage() {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    if (searchParams?.get('setup_issue') !== '1' || !packet.settings) return;
+    const nextParams = new URLSearchParams(searchParams?.toString() || '');
+    nextParams.delete('setup_issue');
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+  }, [packet.settings, pathname, router, searchParams]);
+
   const websiteTraining = useMemo(() => {
     const builds = Array.isArray(packet.buildState.builds) ? packet.buildState.builds : [];
     const activeBuildId = String(packet.buildState.activeBuild?.active_build_id || '').trim();
@@ -416,6 +424,8 @@ export default function ClientGetStartedPage() {
   const forwarding = useMemo(() => {
     const tenant = packet.settings?.tenant || {};
     const readiness = packet.settings?.salesReceptionistReadiness || {};
+    const telnyxVoiceStatus = String(readiness.telnyxVoiceStatus || tenant.telnyx_voice_status || '').trim().toLowerCase();
+    const voiceSetupNeedsAttention = ['failed', 'unavailable'].includes(telnyxVoiceStatus);
     const formattedNumber = formatPhoneDisplay(tenant.telnyx_voice_number)
       || formatPhoneDisplay(readiness.phoneNumber)
       || String(tenant.telnyx_voice_number || readiness.phoneNumber || '').trim()
@@ -426,10 +436,13 @@ export default function ClientGetStartedPage() {
     return {
       number: formattedNumber,
       numberReady,
+      voiceSetupNeedsAttention,
       forwardingConfigured: forwardingStatus === 'configured',
-      statusValue: formattedNumber || 'Setting up',
-      tone: formattedNumber ? 'processing' : 'bad',
-      description: formattedNumber
+      statusValue: formattedNumber || (voiceSetupNeedsAttention ? 'Needs attention' : 'Setting up'),
+      tone: voiceSetupNeedsAttention ? 'bad' : formattedNumber ? 'processing' : 'bad',
+      description: voiceSetupNeedsAttention
+        ? 'A problem occurred while setting up your EveryCall number. You can continue with the rest of setup, but do not forward calls until this page shows your number.'
+        : formattedNumber
         ? 'You now have a phone number that your Receptionist answers 24x7.'
         : 'Your receptionist number is still being assigned. It will appear here as soon as it is ready.'
     };
@@ -553,6 +566,7 @@ export default function ClientGetStartedPage() {
     && receptionistSettings.done
     && forwarding.forwardingConfigured
     && !billingSetup.done;
+  const showSetupIssueBanner = searchParams?.get('setup_issue') === '1' || forwarding.voiceSetupNeedsAttention;
 
   return (
     <>
@@ -574,6 +588,22 @@ export default function ClientGetStartedPage() {
             <span className="mt-1 text-xs font-medium text-[#1d4ed8]">Schedule Onboarding Session</span>
           </a>
         </header>
+
+          {showSetupIssueBanner ? (
+            <section className="mb-8 rounded-xl border border-amber-200 bg-amber-50/80 p-5 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)]">
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined mt-0.5 text-[20px] text-amber-600">warning</span>
+                <div className="min-w-0">
+                  <h2 className="font-['Space_Grotesk'] text-xl font-bold text-[#121c2a]">
+                    A problem occurred while setting up your account.
+                  </h2>
+                  <p className="mt-2 text-sm leading-7 text-slate-700">
+                    You can continue with the rest of setup here. Do not forward calls until your EveryCall number appears on this page or support confirms setup is complete.
+                  </p>
+                </div>
+              </div>
+            </section>
+          ) : null}
 
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
           <div className="flex flex-col gap-8 lg:col-span-7">
