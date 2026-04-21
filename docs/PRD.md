@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD)
 
 ## Summary
-EveryCall is a multi-tenant voice receptionist platform for service businesses. It answers inbound calls, collects key details, and hands off to the business for follow-up. The product is centered on a thin, realtime gateway that executes an EveryCall system prompt plus tenant-specific greeting and compiled knowledge content. Conversational logic lives in the EveryCall system; the gateway handles call control, tool execution, data persistence, and logging. The current production path uses Telnyx + OpenAI Realtime in `call-gateway`, with a Next.js admin/client portal.
+EveryCall is a multi-tenant voice receptionist platform for service businesses. It answers inbound calls, collects key details, and routes the next step through follow-up workflows or tenant-configured blind transfers. The product is centered on a thin, realtime gateway that executes an EveryCall system prompt plus tenant-specific greeting and compiled knowledge content. Conversational logic lives in the EveryCall system; the gateway handles call control, tool execution, data persistence, and logging. The current production path uses Telnyx + OpenAI Realtime in `call-gateway`, with a Next.js admin/client portal.
 
 ## Users
 - Callers: want fast, empathetic intake and clear next steps.
@@ -13,7 +13,8 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 2. Gateway sends `session.update` with EveryCall system prompt + tenant greeting + tenant knowledge payload + session settings.
 3. Assistant gathers required details as defined by the EveryCall system.
 4. Caller questions are answered via tenant knowledge lookup or tools; if unknown, assistant says it doesn’t know and offers a callback.
-5. Call record, transcript, summary, and extracted fields are stored for tenant review.
+5. When the caller explicitly asks for a configured person or extension and confirms the match, the gateway can blind-transfer the call.
+6. Call record, transcript, summary, and extracted fields are stored for tenant review.
 
 ## Success Metrics
 - Call completion rate
@@ -28,10 +29,11 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 - EveryCall system prompt + tenant greeting + tenant knowledge payload (sent at session start)
 - Knowledge-backed answers via tool calls when needed
 - Structured data capture via tool calls (no transcript scraping)
+- Tenant-configured blind transfer by person name or extension
 - Admin and client portals for configuration
 
 ## Out of Scope (Current)
-- Live transfer / dispatch automation
+- Automated dispatch orchestration
 - Calendar booking integration
 - Payments or quotes
 

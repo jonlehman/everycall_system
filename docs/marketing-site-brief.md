@@ -8,12 +8,12 @@ It explains what EveryCall does today, who it is for, why customers would buy it
 This brief is based on the current codebase and product documentation, not aspirational roadmap language.
 
 ## One-Sentence Description
-EveryCall is an AI sales receptionist for service businesses that answers inbound calls, responds using the business's real information, captures qualified leads, and gives the team a clean next step through a client workspace, alerts, and integrations.
+EveryCall is an AI sales receptionist for service businesses that answers inbound calls, responds using the business's real information, captures qualified leads, and gives the team a clean next step through a client workspace, alerts, integrations, and optional blind transfers to configured team members.
 
 ## Short Product Summary
 EveryCall helps service businesses stop losing inbound opportunities when they cannot answer the phone.
 
-When a call comes in, EveryCall answers quickly, speaks in a warm and natural tone, understands what the caller needs, answers business-specific questions using approved knowledge, collects the right contact and job details, and routes the outcome into the business's workflow.
+When a call comes in, EveryCall answers quickly, speaks in a warm and natural tone, understands what the caller needs, answers business-specific questions using approved knowledge, collects the right contact and job details, and routes the outcome into the business's workflow. When the caller specifically asks for a configured team member, EveryCall can also blind-transfer the call by name or extension.
 
 For the client, the value is not just "AI answering calls." The real value is:
 - fewer missed opportunities
@@ -71,6 +71,7 @@ Clients hire EveryCall to:
 - make sure new leads do not go to voicemail
 - collect caller details in a usable way
 - answer common business questions without guessing
+- let callers reach configured team members by name or extension when appropriate
 - send the team a clean summary and next step
 - reduce the chaos of missed calls, bad notes, and incomplete messages
 
@@ -119,7 +120,7 @@ Use this simple client-facing explanation:
 3. It listens to what the caller needs and keeps the conversation short and clear.
 4. It answers business questions using your approved website content, uploaded documents, and configured rules.
 5. It captures the caller's information and job details.
-6. It gives your team the result through the workspace, alerts, and integrations.
+6. It gives your team the result through the workspace, alerts, integrations, or a blind transfer when the caller explicitly asks for a configured person or extension.
 7. You can review calls, improve knowledge, and refine how the receptionist behaves over time.
 
 ## Core Feature Pillars And Client Benefits
@@ -170,19 +171,21 @@ Why it matters:
 - the business has more trust in what the system says
 - the team can improve answers without engineering help
 
-### 4. Lead Capture That Produces Actionable Follow-Up
-EveryCall is strongest today as a lead capture and callback workflow system.
+### 4. Lead Capture And Next-Step Routing
+EveryCall is strongest today as a lead capture and next-step routing system.
 
 What the customer gets:
 - caller name and callback number
 - service request or reason for calling
 - optional address and timing details
 - a summary the team can act on
+- optional blind transfer to a configured team member when the caller asks by name or extension
 
 Why it matters:
 - fewer incomplete messages
 - better follow-up speed
 - less manual cleanup
+- the right callers can reach the right person without exposing private phone numbers
 
 ### 5. Workspace For Reviewing Calls And Taking Action
 EveryCall includes a tenant-facing workspace, not just a phone layer.
@@ -329,7 +332,7 @@ If marketing AI has to decide what to emphasize, prioritize in this order:
 2. Your AI sales receptionist answers like part of your business.
 3. It uses your real business information to answer questions.
 4. It captures qualified lead details and clean summaries.
-5. Your team gets a workspace, alerts, and integrations to act on the result.
+5. Your team gets a workspace, alerts, integrations, and optional transfer routing to act on the result.
 6. You can improve the system over time without engineering help.
 
 ## Recommended Hero Direction
@@ -346,6 +349,7 @@ Support text should mention:
 - business-specific answers
 - lead capture
 - clean team handoff
+- optional transfer to configured team members when appropriate
 
 ## Recommended Page Sections
 The site should likely include these sections:
@@ -376,6 +380,7 @@ Emphasize grounded business knowledge, workspace visibility, and integrations.
 - summaries
 - transcripts
 - alerts
+- optional transfer routing
 - workspace
 - integrations
 
@@ -411,6 +416,7 @@ The website should sound like it understands field-service operators, not like i
 - grounded in your business information
 - captures qualified lead details
 - clean handoff to your team
+- optional blind transfer to configured team members
 - reduce missed-call revenue leakage
 - stop relying on voicemail
 - built for service businesses
@@ -435,7 +441,7 @@ Do not say:
 
 Safer language:
 - moves callers to the right next step
-- captures qualified leads and callback details
+- captures qualified leads, transfer requests, and next-step details
 - helps your team follow up quickly
 
 ### Do Not Claim Fully Automated Dispatch
@@ -487,6 +493,7 @@ EveryCall is the front line, not the whole back office.
 - get cleaner call summaries
 - spend less time reconstructing caller intent
 - improve speed and quality of follow-up
+- let approved callers reach configured team members without sharing direct numbers
 - tune knowledge and rules without engineering help
 
 ### Field Technician / Operator
@@ -515,6 +522,7 @@ The receptionist answers from your actual business information and can be refine
 - Does it sound natural?
 - How does it know what my business offers?
 - Can I update what it says?
+- Can it transfer callers to my team?
 - How does my team get notified?
 - Can it send leads to our existing tools?
 - How quickly can we get started?
@@ -591,7 +599,7 @@ These areas are close enough to roadmap language that marketing AI should be con
 ## Final Instruction To Marketing AI
 Build the website around the client's outcome:
 
-EveryCall helps service businesses answer every important inbound call, give callers a better first experience, capture qualified opportunities, and hand the result to the team in a usable way.
+EveryCall helps service businesses answer every important inbound call, give callers a better first experience, capture qualified opportunities, and hand the result to the team in a usable way, including optional blind transfers to configured team members when appropriate.
 
 Lead with business value.
 Support it with believable product detail.
