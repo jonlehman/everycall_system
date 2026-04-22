@@ -150,4 +150,4 @@ Use the **Status** column and keep **Dependencies** accurate.
 | CU11 | Owner setup checklist with deep links | Dev B | done | CU6, CU8, CU9 | `/client/setup` now shows actionable deep-linked checklist |
 | CU12 | Client UI v2 API + E2E test execution | Smoke Agent | done | CU6, CU7, CU8, CU9, CU10 | Passed on production at commit ce4aea2 |
 | CU13 | Regression checklist updated for client-ui v2 | Dev A | done | CU12 | docs/plan/regression-checklist.md updated |
-| CU14 | Staging rollout + 7-day monitoring | Dev A | in progress | CU13 | Monitoring plan: docs/plan/client-ui-v2-monitoring.md |
+| CU14 | Staging rollout + 7-day monitoring | Dev A | done | CU13 | Monitoring window completed; stale workflow retired on 2026-04-22. |

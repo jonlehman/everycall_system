@@ -1,10 +1,15 @@
-# Client UI V2 Monitoring Window (7 Days)
+# Client UI V2 Monitoring Window (Retired)
 
 ## Status
-- In progress
+- Retired on 2026-04-22
 - Start date: 2026-03-03
 - Owner: Dev A
-- Automated daily run: `.github/workflows/client-ui-v2-monitoring.yml` (16:15 UTC + manual dispatch)
+- Original automated daily run removed on 2026-04-22 after the workflow drifted out of sync with the codebase.
+
+## Retirement Reason
+- The scheduled workflow referenced the retired `test:client-ui:v2:api` command.
+- The remaining `test:client-ui:v2:e2e` script now requires explicit approval before creating a production test tenant.
+- Future monitoring should be rebuilt as a read-only production check rather than a daily tenant-creating regression job.
 
 ## Goal
 Validate Client UI v2 stability and usability after production rollout.
@@ -77,6 +82,11 @@ Validate Client UI v2 stability and usability after production rollout.
   - E2E suite: pass
 - Incident check:
   - No P0/P1 issues observed during this follow-up pass.
+
+### 2026-04-22 (Retirement Cleanup)
+- Removed `.github/workflows/client-ui-v2-monitoring.yml`.
+- Stopped the stale daily GitHub Actions failure notifications.
+- Deferred replacement monitoring to a future read-only production monitoring pass.
 
 ## Day 7 Exit Criteria
 1. No unresolved P0/P1 issues.
