@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import ClientPage from '../_components/ClientPage';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
+
+const GOOGLE_ADS_SIGNUP_CONVERSION_ID = 'AW-18124035745/qSx4CM-0vKQcEKGtm8JD';
 
 function fetchJson(url, options) {
   return fetch(url, options).then(async (resp) => {
@@ -245,6 +247,7 @@ export default function ClientGetStartedPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const signupConversionSentRef = useRef(false);
   const [packet, setPacket] = useState({
     buildState: { builds: [], activeBuild: null },
     users: [],
@@ -309,6 +312,46 @@ export default function ClientGetStartedPage() {
       setShowSupportSetupModal(true);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (searchParams?.get('signup') !== 'success' || signupConversionSentRef.current) return undefined;
+
+    let timeoutId = null;
+    let cancelled = false;
+
+    const clearSignupMarker = () => {
+      const nextParams = new URLSearchParams(searchParams?.toString() || '');
+      nextParams.delete('signup');
+      const nextQuery = nextParams.toString();
+      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+    };
+
+    const fireSignupConversion = (attemptsRemaining) => {
+      if (cancelled || signupConversionSentRef.current) return;
+      if (typeof window !== 'undefined' && typeof window.gtag === 'function') {
+        signupConversionSentRef.current = true;
+        window.gtag('event', 'conversion', {
+          send_to: GOOGLE_ADS_SIGNUP_CONVERSION_ID,
+          value: 1.0,
+          currency: 'USD'
+        });
+        clearSignupMarker();
+        return;
+      }
+      if (attemptsRemaining > 0) {
+        timeoutId = window.setTimeout(() => fireSignupConversion(attemptsRemaining - 1), 250);
+      }
+    };
+
+    fireSignupConversion(20);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
     if (searchParams?.get('setup_issue') !== '1' || !packet.settings) return;

@@ -304,6 +304,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
       }
       setMarketingAttribution({});
       const nextParams = new URLSearchParams();
+      nextParams.set('signup', 'success');
       if (form.hasNoWebsite) {
         nextParams.set('support_setup', '1');
       }
