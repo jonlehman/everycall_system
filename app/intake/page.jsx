@@ -97,19 +97,34 @@ function removeSessionFlag(key) {
 
 function fireGoogleAdsSignupConversion() {
   if (typeof window === 'undefined' || typeof window.gtag !== 'function') {
-    return false;
+    return Promise.resolve(false);
   }
   if (hasSessionFlag(SIGNUP_CONVERSION_SENT_KEY)) {
-    return true;
+    return Promise.resolve(true);
   }
-  window.gtag('event', 'conversion', {
-    send_to: GOOGLE_ADS_SIGNUP_CONVERSION_ID,
-    value: 1.0,
-    currency: 'USD'
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      setSessionFlag(SIGNUP_CONVERSION_SENT_KEY);
+      removeSessionFlag(SIGNUP_CONVERSION_PENDING_KEY);
+      resolve(true);
+    };
+    const timeoutId = window.setTimeout(finish, 1500);
+
+    window.gtag('event', 'conversion', {
+      send_to: GOOGLE_ADS_SIGNUP_CONVERSION_ID,
+      value: 1.0,
+      currency: 'USD',
+      event_timeout: 1500,
+      event_callback: () => {
+        window.clearTimeout(timeoutId);
+        finish();
+      }
+    });
   });
-  setSessionFlag(SIGNUP_CONVERSION_SENT_KEY);
-  removeSessionFlag(SIGNUP_CONVERSION_PENDING_KEY);
-  return true;
 }
 
 function normalizeWebsiteUrl(value) {
@@ -349,7 +364,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
       }
       setMarketingAttribution({});
       const nextParams = new URLSearchParams();
-      const signupConversionFired = fireGoogleAdsSignupConversion();
+      const signupConversionFired = await fireGoogleAdsSignupConversion();
       if (!signupConversionFired) {
         setSessionFlag(SIGNUP_CONVERSION_PENDING_KEY);
         nextParams.set('signup', 'success');
