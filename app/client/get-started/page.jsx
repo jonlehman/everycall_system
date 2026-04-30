@@ -7,6 +7,8 @@ import ClientPage from '../_components/ClientPage';
 import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
 
 const GOOGLE_ADS_SIGNUP_CONVERSION_ID = 'AW-18124035745/qSx4CM-0vKQcEKGtm8JD';
+const SIGNUP_CONVERSION_PENDING_KEY = 'everycall.googleAds.signupConversionPending';
+const SIGNUP_CONVERSION_SENT_KEY = 'everycall.googleAds.signupConversionSent';
 
 function fetchJson(url, options) {
   return fetch(url, options).then(async (resp) => {
@@ -318,6 +320,20 @@ export default function ClientGetStartedPage() {
 
     let timeoutId = null;
     let cancelled = false;
+    const hasPendingConversion = (() => {
+      try {
+        return window.sessionStorage.getItem(SIGNUP_CONVERSION_PENDING_KEY) === '1';
+      } catch {
+        return false;
+      }
+    })();
+    const conversionAlreadySent = (() => {
+      try {
+        return window.sessionStorage.getItem(SIGNUP_CONVERSION_SENT_KEY) === '1';
+      } catch {
+        return false;
+      }
+    })();
 
     const clearSignupMarker = () => {
       const nextParams = new URLSearchParams(searchParams?.toString() || '');
@@ -325,6 +341,11 @@ export default function ClientGetStartedPage() {
       const nextQuery = nextParams.toString();
       router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
     };
+
+    if (!hasPendingConversion || conversionAlreadySent) {
+      clearSignupMarker();
+      return undefined;
+    }
 
     const fireSignupConversion = (attemptsRemaining) => {
       if (cancelled || signupConversionSentRef.current) return;
@@ -335,6 +356,12 @@ export default function ClientGetStartedPage() {
           value: 1.0,
           currency: 'USD'
         });
+        try {
+          window.sessionStorage.setItem(SIGNUP_CONVERSION_SENT_KEY, '1');
+          window.sessionStorage.removeItem(SIGNUP_CONVERSION_PENDING_KEY);
+        } catch {
+          // Ignore storage failures.
+        }
         clearSignupMarker();
         return;
       }

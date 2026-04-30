@@ -10,6 +10,10 @@ import { formatPhoneDisplay } from '../../lib/phoneDisplay';
 import BrandLogo from '../_components/BrandLogo';
 import './intake.css';
 
+const GOOGLE_ADS_SIGNUP_CONVERSION_ID = 'AW-18124035745/qSx4CM-0vKQcEKGtm8JD';
+const SIGNUP_CONVERSION_PENDING_KEY = 'everycall.googleAds.signupConversionPending';
+const SIGNUP_CONVERSION_SENT_KEY = 'everycall.googleAds.signupConversionSent';
+
 const INTAKE_STEPS = [
   {
     key: 'website',
@@ -65,6 +69,47 @@ function createInitialForm(qaMode = false) {
 
 function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
+}
+
+function hasSessionFlag(key) {
+  try {
+    return window.sessionStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setSessionFlag(key) {
+  try {
+    window.sessionStorage.setItem(key, '1');
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function removeSessionFlag(key) {
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function fireGoogleAdsSignupConversion() {
+  if (typeof window === 'undefined' || typeof window.gtag !== 'function') {
+    return false;
+  }
+  if (hasSessionFlag(SIGNUP_CONVERSION_SENT_KEY)) {
+    return true;
+  }
+  window.gtag('event', 'conversion', {
+    send_to: GOOGLE_ADS_SIGNUP_CONVERSION_ID,
+    value: 1.0,
+    currency: 'USD'
+  });
+  setSessionFlag(SIGNUP_CONVERSION_SENT_KEY);
+  removeSessionFlag(SIGNUP_CONVERSION_PENDING_KEY);
+  return true;
 }
 
 function normalizeWebsiteUrl(value) {
@@ -304,7 +349,11 @@ export function IntakePageClient({ qaMode = false } = {}) {
       }
       setMarketingAttribution({});
       const nextParams = new URLSearchParams();
-      nextParams.set('signup', 'success');
+      const signupConversionFired = fireGoogleAdsSignupConversion();
+      if (!signupConversionFired) {
+        setSessionFlag(SIGNUP_CONVERSION_PENDING_KEY);
+        nextParams.set('signup', 'success');
+      }
       if (form.hasNoWebsite) {
         nextParams.set('support_setup', '1');
       }
