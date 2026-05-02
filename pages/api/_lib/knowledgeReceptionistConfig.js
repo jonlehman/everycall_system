@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { extractTextFromDocumentBuffer } from "./knowledgeReceptionistFiles.js";
 import { fetchWebsitePage } from "./knowledgeReceptionistBuilds.js";
+import { loadBuildDerivedCompanyDescription } from "./promptBlueprints.js";
 
 const DEFAULT_STAGE_IDS = [
   "opening",
@@ -156,19 +157,6 @@ const MAX_UPLOADED_DOCUMENT_BODY_CHARS = 250_000;
 
 function normalizeText(value) {
   return String(value || "").trim();
-}
-
-function truncateText(value, limit = 320) {
-  const text = normalizeText(value);
-  if (!text) return "";
-  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
-}
-
-function looksLikeWeakCompanyDescription(value) {
-  const text = normalizeText(value).toLowerCase();
-  if (!text) return true;
-  if (text.split(/\s+/).length < 6) return true;
-  return /\b(privacy|terms|policy|warranty|guarantee|financing|payment|insurance|contact us|call us|after hours|faq|service area|locations?)\b/.test(text);
 }
 
 function createId(prefix) {
@@ -1125,70 +1113,6 @@ function normalizeRuntimeDefaults(value) {
 function defaultGreetingText(tenantKey) {
   const fallbackName = normalizeText(tenantKey).replace(/[_-]+/g, " ").trim() || "the business";
   return `Thanks for calling ${fallbackName}. How can I help?`;
-}
-
-async function loadBuildDerivedCompanyDescription(db, tenantKey) {
-  const activeBuildRes = await db.query(
-    `SELECT active_build_id
-     FROM tenant_active_knowledge_builds
-     WHERE tenant_key = $1
-     LIMIT 1`,
-    [tenantKey]
-  );
-  const activeBuildId = normalizeText(activeBuildRes.rows?.[0]?.active_build_id);
-  if (!activeBuildId) return "";
-
-  const summaryRes = await db.query(
-    `SELECT kss.summary_text,
-            COALESCE(sr.page_type, '') AS page_type,
-            COALESCE(sr.title, '') AS title
-     FROM knowledge_build_source_summaries kss
-     INNER JOIN source_refs sr
-       ON sr.tenant_key = kss.tenant_key
-      AND sr.build_id = kss.build_id
-      AND sr.source_ref_id = kss.source_ref_id
-     WHERE kss.tenant_key = $1
-       AND kss.build_id = $2
-       AND kss.status = 'completed'
-     ORDER BY CASE
-       WHEN sr.page_type = 'home' THEN 0
-       WHEN sr.page_type = 'service_detail' THEN 1
-       WHEN sr.page_type = 'unknown_mixed' THEN 2
-       WHEN sr.page_type = 'contact' THEN 3
-       ELSE 4
-     END,
-     sr.title ASC
-     LIMIT 8`,
-    [tenantKey, activeBuildId]
-  );
-  for (const row of summaryRes.rows || []) {
-    const candidate = truncateText(row.summary_text, 320);
-    if (!looksLikeWeakCompanyDescription(candidate)) {
-      return candidate;
-    }
-  }
-
-  const topicRes = await db.query(
-    `SELECT topic_name, description
-     FROM knowledge_build_topics
-     WHERE tenant_key = $1
-       AND build_id = $2
-     ORDER BY topic_name ASC
-     LIMIT 8`,
-    [tenantKey, activeBuildId]
-  );
-  for (const row of topicRes.rows || []) {
-    const topicName = normalizeText(row.topic_name).toLowerCase();
-    if (/\b(hours|pricing|payment|contact|faq|policy|insurance|financing|warranty|privacy|service area|location)\b/.test(topicName)) {
-      continue;
-    }
-    const candidate = truncateText(row.description, 320);
-    if (!looksLikeWeakCompanyDescription(candidate)) {
-      return candidate;
-    }
-  }
-
-  return "";
 }
 
 async function loadDefaultCompanyDescription(db, tenantKey) {

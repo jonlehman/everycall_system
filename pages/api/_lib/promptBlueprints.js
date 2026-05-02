@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
+import { z } from "zod";
 import {
   buildRuntimeToolDefinitions,
+  callOpenAiJsonModel,
   getDefaultPromptBlueprintSeed,
   getDefaultTenantPromptProfile,
   normalizePromptBlueprintBundle,
@@ -10,6 +12,13 @@ import {
   validateTenantPromptProfile
 } from "@everycall/contracts";
 import { loadTenantBootstrapProfile } from "./tenantBootstrapProfiles.js";
+
+const COMPANY_DESCRIPTION_MODEL = process.env.OPENAI_COMPANY_DESCRIPTION_MODEL
+  || process.env.OPENAI_SUMMARY_MODEL
+  || process.env.OPENAI_MODEL
+  || "gpt-4.1-mini";
+const COMPANY_DESCRIPTION_PAGE_TYPES = ["home", "service_detail", "unknown_mixed", "service_area", "process", "contact"];
+const COMPANY_DESCRIPTION_MAX_CHARS = 320;
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -26,6 +35,26 @@ function looksLikeWeakCompanyDescription(value) {
   if (!text) return true;
   if (text.split(/\s+/).length < 6) return true;
   return /\b(privacy|terms|policy|warranty|guarantee|financing|payment|insurance|contact us|call us|after hours|faq|service area|locations?)\b/.test(text);
+}
+
+function cleanGeneratedCompanyDescription(value) {
+  const text = normalizeText(value)
+    .replace(/^["'“”]+|["'“”]+$/g, "")
+    .replace(/\s+/g, " ");
+  if (!text) return "";
+  const bounded = text.length > COMPANY_DESCRIPTION_MAX_CHARS
+    ? text.slice(0, COMPANY_DESCRIPTION_MAX_CHARS).replace(/\s+\S*$/, "").trim()
+    : text;
+  return bounded || text.slice(0, COMPANY_DESCRIPTION_MAX_CHARS).trim();
+}
+
+function isUsableGeneratedCompanyDescription(value) {
+  const text = normalizeText(value);
+  if (!text) return false;
+  if (text.length > COMPANY_DESCRIPTION_MAX_CHARS) return false;
+  if (text.split(/\s+/).length < 8) return false;
+  if (/\b(privacy policy|terms and conditions|cookie policy|contact us page|faq page)\b/i.test(text)) return false;
+  return true;
 }
 
 function asObject(value) {
@@ -119,7 +148,7 @@ function diffObjectPaths(previous, next, prefix = "") {
   return changed;
 }
 
-async function loadBuildDerivedCompanyDescription(db, tenantKey) {
+export async function loadBuildDerivedCompanyDescription(db, tenantKey) {
   const activeBuildRes = await db.query(
     `SELECT active_build_id
      FROM tenant_active_knowledge_builds
@@ -131,40 +160,57 @@ async function loadBuildDerivedCompanyDescription(db, tenantKey) {
   return loadBuildDerivedCompanyDescriptionForBuild(db, tenantKey, activeBuildId);
 }
 
-async function loadBuildDerivedCompanyDescriptionForBuild(db, tenantKey, buildId) {
+async function loadCompanyDescriptionSourcePagesForBuild(db, tenantKey, buildId) {
   const normalizedBuildId = normalizeText(buildId);
-  if (!normalizedBuildId) return "";
+  if (!normalizedBuildId) return [];
 
   const summaryRes = await db.query(
     `SELECT kss.summary_text,
             COALESCE(sr.page_type, '') AS page_type,
-            COALESCE(sr.title, '') AS title
+            COALESCE(sr.title, '') AS title,
+            COALESCE(sr.source_locator, '') AS source_locator,
+            COALESCE(sii.text_content, '') AS page_text
      FROM knowledge_build_source_summaries kss
      INNER JOIN source_refs sr
        ON sr.tenant_key = kss.tenant_key
       AND sr.build_id = kss.build_id
       AND sr.source_ref_id = kss.source_ref_id
+     LEFT JOIN source_intake_items sii
+       ON sii.tenant_key = sr.tenant_key
+      AND sii.build_id = sr.build_id
+      AND sii.source_ref_id = sr.source_ref_id
      WHERE kss.tenant_key = $1
        AND kss.build_id = $2
        AND kss.status = 'completed'
+       AND sr.page_type = ANY($3::text[])
      ORDER BY CASE
        WHEN sr.page_type = 'home' THEN 0
        WHEN sr.page_type = 'service_detail' THEN 1
        WHEN sr.page_type = 'unknown_mixed' THEN 2
-       WHEN sr.page_type = 'contact' THEN 3
-       ELSE 4
+       WHEN sr.page_type = 'service_area' THEN 3
+       WHEN sr.page_type = 'process' THEN 4
+       WHEN sr.page_type = 'contact' THEN 5
+       ELSE 6
      END,
      sr.title ASC
-     LIMIT 8`,
-    [tenantKey, normalizedBuildId]
+     LIMIT 10`,
+    [tenantKey, normalizedBuildId, COMPANY_DESCRIPTION_PAGE_TYPES]
   );
-  for (const row of summaryRes.rows || []) {
-    const candidate = truncateText(row.summary_text, 320);
-    if (!looksLikeWeakCompanyDescription(candidate)) {
-      return candidate;
-    }
-  }
 
+  return (summaryRes.rows || [])
+    .map((row) => ({
+      pageType: normalizeText(row.page_type),
+      title: normalizeText(row.title),
+      sourceLocator: normalizeText(row.source_locator),
+      summary: truncateText(row.summary_text, 700),
+      pageText: truncateText(row.page_text, 1800)
+    }))
+    .filter((page) => page.summary || page.pageText);
+}
+
+async function loadBuildDerivedCompanyDescriptionTopicFallback(db, tenantKey, buildId) {
+  const normalizedBuildId = normalizeText(buildId);
+  if (!normalizedBuildId) return "";
   const topicRes = await db.query(
     `SELECT topic_name, description
      FROM knowledge_build_topics
@@ -186,6 +232,94 @@ async function loadBuildDerivedCompanyDescriptionForBuild(db, tenantKey, buildId
   }
 
   return "";
+}
+
+function firstLocalCompanyDescriptionCandidate(sourcePages = []) {
+  for (const page of sourcePages || []) {
+    const candidate = truncateText(page.summary || page.pageText, COMPANY_DESCRIPTION_MAX_CHARS);
+    if (!looksLikeWeakCompanyDescription(candidate)) {
+      return candidate;
+    }
+  }
+  return "";
+}
+
+async function generateCompanyDescriptionFromSourcePages({ businessName = "", sourcePages = [] } = {}) {
+  if (!sourcePages.length) return "";
+
+  const system = [
+    "You write concise company descriptions for a phone receptionist setup screen.",
+    `Generate one plain-language description of the company in ${COMPANY_DESCRIPTION_MAX_CHARS} characters or fewer.`,
+    "Synthesize across the supplied website pages. Do not copy one page or preserve marketing fluff.",
+    "Focus on what the company does, who it serves, service area if supported, and what callers usually need help with.",
+    "Do not mention page titles, website navigation, forms, awards, warranties, policies, prices, or history unless central to the business.",
+    "Use only facts supported by the supplied pages. Return JSON only."
+  ].join("\n");
+  const pagesText = sourcePages.map((page, index) => [
+    `Page ${index + 1}`,
+    `Type: ${page.pageType || "unknown"}`,
+    page.title ? `Title: ${page.title}` : "",
+    page.sourceLocator ? `URL: ${page.sourceLocator}` : "",
+    page.summary ? `Existing page summary: ${page.summary}` : "",
+    page.pageText ? `Page text excerpt: ${page.pageText}` : ""
+  ].filter(Boolean).join("\n")).join("\n\n---\n\n");
+
+  const result = await callOpenAiJsonModel({
+    model: COMPANY_DESCRIPTION_MODEL,
+    system,
+    user: [
+      businessName ? `Business name: ${businessName}` : "",
+      `Source pages:\n${pagesText}`
+    ].filter(Boolean).join("\n\n"),
+    schema: z.object({
+      company_description: z.string().min(1)
+    }),
+    jsonSchemaName: "company_description_summary",
+    jsonSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["company_description"],
+      properties: {
+        company_description: {
+          type: "string",
+          description: `One concise company description, ${COMPANY_DESCRIPTION_MAX_CHARS} characters or fewer.`
+        }
+      }
+    },
+    temperature: 0.2,
+    maxOutputTokens: 180
+  });
+
+  const generated = cleanGeneratedCompanyDescription(result.parsed.company_description);
+  return isUsableGeneratedCompanyDescription(generated) ? generated : "";
+}
+
+export async function loadBuildDerivedCompanyDescriptionForBuild(db, tenantKey, buildId) {
+  const normalizedBuildId = normalizeText(buildId);
+  if (!normalizedBuildId) return "";
+
+  const sourcePages = await loadCompanyDescriptionSourcePagesForBuild(db, tenantKey, normalizedBuildId);
+  if (sourcePages.length) {
+    try {
+      const tenant = await loadTenantName(db, tenantKey);
+      const generated = await generateCompanyDescriptionFromSourcePages({
+        businessName: tenant?.name,
+        sourcePages
+      });
+      if (generated) return generated;
+    } catch (err) {
+      console.error("company_description_ai_generation_failed", {
+        tenantKey,
+        buildId: normalizedBuildId,
+        error: String(err?.message || "unknown")
+      });
+    }
+
+    const localCandidate = firstLocalCompanyDescriptionCandidate(sourcePages);
+    if (localCandidate) return localCandidate;
+  }
+
+  return loadBuildDerivedCompanyDescriptionTopicFallback(db, tenantKey, normalizedBuildId);
 }
 
 export async function ensureTenantPromptProfileCompanyDescriptionSnapshot(db, tenantKey, options = {}) {
