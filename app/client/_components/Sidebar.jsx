@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { clientPrimaryNavItems, pathMatches } from './navigation';
+import { CLIENT_SETUP_STATUS_EVENT, fetchClientSetupStatus } from './setupStatus';
 
 function iconName(kind) {
   if (kind === 'dashboard') return 'dashboard';
@@ -19,51 +20,34 @@ function iconName(kind) {
 
 export default function Sidebar({ collapsed = false, onToggle }) {
   const pathname = usePathname();
-  const [knowledgeReady, setKnowledgeReady] = useState(false);
+  const [receptionistReady, setReceptionistReady] = useState(false);
   const [billingActivated, setBillingActivated] = useState(false);
   const supportActive = pathname === '/client/support' || pathname.startsWith('/client/support/');
 
   useEffect(() => {
     let mounted = true;
-    const applyKnowledge = (payload) => {
-      const builds = Array.isArray(payload?.builds) ? payload.builds : [];
-      const hasPublishedBuild = builds.some((build) => String(build?.status || '').trim().toLowerCase() === 'published');
-      setKnowledgeReady(hasPublishedBuild);
+    const applySetupStatus = (setupStatus) => {
+      if (!mounted) return;
+      setReceptionistReady(Boolean(setupStatus?.liveReadiness?.ready));
+      setBillingActivated(Boolean(setupStatus?.tasks?.billing?.details?.hasStripeSubscription));
     };
-    const loadKnowledge = () => {
-      fetch('/api/v1/knowledge/builds', { cache: 'no-store' })
-        .then((resp) => (resp.ok ? resp.json() : null))
-        .then((data) => {
-          if (!mounted) return;
-          applyKnowledge(data || null);
-        })
+    const loadSetupStatus = () => {
+      fetchClientSetupStatus()
+        .then(applySetupStatus)
         .catch(() => {
           if (!mounted) return;
-          setKnowledgeReady(false);
-        });
-    };
-    const loadBilling = () => {
-      fetch('/api/v1/billing', { cache: 'no-store' })
-        .then((resp) => (resp.ok ? resp.json() : null))
-        .then((data) => {
-          if (!mounted) return;
-          setBillingActivated(Boolean(data?.billing?.hasStripeSubscription));
-        })
-        .catch(() => {
-          if (!mounted) return;
+          setReceptionistReady(false);
           setBillingActivated(false);
         });
     };
-    const handleKnowledgeUpdated = (event) => {
-      if (!mounted) return;
-      applyKnowledge(event?.detail || null);
-    };
-    loadKnowledge();
-    loadBilling();
-    window.addEventListener('everycall:knowledge-updated', handleKnowledgeUpdated);
+    const handleSetupStatusUpdated = (event) => applySetupStatus(event?.detail || null);
+    loadSetupStatus();
+    window.addEventListener(CLIENT_SETUP_STATUS_EVENT, handleSetupStatusUpdated);
+    window.addEventListener('everycall:knowledge-updated', loadSetupStatus);
     return () => {
       mounted = false;
-      window.removeEventListener('everycall:knowledge-updated', handleKnowledgeUpdated);
+      window.removeEventListener(CLIENT_SETUP_STATUS_EVENT, handleSetupStatusUpdated);
+      window.removeEventListener('everycall:knowledge-updated', loadSetupStatus);
     };
   }, []);
 
@@ -87,7 +71,6 @@ export default function Sidebar({ collapsed = false, onToggle }) {
           .map((item) => {
           const active = pathMatches(pathname, item);
           const showReceptionistDot = !collapsed && item.icon === 'receptionist';
-          const receptionistReady = knowledgeReady;
           return (
             <div key={item.href} className="flex flex-col">
               <Link

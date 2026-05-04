@@ -4,51 +4,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import ClientPage from '../_components/ClientPage';
-import { formatPhoneDisplay } from '../../../lib/phoneDisplay';
+import { emitClientSetupStatus, fetchClientSetupStatus } from '../_components/setupStatus';
 
 const GOOGLE_ADS_SIGNUP_CONVERSION_ID = 'AW-18124035745/qSx4CM-0vKQcEKGtm8JD';
 const SIGNUP_CONVERSION_PENDING_KEY = 'everycall.googleAds.signupConversionPending';
 const SIGNUP_CONVERSION_SENT_KEY = 'everycall.googleAds.signupConversionSent';
-
-function fetchJson(url, options) {
-  return fetch(url, options).then(async (resp) => {
-    const data = await resp.json().catch(() => null);
-    if (!resp.ok) {
-      throw new Error(data?.message || data?.error || 'request_failed');
-    }
-    return data;
-  });
-}
-
-function isWebsiteBuildKind(buildKind) {
-  const normalized = String(buildKind || '').trim().toLowerCase();
-  return normalized === 'website_base' || normalized === 'legacy_combined';
-}
-
-function resolveWebsiteAncestorBuildId(builds, activeBuild) {
-  const rows = Array.isArray(builds) ? builds : [];
-  const startBuildId = String(activeBuild?.build_id || '').trim();
-  if (!startBuildId) return '';
-  const byBuildId = new Map(
-    rows
-      .map((build) => [String(build?.build_id || '').trim(), build])
-      .filter(([buildId]) => Boolean(buildId))
-  );
-  let currentBuildId = startBuildId;
-  const visited = new Set();
-  while (currentBuildId && !visited.has(currentBuildId)) {
-    visited.add(currentBuildId);
-    const build = byBuildId.get(currentBuildId);
-    if (!build) break;
-    if (isWebsiteBuildKind(build.build_kind)) {
-      return currentBuildId;
-    }
-    const nextBuildId = String(build?.base_build_id || '').trim();
-    if (!nextBuildId) break;
-    currentBuildId = nextBuildId;
-  }
-  return '';
-}
 
 function toneClasses(tone) {
   if (tone === 'ok') {
@@ -250,40 +210,24 @@ export default function ClientGetStartedPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const signupConversionSentRef = useRef(false);
-  const [packet, setPacket] = useState({
-    buildState: { builds: [], activeBuild: null },
-    users: [],
-    settings: null,
-    billing: null,
-    promptProfile: null,
-    runtimeProfile: null
-  });
+  const [setupStatus, setSetupStatus] = useState(null);
+  const [loadingSetupStatus, setLoadingSetupStatus] = useState(true);
   const [refreshingWebsiteTraining, setRefreshingWebsiteTraining] = useState(false);
   const [savingForwardingStatus, setSavingForwardingStatus] = useState(false);
   const [savingReceptionistReviewStatus, setSavingReceptionistReviewStatus] = useState(false);
   const [showSupportSetupModal, setShowSupportSetupModal] = useState(false);
 
-  const loadWorkspace = async () => {
-    const [buildsData, usersData, settingsData, billingData, promptProfileData, runtimeProfileData] = await Promise.all([
-      fetchJson('/api/v1/knowledge/builds').catch(() => null),
-      fetchJson('/api/v1/tenant/users').catch(() => null),
-      fetchJson('/api/v1/settings').catch(() => null),
-      fetchJson('/api/v1/billing').catch(() => null),
-      fetchJson('/api/v1/knowledge/prompt-profile').catch(() => null),
-      fetchJson('/api/v1/knowledge/runtime-profile').catch(() => null)
-    ]);
-
-    return {
-      buildState: {
-        builds: Array.isArray(buildsData?.builds) ? buildsData.builds : [],
-        activeBuild: buildsData?.activeBuild || null
-      },
-      users: Array.isArray(usersData?.users) ? usersData.users : [],
-      settings: settingsData || null,
-      billing: billingData?.billing || null,
-      promptProfile: promptProfileData?.profile || null,
-      runtimeProfile: runtimeProfileData?.profile || null
-    };
+  const loadSetupStatus = async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoadingSetupStatus(true);
+    }
+    const nextSetupStatus = await fetchClientSetupStatus();
+    setSetupStatus(nextSetupStatus);
+    emitClientSetupStatus(nextSetupStatus);
+    if (!silent) {
+      setLoadingSetupStatus(false);
+    }
+    return nextSetupStatus;
   };
 
   const dismissSupportSetupModal = () => {
@@ -296,13 +240,13 @@ export default function ClientGetStartedPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void loadWorkspace()
-      .then((nextPacket) => {
+    void loadSetupStatus()
+      .then(() => {
         if (cancelled) return;
-        setPacket(nextPacket);
       })
       .catch(() => {
         if (cancelled) return;
+        setLoadingSetupStatus(false);
       });
     return () => {
       cancelled = true;
@@ -381,82 +325,44 @@ export default function ClientGetStartedPage() {
   }, [pathname, router, searchParams]);
 
   useEffect(() => {
-    if (searchParams?.get('setup_issue') !== '1' || !packet.settings) return;
+    if (searchParams?.get('setup_issue') !== '1' || !setupStatus) return;
     const nextParams = new URLSearchParams(searchParams?.toString() || '');
     nextParams.delete('setup_issue');
     const nextQuery = nextParams.toString();
     router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
-  }, [packet.settings, pathname, router, searchParams]);
+  }, [pathname, router, searchParams, setupStatus]);
 
   const websiteTraining = useMemo(() => {
-    const builds = Array.isArray(packet.buildState.builds) ? packet.buildState.builds : [];
-    const activeBuildId = String(packet.buildState.activeBuild?.active_build_id || '').trim();
-    const latestLiveBuild = builds.find((build) => String(build?.build_id || '').trim() === activeBuildId) || null;
-    const latestWebsiteBuild = builds.find((build) => isWebsiteBuildKind(build?.build_kind)) || null;
-    const activeBuildStatus = String(latestLiveBuild?.status || '').trim().toLowerCase();
-    const latestWebsiteBuildId = String(latestWebsiteBuild?.build_id || '').trim();
-    const liveWebsiteBuildId = resolveWebsiteAncestorBuildId(builds, latestLiveBuild);
-    const websiteTrainingDone = Boolean(activeBuildId)
-      && activeBuildStatus === 'published'
-      && Boolean(latestWebsiteBuildId)
-      && latestWebsiteBuildId === liveWebsiteBuildId;
-    const latestWebsiteStatus = String(latestWebsiteBuild?.status || '').trim().toLowerCase();
-    const rawWebsiteBuildProgress = Number(latestWebsiteBuild?.progress?.percent);
-    const websiteBuildProgressPercent = Number.isFinite(rawWebsiteBuildProgress)
-      ? Math.max(0, Math.min(100, Math.round(rawWebsiteBuildProgress)))
-      : (websiteTrainingDone ? 100 : 0);
-
-    if (websiteTrainingDone) {
-      return {
-        done: true,
-        progressPercent: 100,
-        tone: 'ok',
-        statusValue: 'Complete',
-        description: 'Your receptionist can now answer any questions about your business covered on your website.',
-        subdescription: ''
-      };
-    }
-    if (latestWebsiteStatus === 'failed') {
-      return {
-        done: false,
-        progressPercent: websiteBuildProgressPercent,
-        tone: 'bad',
-        statusValue: 'Needs attention',
-        description: 'Website training needs attention. Open Knowledge to review the issue with your website crawl.',
-        subdescription: ''
-      };
-    }
+    const task = setupStatus?.tasks?.knowledge || null;
+    const rawProgressPercent = Number(task?.details?.progress?.percent);
+    const progressPercent = Number.isFinite(rawProgressPercent)
+      ? Math.max(0, Math.min(100, Math.round(rawProgressPercent)))
+      : task?.status === 'ready'
+        ? 100
+        : 0;
     return {
-      done: false,
-      progressPercent: websiteBuildProgressPercent,
-      tone: 'processing',
-      statusValue: 'Processing',
-      description: 'Training your receptionist using your website.',
-      subdescription: ''
+      done: task?.status === 'ready',
+      progressPercent,
+      tone: task?.tone || 'processing',
+      statusValue: task?.label || (loadingSetupStatus ? 'Loading' : 'Not live yet'),
+      description: task?.message || 'Open Knowledge to create or review the live training build.',
+      subdescription: Array.isArray(task?.warnings) && task.warnings.length ? task.warnings.join(' ') : ''
     };
-  }, [packet.buildState]);
+  }, [loadingSetupStatus, setupStatus]);
 
   const leadDestinations = useMemo(() => {
-    const configuredUsers = Array.isArray(packet.users)
-      ? packet.users.filter((user) => String(user?.status || '').trim().toLowerCase() !== 'disabled')
-      : [];
-    const emailDestinations = configuredUsers
-      .filter((user) => Boolean(user?.lead_alert_email_enabled) && String(user?.email || '').trim())
-      .map((user) => String(user.email || '').trim());
-    const smsConfiguredDestinations = configuredUsers
-      .filter((user) => (
-        Boolean(user?.lead_alert_sms_enabled)
-        && String(user?.phone_number || '').trim()
-      ))
-      .map((user) => {
-        const phone = formatPhoneDisplay(user.phone_number) || String(user.phone_number || '').trim();
-        const smsStatus = String(user?.sms_opt_in_status || '').trim().toLowerCase();
+    const task = setupStatus?.tasks?.leadDestinations || null;
+    const emailDestinations = Array.isArray(task?.details?.emailRecipients) ? task.details.emailRecipients : [];
+    const smsConfiguredDestinations = Array.isArray(task?.details?.smsRecipients)
+      ? task.details.smsRecipients.map((recipient) => {
+        const phone = String(recipient?.formattedPhoneNumber || recipient?.phoneNumber || '').trim();
         return {
-          display: smsStatus === 'opted_in' ? phone : `${phone} (unconfirmed)`,
-          isConfirmed: smsStatus === 'opted_in',
+          display: recipient?.optedIn ? phone : `${phone} (unconfirmed)`,
+          isConfirmed: Boolean(recipient?.optedIn),
           rawPhone: phone
         };
-      });
+      }).filter((entry) => Boolean(entry.rawPhone))
+      : [];
     const confirmedSmsDestinations = smsConfiguredDestinations
       .filter((entry) => entry.isConfirmed)
       .map((entry) => entry.rawPhone);
@@ -494,77 +400,62 @@ export default function ClientGetStartedPage() {
     return {
       activeDestinations: workingDestinations,
       configuredDestinations,
+      tone: task?.tone || (workingDestinations.length ? 'ok' : configuredDestinations.length ? 'processing' : 'bad'),
       description: configuredDestinations.length
         ? 'Lead alerts are configured for the destinations shown here.'
         : 'Open Send Leads To and choose which people should receive new lead alerts by email or text.',
       subdescription: '',
       lines
     };
-  }, [packet.users]);
+  }, [setupStatus]);
 
   const forwarding = useMemo(() => {
-    const tenant = packet.settings?.tenant || {};
-    const readiness = packet.settings?.salesReceptionistReadiness || {};
-    const telnyxVoiceStatus = String(readiness.telnyxVoiceStatus || tenant.telnyx_voice_status || '').trim().toLowerCase();
-    const voiceSetupNeedsAttention = ['failed', 'unavailable'].includes(telnyxVoiceStatus);
-    const formattedNumber = formatPhoneDisplay(tenant.telnyx_voice_number)
-      || formatPhoneDisplay(readiness.phoneNumber)
-      || String(tenant.telnyx_voice_number || readiness.phoneNumber || '').trim()
-      || '';
-    const forwardingStatus = String(tenant.forwarding_setup_status || '').trim().toLowerCase();
+    const phoneTask = setupStatus?.tasks?.phoneNumber || null;
+    const forwardingTask = setupStatus?.tasks?.forwarding || null;
+    const formattedNumber = String(
+      phoneTask?.details?.formattedPhoneNumber || phoneTask?.details?.phoneNumber || ''
+    ).trim();
+    const voiceSetupNeedsAttention = phoneTask?.status === 'needs_attention';
     const numberReady = Boolean(formattedNumber);
 
     return {
       number: formattedNumber,
       numberReady,
       voiceSetupNeedsAttention,
-      forwardingConfigured: forwardingStatus === 'configured',
-      statusValue: formattedNumber || (voiceSetupNeedsAttention ? 'Needs attention' : 'Setting up'),
-      tone: voiceSetupNeedsAttention ? 'bad' : formattedNumber ? 'processing' : 'bad',
+      forwardingConfigured: forwardingTask?.status === 'ready',
+      statusValue: formattedNumber || phoneTask?.label || (voiceSetupNeedsAttention ? 'Needs attention' : 'Setting up'),
+      tone: forwardingTask?.status === 'ready' ? 'ok' : voiceSetupNeedsAttention ? 'bad' : formattedNumber ? 'processing' : 'bad',
       description: voiceSetupNeedsAttention
-        ? 'A problem occurred while setting up your EveryCall number. You can continue with the rest of setup, but do not forward calls until this page shows your number.'
+        ? (phoneTask?.message || 'A problem occurred while setting up your EveryCall number. You can continue with the rest of setup, but do not forward calls until support confirms setup is complete.')
         : formattedNumber
-        ? 'You now have a phone number that your Receptionist answers 24x7.'
-        : 'Your receptionist number is still being assigned. It will appear here as soon as it is ready.'
+          ? forwardingTask?.message || 'You now have a phone number that your Receptionist answers 24x7.'
+          : phoneTask?.message || 'Your receptionist number is still being assigned. It will appear here as soon as it is ready.'
     };
-  }, [packet.settings]);
+  }, [setupStatus]);
 
   const receptionistSettings = useMemo(() => {
-    const profile = packet.promptProfile || {};
-    const runtimeProfile = packet.runtimeProfile || {};
-    const tenant = packet.settings?.tenant || {};
-    const businessName = String(profile?.business_name || profile?.businessName || '').trim();
-    const openingLine = String(profile?.opening_line || profile?.openingLine || '').trim();
-    const businessPhone = String(tenant?.primary_number || '').trim();
-    const voice = String(runtimeProfile?.session_config?.voice || '').trim();
-    const ready = Boolean(businessName && openingLine && voice && businessPhone);
-    const reviewed = Boolean(tenant?.receptionist_basics_reviewed_at);
-    const done = ready && reviewed;
+    const task = setupStatus?.tasks?.basics || null;
+    const reviewed = Boolean(task?.details?.reviewed);
+    const done = task?.status === 'ready';
 
     return {
       done,
-      ready,
+      ready: task?.status !== 'needs_attention',
       reviewed,
-      tone: done ? 'ok' : ready ? 'processing' : 'bad',
-      statusValue: done ? 'Reviewed' : ready ? 'Ready to review' : 'Needs attention'
+      tone: task?.tone || (done ? 'ok' : 'processing'),
+      statusValue: task?.label || (loadingSetupStatus ? 'Loading' : 'Ready to review')
     };
-  }, [packet.promptProfile, packet.runtimeProfile, packet.settings]);
+  }, [loadingSetupStatus, setupStatus]);
 
   const billingSetup = useMemo(() => {
-    const billing = packet.billing || null;
-    const hasStripeSubscription = Boolean(billing?.hasStripeSubscription);
-    const normalizedStatus = String(billing?.status || '').trim().toLowerCase();
-    const trialDaysRemaining = typeof billing?.trialDaysRemaining === 'number' ? billing.trialDaysRemaining : null;
-
+    const task = setupStatus?.tasks?.billing || null;
     return {
-      done: hasStripeSubscription,
-      tone: hasStripeSubscription ? 'ok' : ['trial_expired', 'deactivated', 'unpaid', 'past_due'].includes(normalizedStatus) ? 'bad' : 'processing',
-      statusValue: hasStripeSubscription ? 'Activated' : 'Not active yet',
-      trialMessage: !hasStripeSubscription && trialDaysRemaining !== null
-        ? `${trialDaysRemaining} day(s) left in trial.`
-        : ''
+      done: task?.status === 'ready',
+      tone: task?.tone || 'processing',
+      statusValue: task?.label || (loadingSetupStatus ? 'Loading' : 'Not active yet'),
+      trialMessage: task?.message || ''
     };
-  }, [packet.billing]);
+  }, [loadingSetupStatus, setupStatus]);
 
   const updateForwardingStatus = async (checked) => {
     if (savingForwardingStatus) return;
@@ -580,18 +471,7 @@ export default function ClientGetStartedPage() {
       if (!response.ok) {
         throw new Error(body?.message || 'forwarding_status_update_failed');
       }
-      setPacket((current) => ({
-        ...current,
-        settings: {
-          ...(current.settings || {}),
-          tenant: {
-            ...((current.settings && current.settings.tenant) || {}),
-            forwarding_setup_status: body?.forwarding?.status || nextStatus,
-            forwarding_configured_at: body?.forwarding?.configuredAt || null,
-            forwarding_acknowledged_at: body?.forwarding?.acknowledgedAt || null
-          }
-        }
-      }));
+      await loadSetupStatus({ silent: true });
     } catch (error) {
       window.alert('Could not update forwarding completion right now.');
     } finally {
@@ -612,16 +492,7 @@ export default function ClientGetStartedPage() {
       if (!response.ok) {
         throw new Error(body?.message || 'receptionist_review_status_update_failed');
       }
-      setPacket((current) => ({
-        ...current,
-        settings: {
-          ...(current.settings || {}),
-          tenant: {
-            ...((current.settings && current.settings.tenant) || {}),
-            receptionist_basics_reviewed_at: body?.review?.reviewedAt || null
-          }
-        }
-      }));
+      await loadSetupStatus({ silent: true });
     } catch (error) {
       window.alert('Could not update receptionist review status right now.');
     } finally {
@@ -630,20 +501,22 @@ export default function ClientGetStartedPage() {
   };
 
   const cardProgressItems = useMemo(() => [
+    { label: 'Get EveryCall number', done: setupStatus?.tasks?.phoneNumber?.status === 'ready' },
     { label: 'Teach EveryCall about your business', done: websiteTraining.done },
-    { label: 'Choose where leads go', done: leadDestinations.activeDestinations.length > 0 },
+    { label: 'Choose where leads go', done: setupStatus?.tasks?.leadDestinations?.status === 'ready' },
     { label: 'Review receptionist settings', done: receptionistSettings.done },
     { label: 'How to use this number', done: forwarding.forwardingConfigured },
     { label: 'Activate billing', done: billingSetup.done }
   ], [
     billingSetup.done,
     forwarding.forwardingConfigured,
-    leadDestinations.activeDestinations.length,
     receptionistSettings.done,
+    setupStatus,
     websiteTraining.done
   ]);
-  const onlyBillingRemaining = websiteTraining.done
-    && leadDestinations.activeDestinations.length > 0
+  const onlyBillingRemaining = setupStatus?.tasks?.phoneNumber?.status === 'ready'
+    && websiteTraining.done
+    && setupStatus?.tasks?.leadDestinations?.status === 'ready'
     && receptionistSettings.done
     && forwarding.forwardingConfigured
     && !billingSetup.done;
@@ -654,8 +527,7 @@ export default function ClientGetStartedPage() {
     if (refreshingWebsiteTraining) return;
     setRefreshingWebsiteTraining(true);
     try {
-      const nextPacket = await loadWorkspace();
-      setPacket(nextPacket);
+      await loadSetupStatus({ silent: true });
     } finally {
       setRefreshingWebsiteTraining(false);
     }
@@ -706,7 +578,7 @@ export default function ClientGetStartedPage() {
               description=""
               subdescription={websiteTraining.subdescription}
               statusBox={{
-                label: 'Website Crawl Status',
+                label: 'Knowledge Status',
                 value: websiteTraining.statusValue,
                 tone: websiteTraining.tone,
                 message: websiteTraining.description
@@ -742,11 +614,7 @@ export default function ClientGetStartedPage() {
               subdescription={leadDestinations.subdescription}
               statusBox={{
                 heading: 'Leads currently go to',
-                tone: leadDestinations.activeDestinations.length
-                  ? 'ok'
-                  : leadDestinations.configuredDestinations.length
-                    ? 'processing'
-                    : 'bad',
+                tone: leadDestinations.tone,
                 lines: leadDestinations.lines.length ? leadDestinations.lines : [
                   { label: 'Status', value: 'No lead destinations configured yet' }
                 ]

@@ -5,6 +5,7 @@ import { Button } from '../../../../components/ui/button';
 import GuidePanel from '../../_components/GuidePanel';
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
+import { emitClientSetupStatus, fetchClientSetupStatus, statusChipFromTask } from '../../_components/setupStatus';
 import StepSection from '../../_components/StepSection';
 import {
   BUSINESS_HOURS_DAY_LABELS,
@@ -17,24 +18,6 @@ function fetchJson(url, options) {
 
 function isInteractiveGuideTarget(target) {
   return target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, button, a, label, [role="button"]'));
-}
-
-function buildDocumentPendingState({ approvedDocuments = [], latestLiveBuild = null } = {}) {
-  const appliedDocumentIds = new Set(
-    Array.isArray(latestLiveBuild?.intake_metadata_json?.uploaded_document_ids)
-      ? latestLiveBuild.intake_metadata_json.uploaded_document_ids.map((value) => String(value || '').trim()).filter(Boolean)
-      : []
-  );
-  const approvedDocumentIds = new Set(
-    approvedDocuments
-      .map((document) => String(document?.uploaded_document_id || '').trim())
-      .filter(Boolean)
-  );
-  const pendingApprovedDocuments = approvedDocuments.filter((document) => !appliedDocumentIds.has(String(document?.uploaded_document_id || '').trim()));
-  const removedLiveDocumentIds = Array.from(appliedDocumentIds).filter((id) => !approvedDocumentIds.has(id));
-  return {
-    hasPendingChanges: pendingApprovedDocuments.length > 0 || removedLiveDocumentIds.length > 0
-  };
 }
 
 const voiceOptions = [
@@ -120,7 +103,7 @@ export default function ReceptionistBasicsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState({ message: 'Loading sales receptionist basics...', tone: 'warn' });
-  const [knowledgeStatusChip, setKnowledgeStatusChip] = useState({ tone: 'ok', label: 'Sales Receptionist Active' });
+  const [setupStatusChip, setSetupStatusChip] = useState({ tone: 'warn', label: 'Ready to review' });
   const [sampleStatus, setSampleStatus] = useState('');
   const [activeGuideKey, setActiveGuideKey] = useState('assistantName');
   const [form, setForm] = useState({
@@ -144,13 +127,12 @@ export default function ReceptionistBasicsPage() {
     setLoading(true);
     setStatus({ message: 'Loading sales receptionist basics...', tone: 'warn' });
     try {
-      const [profileData, routingData, runtimeData, settingsData, buildData, documentData] = await Promise.all([
+      const [profileData, routingData, runtimeData, settingsData, setupStatusData] = await Promise.all([
         fetchJson('/api/v1/knowledge/prompt-profile'),
         fetchJson('/api/v1/routing'),
         fetchJson('/api/v1/knowledge/runtime-profile'),
         fetchJson('/api/v1/settings'),
-        fetchJson('/api/v1/knowledge/builds'),
-        fetchJson('/api/v1/knowledge/uploaded-documents')
+        fetchClientSetupStatus().catch(() => null)
       ]);
       const profile = profileData?.profile || null;
       const routing = routingData?.routing || null;
@@ -171,21 +153,7 @@ export default function ReceptionistBasicsPage() {
         ),
         voiceType: runtimeProfile?.session_config?.voice || 'marin'
       });
-      const builds = Array.isArray(buildData?.builds) ? buildData.builds : [];
-      const activeBuildId = String(buildData?.activeBuild?.active_build_id || '').trim();
-      const latestLiveBuild = builds.find((build) => String(build?.build_id || '').trim() === activeBuildId) || builds[0] || null;
-      const approvedDocuments = Array.isArray(documentData?.documents)
-        ? documentData.documents.filter((document) => String(document?.status || '').trim() === 'approved')
-        : [];
-      const hasPendingDocumentChanges = buildDocumentPendingState({
-        approvedDocuments,
-        latestLiveBuild
-      }).hasPendingChanges;
-      setKnowledgeStatusChip(
-        hasPendingDocumentChanges
-          ? { tone: 'warn', label: 'Documents Pending' }
-          : { tone: 'ok', label: 'Sales Receptionist Active' }
-      );
+      setSetupStatusChip(statusChipFromTask(setupStatusData?.tasks?.basics, { tone: 'warn', label: 'Ready to review' }));
       setStatus({ message: 'Sales receptionist basics loaded.', tone: 'ok' });
     } catch {
       setStatus({ message: 'Could not load sales receptionist basics.', tone: 'bad' });
@@ -251,6 +219,13 @@ export default function ReceptionistBasicsPage() {
       if (!profileResp?.ok || !routingResp?.ok || !runtimeResp?.ok || !settingsResp?.ok) {
         setStatus({ message: 'Could not save sales receptionist basics.', tone: 'bad' });
         return;
+      }
+      try {
+        const nextSetupStatus = await fetchClientSetupStatus();
+        emitClientSetupStatus(nextSetupStatus);
+        setSetupStatusChip(statusChipFromTask(nextSetupStatus?.tasks?.basics, { tone: 'warn', label: 'Ready to review' }));
+      } catch {
+        // The form save succeeded, so leave the local save status alone if the status refresh fails.
       }
       setStatus({ message: 'Sales receptionist basics saved.', tone: 'ok' });
     } catch {
@@ -330,7 +305,7 @@ export default function ReceptionistBasicsPage() {
       title="Basics"
       subtitle="Set the business identity, greeting, and voice used by your sales receptionist."
       status={status}
-      statusChip={knowledgeStatusChip}
+      statusChip={setupStatusChip}
     >
       <div className="grid grid-cols-1 items-start gap-4 pb-[288px] xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
         <div className="grid min-w-0 gap-3">

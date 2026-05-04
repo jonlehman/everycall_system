@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '../../../lib/utils';
 import { pathMatches } from './navigation';
+import { CLIENT_SETUP_STATUS_EVENT, fetchClientSetupStatus } from './setupStatus';
 
 export default function SectionTabs({ items = [] }) {
   const pathname = usePathname();
@@ -14,32 +15,26 @@ export default function SectionTabs({ items = [] }) {
   useEffect(() => {
     if (!hasKnowledgeTab) return undefined;
     let mounted = true;
-    const applyKnowledge = (payload) => {
-      const builds = Array.isArray(payload?.builds) ? payload.builds : [];
-      const hasPublishedBuild = builds.some((build) => String(build?.status || '').trim().toLowerCase() === 'published');
-      setKnowledgeReady(hasPublishedBuild);
+    const applySetupStatus = (setupStatus) => {
+      if (!mounted) return;
+      setKnowledgeReady(setupStatus?.tasks?.knowledge?.status === 'ready');
     };
-    const loadKnowledge = () => {
-      fetch('/api/v1/knowledge/builds', { cache: 'no-store' })
-        .then((resp) => (resp.ok ? resp.json() : null))
-        .then((data) => {
-          if (!mounted) return;
-          applyKnowledge(data || null);
-        })
+    const loadSetupStatus = () => {
+      fetchClientSetupStatus()
+        .then(applySetupStatus)
         .catch(() => {
           if (!mounted) return;
           setKnowledgeReady(false);
         });
     };
-    const handleKnowledgeUpdated = (event) => {
-      if (!mounted) return;
-      applyKnowledge(event?.detail || null);
-    };
-    if (hasKnowledgeTab) loadKnowledge();
-    window.addEventListener('everycall:knowledge-updated', handleKnowledgeUpdated);
+    const handleSetupStatusUpdated = (event) => applySetupStatus(event?.detail || null);
+    loadSetupStatus();
+    window.addEventListener(CLIENT_SETUP_STATUS_EVENT, handleSetupStatusUpdated);
+    window.addEventListener('everycall:knowledge-updated', loadSetupStatus);
     return () => {
       mounted = false;
-      window.removeEventListener('everycall:knowledge-updated', handleKnowledgeUpdated);
+      window.removeEventListener(CLIENT_SETUP_STATUS_EVENT, handleSetupStatusUpdated);
+      window.removeEventListener('everycall:knowledge-updated', loadSetupStatus);
     };
   }, [hasKnowledgeTab]);
 

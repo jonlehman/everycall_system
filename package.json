@@ -18,7 +18,8 @@
     "dev:call-gateway": "PORT=3101 pnpm --filter @everycall/call-gateway dev",
     "smoke": "node scripts/smoke.mjs",
     "smoke:production": "node scripts/smoke-production.mjs",
-    "test:client-ui:v2:e2e": "node scripts/test-client-ui-v2-e2e.mjs"
+    "test:client-ui:v2:e2e": "node scripts/test-client-ui-v2-e2e.mjs",
+    "validate:client-setup-status": "node scripts/validate-client-setup-status.mjs"
   },
   "dependencies": {
     "@everycall/contracts": "workspace:*",

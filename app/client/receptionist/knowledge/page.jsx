@@ -7,6 +7,7 @@ import GuidePanel from '../../_components/GuidePanel';
 import SalesReceptionistNumberHeaderAside from '../../_components/SalesReceptionistNumberHeaderAside';
 import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
+import { emitClientSetupStatus, fetchClientSetupStatus, statusChipFromTask } from '../../_components/setupStatus';
 import StepSection from '../../_components/StepSection';
 
 function fetchJson(url, options) {
@@ -345,6 +346,7 @@ export default function ReceptionistKnowledgePage() {
 
   const [buildState, setBuildState] = useState({ activeBuild: null, builds: [], assignments: [] });
   const [uploadedDocuments, setUploadedDocuments] = useState([]);
+  const [setupStatus, setSetupStatus] = useState(null);
   const [preview, setPreview] = useState(null);
 
   const loadWorkspace = async ({ silent = false } = {}) => {
@@ -355,10 +357,12 @@ export default function ReceptionistKnowledgePage() {
     try {
       const [
         buildData,
-        documentData
+        documentData,
+        setupStatusData
       ] = await Promise.all([
         fetchJson('/api/v1/knowledge/builds'),
-        fetchJson('/api/v1/knowledge/uploaded-documents')
+        fetchJson('/api/v1/knowledge/uploaded-documents'),
+        fetchClientSetupStatus().catch(() => null)
       ]);
 
       const builds = buildData?.builds || [];
@@ -376,6 +380,10 @@ export default function ReceptionistKnowledgePage() {
         }));
       }
       setUploadedDocuments(Array.isArray(documentData?.documents) ? documentData.documents : []);
+      if (setupStatusData) {
+        setSetupStatus(setupStatusData);
+        emitClientSetupStatus(setupStatusData);
+      }
       setBuildForm((current) => ({
         websiteUrl: current.websiteUrl || buildData?.bootstrapWebsiteUrl || builds[0]?.website_root_url || ''
       }));
@@ -640,7 +648,7 @@ export default function ReceptionistKnowledgePage() {
         ? previewAnswer
         : 'Your answer preview will appear here after you test a customer question.');
   const latestBuildStatus = activeBuildStatus || String(latestBuild?.status || '').trim().toLowerCase();
-  const statusChip = buildState.builds.some((build) => isBuildActive(build))
+  const localStatusChip = buildState.builds.some((build) => isBuildActive(build))
     ? { tone: 'warn', label: 'Build In Progress' }
     : hasPendingDocumentChanges
       ? { tone: 'warn', label: 'Documents Pending' }
@@ -649,6 +657,9 @@ export default function ReceptionistKnowledgePage() {
         : latestBuildStatus === 'published'
           ? null
           : { tone: 'warn', label: 'Create Knowledge Base' };
+  const statusChip = setupStatus
+    ? statusChipFromTask(setupStatus?.tasks?.knowledge, localStatusChip)
+    : localStatusChip;
   const activeGuide = guideByContext[activeGuideKey] || guideByContext.website;
   const activeStep = activeGuide.step || '01';
   const activeCardClassName = 'ring-2 ring-[#2563EB]/20 shadow-[0_0_0_1px_rgba(37,99,235,0.05)]';
