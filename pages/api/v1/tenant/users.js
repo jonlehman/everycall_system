@@ -504,7 +504,23 @@ export default async function handler(req, res) {
           return fail(500, "sms_number_missing", "Shared SMS number is not configured.");
         }
         const text = "EveryCall by Creative Dynamic: Reply YES to confirm SMS new lead alerts. Message frequency may vary. Msg&data rates may apply. Consent is not a condition of purchase. Reply HELP for help. Reply STOP to opt out.";
-        const smsResult = await sendTelnyxSms({ from: fromNumber, to: user.phone_number, text });
+        let smsResult = null;
+        try {
+          smsResult = await sendTelnyxSms({ from: fromNumber, to: user.phone_number, text });
+        } catch (smsErr) {
+          const errorMessage = String(smsErr?.message || "unknown").slice(0, 500);
+          console.error("tenant_sms_opt_in_request_failed", {
+            tenantKey,
+            userId: id,
+            error: errorMessage
+          });
+          await audit(manager, "tenant.team_user.sms_opt_in_failed", {
+            user_id: id,
+            phone_number: user.phone_number,
+            error: errorMessage
+          });
+          return fail(502, "sms_send_failed", `SMS opt-in request could not be sent: ${errorMessage}`);
+        }
         const providerMessageId = String(smsResult?.data?.id || smsResult?.id || "").trim() || null;
         await pool.query(
           `UPDATE tenant_users

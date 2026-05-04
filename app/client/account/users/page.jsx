@@ -31,7 +31,8 @@ function createEmptyForm() {
     leadAlertEmailCategories: getDefaultCallCategorySelection(),
     leadAlertSmsCategories: getDefaultCallCategorySelection(),
     smsConsentConfirmed: false,
-    smsOptInStatus: 'not_requested'
+    smsOptInStatus: 'not_requested',
+    savedPhoneNumber: ''
   };
 }
 
@@ -94,6 +95,8 @@ export default function AccountUsersPage() {
   const [formState, setFormState] = useState(createEmptyForm);
   const [loading, setLoading] = useState(false);
   const [savingForm, setSavingForm] = useState(false);
+  const [smsOptInSubmitting, setSmsOptInSubmitting] = useState(false);
+  const [smsOptInFeedback, setSmsOptInFeedback] = useState(null);
   const [status, setStatus] = useState(null);
 
   const loadUsers = () => {
@@ -123,11 +126,13 @@ export default function AccountUsersPage() {
     setFormMode(null);
     setEditingUserId(null);
     setFormState(createEmptyForm());
+    setSmsOptInFeedback(null);
   };
 
   const openCreateForm = () => {
     setFormMode('create');
     setEditingUserId(null);
+    setSmsOptInFeedback(null);
     setFormState({
       ...createEmptyForm(),
       status: activeUserLimitReached ? 'invited' : 'active'
@@ -137,6 +142,7 @@ export default function AccountUsersPage() {
   const openEditForm = (row) => {
     setFormMode('edit');
     setEditingUserId(row.id);
+    setSmsOptInFeedback(null);
     setFormState({
       name: row.name || '',
       email: row.email || '',
@@ -151,7 +157,8 @@ export default function AccountUsersPage() {
       leadAlertEmailCategories: sanitizeCallCategorySelection(row.leadAlertEmailCategories, { fallbackToAll: Boolean(row.leadAlertEmailEnabled) }),
       leadAlertSmsCategories: sanitizeCallCategorySelection(row.leadAlertSmsCategories, { fallbackToAll: Boolean(row.leadAlertSmsEnabled) }),
       smsConsentConfirmed: false,
-      smsOptInStatus: row.smsOptIn || 'not_requested'
+      smsOptInStatus: row.smsOptIn || 'not_requested',
+      savedPhoneNumber: row.phone || ''
     });
   };
 
@@ -200,19 +207,61 @@ export default function AccountUsersPage() {
   };
 
   const requestSmsOptIn = async (id) => {
-    const resp = await fetch('/api/v1/tenant/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'sms_opt_in_request', id, consentConfirmed: true })
-    });
-    const body = await resp.json().catch(() => null);
-    if (!resp.ok) {
-      setStatus({ message: body?.message || 'SMS opt-in request failed.', tone: 'bad' });
+    const phoneNumber = formState.phoneNumber.trim();
+    const savedPhoneNumber = formState.savedPhoneNumber.trim();
+    if (!id) {
+      const message = 'Save this user before sending an SMS opt-in request.';
+      setSmsOptInFeedback({ message, tone: 'bad' });
+      setStatus({ message, tone: 'bad' });
       return;
     }
-    setStatus({ message: body?.message || 'SMS opt-in request sent.', tone: 'ok' });
-    setFormState((current) => ({ ...current, smsOptInStatus: 'pending' }));
-    loadUsers();
+    if (!phoneNumber) {
+      const message = 'Enter and save a mobile phone number before sending the SMS opt-in request.';
+      setSmsOptInFeedback({ message, tone: 'bad' });
+      setStatus({ message, tone: 'bad' });
+      return;
+    }
+    if (phoneNumber !== savedPhoneNumber) {
+      const message = 'Save the updated mobile phone number before sending the SMS opt-in request.';
+      setSmsOptInFeedback({ message, tone: 'bad' });
+      setStatus({ message, tone: 'bad' });
+      return;
+    }
+    if (!formState.smsConsentConfirmed) {
+      const message = 'Check the SMS disclosure confirmation before sending the opt-in request.';
+      setSmsOptInFeedback({ message, tone: 'bad' });
+      setStatus({ message, tone: 'bad' });
+      return;
+    }
+
+    setSmsOptInSubmitting(true);
+    setSmsOptInFeedback({ message: 'Sending SMS opt-in request...', tone: 'warn' });
+    setStatus({ message: 'Sending SMS opt-in request...', tone: 'warn' });
+    try {
+      const resp = await fetch('/api/v1/tenant/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sms_opt_in_request', id, consentConfirmed: true })
+      });
+      const body = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        const message = body?.message || 'SMS opt-in request failed.';
+        setSmsOptInFeedback({ message, tone: 'bad' });
+        setStatus({ message, tone: 'bad' });
+        return;
+      }
+      const message = body?.message || 'SMS opt-in request sent.';
+      setSmsOptInFeedback({ message, tone: 'ok' });
+      setStatus({ message, tone: 'ok' });
+      setFormState((current) => ({ ...current, smsOptInStatus: 'pending' }));
+      loadUsers();
+    } catch {
+      const message = 'SMS opt-in request failed before reaching the server.';
+      setSmsOptInFeedback({ message, tone: 'bad' });
+      setStatus({ message, tone: 'bad' });
+    } finally {
+      setSmsOptInSubmitting(false);
+    }
   };
 
   const deleteUser = async (id) => {
@@ -367,6 +416,11 @@ export default function AccountUsersPage() {
     : formState.smsOptInStatus === 'pending'
       ? 'border-amber-200 bg-amber-50 text-amber-700'
       : 'border-slate-200 bg-slate-100 text-slate-600';
+  const smsOptInFeedbackClass = smsOptInFeedback?.tone === 'ok'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+    : smsOptInFeedback?.tone === 'bad'
+      ? 'border-red-200 bg-red-50 text-red-800'
+      : 'border-amber-200 bg-amber-50 text-amber-800';
 
   const renderCategorySelector = (title, enabled, enabledField, categoriesField) => (
     <div className={`rounded-2xl border px-4 py-4 ${enabled ? 'border-slate-200 bg-slate-50/80' : 'border-slate-200/70 bg-slate-50/40 opacity-80'}`}>
@@ -802,15 +856,26 @@ export default function AccountUsersPage() {
                       </label>
 
                       {formMode === 'edit' ? (
-                        <div>
+                        <div className="space-y-2">
                           <Button
                             type="button"
                             variant="outline"
                             onClick={() => requestSmsOptIn(editingUserId)}
-                            disabled={!formState.phoneNumber.trim() || formState.smsOptInStatus === 'opted_in' || !formState.smsConsentConfirmed}
+                            disabled={formState.smsOptInStatus === 'opted_in' || smsOptInSubmitting}
                           >
-                            {formState.smsOptInStatus === 'opted_in' ? 'SMS Already Enabled' : 'Send SMS Opt-In Request'}
+                            {formState.smsOptInStatus === 'opted_in'
+                              ? 'SMS Already Enabled'
+                              : smsOptInSubmitting
+                                ? 'Sending...'
+                                : formState.smsOptInStatus === 'pending'
+                                  ? 'Resend SMS Opt-In Request'
+                                  : 'Send SMS Opt-In Request'}
                           </Button>
+                          {smsOptInFeedback?.message ? (
+                            <div className={`break-words rounded-md border px-3 py-2 text-xs ${smsOptInFeedbackClass}`}>
+                              {smsOptInFeedback.message}
+                            </div>
+                          ) : null}
                         </div>
                       ) : (
                         <div className="text-xs text-slate-500">

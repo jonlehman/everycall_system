@@ -144,11 +144,33 @@ async function sendInitialSmsOptInRequest(pool, { tenantKey, userId, phoneNumber
 
   const fromNumber = await getSharedSmsNumber(pool);
   if (!fromNumber) {
+    await pool.query(
+      `INSERT INTO audit_log (tenant_key, actor, action, details)
+       VALUES ($1, 'system:onboard', 'onboarding.sms_opt_in_skipped', $2)`,
+      [
+        tenantKey,
+        `user_id=${userId} phone_number=${normalizedPhone} reason=sms_number_missing`
+      ]
+    );
     return { ok: false, skipped: true, reason: "sms_number_missing" };
   }
 
   const text = "EveryCall by Creative Dynamic: Reply YES to confirm SMS new lead alerts. Message frequency may vary. Msg&data rates may apply. Consent is not a condition of purchase. Reply HELP for help. Reply STOP to opt out.";
-  const smsResult = await sendTelnyxSms({ from: fromNumber, to: normalizedPhone, text });
+  let smsResult = null;
+  try {
+    smsResult = await sendTelnyxSms({ from: fromNumber, to: normalizedPhone, text });
+  } catch (smsErr) {
+    const errorMessage = String(smsErr?.message || "unknown").slice(0, 500);
+    await pool.query(
+      `INSERT INTO audit_log (tenant_key, actor, action, details)
+       VALUES ($1, 'system:onboard', 'onboarding.sms_opt_in_failed', $2)`,
+      [
+        tenantKey,
+        `user_id=${userId} phone_number=${normalizedPhone} error=${errorMessage}`
+      ]
+    );
+    throw smsErr;
+  }
   const providerMessageId = String(smsResult?.data?.id || smsResult?.id || "").trim() || null;
 
   await pool.query(
