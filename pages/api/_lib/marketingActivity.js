@@ -181,6 +181,7 @@ export async function loadFencingDemoMarketingActivity(pool, { limit = 50 } = {}
        AND (
          d.source_label = 'fencing_contractors'
          OR d.source_page IN ('/fencing-contractors.html', 'fencing-contractors.html', '/fencing-contractors')
+         OR COALESCE(d.source_url, '') ILIKE '%/fencing-contractors%'
        )
      ORDER BY d.created_at DESC
      LIMIT $1`,

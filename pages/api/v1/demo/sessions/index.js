@@ -22,7 +22,7 @@ function sourceFromRequest(req, body) {
       sourcePage = "";
     }
   }
-  const inferredLabel = /fencing-contractors/i.test(sourcePage)
+  const inferredLabel = /fencing-contractors/i.test(`${sourcePage} ${sourceUrl}`)
     ? "fencing_contractors"
     : "";
   return {
