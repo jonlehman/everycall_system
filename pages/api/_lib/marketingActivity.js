@@ -1,0 +1,203 @@
+import pg from "pg";
+
+const { Pool } = pg;
+
+function normalizeText(value) {
+  return String(value || "").trim();
+}
+
+function normalizeEmail(value) {
+  return normalizeText(value).toLowerCase();
+}
+
+function numberValue(value) {
+  const numeric = Number(value || 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function toIso(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function recommendationTitle(recommendation) {
+  if (!recommendation || typeof recommendation !== "object" || Array.isArray(recommendation)) return "";
+  return normalizeText(recommendation.reportTitle || recommendation.projectName || recommendation.projectTitle);
+}
+
+function getCreativeDynamicPool() {
+  const connectionString = normalizeText(
+    process.env.CD_SITE_DATABASE_URL
+    || process.env.CREATIVE_DYNAMIC_DATABASE_URL
+    || process.env.CD_LEGACY_AI_DATABASE_URL
+  );
+  if (!connectionString) return null;
+
+  if (!globalThis.__creativeDynamicMarketingPool) {
+    globalThis.__creativeDynamicMarketingPool = new Pool({
+      connectionString,
+      ssl: connectionString.includes("sslmode=disable") ? false : { rejectUnauthorized: false },
+      max: 3,
+      idleTimeoutMillis: 30_000
+    });
+  }
+  return globalThis.__creativeDynamicMarketingPool;
+}
+
+function aggregateSarah(items) {
+  return {
+    total30d: items.length,
+    reportsReady: items.filter((item) => item.status === "recommendation_ready" || item.status === "email_sent").length,
+    emailsSent: items.filter((item) => item.emailStatus === "sent" || item.status === "email_sent").length,
+    followUps: items.filter((item) => item.followUpRequested).length
+  };
+}
+
+function aggregateFencing(items) {
+  return {
+    total30d: items.length,
+    ready: items.filter((item) => item.status === "ready").length,
+    connected: items.filter((item) => item.connected).length,
+    transcripts: items.filter((item) => item.transcriptItemCount > 0).length
+  };
+}
+
+function serializeSarah(row) {
+  const recommendation = row.recommendation_json && typeof row.recommendation_json === "object"
+    ? row.recommendation_json
+    : {};
+  const extracted = row.extracted_intake_json && typeof row.extracted_intake_json === "object"
+    ? row.extracted_intake_json
+    : {};
+  const title = recommendationTitle(recommendation) || "Sarah AI intake";
+  const email = normalizeEmail(row.visitor_email);
+  const name = normalizeText(row.visitor_name);
+  const company = normalizeText(row.visitor_company);
+
+  return {
+    id: normalizeText(row.id),
+    source: "sarah_intake",
+    sourceLabel: "Sarah AI intake",
+    title,
+    subtitle: company || normalizeText(row.source_page) || "Creative Dynamic legacy page",
+    contactName: name,
+    contactEmail: email,
+    status: normalizeText(row.status) || "started",
+    emailStatus: normalizeText(row.email_status),
+    followUpRequested: Boolean(extracted.followUpRequested),
+    transcriptItemCount: numberValue(row.transcript_item_count),
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at)
+  };
+}
+
+function serializeFencing(row) {
+  const connected = Boolean(row.connected);
+  const transcriptItemCount = numberValue(row.transcript_item_count);
+  return {
+    id: normalizeText(row.demo_session_id),
+    source: "fencing_demo",
+    sourceLabel: "Fencing live demo",
+    title: normalizeText(row.business_name) || normalizeText(row.normalized_website_url) || "Website demo",
+    subtitle: normalizeText(row.normalized_website_url),
+    contactName: normalizeText(row.contact_name),
+    contactEmail: normalizeEmail(row.contact_email),
+    contactPhone: normalizeText(row.contact_phone),
+    status: normalizeText(row.status) || "created",
+    connected,
+    transcriptItemCount,
+    sourcePage: normalizeText(row.source_page),
+    sourceUrl: normalizeText(row.source_url),
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+    href: `/admin/demo-sessions?session=${encodeURIComponent(normalizeText(row.demo_session_id))}`
+  };
+}
+
+export async function loadSarahMarketingActivity({ limit = 50 } = {}) {
+  const pool = getCreativeDynamicPool();
+  if (!pool) {
+    return {
+      configured: false,
+      message: "Set CD_SITE_DATABASE_URL to include Creative Dynamic Sarah intakes.",
+      items: [],
+      summary: aggregateSarah([])
+    };
+  }
+
+  const result = await pool.query(
+    `SELECT id,
+            status,
+            source_page,
+            visitor_email,
+            visitor_name,
+            visitor_company,
+            extracted_intake_json,
+            recommendation_json,
+            email_status,
+            created_at,
+            updated_at,
+            jsonb_array_length(COALESCE(transcript_items_json, '[]'::jsonb)) AS transcript_item_count
+     FROM legacy_ai_interactions
+     WHERE created_at >= NOW() - INTERVAL '30 days'
+       AND COALESCE(source_page, '') ILIKE '%legacy-software-ai-integration%'
+     ORDER BY created_at DESC
+     LIMIT $1`,
+    [Math.min(Math.max(Number(limit) || 50, 1), 500)]
+  );
+
+  const items = result.rows.map(serializeSarah);
+  return {
+    configured: true,
+    message: "",
+    items,
+    summary: aggregateSarah(items)
+  };
+}
+
+export async function loadFencingDemoMarketingActivity(pool, { limit = 50 } = {}) {
+  const result = await pool.query(
+    `SELECT d.demo_session_id,
+            d.normalized_website_url,
+            d.status,
+            d.contact_name,
+            d.contact_phone,
+            d.contact_email,
+            d.source_page,
+            d.source_url,
+            d.business_name,
+            d.created_at,
+            d.updated_at,
+            jsonb_array_length(COALESCE(d.transcript_items_json, '[]'::jsonb)) AS transcript_item_count,
+            EXISTS (
+              SELECT 1
+              FROM demo_session_events e
+              WHERE e.demo_session_id = d.demo_session_id
+                AND e.event_type = 'realtime_token_created'
+            ) AS connected
+     FROM demo_sessions d
+     WHERE d.created_at >= NOW() - INTERVAL '30 days'
+       AND (
+         d.source_label = 'fencing_contractors'
+         OR d.source_page IN ('/fencing-contractors.html', 'fencing-contractors.html', '/fencing-contractors')
+       )
+     ORDER BY d.created_at DESC
+     LIMIT $1`,
+    [Math.min(Math.max(Number(limit) || 50, 1), 500)]
+  );
+
+  const items = result.rows.map(serializeFencing);
+  return {
+    configured: true,
+    message: "",
+    items,
+    summary: aggregateFencing(items)
+  };
+}
+
+export function mergeMarketingActivity(sarahItems, fencingItems, limit = 60) {
+  return [...sarahItems, ...fencingItems]
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    .slice(0, Math.min(Math.max(Number(limit) || 60, 1), 100));
+}

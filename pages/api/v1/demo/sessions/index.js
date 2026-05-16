@@ -8,6 +8,30 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function normalizeSourceLabel(value) {
+  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80);
+}
+
+function sourceFromRequest(req, body) {
+  const sourceUrl = normalizeText(body.sourceUrl || body.source_url || req.headers?.referer).slice(0, 500);
+  let sourcePage = normalizeText(body.sourcePage || body.source_page).replace(/\s+/g, "").slice(0, 240);
+  if (!sourcePage && sourceUrl) {
+    try {
+      sourcePage = new URL(sourceUrl).pathname || "";
+    } catch {
+      sourcePage = "";
+    }
+  }
+  const inferredLabel = /fencing-contractors/i.test(sourcePage)
+    ? "fencing_contractors"
+    : "";
+  return {
+    sourcePage,
+    sourceUrl,
+    sourceLabel: normalizeSourceLabel(body.sourceLabel || body.source_label || inferredLabel)
+  };
+}
+
 function fail(res, status, error, message, extra = {}) {
   return res.status(status).json({
     ok: false,
@@ -72,10 +96,12 @@ export default async function handler(req, res) {
     });
     if (domainLimit?.limited) return;
 
+    const source = sourceFromRequest(req, body);
     const session = await createAndBuildDemoSession(pool, {
       websiteUrl: validatedWebsiteUrl,
       requestIp: getClientIp(req),
-      userAgent: req.headers?.["user-agent"] || ""
+      userAgent: req.headers?.["user-agent"] || "",
+      ...source
     });
 
     if (!session) {

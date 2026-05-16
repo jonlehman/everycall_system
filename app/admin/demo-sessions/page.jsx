@@ -53,10 +53,13 @@ export default function AdminDemoSessionsPage() {
     try {
       const data = await fetchJson('/api/v1/admin/demo-sessions');
       const nextSessions = Array.isArray(data?.demoSessions) ? data.demoSessions : [];
+      const requestedId = typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('session') || ''
+        : '';
       setSessions(nextSessions);
       setSelectedId((current) => current && nextSessions.some((item) => item.demoSessionId === current)
         ? current
-        : (nextSessions[0]?.demoSessionId || ''));
+        : (nextSessions.find((item) => item.demoSessionId === requestedId)?.demoSessionId || nextSessions[0]?.demoSessionId || ''));
       setStatus(nextSessions.length ? 'Website demos loaded.' : 'No website demos yet.');
     } catch (error) {
       setStatus(error?.message || 'Could not load website demos.');

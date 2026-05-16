@@ -555,6 +555,9 @@ export async function ensureTables(pool) {
       contact_name TEXT,
       contact_phone TEXT,
       contact_email TEXT,
+      source_page TEXT,
+      source_label TEXT,
+      source_url TEXT,
       reused_from_demo_session_id TEXT REFERENCES demo_sessions(demo_session_id) ON DELETE SET NULL,
       business_name TEXT,
       preview_summary TEXT,
@@ -574,6 +577,9 @@ export async function ensureTables(pool) {
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS contact_name TEXT;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS contact_phone TEXT;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS contact_email TEXT;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS source_page TEXT;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS source_label TEXT;`);
+  await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS source_url TEXT;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS reused_from_demo_session_id TEXT REFERENCES demo_sessions(demo_session_id) ON DELETE SET NULL;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS website_hostname TEXT;`);
   await pool.query(`ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS business_name TEXT;`);
@@ -1350,6 +1356,7 @@ export async function ensureTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS sms_failover_events_destination_created_idx ON sms_failover_events (destination, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS request_rate_limits_updated_idx ON request_rate_limits (updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_status_updated_idx ON demo_sessions (status, updated_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_source_created_idx ON demo_sessions (source_label, source_page, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_website_url_updated_idx ON demo_sessions (normalized_website_url, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_origin_updated_idx ON demo_sessions (website_origin, updated_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS demo_sessions_created_idx ON demo_sessions (created_at DESC);`);

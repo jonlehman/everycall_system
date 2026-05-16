@@ -26,6 +26,14 @@ function normalizePhone(value) {
   return normalizeText(value).replace(/\s+/g, " ").slice(0, 60);
 }
 
+function normalizeSourceLabel(value) {
+  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80);
+}
+
+function normalizeSourcePage(value) {
+  return normalizeText(value).replace(/\s+/g, "").slice(0, 240);
+}
+
 function createDemoSessionId() {
   return `demo_${Date.now()}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
 }
@@ -111,6 +119,9 @@ async function insertDemoSession(pool, {
   contactName,
   contactPhone,
   contactEmail,
+  sourcePage,
+  sourceLabel,
+  sourceUrl,
   reusedFromDemoSessionId = null
 }) {
   const ttlDays = Math.max(1, DEMO_SESSION_TTL_DAYS);
@@ -124,12 +135,15 @@ async function insertDemoSession(pool, {
        contact_name,
        contact_phone,
        contact_email,
+       source_page,
+       source_label,
+       source_url,
        reused_from_demo_session_id,
        request_ip_hash,
        user_agent,
        expires_at
      )
-     VALUES ($1, $2, $3, $4, 'created', $5, $6, $7, $8, $9, $10, NOW() + ($11::text || ' days')::interval)
+     VALUES ($1, $2, $3, $4, 'created', $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW() + ($14::text || ' days')::interval)
      RETURNING *`,
     [
       demoSessionId,
@@ -139,6 +153,9 @@ async function insertDemoSession(pool, {
       normalizeText(contactName) || null,
       normalizePhone(contactPhone) || null,
       normalizeEmail(contactEmail) || null,
+      normalizeSourcePage(sourcePage) || null,
+      normalizeSourceLabel(sourceLabel) || null,
+      normalizeText(sourceUrl).slice(0, 500) || null,
       normalizeText(reusedFromDemoSessionId) || null,
       hashRequestIp(requestIp),
       normalizeHeaderValue(userAgent),
@@ -166,6 +183,9 @@ async function updateDemoSession(pool, demoSessionId, changes = {}) {
   if (changes.contactName !== undefined) assign("contact_name", normalizeText(changes.contactName) || null);
   if (changes.contactPhone !== undefined) assign("contact_phone", normalizePhone(changes.contactPhone) || null);
   if (changes.contactEmail !== undefined) assign("contact_email", normalizeEmail(changes.contactEmail) || null);
+  if (changes.sourcePage !== undefined) assign("source_page", normalizeSourcePage(changes.sourcePage) || null);
+  if (changes.sourceLabel !== undefined) assign("source_label", normalizeSourceLabel(changes.sourceLabel) || null);
+  if (changes.sourceUrl !== undefined) assign("source_url", normalizeText(changes.sourceUrl).slice(0, 500) || null);
   if (changes.reusedFromDemoSessionId !== undefined) assign("reused_from_demo_session_id", normalizeText(changes.reusedFromDemoSessionId) || null);
   if (changes.businessName !== undefined) assign("business_name", normalizeText(changes.businessName) || null);
   if (changes.previewSummary !== undefined) assign("preview_summary", normalizeText(changes.previewSummary) || null);
@@ -311,7 +331,10 @@ export async function createAndBuildDemoSession(pool, {
   userAgent = "",
   contactName = "",
   contactPhone = "",
-  contactEmail = ""
+  contactEmail = "",
+  sourcePage = "",
+  sourceLabel = "",
+  sourceUrl = ""
 }) {
   await deleteExpiredDemoSessions(pool);
   const parsedUrl = new URL(String(websiteUrl || ""));
@@ -329,6 +352,9 @@ export async function createAndBuildDemoSession(pool, {
     contactName,
     contactPhone,
     contactEmail,
+    sourcePage,
+    sourceLabel,
+    sourceUrl,
     reusedFromDemoSessionId: reusable?.demo_session_id || null
   });
 
@@ -336,7 +362,9 @@ export async function createAndBuildDemoSession(pool, {
     normalizedWebsiteUrl,
     contactName: normalizeText(contactName) || null,
     contactPhone: normalizePhone(contactPhone) || null,
-    contactEmail: normalizeEmail(contactEmail) || null
+    contactEmail: normalizeEmail(contactEmail) || null,
+    sourcePage: normalizeSourcePage(sourcePage) || null,
+    sourceLabel: normalizeSourceLabel(sourceLabel) || null
   });
 
   if (reusable) {
@@ -433,6 +461,9 @@ export async function listAdminDemoSessions(pool) {
             contact_name,
             contact_phone,
             contact_email,
+            source_page,
+            source_label,
+            source_url,
             business_name,
             preview_summary,
             failure_code,
@@ -452,6 +483,9 @@ export async function listAdminDemoSessions(pool) {
     contactName: normalizeText(row.contact_name),
     contactPhone: normalizePhone(row.contact_phone),
     contactEmail: normalizeEmail(row.contact_email),
+    sourcePage: normalizeSourcePage(row.source_page),
+    sourceLabel: normalizeSourceLabel(row.source_label),
+    sourceUrl: normalizeText(row.source_url),
     businessName: normalizeText(row.business_name),
     previewSummary: normalizeText(row.preview_summary),
     failureCode: normalizeText(row.failure_code),
@@ -489,6 +523,9 @@ export async function loadAdminDemoSessionDetail(pool, demoSessionId) {
     contactName: normalizeText(session.contact_name),
     contactPhone: normalizePhone(session.contact_phone),
     contactEmail: normalizeEmail(session.contact_email),
+    sourcePage: normalizeSourcePage(session.source_page),
+    sourceLabel: normalizeSourceLabel(session.source_label),
+    sourceUrl: normalizeText(session.source_url),
     reusedFromDemoSessionId: normalizeText(session.reused_from_demo_session_id),
     scrapePageCount: Number(session.scrape_page_count || 0),
     scrapePages: Array.isArray(session.scrape_pages_json) ? session.scrape_pages_json : [],
