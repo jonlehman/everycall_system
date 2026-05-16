@@ -1,6 +1,8 @@
 import { requireSession, getAdminActor } from "../../_lib/auth.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
+import { getClientIp } from "../../_lib/rateLimit.js";
 import {
+  buildMarketingActivityIpFilter,
   loadSarahMarketingActivity,
   loadFencingDemoMarketingActivity,
   mergeMarketingActivity
@@ -24,6 +26,10 @@ function unavailableSarahResult(error) {
   };
 }
 
+function truthy(value) {
+  return value === true || value === "1" || value === "true" || value === "yes";
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -44,9 +50,14 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: "forbidden" });
     }
 
+    const excludeCurrentIp = truthy(req.query?.excludeCurrentIp);
+    const ipFilter = excludeCurrentIp
+      ? buildMarketingActivityIpFilter({ currentIp: getClientIp(req) })
+      : { enabled: false, demoIpHashes: [], sarahIpHashes: [] };
+
     const [sarah, fencing] = await Promise.all([
-      loadSarahMarketingActivity({ limit: 60 }).catch(unavailableSarahResult),
-      loadFencingDemoMarketingActivity(pool, { limit: 60 })
+      loadSarahMarketingActivity({ limit: 60, excludedIpHashes: ipFilter.sarahIpHashes }).catch(unavailableSarahResult),
+      loadFencingDemoMarketingActivity(pool, { limit: 60, excludedIpHashes: ipFilter.demoIpHashes })
     ]);
     const activity = mergeMarketingActivity(sarah.items, fencing.items, 80);
 
@@ -71,6 +82,11 @@ export default async function handler(req, res) {
         sarah: sarah.summary,
         fencing: fencing.summary,
         total30d: Number(sarah.summary?.total30d || 0) + Number(fencing.summary?.total30d || 0)
+      },
+      filters: {
+        excludeCurrentIp,
+        excludedDemoIpHashes: ipFilter.demoIpHashes.length,
+        excludedSarahIpHashes: ipFilter.sarahIpHashes.length
       },
       activity
     });

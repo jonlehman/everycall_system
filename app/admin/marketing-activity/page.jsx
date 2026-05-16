@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
+const EXCLUDE_IP_STORAGE_KEY = 'everycall-admin-marketing-exclude-ip';
+
 function fetchJson(url, options) {
   return fetch(url, options).then(async (resp) => {
     const data = await resp.json().catch(() => null);
@@ -112,16 +114,21 @@ export default function AdminMarketingActivityPage() {
   const [status, setStatus] = useState('Loading marketing activity...');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [excludeCurrentIp, setExcludeCurrentIp] = useState(false);
 
-  async function loadActivity() {
+  async function loadActivity({ excludeIp = excludeCurrentIp } = {}) {
     setLoading(true);
     setError('');
     setStatus('Loading marketing activity...');
     try {
-      const nextData = await fetchJson('/api/v1/admin/marketing-activity');
+      const params = new URLSearchParams();
+      if (excludeIp) params.set('excludeCurrentIp', '1');
+      const url = `/api/v1/admin/marketing-activity${params.toString() ? `?${params.toString()}` : ''}`;
+      const nextData = await fetchJson(url);
       setData(nextData);
       const count = numberValue(nextData?.summary?.total30d);
-      setStatus(count ? `${count} runs in the last 30 days.` : 'No tracked runs in the last 30 days.');
+      const suffix = nextData?.filters?.excludeCurrentIp ? ' Your IP is excluded.' : '';
+      setStatus(count ? `${count} runs in the last 30 days.${suffix}` : `No tracked runs in the last 30 days.${suffix}`);
     } catch (err) {
       setError(err?.message || 'Could not load marketing activity.');
       setStatus('Could not load marketing activity.');
@@ -131,8 +138,20 @@ export default function AdminMarketingActivityPage() {
   }
 
   useEffect(() => {
-    void loadActivity();
+    const savedExcludeIp = typeof window !== 'undefined'
+      ? window.localStorage.getItem(EXCLUDE_IP_STORAGE_KEY) === '1'
+      : false;
+    setExcludeCurrentIp(savedExcludeIp);
+    void loadActivity({ excludeIp: savedExcludeIp });
   }, []);
+
+  function updateExcludeCurrentIp(nextValue) {
+    setExcludeCurrentIp(nextValue);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(EXCLUDE_IP_STORAGE_KEY, nextValue ? '1' : '0');
+    }
+    void loadActivity({ excludeIp: nextValue });
+  }
 
   const summary = data?.summary || {};
   const sarah = summary.sarah || {};
@@ -171,14 +190,25 @@ export default function AdminMarketingActivityPage() {
           <h1 className="m-0 text-2xl font-semibold tracking-tight">Marketing Activity</h1>
           <p className="mt-1 text-sm text-slate-500">{status}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => { void loadActivity(); }}
-          disabled={loading}
-          className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {loading ? 'Refreshing...' : 'Refresh'}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={excludeCurrentIp}
+              onChange={(event) => updateExcludeCurrentIp(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Exclude my IP
+          </label>
+          <button
+            type="button"
+            onClick={() => { void loadActivity(); }}
+            disabled={loading}
+            className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {error ? (
@@ -190,6 +220,12 @@ export default function AdminMarketingActivityPage() {
       {!loading && sarahSource.configured === false ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           {sarahSource.message || 'Sarah intake source is not configured.'}
+        </div>
+      ) : null}
+
+      {!loading && data?.filters?.excludeCurrentIp ? (
+        <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+          Your current admin request IP is filtered from this view using stored IP hashes. Raw IP addresses are not shown.
         </div>
       ) : null}
 

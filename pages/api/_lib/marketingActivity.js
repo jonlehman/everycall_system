@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import pg from "pg";
 
 const { Pool } = pg;
@@ -8,6 +9,53 @@ function normalizeText(value) {
 
 function normalizeEmail(value) {
   return normalizeText(value).toLowerCase();
+}
+
+function uniqueValues(values) {
+  return [...new Set((values || []).map(normalizeText).filter(Boolean))];
+}
+
+function hashWithSalt(value, salt) {
+  const raw = normalizeText(value);
+  const normalizedSalt = normalizeText(salt);
+  if (!raw || !normalizedSalt) return "";
+  return crypto.createHash("sha256").update(`${normalizedSalt}|${raw}`, "utf8").digest("hex");
+}
+
+function hashDemoIp(value) {
+  const salt = normalizeText(process.env.DEMO_IP_HASH_SALT || process.env.APP_SECRET || "everycall-demo");
+  return hashWithSalt(value, salt);
+}
+
+function hashSarahIpCandidates(value) {
+  return uniqueValues([
+    process.env.CD_LEGACY_AI_IP_HASH_SALT,
+    process.env.LEGACY_AI_IP_HASH_SALT,
+    process.env.CREATIVE_DYNAMIC_APP_SECRET,
+    process.env.APP_SECRET,
+    "creative-dynamic"
+  ].map((salt) => hashWithSalt(value, salt)));
+}
+
+function normalizeIpHashes(values) {
+  return uniqueValues(values).filter((value) => /^[a-f0-9]{64}$/i.test(value));
+}
+
+export function buildMarketingActivityIpFilter({ currentIp = "" } = {}) {
+  const ip = normalizeText(currentIp);
+  if (!ip) {
+    return {
+      enabled: false,
+      demoIpHashes: [],
+      sarahIpHashes: []
+    };
+  }
+
+  return {
+    enabled: true,
+    demoIpHashes: normalizeIpHashes([hashDemoIp(ip)]),
+    sarahIpHashes: normalizeIpHashes(hashSarahIpCandidates(ip))
+  };
 }
 
 function numberValue(value) {
@@ -115,7 +163,7 @@ function serializeFencing(row) {
   };
 }
 
-export async function loadSarahMarketingActivity({ limit = 50 } = {}) {
+export async function loadSarahMarketingActivity({ limit = 50, excludedIpHashes = [] } = {}) {
   const pool = getCreativeDynamicPool();
   if (!pool) {
     return {
@@ -124,6 +172,14 @@ export async function loadSarahMarketingActivity({ limit = 50 } = {}) {
       items: [],
       summary: aggregateSarah([])
     };
+  }
+
+  const values = [Math.min(Math.max(Number(limit) || 50, 1), 500)];
+  const excludedHashes = normalizeIpHashes(excludedIpHashes);
+  let ipFilterClause = "";
+  if (excludedHashes.length) {
+    values.push(excludedHashes);
+    ipFilterClause = `AND (request_ip_hash IS NULL OR NOT (request_ip_hash = ANY($${values.length}::text[])))`;
   }
 
   const result = await pool.query(
@@ -142,9 +198,10 @@ export async function loadSarahMarketingActivity({ limit = 50 } = {}) {
      FROM legacy_ai_interactions
      WHERE created_at >= NOW() - INTERVAL '30 days'
        AND COALESCE(source_page, '') ILIKE '%legacy-software-ai-integration%'
+       ${ipFilterClause}
      ORDER BY created_at DESC
      LIMIT $1`,
-    [Math.min(Math.max(Number(limit) || 50, 1), 500)]
+    values
   );
 
   const items = result.rows.map(serializeSarah);
@@ -156,7 +213,15 @@ export async function loadSarahMarketingActivity({ limit = 50 } = {}) {
   };
 }
 
-export async function loadFencingDemoMarketingActivity(pool, { limit = 50 } = {}) {
+export async function loadFencingDemoMarketingActivity(pool, { limit = 50, excludedIpHashes = [] } = {}) {
+  const values = [Math.min(Math.max(Number(limit) || 50, 1), 500)];
+  const excludedHashes = normalizeIpHashes(excludedIpHashes);
+  let ipFilterClause = "";
+  if (excludedHashes.length) {
+    values.push(excludedHashes);
+    ipFilterClause = `AND (d.request_ip_hash IS NULL OR NOT (d.request_ip_hash = ANY($${values.length}::text[])))`;
+  }
+
   const result = await pool.query(
     `SELECT d.demo_session_id,
             d.normalized_website_url,
@@ -183,9 +248,10 @@ export async function loadFencingDemoMarketingActivity(pool, { limit = 50 } = {}
          OR d.source_page IN ('/fencing-contractors.html', 'fencing-contractors.html', '/fencing-contractors')
          OR COALESCE(d.source_url, '') ILIKE '%/fencing-contractors%'
        )
+       ${ipFilterClause}
      ORDER BY d.created_at DESC
      LIMIT $1`,
-    [Math.min(Math.max(Number(limit) || 50, 1), 500)]
+    values
   );
 
   const items = result.rows.map(serializeFencing);
