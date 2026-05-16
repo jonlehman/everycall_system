@@ -67,7 +67,11 @@ export default async function handler(req, res) {
     ]);
 
     const [sarah, fencing] = await Promise.all([
-      loadSarahMarketingActivity({ limit: 60, excludedIpHashes: sarahIpHashes }).catch(unavailableSarahResult),
+      loadSarahMarketingActivity({
+        limit: 60,
+        excludedIpHashes: sarahIpHashes,
+        excludeMissingIpHash: excludeCurrentIp
+      }).catch(unavailableSarahResult),
       loadFencingDemoMarketingActivity(pool, { limit: 60, excludedIpHashes: ipFilter.demoIpHashes })
     ]);
     const activity = mergeMarketingActivity(sarah.items, fencing.items, 80);
@@ -98,7 +102,8 @@ export default async function handler(req, res) {
         excludeCurrentIp,
         excludedDemoIpHashes: ipFilter.demoIpHashes.length,
         excludedSarahIpHashes: sarahIpHashes.length,
-        browserSarahIpHashReceived: browserSarahIpHashes.length > 0
+        browserSarahIpHashReceived: browserSarahIpHashes.length > 0,
+        missingSarahIpHashesExcluded: excludeCurrentIp
       },
       activity
     });

@@ -163,7 +163,11 @@ function serializeFencing(row) {
   };
 }
 
-export async function loadSarahMarketingActivity({ limit = 50, excludedIpHashes = [] } = {}) {
+export async function loadSarahMarketingActivity({
+  limit = 50,
+  excludedIpHashes = [],
+  excludeMissingIpHash = false
+} = {}) {
   const pool = getCreativeDynamicPool();
   if (!pool) {
     return {
@@ -180,6 +184,9 @@ export async function loadSarahMarketingActivity({ limit = 50, excludedIpHashes 
   if (excludedHashes.length) {
     values.push(excludedHashes);
     ipFilterClause = `AND (request_ip_hash IS NULL OR NOT (request_ip_hash = ANY($${values.length}::text[])))`;
+  }
+  if (excludeMissingIpHash) {
+    ipFilterClause = `${ipFilterClause} AND request_ip_hash IS NOT NULL AND request_ip_hash <> ''`;
   }
 
   const result = await pool.query(
