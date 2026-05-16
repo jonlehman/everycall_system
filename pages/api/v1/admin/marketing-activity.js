@@ -70,7 +70,8 @@ export default async function handler(req, res) {
       loadSarahMarketingActivity({
         limit: 60,
         excludedIpHashes: sarahIpHashes,
-        excludeMissingIpHash: excludeCurrentIp
+        excludeMissingIpHash: excludeCurrentIp,
+        excludeRepeatIpHashMin: excludeCurrentIp ? 2 : 0
       }).catch(unavailableSarahResult),
       loadFencingDemoMarketingActivity(pool, { limit: 60, excludedIpHashes: ipFilter.demoIpHashes })
     ]);
@@ -103,7 +104,8 @@ export default async function handler(req, res) {
         excludedDemoIpHashes: ipFilter.demoIpHashes.length,
         excludedSarahIpHashes: sarahIpHashes.length,
         browserSarahIpHashReceived: browserSarahIpHashes.length > 0,
-        missingSarahIpHashesExcluded: excludeCurrentIp
+        missingSarahIpHashesExcluded: excludeCurrentIp,
+        repeatSarahIpHashesExcluded: excludeCurrentIp
       },
       activity
     });

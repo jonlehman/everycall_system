@@ -166,7 +166,8 @@ function serializeFencing(row) {
 export async function loadSarahMarketingActivity({
   limit = 50,
   excludedIpHashes = [],
-  excludeMissingIpHash = false
+  excludeMissingIpHash = false,
+  excludeRepeatIpHashMin = 0
 } = {}) {
   const pool = getCreativeDynamicPool();
   if (!pool) {
@@ -187,6 +188,24 @@ export async function loadSarahMarketingActivity({
   }
   if (excludeMissingIpHash) {
     ipFilterClause = `${ipFilterClause} AND request_ip_hash IS NOT NULL AND request_ip_hash <> ''`;
+  }
+  const repeatMin = Number(excludeRepeatIpHashMin || 0);
+  if (Number.isFinite(repeatMin) && repeatMin > 1) {
+    values.push(Math.round(repeatMin));
+    ipFilterClause = `${ipFilterClause}
+       AND (
+         request_ip_hash IS NULL
+         OR request_ip_hash NOT IN (
+           SELECT request_ip_hash
+           FROM legacy_ai_interactions
+           WHERE created_at >= NOW() - INTERVAL '30 days'
+             AND COALESCE(source_page, '') ILIKE '%legacy-software-ai-integration%'
+             AND request_ip_hash IS NOT NULL
+             AND request_ip_hash <> ''
+           GROUP BY request_ip_hash
+           HAVING COUNT(*) >= $${values.length}
+         )
+       )`;
   }
 
   const result = await pool.query(

@@ -262,7 +262,7 @@ export default function AdminMarketingActivityPage() {
 
       {!loading && data?.filters?.excludeCurrentIp ? (
         <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-          Your current admin request IP is filtered from this view using stored IP hashes. Sarah rows without an IP hash are hidden too. Raw IP addresses are not shown.
+          Your current admin request IP is filtered from this view using stored IP hashes. Sarah rows without an IP hash or from repeat IP hashes are hidden too. Raw IP addresses are not shown.
         </div>
       ) : null}
 
