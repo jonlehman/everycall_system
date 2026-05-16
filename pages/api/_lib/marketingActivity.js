@@ -37,7 +37,7 @@ function hashSarahIpCandidates(value) {
   ].map((salt) => hashWithSalt(value, salt)));
 }
 
-function normalizeIpHashes(values) {
+export function normalizeMarketingIpHashes(values) {
   return uniqueValues(values).filter((value) => /^[a-f0-9]{64}$/i.test(value));
 }
 
@@ -53,8 +53,8 @@ export function buildMarketingActivityIpFilter({ currentIp = "" } = {}) {
 
   return {
     enabled: true,
-    demoIpHashes: normalizeIpHashes([hashDemoIp(ip)]),
-    sarahIpHashes: normalizeIpHashes(hashSarahIpCandidates(ip))
+    demoIpHashes: normalizeMarketingIpHashes([hashDemoIp(ip)]),
+    sarahIpHashes: normalizeMarketingIpHashes(hashSarahIpCandidates(ip))
   };
 }
 
@@ -175,7 +175,7 @@ export async function loadSarahMarketingActivity({ limit = 50, excludedIpHashes 
   }
 
   const values = [Math.min(Math.max(Number(limit) || 50, 1), 500)];
-  const excludedHashes = normalizeIpHashes(excludedIpHashes);
+  const excludedHashes = normalizeMarketingIpHashes(excludedIpHashes);
   let ipFilterClause = "";
   if (excludedHashes.length) {
     values.push(excludedHashes);
@@ -215,7 +215,7 @@ export async function loadSarahMarketingActivity({ limit = 50, excludedIpHashes 
 
 export async function loadFencingDemoMarketingActivity(pool, { limit = 50, excludedIpHashes = [] } = {}) {
   const values = [Math.min(Math.max(Number(limit) || 50, 1), 500)];
-  const excludedHashes = normalizeIpHashes(excludedIpHashes);
+  const excludedHashes = normalizeMarketingIpHashes(excludedIpHashes);
   let ipFilterClause = "";
   if (excludedHashes.length) {
     values.push(excludedHashes);

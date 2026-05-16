@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 const EXCLUDE_IP_STORAGE_KEY = 'everycall-admin-marketing-exclude-ip';
+const SARAH_IP_HASH_URL = process.env.NEXT_PUBLIC_SARAH_IP_HASH_URL || 'https://www.creativedynamicinc.com/api/legacy-ai-ip-hash';
 
 function fetchJson(url, options) {
   return fetch(url, options).then(async (resp) => {
@@ -25,6 +26,11 @@ function formatDateTime(value) {
 function numberValue(value) {
   const numeric = Number(value || 0);
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function normalizeIpHash(value) {
+  const hash = String(value || '').trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(hash) ? hash : '';
 }
 
 function sourceTone(source) {
@@ -115,14 +121,45 @@ export default function AdminMarketingActivityPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [excludeCurrentIp, setExcludeCurrentIp] = useState(false);
+  const [sarahIpHash, setSarahIpHash] = useState('');
+  const [ipFilterWarning, setIpFilterWarning] = useState('');
 
-  async function loadActivity({ excludeIp = excludeCurrentIp } = {}) {
+  async function loadSarahIpHash() {
+    try {
+      const hashData = await fetchJson(SARAH_IP_HASH_URL, {
+        method: 'GET',
+        cache: 'no-store',
+        credentials: 'omit'
+      });
+      const nextHash = normalizeIpHash(hashData?.requestIpHash);
+      if (!nextHash) {
+        throw new Error('Sarah IP hash was unavailable.');
+      }
+      setSarahIpHash(nextHash);
+      setIpFilterWarning('');
+      return nextHash;
+    } catch (err) {
+      setIpFilterWarning(err?.message || 'Sarah IP filtering is unavailable right now.');
+      return '';
+    }
+  }
+
+  async function loadActivity({ excludeIp = excludeCurrentIp, sarahHash = sarahIpHash } = {}) {
     setLoading(true);
     setError('');
     setStatus('Loading marketing activity...');
+    let nextSarahHash = sarahHash;
     try {
+      if (excludeIp && !nextSarahHash) {
+        nextSarahHash = await loadSarahIpHash();
+      }
+      if (!excludeIp) {
+        setIpFilterWarning('');
+      }
+
       const params = new URLSearchParams();
       if (excludeIp) params.set('excludeCurrentIp', '1');
+      if (excludeIp && nextSarahHash) params.set('sarahIpHash', nextSarahHash);
       const url = `/api/v1/admin/marketing-activity${params.toString() ? `?${params.toString()}` : ''}`;
       const nextData = await fetchJson(url);
       setData(nextData);
@@ -226,6 +263,12 @@ export default function AdminMarketingActivityPage() {
       {!loading && data?.filters?.excludeCurrentIp ? (
         <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
           Your current admin request IP is filtered from this view using stored IP hashes. Raw IP addresses are not shown.
+        </div>
+      ) : null}
+
+      {!loading && excludeCurrentIp && ipFilterWarning ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Your IP filter is active, but Sarah filtering could not get the Creative Dynamic hash yet.
         </div>
       ) : null}
 

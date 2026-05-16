@@ -3,6 +3,7 @@ import { ensureTables, getPool } from "../../_lib/db.js";
 import { getClientIp } from "../../_lib/rateLimit.js";
 import {
   buildMarketingActivityIpFilter,
+  normalizeMarketingIpHashes,
   loadSarahMarketingActivity,
   loadFencingDemoMarketingActivity,
   mergeMarketingActivity
@@ -30,6 +31,11 @@ function truthy(value) {
   return value === true || value === "1" || value === "true" || value === "yes";
 }
 
+function queryValues(value) {
+  if (Array.isArray(value)) return value;
+  return value ? [value] : [];
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -54,9 +60,14 @@ export default async function handler(req, res) {
     const ipFilter = excludeCurrentIp
       ? buildMarketingActivityIpFilter({ currentIp: getClientIp(req) })
       : { enabled: false, demoIpHashes: [], sarahIpHashes: [] };
+    const browserSarahIpHashes = normalizeMarketingIpHashes(queryValues(req.query?.sarahIpHash));
+    const sarahIpHashes = normalizeMarketingIpHashes([
+      ...ipFilter.sarahIpHashes,
+      ...browserSarahIpHashes
+    ]);
 
     const [sarah, fencing] = await Promise.all([
-      loadSarahMarketingActivity({ limit: 60, excludedIpHashes: ipFilter.sarahIpHashes }).catch(unavailableSarahResult),
+      loadSarahMarketingActivity({ limit: 60, excludedIpHashes: sarahIpHashes }).catch(unavailableSarahResult),
       loadFencingDemoMarketingActivity(pool, { limit: 60, excludedIpHashes: ipFilter.demoIpHashes })
     ]);
     const activity = mergeMarketingActivity(sarah.items, fencing.items, 80);
@@ -86,7 +97,8 @@ export default async function handler(req, res) {
       filters: {
         excludeCurrentIp,
         excludedDemoIpHashes: ipFilter.demoIpHashes.length,
-        excludedSarahIpHashes: ipFilter.sarahIpHashes.length
+        excludedSarahIpHashes: sarahIpHashes.length,
+        browserSarahIpHashReceived: browserSarahIpHashes.length > 0
       },
       activity
     });
