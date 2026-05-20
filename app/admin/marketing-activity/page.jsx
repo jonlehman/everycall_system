@@ -312,7 +312,7 @@ export default function AdminMarketingActivityPage() {
             <div className="mt-4 space-y-3 text-sm text-slate-700">
               <div className="rounded-xl border border-slate-200 bg-white p-3">
                 <div className="font-semibold text-slate-950">Sarah AI intake</div>
-                <div className="mt-1 text-slate-500">Creative Dynamic legacy software page</div>
+                <div className="mt-1 text-slate-500">Creative Dynamic legacy and workflow pages</div>
                 <DetailPill tone={sarahSource.configured === false ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}>
                   {sarahSource.configured === false ? 'Needs database link' : 'Connected'}
                 </DetailPill>
@@ -330,7 +330,7 @@ export default function AdminMarketingActivityPage() {
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <h2 className="m-0 text-lg font-semibold text-slate-950">What Counts</h2>
             <div className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
-              <p className="m-0">Sarah runs count completed or in-progress legacy AI intake sessions from Creative Dynamic.</p>
+              <p className="m-0">Sarah runs count completed or in-progress AI intake sessions from Creative Dynamic.</p>
               <p className="m-0">Fencing runs count live demo builds tagged from the fencing contractors page.</p>
             </div>
           </div>

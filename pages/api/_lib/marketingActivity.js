@@ -128,7 +128,7 @@ function serializeSarah(row) {
     source: "sarah_intake",
     sourceLabel: "Sarah AI intake",
     title,
-    subtitle: company || normalizeText(row.source_page) || "Creative Dynamic legacy page",
+    subtitle: company || normalizeText(row.source_page) || "Creative Dynamic AI page",
     contactName: name,
     contactEmail: email,
     status: normalizeText(row.status) || "started",
@@ -199,7 +199,10 @@ export async function loadSarahMarketingActivity({
            SELECT request_ip_hash
            FROM legacy_ai_interactions
            WHERE created_at >= NOW() - INTERVAL '30 days'
-             AND COALESCE(source_page, '') ILIKE '%legacy-software-ai-integration%'
+             AND (
+               COALESCE(source_page, '') ILIKE '%legacy-software-ai-integration%'
+               OR COALESCE(source_page, '') ILIKE '%ai-workflow-consulting%'
+             )
              AND request_ip_hash IS NOT NULL
              AND request_ip_hash <> ''
            GROUP BY request_ip_hash
@@ -223,7 +226,10 @@ export async function loadSarahMarketingActivity({
             jsonb_array_length(COALESCE(transcript_items_json, '[]'::jsonb)) AS transcript_item_count
      FROM legacy_ai_interactions
      WHERE created_at >= NOW() - INTERVAL '30 days'
-       AND COALESCE(source_page, '') ILIKE '%legacy-software-ai-integration%'
+       AND (
+         COALESCE(source_page, '') ILIKE '%legacy-software-ai-integration%'
+         OR COALESCE(source_page, '') ILIKE '%ai-workflow-consulting%'
+       )
        ${ipFilterClause}
      ORDER BY created_at DESC
      LIMIT $1`,
