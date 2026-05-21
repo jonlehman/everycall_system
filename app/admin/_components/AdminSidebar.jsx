@@ -14,6 +14,7 @@ const sections = [
       { label: 'Support', href: '/admin/support' },
       { label: 'Website Demos', href: '/admin/demo-sessions' },
       { label: 'Marketing Activity', href: '/admin/marketing-activity' },
+      { label: 'Marketing Insights', href: '/admin/marketing-insights' },
       { label: 'Monitoring', href: '/admin/monitoring' },
       { label: 'Provisioning Jobs', href: '/admin/jobs' },
       { label: 'Phone Numbers', href: '/admin/phone-numbers' }
