@@ -182,7 +182,14 @@ async function writeCache(pool, cacheKey, source, payload, ttlMs) {
 }
 
 function dimensionValue(row, dimension) {
-  return cleanText(row?.[dimension] ?? row?.[dimension.replace(/\s+/g, "")]);
+  const compactDimension = dimension.replace(/\s+/g, "").toLowerCase();
+  const direct = row?.[dimension] ?? row?.[dimension.replace(/\s+/g, "")];
+  if (direct !== undefined && direct !== null) return cleanText(direct);
+
+  const match = Object.entries(row || {}).find(
+    ([key]) => key.replace(/\s+/g, "").toLowerCase() === compactDimension
+  );
+  return cleanText(match?.[1]);
 }
 
 function dimensionsKey(row, dimensions) {
@@ -209,6 +216,19 @@ function pickMetricValue(metricName, row, dimensions) {
     .filter(([, value]) => Number.isFinite(Number(value)));
 
   const lowerMetric = cleanText(metricName).toLowerCase();
+  if (lowerMetric.includes("traffic")) return numberValue(row?.totalSessionCount ?? row?.sessionsCount);
+  if (lowerMetric.includes("engagement")) return numberValue(row?.activeTime ?? row?.totalTime);
+  if (lowerMetric.includes("scroll")) return numberValue(row?.averageScrollDepth);
+  if (
+    lowerMetric.includes("dead") ||
+    lowerMetric.includes("rage") ||
+    lowerMetric.includes("quickback") ||
+    lowerMetric.includes("script") ||
+    lowerMetric.includes("error")
+  ) {
+    return numberValue(row?.subTotal ?? row?.pagesViews);
+  }
+
   const direct = numericEntries.find(([key]) => {
     const normalized = key.toLowerCase();
     if (lowerMetric.includes("traffic")) return normalized.includes("session") && !normalized.includes("bot");
