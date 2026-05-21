@@ -303,18 +303,18 @@ function parseClarityProfile(profile, rawMetrics) {
 }
 
 function looksPaidGoogle(row) {
-  const source = normalizeKey(row?.dimensions?.Source);
   const medium = normalizeKey(row?.dimensions?.Medium);
   const channel = normalizeKey(row?.dimensions?.Channel);
   const campaign = normalizeKey(row?.dimensions?.Campaign);
   const url = cleanText(row?.dimensions?.URL).toLowerCase();
   return (
-    source.includes("google") ||
     medium.includes("cpc") ||
     medium.includes("ppc") ||
     medium.includes("paid") ||
     channel.includes("paid") ||
     url.includes("gclid=") ||
+    url.includes("gbraid=") ||
+    url.includes("gad_source=") ||
     (campaign && campaign !== "not set" && campaign !== "(not set)")
   );
 }
