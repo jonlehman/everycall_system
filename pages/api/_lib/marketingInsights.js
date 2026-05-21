@@ -2,6 +2,7 @@ const CLARITY_ENDPOINT = "https://www.clarity.ms/export-data/api/v1/project-live
 const CLARITY_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const GOOGLE_ADS_CACHE_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_GOOGLE_ADS_API_VERSION = "v24";
+const DEFAULT_GOOGLE_ADS_MCP_URL = "https://googleads-mcp.vercel.app/api/mcp";
 
 const CLARITY_PROFILES = [
   {
@@ -109,6 +110,7 @@ function safeErrorMessage(error) {
     .replace(/Bearer\s+[A-Za-z0-9._-]+/g, "Bearer <redacted>")
     .replace(/refresh_token=[^&\s]+/g, "refresh_token=<redacted>")
     .replace(/client_secret=[^&\s]+/g, "client_secret=<redacted>")
+    .replace(/GOOGLE_ADS_MCP_TOKEN=[^&\s]+/g, "GOOGLE_ADS_MCP_TOKEN=<redacted>")
     .slice(0, 500);
 }
 
@@ -491,11 +493,13 @@ function googleAdsRequiredEnv() {
     refreshToken: getEnv("GOOGLE_ADS_REFRESH_TOKEN"),
     customerId: getEnv("GOOGLE_ADS_CUSTOMER_ID", "GOOGLE_ADS_ANALYSIS_CUSTOMER_ID"),
     loginCustomerId: getEnv("GOOGLE_ADS_LOGIN_CUSTOMER_ID"),
-    apiVersion: getEnv("GOOGLE_ADS_API_VERSION") || DEFAULT_GOOGLE_ADS_API_VERSION
+    apiVersion: getEnv("GOOGLE_ADS_API_VERSION") || DEFAULT_GOOGLE_ADS_API_VERSION,
+    mcpUrl: getEnv("GOOGLE_ADS_MCP_URL") || DEFAULT_GOOGLE_ADS_MCP_URL,
+    mcpToken: getEnv("GOOGLE_ADS_MCP_TOKEN")
   };
 }
 
-function googleAdsConfigured(config) {
+function googleAdsDirectConfigured(config) {
   return Boolean(
     config.developerToken &&
       config.clientId &&
@@ -503,6 +507,14 @@ function googleAdsConfigured(config) {
       config.refreshToken &&
       config.customerId
   );
+}
+
+function googleAdsMcpConfigured(config) {
+  return Boolean(config.customerId && config.mcpUrl && config.mcpToken);
+}
+
+function googleAdsConfigured(config) {
+  return googleAdsDirectConfigured(config) || googleAdsMcpConfigured(config);
 }
 
 async function fetchGoogleAdsAccessToken(config) {
@@ -545,6 +557,79 @@ async function runGoogleAdsSearch(config, accessToken, query) {
       body: JSON.stringify({ query })
     }
   );
+}
+
+function parseMcpEnvelope(text) {
+  const dataLine = cleanText(text)
+    ? text
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim())
+        .filter(Boolean)
+        .pop()
+    : "";
+  const raw = dataLine || text || "{}";
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error("Google Ads MCP returned a non-JSON response");
+  }
+}
+
+async function callGoogleAdsMcpTool(config, name, args) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(config.mcpUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.mcpToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream"
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: `marketing-insights-${Date.now()}`,
+        method: "tools/call",
+        params: {
+          name,
+          arguments: args
+        }
+      }),
+      signal: controller.signal
+    });
+    const text = await response.text();
+    const envelope = parseMcpEnvelope(text);
+    if (!response.ok) {
+      const message = envelope?.error?.message || envelope?.message || response.statusText;
+      throw new Error(`${response.status} ${message}`);
+    }
+    if (envelope?.error) {
+      throw new Error(envelope.error.message || "Google Ads MCP returned an error");
+    }
+
+    const content = Array.isArray(envelope?.result?.content) ? envelope.result.content : [];
+    const textContent = content.find((item) => item?.type === "text" && item.text)?.text;
+    if (envelope?.result?.isError) {
+      throw new Error(textContent || "Google Ads MCP tool returned an error");
+    }
+    if (!textContent) return envelope?.result?.structuredContent || envelope?.result || {};
+    try {
+      return JSON.parse(textContent);
+    } catch {
+      return { text: textContent };
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function runGoogleAdsMcpSearch(config, query) {
+  const customerId = cleanText(config.customerId).replaceAll("-", "");
+  return callGoogleAdsMcpTool(config, "google_ads_query", {
+    customerId,
+    query
+  });
 }
 
 function resultRows(payload) {
@@ -623,7 +708,10 @@ function parseAdsLandingPageRows(rows) {
 }
 
 async function fetchGoogleAdsSnapshot(config, days) {
-  const accessToken = await fetchGoogleAdsAccessToken(config);
+  const accessToken = googleAdsDirectConfigured(config) ? await fetchGoogleAdsAccessToken(config) : "";
+  const runSearch = googleAdsDirectConfigured(config)
+    ? (query) => runGoogleAdsSearch(config, accessToken, query)
+    : (query) => runGoogleAdsMcpSearch(config, query);
   const { startDate, endDate } = lastNDaysRange(days);
   const campaignQuery = `
     SELECT
@@ -656,14 +744,15 @@ async function fetchGoogleAdsSnapshot(config, days) {
   `;
 
   const [campaigns, landingPages] = await Promise.all([
-    runGoogleAdsSearch(config, accessToken, campaignQuery),
-    runGoogleAdsSearch(config, accessToken, landingPageQuery).catch((error) => ({
+    runSearch(campaignQuery),
+    runSearch(landingPageQuery).catch((error) => ({
       error: safeErrorMessage(error),
       results: []
     }))
   ]);
 
   return {
+    source: googleAdsDirectConfigured(config) ? "direct_google_ads_api" : "google_ads_mcp",
     dateRange: { startDate, endDate },
     campaigns: parseAdsCampaignRows(resultRows(campaigns)),
     landingPages: parseAdsLandingPageRows(resultRows(landingPages)),
@@ -677,13 +766,14 @@ async function loadGoogleAdsInsights({ pool, days, refresh }) {
     return {
       configured: false,
       message:
-        "Google Ads join is waiting on GOOGLE_ADS_CUSTOMER_ID, GOOGLE_ADS_DEVELOPER_TOKEN, GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, and GOOGLE_ADS_REFRESH_TOKEN in the app environment.",
+        "Google Ads join is waiting on GOOGLE_ADS_CUSTOMER_ID plus either GOOGLE_ADS_MCP_TOKEN or the raw Google Ads API credentials in the app environment.",
       campaigns: [],
       landingPages: []
     };
   }
 
-  const cacheKey = `google_ads:${config.customerId.replaceAll("-", "")}:${days}`;
+  const source = googleAdsDirectConfigured(config) ? "direct" : "mcp";
+  const cacheKey = `google_ads:${source}:${config.customerId.replaceAll("-", "")}:${days}`;
   const cached = await readCache(pool, cacheKey);
   if (cached?.fresh && !refresh) {
     return {
@@ -699,7 +789,7 @@ async function loadGoogleAdsInsights({ pool, days, refresh }) {
 
   try {
     const payload = await fetchGoogleAdsSnapshot(config, days);
-    await writeCache(pool, cacheKey, "google_ads", payload, GOOGLE_ADS_CACHE_TTL_MS);
+    await writeCache(pool, cacheKey, payload.source || "google_ads", payload, GOOGLE_ADS_CACHE_TTL_MS);
     const fresh = await readCache(pool, cacheKey);
     return {
       configured: true,
@@ -851,7 +941,7 @@ function buildRecommendations({ clarity, ads, joinedCampaigns, joinedLandingPage
   if (ads?.configured === false) {
     recommendations.push({
       tone: "setup",
-      text: "Copy the read-only Google Ads API credentials into everycall_system to enable the spend and conversion join."
+      text: "Add GOOGLE_ADS_MCP_TOKEN and GOOGLE_ADS_CUSTOMER_ID to everycall_system to enable the spend and conversion join."
     });
   }
 
@@ -893,6 +983,7 @@ export async function loadMarketingInsights({ pool, days: rawDays, refresh: rawR
       },
       googleAds: {
         configured: Boolean(googleAds.configured),
+        source: googleAds.source || "",
         message: googleAds.message || "",
         landingPageError: googleAds.landingPageError || ""
       }
