@@ -138,9 +138,9 @@ export function buildDemoRealtimeInstructions(bundle = {}) {
 }
 
 function resolveDemoRealtimeModel() {
-  const configured = normalizeText(process.env.OPENAI_DEMO_REALTIME_MODEL || process.env.OPENAI_REALTIME_MODEL);
+  const configured = normalizeText(process.env.OPENAI_DEMO_REALTIME_MODEL);
   if (!configured || configured === "gpt-realtime") {
-    return "gpt-realtime-1.5";
+    return "gpt-realtime-2.1";
   }
   return configured;
 }
@@ -167,11 +167,8 @@ export function buildDemoRealtimeSessionPayload(bundle = {}) {
             language: "en"
           },
           turn_detection: {
-            type: "server_vad",
-            threshold: 0.85,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 650,
-            idle_timeout_ms: null,
+            type: "semantic_vad",
+            eagerness: "high",
             create_response: true,
             interrupt_response: true
           }

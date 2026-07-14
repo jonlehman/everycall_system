@@ -3,15 +3,35 @@
 ## Deployments
 - Admin/client app: Vercel
 - Call gateway: Render
+- Live web demo: code defaults to `gpt-realtime-2.1`; `OPENAI_DEMO_REALTIME_MODEL` is an optional demo-specific Vercel override.
 
 ## Logs
 - Render service logs for call-gateway
 - Look for: `openai_realtime_session_updated`, `assistant_response_canceled`, `openai_realtime_response_done`
+- For the GPT-Realtime-2.1 rollout/canary, enable `REALTIME_TRACE=true` only on staging or a controlled canary and confirm `openai_realtime_session_start` logs `model=gpt-realtime-2.1` and `apiShape=realtime2`.
 
 ## Common Issues
 - Assistant interrupts caller: check barge-in cancel logic and audio queue clearing.
 - Missing pre-close question: verify deterministic enforcement.
 - Wrong knowledge answers: verify compiled knowledge retrieval, overrides, and guardrails.
+- Realtime session update rejected: deliberately pin or migrate the affected tenant/runtime profile's `session_config.model` to `gpt-realtime-1.5`, set the gateway's `OPENAI_REALTIME_API_SHAPE=legacy`, restart the gateway, then inspect the Realtime trace payload and OpenAI error `param`.
+- No outbound audio after the GPT-Realtime-2.1 switch: verify output audio format remains `g711_ulaw` in admin session config and maps to `audio/pcmu` in the Realtime 2 session trace.
+
+## OpenAI GPT-Realtime-2.1 Rollout
+- Default admin/runtime-profile model: `gpt-realtime-2.1`; `session_config.model` is the gateway's model source of truth.
+- Live web demo model: code default `gpt-realtime-2.1`; optionally set `OPENAI_DEMO_REALTIME_MODEL` in Vercel for an explicit demo-only override.
+- Default API shape selection: `OPENAI_REALTIME_API_SHAPE=auto`.
+- Explicit rollback:
+  - deliberately pin or migrate the affected tenant/runtime profile to `session_config.model=gpt-realtime-1.5`
+  - set `OPENAI_REALTIME_API_SHAPE=legacy` on the call gateway and restart it
+- `OPENAI_REALTIME_MODEL` is not read by `call-gateway` and must not be used as a gateway rollout or rollback control.
+- Before production rollout, run:
+  - `corepack pnpm --filter @everycall/call-gateway... build`
+  - `corepack pnpm validate:realtime2-payloads`
+  - tenant profile dry run: `node scripts/migrate-realtime2-runtime-profiles.mjs`
+- Apply existing profile migration only after reviewing dry-run output:
+  - `EVERYCALL_APPLY_REALTIME2_PROFILE_MIGRATION=1 node scripts/migrate-realtime2-runtime-profiles.mjs`
+- Manual canary calls must cover greeting, direct question, knowledge lookup, data capture, transfer lookup/confirmation, alphanumeric readback, barge-in, silence/background noise, and tool failure.
 
 ## Billing Portal
 - `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` should point at the live EveryCall portal configuration in Stripe.
@@ -35,3 +55,5 @@
 
 ## Rollback
 - Use Render rollback to previous deploy.
+- For a model/API-shape rollback without code rollback, deliberately pin or migrate the affected tenant/runtime profile to `session_config.model=gpt-realtime-1.5`, set `OPENAI_REALTIME_API_SHAPE=legacy`, then restart `everycall-call-gateway`.
+- Changing `OPENAI_REALTIME_MODEL` alone has no effect on call-gateway sessions.

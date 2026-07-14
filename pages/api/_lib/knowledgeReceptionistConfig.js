@@ -115,7 +115,7 @@ const DEFAULT_STAGE_PLAYBOOK = [
 ];
 
 export const DEFAULT_RUNTIME_SESSION_CONFIG = {
-  model: "gpt-realtime-1.5",
+  model: "gpt-realtime-2.1",
   voice: "marin",
   max_output_tokens: 4096,
   turn_detection: {

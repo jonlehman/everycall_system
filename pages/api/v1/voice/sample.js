@@ -84,15 +84,95 @@ function buildPreviewPromptPayload(runtimeProfile, voice) {
   };
 }
 
+export function isRealtime2Model(model) {
+  const normalized = String(model || "").trim().toLowerCase();
+  return normalized === "gpt-realtime-2"
+    || normalized.startsWith("gpt-realtime-2.")
+    || normalized.startsWith("gpt-realtime-2-");
+}
+
+export function resolveRealtimeApiShape(configured, model) {
+  const normalized = String(configured || "").trim().toLowerCase();
+  if (["realtime2", "realtime_2", "v2", "current", "nested"].includes(normalized)) return "realtime2";
+  if (["legacy", "v1", "classic"].includes(normalized)) return "legacy";
+  return isRealtime2Model(model) ? "realtime2" : "legacy";
+}
+
+function realtime2AudioFormat(value, fallback = "pcm16") {
+  const normalized = String(value || fallback).trim().toLowerCase();
+  if (normalized === "pcm16" || normalized === "pcm" || normalized === "audio/pcm") {
+    return { type: "audio/pcm", rate: 24000 };
+  }
+  if (["g711_ulaw", "ulaw", "pcmu", "audio/pcmu"].includes(normalized)) {
+    return { type: "audio/pcmu" };
+  }
+  if (["g711_alaw", "alaw", "pcma", "audio/pcma"].includes(normalized)) {
+    return { type: "audio/pcma" };
+  }
+  return realtime2AudioFormat(fallback, "pcm16");
+}
+
+export function buildPreviewSessionUpdate({ apiShape, instructions, promptPayload, voice }) {
+  if (apiShape === "realtime2") {
+    return {
+      type: "session.update",
+      session: {
+        type: "realtime",
+        instructions,
+        tools: Array.isArray(promptPayload.tool_definitions) ? promptPayload.tool_definitions : [],
+        output_modalities: ["audio"],
+        audio: {
+          output: {
+            format: realtime2AudioFormat("pcm16"),
+            voice
+          }
+        },
+        max_output_tokens: promptPayload?.session_config?.max_output_tokens ?? 4096
+      }
+    };
+  }
+  return {
+    type: "session.update",
+    session: {
+      modalities: ["audio", "text"],
+      instructions,
+      tools: Array.isArray(promptPayload.tool_definitions) ? promptPayload.tool_definitions : [],
+      output_audio_format: "pcm16",
+      voice,
+      max_response_output_tokens: promptPayload?.session_config?.max_output_tokens ?? 4096
+    }
+  };
+}
+
+function buildPreviewResponseCreate(apiShape, sampleText) {
+  if (apiShape === "realtime2") {
+    return {
+      type: "response.create",
+      response: {
+        output_modalities: ["audio"],
+        instructions: createRealtimePreviewInstructions(sampleText)
+      }
+    };
+  }
+  return {
+    type: "response.create",
+    response: {
+      modalities: ["audio", "text"],
+      instructions: createRealtimePreviewInstructions(sampleText)
+    }
+  };
+}
+
 async function requestRealtimePreview({ apiKey, promptPayload, sampleText }) {
   return new Promise((resolve, reject) => {
-    const model = String(promptPayload?.session_config?.model || "gpt-realtime-1.5").trim() || "gpt-realtime-1.5";
+    const model = String(promptPayload?.session_config?.model || "gpt-realtime-2.1").trim() || "gpt-realtime-2.1";
+    const apiShape = resolveRealtimeApiShape(process.env.OPENAI_REALTIME_API_SHAPE, model);
     const voice = String(promptPayload?.session_config?.voice || "marin").trim() || "marin";
     const instructions = normalizeText(promptPayload?.system_prompt);
     const ws = new WebSocket(`wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        "OpenAI-Beta": "realtime=v1"
+        ...(apiShape === "legacy" ? { "OpenAI-Beta": "realtime=v1" } : {})
       }
     });
 
@@ -136,17 +216,7 @@ async function requestRealtimePreview({ apiKey, promptPayload, sampleText }) {
     }
 
     ws.on("open", () => {
-      ws.send(JSON.stringify({
-        type: "session.update",
-        session: {
-          modalities: ["audio", "text"],
-          instructions,
-          tools: Array.isArray(promptPayload.tool_definitions) ? promptPayload.tool_definitions : [],
-          output_audio_format: "pcm16",
-          voice,
-          max_response_output_tokens: promptPayload?.session_config?.max_output_tokens ?? 4096
-        }
-      }));
+      ws.send(JSON.stringify(buildPreviewSessionUpdate({ apiShape, instructions, promptPayload, voice })));
     });
 
     ws.on("message", (data) => {
@@ -159,13 +229,7 @@ async function requestRealtimePreview({ apiKey, promptPayload, sampleText }) {
 
       const type = String(event?.type || "");
       if (type === "session.updated") {
-        ws.send(JSON.stringify({
-          type: "response.create",
-          response: {
-            modalities: ["audio", "text"],
-            instructions: createRealtimePreviewInstructions(sampleText)
-          }
-        }));
+        ws.send(JSON.stringify(buildPreviewResponseCreate(apiShape, sampleText)));
         return;
       }
 

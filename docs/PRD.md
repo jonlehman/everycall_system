@@ -56,9 +56,10 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 - If a question is not covered by approved knowledge or general knowledge, the assistant must say it does not know and offer a callback.
 
 ## Realtime Session Settings (Stored in Admin, Not Hardcoded)
-- Model: `gpt-realtime-1.5`
+- Model: `gpt-realtime-2.1`, supplied to the gateway as `session_config.model` by the admin/runtime profile.
 - Voice: `marin`
-- Turn detection: `server_vad`. Threshold `0.75`. Prefix padding `300ms`. Silence duration `500ms`. Idle timeout off.
+- Realtime API shape: the gateway auto-selects the Realtime 2 nested session schema from the supplied model. `OPENAI_REALTIME_API_SHAPE` overrides shape only; rollback requires a deliberate runtime-profile model pin as well as the legacy shape override.
+- Turn detection: `semantic_vad`. Eagerness `high`. Automatic response and interruption enabled.
 - Transcription model: `gpt-4o-mini-transcribe`
 - Noise reduction: `far_field`
 - Max output tokens: `4096`

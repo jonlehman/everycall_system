@@ -15,15 +15,16 @@ A thin realtime gateway that executes a call flow defined by the EveryCall syste
 ## Realtime Session Configuration (Admin-stored, not hard-coded)
 Must match the web demo configuration:
 
-- Model: `gpt-realtime-1.5`
+- Model: `gpt-realtime-2.1`, supplied by the admin/runtime profile as `session_config.model`
 - Voice: `marin`
-- Turn detection: `server_vad`
-  - threshold: `0.75`
-  - prefix padding: `300ms`
-  - silence duration: `500ms`
-  - idle timeout: off
+- Realtime API shape: auto-select the Realtime 2 nested session schema from `session_config.model`; `OPENAI_REALTIME_API_SHAPE` is a shape-only override and does not select the model.
+- Turn detection: `semantic_vad`
+  - eagerness: `high`
+  - create response: enabled
+  - interrupt response: enabled
 - Transcription model: `gpt-4o-mini-transcribe`
 - Noise reduction: `far_field`
+- Input/output audio format: `g711_ulaw`
 - Max output tokens: `4096`
 - Tools: enabled (Knowledge lookup + Data capture)
 

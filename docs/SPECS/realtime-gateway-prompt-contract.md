@@ -94,7 +94,7 @@ The gateway must receive a single JSON payload with the following top-level fiel
     {"type": "function", "name": "knowledge_lookup", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}}},
     {"type": "function", "name": "data_capture", "parameters": {"type": "object", "properties": {"first_name": {"type": "string"}}}}
   ],
-  "session_config": { "model": "gpt-realtime-1.5", "voice": "marin" },
+  "session_config": { "model": "gpt-realtime-2.1", "voice": "marin" },
   "metadata": { "tenant_id": "t_123" }
 }
 ```

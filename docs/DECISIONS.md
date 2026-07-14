@@ -31,3 +31,14 @@
   - a customer-initiated plan change is stored as a pending change and takes effect on the next renewal
   - mid-cycle prorations are disabled for plan changes
   - the app must recognize both direct Stripe subscription price swaps and Stripe-created subscription schedules for future-dated portal changes
+
+## 2026-06-22
+- Use `gpt-realtime-2` as the default OpenAI Realtime voice-agent model for new runtime profiles and demos.
+- `call-gateway` auto-selects the Realtime 2 nested session schema for `gpt-realtime-2` and preserves a legacy schema rollback path via `OPENAI_REALTIME_API_SHAPE=legacy`.
+- Existing tenant runtime profiles with explicit legacy model overrides are migrated deliberately rather than silently rewritten.
+
+## 2026-07-14
+- Use `gpt-realtime-2.1` as the default OpenAI Realtime voice-agent model for new runtime profiles and the live web demo; the production gateway consumes the model from each admin/runtime-profile `session_config` payload.
+- Treat `gpt-realtime-2.1` as part of the Realtime 2 schema family: keep the nested session shape and `OPENAI_REALTIME_API_SHAPE=auto` rather than introducing a new API-shape branch.
+- Preserve a deliberate tenant/runtime-profile pin to `gpt-realtime-1.5` plus `OPENAI_REALTIME_API_SHAPE=legacy` as the explicit operational rollback; the gateway environment variable controls API shape, not the model.
+- Canary coverage must include alphanumeric recognition, silence and background-noise handling, and interruption behavior in addition to the existing gateway, tool, and audio checks.

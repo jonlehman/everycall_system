@@ -14,7 +14,7 @@ function parsePositiveRate(value, fallback) {
 const realtimeInputRatePer1MUsd = parsePositiveRate(process.env.OPENAI_REALTIME_INPUT_RATE_PER_1M_USD, 4);
 const realtimeCachedInputRatePer1MUsd = parsePositiveRate(process.env.OPENAI_REALTIME_CACHED_INPUT_RATE_PER_1M_USD, 0.4);
 const realtimeAudioInputRatePer1MUsd = parsePositiveRate(process.env.OPENAI_REALTIME_AUDIO_INPUT_RATE_PER_1M_USD, 32);
-const realtimeOutputRatePer1MUsd = parsePositiveRate(process.env.OPENAI_REALTIME_OUTPUT_RATE_PER_1M_USD, 16);
+const realtimeOutputRatePer1MUsd = parsePositiveRate(process.env.OPENAI_REALTIME_OUTPUT_RATE_PER_1M_USD, 24);
 const realtimeAudioOutputRatePer1MUsd = parsePositiveRate(process.env.OPENAI_REALTIME_AUDIO_OUTPUT_RATE_PER_1M_USD, 64);
 const telnyxEstimatedInboundRatePerMinuteUsd = parsePositiveRate(process.env.TELNYX_ESTIMATED_INBOUND_RATE_PER_MINUTE_USD, 0.0055);
 

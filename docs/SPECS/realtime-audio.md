@@ -13,7 +13,9 @@ Natural, interruptible speech with low latency and consistent tone.
 - Avoid duplicate assistant messages.
 
 ## Key Parameters
-- VAD: use `server_vad` with threshold `0.75`, prefix padding `300ms`, silence duration `500ms`, idle timeout off.
+- Admin/runtime-profile model: `gpt-realtime-2.1`, with the gateway auto-selecting the Realtime 2 session schema from `session_config.model`.
+- VAD: use `semantic_vad` with eagerness `high`, automatic response enabled, and interruption enabled.
+- Audio formats: `g711_ulaw` input/output for Telnyx, mapped to Realtime 2 `audio/pcmu` format.
 - Voice: `marin` (demo-aligned default).
 - Transcription: `gpt-4o-mini-transcribe` with `far_field` noise reduction.
 - Output pump: queue length and pump interval.

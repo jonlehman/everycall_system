@@ -20,6 +20,12 @@
 - The script logs into both a tenant and admin account, performs read-only page/API checks, verifies billing/dashboard/knowledge surfaces, and logs out.
 - It does not create tenants, publish builds, send SMS, or modify live configuration.
 
+## Realtime 2 Payload Validation
+- Run `corepack pnpm --filter @everycall/call-gateway... build` before importing gateway dist helpers.
+- Run `corepack pnpm validate:realtime2-payloads` after gateway build.
+- Before changing existing tenant profiles, run `node scripts/migrate-realtime2-runtime-profiles.mjs` and review any `manual_review` rows.
+- Apply the tenant profile migration only with `EVERYCALL_APPLY_REALTIME2_PROFILE_MIGRATION=1`.
+
 Use these after any change to prompts, knowledge lookup, or barge-in handling.
 
 ## Script 1: Emergency + Knowledge + Pre-Close
@@ -42,3 +48,14 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 ## Barge-In Test
 - Interrupt the assistant mid-sentence with "Sorry—one sec."
 - Verify assistant speech stops immediately.
+
+## GPT-Realtime-2.1 Canary Calls
+- Verify `openai_realtime_session_start` reports `model=gpt-realtime-2.1` and `apiShape=realtime2`.
+- Verify first assistant audio arrives and outbound audio stays clear over Telnyx.
+- Verify a knowledge lookup does not mention tool names, packets, scores, or system logic.
+- Verify data capture happens only after the caller provides the value.
+- Verify transfer lookup asks for confirmation before transfer.
+- Verify silence and uncertain answers end with a clear next step.
+- Read an alphanumeric value such as `A7K-92Q`, then verify the assistant repeats and captures every character in order.
+- Pause briefly with ordinary background noise present; verify there is no spurious caller turn, duplicate response, or premature close.
+- Interrupt the assistant mid-sentence; verify audio stops promptly and the assistant handles the new utterance without replaying stale audio.

@@ -15,13 +15,25 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
-      - key: OPENAI_REALTIME_MODEL
-        sync: false
+      - key: OPENAI_REALTIME_API_SHAPE
+        value: auto
       - key: OPENAI_REALTIME_VOICE
         sync: false
       - key: OPENAI_REALTIME_INPUT_FORMAT
         sync: false
       - key: OPENAI_REALTIME_OUTPUT_FORMAT
+        sync: false
+      - key: OPENAI_REALTIME_INPUT_RATE_PER_1M_USD
+        sync: false
+      - key: OPENAI_REALTIME_CACHED_INPUT_RATE_PER_1M_USD
+        sync: false
+      - key: OPENAI_REALTIME_AUDIO_INPUT_RATE_PER_1M_USD
+        sync: false
+      - key: OPENAI_REALTIME_OUTPUT_RATE_PER_1M_USD
+        sync: false
+      - key: OPENAI_REALTIME_AUDIO_OUTPUT_RATE_PER_1M_USD
+        sync: false
+      - key: OPENAI_SAFETY_IDENTIFIER
         sync: false
       - key: TELNYX_RTP_PAYLOAD_TYPE
         sync: false
