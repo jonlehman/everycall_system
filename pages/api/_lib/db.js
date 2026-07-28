@@ -9,7 +9,16 @@ export function getPool() {
   }
 
   if (!globalThis.__everycallPool) {
-    globalThis.__everycallPool = new Pool({ connectionString: databaseUrl });
+    const configuredPoolMax = Number.parseInt(
+      String(process.env.DATABASE_POOL_MAX || ""),
+      10
+    );
+    globalThis.__everycallPool = new Pool({
+      connectionString: databaseUrl,
+      ...(Number.isFinite(configuredPoolMax) && configuredPoolMax > 0
+        ? { max: configuredPoolMax }
+        : {})
+    });
   }
 
   return globalThis.__everycallPool;

@@ -6,7 +6,8 @@ export const INTERNAL_AUTH_PURPOSES = {
   gatewayError: "gateway_error",
   callSummaryFinalize: "call_summary_finalize",
   gatewayDebugLog: "gateway_debug_log",
-  telnyxMediaStream: "telnyx_media_stream"
+  telnyxMediaStream: "telnyx_media_stream",
+  salesCallControl: "sales_call_control"
 } as const;
 
 function normalizeText(value: unknown) {

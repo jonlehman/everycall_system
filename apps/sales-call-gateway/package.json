@@ -1,0 +1,27 @@
+{
+  "name": "@everycall/sales-call-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "validate": "pnpm run build && node ../../scripts/validate-sales-call-gateway.mjs"
+  },
+  "dependencies": {
+    "@everycall/contracts": "workspace:*",
+    "@everycall/observability": "workspace:*",
+    "express": "^4.21.2",
+    "pg": "^8.16.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.15.6",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

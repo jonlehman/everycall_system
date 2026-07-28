@@ -13,6 +13,7 @@ import './intake.css';
 const GOOGLE_ADS_SIGNUP_CONVERSION_ID = 'AW-18124035745/qSx4CM-0vKQcEKGtm8JD';
 const SIGNUP_CONVERSION_PENDING_KEY = 'everycall.googleAds.signupConversionPending';
 const SIGNUP_CONVERSION_SENT_KEY = 'everycall.googleAds.signupConversionSent';
+const SALES_SIGNUP_TOKEN_STORAGE_KEY = 'everycall.salesSignupToken';
 
 const INTAKE_STEPS = [
   {
@@ -58,6 +59,7 @@ function createInitialForm(qaMode = false) {
   const qaLeadEmail = qaMode ? 'qa-owner@example.com' : '';
   return {
     businessName: qaMode ? 'Knowledge Receptionist QA Tenant' : '',
+    businessCategory: '',
     leadEmail: qaLeadEmail,
     leadPhone: qaMode ? '+12065550199' : '',
     loginEmail: qaLeadEmail,
@@ -208,6 +210,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
   const [busy, setBusy] = useState(false);
   const [activation, setActivation] = useState(null);
   const [marketingAttribution, setMarketingAttribution] = useState({});
+  const [salesSignupToken, setSalesSignupToken] = useState('');
   const [showNoWebsiteSetupModal, setShowNoWebsiteSetupModal] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const getStartedHref = '/client/get-started';
@@ -226,6 +229,20 @@ export function IntakePageClient({ qaMode = false } = {}) {
 
     const searchParams = new URLSearchParams(window.location.search || '');
     const hasQueryParams = Array.from(searchParams.keys()).length > 0;
+    const urlSignupToken = String(searchParams.get('salesInvite') || '').trim();
+    let signupToken = urlSignupToken;
+    try {
+      if (urlSignupToken) {
+        window.sessionStorage.setItem(SALES_SIGNUP_TOKEN_STORAGE_KEY, urlSignupToken);
+      } else {
+        signupToken = String(
+          window.sessionStorage.getItem(SALES_SIGNUP_TOKEN_STORAGE_KEY) || ''
+        ).trim();
+      }
+    } catch {
+      // The URL token still works when tab storage is unavailable.
+    }
+    let canceled = false;
 
     if (hasQueryParams) {
       const normalized = normalizeMarketingAttribution(searchParams);
@@ -242,23 +259,90 @@ export function IntakePageClient({ qaMode = false } = {}) {
       } catch {
         // Ignore session storage failures.
       }
-      return undefined;
-    }
-
-    try {
-      const stored = window.sessionStorage.getItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
-      if (!stored) return undefined;
-      const normalized = normalizeMarketingAttribution(JSON.parse(stored));
-      if (isEmptyMarketingAttribution(normalized)) {
+    } else {
+      try {
+        const stored = window.sessionStorage.getItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
+        if (stored) {
+          const normalized = normalizeMarketingAttribution(JSON.parse(stored));
+          if (isEmptyMarketingAttribution(normalized)) {
+            window.sessionStorage.removeItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
+          } else {
+            setMarketingAttribution(normalized);
+          }
+        }
+      } catch {
         window.sessionStorage.removeItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
-        return undefined;
       }
-      setMarketingAttribution(normalized);
-    } catch {
-      window.sessionStorage.removeItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
     }
 
-    return undefined;
+    if (urlSignupToken) {
+      const sanitizedUrl = new URL(window.location.href);
+      sanitizedUrl.searchParams.delete('salesInvite');
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${sanitizedUrl.pathname}${sanitizedUrl.search}${sanitizedUrl.hash}`
+      );
+    }
+    if (signupToken) {
+      setSalesSignupToken(signupToken);
+      setStatus({ message: 'Loading your prefilled setup information…', tone: 'warn' });
+      void fetch('/api/v1/sales/signup-prefill/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: signupToken })
+      })
+        .then(async (response) => {
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !data?.ok) {
+            const error = new Error(data?.message || 'This setup link is unavailable.');
+            error.status = response.status;
+            error.code = data?.error || '';
+            throw error;
+          }
+          if (canceled) return;
+          const prefill = data.prefill && typeof data.prefill === 'object' ? data.prefill : {};
+          setForm((current) => ({
+            ...current,
+            businessName: current.businessName || String(prefill.businessName || ''),
+            businessCategory: current.businessCategory || String(prefill.businessCategory || ''),
+            leadEmail: current.leadEmail || String(prefill.leadEmail || ''),
+            loginEmail: current.loginEmail || String(prefill.loginEmail || ''),
+            website: current.website || String(prefill.website || ''),
+            hasNoWebsite: current.hasNoWebsite && !prefill.website
+          }));
+          const trustedAttribution = normalizeMarketingAttribution(prefill.marketingAttribution);
+          if (!isEmptyMarketingAttribution(trustedAttribution)) {
+            setMarketingAttribution(trustedAttribution);
+          }
+          setStatus({
+            message: 'Your business information is prefilled. Please review it and create your password.',
+            tone: 'ok'
+          });
+        })
+        .catch((error) => {
+          if (canceled) return;
+          setSalesSignupToken('');
+          if (
+            [404, 410].includes(Number(error?.status))
+            || String(error?.code || '').startsWith('signup_invitation_')
+          ) {
+            try {
+              window.sessionStorage.removeItem(SALES_SIGNUP_TOKEN_STORAGE_KEY);
+            } catch {
+              // Ignore session storage failures.
+            }
+          }
+          setStatus({
+            message: error?.message || 'This setup link is unavailable.',
+            tone: 'bad'
+          });
+        });
+    }
+
+    return () => {
+      canceled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -320,6 +404,7 @@ export function IntakePageClient({ qaMode = false } = {}) {
     try {
       const requestBody = {
         businessName: form.businessName,
+        businessCategory: form.businessCategory || undefined,
         leadEmail: form.leadEmail,
         leadPhone: form.leadPhone,
         loginEmail: form.loginEmail,
@@ -328,6 +413,10 @@ export function IntakePageClient({ qaMode = false } = {}) {
         noWebsite: form.hasNoWebsite,
         bootstrapMode: form.hasNoWebsite ? 'setup_interview' : 'website_first'
       };
+
+      if (salesSignupToken) {
+        requestBody.salesSignupToken = salesSignupToken;
+      }
 
       if (!isEmptyMarketingAttribution(marketingAttribution)) {
         requestBody.marketingAttribution = marketingAttribution;
@@ -339,6 +428,17 @@ export function IntakePageClient({ qaMode = false } = {}) {
         body: JSON.stringify(requestBody)
       });
       if (!data?.ok) {
+        if (
+          salesSignupToken
+          && String(data?.error || '').startsWith('signup_invitation_')
+        ) {
+          try {
+            window.sessionStorage.removeItem(SALES_SIGNUP_TOKEN_STORAGE_KEY);
+          } catch {
+            // Ignore session storage failures.
+          }
+          setSalesSignupToken('');
+        }
         if (data?.fieldErrors) {
           setCurrentStep(resolveStepForFieldErrors(data.fieldErrors));
         }
@@ -359,10 +459,12 @@ export function IntakePageClient({ qaMode = false } = {}) {
       setActivation(data);
       try {
         window.sessionStorage.removeItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
+        window.sessionStorage.removeItem(SALES_SIGNUP_TOKEN_STORAGE_KEY);
       } catch {
         // Ignore session storage failures.
       }
       setMarketingAttribution({});
+      setSalesSignupToken('');
       const nextParams = new URLSearchParams();
       const signupConversionFired = await fireGoogleAdsSignupConversion();
       if (!signupConversionFired) {

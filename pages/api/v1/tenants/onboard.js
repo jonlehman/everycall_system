@@ -25,6 +25,10 @@ import { createDefaultTenantBusinessHours, saveTenantBusinessHours } from "../..
 import { sendTelnyxSms } from "../../_lib/telnyx.js";
 import { normalizeCallerIdName, provisionTenantVoiceNumber } from "../../_lib/voiceProvisioning.js";
 import { normalizeMarketingAttribution } from "../../../../lib/intakeMarketingAttribution.js";
+import {
+  completeSalesSignupInvitation,
+  validateSalesSignupInvitationForOnboarding
+} from "../../_lib/salesRepository.js";
 
 function slugify(input) {
   return String(input || "")
@@ -216,6 +220,9 @@ function parsePayload(body) {
   const website = noWebsite ? "" : normalizeText(body.website);
   const bootstrapMode = requestedBootstrapMode || (website ? "website_first" : "setup_interview");
   const marketingAttribution = normalizeMarketingAttribution(body.marketingAttribution || body.marketing_attribution);
+  const salesSignupToken = normalizeText(
+    body.salesSignupToken || body.sales_signup_token
+  ).slice(0, 500);
 
   return {
     businessName,
@@ -229,7 +236,8 @@ function parsePayload(body) {
     primaryGoal: "Answer callers briefly and move them to the correct next step.",
     bootstrapMode,
     greetingText: normalizeText(body.greetingText || body.greeting_text),
-    marketingAttribution
+    marketingAttribution,
+    salesSignupToken
   };
 }
 
@@ -374,6 +382,19 @@ export default async function handler(req, res) {
     try {
       await client.query("BEGIN");
       await syncCanonicalKnowledgePacks(client);
+      let salesSignupInvitation = null;
+      if (payload.salesSignupToken) {
+        salesSignupInvitation = await validateSalesSignupInvitationForOnboarding(client, {
+          rawToken: payload.salesSignupToken,
+          forUpdate: true
+        });
+        const trustedAttribution = normalizeMarketingAttribution(
+          salesSignupInvitation.prefill?.marketingAttribution
+        );
+        if (Object.keys(trustedAttribution).length) {
+          payload.marketingAttribution = trustedAttribution;
+        }
+      }
 
       const passwordHash = await bcrypt.hash(payload.password, 10);
       const baseTenantKey = slugify(payload.businessName) || "tenant";
@@ -533,6 +554,13 @@ export default async function handler(req, res) {
         });
       }
 
+      if (salesSignupInvitation) {
+        await completeSalesSignupInvitation(client, {
+          rawToken: payload.salesSignupToken,
+          tenantKey
+        });
+      }
+
       await client.query("COMMIT");
 
       const sessionId = ownerUserId
@@ -638,6 +666,12 @@ export default async function handler(req, res) {
     }
     if (message === "domain_assignment_required") {
       return jsonError(res, 400, "domain_assignment_required", "A canonical domain/subdomain assignment is required.");
+    }
+    if (err?.code === "signup_invitation_not_found") {
+      return jsonError(res, 404, err.code, "This signup invitation could not be found.");
+    }
+    if (err?.code === "signup_invitation_unavailable") {
+      return jsonError(res, Number(err?.statusCode || 410), err.code, err.message);
     }
     return jsonError(res, 500, "onboarding_error", message);
   }

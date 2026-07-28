@@ -3,6 +3,7 @@
 ## Deployments
 - Admin/client app: Vercel
 - Call gateway: Render
+- Outbound sales call gateway: separate Render service `everycall-sales-call-gateway`, exactly one instance
 - Live web demo: code defaults to `gpt-realtime-2.1`; `OPENAI_DEMO_REALTIME_MODEL` is an optional demo-specific Vercel override.
 
 ## Logs
@@ -16,6 +17,22 @@
 - Wrong knowledge answers: verify compiled knowledge retrieval, overrides, and guardrails.
 - Realtime session update rejected: deliberately pin or migrate the affected tenant/runtime profile's `session_config.model` to `gpt-realtime-1.5`, set the gateway's `OPENAI_REALTIME_API_SHAPE=legacy`, restart the gateway, then inspect the Realtime trace payload and OpenAI error `param`.
 - No outbound audio after the GPT-Realtime-2.1 switch: verify output audio format remains `g711_ulaw` in admin session config and maps to `audio/pcmu` in the Realtime 2 session trace.
+
+## Outbound Sales Calling
+- Apply `migrations/0032_outbound_sales_demo.sql` before enabling the Sales Console.
+- Configure the Vercel values documented under `# outbound sales console` in `.env.example`.
+- Leave `SALES_OUTBOUND_ENABLED=false` until the migration, credentials, webhook routes, and controlled provider canary have passed. Set it to `true` to start the scheduled demo and follow-up worker.
+- Configure the isolated Render values under `# isolated outbound sales call gateway`. Never substitute generic production `TELNYX_*` or `OPENAI_*` credentials.
+- In Telnyx, use a dedicated sales Call Control Application for backend dials plus a distinct Credential Connection and WebRTC credential for the browser operator. Enable **Park Outbound Calls** on the Credential Connection and route both sales resources' webhooks to `/webhooks/telnyx` on the sales gateway.
+- Route the dedicated OpenAI project's Realtime webhook to `/webhooks/openai` on the sales gateway.
+- Keep Telnyx and OpenAI signature enforcement enabled. Set both providers' public/webhook secrets before sending traffic.
+- Configure Smartlead campaign IDs only for finalized outcome branches and set its sales webhook secret. Point reply/bounce/unsubscribe events at `/api/v1/webhooks/smartlead/sales`; use the `x-everycall-webhook-secret` header or a `?secret=` URL value when the provider cannot set custom headers. Missing campaign IDs cause a durable job to complete as `campaign_not_configured`; they do not send an unintended sequence.
+- The gateway `/healthz` endpoint is public for platform health checks. `/internal/health` and call actions require an internal-service token.
+- If the console reports `operator_leg_not_parked`, stop testing and enable parking on the dedicated WebRTC credential; the gateway intentionally refuses to dial the prospect.
+- If the AI standby fails, the human call remains active and the console reports the provider error. End the demo or call cleanly before retrying.
+- Automatic deploys are disabled for the sales gateway. Drain active calls, deploy it manually, and stop the old instance before the replacement starts.
+- Do not scale the sales gateway above one instance. Realtime monitor sockets and call locks are process-local.
+- Trial duration remains controlled by `DEFAULT_TRIAL_DAYS`; this subsystem does not change it.
 
 ## OpenAI GPT-Realtime-2.1 Rollout
 - Default admin/runtime-profile model: `gpt-realtime-2.1`; `session_config.model` is the gateway's model source of truth.

@@ -12,6 +12,7 @@ const sections = [
     items: [
       { label: 'Overview', href: '/admin/overview' },
       { label: 'Support', href: '/admin/support' },
+      { label: 'Sales Console', href: '/admin/sales' },
       { label: 'Website Demos', href: '/admin/demo-sessions' },
       { label: 'Marketing Activity', href: '/admin/marketing-activity' },
       { label: 'Marketing Insights', href: '/admin/marketing-insights' },

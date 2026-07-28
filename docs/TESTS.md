@@ -59,3 +59,17 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 - Read an alphanumeric value such as `A7K-92Q`, then verify the assistant repeats and captures every character in order.
 - Pause briefly with ordinary background noise present; verify there is no spurious caller turn, duplicate response, or premature close.
 - Interrupt the assistant mid-sentence; verify audio stops promptly and the assistant handles the new utterance without replaying stale audio.
+
+## Outbound Sales System
+- Run `corepack pnpm validate:sales-system`.
+- Run `corepack pnpm typecheck` and `corepack pnpm build`.
+- The sales validator suite covers CSV permission parsing, the 11-record warm queue, 30-day demo expiry, outcome advancement, durable Smartlead jobs, separate phone/email suppression, signup-token open/consume semantics, browser call options, gateway authentication, webhook signature checks and replay handling, parked-leg fail-safe behavior, conference controls, exact demo greeting, pause audio clearing, teardown, and database-backed integration.
+- Browser verification must use a disposable database and confirm `/admin/sales` renders the current prospect, next prepared prospects, website facts, call readiness, conversion controls, and a visible provider-configuration error when credentials are intentionally absent.
+- Before pilot traffic, make one controlled live provider call and verify:
+  - the operator leg is parked on the dedicated sales connection
+  - the prospect and AI standby dial concurrently
+  - `AI Ready` requires both the accepted OpenAI session and the Telnyx AI leg
+  - `Start Demo` joins the existing AI leg and begins with the configured business greeting
+  - operator audio stays live, `Pause AI` cancels speech and clears buffered audio, and `End Demo` removes only the AI
+  - duplicate Telnyx/OpenAI webhooks do not repeat commands
+  - ending either human leg tears down the conference and unused AI standby

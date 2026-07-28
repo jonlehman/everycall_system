@@ -78,3 +78,70 @@ services:
         value: "3000"
       - key: WORKER_CLAIM_LIMIT
         value: "10"
+  - type: web
+    name: everycall-sales-call-gateway
+    env: docker
+    dockerfilePath: apps/sales-call-gateway/Dockerfile
+    autoDeployTrigger: off
+    numInstances: 1
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: "3102"
+      - key: DATABASE_URL
+        fromService:
+          name: everycall-call-gateway
+          type: web
+          envVarKey: DATABASE_URL
+      - key: INTERNAL_SERVICE_SECRET
+        fromService:
+          name: everycall-call-gateway
+          type: web
+          envVarKey: INTERNAL_SERVICE_SECRET
+      - key: SALES_DATABASE_POOL_MAX
+        value: "5"
+      - key: SALES_PROVIDER_EVENT_RECOVERY_INTERVAL_MS
+        value: "30000"
+      - key: SALES_AI_DEMO_MAX_SECONDS
+        value: "600"
+      # Keep these values aligned with the web app. The gateway rechecks the
+      # operational local-time window immediately before provider dialing.
+      - key: SALES_CALL_WINDOW_START_LOCAL
+        value: "08:00"
+      - key: SALES_CALL_WINDOW_END_LOCAL
+        value: "20:00"
+      - key: SALES_CALL_MISSING_TIMEZONE_POLICY
+        value: block
+      # These are separate Telnyx resources: backend /calls use the Call
+      # Control Application ID, while browser operator webhooks originate on a
+      # Credential Connection with "Park Outbound Calls" enabled.
+      - key: SALES_TELNYX_API_KEY
+        sync: false
+      - key: SALES_TELNYX_PUBLIC_KEY
+        sync: false
+      - key: SALES_TELNYX_CALL_CONTROL_APP_ID
+        sync: false
+      - key: SALES_TELNYX_OPERATOR_CONNECTION_ID
+        sync: false
+      - key: SALES_TELNYX_CALLER_ID
+        sync: false
+      - key: SALES_TELNYX_SIGNATURE_REQUIRED
+        value: "true"
+      - key: SALES_TELNYX_HTTP_TIMEOUT_MS
+        value: "8000"
+      - key: SALES_OPENAI_API_KEY
+        sync: false
+      - key: SALES_OPENAI_PROJECT_ID
+        sync: false
+      - key: SALES_OPENAI_WEBHOOK_SECRET
+        sync: false
+      - key: SALES_OPENAI_SIGNATURE_REQUIRED
+        value: "true"
+      - key: SALES_OPENAI_HTTP_TIMEOUT_MS
+        value: "8000"
+      - key: SALES_OPENAI_REALTIME_MODEL
+        value: gpt-realtime-2.1
+      - key: SALES_OPENAI_REALTIME_VOICE
+        value: marin
+      - key: SALES_OPENAI_TRANSCRIPTION_MODEL
+        value: gpt-4o-mini-transcribe

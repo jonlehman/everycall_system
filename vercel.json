@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/billing-lifecycle",
       "schedule": "15 8 * * *"
+    },
+    {
+      "path": "/api/cron/sales-maintenance",
+      "schedule": "*/1 * * * *"
     }
   ],
   "rewrites": [

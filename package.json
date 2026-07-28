@@ -18,17 +18,20 @@
     "validate:voice-runtime-hardening": "node scripts/validate-voice-runtime-hardening.mjs",
     "typecheck": "pnpm -r typecheck",
     "dev:call-gateway": "PORT=3101 pnpm --filter @everycall/call-gateway dev",
+    "dev:sales-call-gateway": "PORT=3102 pnpm --filter @everycall/sales-call-gateway dev",
+    "validate:sales-system": "node --no-warnings scripts/validate-sales-data.mjs && node --no-warnings scripts/validate-sales-database.mjs && node --no-warnings scripts/validate-sales-smartlead.mjs && node --no-warnings scripts/validate-sales-webrtc.mjs && node --no-warnings scripts/validate-sales-gateway-client.mjs && node --no-warnings scripts/validate-sales-telephony.mjs && pnpm --filter @everycall/sales-call-gateway validate",
     "smoke": "node scripts/smoke.mjs",
     "smoke:production": "node scripts/smoke-production.mjs",
     "test:client-ui:v2:e2e": "node scripts/test-client-ui-v2-e2e.mjs",
     "validate:client-setup-status": "node scripts/validate-client-setup-status.mjs"
   },
   "dependencies": {
-    "@everycall/contracts": "workspace:*",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@everycall/contracts": "workspace:*",
     "@mui/material": "^7.3.8",
     "@mui/x-data-grid": "^8.27.3",
+    "@telnyx/webrtc": "^2.27.8",
     "bcryptjs": "^2.4.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -44,6 +47,8 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.4",
+    "@electric-sql/pglite-socket": "0.2.7",
     "@types/node": "^22.10.2",
     "autoprefixer": "^10.4.27",
     "postcss": "^8.5.8",
