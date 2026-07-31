@@ -4,12 +4,12 @@
 Define behavior when realtime sessions or tool calls fail.
 
 ## Failure Modes
-1. **OpenAI Realtime session fails to initialize**
+1. **xAI Grok Realtime session fails to initialize**
    - Log error with call ID and tenant ID.
    - End call cleanly (no gateway-invented instructions).
    - Notify EveryCall via error callback.
 
-2. **OpenAI Realtime disconnects mid-call**
+2. **xAI Grok Realtime disconnects mid-call**
    - Log disconnect.
    - Attempt a single reconnect if call is still active.
    - If reconnect fails, end call cleanly and notify EveryCall.

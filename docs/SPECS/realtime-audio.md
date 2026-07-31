@@ -4,7 +4,7 @@
 Natural, interruptible speech with low latency and consistent tone.
 
 ## Current Notes
-- OpenAI Realtime is used via WebSocket in `call-gateway`.
+- xAI Grok Realtime is used via WebSocket in `call-gateway`.
 - Session behavior is driven by EveryCall-provided configuration at session start.
 
 ## Desired Behavior
@@ -13,11 +13,11 @@ Natural, interruptible speech with low latency and consistent tone.
 - Avoid duplicate assistant messages.
 
 ## Key Parameters
-- Admin/runtime-profile model: `gpt-realtime-2.1`, with the gateway auto-selecting the Realtime 2 session schema from `session_config.model`.
+- Admin/runtime-profile model: `grok-voice-think-fast-2.0`, with the gateway auto-selecting the Realtime 2 session schema from `session_config.model`.
 - VAD: use `semantic_vad` with eagerness `high`, automatic response enabled, and interruption enabled.
 - Audio formats: `g711_ulaw` input/output for Telnyx, mapped to Realtime 2 `audio/pcmu` format.
-- Voice: `marin` (demo-aligned default).
-- Transcription: `gpt-4o-mini-transcribe` with `far_field` noise reduction.
+- Voice: `eve` (demo-aligned default).
+- Transcription: `grok-transcribe` with `far_field` noise reduction.
 - Output pump: queue length and pump interval.
 
 ## Logging

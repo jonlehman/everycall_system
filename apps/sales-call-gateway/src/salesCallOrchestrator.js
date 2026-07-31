@@ -88,13 +88,13 @@ export function createInMemorySalesRealtimeRegistry() {
 
 export function createSalesCallOrchestrator({
   telnyx,
-  openai,
+  xai,
   realtimeRegistry = createInMemorySalesRealtimeRegistry(),
   participantJoinWaiter = null,
   now = Date.now,
   logger = null
 }) {
-  if (!telnyx || !openai) throw new Error("sales_telephony_clients_required");
+  if (!telnyx || !xai) throw new Error("sales_telephony_clients_required");
 
   function log(level, event, fields = {}) {
     if (!logger) return;
@@ -123,7 +123,7 @@ export function createSalesCallOrchestrator({
     correlationId,
     conferenceId,
     aiTelnyxCallControlId,
-    openaiCallId,
+    xaiCallId,
     leaveConference = true
   }) {
     const selectedCorrelationId = correlationId || salesCallId;
@@ -148,12 +148,12 @@ export function createSalesCallOrchestrator({
 
     const preHangup = await Promise.allSettled(actions.map((entry) => entry.run()));
     const hangupActions = [];
-    if (openaiCallId) {
+    if (xaiCallId) {
       hangupActions.push({
-        action: "hangup_openai",
-        run: () => openai.hangupCall({
-          callId: openaiCallId,
-          clientRequestId: commandId(selectedCorrelationId, "hangup_openai", openaiCallId)
+        action: "hangup_xai",
+        run: () => xai.hangupCall({
+          callId: xaiCallId,
+          clientRequestId: commandId(selectedCorrelationId, "hangup_xai", xaiCallId)
         })
       });
     }
@@ -181,7 +181,7 @@ export function createSalesCallOrchestrator({
       conferenceName,
       operator,
       prospectNumber,
-      openaiSipUri,
+      xaiSipUri,
       correlationNonce,
       existingConference,
       existingProspect,
@@ -276,7 +276,7 @@ export function createSalesCallOrchestrator({
       }
 
       const conferenceId = requireSalesValue(conference?.conference_id, "conference_id");
-      const selectedOpenAISipUri = openaiSipUri || openai.buildSipUri();
+      const selectedXAISipUri = xaiSipUri || xai.buildSipUri();
       const dialAndCheckpoint = async (role, operation) => {
         const result = await operation();
         try {
@@ -303,14 +303,14 @@ export function createSalesCallOrchestrator({
             })),
         existingAI?.call_control_id
           ? Promise.resolve({ call: existingAI, resumed: true })
-          : dialAndCheckpoint("ai", () => telnyx.dialOpenAISipStandby({
-              sipUri: selectedOpenAISipUri,
+          : dialAndCheckpoint("ai", () => telnyx.dialXAISipStandby({
+              sipUri: selectedXAISipUri,
               clientState: aiState,
               userToUser: aiState,
               commandId: commandId(
                 selectedCorrelationId,
                 "dial_ai_standby",
-                selectedOpenAISipUri
+                selectedXAISipUri
               )
             }))
       ]);
@@ -409,7 +409,7 @@ export function createSalesCallOrchestrator({
     async prepareAIStandby({
       salesCallId,
       correlationId,
-      openaiCallId,
+      xaiCallId,
       realtimeSession,
       aiTelnyxCallControlId,
       onEvent,
@@ -418,19 +418,19 @@ export function createSalesCallOrchestrator({
     }) {
       const selectedSalesCallId = requireSalesValue(salesCallId, "sales_call_id");
       const selectedCorrelationId = correlationId || selectedSalesCallId;
-      const selectedOpenAICallId = requireSalesValue(openaiCallId, "openai_call_id");
+      const selectedXAICallId = requireSalesValue(xaiCallId, "xai_call_id");
       try {
-        const accepted = await openai.acceptIncomingCall({
-          callId: selectedOpenAICallId,
+        const accepted = await xai.acceptIncomingCall({
+          callId: selectedXAICallId,
           session: realtimeSession,
           clientRequestId: commandId(
             selectedCorrelationId,
-            "accept_openai_standby",
-            selectedOpenAICallId
+            "accept_xai_standby",
+            selectedXAICallId
           )
         });
-        const controller = await openai.connectMonitor({
-          callId: selectedOpenAICallId,
+        const controller = await xai.connectMonitor({
+          callId: selectedXAICallId,
           correlationId: selectedCorrelationId,
           onEvent,
           onError,
@@ -440,11 +440,11 @@ export function createSalesCallOrchestrator({
         log("info", "sales_ai_standby_ready", {
           sales_call_id: selectedSalesCallId,
           correlation_id: selectedCorrelationId,
-          openai_call_id: selectedOpenAICallId
+          xai_call_id: selectedXAICallId
         });
         return {
           patch: {
-            openai_call_id: selectedOpenAICallId,
+            xai_call_id: selectedXAICallId,
             ai_state: "ready"
           },
           provider: {
@@ -457,7 +457,7 @@ export function createSalesCallOrchestrator({
           salesCallId: selectedSalesCallId,
           correlationId: selectedCorrelationId,
           aiTelnyxCallControlId,
-          openaiCallId: selectedOpenAICallId,
+          xaiCallId: selectedXAICallId,
           leaveConference: false
         });
         throw new SalesCallOrchestrationError("Unable to prepare the AI standby leg", {
@@ -465,7 +465,7 @@ export function createSalesCallOrchestrator({
           cause,
           teardown,
           patch: {
-            openai_call_id: selectedOpenAICallId,
+            xai_call_id: selectedXAICallId,
             ai_state: "failed",
             ...summarizeSalesProviderError(cause)
           }
@@ -478,7 +478,7 @@ export function createSalesCallOrchestrator({
       correlationId,
       conferenceId,
       aiTelnyxCallControlId,
-      openaiCallId,
+      xaiCallId,
       businessName,
       joinTimeoutMs = 5000,
       beforeGreeting,
@@ -527,7 +527,7 @@ export function createSalesCallOrchestrator({
           sales_call_id: selectedSalesCallId,
           correlation_id: selectedCorrelationId,
           conference_id: selectedConferenceId,
-          openai_call_id: openaiCallId || controller.callId
+          xai_call_id: xaiCallId || controller.callId
         });
         return {
           patch: {
@@ -547,7 +547,7 @@ export function createSalesCallOrchestrator({
           correlationId: selectedCorrelationId,
           conferenceId: selectedConferenceId,
           aiTelnyxCallControlId: selectedAIControlId,
-          openaiCallId: openaiCallId || controller.callId
+          xaiCallId: xaiCallId || controller.callId
         });
         throw new SalesCallOrchestrationError("Unable to join or start the AI demo", {
           code: "sales_ai_demo_start_failed",
@@ -582,7 +582,7 @@ export function createSalesCallOrchestrator({
       correlationId,
       conferenceId,
       aiTelnyxCallControlId,
-      openaiCallId
+      xaiCallId
     }) {
       const selectedSalesCallId = requireSalesValue(salesCallId, "sales_call_id");
       const teardown = await teardownAIOnly({
@@ -590,10 +590,10 @@ export function createSalesCallOrchestrator({
         correlationId: correlationId || selectedSalesCallId,
         conferenceId,
         aiTelnyxCallControlId,
-        openaiCallId
+        xaiCallId
       });
       const requiredActions = new Set([
-        ...(openaiCallId ? ["hangup_openai"] : []),
+        ...(xaiCallId ? ["hangup_xai"] : []),
         ...(aiTelnyxCallControlId ? ["hangup_ai_telnyx"] : [])
       ]);
       const teardownComplete = teardown.every((entry) => (
@@ -622,7 +622,7 @@ export function createSalesCallOrchestrator({
       operatorCallControlId,
       prospectCallControlId,
       aiTelnyxCallControlId,
-      openaiCallId,
+      xaiCallId,
       outcome
     }) {
       const selectedSalesCallId = requireSalesValue(salesCallId, "sales_call_id");
@@ -632,12 +632,12 @@ export function createSalesCallOrchestrator({
       if (controller?.isOpen) {
         actions.push({ action: "pause_ai", run: () => controller.pause() });
       }
-      if (openaiCallId) {
+      if (xaiCallId) {
         actions.push({
-          action: "hangup_openai",
-          run: () => openai.hangupCall({
-            callId: openaiCallId,
-            clientRequestId: commandId(selectedCorrelationId, "end_call_openai", openaiCallId)
+          action: "hangup_xai",
+          run: () => xai.hangupCall({
+            callId: xaiCallId,
+            clientRequestId: commandId(selectedCorrelationId, "end_call_xai", xaiCallId)
           })
         });
       }
@@ -707,7 +707,7 @@ export function createSalesCallOrchestrator({
         ))
       ];
       const requiredActionNames = new Set([
-        ...(openaiCallId ? ["hangup_openai"] : []),
+        ...(xaiCallId ? ["hangup_xai"] : []),
         ...(aiTelnyxCallControlId ? ["hangup_ai_telnyx"] : []),
         ...(mustHangupHumans
           ? humanActions.map((entry) => entry.action)

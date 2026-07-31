@@ -13,11 +13,10 @@ import {
   withSalesProviderRetry
 } from "./salesCallProviderUtils.js";
 
-const DEFAULT_OPENAI_API_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_OPENAI_REALTIME_WS_URL = "wss://api.openai.com/v1/realtime";
-const DEFAULT_REALTIME_MODEL = "gpt-realtime-2.1";
-const DEFAULT_REALTIME_VOICE = "marin";
-const DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
+const DEFAULT_XAI_API_BASE_URL = "https://api.x.ai/v1";
+const DEFAULT_XAI_REALTIME_WS_URL = "wss://api.x.ai/v1/realtime";
+const DEFAULT_REALTIME_VOICE = "eve";
+const DEFAULT_TRANSCRIPTION_MODEL = "grok-transcribe";
 
 function normalizeBaseUrl(value, fallback) {
   return String(value || fallback).trim().replace(/\/+$/, "");
@@ -32,24 +31,24 @@ function normalizeBusinessName(value) {
   return normalized || "this business";
 }
 
-function extractOpenAIError(json, rawBody) {
+function extractXAIError(json, rawBody) {
   const error = json?.error;
   const code = String(error?.code || error?.type || "").trim();
-  const message = String(error?.message || rawBody || "OpenAI request failed").trim();
+  const message = String(error?.message || rawBody || "XAI request failed").trim();
   return {
     code,
     message: [code, message].filter(Boolean).join(" | ").slice(0, 1000)
   };
 }
 
-function openAIResourceAlreadyGone(error) {
+function xaiResourceAlreadyGone(error) {
   const code = String(error?.code || "").toLowerCase();
   return [404, 410].includes(Number(error?.status))
     || /(not[_ -]?found|already[_ -]?(ended|hung)|call[_ -]?ended)/.test(code);
 }
 
 function decodeStandardWebhookSecret(secret) {
-  const value = requireSalesValue(secret, "openai_webhook_secret");
+  const value = requireSalesValue(secret, "xai_webhook_secret");
   const encoded = value.startsWith("whsec_") ? value.slice("whsec_".length) : value;
   try {
     const decoded = Buffer.from(encoded, "base64");
@@ -107,55 +106,41 @@ async function defaultWebSocketConstructor() {
   return imported.WebSocket || imported.default;
 }
 
-export function buildSalesOpenAISipUri(projectId) {
+export function buildSalesXAISipUri(phoneNumber) {
   const normalized = requireSalesValue(
-    projectId || process.env.SALES_OPENAI_PROJECT_ID,
-    "sales_openai_project_id"
+    phoneNumber || process.env.SALES_XAI_PHONE_NUMBER,
+    "sales_xai_phone_number"
   );
-  if (!/^proj_[A-Za-z0-9_-]+$/.test(normalized)) {
-    throw new Error("invalid_sales_openai_project_id");
+  if (!/^\+[1-9]\d{7,14}$/.test(normalized)) {
+    throw new Error("invalid_sales_xai_phone_number");
   }
-  return `sip:${normalized}@sip.api.openai.com;transport=tls`;
+  return `sip:${normalized}@sip.voice.x.ai;transport=tls`;
 }
 
 export function buildSalesRealtimeAcceptPayload({
   instructions,
-  model,
+  model: _model,
   voice,
   transcriptionModel,
   maxOutputTokens = 4096,
   noiseReduction = "far_field"
 }) {
   return compactSalesObject({
-    type: "realtime",
-    model: String(model || process.env.SALES_OPENAI_REALTIME_MODEL || DEFAULT_REALTIME_MODEL).trim(),
     instructions: requireSalesValue(instructions, "realtime_instructions"),
     tools: [],
     tool_choice: "none",
-    output_modalities: ["audio"],
-    audio: {
-      input: {
-        transcription: {
-          model: String(
-            transcriptionModel
-            || process.env.SALES_OPENAI_TRANSCRIPTION_MODEL
-            || DEFAULT_TRANSCRIPTION_MODEL
-          ).trim(),
-          language: "en"
-        },
-        noise_reduction: noiseReduction ? { type: String(noiseReduction) } : undefined,
-        turn_detection: {
-          type: "semantic_vad",
-          eagerness: "high",
-          create_response: false,
-          interrupt_response: true
-        }
-      },
-      output: {
-        voice: String(voice || process.env.SALES_OPENAI_REALTIME_VOICE || DEFAULT_REALTIME_VOICE).trim()
-      }
+    modalities: ["audio", "text"],
+    input_audio_transcription: {
+      model: String(transcriptionModel || process.env.SALES_XAI_TRANSCRIPTION_MODEL || DEFAULT_TRANSCRIPTION_MODEL).trim(),
+      language: "en"
     },
-    max_output_tokens: Math.max(1, Math.min(4096, Number(maxOutputTokens) || 4096))
+    turn_detection: {
+      type: "server_vad",
+      create_response: false,
+      interrupt_response: true
+    },
+    voice: String(voice || process.env.SALES_XAI_REALTIME_VOICE || DEFAULT_REALTIME_VOICE).trim(),
+    max_response_output_tokens: Math.max(1, Math.min(4096, Number(maxOutputTokens) || 4096))
   });
 }
 
@@ -167,16 +152,10 @@ export function buildSalesRealtimeResponseModeEvent({
     type: "session.update",
     ...(eventId ? { event_id: eventId } : {}),
     session: {
-      type: "realtime",
-      audio: {
-        input: {
-          turn_detection: {
-            type: "semantic_vad",
-            eagerness: "high",
-            create_response: Boolean(enabled),
-            interrupt_response: true
-          }
-        }
+      turn_detection: {
+        type: "server_vad",
+        create_response: Boolean(enabled),
+        interrupt_response: true
       }
     }
   };
@@ -196,7 +175,7 @@ export function buildSalesRealtimeGreetingEvent({
     type: "response.create",
     ...(eventId ? { event_id: eventId } : {}),
     response: {
-      output_modalities: ["audio"],
+      modalities: ["audio", "text"],
       instructions: `Say exactly this sentence, with no additions: ${JSON.stringify(greeting)}`,
       max_output_tokens: 80,
       metadata: {
@@ -227,7 +206,7 @@ export function buildSalesRealtimeOutputAudioClearEvent({
   });
 }
 
-export function verifySalesOpenAIWebhook({
+export function verifySalesXAIWebhook({
   rawBody,
   headers,
   secret,
@@ -254,41 +233,41 @@ export function verifySalesOpenAIWebhook({
   }
 }
 
-export function normalizeSalesOpenAIIncomingCallEvent(event) {
+export function normalizeSalesXAIIncomingCallEvent(event) {
   const parsed = typeof event === "string" ? JSON.parse(event) : event;
   if (parsed?.type !== "realtime.call.incoming") {
-    throw new Error("unsupported_openai_realtime_webhook_event");
+    throw new Error("unsupported_xai_realtime_webhook_event");
   }
-  const callId = requireSalesValue(parsed?.data?.call_id, "openai_call_id");
+  const callId = requireSalesValue(parsed?.data?.call_id, "xai_call_id");
   const sipHeaders = Array.isArray(parsed?.data?.sip_headers) ? parsed.data.sip_headers : [];
   const userToUser = sipHeaders.find((entry) => (
     String(entry?.name || "").toLowerCase() === "user-to-user"
   ))?.value;
   const correlation = decodeSalesClientState(userToUser);
   return {
-    provider: "openai",
+    provider: "xai",
     event_id: String(parsed?.id || "").trim(),
     type: "realtime.call.incoming",
     occurred_at: parsed?.created_at
       ? new Date(Number(parsed.created_at) * 1000).toISOString()
       : null,
-    openai_call_id: callId,
+    xai_call_id: callId,
     sales_call_id: correlation?.sales_call_id || null,
     correlation_id: correlation?.correlation_id || null,
     correlation_nonce: correlation?.nonce || null,
     role: correlation?.role || "ai",
     patch: {
-      openai_call_id: callId,
+      xai_call_id: callId,
       ai_state: "incoming"
     },
     sip_headers: sipHeaders
   };
 }
 
-export function createSalesOpenAIRealtimeClient({
+export function createSalesXAIRealtimeClient({
   apiKey,
   webhookSecret,
-  projectId,
+  phoneNumber,
   baseUrl,
   realtimeWebSocketUrl,
   fetchImpl,
@@ -298,9 +277,10 @@ export function createSalesOpenAIRealtimeClient({
   retryBaseDelayMs = 100,
   requestTimeoutMs
 } = {}) {
+  const acceptedSessions = new Map();
   const resolveApiKey = () => requireSalesValue(
-    apiKey || process.env.SALES_OPENAI_API_KEY,
-    "sales_openai_api_key"
+    apiKey || process.env.SALES_XAI_API_KEY,
+    "sales_xai_api_key"
   );
   const resolveFetch = () => {
     const selected = fetchImpl || globalThis.fetch;
@@ -308,12 +288,12 @@ export function createSalesOpenAIRealtimeClient({
     return selected;
   };
   const resolveBaseUrl = () => normalizeBaseUrl(
-    baseUrl || process.env.SALES_OPENAI_API_BASE_URL,
-    DEFAULT_OPENAI_API_BASE_URL
+    baseUrl || process.env.SALES_XAI_API_BASE_URL,
+    DEFAULT_XAI_API_BASE_URL
   );
   const resolveWebSocketUrl = () => normalizeBaseUrl(
-    realtimeWebSocketUrl || process.env.SALES_OPENAI_REALTIME_WS_URL,
-    DEFAULT_OPENAI_REALTIME_WS_URL
+    realtimeWebSocketUrl || process.env.SALES_XAI_REALTIME_WS_URL,
+    DEFAULT_XAI_REALTIME_WS_URL
   );
   const resolveRequestTimeoutMs = () => Math.max(
     250,
@@ -321,7 +301,7 @@ export function createSalesOpenAIRealtimeClient({
       30000,
       Number(
         requestTimeoutMs
-        || process.env.SALES_OPENAI_HTTP_TIMEOUT_MS
+        || process.env.SALES_XAI_HTTP_TIMEOUT_MS
         || 8000
       ) || 8000
     )
@@ -370,15 +350,15 @@ export function createSalesOpenAIRealtimeClient({
             timeout = setTimeout(() => {
               timedOut = true;
               abortController.abort();
-              reject(new Error("sales_openai_request_timeout"));
+              reject(new Error("sales_xai_request_timeout"));
             }, resolveRequestTimeoutMs());
           })
         ]);
         response = completed.response;
         responsePayload = completed.payload;
       } catch (cause) {
-        throw new SalesProviderError(`OpenAI ${operation} network failure`, {
-          provider: "openai",
+        throw new SalesProviderError(`XAI ${operation} network failure`, {
+          provider: "xai",
           operation,
           code: timedOut ? "request_timeout" : "network_error",
           retryable: retry,
@@ -389,11 +369,11 @@ export function createSalesOpenAIRealtimeClient({
       }
 
       if (!response.ok) {
-        const detail = extractOpenAIError(responsePayload.json, responsePayload.rawBody);
+        const detail = extractXAIError(responsePayload.json, responsePayload.rawBody);
         throw new SalesProviderError(
-          `OpenAI ${operation} failed (${response.status}): ${detail.message}`,
+          `XAI ${operation} failed (${response.status}): ${detail.message}`,
           {
-            provider: "openai",
+            provider: "xai",
             operation,
             status: response.status,
             code: detail.code || response.status,
@@ -411,15 +391,15 @@ export function createSalesOpenAIRealtimeClient({
   }
 
   return {
-    buildSipUri(selectedProjectId) {
-      return buildSalesOpenAISipUri(selectedProjectId || projectId);
+    buildSipUri(selectedPhoneNumber) {
+      return buildSalesXAISipUri(selectedPhoneNumber || phoneNumber);
     },
 
     verifyWebhook({ rawBody, headers, secret, nowMs, toleranceSeconds }) {
-      return verifySalesOpenAIWebhook({
+      return verifySalesXAIWebhook({
         rawBody,
         headers,
-        secret: secret || webhookSecret || process.env.SALES_OPENAI_WEBHOOK_SECRET,
+        secret: secret || webhookSecret || process.env.SALES_XAI_WEBHOOK_SECRET,
         nowMs,
         toleranceSeconds
       });
@@ -430,28 +410,21 @@ export function createSalesOpenAIRealtimeClient({
       session,
       clientRequestId
     }) {
-      const selectedCallId = requireSalesValue(callId, "openai_call_id");
+      const selectedCallId = requireSalesValue(callId, "xai_call_id");
       const selectedSession = session?.session || session;
-      if (selectedSession?.type !== "realtime") {
+      if (!selectedSession?.instructions) {
         throw new Error("invalid_sales_realtime_accept_payload");
       }
-      await request(
-        `/realtime/calls/${encodeURIComponent(selectedCallId)}/accept`,
-        {
-          operation: "accept_realtime_call",
-          body: selectedSession,
-          clientRequestId
-        }
-      );
+      acceptedSessions.set(selectedCallId, selectedSession);
       return {
-        openai_call_id: selectedCallId,
+        xai_call_id: selectedCallId,
         ai_state: "accepted",
         client_request_id: clientRequestId || null
       };
     },
 
     async hangupCall({ callId, clientRequestId }) {
-      const selectedCallId = requireSalesValue(callId, "openai_call_id");
+      const selectedCallId = requireSalesValue(callId, "xai_call_id");
       try {
         await request(
           `/realtime/calls/${encodeURIComponent(selectedCallId)}/hangup`,
@@ -462,10 +435,10 @@ export function createSalesOpenAIRealtimeClient({
           }
         );
       } catch (error) {
-        if (!openAIResourceAlreadyGone(error)) throw error;
+        if (!xaiResourceAlreadyGone(error)) throw error;
       }
       return {
-        openai_call_id: selectedCallId,
+        xai_call_id: selectedCallId,
         ai_state: "ended",
         client_request_id: clientRequestId || null
       };
@@ -479,7 +452,7 @@ export function createSalesOpenAIRealtimeClient({
       onClose,
       openTimeoutMs = 10000
     }) {
-      const selectedCallId = requireSalesValue(callId, "openai_call_id");
+      const selectedCallId = requireSalesValue(callId, "xai_call_id");
       const WebSocketConstructor = WebSocketImpl || await defaultWebSocketConstructor();
       const url = `${resolveWebSocketUrl()}?call_id=${encodeURIComponent(selectedCallId)}`;
       let socket;
@@ -490,8 +463,8 @@ export function createSalesOpenAIRealtimeClient({
           }
         });
       } catch (cause) {
-        throw new SalesProviderError("OpenAI Realtime WebSocket construction failed", {
-          provider: "openai",
+        throw new SalesProviderError("XAI Realtime WebSocket construction failed", {
+          provider: "xai",
           operation: "connect_realtime_monitor",
           code: "websocket_construction_failed",
           retryable: false,
@@ -532,9 +505,9 @@ export function createSalesOpenAIRealtimeClient({
         }
         if (event?.type === "error") {
           rejectResponseCreatedWaiters(new SalesProviderError(
-            String(event?.error?.message || "OpenAI Realtime rejected an event"),
+            String(event?.error?.message || "XAI Realtime rejected an event"),
             {
-              provider: "openai",
+              provider: "xai",
               operation: "await_response_created",
               code: String(event?.error?.code || "realtime_error"),
               retryable: false
@@ -547,9 +520,9 @@ export function createSalesOpenAIRealtimeClient({
       attachSocketListener(socket, "close", (...args) => {
         closed = true;
         rejectResponseCreatedWaiters(new SalesProviderError(
-          "OpenAI Realtime WebSocket closed before response acknowledgement",
+          "XAI Realtime WebSocket closed before response acknowledgement",
           {
-            provider: "openai",
+            provider: "xai",
             operation: "await_response_created",
             code: "websocket_closed",
             retryable: false
@@ -568,8 +541,8 @@ export function createSalesOpenAIRealtimeClient({
           } catch {
             // Ignore close failure after an open timeout.
           }
-          reject(new SalesProviderError("OpenAI Realtime WebSocket open timed out", {
-            provider: "openai",
+          reject(new SalesProviderError("XAI Realtime WebSocket open timed out", {
+            provider: "xai",
             operation: "connect_realtime_monitor",
             code: "websocket_open_timeout",
             retryable: false
@@ -588,8 +561,8 @@ export function createSalesOpenAIRealtimeClient({
           if (settled) return;
           settled = true;
           clearTimeout(timer);
-          reject(new SalesProviderError("OpenAI Realtime WebSocket failed before opening", {
-            provider: "openai",
+          reject(new SalesProviderError("XAI Realtime WebSocket failed before opening", {
+            provider: "xai",
             operation: "connect_realtime_monitor",
             code: "websocket_open_failed",
             retryable: false,
@@ -598,10 +571,21 @@ export function createSalesOpenAIRealtimeClient({
         });
       });
 
+      const selectedSession = acceptedSessions.get(selectedCallId);
+      if (!selectedSession) {
+        throw new SalesProviderError("xAI SIP session configuration is missing", {
+          provider: "xai",
+          operation: "connect_realtime_monitor",
+          code: "session_configuration_missing",
+          retryable: false
+        });
+      }
+      socket.send(JSON.stringify({ type: "session.update", session: selectedSession }));
+
       function sendEvent(event) {
         if (!opened || closed || socket.readyState !== 1) {
-          throw new SalesProviderError("OpenAI Realtime WebSocket is not open", {
-            provider: "openai",
+          throw new SalesProviderError("XAI Realtime WebSocket is not open", {
+            provider: "xai",
             operation: "send_realtime_event",
             code: "websocket_not_open",
             retryable: false
@@ -627,9 +611,9 @@ export function createSalesOpenAIRealtimeClient({
             const index = responseCreatedWaiters.indexOf(waiter);
             if (index >= 0) responseCreatedWaiters.splice(index, 1);
             reject(new SalesProviderError(
-              "OpenAI greeting response acknowledgement timed out",
+              "XAI greeting response acknowledgement timed out",
               {
-                provider: "openai",
+                provider: "xai",
                 operation: "await_response_created",
                 code: "response_created_timeout",
                 retryable: false

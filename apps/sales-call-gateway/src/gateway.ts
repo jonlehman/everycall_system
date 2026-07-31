@@ -10,9 +10,9 @@ import {
 } from "./salesCallOrchestrator.js";
 import {
   buildSalesRealtimeAcceptPayload,
-  normalizeSalesOpenAIIncomingCallEvent,
-  verifySalesOpenAIWebhook
-} from "./salesOpenAIRealtime.js";
+  normalizeSalesXAIIncomingCallEvent,
+  verifySalesXAIWebhook
+} from "./salesXAIRealtime.js";
 import {
   normalizeSalesTelnyxWebhookEvent,
   salesTelnyxCallPatch,
@@ -43,13 +43,13 @@ type Logger = {
 type GatewayOptions = {
   repository: SalesGatewayRepository;
   telnyx: any;
-  openai: any;
+  xai: any;
   internalAuthEnv?: Record<string, unknown>;
   telnyxPublicKey?: string;
   telnyxOperatorConnectionId?: string;
-  openaiWebhookSecret?: string;
+  xaiWebhookSecret?: string;
   requireTelnyxSignature?: boolean;
-  requireOpenAISignature?: boolean;
+  requireXAISignature?: boolean;
   logger?: Logger;
   now?: () => number | Date;
   salesCallingWindowEnv?: Record<string, string | undefined>;
@@ -292,13 +292,13 @@ export function createSalesCallGateway(options: GatewayOptions) {
   const {
     repository,
     telnyx,
-    openai,
+    xai,
     internalAuthEnv = process.env,
     telnyxPublicKey = "",
     telnyxOperatorConnectionId = "",
-    openaiWebhookSecret = "",
+    xaiWebhookSecret = "",
     requireTelnyxSignature = true,
-    requireOpenAISignature = true,
+    requireXAISignature = true,
     logger = {},
     now = Date.now,
     salesCallingWindowEnv = process.env,
@@ -307,14 +307,14 @@ export function createSalesCallGateway(options: GatewayOptions) {
     setTimeoutImpl = setTimeout,
     clearTimeoutImpl = clearTimeout
   } = options;
-  if (!repository || !telnyx || !openai) {
+  if (!repository || !telnyx || !xai) {
     throw new Error("sales_gateway_dependencies_required");
   }
 
   const realtimeRegistry = createInMemorySalesRealtimeRegistry();
   const orchestrator: any = (createSalesCallOrchestrator as any)({
     telnyx,
-    openai,
+    xai,
     realtimeRegistry,
     participantJoinWaiter,
     now,
@@ -349,7 +349,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
       correlationId: text(call.metadata.correlation_id) || call.salesCallId,
       conferenceId: call.conferenceId,
       aiTelnyxCallControlId: call.aiTelnyxCallControlId,
-      openaiCallId: call.openaiCallId
+      xaiCallId: call.xaiCallId
     });
     clearDemoTimer(call.salesCallId);
     return repository.patchCall(call.salesCallId, {
@@ -418,7 +418,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
               correlationId: text(call.metadata.correlation_id) || salesCallId,
               conferenceId: call.conferenceId,
               aiTelnyxCallControlId: call.aiTelnyxCallControlId,
-              openaiCallId: call.openaiCallId
+              xaiCallId: call.xaiCallId
             });
             teardown = result.teardown;
           } catch (error) {
@@ -460,23 +460,23 @@ export function createSalesCallGateway(options: GatewayOptions) {
     return {
       onEvent(event: any) {
         if (event?.type !== "error") return;
-        const message = text(event?.error?.message || "OpenAI Realtime reported an error.");
+        const message = text(event?.error?.message || "XAI Realtime reported an error.");
         void noteRuntimeProblem(
-          `openai:realtime:${text(event?.error?.code) || "error"}`,
+          `xai:realtime:${text(event?.error?.code) || "error"}`,
           message
         );
       },
       onError(error: unknown) {
         void noteRuntimeProblem(
-          "openai:realtime:websocket_error",
-          text((error as Error)?.message || "OpenAI Realtime WebSocket error.")
+          "xai:realtime:websocket_error",
+          text((error as Error)?.message || "XAI Realtime WebSocket error.")
         );
       },
       onClose() {
         realtimeRegistry.delete(salesCallId);
         void noteRuntimeProblem(
-          "openai:realtime:websocket_closed",
-          "OpenAI Realtime standby disconnected unexpectedly."
+          "xai:realtime:websocket_closed",
+          "XAI Realtime standby disconnected unexpectedly."
         );
       }
     };
@@ -685,7 +685,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
         operatorCallControlId: current.operatorCallControlId,
         prospectCallControlId: current.prospectCallControlId,
         aiTelnyxCallControlId: current.aiTelnyxCallControlId,
-        openaiCallId: current.openaiCallId,
+        xaiCallId: current.xaiCallId,
         outcome
       });
       return repository.patchCall(current.salesCallId, {
@@ -713,7 +713,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
         correlationId: text(call.metadata.correlation_id) || call.salesCallId,
         conferenceId: call.conferenceId,
         aiTelnyxCallControlId: call.aiTelnyxCallControlId,
-        openaiCallId: call.openaiCallId
+        xaiCallId: call.xaiCallId
       });
       const teardownFailed = teardownHasFailures(result.teardown);
       return repository.patchCall(call.salesCallId, {
@@ -889,10 +889,10 @@ export function createSalesCallGateway(options: GatewayOptions) {
     });
   }
 
-  async function processOpenAIIncoming(salesCallId: string, event: any) {
+  async function processXAIIncoming(salesCallId: string, event: any) {
     return withCallLock(salesCallId, async () => {
       let call = await loadRequiredCall(salesCallId);
-      const openaiCallId = text(event.openai_call_id);
+      const xaiCallId = text(event.xai_call_id);
       const expectedNonce = text(call.metadata.sip_correlation_nonce);
       const incomingNonce = text(event.correlation_nonce);
       const expectedCorrelationId =
@@ -902,45 +902,45 @@ export function createSalesCallGateway(options: GatewayOptions) {
         || !secureTextEqual(expectedNonce, incomingNonce)
         || text(event.correlation_id) !== expectedCorrelationId
       ) {
-        await openai.hangupCall({ callId: openaiCallId });
-        log("warn", "sales_openai_correlation_rejected", {
+        await xai.hangupCall({ callId: xaiCallId });
+        log("warn", "sales_xai_correlation_rejected", {
           sales_call_id: salesCallId,
-          openai_call_id: openaiCallId,
+          xai_call_id: xaiCallId,
           reason: "invalid_or_missing_correlation_nonce"
         });
         return call;
       }
       if (TERMINAL_STATES.has(call.state) || call.state === "ending") {
-        await openai.hangupCall({ callId: openaiCallId });
+        await xai.hangupCall({ callId: xaiCallId });
         return call;
       }
       if (
         INTENTIONAL_AI_TEARDOWN_STATES.has(call.state)
         || ["ended", "failed", "tearing_down"].includes(call.aiState || "")
       ) {
-        await openai.hangupCall({ callId: openaiCallId });
+        await xai.hangupCall({ callId: xaiCallId });
         return call;
       }
-      if (call.openaiCallId && call.openaiCallId !== openaiCallId) {
-        await openai.hangupCall({ callId: openaiCallId });
-        log("warn", "sales_openai_correlation_rejected", {
+      if (call.xaiCallId && call.xaiCallId !== xaiCallId) {
+        await xai.hangupCall({ callId: xaiCallId });
+        log("warn", "sales_xai_correlation_rejected", {
           sales_call_id: salesCallId,
-          openai_call_id: openaiCallId,
-          reason: "different_openai_call_already_bound"
+          xai_call_id: xaiCallId,
+          reason: "different_xai_call_already_bound"
         });
         return call;
       }
       if (!callIsEligible(call, now, salesCallingWindowEnv)) {
-        await openai.hangupCall({ callId: openaiCallId });
+        await xai.hangupCall({ callId: xaiCallId });
         return repository.patchCall(salesCallId, {
-          openai_call_id: openaiCallId,
+          xai_call_id: xaiCallId,
           ai_state: "failed",
           provider_error_code: "sales:demo:not_ready",
           provider_error_message: "The prepared demo is no longer eligible or ready."
         });
       }
       if (
-        call.openaiCallId === openaiCallId
+        call.xaiCallId === xaiCallId
         && ["realtime_ready_waiting_sip", "ready", "live", "paused"]
           .includes(call.aiState || "")
         && realtimeRegistry.get(salesCallId)?.isOpen
@@ -949,7 +949,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
       }
       const sipConnectedBeforeAccept = call.aiState === "sip_connected";
       call = await repository.patchCall(salesCallId, {
-        openai_call_id: openaiCallId,
+        xai_call_id: xaiCallId,
         ai_state: sipConnectedBeforeAccept
           ? "accepting_sip_connected"
           : "accepting"
@@ -959,7 +959,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
         const result = await orchestrator.prepareAIStandby({
           salesCallId,
           correlationId: text(call.metadata.correlation_id) || salesCallId,
-          openaiCallId,
+          xaiCallId,
           aiTelnyxCallControlId: call.aiTelnyxCallControlId,
           realtimeSession: (buildSalesRealtimeAcceptPayload as any)({
             instructions: resolveSalesDemoInstructions(call)
@@ -980,7 +980,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
         const teardownFailed = teardownHasFailures(teardown);
         await repository.patchCall(salesCallId, {
           ...errorPatch(error),
-          openai_call_id: openaiCallId,
+          xai_call_id: xaiCallId,
           ...(teardownFailed
             ? {
                 ...teardownErrorPatch(teardown),
@@ -1055,7 +1055,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
             correlationId,
             conferenceId: call.conferenceId,
             aiTelnyxCallControlId: call.aiTelnyxCallControlId,
-            openaiCallId: call.openaiCallId,
+            xaiCallId: call.xaiCallId,
             businessName: resolveSalesDemoBusinessName(call),
             beforeGreeting: () => repository.patchCall(salesCallId, {
               metadata_json: {
@@ -1175,7 +1175,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
           correlationId,
           conferenceId: call.conferenceId,
           aiTelnyxCallControlId: call.aiTelnyxCallControlId,
-          openaiCallId: call.openaiCallId
+          xaiCallId: call.xaiCallId
         });
         call = await repository.patchCall(salesCallId, {
           ...result.patch,
@@ -1208,7 +1208,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
   }
 
   async function claimProviderEvent(
-    provider: "telnyx" | "openai",
+    provider: "telnyx" | "xai",
     event: any,
     body: string,
     salesCallId: string,
@@ -1240,7 +1240,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
   }
 
   async function failClaimedEvent(
-    provider: "telnyx" | "openai",
+    provider: "telnyx" | "xai",
     eventId: string,
     claimToken: string,
     error: unknown
@@ -1275,15 +1275,15 @@ export function createSalesCallGateway(options: GatewayOptions) {
     });
   }
 
-  async function teardownUncorrelatedOpenAI(event: any) {
-    const openaiCallId = text(event?.openai_call_id);
-    if (!openaiCallId) return;
-    await openai.hangupCall({
-      callId: openaiCallId,
+  async function teardownUncorrelatedXAI(event: any) {
+    const xaiCallId = text(event?.xai_call_id);
+    if (!xaiCallId) return;
+    await xai.hangupCall({
+      callId: xaiCallId,
       clientRequestId: deriveSalesCommandId({
-        correlationId: text(event?.event_id) || openaiCallId,
-        operation: "hangup_uncorrelated_openai",
-        target: openaiCallId
+        correlationId: text(event?.event_id) || xaiCallId,
+        operation: "hangup_uncorrelated_xai",
+        target: xaiCallId
       })
     });
   }
@@ -1338,36 +1338,36 @@ export function createSalesCallGateway(options: GatewayOptions) {
   );
 
   app.post(
-    "/webhooks/openai",
+    "/webhooks/xai",
     express.raw({ type: "*/*", limit: "1mb" }),
     asyncRoute(async (req, res) => {
       const body = rawBody(req);
       if (
-        requireOpenAISignature
-        && !verifySalesOpenAIWebhook({
+        requireXAISignature
+        && !verifySalesXAIWebhook({
           rawBody: body,
           headers: req.headers,
-          secret: openaiWebhookSecret
+          secret: xaiWebhookSecret
         })
       ) {
-        return res.status(401).json({ ok: false, error: "invalid_openai_signature" });
+        return res.status(401).json({ ok: false, error: "invalid_xai_signature" });
       }
       let event;
       try {
-        event = normalizeSalesOpenAIIncomingCallEvent(body);
+        event = normalizeSalesXAIIncomingCallEvent(body);
       } catch {
-        return res.status(400).json({ ok: false, error: "invalid_openai_event" });
+        return res.status(400).json({ ok: false, error: "invalid_xai_event" });
       }
       const salesCallId = await correlateProviderEvent(event);
       if (!salesCallId) {
-        log("warn", "sales_openai_event_uncorrelated", {
+        log("warn", "sales_xai_event_uncorrelated", {
           event_id: text(event.event_id),
-          openai_call_id: text(event.openai_call_id)
+          xai_call_id: text(event.xai_call_id)
         });
-        await teardownUncorrelatedOpenAI(event);
+        await teardownUncorrelatedXAI(event);
         return res.status(202).json({ ok: true, correlated: false });
       }
-      const claim = await claimProviderEvent("openai", event, body, salesCallId);
+      const claim = await claimProviderEvent("xai", event, body, salesCallId);
       if (!claim.claimed) {
         return res.status(claim.status === "processed" ? 200 : 202).json({
           ok: true,
@@ -1376,10 +1376,10 @@ export function createSalesCallGateway(options: GatewayOptions) {
         });
       }
       try {
-        await processOpenAIIncoming(salesCallId, event);
-        await repository.completeEvent("openai", claim.eventId, claim.claimToken);
+        await processXAIIncoming(salesCallId, event);
+        await repository.completeEvent("xai", claim.eventId, claim.claimToken);
       } catch (error) {
-        await failClaimedEvent("openai", claim.eventId, claim.claimToken, error);
+        await failClaimedEvent("xai", claim.eventId, claim.claimToken, error);
         throw error;
       }
       return res.status(200).json({ ok: true });
@@ -1488,10 +1488,10 @@ export function createSalesCallGateway(options: GatewayOptions) {
     let skipped = 0;
     let failed = 0;
     for (const pending of pendingEvents) {
-      const provider = text(pending.provider) as "telnyx" | "openai";
+      const provider = text(pending.provider) as "telnyx" | "xai";
       const claimToken = crypto.randomUUID();
       try {
-        if (provider !== "telnyx" && provider !== "openai") {
+        if (provider !== "telnyx" && provider !== "xai") {
           throw new Error("unsupported_sales_provider_event");
         }
         const claim = await repository.claimEvent({
@@ -1512,11 +1512,11 @@ export function createSalesCallGateway(options: GatewayOptions) {
         }
         const event = provider === "telnyx"
           ? normalizeSalesTelnyxWebhookEvent(pending.payload)
-          : normalizeSalesOpenAIIncomingCallEvent(pending.payload);
+          : normalizeSalesXAIIncomingCallEvent(pending.payload);
         if (provider === "telnyx") {
           await processTelnyxEvent(pending.salesCallId, event);
         } else {
-          await processOpenAIIncoming(pending.salesCallId, event);
+          await processXAIIncoming(pending.salesCallId, event);
         }
         await repository.completeEvent(
           provider,
@@ -1587,7 +1587,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
         operatorCallControlId: call.operatorCallControlId,
         prospectCallControlId: call.prospectCallControlId,
         aiTelnyxCallControlId: call.aiTelnyxCallControlId,
-        openaiCallId: call.openaiCallId,
+        xaiCallId: call.xaiCallId,
         outcome: call.outcome
       });
       await repository.patchCall(call.salesCallId, {
@@ -1602,7 +1602,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
         correlationId: text(call.metadata.correlation_id) || call.salesCallId,
         conferenceId: call.conferenceId,
         aiTelnyxCallControlId: call.aiTelnyxCallControlId,
-        openaiCallId: call.openaiCallId
+        xaiCallId: call.xaiCallId
       });
       const returnState = text(call.metadata.teardown_return_state);
       await repository.patchCall(call.salesCallId, {
@@ -1628,7 +1628,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
         correlationId: text(call.metadata.correlation_id) || call.salesCallId,
         conferenceId: call.conferenceId,
         aiTelnyxCallControlId: call.aiTelnyxCallControlId,
-        openaiCallId: call.openaiCallId
+        xaiCallId: call.xaiCallId
       });
       await repository.patchCall(call.salesCallId, {
         ...teardownErrorPatch(result.teardown),
@@ -1647,11 +1647,11 @@ export function createSalesCallGateway(options: GatewayOptions) {
       });
       return true;
     }
-    if (!call.openaiCallId) return false;
+    if (!call.xaiCallId) return false;
     const existingController = realtimeRegistry.get(call.salesCallId);
     if (!existingController?.isOpen) {
-      const controller = await openai.connectMonitor({
-        callId: call.openaiCallId,
+      const controller = await xai.connectMonitor({
+        callId: call.xaiCallId,
         correlationId: text(call.metadata.correlation_id) || call.salesCallId,
         ...monitorCallbacks(call.salesCallId)
       });
@@ -1676,7 +1676,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
         correlationId: text(call.metadata.correlation_id) || call.salesCallId,
         conferenceId: call.conferenceId,
         aiTelnyxCallControlId: call.aiTelnyxCallControlId,
-        openaiCallId: call.openaiCallId,
+        xaiCallId: call.xaiCallId,
         businessName: resolveSalesDemoBusinessName(call),
         beforeGreeting: () => repository.patchCall(call.salesCallId, {
           metadata_json: {
@@ -1736,7 +1736,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
                   text(call.metadata.correlation_id) || call.salesCallId,
                 conferenceId: call.conferenceId,
                 aiTelnyxCallControlId: call.aiTelnyxCallControlId,
-                openaiCallId: call.openaiCallId
+                xaiCallId: call.xaiCallId
               });
               teardown = ended.teardown;
             } catch {
@@ -1796,7 +1796,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
     realtimeRegistry,
     performAction,
     processTelnyxEvent,
-    processOpenAIIncoming,
+    processXAIIncoming,
     recoverProviderEvents,
     recoverRealtimeSessions
   };

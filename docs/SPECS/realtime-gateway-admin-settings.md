@@ -4,15 +4,13 @@
 Define admin-configurable session settings used by the gateway.
 
 ## Required Settings
-- `model`: `gpt-realtime-2.1`, delivered to the gateway as `session_config.model`
-- `api_shape`: auto-selected by the gateway from `session_config.model` unless the shape-only `OPENAI_REALTIME_API_SHAPE` override is set.
-- `voice`: `marin`
+- `model`: `grok-voice-think-fast-2.0`, pinned by the gateway
+- `voice`: `eve`
 - `turn_detection`:
-  - `type`: `semantic_vad`
-  - `eagerness`: `high`
+  - `type`: `server_vad`
   - `create_response`: `true`
   - `interrupt_response`: `true`
-- `transcription_model`: `gpt-4o-mini-transcribe`
+- `transcription_model`: `grok-transcribe`
 - `noise_reduction`: `far_field`
 - `max_output_tokens`: `4096`
 - `input_audio_format`: `g711_ulaw`
@@ -20,7 +18,5 @@ Define admin-configurable session settings used by the gateway.
 
 ## Persistence Rules
 - Values are stored in EveryCall admin and injected into the gateway via the prompt contract.
-- The gateway must not override admin-provided values.
-- `session_config.model` is the gateway's model source of truth; `OPENAI_REALTIME_MODEL` is not a call-gateway model control.
-- Existing tenant profiles with no stored model override inherit the current default model.
-- Existing tenant profiles with stored legacy model overrides must be migrated explicitly or intentionally pinned.
+- The gateway overrides provider-specific model, voice, transcription, and VAD settings while preserving tenant prompts, tools, and compatible audio settings.
+- Stored legacy model values are retained for audit/history but cannot select an OpenAI realtime session after this cutover.

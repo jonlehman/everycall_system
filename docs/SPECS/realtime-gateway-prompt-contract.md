@@ -49,7 +49,7 @@ The gateway must receive a single JSON payload with the following top-level fiel
 - The gateway stores this schema and uses it to validate data capture payloads.
 
 **`tool_definitions`**
-- Array of tool definitions compatible with OpenAI Realtime tool calling.
+- Array of tool definitions compatible with xAI Grok Realtime tool calling.
 - Must include tools for knowledge lookup and data capture.
 
 **`session_config`**
@@ -94,7 +94,7 @@ The gateway must receive a single JSON payload with the following top-level fiel
     {"type": "function", "name": "knowledge_lookup", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}}},
     {"type": "function", "name": "data_capture", "parameters": {"type": "object", "properties": {"first_name": {"type": "string"}}}}
   ],
-  "session_config": { "model": "gpt-realtime-2.1", "voice": "marin" },
+  "session_config": { "model": "grok-voice-think-fast-2.0", "voice": "eve" },
   "metadata": { "tenant_id": "t_123" }
 }
 ```

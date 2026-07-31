@@ -4,28 +4,28 @@
 - Admin/client app: Vercel
 - Call gateway: Render
 - Outbound sales call gateway: separate Render service `everycall-sales-call-gateway`, exactly one instance
-- Live web demo: code defaults to `gpt-realtime-2.1`; `OPENAI_DEMO_REALTIME_MODEL` is an optional demo-specific Vercel override.
+- Live web demo: pinned `grok-voice-think-fast-2.0`; `XAI_DEMO_REALTIME_VOICE` optionally selects a built-in xAI voice.
 
 ## Logs
 - Render service logs for call-gateway
-- Look for: `openai_realtime_session_updated`, `assistant_response_canceled`, `openai_realtime_response_done`
-- For the GPT-Realtime-2.1 rollout/canary, enable `REALTIME_TRACE=true` only on staging or a controlled canary and confirm `openai_realtime_session_start` logs `model=gpt-realtime-2.1` and `apiShape=realtime2`.
+- Look for: `xai_realtime_session_updated`, `assistant_response_canceled`, `xai_realtime_response_done`
+- For diagnosis, enable `REALTIME_TRACE=true` only on staging and confirm `xai_realtime_session_start` reports `model=grok-voice-think-fast-2.0`.
 
 ## Common Issues
 - Assistant interrupts caller: check barge-in cancel logic and audio queue clearing.
 - Missing pre-close question: verify deterministic enforcement.
 - Wrong knowledge answers: verify compiled knowledge retrieval, overrides, and guardrails.
-- Realtime session update rejected: deliberately pin or migrate the affected tenant/runtime profile's `session_config.model` to `gpt-realtime-1.5`, set the gateway's `OPENAI_REALTIME_API_SHAPE=legacy`, restart the gateway, then inspect the Realtime trace payload and OpenAI error `param`.
-- No outbound audio after the GPT-Realtime-2.1 switch: verify output audio format remains `g711_ulaw` in admin session config and maps to `audio/pcmu` in the Realtime 2 session trace.
+- Realtime session update rejected: inspect the xAI error `param`, confirm the selected voice is valid, and confirm G.711 μ-law is configured end-to-end.
+- No outbound audio after the Grok Voice Think Fast 2.0 switch: verify the xAI `session.update` payload uses `output_audio_format: "g711_ulaw"` and that Telnyx is configured for G.711 μ-law.
 
 ## Outbound Sales Calling
 - Apply `migrations/0032_outbound_sales_demo.sql` before enabling the Sales Console.
 - Configure the Vercel values documented under `# outbound sales console` in `.env.example`.
 - Leave `SALES_OUTBOUND_ENABLED=false` until the migration, credentials, webhook routes, and controlled provider canary have passed. Set it to `true` to start the scheduled demo and follow-up worker.
-- Configure the isolated Render values under `# isolated outbound sales call gateway`. Never substitute generic production `TELNYX_*` or `OPENAI_*` credentials.
+- Configure the isolated Render values under `# isolated outbound sales call gateway`. Never substitute generic production `TELNYX_*` or `XAI_*` credentials.
 - In Telnyx, use a dedicated sales Call Control Application for backend dials plus a distinct Credential Connection and WebRTC credential for the browser operator. Enable **Park Outbound Calls** on the Credential Connection and route both sales resources' webhooks to `/webhooks/telnyx` on the sales gateway.
-- Route the dedicated OpenAI project's Realtime webhook to `/webhooks/openai` on the sales gateway.
-- Keep Telnyx and OpenAI signature enforcement enabled. Set both providers' public/webhook secrets before sending traffic.
+- Register the dedicated E.164 Direct SIP number with xAI and route its signed webhook to `/webhooks/xai` on the sales gateway.
+- Keep Telnyx and xAI signature enforcement enabled. Set both providers' public/webhook secrets before sending traffic.
 - Configure Smartlead campaign IDs only for finalized outcome branches and set its sales webhook secret. Point reply/bounce/unsubscribe events at `/api/v1/webhooks/smartlead/sales`; use the `x-everycall-webhook-secret` header or a `?secret=` URL value when the provider cannot set custom headers. Missing campaign IDs cause a durable job to complete as `campaign_not_configured`; they do not send an unintended sequence.
 - The gateway `/healthz` endpoint is public for platform health checks. `/internal/health` and call actions require an internal-service token.
 - If the console reports `operator_leg_not_parked`, stop testing and enable parking on the dedicated WebRTC credential; the gateway intentionally refuses to dial the prospect.
@@ -34,20 +34,18 @@
 - Do not scale the sales gateway above one instance. Realtime monitor sockets and call locks are process-local.
 - Trial duration remains controlled by `DEFAULT_TRIAL_DAYS`; this subsystem does not change it.
 
-## OpenAI GPT-Realtime-2.1 Rollout
-- Default admin/runtime-profile model: `gpt-realtime-2.1`; `session_config.model` is the gateway's model source of truth.
-- Live web demo model: code default `gpt-realtime-2.1`; optionally set `OPENAI_DEMO_REALTIME_MODEL` in Vercel for an explicit demo-only override.
-- Default API shape selection: `OPENAI_REALTIME_API_SHAPE=auto`.
-- Explicit rollback:
-  - deliberately pin or migrate the affected tenant/runtime profile to `session_config.model=gpt-realtime-1.5`
-  - set `OPENAI_REALTIME_API_SHAPE=legacy` on the call gateway and restart it
-- `OPENAI_REALTIME_MODEL` is not read by `call-gateway` and must not be used as a gateway rollout or rollback control.
+## xAI Grok Realtime Cutover
+- All realtime paths pin `grok-voice-think-fast-2.0`; stored runtime-profile model values cannot override the provider/model.
+- Configure `XAI_API_KEY`, `XAI_REALTIME_VOICE=eve`, and `XAI_REALTIME_AUDIO_RATE_PER_MINUTE_USD=0.05`.
+- Apply `migrations/0033_xai_realtime_cutover.sql`.
+- The browser demo token endpoint returns an xAI ephemeral token, WebSocket URL, subprotocol, and `session.update` event.
+- Configure the sales gateway with `SALES_XAI_API_KEY`, `SALES_XAI_PHONE_NUMBER`, and the one-time `SALES_XAI_WEBHOOK_SECRET` returned when registering the Direct SIP number.
 - Before production rollout, run:
   - `corepack pnpm --filter @everycall/call-gateway... build`
-  - `corepack pnpm validate:realtime2-payloads`
-  - tenant profile dry run: `node scripts/migrate-realtime2-runtime-profiles.mjs`
+  - `corepack pnpm validate:xai-realtime-payloads`
+  - tenant profile dry run: `node scripts/migrate-xai-runtime-profiles.mjs`
 - Apply existing profile migration only after reviewing dry-run output:
-  - `EVERYCALL_APPLY_REALTIME2_PROFILE_MIGRATION=1 node scripts/migrate-realtime2-runtime-profiles.mjs`
+  - `EVERYCALL_APPLY_XAI_PROFILE_MIGRATION=1 node scripts/migrate-xai-runtime-profiles.mjs`
 - Manual canary calls must cover greeting, direct question, knowledge lookup, data capture, transfer lookup/confirmation, alphanumeric readback, barge-in, silence/background noise, and tool failure.
 
 ## Billing Portal
@@ -72,5 +70,4 @@
 
 ## Rollback
 - Use Render rollback to previous deploy.
-- For a model/API-shape rollback without code rollback, deliberately pin or migrate the affected tenant/runtime profile to `session_config.model=gpt-realtime-1.5`, set `OPENAI_REALTIME_API_SHAPE=legacy`, then restart `everycall-call-gateway`.
-- Changing `OPENAI_REALTIME_MODEL` alone has no effect on call-gateway sessions.
+- Roll back the Render/Vercel deployments together if provider setup fails; this direct cutover intentionally has no runtime provider toggle.

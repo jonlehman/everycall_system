@@ -140,7 +140,7 @@ Store each prepared website-derived demo bundle for 30 days from its successful 
 
 During that period, the same demo can be reused for a callback or another sales attempt without browsing the website again. After 30 days, mark it stale and rebuild it before the next demonstration.
 
-Only the prepared company data persists for the month. A fresh OpenAI Realtime connection and AI call leg are created for each sales call, placed in standby, and removed when that sales call ends.
+Only the prepared company data persists for the month. A fresh xAI Grok Realtime connection and AI call leg are created for each sales call, placed in standby, and removed when that sales call ends.
 
 ### 2. Place the Human Call
 
@@ -151,8 +151,8 @@ The system:
 1. creates a sales-call record and asks the browser softphone to place the displayed call
 2. receives the operator leg in a parked state on a dedicated Telnyx sales credential
 3. verifies the parked state and creates the Telnyx conference around the connected operator
-4. simultaneously dials the prospect and the OpenAI SIP endpoint for a private standby AI leg
-5. accepts and fully configures the OpenAI Realtime session with the prepared prospect demo
+4. simultaneously dials the prospect and the xAI Direct SIP endpoint for a private standby AI leg
+5. joins the incoming xAI SIP call by WebSocket and configures the Grok Realtime session with the prepared prospect demo
 6. opens the server-control WebSocket but does not ask the AI to speak
 7. keeps the AI leg parked and isolated from the sales conference
 8. joins the answered prospect to the conference
@@ -189,8 +189,8 @@ During the demo:
 
 References:
 
-- [OpenAI Realtime SIP guide](https://developers.openai.com/api/docs/guides/realtime-sip)
-- [OpenAI Realtime architecture overview](https://developers.openai.com/api/docs/guides/realtime)
+- [xAI Grok Realtime SIP guide](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech/sip)
+- [xAI Grok Realtime architecture overview](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech)
 - [Current demo session builder](../pages/api/_lib/demoRealtimeSession.js)
 - [EveryCall product requirements](./PRD.md)
 - [Marketing claim guardrails](./marketing-site-brief.md)
@@ -307,7 +307,7 @@ Conversion
 | --- | --- |
 | EveryCall sales service | Separately isolated prospect queue, CSV eligibility, call state, demo preparation, signup invitations, and outcome routing |
 | Telnyx | Outbound calls, browser operator leg, parked AI standby leg, conference, participant controls, caller ID, and call webhooks |
-| OpenAI Realtime | Preconfigured standby AI session and live receptionist interaction using the prepared prospect demo |
+| xAI Grok Realtime | Preconfigured standby AI session and live receptionist interaction using the prepared prospect demo |
 | Smartlead | Outcome-driven email follow-up, replies, bounces, and unsubscribes |
 | Existing EveryCall onboarding | Real tenant, login, knowledge build, receptionist number, trial, and guided go-live |
 
@@ -345,7 +345,7 @@ Every provider command and webhook must be idempotent, signature-verified when s
 - use a separate sales Telnyx application, webhook route, and test configuration
 - create a Telnyx conference
 - connect the browser softphone
-- start the parked OpenAI SIP leg at the same time Telnyx dials the prospect
+- start the parked xAI Direct SIP leg at the same time Telnyx dials the prospect
 - fully configure the Realtime session and hold it silent in standby
 - verify the ready leg can join the conference without reconnecting or rebuilding
 - verify three-way conversation, telemarketer interjection, pause, end-demo, teardown, and failure behavior
@@ -399,4 +399,4 @@ The recommended system is a Telnyx-controlled, human-first conference using brow
 
 The conversion flow should end in a secure, prefilled invitation to the existing intake. That allows the telemarketer to guide setup during the call while preserving the prospect's control over credentials and final submission.
 
-The next step is the controlled Phase 1 provider canary. It must validate the remaining external link with real credentials: holding a configured OpenAI Realtime SIP leg in silent standby and then joining it to the Telnyx conference with minimal delay. Pilot traffic should remain disabled until that canary passes.
+The next step is the controlled Phase 1 provider canary. It must validate the remaining external link with real credentials: holding a configured xAI Grok Realtime SIP leg in silent standby and then joining it to the Telnyx conference with minimal delay. Pilot traffic should remain disabled until that canary passes.

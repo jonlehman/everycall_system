@@ -435,7 +435,7 @@ export function createSalesTelnyxClient({
       });
     },
 
-    dialOpenAISipStandby({
+    dialXAISipStandby({
       sipUri,
       from,
       callControlApplicationId: selectedCallControlApplicationId,
@@ -446,7 +446,7 @@ export function createSalesTelnyxClient({
       timeLimitSeconds = 3600
     }) {
       return dialCall({
-        to: requireSalesValue(sipUri, "openai_sip_uri"),
+        to: requireSalesValue(sipUri, "xai_sip_uri"),
         from,
         callControlApplicationId: selectedCallControlApplicationId,
         clientState,

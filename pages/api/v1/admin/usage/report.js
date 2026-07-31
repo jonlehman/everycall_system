@@ -1,7 +1,6 @@
 import { ensureTables, getPool } from "../../../_lib/db.js";
 import { getAdminActor, requireSession } from "../../../_lib/auth.js";
 import {
-  estimateAiCostMicrosUsd,
   estimatePeriodNumberCostCents,
   estimateTelephonyCostMicrosUsd
 } from "@everycall/contracts/callCosting";
@@ -11,11 +10,7 @@ function parsePositiveRate(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-const realtimeInputRatePer1MUsd = parsePositiveRate(process.env.OPENAI_REALTIME_INPUT_RATE_PER_1M_USD, 4);
-const realtimeCachedInputRatePer1MUsd = parsePositiveRate(process.env.OPENAI_REALTIME_CACHED_INPUT_RATE_PER_1M_USD, 0.4);
-const realtimeAudioInputRatePer1MUsd = parsePositiveRate(process.env.OPENAI_REALTIME_AUDIO_INPUT_RATE_PER_1M_USD, 32);
-const realtimeOutputRatePer1MUsd = parsePositiveRate(process.env.OPENAI_REALTIME_OUTPUT_RATE_PER_1M_USD, 24);
-const realtimeAudioOutputRatePer1MUsd = parsePositiveRate(process.env.OPENAI_REALTIME_AUDIO_OUTPUT_RATE_PER_1M_USD, 64);
+const xAiRealtimeAudioRatePerMinuteUsd = parsePositiveRate(process.env.XAI_REALTIME_AUDIO_RATE_PER_MINUTE_USD, 0.05);
 const telnyxEstimatedInboundRatePerMinuteUsd = parsePositiveRate(process.env.TELNYX_ESTIMATED_INBOUND_RATE_PER_MINUTE_USD, 0.0055);
 
 function normalizeMicros(value) {
@@ -26,25 +21,9 @@ function normalizeMicros(value) {
 function estimateCallAiCost(row) {
   const stored = normalizeMicros(row.ai_estimated_cost_micros_usd);
   if (stored > 0) return stored;
-  return estimateAiCostMicrosUsd(
-    {
-      inputTokens: Number(row.ai_input_tokens || 0),
-      outputTokens: Number(row.ai_output_tokens || 0),
-      cachedInputTokens: Number(row.ai_cached_input_tokens || 0),
-      cachedInputTextTokens: Number(row.ai_cached_input_text_tokens || 0),
-      cachedInputAudioTokens: Number(row.ai_cached_input_audio_tokens || 0),
-      inputTextTokens: Number(row.ai_input_text_tokens || 0),
-      inputAudioTokens: Number(row.ai_input_audio_tokens || 0),
-      outputTextTokens: Number(row.ai_output_text_tokens || 0),
-      outputAudioTokens: Number(row.ai_output_audio_tokens || 0)
-    },
-    {
-      textInputRatePer1MUsd: realtimeInputRatePer1MUsd,
-      cachedInputRatePer1MUsd: realtimeCachedInputRatePer1MUsd,
-      audioInputRatePer1MUsd: realtimeAudioInputRatePer1MUsd,
-      textOutputRatePer1MUsd: realtimeOutputRatePer1MUsd,
-      audioOutputRatePer1MUsd: realtimeAudioOutputRatePer1MUsd
-    }
+  return estimateTelephonyCostMicrosUsd(
+    Number(row.duration_seconds || 0),
+    xAiRealtimeAudioRatePerMinuteUsd
   );
 }
 

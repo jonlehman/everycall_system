@@ -86,6 +86,10 @@ async function main() {
       new URL("../migrations/0032_outbound_sales_demo.sql", import.meta.url),
       "utf8"
     ));
+    await db.exec(await fs.readFile(
+      new URL("../migrations/0033_xai_realtime_cutover.sql", import.meta.url),
+      "utf8"
+    ));
     const admin = await pool.query(
       `INSERT INTO admin_users (username, email, role)
        VALUES ('sales-validator', 'sales-validator@example.com', 'admin')

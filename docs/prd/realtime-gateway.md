@@ -1,7 +1,7 @@
 # PRD: EveryCall Realtime Gateway (V1, Clean-Slate)
 
 ## Purpose
-A thin realtime gateway that executes a call flow defined by the EveryCall system, augmented only by tenant greeting + knowledge retrieval. The gateway handles call control (initiate, hang up), initial realtime AI call, realtime AI calls to its exposed tools, data persistence, and logging. It should enable the realtime AI to behave like OpenAI's realtime demo: natural, responsive, and tool-driven when needed.
+A thin realtime gateway that executes a call flow defined by the EveryCall system, augmented only by tenant greeting + knowledge retrieval. The gateway handles call control (initiate, hang up), initial realtime AI call, realtime AI calls to its exposed tools, data persistence, and logging. It should enable the realtime AI to behave like xAI's realtime demo: natural, responsive, and tool-driven when needed.
 
 ## Core Principle
 - All conversational logic lives in the EveryCall system.
@@ -12,17 +12,16 @@ A thin realtime gateway that executes a call flow defined by the EveryCall syste
   - Data capture tool handling
   - Data persistence and logging
 
-## Realtime Session Configuration (Admin-stored, not hard-coded)
+## Realtime Session Configuration
 Must match the web demo configuration:
 
-- Model: `gpt-realtime-2.1`, supplied by the admin/runtime profile as `session_config.model`
-- Voice: `marin`
-- Realtime API shape: auto-select the Realtime 2 nested session schema from `session_config.model`; `OPENAI_REALTIME_API_SHAPE` is a shape-only override and does not select the model.
-- Turn detection: `semantic_vad`
-  - eagerness: `high`
+- Model: `grok-voice-think-fast-2.0`, pinned by the gateway
+- Voice: `eve`
+- Realtime endpoint: `wss://api.x.ai/v1/realtime`
+- Turn detection: `server_vad`
   - create response: enabled
   - interrupt response: enabled
-- Transcription model: `gpt-4o-mini-transcribe`
+- Transcription model: `grok-transcribe`
 - Noise reduction: `far_field`
 - Input/output audio format: `g711_ulaw`
 - Max output tokens: `4096`

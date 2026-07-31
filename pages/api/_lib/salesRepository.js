@@ -1796,7 +1796,7 @@ export async function createSalesCallSession(pool, input = {}) {
        operator_call_control_id, operator_leg_id, operator_session_id,
        prospect_call_control_id, prospect_leg_id, prospect_session_id,
        ai_telnyx_call_control_id, ai_telnyx_leg_id, ai_telnyx_session_id,
-       openai_call_id, ai_state, provider_error_code, provider_error_message,
+       xai_call_id, ai_state, provider_error_code, provider_error_message,
        started_at, connected_at, demo_started_at, demo_ended_at, ended_at,
        idempotency_key, metadata_json
      )
@@ -1829,7 +1829,7 @@ export async function createSalesCallSession(pool, input = {}) {
       normalizeSalesText(input.aiTelnyxCallControlId || input.ai_telnyx_call_control_id, 240) || null,
       normalizeSalesText(input.aiTelnyxLegId || input.ai_telnyx_leg_id, 240) || null,
       normalizeSalesText(input.aiTelnyxSessionId || input.ai_telnyx_session_id, 240) || null,
-      normalizeSalesText(input.openaiCallId || input.openai_call_id, 240) || null,
+      normalizeSalesText(input.xaiCallId || input.xai_call_id, 240) || null,
       normalizeSalesText(input.aiState || input.ai_state, 80) || null,
       normalizeSalesText(input.providerErrorCode || input.provider_error_code, 160) || null,
       normalizeSalesText(input.providerErrorMessage || input.provider_error_message, 1000) || null,
@@ -1870,7 +1870,7 @@ export function serializeSalesCallSession(row) {
     aiTelnyxCallControlId: row.ai_telnyx_call_control_id || null,
     aiTelnyxLegId: row.ai_telnyx_leg_id || null,
     aiTelnyxSessionId: row.ai_telnyx_session_id || null,
-    openaiCallId: row.openai_call_id || null,
+    xaiCallId: row.xai_call_id || null,
     aiState: row.ai_state || null,
     providerErrorCode: row.provider_error_code || null,
     providerErrorMessage: row.provider_error_message || null,
@@ -1913,7 +1913,7 @@ const SALES_CALL_UPDATE_COLUMNS = Object.freeze({
   aiTelnyxCallControlId: ["ai_telnyx_call_control_id", 240],
   aiTelnyxLegId: ["ai_telnyx_leg_id", 240],
   aiTelnyxSessionId: ["ai_telnyx_session_id", 240],
-  openaiCallId: ["openai_call_id", 240],
+  xaiCallId: ["xai_call_id", 240],
   aiState: ["ai_state", 80],
   providerErrorCode: ["provider_error_code", 160],
   providerErrorMessage: ["provider_error_message", 1000]

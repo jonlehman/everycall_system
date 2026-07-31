@@ -60,9 +60,9 @@ export default async function handler(req, res) {
       return fail(res, 409, "demo_session_not_ready", "Demo session is not ready yet.");
     }
 
-    const apiKey = normalizeText(process.env.OPENAI_API_KEY);
+    const apiKey = normalizeText(process.env.XAI_API_KEY);
     if (!apiKey) {
-      return fail(res, 500, "missing_openai_key", "OpenAI API key is not configured.");
+      return fail(res, 500, "missing_xai_key", "xAI API key is not configured.");
     }
 
     const { session, model, voice } = buildDemoRealtimeSessionPayload(
@@ -71,13 +71,13 @@ export default async function handler(req, res) {
         : {}
     );
 
-    const upstream = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
+    const upstream = await fetch("https://api.x.ai/v1/realtime/client_secrets", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ session })
+      body: JSON.stringify({ expires_after: { seconds: 300 } })
     });
 
     const data = await upstream.json().catch(() => null);
@@ -96,7 +96,13 @@ export default async function handler(req, res) {
       demoSessionId,
       session: {
         clientSecret: data.value,
-        expiresAt: data.expires_at || null
+        expiresAt: data.expires_at || null,
+        websocketUrl: `wss://api.x.ai/v1/realtime?model=${encodeURIComponent(model)}`,
+        websocketProtocol: `xai-client-secret.${data.value}`,
+        update: {
+          type: "session.update",
+          session
+        }
       },
       realtime: {
         model,

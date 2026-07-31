@@ -20,11 +20,11 @@
 - The script logs into both a tenant and admin account, performs read-only page/API checks, verifies billing/dashboard/knowledge surfaces, and logs out.
 - It does not create tenants, publish builds, send SMS, or modify live configuration.
 
-## Realtime 2 Payload Validation
+## xAI Realtime Payload Validation
 - Run `corepack pnpm --filter @everycall/call-gateway... build` before importing gateway dist helpers.
-- Run `corepack pnpm validate:realtime2-payloads` after gateway build.
-- Before changing existing tenant profiles, run `node scripts/migrate-realtime2-runtime-profiles.mjs` and review any `manual_review` rows.
-- Apply the tenant profile migration only with `EVERYCALL_APPLY_REALTIME2_PROFILE_MIGRATION=1`.
+- Run `corepack pnpm validate:xai-realtime-payloads` after gateway build.
+- Before changing existing tenant profiles, run `node scripts/migrate-xai-runtime-profiles.mjs` and review the dry-run rows.
+- Apply the tenant profile migration only with `EVERYCALL_APPLY_XAI_PROFILE_MIGRATION=1`.
 
 Use these after any change to prompts, knowledge lookup, or barge-in handling.
 
@@ -49,8 +49,8 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 - Interrupt the assistant mid-sentence with "Sorry—one sec."
 - Verify assistant speech stops immediately.
 
-## GPT-Realtime-2.1 Canary Calls
-- Verify `openai_realtime_session_start` reports `model=gpt-realtime-2.1` and `apiShape=realtime2`.
+## Grok Voice Think Fast 2.0 Calls
+- Verify `xai_realtime_session_start` reports `model=grok-voice-think-fast-2.0`.
 - Verify first assistant audio arrives and outbound audio stays clear over Telnyx.
 - Verify a knowledge lookup does not mention tool names, packets, scores, or system logic.
 - Verify data capture happens only after the caller provides the value.
@@ -68,8 +68,8 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 - Before pilot traffic, make one controlled live provider call and verify:
   - the operator leg is parked on the dedicated sales connection
   - the prospect and AI standby dial concurrently
-  - `AI Ready` requires both the accepted OpenAI session and the Telnyx AI leg
+  - `AI Ready` requires both the accepted xAI session and the Telnyx AI leg
   - `Start Demo` joins the existing AI leg and begins with the configured business greeting
   - operator audio stays live, `Pause AI` cancels speech and clears buffered audio, and `End Demo` removes only the AI
-  - duplicate Telnyx/OpenAI webhooks do not repeat commands
+  - duplicate Telnyx/xAI webhooks do not repeat commands
   - ending either human leg tears down the conference and unused AI standby

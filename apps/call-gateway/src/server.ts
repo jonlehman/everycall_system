@@ -5,7 +5,7 @@ import path from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
 import { readCallGatewayEnv } from "@everycall/config";
 import type { CallState } from "@everycall/contracts";
-import { estimateAiCostMicrosUsd, estimateBillableMinutes, estimateTelephonyCostMicrosUsd, usdToMicros } from "@everycall/contracts/callCosting";
+import { estimateBillableMinutes, estimateTelephonyCostMicrosUsd, usdToMicros } from "@everycall/contracts/callCosting";
 import { buildTranscriptFromEvents } from "@everycall/contracts/callTranscript";
 import {
   INTERNAL_AUTH_PURPOSES,
@@ -59,11 +59,9 @@ import {
   normalizeToolExecutionKey
 } from "./toolResponseControl.js";
 import {
-  buildOpenAiRealtimeHeaders,
+  buildXAiRealtimeHeaders,
   buildRealtimeResponseCreateEvent,
-  buildRealtimeSessionUpdateEvent,
-  resolveRealtimeApiShape,
-  type RealtimeApiShape
+  buildRealtimeSessionUpdateEvent
 } from "./realtimePayloads.js";
 
 const env = readCallGatewayEnv(process.env);
@@ -80,7 +78,8 @@ const gatewayErrorToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PUR
 const callSummaryFinalizeToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PURPOSES.callSummaryFinalize);
 const gatewayDebugLogToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PURPOSES.gatewayDebugLog);
 const callGatewayBaseUrl = process.env.CALL_GATEWAY_BASE_URL || "";
-const openAiKey = process.env.OPENAI_API_KEY || "";
+const XAiKey = process.env.XAI_API_KEY || "";
+const XAI_REALTIME_MODEL = "grok-voice-think-fast-2.0";
 const signatureRequired = (process.env.TELNYX_SIGNATURE_REQUIRED || "true").toLowerCase() !== "false";
 const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
@@ -100,9 +99,9 @@ const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "gateway_call_session_end",
   "knowledge_build_assets_startup_preload_started",
   "knowledge_build_assets_startup_preload_completed",
-  "openai_realtime_session_start",
-  "openai_realtime_session_updated",
-  "openai_realtime_response_done",
+  "xai_realtime_session_start",
+  "xai_realtime_session_updated",
+  "xai_realtime_response_done",
   "assistant_response_canceled",
   "telnyx_bidirectional_payload_mode_normalized"
 ]);
@@ -221,9 +220,9 @@ type StreamSession = {
   isShuttingDown?: boolean;
   telnyxStreamId?: string;
   telnyxWs?: WebSocket;
-  openAiWs?: WebSocket;
-  openAiReady?: boolean;
-  openAiSessionUpdated?: boolean;
+  XAiWs?: WebSocket;
+  XAiReady?: boolean;
+  XAiSessionUpdated?: boolean;
   reconnectAttempted?: boolean;
   promptPayload?: GatewayPromptPayload;
   knowledgeCallState?: CallState | null;
@@ -244,7 +243,6 @@ type StreamSession = {
   rtpTimestamp?: number;
   rtpSsrc?: number;
   realtimeModel?: string;
-  realtimeApiShape?: RealtimeApiShape;
   aiInputRateMicrosUsd?: number;
   aiOutputRateMicrosUsd?: number;
   callAnsweredAt?: string | null;
@@ -257,7 +255,7 @@ type StreamSession = {
   completedToolCallKeys?: Set<string>;
   pendingToolSpeechWait?: PendingToolSpeechWait | null;
   audioPumpTrace?: AudioPumpTrace | null;
-  suppressOpenAiReconnect?: boolean;
+  suppressXAiReconnect?: boolean;
   aiDetached?: boolean;
   transferState?: TransferState | null;
   pendingReconnectAssistantResponse?: PendingReconnectAssistantResponse | null;
@@ -283,10 +281,10 @@ function createStreamSession(
     callActive: true,
     isShuttingDown: false,
     reconnectAttempted: false,
-    openAiSessionUpdated: false,
+    XAiSessionUpdated: false,
     greetingSent: false,
-    aiInputRateMicrosUsd: realtimeInputRateMicrosUsd,
-    aiOutputRateMicrosUsd: realtimeOutputRateMicrosUsd,
+    aiInputRateMicrosUsd: 0,
+    aiOutputRateMicrosUsd: usdToMicros(xAiAudioRatePerMinuteUsd),
     callAnsweredAt: null,
     usageTotals: emptyUsageTotals(),
     promptPayload,
@@ -307,7 +305,7 @@ function createStreamSession(
     completedToolCallKeys: new Set<string>(),
     pendingToolSpeechWait: null,
     audioPumpTrace: null,
-    suppressOpenAiReconnect: false,
+    suppressXAiReconnect: false,
     aiDetached: false,
     transferState: null,
     pendingReconnectAssistantResponse: null,
@@ -338,19 +336,13 @@ function logPrewarmOutcome(callSid: string, tenantKey: string, source: string, r
   });
 }
 
-function parseUsdRatePerMillion(value: string | undefined, fallback: number) {
+function parsePositiveRate(value: string | undefined, fallback: number) {
   const parsed = Number(value || "");
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-const realtimeInputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_INPUT_RATE_PER_1M_USD, 4);
-const realtimeCachedInputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_CACHED_INPUT_RATE_PER_1M_USD, 0.4);
-const realtimeAudioInputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_AUDIO_INPUT_RATE_PER_1M_USD, 32);
-const realtimeOutputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_OUTPUT_RATE_PER_1M_USD, 24);
-const realtimeAudioOutputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_AUDIO_OUTPUT_RATE_PER_1M_USD, 64);
-const realtimeInputRateMicrosUsd = usdToMicros(realtimeInputRatePer1MUsd);
-const realtimeOutputRateMicrosUsd = usdToMicros(realtimeOutputRatePer1MUsd);
-const telnyxEstimatedInboundRatePerMinuteUsd = parseUsdRatePerMillion(process.env.TELNYX_ESTIMATED_INBOUND_RATE_PER_MINUTE_USD, 0.0055);
+const xAiAudioRatePerMinuteUsd = parsePositiveRate(process.env.XAI_REALTIME_AUDIO_RATE_PER_MINUTE_USD, 0.05);
+const telnyxEstimatedInboundRatePerMinuteUsd = parsePositiveRate(process.env.TELNYX_ESTIMATED_INBOUND_RATE_PER_MINUTE_USD, 0.0055);
 const telnyxEstimatedInboundRateMicrosUsd = usdToMicros(telnyxEstimatedInboundRatePerMinuteUsd);
 
 function emptyUsageTotals(): UsageTotals {
@@ -398,7 +390,7 @@ function collectUsage(payloadMsg: any) {
   };
 }
 
-function estimateUsageCostMicrosUsd(usage: {
+function estimateUsageCostMicrosUsd(_usage: {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens?: number | null;
@@ -409,28 +401,16 @@ function estimateUsageCostMicrosUsd(usage: {
   outputTextTokens?: number | null;
   outputAudioTokens?: number | null;
 }) {
-  return estimateAiCostMicrosUsd({
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    cachedInputTokens: usage.cachedInputTokens,
-    cachedInputTextTokens: usage.cachedInputTextTokens,
-    cachedInputAudioTokens: usage.cachedInputAudioTokens,
-    inputTextTokens: usage.inputTextTokens,
-    inputAudioTokens: usage.inputAudioTokens,
-    outputTextTokens: usage.outputTextTokens,
-    outputAudioTokens: usage.outputAudioTokens
-  }, {
-    textInputRatePer1MUsd: realtimeInputRatePer1MUsd,
-    cachedInputRatePer1MUsd: realtimeCachedInputRatePer1MUsd,
-    audioInputRatePer1MUsd: realtimeAudioInputRatePer1MUsd,
-    textOutputRatePer1MUsd: realtimeOutputRatePer1MUsd,
-    audioOutputRatePer1MUsd: realtimeAudioOutputRatePer1MUsd
-  });
+  return 0;
 }
 
 async function persistCallUsage(session: StreamSession) {
   if (!pool) return;
   const usage = session.usageTotals || emptyUsageTotals();
+  const startedAtMs = session.callAnsweredAt ? Date.parse(session.callAnsweredAt) : Date.now();
+  usage.estimatedCostMicrosUsd = usdToMicros(
+    (Math.max(0, Date.now() - startedAtMs) / 60000) * xAiAudioRatePerMinuteUsd
+  );
   try {
     await pool.query(
       `UPDATE calls
@@ -464,8 +444,8 @@ async function persistCallUsage(session: StreamSession) {
         usage.inputAudioTokens,
         usage.outputTextTokens,
         usage.outputAudioTokens,
-        session.aiInputRateMicrosUsd ?? realtimeInputRateMicrosUsd,
-        session.aiOutputRateMicrosUsd ?? realtimeOutputRateMicrosUsd,
+        0,
+        usdToMicros(xAiAudioRatePerMinuteUsd),
         usage.estimatedCostMicrosUsd,
         usage.responseCount
       ]
@@ -682,22 +662,13 @@ function toWebSocketUrl(baseUrl: string) {
   return baseUrl;
 }
 
-function sendOpenAiEvent(ws: WebSocket | undefined, payload: Record<string, unknown>) {
+function sendXAiEvent(ws: WebSocket | undefined, payload: Record<string, unknown>) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify(payload));
 }
 
-function createAudioTextResponseEvent(response: Record<string, unknown> = {}, apiShape: RealtimeApiShape = "legacy") {
-  return buildRealtimeResponseCreateEvent(response, apiShape);
-}
-
-function buildOpenAiSafetyIdentifier(session: StreamSession) {
-  const configured = String(process.env.OPENAI_SAFETY_IDENTIFIER || "").trim();
-  if (configured) return configured;
-  return crypto
-    .createHash("sha256")
-    .update(`everycall:${session.tenantKey}:${session.callSid}`)
-    .digest("hex");
+function createAudioTextResponseEvent(response: Record<string, unknown> = {}) {
+  return buildRealtimeResponseCreateEvent(response);
 }
 
 function createFunctionCallOutputEvent(callId: string, output: unknown) {
@@ -793,7 +764,7 @@ function requestAssistantResponse(
 ) {
   const result = enqueueAssistantResponseRequest(session, { reason, response, dedupeKey });
   if (result.action === "duplicate_queued") {
-    logInfo("openai_realtime_response_request_deduped", {
+    logInfo("xai_realtime_response_request_deduped", {
       callSid: session.callSid,
       reason,
       dedupeKey: dedupeKey || undefined,
@@ -803,7 +774,7 @@ function requestAssistantResponse(
   }
 
   if (result.action === "queued") {
-    logInfo("openai_realtime_response_queued", {
+    logInfo("xai_realtime_response_queued", {
       callSid: session.callSid,
       reason,
       dedupeKey: dedupeKey || undefined,
@@ -813,20 +784,20 @@ function requestAssistantResponse(
     return;
   }
 
-  sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent(result.request.response, session.realtimeApiShape));
+  sendXAiEvent(session.XAiWs, createAudioTextResponseEvent(result.request.response));
 }
 
 function flushQueuedAssistantResponses(session: StreamSession) {
   if (hasActiveAssistantResponse(session)) return;
   const next = dequeueAssistantResponseRequest(session);
   if (!next) return;
-  logInfo("openai_realtime_response_flushed", {
+  logInfo("xai_realtime_response_flushed", {
     callSid: session.callSid,
     reason: next.reason,
     dedupeKey: next.dedupeKey || undefined,
     remainingQueueDepth: session.queuedAssistantResponses?.length || 0
   });
-  sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent(next.response, session.realtimeApiShape));
+  sendXAiEvent(session.XAiWs, createAudioTextResponseEvent(next.response));
 }
 
 function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined, payloadBase64: string) {
@@ -969,7 +940,7 @@ async function interruptAssistantForCallerSpeech(session: StreamSession | undefi
   if (!plan.shouldInterrupt) return false;
 
   for (const event of plan.events) {
-    sendOpenAiEvent(session.openAiWs, event);
+    sendXAiEvent(session.XAiWs, event);
   }
   applyAssistantInterruption(session, plan);
   if (session.knowledgeCallState) {
@@ -1396,7 +1367,7 @@ function noteCallerTransferConfirmation(session: StreamSession, transcript: stri
 async function detachAiForTransferredCall(session: StreamSession, source: string) {
   if (session.aiDetached) return;
   session.aiDetached = true;
-  session.suppressOpenAiReconnect = true;
+  session.suppressXAiReconnect = true;
   session.pendingToolCall = null;
   session.pendingToolSpeechWait = null;
   session.outputQueue = [];
@@ -1407,10 +1378,10 @@ async function detachAiForTransferredCall(session: StreamSession, source: string
   }
   session.outputNextFrameAtMs = null;
 
-  if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
-    session.openAiWs.close();
+  if (session.XAiWs && session.XAiWs.readyState === WebSocket.OPEN) {
+    session.XAiWs.close();
   }
-  delete session.openAiWs;
+  delete session.XAiWs;
   session.ignoreNextStreamingStopped = true;
 
   try {
@@ -1438,9 +1409,9 @@ async function reattachAiAfterFailedTransfer(session: StreamSession, reason: str
   }
 
   session.aiDetached = false;
-  session.suppressOpenAiReconnect = false;
-  session.openAiReady = false;
-  session.openAiSessionUpdated = false;
+  session.suppressXAiReconnect = false;
+  session.XAiReady = false;
+  session.XAiSessionUpdated = false;
   session.pendingToolCall = null;
   session.pendingToolSpeechWait = null;
   session.outputQueue = [];
@@ -1461,7 +1432,7 @@ async function reattachAiAfterFailedTransfer(session: StreamSession, reason: str
     return true;
   } catch (err) {
     session.aiDetached = true;
-    session.suppressOpenAiReconnect = true;
+    session.suppressXAiReconnect = true;
     logError("telnyx_stream_restart_failed_after_transfer_failure", {
       callSid: session.callSid,
       callControlId: session.callControlId,
@@ -1647,8 +1618,8 @@ async function endCallSession(session: StreamSession | undefined, reason: string
     session.hangupTimer = null;
   }
 
-  if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
-    session.openAiWs.close();
+  if (session.XAiWs && session.XAiWs.readyState === WebSocket.OPEN) {
+    session.XAiWs.close();
   }
 
   await finalizeCallSummary(session);
@@ -1896,7 +1867,7 @@ function logRealtimeToolPayloads(session: StreamSession, params: {
       payload: params.responseEvent
     });
   }
-  logInfo("openai_realtime_tool_response_requested", {
+  logInfo("xai_realtime_tool_response_requested", {
     callSid: params.callSid,
     tool: params.tool,
     callId: params.callId,
@@ -2045,8 +2016,8 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       { status: "accepted", errors: [] }
     );
     const toolResultEvent = createFunctionCallOutputEvent(callId, toolOutput);
-    const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
-    sendOpenAiEvent(session.openAiWs, toolResultEvent);
+    const responseEvent = createAudioTextResponseEvent({});
+    sendXAiEvent(session.XAiWs, toolResultEvent);
     logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
@@ -2071,8 +2042,8 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       { status: "accepted", errors: [] }
     );
     const toolResultEvent = createFunctionCallOutputEvent(callId, lookupResult);
-    const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
-    sendOpenAiEvent(session.openAiWs, toolResultEvent);
+    const responseEvent = createAudioTextResponseEvent({});
+    sendXAiEvent(session.XAiWs, toolResultEvent);
     logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
@@ -2100,8 +2071,8 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     }
     await forwardToolResult(session.callSid, session.tenantKey, name, args, validation);
     const toolResultEvent = createFunctionCallOutputEvent(callId, validation);
-    const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
-    sendOpenAiEvent(session.openAiWs, toolResultEvent);
+    const responseEvent = createAudioTextResponseEvent({});
+    sendXAiEvent(session.XAiWs, toolResultEvent);
     logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
@@ -2126,8 +2097,8 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       };
       await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, output);
-      const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
-      sendOpenAiEvent(session.openAiWs, toolResultEvent);
+      const responseEvent = createAudioTextResponseEvent({});
+      sendXAiEvent(session.XAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
@@ -2148,8 +2119,8 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       };
       await forwardToolResult(session.callSid, session.tenantKey, name, confirmationOutput, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, confirmationOutput);
-      const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
-      sendOpenAiEvent(session.openAiWs, toolResultEvent);
+      const responseEvent = createAudioTextResponseEvent({});
+      sendXAiEvent(session.XAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
@@ -2178,8 +2149,8 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       };
       await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, output);
-      const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
-      sendOpenAiEvent(session.openAiWs, toolResultEvent);
+      const responseEvent = createAudioTextResponseEvent({});
+      sendXAiEvent(session.XAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
@@ -2228,7 +2199,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       };
       await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, output);
-      sendOpenAiEvent(session.openAiWs, toolResultEvent);
+      sendXAiEvent(session.XAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
@@ -2252,8 +2223,8 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       });
       await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, output);
-      const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
-      sendOpenAiEvent(session.openAiWs, toolResultEvent);
+      const responseEvent = createAudioTextResponseEvent({});
+      sendXAiEvent(session.XAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
@@ -2277,7 +2248,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     });
     await forwardToolResult(session.callSid, session.tenantKey, name, { reason }, { status: "accepted", errors: [] });
     const toolResultEvent = createFunctionCallOutputEvent(callId, { status: "accepted", reason });
-    sendOpenAiEvent(session.openAiWs, toolResultEvent);
+    sendXAiEvent(session.XAiWs, toolResultEvent);
     logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
@@ -2298,8 +2269,8 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
 
   await forwardToolResult(session.callSid, session.tenantKey, name, args, { status: "accepted", errors: [] });
   const toolResultEvent = createFunctionCallOutputEvent(callId, { status: "accepted" });
-  const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
-  sendOpenAiEvent(session.openAiWs, toolResultEvent);
+  const responseEvent = createAudioTextResponseEvent({});
+  sendXAiEvent(session.XAiWs, toolResultEvent);
   logRealtimeToolPayloads(session, {
     callSid: session.callSid,
     tool: name,
@@ -2320,7 +2291,7 @@ async function handleToolCallEvent(
 ) {
   const attempt = beginToolExecution(session, name, callId);
   if (!attempt.shouldExecute) {
-    logInfo("openai_realtime_tool_event_deduped", {
+    logInfo("xai_realtime_tool_event_deduped", {
       callSid: session.callSid,
       tool: name,
       callId,
@@ -2339,47 +2310,40 @@ async function handleToolCallEvent(
   }
 }
 
-function connectOpenAiRealtime(session: StreamSession) {
-  if (!openAiKey) {
-    logError("openai_realtime_missing_key", { callSid: session.callSid });
-    void notifyGatewayError(session.callSid, session.tenantKey, "openai_realtime_missing_key", "OPENAI_API_KEY is missing");
-    void endCallSession(session, "openai_key_missing", true);
+function connectXAiRealtime(session: StreamSession) {
+  if (!XAiKey) {
+    logError("xai_realtime_missing_key", { callSid: session.callSid });
+    void notifyGatewayError(session.callSid, session.tenantKey, "xai_realtime_missing_key", "XAI_API_KEY is missing");
+    void endCallSession(session, "xai_key_missing", true);
     return;
   }
   const payload = session.promptPayload;
   if (!payload) {
-    logError("openai_realtime_missing_prompt_payload", { callSid: session.callSid });
+    logError("xai_realtime_missing_prompt_payload", { callSid: session.callSid });
     void notifyGatewayError(
       session.callSid,
       session.tenantKey,
-      "openai_realtime_missing_prompt_payload",
+      "xai_realtime_missing_prompt_payload",
       "Prompt payload was not present when realtime connection was attempted"
     );
     void endCallSession(session, "prompt_payload_missing", true);
     return;
   }
 
-  session.openAiReady = false;
-  const model = payload.session_config.model;
-  const apiShape = resolveRealtimeApiShape(process.env.OPENAI_REALTIME_API_SHAPE, model);
-  session.realtimeApiShape = apiShape;
+  session.XAiReady = false;
+  const model = XAI_REALTIME_MODEL;
   const instructions = buildSessionInstructions(payload);
-  const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
+  const url = `wss://api.x.ai/v1/realtime?model=${encodeURIComponent(model)}`;
   const ws = new WebSocket(url, {
-    headers: buildOpenAiRealtimeHeaders({
-      apiKey: openAiKey,
-      apiShape,
-      safetyIdentifier: buildOpenAiSafetyIdentifier(session)
-    })
+    headers: buildXAiRealtimeHeaders(XAiKey)
   });
-  session.openAiWs = ws;
+  session.XAiWs = ws;
 
   ws.on("open", () => {
-    session.openAiReady = true;
-    logInfo("openai_realtime_session_start", {
+    session.XAiReady = true;
+    logInfo("xai_realtime_session_start", {
       callSid: session.callSid,
       model,
-      apiShape,
       voice: payload.session_config.voice,
       turnDetectionType: payload.session_config.turn_detection?.type,
       inputAudioFormat: payload.session_config.input_audio_format || "g711_ulaw",
@@ -2387,10 +2351,16 @@ function connectOpenAiRealtime(session: StreamSession) {
     });
 
     const sessionUpdate = buildRealtimeSessionUpdateEvent({
-      apiShape,
       instructions,
       tools: payload.tool_definitions,
-      sessionConfig: payload.session_config
+      sessionConfig: {
+        ...payload.session_config,
+        voice: process.env.XAI_REALTIME_VOICE || "eve",
+        turn_detection: {
+          ...payload.session_config.turn_detection,
+          type: "server_vad"
+        }
+      }
     });
 
     logRealtimeEntry(session, {
@@ -2398,13 +2368,12 @@ function connectOpenAiRealtime(session: StreamSession) {
       kind: "outbound",
       callSid: session.callSid,
       type: "session.update",
-      apiShape,
       instructions,
       tools: payload.tool_definitions,
       payload: sessionUpdate
     });
 
-    sendOpenAiEvent(ws, sessionUpdate);
+    sendXAiEvent(ws, sessionUpdate);
   });
 
   ws.on("message", async (data) => {
@@ -2420,11 +2389,10 @@ function connectOpenAiRealtime(session: StreamSession) {
 
     if (type === "session.updated") {
       session.realtimeModel = payloadMsg?.session?.model || model;
-      session.openAiSessionUpdated = true;
-      logInfo("openai_realtime_session_updated", {
+      session.XAiSessionUpdated = true;
+      logInfo("xai_realtime_session_updated", {
         callSid: session.callSid,
         model: session.realtimeModel,
-        apiShape: session.realtimeApiShape
       });
       if (session.pendingReconnectAssistantResponse) {
         const pendingResponse = session.pendingReconnectAssistantResponse;
@@ -2438,7 +2406,7 @@ function connectOpenAiRealtime(session: StreamSession) {
       }
       if (!session.greetingSent) {
         session.greetingSent = true;
-        logInfo("openai_realtime_greeting_requested", {
+        logInfo("xai_realtime_greeting_requested", {
           callSid: session.callSid,
           callControlId: session.callControlId
         });
@@ -2453,7 +2421,7 @@ function connectOpenAiRealtime(session: StreamSession) {
     }
 
     if (type === "error") {
-      logError("openai_realtime_server_error", {
+      logError("xai_realtime_server_error", {
         callSid: session.callSid,
         errorType: payloadMsg?.error?.type,
         errorCode: payloadMsg?.error?.code,
@@ -2470,7 +2438,7 @@ function connectOpenAiRealtime(session: StreamSession) {
         session.pendingToolSpeechWait.responseCreatedAtMs = performance.now();
         session.pendingToolSpeechWait.responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
         const waitMs = Number((session.pendingToolSpeechWait.responseCreatedAtMs - session.pendingToolSpeechWait.requestedAtMs).toFixed(3));
-        logInfo("openai_realtime_tool_response_created", {
+        logInfo("xai_realtime_tool_response_created", {
           callSid: session.callSid,
           tool: session.pendingToolSpeechWait.tool,
           callId: session.pendingToolSpeechWait.callId,
@@ -2490,7 +2458,7 @@ function connectOpenAiRealtime(session: StreamSession) {
       }
       markAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
       noteAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
-      logInfo("openai_realtime_response_created", {
+      logInfo("xai_realtime_response_created", {
         callSid: session.callSid,
         responseId: payloadMsg?.response?.id || payloadMsg?.response_id
       });
@@ -2516,7 +2484,7 @@ function connectOpenAiRealtime(session: StreamSession) {
       totals.estimatedCostMicrosUsd += estimateUsageCostMicrosUsd(usage);
       session.usageTotals = totals;
       void persistCallUsage(session);
-      logInfo("openai_realtime_response_done", {
+      logInfo("xai_realtime_response_done", {
         callSid: session.callSid,
         responseId: payloadMsg?.response?.id || payloadMsg?.response_id,
         status: payloadMsg?.response?.status || payloadMsg?.status,
@@ -2570,7 +2538,7 @@ function connectOpenAiRealtime(session: StreamSession) {
           const responseCreatedToFirstAudioMs = session.pendingToolSpeechWait.responseCreatedAtMs
             ? Number((performance.now() - session.pendingToolSpeechWait.responseCreatedAtMs).toFixed(3))
             : undefined;
-          logInfo("openai_realtime_tool_response_first_audio", {
+          logInfo("xai_realtime_tool_response_first_audio", {
             callSid: session.callSid,
             tool: session.pendingToolSpeechWait.tool,
             callId: session.pendingToolSpeechWait.callId,
@@ -2667,46 +2635,46 @@ function connectOpenAiRealtime(session: StreamSession) {
   });
 
   ws.on("close", () => {
-    logInfo("openai_realtime_session_closed", {
+    logInfo("xai_realtime_session_closed", {
       callSid: session.callSid,
       reconnectAttempted: Boolean(session.reconnectAttempted),
-      openAiReady: Boolean(session.openAiReady),
-      openAiSessionUpdated: Boolean(session.openAiSessionUpdated)
+      XAiReady: Boolean(session.XAiReady),
+      XAiSessionUpdated: Boolean(session.XAiSessionUpdated)
     });
 
     if (session.isShuttingDown || !session.callActive) return;
-    if (session.suppressOpenAiReconnect || session.aiDetached) return;
+    if (session.suppressXAiReconnect || session.aiDetached) return;
 
-    const wasInitialized = Boolean(session.openAiReady && session.openAiSessionUpdated);
+    const wasInitialized = Boolean(session.XAiReady && session.XAiSessionUpdated);
     if (!wasInitialized) {
       void notifyGatewayError(
         session.callSid,
         session.tenantKey,
-        "openai_realtime_session_init_failed",
+        "xai_realtime_session_init_failed",
         "Realtime session closed before initialization completed"
       );
-      void endCallSession(session, "openai_init_failed", true);
+      void endCallSession(session, "xai_init_failed", true);
       return;
     }
 
     if (!session.reconnectAttempted) {
       session.reconnectAttempted = true;
-      logInfo("openai_realtime_reconnect_attempt", { callSid: session.callSid });
-      connectOpenAiRealtime(session);
+      logInfo("xai_realtime_reconnect_attempt", { callSid: session.callSid });
+      connectXAiRealtime(session);
       return;
     }
 
     void notifyGatewayError(
       session.callSid,
       session.tenantKey,
-      "openai_realtime_disconnected",
+      "xai_realtime_disconnected",
       "Realtime session disconnected and reconnect attempt failed"
     );
-    void endCallSession(session, "openai_disconnect_after_retry", true);
+    void endCallSession(session, "xai_disconnect_after_retry", true);
   });
 
   ws.on("error", (err) => {
-    logError("openai_realtime_session_error", {
+    logError("xai_realtime_session_error", {
       callSid: session.callSid,
       message: err instanceof Error ? err.message : "unknown"
     });
@@ -3095,7 +3063,7 @@ wss.on("connection", (ws, req) => {
         mediaSampleRate: payload.start?.media_format?.sample_rate,
         mediaChannels: payload.start?.media_format?.channels
       });
-      connectOpenAiRealtime(session);
+      connectXAiRealtime(session);
       return;
     }
 
@@ -3108,10 +3076,10 @@ wss.on("connection", (ws, req) => {
       const callControlId = streamIdToCall.get(streamId);
       if (!callControlId) return;
       const session = streamSessions.get(callControlId);
-      if (!session?.openAiWs) return;
+      if (!session?.XAiWs) return;
       if (session.transferState?.status === "pending" || session.aiDetached) return;
       const pcm = decodeInboundAudioPayload(encoded);
-      sendOpenAiEvent(session.openAiWs, {
+      sendXAiEvent(session.XAiWs, {
         type: "input_audio_buffer.append",
         audio: pcm.toString("base64")
       });

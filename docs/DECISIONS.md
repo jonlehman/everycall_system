@@ -1,7 +1,7 @@
 # Decisions
 
 ## 2026-02-28
-- Use OpenAI Realtime in `call-gateway` for voice responses (Render deployment).
+- Use xAI Grok Realtime in `call-gateway` for voice responses (Render deployment).
 - Admin/client app deployed on Vercel; call gateway on Render.
 - Seed industry prompts and structured knowledge starters for consistent onboarding.
 - Grounded knowledge retrieval is preferred over model improvisation.
@@ -50,3 +50,10 @@
 - Keep prepared sales demo bundles for 30 days and maintain the current prospect plus 10 upcoming prospects as the warm queue.
 - Treat phone eligibility and Smartlead email suppression as separate channel states. Record outcomes durably and route eligible email follow-up asynchronously.
 - Assisted signup sends a short-lived, single-use prefilled link to the prospect. The prospect creates their own password and submits through the existing onboarding transaction; sales-demo artifacts are never promoted into tenant data.
+
+## 2026-07-30
+- Replace every realtime voice path with xAI Grok Speech to Speech and pin `grok-voice-think-fast-2.0`; keep unrelated OpenAI Responses, summaries, embeddings, and knowledge compilation unchanged.
+- The inbound gateway and voice-preview API use `wss://api.x.ai/v1/realtime`; browser demos receive an xAI ephemeral client secret and connect with the `xai-client-secret.*` WebSocket subprotocol.
+- Outbound sales uses a Direct SIP number registered with xAI, dials `sip:{E.164}@sip.voice.x.ai;transport=tls`, verifies signed xAI webhooks, and joins incoming calls by opening the `call_id` WebSocket. xAI has no separate accept request.
+- Rename persisted `openai_call_id` to `xai_call_id` with an additive, idempotent migration and migrate queued provider-event labels from `openai` to `xai`.
+- Estimate Grok realtime audio at its per-minute rate rather than applying OpenAI token rates.

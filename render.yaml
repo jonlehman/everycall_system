@@ -13,28 +13,12 @@ services:
         sync: false
       - key: TELNYX_TRANSCRIPTION_MODEL
         sync: false
-      - key: OPENAI_API_KEY
+      - key: XAI_API_KEY
         sync: false
-      - key: OPENAI_REALTIME_API_SHAPE
-        value: auto
-      - key: OPENAI_REALTIME_VOICE
+      - key: XAI_REALTIME_VOICE
         sync: false
-      - key: OPENAI_REALTIME_INPUT_FORMAT
-        sync: false
-      - key: OPENAI_REALTIME_OUTPUT_FORMAT
-        sync: false
-      - key: OPENAI_REALTIME_INPUT_RATE_PER_1M_USD
-        sync: false
-      - key: OPENAI_REALTIME_CACHED_INPUT_RATE_PER_1M_USD
-        sync: false
-      - key: OPENAI_REALTIME_AUDIO_INPUT_RATE_PER_1M_USD
-        sync: false
-      - key: OPENAI_REALTIME_OUTPUT_RATE_PER_1M_USD
-        sync: false
-      - key: OPENAI_REALTIME_AUDIO_OUTPUT_RATE_PER_1M_USD
-        sync: false
-      - key: OPENAI_SAFETY_IDENTIFIER
-        sync: false
+      - key: XAI_REALTIME_AUDIO_RATE_PER_MINUTE_USD
+        value: "0.05"
       - key: TELNYX_RTP_PAYLOAD_TYPE
         sync: false
       - key: TELNYX_BIDIRECTIONAL_PAYLOAD_MODE
@@ -129,19 +113,17 @@ services:
         value: "true"
       - key: SALES_TELNYX_HTTP_TIMEOUT_MS
         value: "8000"
-      - key: SALES_OPENAI_API_KEY
+      - key: SALES_XAI_API_KEY
         sync: false
-      - key: SALES_OPENAI_PROJECT_ID
+      - key: SALES_XAI_PHONE_NUMBER
         sync: false
-      - key: SALES_OPENAI_WEBHOOK_SECRET
+      - key: SALES_XAI_WEBHOOK_SECRET
         sync: false
-      - key: SALES_OPENAI_SIGNATURE_REQUIRED
+      - key: SALES_XAI_SIGNATURE_REQUIRED
         value: "true"
-      - key: SALES_OPENAI_HTTP_TIMEOUT_MS
+      - key: SALES_XAI_HTTP_TIMEOUT_MS
         value: "8000"
-      - key: SALES_OPENAI_REALTIME_MODEL
-        value: gpt-realtime-2.1
-      - key: SALES_OPENAI_REALTIME_VOICE
-        value: marin
-      - key: SALES_OPENAI_TRANSCRIPTION_MODEL
-        value: gpt-4o-mini-transcribe
+      - key: SALES_XAI_REALTIME_VOICE
+        value: eve
+      - key: SALES_XAI_TRANSCRIPTION_MODEL
+        value: grok-transcribe

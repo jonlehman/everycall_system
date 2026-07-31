@@ -180,44 +180,31 @@ There are no live tools in this demonstration.
 }
 
 function resolveDemoRealtimeModel() {
-  const configured = normalizeText(process.env.OPENAI_DEMO_REALTIME_MODEL);
-  if (!configured || configured === "gpt-realtime") {
-    return "gpt-realtime-2.1";
-  }
-  return configured;
+  return "grok-voice-think-fast-2.0";
 }
 
 function resolveDemoTranscriptionModel() {
-  return normalizeText(process.env.OPENAI_DEMO_TRANSCRIPTION_MODEL || process.env.OPENAI_REALTIME_TRANSCRIPTION_MODEL)
-    || "gpt-4o-mini-transcribe";
+  return "grok-transcribe";
 }
 
 export function buildDemoRealtimeSessionPayload(bundle = {}) {
   const model = resolveDemoRealtimeModel();
-  const voice = normalizeText(process.env.OPENAI_DEMO_REALTIME_VOICE || process.env.OPENAI_REALTIME_VOICE) || "marin";
+  const voice = normalizeText(process.env.XAI_DEMO_REALTIME_VOICE || process.env.XAI_REALTIME_VOICE) || "eve";
   const transcriptionModel = resolveDemoTranscriptionModel();
 
   return {
     session: {
-      type: "realtime",
-      model,
       instructions: buildDemoRealtimeInstructions(bundle),
-      audio: {
-        input: {
-          transcription: {
-            model: transcriptionModel,
-            language: "en"
-          },
-          turn_detection: {
-            type: "semantic_vad",
-            eagerness: "high",
-            create_response: true,
-            interrupt_response: true
-          }
-        },
-        output: {
-          voice
-        }
+      modalities: ["audio", "text"],
+      voice,
+      input_audio_transcription: {
+        model: transcriptionModel,
+        language: "en"
+      },
+      turn_detection: {
+        type: "server_vad",
+        create_response: true,
+        interrupt_response: true
       }
     },
     model,

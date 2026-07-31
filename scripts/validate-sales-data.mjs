@@ -628,6 +628,10 @@ async function validateStaticIsolationAndRoutes() {
     path.join(root, "migrations/0032_outbound_sales_demo.sql"),
     "utf8"
   );
+  const xaiCutoverMigration = await fs.readFile(
+    path.join(root, "migrations/0033_xai_realtime_cutover.sql"),
+    "utf8"
+  );
   const repository = await fs.readFile(
     path.join(root, "pages/api/_lib/salesRepository.js"),
     "utf8"
@@ -684,6 +688,13 @@ async function validateStaticIsolationAndRoutes() {
   ]) {
     assert.match(migration, new RegExp(`\\b${column} TEXT\\b`));
   }
+  assert.match(xaiCutoverMigration, /column_name = 'openai_call_id'/);
+  assert.match(xaiCutoverMigration, /column_name = 'xai_call_id'/);
+  assert.match(
+    xaiCutoverMigration,
+    /ALTER TABLE sales_call_sessions RENAME COLUMN openai_call_id TO xai_call_id/
+  );
+  assert.match(xaiCutoverMigration, /UPDATE sales_call_events[\s\S]*SET provider = 'xai'[\s\S]*WHERE provider = 'openai'/);
   for (const column of [
     "email_permission",
     "email_suppressed_at",

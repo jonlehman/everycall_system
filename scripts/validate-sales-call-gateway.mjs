@@ -11,7 +11,7 @@ import {
 } from "../apps/sales-call-gateway/dist/apps/sales-call-gateway/src/gateway.js";
 import {
   buildSalesDemoGreeting
-} from "../apps/sales-call-gateway/dist/apps/sales-call-gateway/src/salesOpenAIRealtime.js";
+} from "../apps/sales-call-gateway/dist/apps/sales-call-gateway/src/salesXAIRealtime.js";
 import {
   decodeSalesClientState,
   encodeSalesClientState
@@ -35,7 +35,7 @@ function baseCall(id, overrides = {}) {
     aiTelnyxCallControlId: null,
     aiTelnyxLegId: null,
     aiTelnyxSessionId: null,
-    openaiCallId: null,
+    xaiCallId: null,
     providerErrorCode: null,
     providerErrorMessage: null,
     outcome: null,
@@ -104,7 +104,7 @@ const PATCH_MAP = {
   ai_telnyx_call_control_id: "aiTelnyxCallControlId",
   ai_telnyx_leg_id: "aiTelnyxLegId",
   ai_telnyx_session_id: "aiTelnyxSessionId",
-  openai_call_id: "openaiCallId",
+  xai_call_id: "xaiCallId",
   provider_error_code: "providerErrorCode",
   provider_error_message: "providerErrorMessage",
   started_at: "startedAt",
@@ -227,7 +227,7 @@ function createMemoryRepository(initialCalls) {
         payload.call_session_id,
         payload.conference_id,
         payload.call_id,
-        payload.openai_call_id
+        payload.xai_call_id
       ].filter(Boolean);
       for (const call of calls.values()) {
         const refs = [
@@ -241,7 +241,7 @@ function createMemoryRepository(initialCalls) {
           call.aiTelnyxLegId,
           call.aiTelnyxSessionId,
           call.conferenceId,
-          call.openaiCallId
+          call.xaiCallId
         ];
         if (values.some((value) => refs.includes(value))) return call.salesCallId;
       }
@@ -259,7 +259,7 @@ function createMemoryRepository(initialCalls) {
           )
         )
         || (
-          call.openaiCallId
+          call.xaiCallId
           && [
             "sip_connected",
             "accepting",
@@ -297,12 +297,12 @@ function createController(callId, events, callbacks = {}) {
     isOpen: true,
     startDemo({ businessName }) {
       const greeting = buildSalesDemoGreeting(businessName);
-      events.push(`openai:greeting:${greeting}`);
+      events.push(`xai:greeting:${greeting}`);
       return { greeting };
     },
     pause() {
-      events.push("openai:response.cancel");
-      events.push("openai:output_audio_buffer.clear");
+      events.push("xai:response.cancel");
+      events.push("xai:output_audio_buffer.clear");
       return { type: "paused" };
     },
     close() {
@@ -345,7 +345,7 @@ const telnyx = {
       }
     };
   },
-  async dialOpenAISipStandby({ clientState }) {
+  async dialXAISipStandby({ clientState }) {
     const state = decodeSalesClientState(clientState);
     providerEvents.push(`telnyx:dial_ai:${state.sales_call_id}`);
     assert.ok(
@@ -391,18 +391,18 @@ const telnyx = {
   }
 };
 
-const openai = {
+const xai = {
   controllers: new Map(),
   buildSipUri() {
-    return "sip:proj_sales@sip.api.openai.com;transport=tls";
+    return "sip:proj_sales@sip.api.xai.com;transport=tls";
   },
   async acceptIncomingCall({ callId, session }) {
-    providerEvents.push(`openai:accept:${callId}`);
+    providerEvents.push(`xai:accept:${callId}`);
     assert.equal(session.instructions, "STORED DEMO INSTRUCTIONS");
     return { ai_state: "accepted" };
   },
   async connectMonitor({ callId, ...callbacks }) {
-    providerEvents.push(`openai:monitor:${callId}`);
+    providerEvents.push(`xai:monitor:${callId}`);
     if (consumeProviderFailure(`monitor:${callId}`)) {
       throw new Error(`monitor connect failed for ${callId}`);
     }
@@ -416,7 +416,7 @@ const openai = {
     return controller;
   },
   async hangupCall({ callId }) {
-    providerEvents.push(`openai:hangup:${callId}`);
+    providerEvents.push(`xai:hangup:${callId}`);
     return { ai_state: "ended" };
   }
 };
@@ -441,7 +441,7 @@ const failedStart = baseCall("sales-call-failed-start", {
   operatorCallControlId: "operator-fail",
   prospectCallControlId: "prospect-fail",
   aiTelnyxCallControlId: "ai-fail",
-  openaiCallId: "rtc-fail",
+  xaiCallId: "rtc-fail",
   connectedAt: "2026-07-28T12:00:00.000Z"
 });
 const eventRecoveryCall = baseCall("sales-call-event-recovery", {
@@ -459,7 +459,7 @@ const realtimeRecoveryCall = baseCall("sales-call-realtime-recovery", {
   operatorCallControlId: "operator-realtime-recovery",
   prospectCallControlId: "prospect-realtime-recovery",
   aiTelnyxCallControlId: "ai-realtime-recovery",
-  openaiCallId: "rtc-realtime-recovery",
+  xaiCallId: "rtc-realtime-recovery",
   connectedAt: "2026-07-28T12:00:00.000Z",
   metadata: { sip_correlation_nonce: "realtime-recovery-nonce" }
 });
@@ -470,7 +470,7 @@ const durationCall = baseCall("sales-call-duration", {
   operatorCallControlId: "operator-duration",
   prospectCallControlId: "prospect-duration",
   aiTelnyxCallControlId: "ai-duration",
-  openaiCallId: "rtc-duration",
+  xaiCallId: "rtc-duration",
   connectedAt: "2026-07-28T12:00:00.000Z"
 });
 const partialTeardownCall = baseCall("sales-call-partial-teardown", {
@@ -511,18 +511,18 @@ const internalToken = getInternalServiceToken(
 );
 const { publicKey: telnyxPublicKey, privateKey: telnyxPrivateKey } =
   crypto.generateKeyPairSync("ed25519");
-const openaiSecretBytes = Buffer.from("openai-sales-webhook-secret", "utf8");
-const openaiWebhookSecret = `whsec_${openaiSecretBytes.toString("base64")}`;
+const xaiSecretBytes = Buffer.from("xai-sales-webhook-secret", "utf8");
+const xaiWebhookSecret = `whsec_${xaiSecretBytes.toString("base64")}`;
 
 const demoTimeouts = [];
 const gateway = createSalesCallGateway({
   repository,
   telnyx,
-  openai,
+  xai,
   internalAuthEnv: internalEnv,
   telnyxPublicKey: telnyxPublicKey.export({ type: "spki", format: "pem" }),
   telnyxOperatorConnectionId: "sales-operator-credential-connection",
-  openaiWebhookSecret,
+  xaiWebhookSecret,
   now: () => new Date("2026-07-28T12:00:00.000Z"),
   aiDemoMaxSeconds: 120,
   setTimeoutImpl(callback, delayMs) {
@@ -562,11 +562,11 @@ function telnyxHeaders(body, valid = true) {
   };
 }
 
-function openaiHeaders(body, valid = true) {
+function xaiHeaders(body, valid = true) {
   const webhookId = `wh_${crypto.randomUUID()}`;
   const timestamp = String(Math.floor(Date.now() / 1000));
   const signature = crypto
-    .createHmac("sha256", openaiSecretBytes)
+    .createHmac("sha256", xaiSecretBytes)
     .update(`${webhookId}.${timestamp}.${body}`, "utf8")
     .digest("base64");
   return {
@@ -586,11 +586,11 @@ async function postTelnyx(event, valid = true) {
   });
 }
 
-async function postOpenAI(event, valid = true) {
+async function postXAI(event, valid = true) {
   const body = JSON.stringify(event);
-  return fetch(`${baseUrl}/webhooks/openai`, {
+  return fetch(`${baseUrl}/webhooks/xai`, {
     method: "POST",
-    headers: openaiHeaders(body, valid),
+    headers: xaiHeaders(body, valid),
     body
   });
 }
@@ -942,7 +942,7 @@ try {
 
   const incomingEvent = {
     object: "event",
-    id: "openai-incoming-1",
+    id: "xai-incoming-1",
     type: "realtime.call.incoming",
     created_at: Math.floor(Date.now() / 1000),
     data: {
@@ -956,9 +956,9 @@ try {
     role: "ai",
     nonce: "not-the-expected-nonce"
   });
-  assert.equal((await postOpenAI({
+  assert.equal((await postXAI({
     ...incomingEvent,
-    id: "openai-invalid-correlation-1",
+    id: "xai-invalid-correlation-1",
     data: {
       ...incomingEvent.data,
       call_id: "rtc-invalid-correlation",
@@ -968,33 +968,33 @@ try {
       }]
     }
   })).status, 200);
-  assert.ok(providerEvents.includes("openai:hangup:rtc-invalid-correlation"));
-  assert.equal(repository.calls.get("sales-call-1").openaiCallId, null);
+  assert.ok(providerEvents.includes("xai:hangup:rtc-invalid-correlation"));
+  assert.equal(repository.calls.get("sales-call-1").xaiCallId, null);
 
-  const uncorrelatedOpenAI = {
+  const uncorrelatedXAI = {
     ...incomingEvent,
-    id: "openai-uncorrelated",
+    id: "xai-uncorrelated",
     data: {
       ...incomingEvent.data,
       call_id: "rtc-uncorrelated",
       sip_headers: []
     }
   };
-  assert.equal((await postOpenAI(uncorrelatedOpenAI)).status, 202);
-  assert.ok(providerEvents.includes("openai:hangup:rtc-uncorrelated"));
+  assert.equal((await postXAI(uncorrelatedXAI)).status, 202);
+  assert.ok(providerEvents.includes("xai:hangup:rtc-uncorrelated"));
 
-  assert.equal((await postOpenAI(incomingEvent)).status, 200);
+  assert.equal((await postXAI(incomingEvent)).status, 200);
   assert.equal(
     repository.calls.get("sales-call-1").aiState,
     "realtime_ready_waiting_sip"
   );
-  assert.equal(repository.calls.get("sales-call-1").openaiCallId, "rtc-sales-call-1");
+  assert.equal(repository.calls.get("sales-call-1").xaiCallId, "rtc-sales-call-1");
   assert.deepEqual(
     providerEvents.filter((event) =>
-      event === "openai:accept:rtc-sales-call-1"
-      || event === "openai:monitor:rtc-sales-call-1"
+      event === "xai:accept:rtc-sales-call-1"
+      || event === "xai:monitor:rtc-sales-call-1"
     ),
-    ["openai:accept:rtc-sales-call-1", "openai:monitor:rtc-sales-call-1"]
+    ["xai:accept:rtc-sales-call-1", "xai:monitor:rtc-sales-call-1"]
   );
   assert.equal((await postTelnyx({
     data: {
@@ -1013,7 +1013,7 @@ try {
   assert.equal(repository.calls.get("sales-call-1").state, "ai_live");
   assert.equal(repository.calls.get("sales-call-1").aiState, "live");
   const expectedGreeting =
-    "openai:greeting:Thanks for calling Acme Appliance Repair. How can I help you?";
+    "xai:greeting:Thanks for calling Acme Appliance Repair. How can I help you?";
   const joinIndex = providerEvents.indexOf("telnyx:join_ai:ai-control-sales-call-1");
   const confirmationIndex = providerEvents.indexOf(
     "telnyx:join_confirmed:ai-control-sales-call-1"
@@ -1034,8 +1034,8 @@ try {
   assert.equal((await action("sales-call-1", "pause_ai")).status, 200);
   assert.equal(repository.calls.get("sales-call-1").state, "ai_paused");
   assert.equal(repository.calls.get("sales-call-1").aiState, "paused");
-  assert.ok(providerEvents.includes("openai:response.cancel"));
-  assert.ok(providerEvents.includes("openai:output_audio_buffer.clear"));
+  assert.ok(providerEvents.includes("xai:response.cancel"));
+  assert.ok(providerEvents.includes("xai:output_audio_buffer.clear"));
 
   const beforeEndDemo = providerEvents.length;
   assert.equal((await action("sales-call-1", "end_demo")).status, 200);
@@ -1108,7 +1108,7 @@ try {
       operatorCallControlId: "operator-recovery-teardown-failure",
       prospectCallControlId: "prospect-recovery-teardown-failure",
       aiTelnyxCallControlId: "ai-recovery-teardown-failure",
-      openaiCallId: "rtc-recovery-teardown-failure",
+      xaiCallId: "rtc-recovery-teardown-failure",
       connectedAt: "2026-07-28T12:00:00.000Z"
     }
   );
@@ -1171,9 +1171,9 @@ try {
     role: "ai",
     nonce: "runtime-failure-nonce"
   });
-  assert.equal((await postOpenAI({
+  assert.equal((await postXAI({
     object: "event",
-    id: "openai-runtime-failure-incoming",
+    id: "xai-runtime-failure-incoming",
     type: "realtime.call.incoming",
     created_at: Math.floor(Date.now() / 1000),
     data: {
@@ -1185,7 +1185,7 @@ try {
     }
   })).status, 200);
   assert.equal(repository.calls.get("sales-call-runtime-failure").aiState, "ready");
-  openai.controllers.get("rtc-runtime-failure").close();
+  xai.controllers.get("rtc-runtime-failure").close();
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if (repository.calls.get("sales-call-runtime-failure").aiState === "failed") break;
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -1196,7 +1196,7 @@ try {
     "prospect_connected"
   );
   assert.ok(providerEvents.includes("telnyx:hangup:ai-runtime-failure"));
-  assert.ok(providerEvents.includes("openai:hangup:rtc-runtime-failure"));
+  assert.ok(providerEvents.includes("xai:hangup:rtc-runtime-failure"));
 
   const failedAction = await action("sales-call-failed-start", "start_demo");
   assert.equal(failedAction.status, 502);
@@ -1210,12 +1210,12 @@ try {
     "telnyx:end_conference:conf-sales-sales-call-1"
   ));
 
-  const invalidOpenAI = {
+  const invalidXAI = {
     ...incomingEvent,
-    id: "openai-invalid-signature",
+    id: "xai-invalid-signature",
     data: { ...incomingEvent.data, call_id: "rtc-invalid" }
   };
-  assert.equal((await postOpenAI(invalidOpenAI, false)).status, 401);
+  assert.equal((await postXAI(invalidXAI, false)).status, 401);
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

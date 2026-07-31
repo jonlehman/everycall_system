@@ -13,7 +13,7 @@ Define the step-by-step sequence of events for an inbound call.
    - Gateway validates required fields.
 
 3. **Realtime Session Setup**
-   - Gateway opens OpenAI Realtime session.
+   - Gateway opens xAI Grok Realtime session.
    - Gateway sends `session.update` with:
      - System prompt + tenant greeting + knowledge tool policy
      - Tool definitions
@@ -21,13 +21,13 @@ Define the step-by-step sequence of events for an inbound call.
 
 4. **Conversation Loop**
    - Caller speaks.
-   - Audio streamed to OpenAI Realtime.
-   - OpenAI responds with audio deltas.
+   - Audio streamed to xAI Grok Realtime.
+   - xAI responds with audio deltas.
    - Gateway relays audio to caller.
 
 5. **Tool Calls**
-   - If OpenAI requests `knowledge_lookup`, gateway performs lookup and returns relevant knowledge matches, overrides, and guardrails.
-   - If OpenAI requests `data_capture`, gateway validates payload against schema and forwards it to EveryCall.
+   - If xAI requests `knowledge_lookup`, gateway performs lookup and returns relevant knowledge matches, overrides, and guardrails.
+   - If xAI requests `data_capture`, gateway validates payload against schema and forwards it to EveryCall.
 
 6. **Call End**
    - Call ends via caller hangup or gateway hangup.
