@@ -13,9 +13,9 @@ Natural, interruptible speech with low latency and consistent tone.
 - Avoid duplicate assistant messages.
 
 ## Key Parameters
-- Admin/runtime-profile model: `grok-voice-think-fast-2.0`, with the gateway auto-selecting the Realtime 2 session schema from `session_config.model`.
+- Gateway model: `grok-voice-think-fast-2.0`, pinned by the inbound realtime entry point.
 - VAD: use `semantic_vad` with eagerness `high`, automatic response enabled, and interruption enabled.
-- Audio formats: `g711_ulaw` input/output for Telnyx, mapped to Realtime 2 `audio/pcmu` format.
+- Audio formats: stored `g711_ulaw` input/output settings are mapped to xAI's nested `audio.input.format` and `audio.output.format` objects as `audio/pcmu` over JSON transport. This prevents xAI's default 24 kHz PCM from being sent to Telnyx as 8 kHz PCMU.
 - Voice: `eve` (demo-aligned default).
 - Transcription: `grok-transcribe` with `far_field` noise reduction.
 - Output pump: queue length and pump interval.

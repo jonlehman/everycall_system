@@ -51,6 +51,7 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 
 ## Grok Voice Think Fast 2.0 Calls
 - Verify `xai_realtime_session_start` reports `model=grok-voice-think-fast-2.0`.
+- Verify `xai_realtime_session_updated` reports `inputAudioFormat=audio/pcmu` and `outputAudioFormat=audio/pcmu` before the greeting response.
 - Verify first assistant audio arrives and outbound audio stays clear over Telnyx.
 - Verify a knowledge lookup does not mention tool names, packets, scores, or system logic.
 - Verify data capture happens only after the caller provides the value.

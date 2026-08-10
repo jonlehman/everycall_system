@@ -20,9 +20,21 @@ function normalizeText(value: unknown) {
   return String(value || "").trim();
 }
 
-function audioFormat(value: unknown, fallback = "g711_ulaw") {
-  const normalized = normalizeText(value) || fallback;
-  return normalized;
+function xAiAudioFormat(value: unknown, fallback = "g711_ulaw"): { type: string; rate?: number } {
+  const normalized = (normalizeText(value) || fallback).toLowerCase();
+  if (["g711_ulaw", "ulaw", "pcmu", "audio/pcmu"].includes(normalized)) {
+    return { type: "audio/pcmu" };
+  }
+  if (["g711_alaw", "alaw", "pcma", "audio/pcma"].includes(normalized)) {
+    return { type: "audio/pcma" };
+  }
+  if (["pcm16", "pcm", "audio/pcm"].includes(normalized)) {
+    return { type: "audio/pcm", rate: 24000 };
+  }
+  if (["opus", "audio/opus"].includes(normalized)) {
+    return { type: "audio/opus" };
+  }
+  return xAiAudioFormat(fallback, "g711_ulaw");
 }
 
 function maxOutputTokens(config: RealtimeSessionConfig) {
@@ -56,13 +68,21 @@ export function buildRealtimeSessionUpdateEvent(input: RealtimeSessionUpdateInpu
       modalities: ["audio", "text"],
       instructions: input.instructions,
       tools: input.tools,
-      input_audio_format: audioFormat(config.input_audio_format ?? config.inputAudioFormat),
-      output_audio_format: audioFormat(config.output_audio_format ?? config.outputAudioFormat),
       voice: normalizeText(config.voice) || "eve",
       turn_detection: buildRealtimeTurnDetectionConfig(config.turn_detection ?? config.turnDetection),
-      input_audio_transcription: {
-        model: "grok-transcribe",
-        language: "en"
+      audio: {
+        input: {
+          format: xAiAudioFormat(config.input_audio_format ?? config.inputAudioFormat),
+          transport: "json",
+          transcription: {
+            model: "grok-transcribe",
+            language_hint: "en"
+          }
+        },
+        output: {
+          format: xAiAudioFormat(config.output_audio_format ?? config.outputAudioFormat),
+          transport: "json"
+        }
       },
       max_response_output_tokens: maxOutputTokens(config)
     }

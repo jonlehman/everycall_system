@@ -27,12 +27,24 @@ const update = realtime.buildRealtimeSessionUpdateEvent({
 assert.equal(update.type, "session.update");
 assert.deepEqual(update.session.modalities, ["audio", "text"]);
 assert.equal(update.session.voice, "eve");
-assert.equal(update.session.input_audio_format, "g711_ulaw");
-assert.equal(update.session.output_audio_format, "g711_ulaw");
+assert.equal(update.session.input_audio_format, undefined);
+assert.equal(update.session.output_audio_format, undefined);
 assert.equal(update.session.turn_detection.type, "server_vad");
-assert.equal(update.session.input_audio_transcription.model, "grok-transcribe");
+assert.deepEqual(update.session.audio, {
+  input: {
+    format: { type: "audio/pcmu" },
+    transport: "json",
+    transcription: {
+      model: "grok-transcribe",
+      language_hint: "en"
+    }
+  },
+  output: {
+    format: { type: "audio/pcmu" },
+    transport: "json"
+  }
+});
 assert.equal(update.session.max_response_output_tokens, 4096);
-assert.equal(update.session.audio, undefined);
 assert.equal(update.session.type, undefined);
 
 const response = realtime.buildRealtimeResponseCreateEvent({ instructions: "Say hello." });

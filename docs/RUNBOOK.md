@@ -16,7 +16,7 @@
 - Missing pre-close question: verify deterministic enforcement.
 - Wrong knowledge answers: verify compiled knowledge retrieval, overrides, and guardrails.
 - Realtime session update rejected: inspect the xAI error `param`, confirm the selected voice is valid, and confirm G.711 μ-law is configured end-to-end.
-- No outbound audio after the Grok Voice Think Fast 2.0 switch: verify the xAI `session.update` payload uses `output_audio_format: "g711_ulaw"` and that Telnyx is configured for G.711 μ-law.
+- Static or missing outbound audio after the Grok Voice Think Fast 2.0 switch: verify the xAI `session.update` payload uses `session.audio.input.format.type: "audio/pcmu"` and `session.audio.output.format.type: "audio/pcmu"` with JSON transport, and that Telnyx is configured for G.711 μ-law at 8 kHz. Flat `input_audio_format` / `output_audio_format` fields can leave xAI on its default 24 kHz PCM and must not be used.
 
 ## Outbound Sales Calling
 - Apply `migrations/0032_outbound_sales_demo.sql` before enabling the Sales Console.

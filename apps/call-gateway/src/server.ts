@@ -2390,9 +2390,13 @@ function connectXAiRealtime(session: StreamSession) {
     if (type === "session.updated") {
       session.realtimeModel = payloadMsg?.session?.model || model;
       session.XAiSessionUpdated = true;
+      const acceptedInputAudioFormat = payloadMsg?.session?.audio?.input?.format?.type;
+      const acceptedOutputAudioFormat = payloadMsg?.session?.audio?.output?.format?.type;
       logInfo("xai_realtime_session_updated", {
         callSid: session.callSid,
         model: session.realtimeModel,
+        inputAudioFormat: acceptedInputAudioFormat,
+        outputAudioFormat: acceptedOutputAudioFormat
       });
       if (session.pendingReconnectAssistantResponse) {
         const pendingResponse = session.pendingReconnectAssistantResponse;
