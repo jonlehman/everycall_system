@@ -11,7 +11,7 @@ Define admin-configurable session settings used by the gateway.
 - `turn_detection`:
   - `type`: `server_vad`
   - `threshold`: `0.9`
-  - `silence_duration_ms`: `350`
+  - `silence_duration_ms`: `200`
 - `transcription_model`: `grok-transcribe`
 - `input_audio_format`: `g711_ulaw`
 - `output_audio_format`: `g711_ulaw`

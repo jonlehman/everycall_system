@@ -130,7 +130,7 @@ export function buildDemoRealtimeInstructions(bundle = {}) {
     "- Speak in English by default.",
     "- Only switch to another language if the caller clearly starts speaking that language first.",
     "- Do not collect or store sensitive information.",
-    "- Keep responses short, usually one or two sentences.",
+    "- Keep responses focused, usually one to three natural conversational sentences.",
     buildDemoFactPack(bundle)
   ];
 
@@ -171,7 +171,7 @@ There are no live tools in this demonstration.
   return [
     rendered.startupPrompt,
     "# Live Demonstration Rules",
-    "- Keep each response to one or two short sentences.",
+    "- Keep each response focused, usually one to three natural conversational sentences.",
     "- Answer direct questions before continuing and ask only one question at a time.",
     "- Do not collect payment-card data or other sensitive information.",
     "- Speak in English by default and change language only if the caller clearly does so first.",
@@ -200,7 +200,7 @@ export function buildDemoRealtimeSessionPayload(bundle = {}) {
       turn_detection: {
         type: "server_vad",
         threshold: 0.9,
-        silence_duration_ms: 350
+        silence_duration_ms: 200
       },
       audio: {
         input: {

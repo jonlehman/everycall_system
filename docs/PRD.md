@@ -59,7 +59,7 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 - Model: `grok-voice-think-fast-2.0`, pinned by each realtime entry point.
 - Voice: `ara`
 - Realtime endpoint: `wss://api.x.ai/v1/realtime`.
-- Turn detection: xAI-native `server_vad` with a `0.9` activation threshold and a 350 ms silence endpoint. The higher threshold reduces speakerphone echo triggers while preserving caller barge-in.
+- Turn detection: xAI-native `server_vad` with a `0.9` activation threshold and a 200 ms silence endpoint. The higher threshold reduces speakerphone echo triggers while preserving caller barge-in; the shorter endpoint reduces the pause after the caller finishes.
 - Transcription model: `grok-transcribe`
 - Reasoning effort: `high` to prioritize conversation continuity, instruction following, and tool judgment; production canaries must track the latency impact.
 - Tools: enabled for knowledge lookup and data capture; tool definitions are provided by EveryCall.

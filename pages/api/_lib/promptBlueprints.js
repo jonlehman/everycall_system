@@ -468,14 +468,22 @@ function normalizeStoredTenantPromptProfile(row, defaults) {
   }, defaults);
 }
 
-async function ensureDefaultPromptBlueprint(db) {
+export async function ensureDefaultPromptBlueprint(db) {
   if (ensureDefaultPromptBlueprintPromise) {
     return ensureDefaultPromptBlueprintPromise;
   }
-  ensureDefaultPromptBlueprintPromise = (async () => {
+  ensureDefaultPromptBlueprintPromise = withTransaction(db, async (client) => {
     const seed = getDefaultPromptBlueprintSeed();
     const promptBlueprintId = `pb_${seed.blueprint_key}_v${seed.version}`;
-    await db.query(
+    const existingBlueprint = await client.query(
+      `SELECT prompt_blueprint_id
+       FROM prompt_blueprints
+       WHERE prompt_blueprint_id = $1
+       LIMIT 1`,
+      [promptBlueprintId]
+    );
+    const isNewBlueprintVersion = existingBlueprint.rowCount === 0;
+    await client.query(
       `UPDATE prompt_blueprints
        SET status = 'archived',
            updated_at = NOW()
@@ -484,7 +492,7 @@ async function ensureDefaultPromptBlueprint(db) {
          AND prompt_blueprint_id <> $2`,
       [seed.blueprint_key, promptBlueprintId]
     );
-    await db.query(
+    await client.query(
       `INSERT INTO prompt_blueprints (
          prompt_blueprint_id, blueprint_key, version, status, name, sample_phrase_groups_json, tool_definitions_json
        )
@@ -507,13 +515,13 @@ async function ensureDefaultPromptBlueprint(db) {
         JSON.stringify(seed.tool_definitions)
       ]
     );
-    await db.query(
+    await client.query(
       `DELETE FROM prompt_blueprint_sections
        WHERE prompt_blueprint_id = $1`,
       [promptBlueprintId]
     );
     for (const section of seed.sections) {
-      await db.query(
+      await client.query(
         `INSERT INTO prompt_blueprint_sections (
            prompt_blueprint_id, section_id, section_order, default_text, is_template, allowed_placeholders_json, admin_metadata_json
          )
@@ -529,7 +537,37 @@ async function ensureDefaultPromptBlueprint(db) {
         ]
       );
     }
-  })();
+    if (isNewBlueprintVersion) {
+      await client.query(
+        `INSERT INTO tenant_prompt_section_overrides (
+           tenant_key, prompt_blueprint_id, section_id, override_text, updated_by_id, created_at, updated_at
+         )
+         SELECT source.tenant_key,
+                $2,
+                source.section_id,
+                source.override_text,
+                source.updated_by_id,
+                source.created_at,
+                source.updated_at
+         FROM tenant_prompt_section_overrides AS source
+         JOIN (
+           SELECT prompt_blueprint_id
+           FROM prompt_blueprints
+           WHERE blueprint_key = $1
+             AND prompt_blueprint_id <> $2
+             AND version < $3
+           ORDER BY version DESC, updated_at DESC
+           LIMIT 1
+         ) AS previous_blueprint
+           ON previous_blueprint.prompt_blueprint_id = source.prompt_blueprint_id
+         JOIN prompt_blueprint_sections AS target_section
+           ON target_section.prompt_blueprint_id = $2
+          AND target_section.section_id = source.section_id
+         ON CONFLICT (tenant_key, prompt_blueprint_id, section_id) DO NOTHING`,
+        [seed.blueprint_key, promptBlueprintId, seed.version]
+      );
+    }
+  });
   try {
     await ensureDefaultPromptBlueprintPromise;
   } finally {

@@ -21,6 +21,15 @@ const voiceControl = await import(pathToFileURL(
 const migration = await import(pathToFileURL(
   path.join(process.cwd(), "scripts/migrate-xai-runtime-profiles.mjs")
 ).href);
+const promptBlueprints = await import(pathToFileURL(
+  path.join(process.cwd(), "packages/contracts/dist/promptBlueprints.js")
+).href);
+const knowledgeConfig = await import(pathToFileURL(
+  path.join(process.cwd(), "pages/api/_lib/knowledgeReceptionistConfig.js")
+).href);
+const promptRuntime = await import(pathToFileURL(
+  path.join(process.cwd(), "pages/api/_lib/promptBlueprints.js")
+).href);
 
 assert.deepEqual(realtime.buildXAiRealtimeHeaders("test_key"), {
   Authorization: "Bearer test_key"
@@ -59,7 +68,7 @@ assert.equal(update.session.output_audio_format, undefined);
 assert.deepEqual(update.session.turn_detection, {
   type: "server_vad",
   threshold: 0.9,
-  silence_duration_ms: 350
+  silence_duration_ms: 200
 });
 assert.equal(update.session.turn_detection.eagerness, undefined);
 assert.equal(update.session.turn_detection.create_response, undefined);
@@ -91,7 +100,7 @@ assert.equal(explicitNonReasoningUpdate.session.voice, "ara");
 assert.deepEqual(explicitNonReasoningUpdate.session.turn_detection, {
   type: "server_vad",
   threshold: 0.9,
-  silence_duration_ms: 350
+  silence_duration_ms: 200
 });
 
 const startupOrder = [];
@@ -156,6 +165,11 @@ assert.deepEqual(turnTiming.finishRealtimeTurnTiming(timing, 1450), {
 assert.equal(migration.TARGET_MODEL, "grok-voice-think-fast-2.0");
 assert.equal(migration.TARGET_VOICE, "ara");
 assert.equal(migration.TARGET_VAD_THRESHOLD, 0.9);
+assert.equal(migration.TARGET_SILENCE_DURATION_MS, 200);
+assert.equal(knowledgeConfig.DEFAULT_RUNTIME_SESSION_CONFIG.voice, "ara");
+assert.equal(knowledgeConfig.DEFAULT_RUNTIME_SESSION_CONFIG.reasoning.effort, "high");
+assert.equal(knowledgeConfig.DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.threshold, 0.9);
+assert.equal(knowledgeConfig.DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.silence_duration_ms, 200);
 assert.deepEqual(
   migration.planProfileMigration({
     tenant_key: "legacy",
@@ -190,7 +204,7 @@ assert.deepEqual(
       turn_detection: {
         type: "server_vad",
         threshold: 0.9,
-        silence_duration_ms: 350
+        silence_duration_ms: 200
       }
     }
   }
@@ -209,5 +223,72 @@ const araEchoMigrationSql = readFileSync(
 );
 assert.match(araEchoMigrationSql, /to_jsonb\('ara'::text\)/);
 assert.match(araEchoMigrationSql, /"threshold":0\.9/);
+
+const fasterEndpointingMigrationSql = readFileSync(
+  path.join(process.cwd(), "migrations/0037_xai_faster_turn_endpointing.sql"),
+  "utf8"
+);
+assert.match(fasterEndpointingMigrationSql, /'\{turn_detection,silence_duration_ms\}'/);
+assert.match(fasterEndpointingMigrationSql, /'200'::jsonb/);
+
+const newVersionQueries = [];
+await promptRuntime.ensureDefaultPromptBlueprint({
+  async query(sql, params = []) {
+    newVersionQueries.push({ sql, params });
+    if (/SELECT prompt_blueprint_id\s+FROM prompt_blueprints\s+WHERE prompt_blueprint_id/.test(sql)) {
+      return { rows: [], rowCount: 0 };
+    }
+    return { rows: [], rowCount: 1 };
+  }
+});
+const overrideCopyQuery = newVersionQueries.find(({ sql }) => /INSERT INTO tenant_prompt_section_overrides/.test(sql));
+assert(overrideCopyQuery, "new prompt versions must copy tenant section overrides forward");
+assert.match(overrideCopyQuery.sql, /JOIN prompt_blueprint_sections AS target_section/);
+assert.match(overrideCopyQuery.sql, /AND version < \$3/);
+assert.match(overrideCopyQuery.sql, /ON CONFLICT \(tenant_key, prompt_blueprint_id, section_id\) DO NOTHING/);
+assert.deepEqual(overrideCopyQuery.params, ["canonical_receptionist", "pb_canonical_receptionist_v4", 4]);
+
+const existingVersionQueries = [];
+await promptRuntime.ensureDefaultPromptBlueprint({
+  async query(sql, params = []) {
+    existingVersionQueries.push({ sql, params });
+    if (/SELECT prompt_blueprint_id\s+FROM prompt_blueprints\s+WHERE prompt_blueprint_id/.test(sql)) {
+      return { rows: [{ prompt_blueprint_id: "pb_canonical_receptionist_v4" }], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 1 };
+  }
+});
+assert.equal(
+  existingVersionQueries.some(({ sql }) => /INSERT INTO tenant_prompt_section_overrides/.test(sql)),
+  false,
+  "existing prompt versions must not repopulate deliberately reset overrides"
+);
+
+const promptSeed = promptBlueprints.getDefaultPromptBlueprintSeed();
+assert.equal(promptSeed.version, 4);
+assert.equal(promptSeed.name, "Canonical Receptionist v4");
+const promptProfile = promptBlueprints.normalizeTenantPromptProfile({
+  assistant_name: "Sarah",
+  business_name: "Creative Dynamic",
+  company_description: "Creative Dynamic helps businesses plan and build software systems.",
+  opening_line: "Thanks for calling Creative Dynamic. This is Sarah. How can I help you today?",
+  ai_disclosure_line: "I’m the business’s automated assistant.",
+  lead_goal: "callback information",
+  required_contact_fields: ["caller’s name", "caller’s best phone number"],
+  closing_phrase: "Thanks for calling. Have a great rest of your day.",
+  basic_no_tool_allowed_statement: "Creative Dynamic helps businesses plan and build software systems."
+});
+const renderedPrompt = promptBlueprints.renderPromptContext(promptSeed, promptProfile, {
+  companyDescription: promptProfile.company_description,
+  companyDescriptionSource: "tenant_override"
+}).startupPrompt;
+assert.match(renderedPrompt, /Discovery does not have a fixed number of turns\./);
+assert.match(renderedPrompt, /briefly summarize the need in the caller’s language and confirm that you understood it correctly\./);
+assert.match(renderedPrompt, /Do not suggest speaking with the team until the caller confirms the summary/);
+assert.match(renderedPrompt, /Do not ask for callback information immediately after the caller’s first substantive explanation/);
+assert.match(renderedPrompt, /Do not automatically append a generic reassurance, offer to help, or conversation bridge/);
+assert.match(renderedPrompt, /if the caller explicitly requests a person, callback, or next step before a summary is needed/);
+assert.doesNotMatch(renderedPrompt, /Use one or two short discovery turns/);
+assert.doesNotMatch(renderedPrompt, /If the caller is not clearly receptive, do ONE more brief engagement turn/);
 
 console.log(JSON.stringify({ ok: true, checked: "xai_realtime_payloads" }, null, 2));

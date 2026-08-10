@@ -38,7 +38,7 @@
 ## xAI Grok Realtime Cutover
 - All realtime paths pin `grok-voice-think-fast-2.0`; stored runtime-profile model values cannot override the provider/model.
 - Configure `XAI_API_KEY` and `XAI_REALTIME_AUDIO_RATE_PER_MINUTE_USD=0.05`. The inbound default voice is the runtime-profile value, with `ara` as the code-owned fallback.
-- Apply `migrations/0033_xai_realtime_cutover.sql`, `migrations/0034_xai_luna_turn_taking.sql`, `migrations/0035_xai_high_reasoning.sql`, and `migrations/0036_xai_ara_echo_resistance.sql` in order.
+- Apply `migrations/0033_xai_realtime_cutover.sql`, `migrations/0034_xai_luna_turn_taking.sql`, `migrations/0035_xai_high_reasoning.sql`, `migrations/0036_xai_ara_echo_resistance.sql`, and `migrations/0037_xai_faster_turn_endpointing.sql` in order. Canonical prompt version initialization copies valid tenant section overrides forward transactionally.
 - The browser demo token endpoint returns an xAI ephemeral token, WebSocket URL, subprotocol, and `session.update` event.
 - Configure the sales gateway with `SALES_XAI_API_KEY`, `SALES_XAI_PHONE_NUMBER`, and the one-time `SALES_XAI_WEBHOOK_SECRET` returned when registering the Direct SIP number.
 - Before production rollout, run:
@@ -49,7 +49,7 @@
 - Apply existing profile migration only after reviewing dry-run output:
   - `EVERYCALL_APPLY_XAI_PROFILE_MIGRATION=1 node scripts/migrate-xai-runtime-profiles.mjs`
 - Manual canary calls must cover greeting, direct question, knowledge lookup, data capture, transfer lookup/confirmation, alphanumeric readback, barge-in, silence/background noise, and tool failure.
-- During a canary, verify `xai_realtime_session_updated` reports `voice=ara`, `reasoningEffort=high`, and xAI-native `server_vad` with `threshold=0.9`; verify `xai_realtime_turn_latency` is emitted from speech endpoint to first audio and compare it with the previous `none` baseline.
+- During a canary, verify `xai_realtime_session_updated` reports `voice=ara`, `reasoningEffort=high`, and xAI-native `server_vad` with `threshold=0.9` and `silence_duration_ms=200`; verify `xai_realtime_turn_latency` is emitted from speech endpoint to first audio and compare it with the previous `none` baseline.
 - Verify `telnyx_call_control_answer_requested` is emitted before session bootstrap completes and use `webhookToAnswerRequestMs` / `webhookToAnswerAcceptedMs` to investigate any call that rings more than once.
 
 ## Billing Portal

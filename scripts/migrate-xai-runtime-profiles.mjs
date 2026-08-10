@@ -9,7 +9,7 @@ export const TARGET_MODEL = "grok-voice-think-fast-2.0";
 export const TARGET_VOICE = "ara";
 export const TARGET_TRANSCRIPTION_MODEL = "grok-transcribe";
 export const TARGET_REASONING_EFFORT = "high";
-export const TARGET_SILENCE_DURATION_MS = 350;
+export const TARGET_SILENCE_DURATION_MS = 200;
 export const TARGET_VAD_THRESHOLD = 0.9;
 
 function normalizeText(value) {

@@ -123,7 +123,7 @@ export const DEFAULT_RUNTIME_SESSION_CONFIG = {
   turn_detection: {
     type: "server_vad",
     threshold: 0.9,
-    silence_duration_ms: 350
+    silence_duration_ms: 200
   },
   transcription_model: "grok-transcribe",
   input_audio_format: "g711_ulaw",

@@ -62,7 +62,7 @@ export function buildRealtimeTurnDetectionConfig(
       : DEFAULT_XAI_VAD_THRESHOLD,
     silence_duration_ms: typeof configured?.silence_duration_ms === "number"
       ? configured.silence_duration_ms
-      : 350
+      : 200
   };
   if (typeof configured?.prefix_padding_ms === "number") {
     result.prefix_padding_ms = configured.prefix_padding_ms;

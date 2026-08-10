@@ -12,7 +12,7 @@ assert.deepEqual(payload.session.reasoning, { effort: "high" });
 assert.deepEqual(payload.session.turn_detection, {
   type: "server_vad",
   threshold: 0.9,
-  silence_duration_ms: 350
+  silence_duration_ms: 200
 });
 assert.equal(payload.session.audio.input.transcription.model, "grok-transcribe");
 assert.deepEqual(payload.session.audio.input.format, { type: "audio/pcm", rate: 24000 });

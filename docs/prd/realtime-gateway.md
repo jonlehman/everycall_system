@@ -20,7 +20,7 @@ Must match the web demo configuration:
 - Realtime endpoint: `wss://api.x.ai/v1/realtime`
 - Turn detection: xAI-native `server_vad`
   - activation threshold: `0.9` to reduce speakerphone echo triggers
-  - silence endpoint: `350 ms`
+  - silence endpoint: `200 ms`
   - automatic response and model interruption are owned by xAI
 - Reasoning effort: `high` for stronger conversation continuity and instruction following; measure endpoint-to-first-audio latency during rollout
 - Transcription model: `grok-transcribe`
