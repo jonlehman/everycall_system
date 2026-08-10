@@ -52,7 +52,8 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 
 ## Grok Voice Think Fast 2.0 Calls
 - Verify `xai_realtime_session_start` reports `model=grok-voice-think-fast-2.0`.
-- Verify `xai_realtime_session_updated` reports `voice=luna`, `reasoningEffort=none`, `turnDetection.type=server_vad`, `inputAudioFormat=audio/pcmu`, and `outputAudioFormat=audio/pcmu` before the greeting response.
+- Verify `xai_realtime_session_updated` reports `voice=luna`, `reasoningEffort=high`, `turnDetection.type=server_vad`, `inputAudioFormat=audio/pcmu`, and `outputAudioFormat=audio/pcmu` before the greeting response.
+- Compare endpoint-to-first-audio latency at `high` reasoning against the previous `none` baseline while repeating the same conversation-continuity and tool-use scenarios.
 - Verify no `modalities`, `max_response_output_tokens`, `eagerness`, `create_response`, or `interrupt_response` fields are sent on the inbound xAI session.
 - For a tenant with an eligible directory entry, verify xAI's accepted session includes `lookup_transfer_target` and `transfer_call` alongside the knowledge and data tools.
 - Verify first assistant audio arrives and outbound audio stays clear over Telnyx.

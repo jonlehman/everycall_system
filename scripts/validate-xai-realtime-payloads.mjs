@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -45,7 +46,7 @@ const update = realtime.buildRealtimeSessionUpdateEvent({
 assert.equal(update.type, "session.update");
 assert.equal(update.session.modalities, undefined);
 assert.equal(update.session.voice, "luna");
-assert.deepEqual(update.session.reasoning, { effort: "none" });
+assert.deepEqual(update.session.reasoning, { effort: "high" });
 assert.deepEqual(update.session.tools.map((tool) => tool.name), [
   "knowledge_lookup",
   "lookup_transfer_target",
@@ -76,6 +77,13 @@ assert.deepEqual(update.session.audio, {
 });
 assert.equal(update.session.max_response_output_tokens, undefined);
 assert.equal(update.session.type, undefined);
+
+const explicitNonReasoningUpdate = realtime.buildRealtimeSessionUpdateEvent({
+  instructions: "Answer quickly.",
+  tools: [],
+  sessionConfig: { reasoning: { effort: "none" } }
+});
+assert.deepEqual(explicitNonReasoningUpdate.session.reasoning, { effort: "none" });
 
 const response = realtime.buildRealtimeResponseCreateEvent({ instructions: "Say hello." });
 assert.deepEqual(response, { type: "response.create", response: { instructions: "Say hello." } });
@@ -143,7 +151,7 @@ assert.deepEqual(
     next_session_config_json: {
       model: "grok-voice-think-fast-2.0",
       voice: "luna",
-      reasoning: { effort: "none" },
+      reasoning: { effort: "high" },
       transcription_model: "grok-transcribe",
       turn_detection: {
         type: "server_vad",
@@ -152,5 +160,12 @@ assert.deepEqual(
     }
   }
 );
+
+const highReasoningMigrationSql = readFileSync(
+  path.join(process.cwd(), "migrations/0035_xai_high_reasoning.sql"),
+  "utf8"
+);
+assert.match(highReasoningMigrationSql, /'\{reasoning\}'/);
+assert.match(highReasoningMigrationSql, /'\{"effort":"high"\}'::jsonb/);
 
 console.log(JSON.stringify({ ok: true, checked: "xai_realtime_payloads" }, null, 2));

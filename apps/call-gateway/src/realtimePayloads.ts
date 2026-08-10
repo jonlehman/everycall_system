@@ -42,7 +42,7 @@ function xAiReasoningEffort(config: RealtimeSessionConfig) {
   const configured = normalizeText(
     config.reasoning?.effort ?? config.reasoning_effort ?? config.reasoningEffort
   ).toLowerCase();
-  return configured === "high" ? "high" : "none";
+  return configured === "none" ? "none" : "high";
 }
 
 export function buildXAiRealtimeHeaders(apiKey: string) {

@@ -8,7 +8,7 @@ export const APPLY_ENV = "EVERYCALL_APPLY_XAI_PROFILE_MIGRATION";
 export const TARGET_MODEL = "grok-voice-think-fast-2.0";
 export const TARGET_VOICE = "luna";
 export const TARGET_TRANSCRIPTION_MODEL = "grok-transcribe";
-export const TARGET_REASONING_EFFORT = "none";
+export const TARGET_REASONING_EFFORT = "high";
 export const TARGET_SILENCE_DURATION_MS = 350;
 
 function normalizeText(value) {

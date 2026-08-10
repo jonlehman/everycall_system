@@ -2,7 +2,8 @@
 
 ## 2026-08-10
 - Use xAI `luna` as the default EveryCall receptionist voice.
-- Use only xAI-native Speech to Speech session fields on inbound calls: `server_vad`, a 350 ms silence endpoint, `reasoning.effort=none`, nested audio/transcription configuration, and streamed audio deltas.
+- Use only xAI-native Speech to Speech session fields on inbound calls: `server_vad`, a 350 ms silence endpoint, `reasoning.effort=high`, nested audio/transcription configuration, and streamed audio deltas.
+- Prefer Grok's only supported reasoning-enabled level, `high`, to improve conversation continuity and instruction following. Keep the prompt unchanged and measure endpoint-to-first-audio latency during the canary before considering `none` again.
 - Let xAI server VAD own model-side automatic response and interruption. On caller barge-in, EveryCall clears its local audio queue and Telnyx's playback queue without sending redundant OpenAI-era cancel/truncate events.
 - Request only the caller's inbound Telnyx track and log endpoint-to-first-audio latency for production turn-taking verification.
 

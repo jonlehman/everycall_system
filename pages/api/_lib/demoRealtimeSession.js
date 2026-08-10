@@ -196,7 +196,7 @@ export function buildDemoRealtimeSessionPayload(bundle = {}) {
     session: {
       instructions: buildDemoRealtimeInstructions(bundle),
       voice,
-      reasoning: { effort: "none" },
+      reasoning: { effort: "high" },
       turn_detection: {
         type: "server_vad",
         silence_duration_ms: 350

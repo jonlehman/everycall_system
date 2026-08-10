@@ -61,7 +61,7 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 - Realtime endpoint: `wss://api.x.ai/v1/realtime`.
 - Turn detection: xAI-native `server_vad` with a 350 ms silence endpoint. Grok handles automatic response and interruption.
 - Transcription model: `grok-transcribe`
-- Reasoning effort: `none` for low-latency receptionist turns.
+- Reasoning effort: `high` to prioritize conversation continuity, instruction following, and tool judgment; production canaries must track the latency impact.
 - Tools: enabled for knowledge lookup and data capture; tool definitions are provided by EveryCall.
 
 ## Tooling & Data Capture

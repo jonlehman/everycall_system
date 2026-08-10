@@ -11,7 +11,7 @@ try {
   assert.equal(payload.session.model, undefined);
   assert.equal(payload.session.modalities, undefined);
   assert.equal(payload.session.voice, "luna");
-  assert.deepEqual(payload.session.reasoning, { effort: "none" });
+  assert.deepEqual(payload.session.reasoning, { effort: "high" });
   assert.deepEqual(payload.session.turn_detection, { type: "server_vad", silence_duration_ms: 350 });
   assert.equal(payload.session.audio.input.transcription.model, "grok-transcribe");
   assert.deepEqual(payload.session.audio.input.format, { type: "audio/pcm", rate: 24000 });
@@ -29,7 +29,7 @@ try {
   assert.equal(preview.session.modalities, undefined);
   assert.equal(preview.session.output_audio_format, undefined);
   assert.equal(preview.session.voice, "rex");
-  assert.deepEqual(preview.session.reasoning, { effort: "none" });
+  assert.deepEqual(preview.session.reasoning, { effort: "high" });
   assert.deepEqual(preview.session.audio.output.format, { type: "audio/pcm", rate: 24000 });
   assert.equal(preview.session.max_response_output_tokens, undefined);
 

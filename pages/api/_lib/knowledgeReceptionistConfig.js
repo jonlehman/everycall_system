@@ -118,7 +118,7 @@ export const DEFAULT_RUNTIME_SESSION_CONFIG = {
   model: "grok-voice-think-fast-2.0",
   voice: "luna",
   reasoning: {
-    effort: "none"
+    effort: "high"
   },
   turn_detection: {
     type: "server_vad",
@@ -1049,7 +1049,7 @@ function normalizeSessionConfig(value) {
   return {
     model: normalizeText(source.model) || DEFAULT_RUNTIME_SESSION_CONFIG.model,
     voice: normalizeText(source.voice) || DEFAULT_RUNTIME_SESSION_CONFIG.voice,
-    reasoning: { effort: reasoningEffort === "high" ? "high" : "none" },
+    reasoning: { effort: reasoningEffort === "none" ? "none" : "high" },
     turn_detection: normalizedTurnDetection,
     transcription_model: normalizeText(source.transcription_model || source.transcriptionModel)
       || DEFAULT_RUNTIME_SESSION_CONFIG.transcription_model,

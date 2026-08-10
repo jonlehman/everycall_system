@@ -21,7 +21,7 @@ Must match the web demo configuration:
 - Turn detection: xAI-native `server_vad`
   - silence endpoint: `350 ms`
   - automatic response and model interruption are owned by xAI
-- Reasoning effort: `none` for low-latency receptionist turns
+- Reasoning effort: `high` for stronger conversation continuity and instruction following; measure endpoint-to-first-audio latency during rollout
 - Transcription model: `grok-transcribe`
 - Input/output audio format: `g711_ulaw`
 - Tools: enabled (Knowledge lookup + Data capture)

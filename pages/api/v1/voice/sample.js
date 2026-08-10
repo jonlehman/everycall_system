@@ -87,7 +87,7 @@ export function buildPreviewSessionUpdate({ instructions, promptPayload, voice }
       instructions,
       tools: Array.isArray(promptPayload.tool_definitions) ? promptPayload.tool_definitions : [],
       voice,
-      reasoning: { effort: "none" },
+      reasoning: { effort: "high" },
       audio: {
         output: {
           format: { type: "audio/pcm", rate: PREVIEW_SAMPLE_RATE_HZ },

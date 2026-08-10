@@ -97,7 +97,7 @@ The gateway must receive a single JSON payload with the following top-level fiel
   "session_config": {
     "model": "grok-voice-think-fast-2.0",
     "voice": "luna",
-    "reasoning": { "effort": "none" },
+    "reasoning": { "effort": "high" },
     "turn_detection": { "type": "server_vad", "silence_duration_ms": 350 }
   },
   "metadata": { "tenant_id": "t_123" }
