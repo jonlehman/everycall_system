@@ -63,6 +63,10 @@ import {
   buildRealtimeResponseCreateEvent,
   buildRealtimeSessionUpdateEvent
 } from "./realtimePayloads.js";
+import {
+  normalizeTransferLookupText,
+  rankTransferMatches
+} from "./transferDirectory.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -1065,61 +1069,6 @@ function normalizeOptionalText(value: unknown) {
   return text || null;
 }
 
-function normalizeTransferLookupText(value: unknown) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function normalizeDigitsOnly(value: unknown) {
-  return String(value || "").replace(/[^\d]/g, "");
-}
-
-function levenshteinDistance(leftInput: string, rightInput: string) {
-  const left = String(leftInput || "");
-  const right = String(rightInput || "");
-  if (left === right) return 0;
-  if (!left.length) return right.length;
-  if (!right.length) return left.length;
-
-  const previous: number[] = Array.from({ length: right.length + 1 }, (_, index) => index);
-  for (let row = 1; row <= left.length; row += 1) {
-    let diagonal = previous[0] ?? 0;
-    previous[0] = row;
-    for (let column = 1; column <= right.length; column += 1) {
-      const temp = previous[column] ?? column;
-      const current = previous[column] ?? column;
-      const leftCost = previous[column - 1] ?? (column - 1);
-      if (left[row - 1] === right[column - 1]) {
-        previous[column] = diagonal;
-      } else {
-        previous[column] = Math.min(current + 1, leftCost + 1, diagonal + 1);
-      }
-      diagonal = temp;
-    }
-  }
-  return previous[right.length] ?? right.length;
-}
-
-function isCloseTransferNameToken(queryToken: string, targetToken: string) {
-  if (!queryToken || !targetToken) return false;
-  if (queryToken === targetToken) return true;
-  if (Math.abs(queryToken.length - targetToken.length) > 1) return false;
-  if (queryToken.charAt(0) !== targetToken.charAt(0)) return false;
-  return levenshteinDistance(queryToken, targetToken) <= 1;
-}
-
-function hasFuzzyTransferTokenMatch(targetName: string, normalizedQuery: string) {
-  const queryTokens = normalizedQuery.split(" ").filter(Boolean);
-  const targetTokens = normalizeTransferLookupText(targetName).split(" ").filter(Boolean);
-  if (!queryTokens.length || !targetTokens.length) return false;
-  return queryTokens.every((queryToken) =>
-    targetTokens.some((targetToken) => isCloseTransferNameToken(queryToken, targetToken))
-  );
-}
-
 function classifyTransferConfirmation(text: string) {
   const normalized = normalizeTransferLookupText(text);
   if (!normalized) return "neutral" as const;
@@ -1201,48 +1150,6 @@ async function loadTransferTargetsForTenant(tenantKey: string): Promise<Transfer
     transfer_extension: normalizeOptionalText(row.transfer_extension),
     forward_to_number: String(row.forward_to_number || "").trim()
   }));
-}
-
-function rankTransferMatches(targets: TransferTargetRow[], query: string) {
-  const normalizedQuery = normalizeTransferLookupText(query);
-  if (!normalizedQuery) return [];
-
-  const queryDigits = normalizeDigitsOnly(query);
-  if (queryDigits) {
-    const extensionMatches = targets.filter((target) => normalizeDigitsOnly(target.transfer_extension) === queryDigits);
-    if (extensionMatches.length) {
-      return extensionMatches;
-    }
-  }
-
-  const exactFullNameMatches = targets.filter((target) => normalizeTransferLookupText(target.name) === normalizedQuery);
-  if (exactFullNameMatches.length) {
-    return exactFullNameMatches;
-  }
-
-  const startsWithMatches = targets.filter((target) => normalizeTransferLookupText(target.name).startsWith(normalizedQuery));
-  if (startsWithMatches.length) {
-    return startsWithMatches;
-  }
-
-  const exactTokenMatches = targets.filter((target) => normalizeTransferLookupText(target.name).split(" ").includes(normalizedQuery));
-  if (exactTokenMatches.length) {
-    return exactTokenMatches;
-  }
-
-  const fuzzyTokenMatches = targets.filter((target) => hasFuzzyTransferTokenMatch(target.name, normalizedQuery));
-  if (fuzzyTokenMatches.length) {
-    return fuzzyTokenMatches;
-  }
-
-  if (normalizedQuery.length >= 3) {
-    const includesMatches = targets.filter((target) => normalizeTransferLookupText(target.name).includes(normalizedQuery));
-    if (includesMatches.length) {
-      return includesMatches;
-    }
-  }
-
-  return [];
 }
 
 async function lookupTransferTarget(tenantKey: string, query: string) {

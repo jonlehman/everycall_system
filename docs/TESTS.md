@@ -23,6 +23,7 @@
 ## xAI Realtime Payload Validation
 - Run `corepack pnpm --filter @everycall/call-gateway... build` before importing gateway dist helpers.
 - Run `corepack pnpm validate:xai-realtime-payloads` after gateway build.
+- Run `corepack pnpm validate:transfer-directory` after gateway build. It verifies exact name/extension lookup, natural-language transfer requests, general directory questions, and safe no-match behavior.
 - Before changing existing tenant profiles, run `node scripts/migrate-xai-runtime-profiles.mjs` and review the dry-run rows.
 - Apply the tenant profile migration only with `EVERYCALL_APPLY_XAI_PROFILE_MIGRATION=1`.
 

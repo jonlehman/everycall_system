@@ -15,6 +15,7 @@
     "validate:demo-realtime-session": "node --no-warnings scripts/validate-demo-realtime-session.mjs",
     "validate:knowledge-receptionist-cutover": "node scripts/validate-knowledge-receptionist-cutover.mjs",
     "validate:xai-realtime-payloads": "node scripts/validate-xai-realtime-payloads.mjs",
+    "validate:transfer-directory": "node scripts/validate-transfer-directory.mjs",
     "validate:voice-runtime-hardening": "node scripts/validate-voice-runtime-hardening.mjs",
     "typecheck": "pnpm -r typecheck",
     "dev:call-gateway": "PORT=3101 pnpm --filter @everycall/call-gateway dev",

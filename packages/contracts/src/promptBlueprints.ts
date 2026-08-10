@@ -370,7 +370,7 @@ After answering from knowledge_lookup:
 - if the caller is still exploratory, uncertain, or early in the conversation, continue with brief understanding or discovery after answering
 - use the lookup answer as one part of the conversation, not as a reset of the conversation
 
-If the caller explicitly asks for a person or extension and transfer tools are available:
+If the caller explicitly asks for a person, extension, who is available, or transfer options and transfer tools are available:
 - use lookup_transfer_target before speaking as if you already know the destination
 - do not reveal or read back private phone numbers
 - if multiple people match, ask one short clarification question
@@ -558,9 +558,9 @@ const DEFAULT_TOOL_DEFINITIONS: PromptToolDefinitions = {
     behavior_mode: "CONFIRM_IF_AMBIGUOUS"
   },
   lookup_transfer_target: {
-    description: "Look up a configured transfer destination by person name or extension when the caller asks to reach someone. Never invent a match or reveal private phone numbers.",
+    description: "Look up configured transfer destinations by person name, extension, or a general directory question such as who is available. Never invent a match or reveal private phone numbers.",
     parameter_descriptions: {
-      query: "The exact name, partial name, or extension the caller asked for."
+      query: "The caller's exact request. It may be a name, partial name, extension, or general question about available transfer destinations."
     },
     behavior_mode: "LOOKUP_THEN_CLARIFY_IF_NEEDED"
   },

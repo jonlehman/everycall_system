@@ -17,6 +17,7 @@
 - Wrong knowledge answers: verify compiled knowledge retrieval, overrides, and guardrails.
 - Realtime session update rejected: inspect the xAI error `param`, confirm the selected voice is valid, and confirm G.711 μ-law is configured end-to-end.
 - Static or missing outbound audio after the Grok Voice Think Fast 2.0 switch: verify the xAI `session.update` payload uses `session.audio.input.format.type: "audio/pcmu"` and `session.audio.output.format.type: "audio/pcmu"` with JSON transport, and that Telnyx is configured for G.711 μ-law at 8 kHz. Flat `input_audio_format` / `output_audio_format` fields can leave xAI on its default 24 kHz PCM and must not be used.
+- Transfer lookup returns `not_found` when the caller asks who is available: run `corepack pnpm validate:transfer-directory` and confirm the gateway treats a general directory question as a request for all configured transfer targets; a transfer still requires explicit caller confirmation.
 
 ## Outbound Sales Calling
 - Apply `migrations/0032_outbound_sales_demo.sql` before enabling the Sales Console.

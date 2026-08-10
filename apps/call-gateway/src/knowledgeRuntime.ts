@@ -318,7 +318,8 @@ export function buildGatewaySessionInstructions(payload: GatewayPromptPayload) {
   const toolNames = runtimeToolNames(payload.tool_definitions);
   const transferRules = toolNames.has("lookup_transfer_target") && toolNames.has("transfer_call")
     ? `# Transfer Rules
-- If the caller asks for a person or extension, use lookup_transfer_target before assuming you know the destination.
+- If the caller asks for a person, extension, who is available, or transfer options, use lookup_transfer_target before assuming you know the destination.
+- For a general directory question, pass the caller's natural wording to lookup_transfer_target and present the returned configured names briefly.
 - Never reveal, read back, or hint at the private forwarding number.
 - If lookup_transfer_target returns more than one match, ask one short clarification question.
 - If lookup_transfer_target returns one clear match, ask one short confirmation question about whether the caller wants to be transferred now.
