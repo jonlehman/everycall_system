@@ -6,10 +6,11 @@ const { Pool } = pg;
 
 export const APPLY_ENV = "EVERYCALL_APPLY_XAI_PROFILE_MIGRATION";
 export const TARGET_MODEL = "grok-voice-think-fast-2.0";
-export const TARGET_VOICE = "luna";
+export const TARGET_VOICE = "ara";
 export const TARGET_TRANSCRIPTION_MODEL = "grok-transcribe";
 export const TARGET_REASONING_EFFORT = "high";
 export const TARGET_SILENCE_DURATION_MS = 350;
+export const TARGET_VAD_THRESHOLD = 0.9;
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -45,6 +46,7 @@ export function planProfileMigration(row) {
     transcription_model: TARGET_TRANSCRIPTION_MODEL,
     turn_detection: {
       type: "server_vad",
+      threshold: TARGET_VAD_THRESHOLD,
       silence_duration_ms: TARGET_SILENCE_DURATION_MS
     }
   };

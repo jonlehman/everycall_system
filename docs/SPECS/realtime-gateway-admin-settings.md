@@ -5,11 +5,12 @@ Define admin-configurable session settings used by the gateway.
 
 ## Required Settings
 - `model`: `grok-voice-think-fast-2.0`, pinned by the gateway
-- `voice`: `luna`
+- `voice`: `ara`
 - `reasoning`:
   - `effort`: `high`
 - `turn_detection`:
   - `type`: `server_vad`
+  - `threshold`: `0.9`
   - `silence_duration_ms`: `350`
 - `transcription_model`: `grok-transcribe`
 - `input_audio_format`: `g711_ulaw`

@@ -45,6 +45,8 @@ function xAiReasoningEffort(config: RealtimeSessionConfig) {
   return configured === "none" ? "none" : "high";
 }
 
+const DEFAULT_XAI_VAD_THRESHOLD = 0.9;
+
 export function buildXAiRealtimeHeaders(apiKey: string) {
   return { Authorization: `Bearer ${apiKey}` };
 }
@@ -55,13 +57,13 @@ export function buildRealtimeTurnDetectionConfig(
   if (configured === null) return null;
   const result: Record<string, unknown> = {
     type: "server_vad",
+    threshold: typeof configured?.threshold === "number"
+      ? Math.max(0.1, Math.min(0.9, configured.threshold))
+      : DEFAULT_XAI_VAD_THRESHOLD,
     silence_duration_ms: typeof configured?.silence_duration_ms === "number"
       ? configured.silence_duration_ms
       : 350
   };
-  if (typeof configured?.threshold === "number") {
-    result.threshold = configured.threshold;
-  }
   if (typeof configured?.prefix_padding_ms === "number") {
     result.prefix_padding_ms = configured.prefix_padding_ms;
   }
@@ -78,7 +80,7 @@ export function buildRealtimeSessionUpdateEvent(input: RealtimeSessionUpdateInpu
     session: {
       instructions: input.instructions,
       tools: input.tools,
-      voice: normalizeText(config.voice) || "luna",
+      voice: normalizeText(config.voice) || "ara",
       reasoning: { effort: xAiReasoningEffort(config) },
       turn_detection: buildRealtimeTurnDetectionConfig(config.turn_detection ?? config.turnDetection),
       audio: {

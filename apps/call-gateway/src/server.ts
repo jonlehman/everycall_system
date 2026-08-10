@@ -63,6 +63,7 @@ import {
   buildRealtimeResponseCreateEvent,
   buildRealtimeSessionUpdateEvent
 } from "./realtimePayloads.js";
+import { beginInboundCallStartup } from "./inboundCallStartup.js";
 import {
   normalizeTransferLookupText,
   rankTransferMatches
@@ -95,7 +96,7 @@ const gatewayDebugLogToken = getInternalServiceToken(process.env, INTERNAL_AUTH_
 const callGatewayBaseUrl = process.env.CALL_GATEWAY_BASE_URL || "";
 const XAiKey = process.env.XAI_API_KEY || "";
 const XAI_REALTIME_MODEL = "grok-voice-think-fast-2.0";
-const XAI_REALTIME_VOICE = "luna";
+const XAI_REALTIME_VOICE = "ara";
 const signatureRequired = (process.env.TELNYX_SIGNATURE_REQUIRED || "true").toLowerCase() !== "false";
 const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
@@ -120,6 +121,8 @@ const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "xai_realtime_response_done",
   "xai_realtime_turn_latency",
   "assistant_barge_in_applied",
+  "telnyx_call_control_answer_requested",
+  "telnyx_call_control_answer_accepted",
   "telnyx_bidirectional_payload_mode_normalized"
 ]);
 
@@ -283,6 +286,7 @@ type StreamSession = {
 };
 
 const streamSessions = new Map<string, StreamSession>();
+const inboundSessionBootstraps = new Map<string, Promise<StreamSession | undefined>>();
 
 function createStreamSession(
   callControlId: string,
@@ -1065,14 +1069,14 @@ async function markCallCompleted(callSid: string, answeredAtHint: string | null 
   }
 }
 
-async function markCallAnswered(callSid: string) {
+async function markCallAnswered(callSid: string, answeredAtHint: string | null = null) {
   if (!pool) return;
   try {
     await pool.query(
       `UPDATE calls
-       SET answered_at = COALESCE(answered_at, NOW())
+       SET answered_at = COALESCE(answered_at, $2::timestamptz, NOW())
        WHERE call_sid = $1`,
-      [callSid]
+      [callSid, answeredAtHint]
     );
   } catch (err) {
     logError("call_answered_update_failed", {
@@ -1674,6 +1678,46 @@ async function recoverSessionForCallControlId(callControlId: string, source: str
     realtimeLogPath
   );
   streamSessions.set(callControlId, session);
+  return session;
+}
+
+async function initializeInboundCallSession(params: {
+  callControlId: string;
+  callSid: string;
+  tenantKey: string;
+  to: string;
+  from: string;
+}) {
+  const { callControlId, callSid, tenantKey, to, from } = params;
+  const promptPayload = await fetchPromptPayload(tenantKey, callSid, to, from);
+  await safePrewarmBuildAssets(callSid, tenantKey, promptPayload.knowledge_runtime.active_build_id, "call_initiated");
+  const realtimeLogPath = realtimeDebug || realtimeTrace ? initRealtimeLog(callSid) : undefined;
+  const knowledgeCallState = initializeKnowledgeCallState(promptPayload);
+  await persistKnowledgeCallState(pool, tenantKey, callSid, knowledgeCallState, {
+    source: "call_initiated"
+  });
+  const session = createStreamSession(
+    callControlId,
+    callSid,
+    tenantKey,
+    promptPayload,
+    knowledgeCallState,
+    realtimeLogPath
+  );
+  streamSessions.set(callControlId, session);
+  return session;
+}
+
+async function waitForInboundSessionBootstrap(callControlId: string, source: string) {
+  const pending = inboundSessionBootstraps.get(callControlId);
+  if (!pending) return undefined;
+  logInfo("inbound_session_bootstrap_wait", { callControlId, source });
+  const session = await pending;
+  logInfo("inbound_session_bootstrap_wait_completed", {
+    callControlId,
+    source,
+    ready: Boolean(session)
+  });
   return session;
 }
 
@@ -2650,6 +2694,7 @@ function connectXAiRealtime(session: StreamSession) {
 }
 
 app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: "256kb" }), async (req, res) => {
+  const webhookReceivedAtMs = Date.now();
   const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
   logInfo("telnyx_call_control_request", {
     path: req.path,
@@ -2755,10 +2800,16 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
       [callSid, tenantKey, from, to]
     );
 
-    let promptPayload: GatewayPromptPayload;
-    try {
-      promptPayload = await fetchPromptPayload(tenantKey, callSid, to, from);
-    } catch (err) {
+    logInfo("telnyx_call_control_answer_requested", {
+      callSid,
+      callControlId,
+      webhookToAnswerRequestMs: Date.now() - webhookReceivedAtMs
+    });
+    const startup = beginInboundCallStartup(
+      () => telnyxCallAction(callControlId, "answer", {}),
+      () => initializeInboundCallSession({ callControlId, callSid, tenantKey, to, from })
+    );
+    const trackedBootstrap = startup.bootstrapPromise.catch(async (err) => {
       logError("prompt_payload_fetch_failed", {
         callSid,
         tenantKey,
@@ -2779,24 +2830,26 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
         "prompt_payload_fetch_failed",
         true
       );
-      return res.status(200).send("ok");
-    }
-
-    await safePrewarmBuildAssets(callSid, tenantKey, promptPayload.knowledge_runtime.active_build_id, "call_initiated");
-    const realtimeLogPath = realtimeDebug || realtimeTrace ? initRealtimeLog(callSid) : undefined;
-    const knowledgeCallState = initializeKnowledgeCallState(promptPayload);
-    await persistKnowledgeCallState(pool, tenantKey, callSid, knowledgeCallState, {
-      source: "call_initiated"
+      return undefined;
     });
-    streamSessions.set(callControlId, createStreamSession(callControlId, callSid, tenantKey, promptPayload, knowledgeCallState, realtimeLogPath));
+    inboundSessionBootstraps.set(callControlId, trackedBootstrap);
 
     try {
-      await telnyxCallAction(callControlId, "answer", {});
+      await startup.answerPromise;
+      logInfo("telnyx_call_control_answer_accepted", {
+        callSid,
+        callControlId,
+        webhookToAnswerAcceptedMs: Date.now() - webhookReceivedAtMs
+      });
     } catch (err) {
       logError("telnyx_call_control_answer_error", {
         callSid,
         message: err instanceof Error ? err.message : "unknown"
       });
+    }
+    await trackedBootstrap;
+    if (inboundSessionBootstraps.get(callControlId) === trackedBootstrap) {
+      inboundSessionBootstraps.delete(callControlId);
     }
 
     return res.status(200).send("ok");
@@ -2840,7 +2893,14 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
       return res.status(200).send("ok");
     }
 
+    const answeredAt = normalizeOptionalText(payload.data?.occurred_at || payload.occurred_at)
+      || new Date().toISOString();
+    await markCallAnswered(callControlId, answeredAt);
+
     let session = streamSessions.get(callControlId);
+    if (!session) {
+      session = await waitForInboundSessionBootstrap(callControlId, "call_answered");
+    }
     if (!session) {
       const callSid = callControlId;
       logInfo("call_answered_session_recovery_attempt", { callSid, callControlId });
@@ -2861,8 +2921,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
     }
 
     if (session) {
-      session.callAnsweredAt = session.callAnsweredAt || new Date().toISOString();
-      await markCallAnswered(session.callSid);
+      session.callAnsweredAt = session.callAnsweredAt || answeredAt;
       const streamUrl = `${toWebSocketUrl(callGatewayBaseUrl || buildBaseUrl(req))}/v1/telnyx/stream`;
       session.telnyxStreamBaseUrl = streamUrl;
       try {
@@ -2999,6 +3058,9 @@ wss.on("connection", (ws, req) => {
         return;
       }
       let session = streamSessions.get(callControlId);
+      if (!session) {
+        session = await waitForInboundSessionBootstrap(callControlId, "stream_start");
+      }
       if (!session) {
         logInfo("stream_start_session_recovery_attempt", { callControlId, streamId });
         try {

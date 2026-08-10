@@ -6,6 +6,9 @@ import { pathToFileURL } from "node:url";
 const realtime = await import(pathToFileURL(
   path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/realtimePayloads.js")
 ).href);
+const inboundStartup = await import(pathToFileURL(
+  path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/inboundCallStartup.js")
+).href);
 const turnTiming = await import(pathToFileURL(
   path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/realtimeTurnTiming.js")
 ).href);
@@ -31,7 +34,6 @@ const update = realtime.buildRealtimeSessionUpdateEvent({
     { type: "function", name: "transfer_call" }
   ],
   sessionConfig: {
-    voice: "luna",
     max_output_tokens: 4096,
     turn_detection: {
       type: "semantic_vad",
@@ -45,7 +47,7 @@ const update = realtime.buildRealtimeSessionUpdateEvent({
 });
 assert.equal(update.type, "session.update");
 assert.equal(update.session.modalities, undefined);
-assert.equal(update.session.voice, "luna");
+assert.equal(update.session.voice, "ara");
 assert.deepEqual(update.session.reasoning, { effort: "high" });
 assert.deepEqual(update.session.tools.map((tool) => tool.name), [
   "knowledge_lookup",
@@ -56,6 +58,7 @@ assert.equal(update.session.input_audio_format, undefined);
 assert.equal(update.session.output_audio_format, undefined);
 assert.deepEqual(update.session.turn_detection, {
   type: "server_vad",
+  threshold: 0.9,
   silence_duration_ms: 350
 });
 assert.equal(update.session.turn_detection.eagerness, undefined);
@@ -84,6 +87,35 @@ const explicitNonReasoningUpdate = realtime.buildRealtimeSessionUpdateEvent({
   sessionConfig: { reasoning: { effort: "none" } }
 });
 assert.deepEqual(explicitNonReasoningUpdate.session.reasoning, { effort: "none" });
+assert.equal(explicitNonReasoningUpdate.session.voice, "ara");
+assert.deepEqual(explicitNonReasoningUpdate.session.turn_detection, {
+  type: "server_vad",
+  threshold: 0.9,
+  silence_duration_ms: 350
+});
+
+const startupOrder = [];
+let releaseAnswer;
+const answerGate = new Promise((resolve) => {
+  releaseAnswer = resolve;
+});
+const inboundCallStartup = inboundStartup.beginInboundCallStartup(
+  async () => {
+    startupOrder.push("answer_started");
+    await answerGate;
+    startupOrder.push("answer_accepted");
+  },
+  async () => {
+    startupOrder.push("bootstrap_started");
+    return "session_ready";
+  }
+);
+assert.deepEqual(startupOrder, ["answer_started", "bootstrap_started"]);
+assert.equal(await inboundCallStartup.bootstrapPromise, "session_ready");
+assert.deepEqual(startupOrder, ["answer_started", "bootstrap_started"]);
+releaseAnswer();
+await inboundCallStartup.answerPromise;
+assert.deepEqual(startupOrder, ["answer_started", "bootstrap_started", "answer_accepted"]);
 
 const response = realtime.buildRealtimeResponseCreateEvent({ instructions: "Say hello." });
 assert.deepEqual(response, { type: "response.create", response: { instructions: "Say hello." } });
@@ -122,6 +154,8 @@ assert.deepEqual(turnTiming.finishRealtimeTurnTiming(timing, 1450), {
 });
 
 assert.equal(migration.TARGET_MODEL, "grok-voice-think-fast-2.0");
+assert.equal(migration.TARGET_VOICE, "ara");
+assert.equal(migration.TARGET_VAD_THRESHOLD, 0.9);
 assert.deepEqual(
   migration.planProfileMigration({
     tenant_key: "legacy",
@@ -150,11 +184,12 @@ assert.deepEqual(
     current_model: "gpt-realtime-2.1",
     next_session_config_json: {
       model: "grok-voice-think-fast-2.0",
-      voice: "luna",
+      voice: "ara",
       reasoning: { effort: "high" },
       transcription_model: "grok-transcribe",
       turn_detection: {
         type: "server_vad",
+        threshold: 0.9,
         silence_duration_ms: 350
       }
     }
@@ -167,5 +202,12 @@ const highReasoningMigrationSql = readFileSync(
 );
 assert.match(highReasoningMigrationSql, /'\{reasoning\}'/);
 assert.match(highReasoningMigrationSql, /'\{"effort":"high"\}'::jsonb/);
+
+const araEchoMigrationSql = readFileSync(
+  path.join(process.cwd(), "migrations/0036_xai_ara_echo_resistance.sql"),
+  "utf8"
+);
+assert.match(araEchoMigrationSql, /to_jsonb\('ara'::text\)/);
+assert.match(araEchoMigrationSql, /"threshold":0\.9/);
 
 console.log(JSON.stringify({ ok: true, checked: "xai_realtime_payloads" }, null, 2));

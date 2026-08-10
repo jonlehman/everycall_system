@@ -272,7 +272,7 @@ function buildBasicsTask({ tenant, promptProfile = {}, runtimeProfile = {}, perm
     runtimeProfile?.session_config_json?.voice
     || runtimeProfile?.session_config?.voice
     || runtimeProfile?.sessionConfig?.voice
-  ) || "luna";
+  ) || "ara";
   const reviewed = Boolean(tenant?.receptionist_basics_reviewed_at);
   const missing = [];
   if (!businessName) missing.push("business_name");

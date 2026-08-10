@@ -110,7 +110,7 @@ function buildPreviewResponseCreate(sampleText) {
 async function requestRealtimePreview({ apiKey, promptPayload, sampleText }) {
   return new Promise((resolve, reject) => {
     const model = "grok-voice-think-fast-2.0";
-    const voice = String(promptPayload?.session_config?.voice || "luna").trim() || "luna";
+    const voice = String(promptPayload?.session_config?.voice || "ara").trim() || "ara";
     const instructions = normalizeText(promptPayload?.system_prompt);
     const ws = new WebSocket(`wss://api.x.ai/v1/realtime?model=${encodeURIComponent(model)}`, {
       headers: {
@@ -269,7 +269,7 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: "method_not_allowed" });
     }
 
-    const voice = String(req.method === "POST" ? body.voice : req.query?.voice || "luna").toLowerCase();
+    const voice = String(req.method === "POST" ? body.voice : req.query?.voice || "ara").toLowerCase();
     if (!REALTIME_VOICES.has(voice)) {
       return res.status(400).json({ error: "invalid_voice" });
     }

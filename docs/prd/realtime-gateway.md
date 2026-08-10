@@ -16,9 +16,10 @@ A thin realtime gateway that executes a call flow defined by the EveryCall syste
 Must match the web demo configuration:
 
 - Model: `grok-voice-think-fast-2.0`, pinned by the gateway
-- Voice: `luna`
+- Voice: `ara`
 - Realtime endpoint: `wss://api.x.ai/v1/realtime`
 - Turn detection: xAI-native `server_vad`
+  - activation threshold: `0.9` to reduce speakerphone echo triggers
   - silence endpoint: `350 ms`
   - automatic response and model interruption are owned by xAI
 - Reasoning effort: `high` for stronger conversation continuity and instruction following; measure endpoint-to-first-audio latency during rollout

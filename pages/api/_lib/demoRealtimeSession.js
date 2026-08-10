@@ -189,7 +189,7 @@ function resolveDemoTranscriptionModel() {
 
 export function buildDemoRealtimeSessionPayload(bundle = {}) {
   const model = resolveDemoRealtimeModel();
-  const voice = normalizeText(process.env.XAI_DEMO_REALTIME_VOICE) || "luna";
+  const voice = "ara";
   const transcriptionModel = resolveDemoTranscriptionModel();
 
   return {
@@ -199,6 +199,7 @@ export function buildDemoRealtimeSessionPayload(bundle = {}) {
       reasoning: { effort: "high" },
       turn_detection: {
         type: "server_vad",
+        threshold: 0.9,
         silence_duration_ms: 350
       },
       audio: {

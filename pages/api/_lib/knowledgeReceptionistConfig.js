@@ -116,12 +116,13 @@ const DEFAULT_STAGE_PLAYBOOK = [
 
 export const DEFAULT_RUNTIME_SESSION_CONFIG = {
   model: "grok-voice-think-fast-2.0",
-  voice: "luna",
+  voice: "ara",
   reasoning: {
     effort: "high"
   },
   turn_detection: {
     type: "server_vad",
+    threshold: 0.9,
     silence_duration_ms: 350
   },
   transcription_model: "grok-transcribe",
@@ -1027,11 +1028,11 @@ function normalizeSessionConfig(value) {
     : DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.silence_duration_ms;
   const normalizedTurnDetection = {
     type: "server_vad",
+    threshold: Number.isFinite(Number(turnDetection.threshold))
+      ? Math.max(0.1, Math.min(0.9, Number(turnDetection.threshold)))
+      : DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.threshold,
     silence_duration_ms: silenceDurationMs
   };
-  if (Number.isFinite(Number(turnDetection.threshold))) {
-    normalizedTurnDetection.threshold = Math.max(0.1, Math.min(0.9, Number(turnDetection.threshold)));
-  }
   if (Number.isFinite(Number(turnDetection.prefix_padding_ms ?? turnDetection.prefixPaddingMs))) {
     normalizedTurnDetection.prefix_padding_ms = Math.max(
       0,

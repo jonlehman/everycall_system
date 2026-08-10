@@ -52,7 +52,7 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 
 ## Grok Voice Think Fast 2.0 Calls
 - Verify `xai_realtime_session_start` reports `model=grok-voice-think-fast-2.0`.
-- Verify `xai_realtime_session_updated` reports `voice=luna`, `reasoningEffort=high`, `turnDetection.type=server_vad`, `inputAudioFormat=audio/pcmu`, and `outputAudioFormat=audio/pcmu` before the greeting response.
+- Verify `xai_realtime_session_updated` reports `voice=ara`, `reasoningEffort=high`, `turnDetection.type=server_vad`, `turnDetection.threshold=0.9`, `inputAudioFormat=audio/pcmu`, and `outputAudioFormat=audio/pcmu` before the greeting response.
 - Compare endpoint-to-first-audio latency at `high` reasoning against the previous `none` baseline while repeating the same conversation-continuity and tool-use scenarios.
 - Verify no `modalities`, `max_response_output_tokens`, `eagerness`, `create_response`, or `interrupt_response` fields are sent on the inbound xAI session.
 - For a tenant with an eligible directory entry, verify xAI's accepted session includes `lookup_transfer_target` and `transfer_call` alongside the knowledge and data tools.
@@ -63,8 +63,10 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 - Verify silence and uncertain answers end with a clear next step.
 - Read an alphanumeric value such as `A7K-92Q`, then verify the assistant repeats and captures every character in order.
 - Pause briefly with ordinary background noise present; verify there is no spurious caller turn, duplicate response, or premature close.
+- Place a speakerphone call at normal volume; verify Ara does not treat her own playback as caller speech, while a clearly spoken caller interruption still stops playback.
 - Interrupt the assistant mid-sentence; verify xAI handles model-side barge-in, EveryCall sends Telnyx `clear`, and the assistant handles the new utterance without replaying stale audio.
 - Verify `xai_realtime_turn_latency` records endpoint-to-first-audio timing for ordinary caller turns and turns with tool calls.
+- Verify `telnyx_call_control_answer_requested` occurs before prompt/bootstrap completion and records a low `webhookToAnswerRequestMs`; confirm the PSTN call is answered on the first ring.
 
 ## Outbound Sales System
 - Run `corepack pnpm validate:sales-system`.
