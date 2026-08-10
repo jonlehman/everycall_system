@@ -304,6 +304,9 @@ export function validateGatewayPromptPayload(input: unknown): GatewayPromptPaylo
   if (!normalizeText(payload.system_prompt)) {
     throw new Error("invalid_gateway_prompt_payload");
   }
+  if (!normalizeText(payload.tenant_greeting)) {
+    throw new Error("invalid_gateway_prompt_payload");
+  }
   if (!normalizeText(payload.knowledge_runtime?.active_build_id)) {
     throw new Error("invalid_gateway_prompt_payload");
   }

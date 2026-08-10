@@ -59,6 +59,7 @@ import {
   normalizeToolExecutionKey
 } from "./toolResponseControl.js";
 import {
+  buildRealtimeForceMessageEvent,
   buildXAiRealtimeHeaders,
   buildRealtimeResponseCreateEvent,
   buildRealtimeSessionUpdateEvent
@@ -2378,17 +2379,25 @@ function connectXAiRealtime(session: StreamSession) {
         );
       }
       if (!session.greetingSent) {
+        const greetingEvent = buildRealtimeForceMessageEvent(payload.tenant_greeting, {
+          interruptible: true
+        });
         session.greetingSent = true;
         logInfo("xai_realtime_greeting_requested", {
           callSid: session.callSid,
-          callControlId: session.callControlId
+          callControlId: session.callControlId,
+          mode: "force_message",
+          interruptible: true
         });
-        requestAssistantResponse(
-          session,
-          "greeting",
-          {},
-          "greeting"
-        );
+        logRealtimeEntry(session, {
+          ts: new Date().toISOString(),
+          kind: "outbound",
+          callSid: session.callSid,
+          type: "conversation.item.create",
+          purpose: "tenant_greeting",
+          payload: greetingEvent
+        });
+        sendXAiEvent(ws, greetingEvent);
       }
       return;
     }

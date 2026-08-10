@@ -539,7 +539,7 @@ export const knowledgeGatewayRuntimeContextSchema = z.object({
 
 export const gatewayPromptPayloadSchema = z.object({
   system_prompt: z.string().min(1),
-  tenant_greeting: z.string(),
+  tenant_greeting: z.string().trim().min(1),
   field_schema: jsonRecordSchema,
   tool_definitions: arbitraryObjectArraySchema,
   session_config: knowledgeRuntimeSessionConfigSchema,

@@ -106,3 +106,27 @@ export function buildRealtimeResponseCreateEvent(response: Record<string, unknow
     ? { type: "response.create", response }
     : { type: "response.create" };
 }
+
+export function buildRealtimeForceMessageEvent(
+  text: string,
+  options: { interruptible?: boolean } = {}
+) {
+  const normalizedText = String(text || "").trim();
+  if (!normalizedText) {
+    throw new Error("force_message_text_required");
+  }
+  return {
+    type: "conversation.item.create",
+    item: {
+      type: "force_message",
+      role: "assistant",
+      interruptible: options.interruptible !== false,
+      content: [
+        {
+          type: "output_text",
+          text: normalizedText
+        }
+      ]
+    }
+  };
+}
