@@ -231,6 +231,14 @@ const fasterEndpointingMigrationSql = readFileSync(
 assert.match(fasterEndpointingMigrationSql, /'\{turn_detection,silence_duration_ms\}'/);
 assert.match(fasterEndpointingMigrationSql, /'200'::jsonb/);
 
+const singleCompanyDescriptionMigrationSql = readFileSync(
+  path.join(process.cwd(), "migrations/0038_prompt_single_company_description.sql"),
+  "utf8"
+);
+assert.match(singleCompanyDescriptionMigrationSql, /company_description = COALESCE/);
+assert.match(singleCompanyDescriptionMigrationSql, /basic_no_tool_allowed_statement = NULL/);
+assert.match(singleCompanyDescriptionMigrationSql, /tenant_prompt_section_overrides/);
+
 const newVersionQueries = [];
 await promptRuntime.ensureDefaultPromptBlueprint({
   async query(sql, params = []) {
@@ -245,15 +253,16 @@ const overrideCopyQuery = newVersionQueries.find(({ sql }) => /INSERT INTO tenan
 assert(overrideCopyQuery, "new prompt versions must copy tenant section overrides forward");
 assert.match(overrideCopyQuery.sql, /JOIN prompt_blueprint_sections AS target_section/);
 assert.match(overrideCopyQuery.sql, /AND version < \$3/);
+assert.match(overrideCopyQuery.sql, /a brief general summary of the company description above/);
 assert.match(overrideCopyQuery.sql, /ON CONFLICT \(tenant_key, prompt_blueprint_id, section_id\) DO NOTHING/);
-assert.deepEqual(overrideCopyQuery.params, ["canonical_receptionist", "pb_canonical_receptionist_v4", 4]);
+assert.deepEqual(overrideCopyQuery.params, ["canonical_receptionist", "pb_canonical_receptionist_v5", 5]);
 
 const existingVersionQueries = [];
 await promptRuntime.ensureDefaultPromptBlueprint({
   async query(sql, params = []) {
     existingVersionQueries.push({ sql, params });
     if (/SELECT prompt_blueprint_id\s+FROM prompt_blueprints\s+WHERE prompt_blueprint_id/.test(sql)) {
-      return { rows: [{ prompt_blueprint_id: "pb_canonical_receptionist_v4" }], rowCount: 1 };
+      return { rows: [{ prompt_blueprint_id: "pb_canonical_receptionist_v5" }], rowCount: 1 };
     }
     return { rows: [], rowCount: 1 };
   }
@@ -265,8 +274,8 @@ assert.equal(
 );
 
 const promptSeed = promptBlueprints.getDefaultPromptBlueprintSeed();
-assert.equal(promptSeed.version, 4);
-assert.equal(promptSeed.name, "Canonical Receptionist v4");
+assert.equal(promptSeed.version, 5);
+assert.equal(promptSeed.name, "Canonical Receptionist v5");
 const promptProfile = promptBlueprints.normalizeTenantPromptProfile({
   assistant_name: "Sarah",
   business_name: "Creative Dynamic",
@@ -276,12 +285,44 @@ const promptProfile = promptBlueprints.normalizeTenantPromptProfile({
   lead_goal: "callback information",
   required_contact_fields: ["caller’s name", "caller’s best phone number"],
   closing_phrase: "Thanks for calling. Have a great rest of your day.",
-  basic_no_tool_allowed_statement: "Creative Dynamic helps businesses plan and build software systems."
+  basic_no_tool_allowed_statement: "This legacy description must not be rendered."
 });
 const renderedPrompt = promptBlueprints.renderPromptContext(promptSeed, promptProfile, {
   companyDescription: promptProfile.company_description,
   companyDescriptionSource: "tenant_override"
 }).startupPrompt;
+assert.equal(
+  renderedPrompt.match(/Creative Dynamic helps businesses plan and build software systems\./g)?.length,
+  1,
+  "the canonical prompt must render the tenant company description exactly once"
+);
+assert.match(renderedPrompt, /a brief general summary of the company description above/);
+assert.doesNotMatch(renderedPrompt, /This legacy description must not be rendered/);
+assert.equal("basic_no_tool_allowed_statement" in promptProfile, false);
+assert.equal(
+  promptRuntime.normalizeTenantPromptSectionOverride(
+    "business_context",
+    "# Business Context\n{company_description}\n- the general statement that {basic_no_tool_allowed_statement}"
+  ),
+  "# Business Context\n{company_description}\n- a brief general summary of the company description above"
+);
+for (const [businessName, companyDescription, otherDescription] of [
+  ["Tenant Alpha", "Tenant Alpha repairs residential plumbing systems.", "Tenant Beta manages commercial landscaping."],
+  ["Tenant Beta", "Tenant Beta manages commercial landscaping.", "Tenant Alpha repairs residential plumbing systems."]
+]) {
+  const tenantRenderedPrompt = promptBlueprints.renderPromptContext(
+    promptSeed,
+    promptBlueprints.normalizeTenantPromptProfile({
+      assistant_name: "Sarah",
+      business_name: businessName,
+      company_description: companyDescription,
+      opening_line: `Thanks for calling ${businessName}. This is Sarah. How can I help you today?`
+    }),
+    { companyDescription, companyDescriptionSource: "tenant_override" }
+  ).startupPrompt;
+  assert.equal(tenantRenderedPrompt.match(new RegExp(companyDescription.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))?.length, 1);
+  assert.doesNotMatch(tenantRenderedPrompt, new RegExp(otherDescription.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+}
 assert.match(renderedPrompt, /Discovery does not have a fixed number of turns\./);
 assert.match(renderedPrompt, /briefly summarize the need in the caller’s language and confirm that you understood it correctly\./);
 assert.match(renderedPrompt, /Do not suggest speaking with the team until the caller confirms the summary/);

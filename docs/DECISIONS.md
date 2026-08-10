@@ -1,9 +1,10 @@
 # Decisions
 
 ## 2026-08-10
+- Use `tenant_prompt_profiles.company_description` as the only tenant-specific business description in the canonical receptionist prompt. The no-tool rule refers back to that description instead of inserting a second independently stored or generated statement; canonical receptionist v5 preserves tenant isolation and carries section overrides forward after removing the deprecated placeholder.
 - Use xAI `ara` as the default EveryCall receptionist voice, superseding the initial `luna` cutover default.
 - Use only xAI-native Speech to Speech session fields on inbound calls: `server_vad`, a `0.9` activation threshold, a 200 ms silence endpoint, `reasoning.effort=high`, nested audio/transcription configuration, and streamed audio deltas.
-- Prefer Grok's only supported reasoning-enabled level, `high`, to improve conversation continuity and instruction following. Use canonical receptionist prompt v4 for state-based discovery, confirmed understanding before handoff, and explicit callback readiness; measure endpoint-to-first-audio latency during the canary before considering `none` again.
+- Prefer Grok's only supported reasoning-enabled level, `high`, to improve conversation continuity and instruction following. Use canonical receptionist prompt v5 for state-based discovery, confirmed understanding before handoff, explicit callback readiness, and one canonical tenant company description; measure endpoint-to-first-audio latency during the canary before considering `none` again.
 - Let xAI server VAD own model-side automatic response and interruption. On caller barge-in, EveryCall clears its local audio queue and Telnyx's playback queue without sending redundant OpenAI-era cancel/truncate events.
 - Request only the caller's inbound Telnyx track and log endpoint-to-first-audio latency for production turn-taking verification.
 - Start Telnyx's answer command before prompt retrieval, knowledge prewarming, and call-state persistence. The `call.answered` and media-stream handlers wait for the same in-flight session bootstrap instead of performing duplicate recovery.

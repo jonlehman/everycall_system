@@ -431,8 +431,7 @@ async function buildTenantPromptProfileDefaults(db, tenantKey) {
     ai_disclosure_line: defaults.ai_disclosure_line,
     lead_goal: defaults.lead_goal,
     required_contact_fields: defaults.required_contact_fields,
-    closing_phrase: defaults.closing_phrase,
-    basic_no_tool_allowed_statement: companyDescription
+    closing_phrase: defaults.closing_phrase
   });
 }
 
@@ -462,7 +461,6 @@ function normalizeStoredTenantPromptProfile(row, defaults) {
     lead_goal: row?.lead_goal,
     required_contact_fields: row?.required_contact_fields_json,
     closing_phrase: row?.closing_phrase,
-    basic_no_tool_allowed_statement: row?.basic_no_tool_allowed_statement,
     updated_at: row?.updated_at,
     created_at: row?.created_at
   }, defaults);
@@ -545,7 +543,19 @@ export async function ensureDefaultPromptBlueprint(db) {
          SELECT source.tenant_key,
                 $2,
                 source.section_id,
-                source.override_text,
+                CASE
+                  WHEN source.section_id = 'business_context'
+                  THEN REPLACE(
+                         REPLACE(
+                           source.override_text,
+                           '- the general statement that {basic_no_tool_allowed_statement}',
+                           '- a brief general summary of the company description above'
+                         ),
+                         '{basic_no_tool_allowed_statement}',
+                         'the company description above'
+                       )
+                  ELSE source.override_text
+                END,
                 source.updated_by_id,
                 source.created_at,
                 source.updated_at
@@ -697,7 +707,7 @@ export async function loadTenantPromptProfile(db, tenantKey) {
   const defaults = await buildTenantPromptProfileDefaults(db, tenantKey);
   const res = await db.query(
     `SELECT tenant_key, assistant_name, business_name, company_description, opening_line, ai_disclosure_line,
-            lead_goal, required_contact_fields_json, closing_phrase, basic_no_tool_allowed_statement,
+            lead_goal, required_contact_fields_json, closing_phrase,
             updated_by_id, created_at, updated_at
      FROM tenant_prompt_profiles
      WHERE tenant_key = $1
@@ -713,7 +723,7 @@ export async function loadTenantPromptProfileEditorState(db, tenantKey) {
   const defaults = await buildTenantPromptProfileDefaults(db, tenantKey);
   const res = await db.query(
     `SELECT tenant_key, assistant_name, business_name, company_description, opening_line, ai_disclosure_line,
-            lead_goal, required_contact_fields_json, closing_phrase, basic_no_tool_allowed_statement,
+            lead_goal, required_contact_fields_json, closing_phrase,
             updated_by_id, created_at, updated_at
      FROM tenant_prompt_profiles
      WHERE tenant_key = $1
@@ -770,12 +780,6 @@ export async function loadTenantPromptProfileEditorState(db, tenantKey) {
       effectiveValue: profile.closing_phrase,
       overrideValue: normalizeText(row?.closing_phrase),
       hasOverride: row?.closing_phrase !== undefined && row?.closing_phrase !== null && normalizeText(row?.closing_phrase).length > 0
-    }),
-    basic_no_tool_allowed_statement: buildFieldState({
-      defaultValue: defaults.basic_no_tool_allowed_statement,
-      effectiveValue: profile.basic_no_tool_allowed_statement,
-      overrideValue: normalizeText(row?.basic_no_tool_allowed_statement),
-      hasOverride: row?.basic_no_tool_allowed_statement !== undefined && row?.basic_no_tool_allowed_statement !== null && normalizeText(row?.basic_no_tool_allowed_statement).length > 0
     })
   };
   return {
@@ -796,10 +800,7 @@ function buildStoredTenantPromptProfile(profile, defaults, tenantKey) {
     ai_disclosure_line: valuesEqual(profile.ai_disclosure_line, defaults.ai_disclosure_line) ? null : profile.ai_disclosure_line,
     lead_goal: valuesEqual(profile.lead_goal, defaults.lead_goal) ? null : profile.lead_goal,
     required_contact_fields_json: valuesEqual(profile.required_contact_fields, defaults.required_contact_fields) ? null : profile.required_contact_fields,
-    closing_phrase: valuesEqual(profile.closing_phrase, defaults.closing_phrase) ? null : profile.closing_phrase,
-    basic_no_tool_allowed_statement: valuesEqual(profile.basic_no_tool_allowed_statement, defaults.basic_no_tool_allowed_statement)
-      ? null
-      : profile.basic_no_tool_allowed_statement
+    closing_phrase: valuesEqual(profile.closing_phrase, defaults.closing_phrase) ? null : profile.closing_phrase
   };
 }
 
@@ -816,9 +817,9 @@ export async function saveTenantPromptProfile(db, tenantKey, input = {}, actor =
     await client.query(
       `INSERT INTO tenant_prompt_profiles (
          tenant_key, assistant_name, business_name, company_description, opening_line, ai_disclosure_line,
-         lead_goal, required_contact_fields_json, closing_phrase, basic_no_tool_allowed_statement, updated_by_id, updated_at
+         lead_goal, required_contact_fields_json, closing_phrase, updated_by_id, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, NOW())
        ON CONFLICT (tenant_key)
        DO UPDATE SET assistant_name = EXCLUDED.assistant_name,
                      business_name = EXCLUDED.business_name,
@@ -828,7 +829,7 @@ export async function saveTenantPromptProfile(db, tenantKey, input = {}, actor =
                      lead_goal = EXCLUDED.lead_goal,
                      required_contact_fields_json = EXCLUDED.required_contact_fields_json,
                      closing_phrase = EXCLUDED.closing_phrase,
-                     basic_no_tool_allowed_statement = EXCLUDED.basic_no_tool_allowed_statement,
+                     basic_no_tool_allowed_statement = NULL,
                      updated_by_id = EXCLUDED.updated_by_id,
                      updated_at = NOW()`,
       [
@@ -841,7 +842,6 @@ export async function saveTenantPromptProfile(db, tenantKey, input = {}, actor =
         stored.lead_goal,
         JSON.stringify(stored.required_contact_fields_json),
         stored.closing_phrase,
-        stored.basic_no_tool_allowed_statement,
         actorId(actor)
       ]
     );
@@ -899,6 +899,17 @@ export async function loadTenantPromptSectionOverrides(db, tenantKey, promptBlue
   };
 }
 
+export function normalizeTenantPromptSectionOverride(sectionId, value) {
+  const text = normalizeText(value);
+  if (normalizeText(sectionId) !== "business_context") return text;
+  return text
+    .replace(
+      "- the general statement that {basic_no_tool_allowed_statement}",
+      "- a brief general summary of the company description above"
+    )
+    .replaceAll("{basic_no_tool_allowed_statement}", "the company description above");
+}
+
 export async function saveTenantPromptSectionOverrides(db, tenantKey, promptBlueprintId, overridesInput = {}, actor = null) {
   return withTransaction(db, async (client) => {
     const blueprint = await loadPromptBlueprint(client, promptBlueprintId);
@@ -912,7 +923,10 @@ export async function saveTenantPromptSectionOverrides(db, tenantKey, promptBlue
     );
     const savedOverrides = {};
     for (const section of blueprint.sections) {
-      const overrideText = normalizeText(overrides[section.section_id]);
+      const overrideText = normalizeTenantPromptSectionOverride(
+        section.section_id,
+        overrides[section.section_id]
+      );
       if (!overrideText) continue;
       await client.query(
         `INSERT INTO tenant_prompt_section_overrides (

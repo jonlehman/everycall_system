@@ -74,7 +74,6 @@ export type TenantPromptProfile = {
   lead_goal: string;
   required_contact_fields: string[];
   closing_phrase: string;
-  basic_no_tool_allowed_statement: string;
   updated_at?: string | null;
   created_at?: string | null;
 };
@@ -158,14 +157,14 @@ REQUIRED CALLBACK INFORMATION:
     section_id: "business_context",
     title: "Business Context",
     is_template: true,
-    allowed_placeholders: ["business_name", "company_description", "assistant_name", "basic_no_tool_allowed_statement"],
+    allowed_placeholders: ["business_name", "company_description", "assistant_name"],
     default_text: `# Business Context
 {company_description}
 
 {assistant_name} may answer WITHOUT a tool only for:
 - greetings and basic conversational courtesies
 - {assistant_name}'s identity as the business’s automated assistant
-- the general statement that {basic_no_tool_allowed_statement}`
+- a brief general summary of the company description above`
   },
   {
     section_id: "priority_order",
@@ -745,8 +744,7 @@ export function getDefaultTenantPromptProfile() {
     ai_disclosure_line: DEFAULT_AI_DISCLOSURE,
     lead_goal: DEFAULT_LEAD_GOAL,
     required_contact_fields: [...DEFAULT_REQUIRED_CONTACT_FIELDS],
-    closing_phrase: DEFAULT_CLOSING_PHRASE,
-    basic_no_tool_allowed_statement: ""
+    closing_phrase: DEFAULT_CLOSING_PHRASE
   } satisfies TenantPromptProfile;
 }
 
@@ -764,9 +762,9 @@ export function getPromptSectionSeeds() {
 export function getDefaultPromptBlueprintSeed() {
   return {
     blueprint_key: "canonical_receptionist",
-    version: 4,
+    version: 5,
     status: "active" as PromptBlueprintStatus,
-    name: "Canonical Receptionist v4",
+    name: "Canonical Receptionist v5",
     sample_phrase_groups: normalizeSamplePhraseGroups(DEFAULT_SAMPLE_PHRASE_GROUPS),
     tool_definitions: {
       knowledge_lookup: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup.parameter_descriptions } },
@@ -852,8 +850,6 @@ export function normalizeTenantPromptProfile(input: unknown, defaults?: Partial<
     ? `Thanks for calling ${businessName}. This is ${assistantName}. How can I help you today?`
     : `Thanks for calling. This is ${assistantName}. How can I help you today?`);
   const companyDescription = normalizeText(source.company_description || source.companyDescription) || normalizeText(fallback.company_description);
-  const basicStatementDefault = normalizeText(fallback.basic_no_tool_allowed_statement)
-    || normalizeText(companyDescription || businessName);
   return {
     tenant_key: normalizeText(source.tenant_key || source.tenantKey) || normalizeText(fallback.tenant_key) || null,
     assistant_name: assistantName,
@@ -864,7 +860,6 @@ export function normalizeTenantPromptProfile(input: unknown, defaults?: Partial<
     lead_goal: normalizeText(source.lead_goal || source.leadGoal) || normalizeText(fallback.lead_goal) || DEFAULT_LEAD_GOAL,
     required_contact_fields: uniqueValues(asStringArray(source.required_contact_fields || source.requiredContactFields, fallback.required_contact_fields || DEFAULT_REQUIRED_CONTACT_FIELDS)),
     closing_phrase: normalizeText(source.closing_phrase || source.closingPhrase) || normalizeText(fallback.closing_phrase) || DEFAULT_CLOSING_PHRASE,
-    basic_no_tool_allowed_statement: normalizeText(source.basic_no_tool_allowed_statement || source.basicNoToolAllowedStatement) || basicStatementDefault,
     updated_at: normalizeText(source.updated_at || source.updatedAt) || normalizeText(fallback.updated_at) || null,
     created_at: normalizeText(source.created_at || source.createdAt) || normalizeText(fallback.created_at) || null
   };
@@ -961,7 +956,6 @@ export function renderPromptContext(
     opening_line: tenantProfile.opening_line,
     ai_disclosure_line: tenantProfile.ai_disclosure_line,
     closing_phrase: tenantProfile.closing_phrase,
-    basic_no_tool_allowed_statement: tenantProfile.basic_no_tool_allowed_statement,
     sample_phrase_groups_block: samplePhraseGroupsBlock
   };
   const renderedSections = blueprint.sections

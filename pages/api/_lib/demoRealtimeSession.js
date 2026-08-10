@@ -45,7 +45,6 @@ function buildDemoTenantProfile(bundle = {}) {
     assistant_name: "Sarah",
     business_name: businessName,
     company_description: summary,
-    basic_no_tool_allowed_statement: summary,
     opening_line: `Hi, thanks for calling ${businessName}. This is Sarah. How can I help you?`
   });
 }
