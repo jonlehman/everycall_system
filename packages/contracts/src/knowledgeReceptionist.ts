@@ -381,19 +381,17 @@ export const knowledgeReadinessStateSchema = z.object({
 export const knowledgeRuntimeSessionConfigSchema = z.object({
   model: z.string().min(1),
   voice: z.string().min(1),
-  max_output_tokens: z.number().int().positive().optional(),
+  reasoning: z.object({
+    effort: z.enum(["high", "none"])
+  }).optional(),
   turn_detection: z.object({
     type: z.string().min(1),
-    eagerness: z.string().min(1).optional(),
     threshold: z.number().optional(),
     prefix_padding_ms: z.number().int().nonnegative().optional(),
     silence_duration_ms: z.number().int().nonnegative().optional(),
-    idle_timeout_ms: z.number().int().nonnegative().nullable().optional(),
-    create_response: z.boolean().optional(),
-    interrupt_response: z.boolean().optional()
+    idle_timeout_ms: z.number().int().nonnegative().nullable().optional()
   }),
   transcription_model: z.string().min(1).optional(),
-  noise_reduction: z.string().min(1).optional(),
   input_audio_format: z.string().min(1).optional(),
   output_audio_format: z.string().min(1).optional()
 });

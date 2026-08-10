@@ -15,8 +15,6 @@ services:
         sync: false
       - key: XAI_API_KEY
         sync: false
-      - key: XAI_REALTIME_VOICE
-        sync: false
       - key: XAI_REALTIME_AUDIO_RATE_PER_MINUTE_USD
         value: "0.05"
       - key: TELNYX_RTP_PAYLOAD_TYPE

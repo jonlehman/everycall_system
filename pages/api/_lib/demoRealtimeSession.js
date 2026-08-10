@@ -189,22 +189,31 @@ function resolveDemoTranscriptionModel() {
 
 export function buildDemoRealtimeSessionPayload(bundle = {}) {
   const model = resolveDemoRealtimeModel();
-  const voice = normalizeText(process.env.XAI_DEMO_REALTIME_VOICE || process.env.XAI_REALTIME_VOICE) || "eve";
+  const voice = normalizeText(process.env.XAI_DEMO_REALTIME_VOICE) || "luna";
   const transcriptionModel = resolveDemoTranscriptionModel();
 
   return {
     session: {
       instructions: buildDemoRealtimeInstructions(bundle),
-      modalities: ["audio", "text"],
       voice,
-      input_audio_transcription: {
-        model: transcriptionModel,
-        language: "en"
-      },
+      reasoning: { effort: "none" },
       turn_detection: {
         type: "server_vad",
-        create_response: true,
-        interrupt_response: true
+        silence_duration_ms: 350
+      },
+      audio: {
+        input: {
+          format: { type: "audio/pcm", rate: 24000 },
+          transport: "json",
+          transcription: {
+            model: transcriptionModel,
+            language_hint: "en"
+          }
+        },
+        output: {
+          format: { type: "audio/pcm", rate: 24000 },
+          transport: "json"
+        }
       }
     },
     model,

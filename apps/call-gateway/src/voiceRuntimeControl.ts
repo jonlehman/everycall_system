@@ -122,15 +122,6 @@ export function buildAssistantInterruptionPlan(
 
   const truncatedAudioMs = Math.max(0, Number(session.assistantAudioMsSent || 0));
   const assistantItemId = normalizeText(session.currentAssistantItemId) || null;
-  const events: Array<Record<string, unknown>> = [{ type: "response.cancel" }];
-  if (assistantItemId && truncatedAudioMs > 0) {
-    events.push({
-      type: "conversation.item.truncate",
-      item_id: assistantItemId,
-      content_index: 0,
-      audio_end_ms: truncatedAudioMs
-    });
-  }
 
   return {
     shouldInterrupt: true,
@@ -140,7 +131,7 @@ export function buildAssistantInterruptionPlan(
     queuedFramesDropped: session.outputQueue?.length || 0,
     bufferedBytesDropped: session.outputBuffer?.length || 0,
     truncatedAudioMs,
-    events
+    events: []
   };
 }
 

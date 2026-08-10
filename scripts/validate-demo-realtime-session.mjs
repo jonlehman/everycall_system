@@ -7,28 +7,31 @@ try {
   delete process.env.XAI_DEMO_REALTIME_VOICE;
   const payload = buildDemoRealtimeSessionPayload({ businessName: "Example Co" });
   assert.equal(payload.model, "grok-voice-think-fast-2.0");
-  assert.equal(payload.voice, "eve");
+  assert.equal(payload.voice, "luna");
   assert.equal(payload.session.model, undefined);
-  assert.deepEqual(payload.session.modalities, ["audio", "text"]);
-  assert.equal(payload.session.voice, "eve");
-  assert.equal(payload.session.turn_detection.type, "server_vad");
-  assert.equal(payload.session.input_audio_transcription.model, "grok-transcribe");
+  assert.equal(payload.session.modalities, undefined);
+  assert.equal(payload.session.voice, "luna");
+  assert.deepEqual(payload.session.reasoning, { effort: "none" });
+  assert.deepEqual(payload.session.turn_detection, { type: "server_vad", silence_duration_ms: 350 });
+  assert.equal(payload.session.audio.input.transcription.model, "grok-transcribe");
+  assert.deepEqual(payload.session.audio.input.format, { type: "audio/pcm", rate: 24000 });
+  assert.deepEqual(payload.session.audio.output.format, { type: "audio/pcm", rate: 24000 });
   assert.equal(payload.session.type, undefined);
-  assert.equal(payload.session.audio, undefined);
 
   process.env.XAI_DEMO_REALTIME_VOICE = "ara";
   assert.equal(buildDemoRealtimeSessionPayload().voice, "ara");
 
   const preview = buildPreviewSessionUpdate({
     instructions: "Preview greeting only.",
-    promptPayload: { tool_definitions: [], session_config: { max_output_tokens: 512 } },
+    promptPayload: { tool_definitions: [], session_config: {} },
     voice: "rex"
   });
-  assert.deepEqual(preview.session.modalities, ["audio", "text"]);
-  assert.equal(preview.session.output_audio_format, "pcm16");
+  assert.equal(preview.session.modalities, undefined);
+  assert.equal(preview.session.output_audio_format, undefined);
   assert.equal(preview.session.voice, "rex");
-  assert.equal(preview.session.max_response_output_tokens, 512);
-  assert.equal(preview.session.audio, undefined);
+  assert.deepEqual(preview.session.reasoning, { effort: "none" });
+  assert.deepEqual(preview.session.audio.output.format, { type: "audio/pcm", rate: 24000 });
+  assert.equal(preview.session.max_response_output_tokens, undefined);
 
   console.log("xAI demo Realtime session validation passed.");
 } finally {

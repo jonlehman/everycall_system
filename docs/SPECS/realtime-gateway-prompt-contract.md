@@ -53,7 +53,7 @@ The gateway must receive a single JSON payload with the following top-level fiel
 - Must include tools for knowledge lookup and data capture.
 
 **`session_config`**
-- Realtime session settings (model, voice, VAD, transcription, max tokens).
+- Realtime session settings (model, voice, reasoning, xAI VAD, transcription, and audio formats).
 - The gateway must apply these settings exactly and must not override them.
 
 **`metadata`** (optional)
@@ -94,7 +94,12 @@ The gateway must receive a single JSON payload with the following top-level fiel
     {"type": "function", "name": "knowledge_lookup", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}}},
     {"type": "function", "name": "data_capture", "parameters": {"type": "object", "properties": {"first_name": {"type": "string"}}}}
   ],
-  "session_config": { "model": "grok-voice-think-fast-2.0", "voice": "eve" },
+  "session_config": {
+    "model": "grok-voice-think-fast-2.0",
+    "voice": "luna",
+    "reasoning": { "effort": "none" },
+    "turn_detection": { "type": "server_vad", "silence_duration_ms": 350 }
+  },
   "metadata": { "tenant_id": "t_123" }
 }
 ```

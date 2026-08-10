@@ -21,6 +21,7 @@ function isInteractiveGuideTarget(target) {
 }
 
 const voiceOptions = [
+  { value: 'luna', label: 'Luna', description: 'Gentle, patient, and nurturing' },
   { value: 'eve', label: 'Eve', description: 'Warm and natural' },
   { value: 'ara', label: 'Ara', description: 'Clear and friendly' },
   { value: 'leo', label: 'Leo', description: 'Confident and natural' },
@@ -111,7 +112,7 @@ export default function ReceptionistBasicsPage() {
     emergencyBehavior: 'Immediate Transfer',
     afterHours: 'Collect details and dispatch callback',
     businessHoursConfig: defaultHoursConfig,
-    voiceType: 'eve'
+    voiceType: 'luna'
   });
 
   const sampleAudioRef = useRef(null);
@@ -146,7 +147,7 @@ export default function ReceptionistBasicsPage() {
           routing?.business_hours_config || { businessHours: routing?.business_hours || '', timezone },
           timezone
         ),
-        voiceType: runtimeProfile?.session_config?.voice || 'eve'
+        voiceType: runtimeProfile?.session_config?.voice || 'luna'
       });
       setSetupStatusChip(statusChipFromTask(setupStatusData?.tasks?.basics, { tone: 'warn', label: 'Ready to review' }));
       setStatus({ message: 'Sales receptionist basics loaded.', tone: 'ok' });

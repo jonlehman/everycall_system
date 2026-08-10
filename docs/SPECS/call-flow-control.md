@@ -18,12 +18,12 @@ Guarantee pre-close question is asked and enforce barge-in behavior.
 - Track `preCloseAsked` and `preCloseAnswered`.
 - If assistant attempts to close without pre-close, inject pre-close question.
 - On caller barge-in:
-  - send `response.cancel`
-  - clear audio output queue
-  - stop output pump
+  - rely on xAI server VAD to interrupt the active response
+  - send Telnyx `clear` to stop already-buffered caller playback
+  - clear the local audio output queue and stop the output pump
 
 ## Logging
-- `assistant_response_canceled` with reason
+- `assistant_barge_in_applied` with reason
 - `preclose_injected` when system forces the question
 
 ## Edge Cases

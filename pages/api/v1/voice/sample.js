@@ -11,6 +11,7 @@ const MAX_SAMPLE_TEXT_LENGTH = 600;
 const PREVIEW_TIMEOUT_MS = 20000;
 const PREVIEW_SAMPLE_RATE_HZ = 24000;
 const REALTIME_VOICES = new Set([
+  "luna",
   "eve",
   "ara",
   "leo",
@@ -83,12 +84,16 @@ export function buildPreviewSessionUpdate({ instructions, promptPayload, voice }
   return {
     type: "session.update",
     session: {
-      modalities: ["audio", "text"],
       instructions,
       tools: Array.isArray(promptPayload.tool_definitions) ? promptPayload.tool_definitions : [],
-      output_audio_format: "pcm16",
       voice,
-      max_response_output_tokens: promptPayload?.session_config?.max_output_tokens ?? 4096
+      reasoning: { effort: "none" },
+      audio: {
+        output: {
+          format: { type: "audio/pcm", rate: PREVIEW_SAMPLE_RATE_HZ },
+          transport: "json"
+        }
+      }
     }
   };
 }
@@ -97,7 +102,6 @@ function buildPreviewResponseCreate(sampleText) {
   return {
     type: "response.create",
     response: {
-      modalities: ["audio", "text"],
       instructions: createRealtimePreviewInstructions(sampleText)
     }
   };
@@ -106,7 +110,7 @@ function buildPreviewResponseCreate(sampleText) {
 async function requestRealtimePreview({ apiKey, promptPayload, sampleText }) {
   return new Promise((resolve, reject) => {
     const model = "grok-voice-think-fast-2.0";
-    const voice = String(promptPayload?.session_config?.voice || "eve").trim() || "eve";
+    const voice = String(promptPayload?.session_config?.voice || "luna").trim() || "luna";
     const instructions = normalizeText(promptPayload?.system_prompt);
     const ws = new WebSocket(`wss://api.x.ai/v1/realtime?model=${encodeURIComponent(model)}`, {
       headers: {
@@ -265,7 +269,7 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: "method_not_allowed" });
     }
 
-    const voice = String(req.method === "POST" ? body.voice : req.query?.voice || "eve").toLowerCase();
+    const voice = String(req.method === "POST" ? body.voice : req.query?.voice || "luna").toLowerCase();
     if (!REALTIME_VOICES.has(voice)) {
       return res.status(400).json({ error: "invalid_voice" });
     }

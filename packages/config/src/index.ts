@@ -11,7 +11,6 @@ const callGatewayEnvSchema = baseSchema.extend({
   TELNYX_AI_MODEL: z.string().min(1).optional(),
   TELNYX_TRANSCRIPTION_MODEL: z.string().min(1).optional(),
   XAI_API_KEY: z.string().min(1).optional(),
-  XAI_REALTIME_VOICE: z.string().min(1).optional(),
   XAI_REALTIME_AUDIO_RATE_PER_MINUTE_USD: z.string().min(1).optional(),
   TELNYX_RTP_PAYLOAD_TYPE: z.string().min(1).optional(),
   TELNYX_BIDIRECTIONAL_PAYLOAD_MODE: z.string().min(1).optional(),

@@ -6,8 +6,10 @@ const { Pool } = pg;
 
 export const APPLY_ENV = "EVERYCALL_APPLY_XAI_PROFILE_MIGRATION";
 export const TARGET_MODEL = "grok-voice-think-fast-2.0";
-export const TARGET_VOICE = "eve";
+export const TARGET_VOICE = "luna";
 export const TARGET_TRANSCRIPTION_MODEL = "grok-transcribe";
+export const TARGET_REASONING_EFFORT = "none";
+export const TARGET_SILENCE_DURATION_MS = 350;
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -20,16 +22,30 @@ function asObject(value) {
 export function planProfileMigration(row) {
   const tenantKey = normalizeText(row.tenant_key);
   const current = asObject(row.session_config_json);
+  const {
+    max_output_tokens: _legacyMaxOutputTokens,
+    maxOutputTokens: _legacyMaxOutputTokensCamel,
+    max_response_output_tokens: _legacyMaxResponseOutputTokens,
+    maxResponseOutputTokens: _legacyMaxResponseOutputTokensCamel,
+    noise_reduction: _legacyNoiseReduction,
+    noiseReduction: _legacyNoiseReductionCamel,
+    modalities: _legacyModalities,
+    input_audio_transcription: _legacyInputAudioTranscription,
+    inputAudioTranscription: _legacyInputAudioTranscriptionCamel,
+    reasoning_effort: _legacyReasoningEffort,
+    reasoningEffort: _legacyReasoningEffortCamel,
+    turnDetection: _legacyTurnDetectionCamel,
+    ...xaiCompatibleCurrent
+  } = current;
   const next = {
-    ...current,
+    ...xaiCompatibleCurrent,
     model: TARGET_MODEL,
     voice: TARGET_VOICE,
+    reasoning: { effort: TARGET_REASONING_EFFORT },
     transcription_model: TARGET_TRANSCRIPTION_MODEL,
     turn_detection: {
-      ...asObject(current.turn_detection),
       type: "server_vad",
-      create_response: true,
-      interrupt_response: true
+      silence_duration_ms: TARGET_SILENCE_DURATION_MS
     }
   };
   const changed = JSON.stringify(current) !== JSON.stringify(next);

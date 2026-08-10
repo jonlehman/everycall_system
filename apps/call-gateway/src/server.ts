@@ -67,6 +67,17 @@ import {
   normalizeTransferLookupText,
   rankTransferMatches
 } from "./transferDirectory.js";
+import {
+  finishRealtimeTurnTiming,
+  noteRealtimeTurnResponseCreated,
+  startRealtimeTurnTiming,
+  type RealtimeTurnTiming
+} from "./realtimeTurnTiming.js";
+import {
+  buildTelnyxClearEvent,
+  shouldForwardTelnyxInputTrack,
+  TELNYX_INPUT_STREAM_TRACK
+} from "./telephonyStreamControl.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -84,6 +95,7 @@ const gatewayDebugLogToken = getInternalServiceToken(process.env, INTERNAL_AUTH_
 const callGatewayBaseUrl = process.env.CALL_GATEWAY_BASE_URL || "";
 const XAiKey = process.env.XAI_API_KEY || "";
 const XAI_REALTIME_MODEL = "grok-voice-think-fast-2.0";
+const XAI_REALTIME_VOICE = "luna";
 const signatureRequired = (process.env.TELNYX_SIGNATURE_REQUIRED || "true").toLowerCase() !== "false";
 const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
@@ -106,7 +118,8 @@ const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "xai_realtime_session_start",
   "xai_realtime_session_updated",
   "xai_realtime_response_done",
-  "assistant_response_canceled",
+  "xai_realtime_turn_latency",
+  "assistant_barge_in_applied",
   "telnyx_bidirectional_payload_mode_normalized"
 ]);
 
@@ -266,6 +279,7 @@ type StreamSession = {
   pendingTransferCandidate?: PendingTransferCandidate | null;
   telnyxStreamBaseUrl?: string;
   ignoreNextStreamingStopped?: boolean;
+  callerTurnTiming?: RealtimeTurnTiming | null;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -504,7 +518,7 @@ function logBidirectionalPayloadModeNormalization() {
 function getTelnyxStreamingStartPayload(baseUrl: string, callControlId: string) {
   return {
     stream_url: buildTelnyxMediaStreamUrl(baseUrl, callControlId),
-    stream_track: "both_tracks",
+    stream_track: TELNYX_INPUT_STREAM_TRACK,
     stream_bidirectional_mode: resolveBidirectionalPayloadMode(),
     stream_bidirectional_codec: "PCMU",
     stream_bidirectional_sampling_rate: 8000,
@@ -815,6 +829,11 @@ function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined
   );
 }
 
+function clearTelnyxMedia(ws: WebSocket | undefined) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify(buildTelnyxClearEvent()));
+}
+
 function decodeInboundAudioPayload(encoded: string) {
   return Buffer.from(encoded, "base64");
 }
@@ -932,6 +951,7 @@ function startOutputPump(session: StreamSession) {
       if (!(session.outputBuffer && session.outputBuffer.length > 0) && !session.currentResponseId) {
         logAudioPumpTraceSummary(session, "playback_drained");
         noteAssistantPlaybackDrained(session);
+        flushQueuedAssistantResponses(session);
       }
       return;
     }
@@ -943,9 +963,7 @@ async function interruptAssistantForCallerSpeech(session: StreamSession | undefi
   const plan = buildAssistantInterruptionPlan(session, reason);
   if (!plan.shouldInterrupt) return false;
 
-  for (const event of plan.events) {
-    sendXAiEvent(session.XAiWs, event);
-  }
+  clearTelnyxMedia(session.telnyxWs);
   applyAssistantInterruption(session, plan);
   if (session.knowledgeCallState) {
     await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
@@ -957,7 +975,7 @@ async function interruptAssistantForCallerSpeech(session: StreamSession | undefi
     });
   }
   logAudioPumpTraceSummary(session, "interrupted");
-  logInfo("assistant_response_canceled", {
+  logInfo("assistant_barge_in_applied", {
     callSid: session.callSid,
     callControlId: session.callControlId,
     reason,
@@ -2239,6 +2257,7 @@ function connectXAiRealtime(session: StreamSession) {
 
   session.XAiReady = false;
   const model = XAI_REALTIME_MODEL;
+  const voice = String(payload.session_config.voice || XAI_REALTIME_VOICE).trim() || XAI_REALTIME_VOICE;
   const instructions = buildSessionInstructions(payload);
   const url = `wss://api.x.ai/v1/realtime?model=${encodeURIComponent(model)}`;
   const ws = new WebSocket(url, {
@@ -2251,8 +2270,8 @@ function connectXAiRealtime(session: StreamSession) {
     logInfo("xai_realtime_session_start", {
       callSid: session.callSid,
       model,
-      voice: payload.session_config.voice,
-      turnDetectionType: payload.session_config.turn_detection?.type,
+      voice,
+      turnDetectionType: "server_vad",
       inputAudioFormat: payload.session_config.input_audio_format || "g711_ulaw",
       outputAudioFormat: payload.session_config.output_audio_format || "g711_ulaw"
     });
@@ -2262,11 +2281,7 @@ function connectXAiRealtime(session: StreamSession) {
       tools: payload.tool_definitions,
       sessionConfig: {
         ...payload.session_config,
-        voice: process.env.XAI_REALTIME_VOICE || "eve",
-        turn_detection: {
-          ...payload.session_config.turn_detection,
-          type: "server_vad"
-        }
+        voice
       }
     });
 
@@ -2302,6 +2317,9 @@ function connectXAiRealtime(session: StreamSession) {
       logInfo("xai_realtime_session_updated", {
         callSid: session.callSid,
         model: session.realtimeModel,
+        voice: payloadMsg?.session?.voice,
+        reasoningEffort: payloadMsg?.session?.reasoning?.effort,
+        turnDetection: payloadMsg?.session?.turn_detection,
         inputAudioFormat: acceptedInputAudioFormat,
         outputAudioFormat: acceptedOutputAudioFormat
       });
@@ -2344,6 +2362,21 @@ function connectXAiRealtime(session: StreamSession) {
     }
 
     if (type === "response.created") {
+      const responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
+      const turnCreated = noteRealtimeTurnResponseCreated(
+        session.callerTurnTiming,
+        responseId,
+        performance.now()
+      );
+      if (turnCreated) {
+        logRealtimeDetailEntry(session, {
+          ts: new Date().toISOString(),
+          kind: "turn_response_created",
+          callSid: session.callSid,
+          responseId,
+          ...turnCreated
+        });
+      }
       ensureAudioPumpTrace(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
       if (session.pendingToolSpeechWait && !session.pendingToolSpeechWait.responseId) {
         session.pendingToolSpeechWait.responseCreatedAtMs = performance.now();
@@ -2410,7 +2443,7 @@ function connectXAiRealtime(session: StreamSession) {
       logAudioPumpTraceSummary(session, "response_done");
       if (session.pendingToolSpeechWait) {
         const responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
-        if (!session.pendingToolSpeechWait.responseId || session.pendingToolSpeechWait.responseId === responseId) {
+        if (session.pendingToolSpeechWait.responseId && session.pendingToolSpeechWait.responseId === responseId) {
           logRealtimeDetailEntry(session, {
             ts: new Date().toISOString(),
             kind: "tool_response_done",
@@ -2423,7 +2456,9 @@ function connectXAiRealtime(session: StreamSession) {
           session.pendingToolSpeechWait = null;
         }
       }
-      flushQueuedAssistantResponses(session);
+      if (!hasPendingAssistantAudio(session)) {
+        flushQueuedAssistantResponses(session);
+      }
       return;
     }
 
@@ -2444,6 +2479,23 @@ function connectXAiRealtime(session: StreamSession) {
     if (type === "response.output_audio.delta" || type === "response.audio.delta" || type === "output_audio.delta") {
       const audioBase64 = payloadMsg.delta || payloadMsg.audio?.delta || payloadMsg.audio?.data || payloadMsg.data || "";
       if (audioBase64) {
+        const turnLatency = finishRealtimeTurnTiming(session.callerTurnTiming, performance.now());
+        if (turnLatency) {
+          logInfo("xai_realtime_turn_latency", {
+            callSid: session.callSid,
+            responseId: payloadMsg?.response_id || payloadMsg?.response?.id || turnLatency.response_id || undefined,
+            endpointToResponseCreatedMs: turnLatency.endpoint_to_response_created_ms ?? undefined,
+            responseCreatedToFirstAudioMs: turnLatency.response_created_to_first_audio_ms ?? undefined,
+            endpointToFirstAudioMs: turnLatency.endpoint_to_first_audio_ms
+          });
+          logRealtimeDetailEntry(session, {
+            ts: new Date().toISOString(),
+            kind: "turn_first_audio",
+            callSid: session.callSid,
+            ...turnLatency
+          });
+          session.callerTurnTiming = null;
+        }
         if (session.pendingToolSpeechWait && !session.pendingToolSpeechWait.firstAudioLogged) {
           const waitMs = Number((performance.now() - session.pendingToolSpeechWait.requestedAtMs).toFixed(3));
           const responseCreatedToFirstAudioMs = session.pendingToolSpeechWait.responseCreatedAtMs
@@ -2498,6 +2550,11 @@ function connectXAiRealtime(session: StreamSession) {
           [session.callSid, session.tenantKey, "caller", String(transcript)]
         );
       }
+      return;
+    }
+
+    if (type === "input_audio_buffer.speech_stopped") {
+      session.callerTurnTiming = startRealtimeTurnTiming(performance.now());
       return;
     }
 
@@ -2983,7 +3040,7 @@ wss.on("connection", (ws, req) => {
       const encoded = payload.media?.payload;
       const track = String(payload.media?.track || payload.track || "").toLowerCase();
       if (!streamId || !encoded) return;
-      if (track && !track.includes("inbound")) return;
+      if (!shouldForwardTelnyxInputTrack(track)) return;
       const callControlId = streamIdToCall.get(streamId);
       if (!callControlId) return;
       const session = streamSessions.get(callControlId);

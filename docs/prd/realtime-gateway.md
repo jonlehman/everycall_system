@@ -16,15 +16,14 @@ A thin realtime gateway that executes a call flow defined by the EveryCall syste
 Must match the web demo configuration:
 
 - Model: `grok-voice-think-fast-2.0`, pinned by the gateway
-- Voice: `eve`
+- Voice: `luna`
 - Realtime endpoint: `wss://api.x.ai/v1/realtime`
-- Turn detection: `server_vad`
-  - create response: enabled
-  - interrupt response: enabled
+- Turn detection: xAI-native `server_vad`
+  - silence endpoint: `350 ms`
+  - automatic response and model interruption are owned by xAI
+- Reasoning effort: `none` for low-latency receptionist turns
 - Transcription model: `grok-transcribe`
-- Noise reduction: `far_field`
 - Input/output audio format: `g711_ulaw`
-- Max output tokens: `4096`
 - Tools: enabled (Knowledge lookup + Data capture)
 
 ## Prompt & Instruction Model

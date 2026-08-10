@@ -1,7 +1,8 @@
 export type RealtimeSessionConfig = {
   voice?: string;
-  max_output_tokens?: number;
-  maxOutputTokens?: number;
+  reasoning?: { effort?: string } | null;
+  reasoning_effort?: string;
+  reasoningEffort?: string;
   turn_detection?: Record<string, unknown> | null;
   turnDetection?: Record<string, unknown> | null;
   input_audio_format?: string;
@@ -37,9 +38,11 @@ function xAiAudioFormat(value: unknown, fallback = "g711_ulaw"): { type: string;
   return xAiAudioFormat(fallback, "g711_ulaw");
 }
 
-function maxOutputTokens(config: RealtimeSessionConfig) {
-  const raw = config.max_output_tokens ?? config.maxOutputTokens;
-  return Number.isFinite(Number(raw)) ? Number(raw) : 4096;
+function xAiReasoningEffort(config: RealtimeSessionConfig) {
+  const configured = normalizeText(
+    config.reasoning?.effort ?? config.reasoning_effort ?? config.reasoningEffort
+  ).toLowerCase();
+  return configured === "high" ? "high" : "none";
 }
 
 export function buildXAiRealtimeHeaders(apiKey: string) {
@@ -50,14 +53,22 @@ export function buildRealtimeTurnDetectionConfig(
   configured: Record<string, unknown> | null | undefined
 ) {
   if (configured === null) return null;
-  return {
+  const result: Record<string, unknown> = {
     type: "server_vad",
-    threshold: typeof configured?.threshold === "number" ? configured.threshold : 0.75,
-    prefix_padding_ms: typeof configured?.prefix_padding_ms === "number" ? configured.prefix_padding_ms : 300,
-    silence_duration_ms: typeof configured?.silence_duration_ms === "number" ? configured.silence_duration_ms : 600,
-    create_response: configured?.create_response === undefined ? true : Boolean(configured.create_response),
-    interrupt_response: configured?.interrupt_response === undefined ? true : Boolean(configured.interrupt_response)
+    silence_duration_ms: typeof configured?.silence_duration_ms === "number"
+      ? configured.silence_duration_ms
+      : 350
   };
+  if (typeof configured?.threshold === "number") {
+    result.threshold = configured.threshold;
+  }
+  if (typeof configured?.prefix_padding_ms === "number") {
+    result.prefix_padding_ms = configured.prefix_padding_ms;
+  }
+  if (configured?.idle_timeout_ms === null || typeof configured?.idle_timeout_ms === "number") {
+    result.idle_timeout_ms = configured.idle_timeout_ms;
+  }
+  return result;
 }
 
 export function buildRealtimeSessionUpdateEvent(input: RealtimeSessionUpdateInput) {
@@ -65,10 +76,10 @@ export function buildRealtimeSessionUpdateEvent(input: RealtimeSessionUpdateInpu
   return {
     type: "session.update",
     session: {
-      modalities: ["audio", "text"],
       instructions: input.instructions,
       tools: input.tools,
-      voice: normalizeText(config.voice) || "eve",
+      voice: normalizeText(config.voice) || "luna",
+      reasoning: { effort: xAiReasoningEffort(config) },
       turn_detection: buildRealtimeTurnDetectionConfig(config.turn_detection ?? config.turnDetection),
       audio: {
         input: {
@@ -83,18 +94,13 @@ export function buildRealtimeSessionUpdateEvent(input: RealtimeSessionUpdateInpu
           format: xAiAudioFormat(config.output_audio_format ?? config.outputAudioFormat),
           transport: "json"
         }
-      },
-      max_response_output_tokens: maxOutputTokens(config)
+      }
     }
   };
 }
 
 export function buildRealtimeResponseCreateEvent(response: Record<string, unknown> = {}) {
-  return {
-    type: "response.create",
-    response: {
-      modalities: ["audio", "text"],
-      ...response
-    }
-  };
+  return Object.keys(response).length
+    ? { type: "response.create", response }
+    : { type: "response.create" };
 }

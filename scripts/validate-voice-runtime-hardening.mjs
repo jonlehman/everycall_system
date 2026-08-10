@@ -110,8 +110,7 @@ function validateInterruptionScenario(voiceControl, label, turnResult, reason) {
   const priorState = JSON.stringify(turnResult.call_state);
   const plan = voiceControl.buildAssistantInterruptionPlan(session, reason, 1_000);
   assert.equal(plan.shouldInterrupt, true, `${label}: interruption should trigger`);
-  assert.equal(plan.events[0]?.type, "response.cancel", `${label}: missing response.cancel`);
-  assert.equal(plan.events[1]?.type, "conversation.item.truncate", `${label}: missing truncate`);
+  assert.deepEqual(plan.events, [], `${label}: xAI VAD should own provider-side interruption`);
   assert.equal(plan.truncatedAudioMs, 120, `${label}: unexpected truncate ms`);
   voiceControl.applyAssistantInterruption(session, plan);
   assert.equal(session.outputQueue.length, 0, `${label}: output queue not cleared`);
@@ -332,7 +331,11 @@ async function main() {
 
     assert.equal(summary.base.overrideGuardrailCorrectness.afterHours?.matchedOverrides?.length > 0, true, "after-hours override should remain correct");
     assert.equal(summary.base.overrideGuardrailCorrectness.dangerousQuestion?.matchedGuardrails?.length > 0, true, "dangerous-question guardrail should remain correct");
-    assert.equal(summary.interruption.normalAnswer.events.includes("response.cancel"), true, "normal answer interruption missing cancel");
+    assert.deepEqual(
+      summary.interruption.normalAnswer.events,
+      [],
+      "Grok-native interruption should not emit OpenAI response cancellation events"
+    );
     assert.equal(summary.recovery.recoveredWithPrewarmFailure?.prewarm?.status, "failed", "expected explicit failed prewarm status");
     assert.equal(summary.specificity.misses.length, 0, `specificity misses: ${JSON.stringify(summary.specificity.misses)}`);
 
