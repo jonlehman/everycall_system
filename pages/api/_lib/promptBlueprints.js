@@ -573,6 +573,7 @@ export async function ensureDefaultPromptBlueprint(db) {
          JOIN prompt_blueprint_sections AS target_section
            ON target_section.prompt_blueprint_id = $2
           AND target_section.section_id = source.section_id
+         WHERE source.section_id <> 'wording_preferences'
          ON CONFLICT (tenant_key, prompt_blueprint_id, section_id) DO NOTHING`,
         [seed.blueprint_key, promptBlueprintId, seed.version]
       );
@@ -901,13 +902,25 @@ export async function loadTenantPromptSectionOverrides(db, tenantKey, promptBlue
 
 export function normalizeTenantPromptSectionOverride(sectionId, value) {
   const text = normalizeText(value);
-  if (normalizeText(sectionId) !== "business_context") return text;
-  return text
-    .replace(
-      "- the general statement that {basic_no_tool_allowed_statement}",
-      "- a brief general summary of the company description above"
-    )
-    .replaceAll("{basic_no_tool_allowed_statement}", "the company description above");
+  const normalizedSectionId = normalizeText(sectionId);
+  if (normalizedSectionId === "business_context") {
+    return text
+      .replace(
+        "- the general statement that {basic_no_tool_allowed_statement}",
+        "- a brief general summary of the company description above"
+      )
+      .replaceAll("{basic_no_tool_allowed_statement}", "the company description above");
+  }
+  if (normalizedSectionId === "wording_preferences") {
+    const withoutLegacyOpening = text
+      .split("\n")
+      .filter((line) => !line.includes("{opening_line}"))
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    return withoutLegacyOpening === "# Wording Preferences" ? "" : withoutLegacyOpening;
+  }
+  return text;
 }
 
 export async function saveTenantPromptSectionOverrides(db, tenantKey, promptBlueprintId, overridesInput = {}, actor = null) {

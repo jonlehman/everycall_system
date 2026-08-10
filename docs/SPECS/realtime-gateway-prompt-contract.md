@@ -19,7 +19,8 @@ The gateway must receive a single JSON payload with the following top-level fiel
 - The authoritative EveryCall system prompt defining call flow and tool usage.
 
 **`tenant_greeting`**
-- Tenant-specific greeting and naming details.
+- Non-empty tenant-specific greeting spoken verbatim after xAI accepts the session.
+- The gateway sends it as one interruptible `force_message`; it is not interpolated into the model-facing system prompt and no greeting `response.create` follows it.
 
 **`tenant_knowledge`**
 - Object containing tenant-scoped runtime knowledge.
@@ -62,6 +63,7 @@ The gateway must receive a single JSON payload with the following top-level fiel
 ## Gateway Rules
 - The gateway must never send instructions not provided in this payload.
 - The gateway must not merge or mutate prompt text beyond basic concatenation.
+- The gateway must use only `tenant_greeting` for the opening and must not fall back to a global or cross-tenant greeting.
 - If the payload is missing required fields, the gateway must reject the session.
 
 ## Example Payload (Redacted)

@@ -48,7 +48,7 @@
   - tenant profile dry run: `node scripts/migrate-xai-runtime-profiles.mjs`
 - Apply existing profile migration only after reviewing dry-run output:
   - `EVERYCALL_APPLY_XAI_PROFILE_MIGRATION=1 node scripts/migrate-xai-runtime-profiles.mjs`
-- Manual canary calls must cover greeting, direct question, knowledge lookup, data capture, transfer lookup/confirmation, alphanumeric readback, barge-in, silence/background noise, and tool failure.
+- Manual canary calls must cover the exact forced tenant greeting, direct question, knowledge lookup, data capture, transfer lookup/confirmation, alphanumeric readback, barge-in during the greeting and ordinary turns, silence/background noise, and tool failure.
 - During a canary, verify `xai_realtime_session_updated` reports `voice=ara`, `reasoningEffort=high`, and xAI-native `server_vad` with `threshold=0.9` and `silence_duration_ms=200`; verify `xai_realtime_turn_latency` is emitted from speech endpoint to first audio and compare it with the previous `none` baseline.
 - Verify `telnyx_call_control_answer_requested` is emitted before session bootstrap completes and use `webhookToAnswerRequestMs` / `webhookToAnswerAcceptedMs` to investigate any call that rings more than once.
 

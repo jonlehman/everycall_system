@@ -12,6 +12,9 @@ const inboundStartup = await import(pathToFileURL(
 const turnTiming = await import(pathToFileURL(
   path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/realtimeTurnTiming.js")
 ).href);
+const knowledgeRuntime = await import(pathToFileURL(
+  path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/knowledgeRuntime.js")
+).href);
 const telephony = await import(pathToFileURL(
   path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/telephonyStreamControl.js")
 ).href);
@@ -129,6 +132,69 @@ assert.deepEqual(startupOrder, ["answer_started", "bootstrap_started", "answer_a
 const response = realtime.buildRealtimeResponseCreateEvent({ instructions: "Say hello." });
 assert.deepEqual(response, { type: "response.create", response: { instructions: "Say hello." } });
 assert.deepEqual(realtime.buildRealtimeResponseCreateEvent(), { type: "response.create" });
+
+const tenantAlphaGreeting = realtime.buildRealtimeForceMessageEvent(
+  "Thanks for calling Tenant Alpha. This is Ava. How can I help you today?"
+);
+const tenantBetaGreeting = realtime.buildRealtimeForceMessageEvent(
+  "Thanks for calling Tenant Beta. This is Ben. How can I help you today?"
+);
+assert.deepEqual(tenantAlphaGreeting, {
+  type: "conversation.item.create",
+  item: {
+    type: "force_message",
+    role: "assistant",
+    interruptible: true,
+    content: [{
+      type: "output_text",
+      text: "Thanks for calling Tenant Alpha. This is Ava. How can I help you today?"
+    }]
+  }
+});
+assert.equal(tenantAlphaGreeting.type, "conversation.item.create");
+assert.notEqual(tenantAlphaGreeting.item.content[0].text, tenantBetaGreeting.item.content[0].text);
+assert.doesNotMatch(tenantAlphaGreeting.item.content[0].text, /Tenant Beta|Ben/);
+assert.doesNotMatch(tenantBetaGreeting.item.content[0].text, /Tenant Alpha|Ava/);
+assert.throws(
+  () => realtime.buildRealtimeForceMessageEvent("   "),
+  /force_message_text_required/
+);
+
+const gatewayPromptPayload = {
+  system_prompt: "Answer naturally.",
+  tenant_greeting: "Thanks for calling Tenant Alpha.",
+  tool_definitions: [],
+  knowledge_runtime: { active_build_id: "kb_1" }
+};
+assert.equal(
+  knowledgeRuntime.validateGatewayPromptPayload(gatewayPromptPayload).tenant_greeting,
+  "Thanks for calling Tenant Alpha."
+);
+assert.throws(
+  () => knowledgeRuntime.validateGatewayPromptPayload({ ...gatewayPromptPayload, tenant_greeting: "" }),
+  /invalid_gateway_prompt_payload/
+);
+assert.doesNotMatch(
+  knowledgeRuntime.buildGatewaySessionInstructions(gatewayPromptPayload),
+  /# Transfer Rules/
+);
+assert.doesNotMatch(
+  knowledgeRuntime.buildGatewaySessionInstructions({
+    ...gatewayPromptPayload,
+    tool_definitions: [{ type: "function", name: "lookup_transfer_target" }]
+  }),
+  /# Transfer Rules/
+);
+assert.match(
+  knowledgeRuntime.buildGatewaySessionInstructions({
+    ...gatewayPromptPayload,
+    tool_definitions: [
+      { type: "function", name: "lookup_transfer_target" },
+      { type: "function", name: "transfer_call" }
+    ]
+  }),
+  /# Transfer Rules/
+);
 
 assert.equal(telephony.TELNYX_INPUT_STREAM_TRACK, "inbound_track");
 assert.equal(telephony.shouldForwardTelnyxInputTrack("inbound"), true);
@@ -254,15 +320,16 @@ assert(overrideCopyQuery, "new prompt versions must copy tenant section override
 assert.match(overrideCopyQuery.sql, /JOIN prompt_blueprint_sections AS target_section/);
 assert.match(overrideCopyQuery.sql, /AND version < \$3/);
 assert.match(overrideCopyQuery.sql, /a brief general summary of the company description above/);
+assert.match(overrideCopyQuery.sql, /WHERE source\.section_id <> 'wording_preferences'/);
 assert.match(overrideCopyQuery.sql, /ON CONFLICT \(tenant_key, prompt_blueprint_id, section_id\) DO NOTHING/);
-assert.deepEqual(overrideCopyQuery.params, ["canonical_receptionist", "pb_canonical_receptionist_v5", 5]);
+assert.deepEqual(overrideCopyQuery.params, ["canonical_receptionist", "pb_canonical_receptionist_v6", 6]);
 
 const existingVersionQueries = [];
 await promptRuntime.ensureDefaultPromptBlueprint({
   async query(sql, params = []) {
     existingVersionQueries.push({ sql, params });
     if (/SELECT prompt_blueprint_id\s+FROM prompt_blueprints\s+WHERE prompt_blueprint_id/.test(sql)) {
-      return { rows: [{ prompt_blueprint_id: "pb_canonical_receptionist_v5" }], rowCount: 1 };
+      return { rows: [{ prompt_blueprint_id: "pb_canonical_receptionist_v6" }], rowCount: 1 };
     }
     return { rows: [], rowCount: 1 };
   }
@@ -274,8 +341,10 @@ assert.equal(
 );
 
 const promptSeed = promptBlueprints.getDefaultPromptBlueprintSeed();
-assert.equal(promptSeed.version, 5);
-assert.equal(promptSeed.name, "Canonical Receptionist v5");
+assert.equal(promptSeed.version, 6);
+assert.equal(promptSeed.name, "Canonical Receptionist v6");
+const canonicalSectionText = promptSeed.sections.map((section) => section.default_text).join("\n");
+assert.doesNotMatch(canonicalSectionText, /\bSarah\b|Creative Dynamic|Seattle|Oof/i);
 const promptProfile = promptBlueprints.normalizeTenantPromptProfile({
   assistant_name: "Sarah",
   business_name: "Creative Dynamic",
@@ -296,8 +365,12 @@ assert.equal(
   1,
   "the canonical prompt must render the tenant company description exactly once"
 );
-assert.match(renderedPrompt, /a brief general summary of the company description above/);
+assert.match(renderedPrompt, /You may speak from memory only about this general description/);
 assert.doesNotMatch(renderedPrompt, /This legacy description must not be rendered/);
+assert.doesNotMatch(
+  renderedPrompt,
+  /Thanks for calling Creative Dynamic\. This is Sarah\. How can I help you today\?/
+);
 assert.equal("basic_no_tool_allowed_statement" in promptProfile, false);
 assert.equal(
   promptRuntime.normalizeTenantPromptSectionOverride(
@@ -305,6 +378,20 @@ assert.equal(
     "# Business Context\n{company_description}\n- the general statement that {basic_no_tool_allowed_statement}"
   ),
   "# Business Context\n{company_description}\n- a brief general summary of the company description above"
+);
+assert.equal(
+  promptRuntime.normalizeTenantPromptSectionOverride(
+    "wording_preferences",
+    "# Wording Preferences\n- Use this exact opening on the first turn: {opening_line}\n- Keep all other wording flexible and natural."
+  ),
+  "# Wording Preferences\n- Keep all other wording flexible and natural."
+);
+assert.equal(
+  promptRuntime.normalizeTenantPromptSectionOverride(
+    "wording_preferences",
+    "# Wording Preferences\n- Use this exact opening on the first turn: {opening_line}"
+  ),
+  ""
 );
 for (const [businessName, companyDescription, otherDescription] of [
   ["Tenant Alpha", "Tenant Alpha repairs residential plumbing systems.", "Tenant Beta manages commercial landscaping."],
@@ -323,13 +410,19 @@ for (const [businessName, companyDescription, otherDescription] of [
   assert.equal(tenantRenderedPrompt.match(new RegExp(companyDescription.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))?.length, 1);
   assert.doesNotMatch(tenantRenderedPrompt, new RegExp(otherDescription.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 }
-assert.match(renderedPrompt, /Discovery does not have a fixed number of turns\./);
-assert.match(renderedPrompt, /briefly summarize the need in the caller’s language and confirm that you understood it correctly\./);
-assert.match(renderedPrompt, /Do not suggest speaking with the team until the caller confirms the summary/);
-assert.match(renderedPrompt, /Do not ask for callback information immediately after the caller’s first substantive explanation/);
-assert.match(renderedPrompt, /Do not automatically append a generic reassurance, offer to help, or conversation bridge/);
-assert.match(renderedPrompt, /if the caller explicitly requests a person, callback, or next step before a summary is needed/);
-assert.doesNotMatch(renderedPrompt, /Use one or two short discovery turns/);
-assert.doesNotMatch(renderedPrompt, /If the caller is not clearly receptive, do ONE more brief engagement turn/);
+const renderedPromptWordCount = renderedPrompt.match(/\S+/g)?.length || 0;
+assert.ok(
+  renderedPromptWordCount >= 800 && renderedPromptWordCount <= 1000,
+  `canonical prompt word count must stay between 800 and 1000; received ${renderedPromptWordCount}`
+);
+assert.match(renderedPrompt, /briefly reflect it in their language and check that you have it right/);
+assert.match(renderedPrompt, /A caller merely sounding qualified is not permission to begin capture\./);
+assert.match(renderedPrompt, /Do not append generic reassurance, filler, or a canned offer to help\./);
+assert.match(renderedPrompt, /Call data_capture silently once the caller has provided and confirmed the configured details/);
+assert.match(renderedPrompt, /when it provides outcome_type, choose the allowed outcome that matches the agreed next step/);
+assert.match(renderedPrompt, /call finish_session silently/);
+assert.match(renderedPrompt, /Use knowledge_lookup silently when the answer can follow promptly\./);
+assert.match(renderedPrompt, /Do not collect payment-card information by voice\./);
+assert.match(renderedPrompt, /The system delivers the configured opening before your first model-generated turn\. Do not repeat it\./);
 
 console.log(JSON.stringify({ ok: true, checked: "xai_realtime_payloads" }, null, 2));

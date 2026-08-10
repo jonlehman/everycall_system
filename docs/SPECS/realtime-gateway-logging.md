@@ -9,8 +9,8 @@ Define what the gateway logs for each call and how logs are accessed.
 
 ## Required Log Content
 - Outbound `session.update` payload (redacted as needed).
-- Outbound `response.create` instructions.
-- Raw realtime events from OpenAI (inbound/outbound).
+- Outbound `conversation.item.create` tenant greeting and `response.create` tool-continuation instructions.
+- Raw xAI Realtime events (inbound/outbound).
 - Tool call requests and responses.
 - Errors and disconnects with call IDs.
 
