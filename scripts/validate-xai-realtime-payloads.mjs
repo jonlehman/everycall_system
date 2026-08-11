@@ -36,6 +36,9 @@ const migration = await import(pathToFileURL(
 const promptBlueprints = await import(pathToFileURL(
   path.join(process.cwd(), "packages/contracts/dist/promptBlueprints.js")
 ).href);
+const callTranscript = await import(pathToFileURL(
+  path.join(process.cwd(), "packages/contracts/dist/callTranscript.js")
+).href);
 const knowledgeConfig = await import(pathToFileURL(
   path.join(process.cwd(), "pages/api/_lib/knowledgeReceptionistConfig.js")
 ).href);
@@ -101,6 +104,76 @@ assert.deepEqual(update.session.audio, {
 });
 assert.equal(update.session.max_response_output_tokens, undefined);
 assert.equal(update.session.type, undefined);
+
+const cumulativeCallerRows = [
+  { role: "assistant", text: "How can I help?", event_type: "message" },
+  { role: "caller", text: "Well, it worked.", event_type: "message" },
+  { role: "caller", text: "Well, it works.", event_type: "message" },
+  { role: "caller", text: "Well, it works. But sometimes it'll error out.", event_type: "message" },
+  { role: "caller", text: "Well, it works. But sometimes it'll error out.", event_type: "message" },
+  { role: "assistant", text: "Let me check on that for you.", event_type: "message" },
+  { role: "assistant", text: "Yes, this fits what we do.", event_type: "message" }
+];
+assert.equal(
+  callTranscript.buildTranscriptFromEvents(cumulativeCallerRows),
+  [
+    "Assistant: How can I help?",
+    "Caller: Well, it works. But sometimes it'll error out.",
+    "Assistant: Let me check on that for you.",
+    "Assistant: Yes, this fits what we do."
+  ].join("\n")
+);
+assert.equal(
+  callTranscript.sanitizeTranscriptText([
+    "Caller: 4 2",
+    "Caller: 4 2 5 6 1 5",
+    "Caller: 4 2 5 6 1 5 4 6 4 zero",
+    "Caller: 4 2 5 6 1 5 4 6 4 zero"
+  ].join("\n")),
+  "Caller: 4 2 5 6 1 5 4 6 4 zero"
+);
+assert.equal(
+  callTranscript.sanitizeTranscriptText([
+    "Caller: I need help with billing.",
+    "Caller: I also have a support question.",
+    "Caller: I want to talk to Sarah.",
+    "Caller: I want to talk to someone else."
+  ].join("\n")),
+  [
+    "Caller: I need help with billing.",
+    "Caller: I also have a support question.",
+    "Caller: I want to talk to Sarah.",
+    "Caller: I want to talk to someone else."
+  ].join("\n"),
+  "separate same-speaker thoughts must not be collapsed"
+);
+assert.equal(
+  callTranscript.sanitizeTranscriptText([
+    "Caller: Necesito ayuda.",
+    "Caller: Necesito ayuda con mi cuenta."
+  ].join("\n")),
+  "Caller: Necesito ayuda con mi cuenta.",
+  "multilingual cumulative snapshots must be collapsed"
+);
+assert.equal(
+  callTranscript.sanitizeTranscriptText([
+    "Caller: I need a plumber today.",
+    "Caller: I need a plumber."
+  ].join("\n")),
+  "Caller: I need a plumber.",
+  "a later corrected snapshot may be shorter than an earlier update"
+);
+assert.equal(
+  callTranscript.sanitizeTranscriptText([
+    "Assistant: We can help.",
+    "Assistant: We can help. Let me check the details."
+  ].join("\n")),
+  [
+    "Assistant: We can help.",
+    "Assistant: We can help. Let me check the details."
+  ].join("\n"),
+  "assistant messages must never be treated as caller transcription snapshots"
+);
 
 const explicitNonReasoningUpdate = realtime.buildRealtimeSessionUpdateEvent({
   instructions: "Answer quickly.",
@@ -713,6 +786,7 @@ for (const eventName of [
   "assistant_barge_in_decision",
   "assistant_barge_in_applied",
   "assistant_finish_session_rejected",
+  "caller_transcript_turn_coalesced",
   "knowledge_lookup_timing"
 ]) {
   assert.match(
@@ -730,7 +804,17 @@ assert.match(callGatewaySource, /evaluateFinishSessionPolicy\(/);
 assert.match(callGatewaySource, /logInfo\("assistant_finish_session_rejected"/);
 assert.match(
   callGatewaySource,
-  /if \(type === "input_audio_buffer\.speech_started"\) \{\s+session\.lastAssistantTranscript = null;/,
+  /type === "conversation\.item\.input_audio_transcription\.updated"[\s\S]*persistCallerTranscriptSnapshot\(session, String\(transcript\)\)/,
+  "cumulative xAI caller transcript updates must be coalesced before persistence"
+);
+assert.match(
+  callGatewaySource,
+  /UPDATE call_events[\s\S]*WHERE id = \$2 AND call_sid = \$3 AND role = 'caller'/,
+  "later snapshots from one caller turn must update the existing call event"
+);
+assert.match(
+  callGatewaySource,
+  /if \(type === "input_audio_buffer\.speech_started"\) \{[\s\S]*?session\.callerTranscriptTurn = createCallerTranscriptTurnState\(\);\s+session\.lastAssistantTranscript = null;/,
   "a new caller turn must invalidate any closing spoken on an earlier turn"
 );
 

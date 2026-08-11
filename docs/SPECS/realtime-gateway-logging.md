@@ -47,6 +47,10 @@ Define what the gateway logs for each call and how logs are accessed.
 - `assistant_finish_session_rejected`: records an opaque call/tool correlation
   and safe rejection reason when the model requests `finish_session` before
   the configured closing has been spoken. It does not include transcript text.
+- `caller_transcript_turn_coalesced`: records how many cumulative caller
+  transcription snapshots were received and collapsed for one VAD speech turn,
+  plus database-write and final-character counts. It does not include caller
+  text or provider payloads.
 
 ## Access
 - Logs are downloadable via an authenticated endpoint.

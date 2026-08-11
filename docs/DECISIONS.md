@@ -1,5 +1,8 @@
 # Decisions
 
+## 2026-08-11
+- Treat xAI caller transcription events as cumulative snapshots within one VAD speech turn. Persist the first snapshot as one caller `call_events` row and update that row as corrected or longer snapshots arrive. Collapse legacy adjacent cumulative snapshots on every transcript read so existing call detail, export, notification, analysis, summary, and knowledge-context paths present one caller line per turn.
+
 ## 2026-08-10
 - Use canonical receptionist v7 to keep knowledge lookups from splitting substantive answers, require enough project understanding before offering a callback, treat a declined callback or transfer as declining only that option, and reserve `finish_session` for a clear mutual close. Enforce the existing spoken-close policy in the gateway so an early finish request leaves the call active and returns control to the assistant. Keep v6 archived for rollback.
 - Use `tenant_prompt_profiles.company_description` as the only tenant-specific business description in the canonical receptionist prompt. Canonical receptionist v6 keeps that description tenant-scoped and reduces the model prompt to concise, state-based guidance while retaining grounded lookup, capture, closing, safety, and conditional transfer rules; v5 remains archived for rollback.

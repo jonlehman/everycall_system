@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 import {
   buildBusinessHoursAnswerPacket,
+  buildTranscriptFromEvents,
   buildPlannerOpenAiRequestBody,
   buildRuntimeEmbeddingsRequestBody,
   executePlannerPgvectorRuntime,
@@ -427,15 +428,19 @@ export async function prewarmKnowledgeBuildAssets(pool: PoolLike, tenantKey: str
 
 async function loadRecentConversationSummary(pool: Queryable, callId: string) {
   const res = await pool.query(
-    `SELECT role, text
+    `SELECT role, text, event_type
      FROM call_events
      WHERE call_sid = $1
      ORDER BY created_at DESC
-     LIMIT 6`,
+     LIMIT 40`,
     [callId]
   );
   const rows = (res.rows || []).slice().reverse();
-  return rows.map((row) => `${normalizeText(row.role || "speaker")}: ${normalizeText(row.text)}`).filter(Boolean).join(" | ");
+  return buildTranscriptFromEvents(rows)
+    .split("\n")
+    .filter(Boolean)
+    .slice(-6)
+    .join(" | ");
 }
 
 export async function fetchKnowledgeRuntimeTurn(

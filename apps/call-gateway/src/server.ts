@@ -6,7 +6,10 @@ import WebSocket, { WebSocketServer } from "ws";
 import { readCallGatewayEnv } from "@everycall/config";
 import type { CallState } from "@everycall/contracts";
 import { estimateBillableMinutes, estimateTelephonyCostMicrosUsd, usdToMicros } from "@everycall/contracts/callCosting";
-import { buildTranscriptFromEvents } from "@everycall/contracts/callTranscript";
+import {
+  buildTranscriptFromEvents,
+  selectPreferredTranscriptSnapshot
+} from "@everycall/contracts/callTranscript";
 import {
   INTERNAL_AUTH_PURPOSES,
   getInternalServiceToken,
@@ -66,6 +69,7 @@ import {
 } from "./realtimePayloads.js";
 import { beginInboundCallStartup } from "./inboundCallStartup.js";
 import {
+  classifyTransferConfirmation,
   normalizeTransferLookupText,
   rankTransferMatches
 } from "./transferDirectory.js";
@@ -144,6 +148,7 @@ const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "assistant_barge_in_decision",
   "assistant_barge_in_applied",
   "assistant_finish_session_rejected",
+  "caller_transcript_turn_coalesced",
   "telnyx_call_control_answer_requested",
   "telnyx_call_control_answer_accepted",
   "telnyx_bidirectional_payload_mode_normalized"
@@ -246,6 +251,14 @@ type TransferLegClientState = {
   target_id: string;
 };
 
+type CallerTranscriptTurnState = {
+  rowId: string | null;
+  text: string;
+  snapshotsReceived: number;
+  databaseWrites: number;
+  summaryLogged: boolean;
+};
+
 type StreamSession = {
   callControlId: string;
   callSid: string;
@@ -298,6 +311,8 @@ type StreamSession = {
   ignoreNextStreamingStopped?: boolean;
   callerTurnTiming?: RealtimeTurnTiming | null;
   lastAssistantTranscript?: string | null;
+  callerTranscriptTurn?: CallerTranscriptTurnState | null;
+  callerTranscriptPersistenceTail?: Promise<void>;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -332,6 +347,8 @@ function createStreamSession(
     outputPrimed: false,
     currentResponseId: null,
     lastAssistantTranscript: null,
+    callerTranscriptTurn: null,
+    callerTranscriptPersistenceTail: Promise.resolve(),
     currentAssistantItemId: null,
     assistantAudioActive: false,
     assistantAudioMsSent: 0,
@@ -351,6 +368,73 @@ function createStreamSession(
     ignoreNextStreamingStopped: false,
     ...(realtimeLogPath ? { realtimeLogPath } : {})
   };
+}
+
+function createCallerTranscriptTurnState(): CallerTranscriptTurnState {
+  return {
+    rowId: null,
+    text: "",
+    snapshotsReceived: 0,
+    databaseWrites: 0,
+    summaryLogged: false
+  };
+}
+
+function logCallerTranscriptTurnSummary(session: StreamSession, source: string) {
+  const turn = session.callerTranscriptTurn;
+  if (!turn || turn.summaryLogged || turn.snapshotsReceived < 2) return;
+  turn.summaryLogged = true;
+  logInfo("caller_transcript_turn_coalesced", {
+    callSid: session.callSid,
+    source,
+    snapshotsReceived: turn.snapshotsReceived,
+    snapshotsCollapsed: Math.max(0, turn.snapshotsReceived - 1),
+    databaseWrites: turn.databaseWrites,
+    finalTextCharacters: turn.text.length
+  });
+}
+
+async function persistCallerTranscriptSnapshot(session: StreamSession, transcript: string) {
+  if (!pool) return;
+  const turn = session.callerTranscriptTurn || createCallerTranscriptTurnState();
+  session.callerTranscriptTurn = turn;
+  turn.snapshotsReceived += 1;
+
+  const preferredText = selectPreferredTranscriptSnapshot(turn.text, transcript);
+  if (!preferredText || preferredText === turn.text) return;
+  turn.text = preferredText;
+  const textToPersist = preferredText;
+
+  const persistence = (session.callerTranscriptPersistenceTail || Promise.resolve())
+    .catch(() => undefined)
+    .then(async () => {
+      if (turn.rowId) {
+        await pool.query(
+          `UPDATE call_events
+           SET text = $1
+           WHERE id = $2 AND call_sid = $3 AND role = 'caller'`,
+          [textToPersist, turn.rowId, session.callSid]
+        );
+      } else {
+        const inserted = await pool.query(
+          `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
+           VALUES ($1, $2, $3, $4, 'message')
+           RETURNING id`,
+          [session.callSid, session.tenantKey, "caller", textToPersist]
+        );
+        turn.rowId = inserted.rows?.[0]?.id ? String(inserted.rows[0].id) : null;
+      }
+      turn.databaseWrites += 1;
+    });
+  session.callerTranscriptPersistenceTail = persistence;
+  try {
+    await persistence;
+  } catch (err) {
+    logError("caller_transcript_persist_failed", {
+      callSid: session.callSid,
+      message: err instanceof Error ? err.message : "unknown"
+    });
+  }
 }
 
 function logPrewarmOutcome(callSid: string, tenantKey: string, source: string, result: { status: "ready" | "failed"; fetchMs: number; cacheHit: boolean; message?: string; buildId?: string }) {
@@ -1190,20 +1274,6 @@ function normalizeOptionalText(value: unknown) {
   return text || null;
 }
 
-function classifyTransferConfirmation(text: string) {
-  const normalized = normalizeTransferLookupText(text);
-  if (!normalized) return "neutral" as const;
-  if (/\b(no|nope|nah|not now|dont|don't|do not|cancel|stop|wait|hold on|never mind)\b/.test(normalized)) {
-    return "rejected" as const;
-  }
-  if (
-    /\b(yes|yeah|yep|sure|ok|okay|please|go ahead|that works|sounds good|do it|connect me|transfer me)\b/.test(normalized)
-  ) {
-    return "confirmed" as const;
-  }
-  return "neutral" as const;
-}
-
 function buildTransferTargetId(id: number) {
   return `tenant_user_${id}`;
 }
@@ -1366,9 +1436,10 @@ function notePendingTransferLookup(session: StreamSession, lookupResult: {
 
 function noteCallerTransferConfirmation(session: StreamSession, transcript: string) {
   const pendingCandidate = session.pendingTransferCandidate;
-  if (!pendingCandidate || pendingCandidate.confirmed) return;
+  if (!pendingCandidate) return;
   const classification = classifyTransferConfirmation(transcript);
   if (classification === "confirmed") {
+    if (pendingCandidate.confirmed) return;
     pendingCandidate.confirmed = true;
     pendingCandidate.confirmedAt = new Date().toISOString();
     logInfo("call_transfer_confirmation_received", {
@@ -1389,6 +1460,18 @@ function noteCallerTransferConfirmation(session: StreamSession, transcript: stri
       targetExtension: pendingCandidate.targetExtension || undefined
     });
     session.pendingTransferCandidate = null;
+    return;
+  }
+  if (pendingCandidate.confirmed) {
+    pendingCandidate.confirmed = false;
+    pendingCandidate.confirmedAt = null;
+    logInfo("call_transfer_confirmation_revised", {
+      callSid: session.callSid,
+      callControlId: session.callControlId,
+      targetId: pendingCandidate.targetId,
+      targetName: pendingCandidate.targetName,
+      targetExtension: pendingCandidate.targetExtension || undefined
+    });
   }
 }
 
@@ -1621,6 +1704,12 @@ async function endCallSession(session: StreamSession | undefined, reason: string
   if (!session || session.isShuttingDown) return;
   session.isShuttingDown = true;
   session.callActive = false;
+  try {
+    await session.callerTranscriptPersistenceTail;
+  } catch {
+    // Persistence failures are logged where the queued write is performed.
+  }
+  logCallerTranscriptTurnSummary(session, "session_end");
   await persistCallUsage(session);
   if (session.knowledgeCallState) {
     await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
@@ -2796,15 +2885,18 @@ function connectXAiRealtime(session: StreamSession) {
       return;
     }
 
-    if (type === "conversation.item.input_audio_transcription.completed" || type === "input_audio_transcription.completed") {
+    if (
+      type === "conversation.item.input_audio_transcription.updated"
+      || type === "conversation.item.input_audio_transcription.completed"
+      || type === "input_audio_transcription.updated"
+      || type === "input_audio_transcription.completed"
+    ) {
       const transcript = payloadMsg.transcript || payloadMsg.text || "";
       if (transcript && pool) {
-        noteCallerTransferConfirmation(session, String(transcript));
-        await pool.query(
-          `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-           VALUES ($1, $2, $3, $4, 'message')`,
-          [session.callSid, session.tenantKey, "caller", String(transcript)]
-        );
+        if (type.endsWith(".completed")) {
+          noteCallerTransferConfirmation(session, String(transcript));
+        }
+        await persistCallerTranscriptSnapshot(session, String(transcript));
       }
       return;
     }
@@ -2815,6 +2907,8 @@ function connectXAiRealtime(session: StreamSession) {
     }
 
     if (type === "input_audio_buffer.speech_started") {
+      logCallerTranscriptTurnSummary(session, "next_speech_started");
+      session.callerTranscriptTurn = createCallerTranscriptTurnState();
       session.lastAssistantTranscript = null;
       if (session.transferState?.status === "pending" || session.aiDetached) {
         logInfo("assistant_barge_in_decision", {

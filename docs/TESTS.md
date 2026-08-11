@@ -72,6 +72,7 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 - Interrupt the assistant mid-sentence; verify xAI handles model-side barge-in, EveryCall sends Telnyx `clear`, and the assistant handles the new utterance without replaying stale audio.
 - Verify `xai_realtime_turn_latency` records endpoint-to-first-audio timing for ordinary caller turns and turns with tool calls.
 - Verify `telnyx_call_control_answer_requested` occurs before prompt/bootstrap completion and records a low `webhookToAnswerRequestMs`; confirm the PSTN call is answered on the first ring.
+- Speak one sentence slowly enough to produce multiple xAI transcription updates. Verify the saved and exported transcript contains one complete caller line for that VAD turn, and verify Render emits `caller_transcript_turn_coalesced` with multiple snapshots but no transcript text.
 
 ## Outbound Sales System
 - Run `corepack pnpm validate:sales-system`.

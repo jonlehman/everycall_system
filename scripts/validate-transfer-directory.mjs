@@ -20,5 +20,11 @@ assert.deepEqual(directory.rankTransferMatches([targets[0]], "Who's available?")
 assert.deepEqual(directory.rankTransferMatches(targets, "billing department"), []);
 assert.deepEqual(directory.rankTransferMatches([{ id: 3, name: "Will Jackson" }], "Will you transfer me?"), []);
 assert.deepEqual(directory.rankTransferMatches([{ id: 3, name: "Will Jackson" }], "Please transfer me to Will.").map((target) => target.id), [3]);
+assert.equal(directory.classifyTransferConfirmation("Yes."), "confirmed");
+assert.equal(directory.classifyTransferConfirmation("Yes, but not now."), "rejected");
+assert.equal(directory.classifyTransferConfirmation("Yes, first tell me who it is."), "neutral");
+assert.equal(directory.classifyTransferConfirmation("Yeah, is this the kind of thing you do?"), "neutral");
+assert.equal(directory.classifyTransferConfirmation("Yes, I'd like that."), "confirmed");
+assert.equal(directory.classifyTransferConfirmation("Can you connect me to John?"), "neutral");
 
 console.log(JSON.stringify({ ok: true, checked: "transfer_directory" }, null, 2));

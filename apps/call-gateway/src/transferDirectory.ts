@@ -11,6 +11,35 @@ export function normalizeTransferLookupText(value: unknown) {
     .trim();
 }
 
+export function classifyTransferConfirmation(value: unknown) {
+  const raw = String(value || "").trim();
+  const normalized = normalizeTransferLookupText(value);
+  if (!normalized) return "neutral" as const;
+  if (/\b(no|nope|nah|not now|dont|don t|do not|cancel|stop|wait|hold on|never mind)\b/.test(normalized)) {
+    return "rejected" as const;
+  }
+  if (/\b(but|first|before|after|later|question|tell me|explain)\b/.test(normalized)) {
+    return "neutral" as const;
+  }
+  if (
+    raw.includes("?")
+    || /\b(?:is this|are you|can you|could you|would you|do you|does it|what|why|how|who|when|where)\b/.test(normalized)
+  ) {
+    return "neutral" as const;
+  }
+  if (
+    /\b(?:go ahead|do it|connect me|transfer me)\b/.test(normalized)
+    || /^(?:that works|sounds good)$/.test(normalized)
+  ) {
+    return "confirmed" as const;
+  }
+  const wordCount = normalized.split(" ").filter(Boolean).length;
+  if (/^(?:yes|yeah|yep|sure|ok|okay|absolutely|please)\b/.test(normalized) && wordCount <= 10) {
+    return "confirmed" as const;
+  }
+  return "neutral" as const;
+}
+
 function normalizeDigitsOnly(value: unknown) {
   return String(value || "").replace(/[^\d]/g, "");
 }

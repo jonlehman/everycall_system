@@ -33,6 +33,10 @@
   and returns control to the assistant; correlate the event with the transcript
   to determine whether a declined callback or transfer was mistaken for a
   goodbye.
+- `caller_transcript_turn_coalesced` confirms that cumulative xAI transcription
+  snapshots were folded into one caller transcript row. `snapshotsReceived`
+  may be greater than one; `snapshotsCollapsed` should then equal one less.
+  This event includes counts and character length only, never transcript text.
 - For a slow `knowledge_lookup`, correlate `knowledge_lookup_timing` with those
   response events:
   - `endpointToToolCallReadyMs` measures how long xAI took after caller
@@ -53,6 +57,11 @@
 ## Common Issues
 - Assistant interrupts caller: check barge-in cancel logic and audio queue clearing.
 - Missing pre-close question: verify deterministic enforcement.
+- Repeated growing caller lines in a transcript: verify the deployed gateway
+  handles both `conversation.item.input_audio_transcription.updated` and
+  `.completed`, then look for `caller_transcript_turn_coalesced`. Historical
+  staircase rows are collapsed by the shared transcript reader and do not
+  require destructive database cleanup.
 - Wrong knowledge answers: verify compiled knowledge retrieval, overrides, and guardrails.
 - Realtime session update rejected: inspect the xAI error `param`, confirm the selected voice is valid, and confirm G.711 μ-law is configured end-to-end.
 - Static or missing outbound audio after the Grok Voice Think Fast 2.0 switch: verify the xAI `session.update` payload uses `session.audio.input.format.type: "audio/pcmu"` and `session.audio.output.format.type: "audio/pcmu"` with JSON transport, and that Telnyx is configured for G.711 μ-law at 8 kHz. Flat `input_audio_format` / `output_audio_format` fields can leave xAI on its default 24 kHz PCM and must not be used.
