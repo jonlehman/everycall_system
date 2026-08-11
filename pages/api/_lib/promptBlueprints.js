@@ -48,6 +48,12 @@ function cleanGeneratedCompanyDescription(value) {
   return bounded || text.slice(0, COMPANY_DESCRIPTION_MAX_CHARS).trim();
 }
 
+function cleanExistingCompanyDescription(value) {
+  return normalizeText(value)
+    .replace(/^["'“”]+|["'“”]+$/g, "")
+    .replace(/\s+/g, " ");
+}
+
 function isUsableGeneratedCompanyDescription(value) {
   const text = normalizeText(value);
   if (!text) return false;
@@ -55,6 +61,185 @@ function isUsableGeneratedCompanyDescription(value) {
   if (text.split(/\s+/).length < 8) return false;
   if (/\b(privacy policy|terms and conditions|cookie policy|contact us page|faq page)\b/i.test(text)) return false;
   return true;
+}
+
+function isUsableSpokenCompanyDescription(value) {
+  const text = normalizeText(value);
+  if (!text || text.length > COMPANY_DESCRIPTION_MAX_CHARS) return false;
+  if (text.split(/\s+/).length < 4) return false;
+  return !/\b(privacy policy|terms and conditions|cookie policy|contact us page|faq page)\b/i.test(text);
+}
+
+function semanticDescriptionSequence(value, businessName = "") {
+  const businessNameWords = normalizeText(businessName)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(/\s+/g)
+    .filter(Boolean);
+  const words = normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(/\s+/g)
+    .filter(Boolean);
+  const beginsWithBusinessName = businessNameWords.length > 0
+    && businessNameWords.every((word, index) => words[index] === word);
+  const beginsWithWe = words[0] === "we";
+  const withoutLeadingSubject = beginsWithBusinessName
+    ? words.slice(businessNameWords.length)
+    : beginsWithWe
+      ? words.slice(1)
+      : words;
+  const firstWordInflections = {
+    is: "are",
+    has: "have",
+    does: "do",
+    builds: "build",
+    creates: "create",
+    delivers: "deliver",
+    designs: "design",
+    develops: "develop",
+    handles: "handle",
+    helps: "help",
+    installs: "install",
+    manages: "manage",
+    makes: "make",
+    offers: "offer",
+    provides: "provide",
+    repairs: "repair",
+    serves: "serve",
+    specializes: "specialize",
+    supports: "support",
+    supplies: "supply",
+    works: "work"
+  };
+  if (beginsWithBusinessName && withoutLeadingSubject.length > 0) {
+    const [firstWord, ...rest] = withoutLeadingSubject;
+    return [firstWordInflections[firstWord] || firstWord, ...rest];
+  }
+  return withoutLeadingSubject;
+}
+
+export function isConservativeCompanyDescriptionRewrite(source, candidate, businessName = "") {
+  const original = cleanExistingCompanyDescription(source);
+  const rewritten = cleanGeneratedCompanyDescription(candidate);
+  if (!original || !isUsableSpokenCompanyDescription(rewritten)) return false;
+  const originalSequence = semanticDescriptionSequence(original, businessName);
+  const rewrittenSequence = semanticDescriptionSequence(rewritten, businessName);
+  if (!originalSequence.length || !rewrittenSequence.length) return false;
+  return originalSequence.length === rewrittenSequence.length
+    && originalSequence.every((word, index) => rewrittenSequence[index] === word);
+}
+
+export function rewriteLeadingBusinessNameForSpokenRegister(source, businessName) {
+  const original = cleanExistingCompanyDescription(source);
+  const name = normalizeText(businessName);
+  if (!original || !name) return original;
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const verbInflections = {
+    is: "are",
+    has: "have",
+    does: "do",
+    builds: "build",
+    creates: "create",
+    delivers: "deliver",
+    designs: "design",
+    develops: "develop",
+    handles: "handle",
+    helps: "help",
+    installs: "install",
+    manages: "manage",
+    makes: "make",
+    offers: "offer",
+    provides: "provide",
+    repairs: "repair",
+    serves: "serve",
+    specializes: "specialize",
+    supports: "support",
+    supplies: "supply",
+    works: "work"
+  };
+  const verbPattern = Object.keys(verbInflections).join("|");
+  const subjectMatch = original.match(new RegExp(`^${escapedName}\\s+(${verbPattern})\\b`, "i"));
+  if (!subjectMatch) return original;
+  const sourceVerb = normalizeText(subjectMatch[1]).toLowerCase();
+  const spokenVerb = verbInflections[sourceVerb];
+  return spokenVerb
+    ? `We ${spokenVerb}${original.slice(subjectMatch[0].length)}`
+    : original;
+}
+
+export async function rewriteCompanyDescriptionForSpokenRegister({
+  businessName = "",
+  companyDescription = "",
+  model = COMPANY_DESCRIPTION_MODEL
+} = {}) {
+  const source = cleanExistingCompanyDescription(companyDescription);
+  if (!source) return "";
+  const rewriteSystems = [
+    [
+      "Rewrite a company description so a warm phone receptionist can say it aloud naturally.",
+      "Keep every source content word in the same order.",
+      "You may replace a leading business name with we, adjust only its immediately following verb for first-person grammar, and improve punctuation.",
+      "Do not add, remove, reorder, pluralize, singularize, or replace any service, technology, audience, boundary, place, number, limitation, adjective, or other content word.",
+      "Never change polarity, modality, exclusivity, relationships, scope, or quantities.",
+      `Keep the result to ${COMPANY_DESCRIPTION_MAX_CHARS} characters or fewer. Return JSON only.`
+    ]
+  ];
+  let lastError = null;
+  for (let index = 0; index < rewriteSystems.length; index += 1) {
+    try {
+      const result = await callOpenAiJsonModel({
+        model,
+        system: rewriteSystems[index].join("\n"),
+        user: [
+          normalizeText(businessName) ? `Business name: ${normalizeText(businessName)}` : "",
+          `Source description: ${source}`
+        ].filter(Boolean).join("\n"),
+        schema: z.object({ company_description: z.string().min(1) }),
+        jsonSchemaName: "spoken_company_description",
+        jsonSchema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["company_description"],
+          properties: {
+            company_description: {
+              type: "string",
+              description: `One or two short spoken sentences, ${COMPANY_DESCRIPTION_MAX_CHARS} characters or fewer.`
+            }
+          }
+        },
+        temperature: 0.1,
+        maxOutputTokens: 180,
+        promptCacheKey: `everycall-spoken-company-description-v1-${index + 1}`
+      });
+      const rewritten = cleanGeneratedCompanyDescription(result.parsed.company_description);
+      if (isConservativeCompanyDescriptionRewrite(source, rewritten, businessName)) return rewritten;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  const deterministicRewrite = rewriteLeadingBusinessNameForSpokenRegister(source, businessName);
+  if (deterministicRewrite !== source
+    && isConservativeCompanyDescriptionRewrite(source, deterministicRewrite, businessName)) {
+    return deterministicRewrite;
+  }
+  if (lastError) {
+    console.error("company_description_spoken_rewrite_failed", {
+      businessName: normalizeText(businessName),
+      error: normalizeText(lastError?.message || "unknown")
+    });
+  } else {
+    console.error("company_description_spoken_rewrite_rejected", {
+      businessName: normalizeText(businessName)
+    });
+  }
+  return source;
+}
+
+export function hasExplicitCompanyDescriptionInput(input = {}) {
+  const source = asObject(input);
+  return Object.prototype.hasOwnProperty.call(source, "company_description")
+    || Object.prototype.hasOwnProperty.call(source, "companyDescription");
 }
 
 function asObject(value) {
@@ -248,10 +433,12 @@ async function generateCompanyDescriptionFromSourcePages({ businessName = "", so
   if (!sourcePages.length) return "";
 
   const system = [
-    "You write concise company descriptions for a phone receptionist setup screen.",
-    `Generate one plain-language description of the company in ${COMPANY_DESCRIPTION_MAX_CHARS} characters or fewer.`,
+    "You write concise company descriptions that a warm phone receptionist can say aloud naturally.",
+    `Generate one or two short spoken sentences in plain everyday language, ${COMPANY_DESCRIPTION_MAX_CHARS} characters or fewer.`,
     "Synthesize across the supplied website pages. Do not copy one page or preserve marketing fluff.",
     "Focus on what the company does, who it serves, service area if supported, and what callers usually need help with.",
+    "Avoid written marketing language such as seamless, scalable, end-to-end, innovative, leading, and best-in-class.",
+    "Do not name technologies or products unless the source needs the name to accurately describe the business.",
     "Do not mention page titles, website navigation, forms, awards, warranties, policies, prices, or history unless central to the business.",
     "Use only facts supported by the supplied pages. Return JSON only."
   ].join("\n");
@@ -806,10 +993,21 @@ function buildStoredTenantPromptProfile(profile, defaults, tenantKey) {
 }
 
 export async function saveTenantPromptProfile(db, tenantKey, input = {}, actor = null) {
+  const previous = await loadTenantPromptProfile(db, tenantKey);
+  const defaults = await buildTenantPromptProfileDefaults(db, tenantKey);
+  let normalized = normalizeTenantPromptProfile(input, previous);
+  const hasExplicitCompanyDescription = hasExplicitCompanyDescriptionInput(input);
+  if (hasExplicitCompanyDescription && normalizeText(normalized.company_description)) {
+    const spokenDescription = await rewriteCompanyDescriptionForSpokenRegister({
+      businessName: normalized.business_name,
+      companyDescription: normalized.company_description
+    });
+    normalized = normalizeTenantPromptProfile({
+      ...normalized,
+      company_description: spokenDescription
+    }, previous);
+  }
   return withTransaction(db, async (client) => {
-    const previous = await loadTenantPromptProfile(client, tenantKey);
-    const defaults = await buildTenantPromptProfileDefaults(client, tenantKey);
-    const normalized = normalizeTenantPromptProfile(input, previous);
     const validation = validateTenantPromptProfile(normalized);
     if (!validation.valid) {
       throw new Error(`invalid_tenant_prompt_profile:${validation.errors.join(",")}`);
@@ -1009,7 +1207,8 @@ export async function loadPromptRuntimeContext(
   {
     promptBlueprintOverride = null,
     tenantPromptProfileOverride = null,
-    sectionOverridesOverride = null
+    sectionOverridesOverride = null,
+    coreFactsOverride = []
   } = {}
 ) {
   const [liveBlueprint, liveProfileState, liveOverridesState] = await Promise.all([
@@ -1052,7 +1251,8 @@ export async function loadPromptRuntimeContext(
   const rendered = renderPromptContext(blueprint, tenantProfile, {
     companyDescription,
     companyDescriptionSource,
-    sectionOverrides: rawSectionOverrides
+    sectionOverrides: rawSectionOverrides,
+    coreFacts: Array.isArray(coreFactsOverride) ? coreFactsOverride : []
   });
   return {
     blueprint,

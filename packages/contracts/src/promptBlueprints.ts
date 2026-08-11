@@ -3,6 +3,7 @@ export type PromptBlueprintStatus = "draft" | "active" | "archived";
 export type PromptBlueprintSectionId =
   | "role_objective"
   | "business_context"
+  | "core_facts"
   | "priority_order"
   | "personality_tone"
   | "variety"
@@ -105,6 +106,11 @@ export type PromptRenderContext = {
   companyDescriptionSource: "tenant_override" | "active_build_summary" | "blank";
 };
 
+export type CoreFactPromptValue = {
+  title: string;
+  spoken_text: string;
+};
+
 export type RuntimeToolDefinition = {
   type: "function";
   name: RuntimeToolName;
@@ -125,6 +131,10 @@ const DEFAULT_LEAD_GOAL = "callback information";
 const DEFAULT_REQUIRED_CONTACT_FIELDS = ["caller’s name", "caller’s best phone number"];
 const DEFAULT_AI_DISCLOSURE = "I’m the business’s automated assistant.";
 const DEFAULT_CLOSING_PHRASE = "Thanks for calling. Have a great rest of your day.";
+const CORE_FACTS_BLOCK_TOKEN_BUDGET = 600;
+const CORE_FACTS_MEMORY_REFERENCE_SENTENCE = "You may speak from memory only about this general description, the facts in What You Know By Heart below, ordinary courtesies, and your identity as the business's automated assistant.";
+const CORE_FACTS_LOOKUP_RULE = "Use knowledge_lookup before stating any specific business fact that What You Know By Heart doesn't cover.";
+const CORE_FACT_INSTRUCTION_PATTERN = /\b(ignore (all |any )?(previous|prior) instructions?|system prompt|developer message|assistant instructions?|call (a )?tool|knowledge_lookup|data_capture|finish_session)\b/i;
 
 const SECTION_SEEDS: PromptSectionSeed[] = [
   {
@@ -174,7 +184,20 @@ Say every business fact in plain spoken language, the way you'd explain it to a 
 
 {company_description}
 
-You may speak from memory only about this general description, ordinary courtesies, and your identity as the business's automated assistant. Every other business-specific fact — pricing, timelines, availability, services, policies, hours, anything — must come from knowledge_lookup.`
+You may speak from memory only about this general description, the facts in What You Know By Heart below, ordinary courtesies, and your identity as the business's automated assistant. Every other business-specific fact must come from knowledge_lookup.`
+  },
+  {
+    section_id: "core_facts",
+    title: "What You Know By Heart",
+    is_template: true,
+    allowed_placeholders: ["core_facts_block"],
+    default_text: `What You Know By Heart
+
+These facts are approved for you to state from memory, rephrased in your own spoken words:
+
+{core_facts_block}
+
+If a caller's question is fully answered by these facts, answer immediately — no lookup, no holding phrase. If any part of the question goes beyond them, use knowledge_lookup for that part. Never stretch or combine these facts to cover something they don't plainly say.`
   },
   {
     section_id: "variety",
@@ -268,7 +291,7 @@ Never say the team was notified or that someone will call unless the workflow ac
     allowed_placeholders: [],
     default_text: `Facts and Tools
 
-Use knowledge_lookup before stating any specific business fact. Complete it before starting a substantive answer; use it silently when the answer can follow promptly. If a noticeable pause is likely, say one self-contained holding phrase such as "Let me check that for you," then wait — never start an answer you can't finish. Never mention tools, searches, internal systems, or sources.
+Use knowledge_lookup before stating any specific business fact that What You Know By Heart doesn't cover. Complete it before starting a substantive answer; use it silently when the answer can follow promptly. If a noticeable pause is likely, say one self-contained holding phrase such as "Let me check that for you," then wait — never start an answer you can't finish. Never mention tools, searches, internal systems, or sources.
 
 Answer only from what the lookup returns, rephrased in your own spoken voice. If a detail isn't confirmed, say plainly that you can't confirm it — never fill gaps with general business knowledge.
 
@@ -460,6 +483,16 @@ function renderRequiredContactFieldsBlock(values: string[]) {
   return normalized.map((value) => `- ${value}`).join("\n");
 }
 
+function orderRequiredContactFields(values: string[]) {
+  const ordered = [...values];
+  const nameIndex = ordered.findIndex((value) => /\bname\b/i.test(value));
+  const phoneIndex = ordered.findIndex((value) => /\b(phone|telephone|callback number)\b/i.test(value));
+  if (nameIndex >= 0 && phoneIndex >= 0 && nameIndex > phoneIndex) {
+    [ordered[nameIndex], ordered[phoneIndex]] = [ordered[phoneIndex]!, ordered[nameIndex]!];
+  }
+  return ordered;
+}
+
 function renderRequiredContactFieldsPhrase(values: string[]) {
   const normalized = values.length ? values : DEFAULT_REQUIRED_CONTACT_FIELDS;
   if (normalized.length === 1) return normalized[0] ?? "the required callback details";
@@ -467,6 +500,23 @@ function renderRequiredContactFieldsPhrase(values: string[]) {
     return `${normalized[0] ?? "the required callback details"} and ${normalized[1] ?? "the phone number"}`;
   }
   return "the required callback details";
+}
+
+function renderCoreFactsBlock(values: CoreFactPromptValue[]) {
+  const lines: string[] = [];
+  let estimatedTokens = 0;
+  for (const item of Array.isArray(values) ? values : []) {
+    const title = normalizeText(item?.title).replace(/[\r\n:]+/g, " ").replace(/\s+/g, " ");
+    const spokenText = normalizeText(item?.spoken_text).replace(/[\r\n]+/g, " ").replace(/\s+/g, " ");
+    if (!title || !spokenText) continue;
+    if (CORE_FACT_INSTRUCTION_PATTERN.test(title) || CORE_FACT_INSTRUCTION_PATTERN.test(spokenText)) continue;
+    const line = `${title}: ${spokenText}`;
+    const lineTokens = Math.ceil(new TextEncoder().encode(`${line}\n`).length / 4);
+    if (estimatedTokens + lineTokens > CORE_FACTS_BLOCK_TOKEN_BUDGET) break;
+    lines.push(line);
+    estimatedTokens += lineTokens;
+  }
+  return lines.join("\n");
 }
 
 function renderSamplePhraseGroupsBlock(groups: Record<SamplePhraseGroupId, string[]>) {
@@ -563,9 +613,9 @@ export function getPromptSectionSeeds() {
 export function getDefaultPromptBlueprintSeed() {
   return {
     blueprint_key: "canonical_receptionist",
-    version: 8,
+    version: 9,
     status: "active" as PromptBlueprintStatus,
-    name: "Canonical Receptionist v8",
+    name: "Canonical Receptionist v9",
     sample_phrase_groups: normalizeSamplePhraseGroups(DEFAULT_SAMPLE_PHRASE_GROUPS),
     tool_definitions: {
       knowledge_lookup: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup.parameter_descriptions } },
@@ -659,7 +709,7 @@ export function normalizeTenantPromptProfile(input: unknown, defaults?: Partial<
     opening_line: normalizeText(source.opening_line || source.openingLine) || openingLineDefault,
     ai_disclosure_line: normalizeText(source.ai_disclosure_line || source.aiDisclosureLine) || normalizeText(fallback.ai_disclosure_line) || DEFAULT_AI_DISCLOSURE,
     lead_goal: normalizeText(source.lead_goal || source.leadGoal) || normalizeText(fallback.lead_goal) || DEFAULT_LEAD_GOAL,
-    required_contact_fields: uniqueValues(asStringArray(source.required_contact_fields || source.requiredContactFields, fallback.required_contact_fields || DEFAULT_REQUIRED_CONTACT_FIELDS)),
+    required_contact_fields: orderRequiredContactFields(uniqueValues(asStringArray(source.required_contact_fields || source.requiredContactFields, fallback.required_contact_fields || DEFAULT_REQUIRED_CONTACT_FIELDS))),
     closing_phrase: normalizeText(source.closing_phrase || source.closingPhrase) || normalizeText(fallback.closing_phrase) || DEFAULT_CLOSING_PHRASE,
     updated_at: normalizeText(source.updated_at || source.updatedAt) || normalizeText(fallback.updated_at) || null,
     created_at: normalizeText(source.created_at || source.createdAt) || normalizeText(fallback.created_at) || null
@@ -740,6 +790,7 @@ export function renderPromptContext(
     companyDescriptionSource?: "tenant_override" | "active_build_summary" | "blank";
     companyDescription?: string;
     sectionOverrides?: Record<string, string>;
+    coreFacts?: CoreFactPromptValue[];
   } = {}
 ): PromptRenderContext {
   const blueprint = normalizePromptBlueprintBundle(blueprintInput);
@@ -747,10 +798,12 @@ export function renderPromptContext(
   const sectionOverrides = asObject(options.sectionOverrides);
   const companyDescription = normalizeText(options.companyDescription || tenantProfile.company_description);
   const samplePhraseGroupsBlock = renderSamplePhraseGroupsBlock(blueprint.sample_phrase_groups);
+  const coreFactsBlock = renderCoreFactsBlock(options.coreFacts || []);
   const renderValues = {
     assistant_name: tenantProfile.assistant_name,
     business_name: tenantProfile.business_name,
     company_description: companyDescription,
+    core_facts_block: coreFactsBlock,
     lead_goal: tenantProfile.lead_goal,
     required_contact_fields_block: renderRequiredContactFieldsBlock(tenantProfile.required_contact_fields),
     required_contact_fields_phrase: renderRequiredContactFieldsPhrase(tenantProfile.required_contact_fields),
@@ -762,7 +815,20 @@ export function renderPromptContext(
   const renderedSections = blueprint.sections
     .map((section) => {
       const overrideText = normalizeText(sectionOverrides[section.section_id]);
-      const textSource = overrideText || section.default_text;
+      if (section.section_id === "core_facts" && !coreFactsBlock) {
+        return null;
+      }
+      let textSource = overrideText || section.default_text;
+      if (!coreFactsBlock && section.section_id === "business_context") {
+        textSource = textSource
+          .replace(CORE_FACTS_MEMORY_REFERENCE_SENTENCE, "")
+          .replace(/\n[ \t]+/g, "\n");
+      }
+      if (!coreFactsBlock && section.section_id === "tools") {
+        textSource = textSource
+          .replace(CORE_FACTS_LOOKUP_RULE, "")
+          .replace(/\n[ \t]+/g, "\n");
+      }
       const placeholders = extractPlaceholders(textSource);
       const renderedText = interpolateTemplate(textSource, renderValues).trim();
       if (section.section_id === "sample_phrase_guidance" && !samplePhraseGroupsBlock) {

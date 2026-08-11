@@ -23,7 +23,9 @@
 ## xAI Realtime Payload Validation
 - Run `corepack pnpm --filter @everycall/call-gateway... build` before importing gateway dist helpers.
 - Run `corepack pnpm validate:xai-realtime-payloads` after gateway build.
-- The payload validator renders canonical receptionist v8 with all seven tenant variables and compares the complete result byte-for-byte with the approved prompt. It also verifies that transfer-enabled sessions receive the same `system_prompt` without hidden gateway text.
+- The payload validator renders canonical receptionist v9 with all seven tenant values plus the automatic `core_facts_block` and compares the complete result byte-for-byte with the approved prompt. It also verifies the full by-heart section and its two references disappear when there are no pins, name precedes phone in callback capture, and transfer-enabled sessions receive the same `system_prompt` without hidden gateway text.
+- Run `corepack pnpm validate:core-facts` to verify AI-at-creation rating fields, AI editorial ordering, exact rendered-line independent auditing with a required marketing-language classification and final known-leak fail-safe, missing-rating retry and fail-closed behavior, absence of numeric score cutoffs or score-order fallback, AI-ordered refinement, 600-token/20-pin defenses, instruction-like safety rejection, deletion-only atomic spoken rewrites limited to narrow comma-delimited trailing promotional clauses plus adversarial domain-term/embedded-qualifier/inversion cases, retrieval hysteresis, three-swap cap, idempotent migration, pin constraints, and continued vector indexing of every canonical fact.
+- Before rollout, run `corepack pnpm audit:core-facts-rollout`; it reports migration names and v8/v9 override counts without printing tenant prompt text or secrets.
 - Run `corepack pnpm validate:transfer-directory` after gateway build. It verifies exact name/extension lookup, natural-language transfer requests, general directory questions, and safe no-match behavior.
 - Before changing existing tenant profiles, run `node scripts/migrate-xai-runtime-profiles.mjs` and review the dry-run rows.
 - Apply the tenant profile migration only with `EVERYCALL_APPLY_XAI_PROFILE_MIGRATION=1`.
@@ -58,7 +60,8 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 - Compare endpoint-to-first-audio latency at `high` reasoning against the previous `none` baseline while repeating the same conversation-continuity and tool-use scenarios.
 - Verify no `modalities`, `max_response_output_tokens`, `eagerness`, `create_response`, or `interrupt_response` fields are sent on the inbound xAI session.
 - For a tenant with an eligible directory entry, verify xAI's accepted session includes `lookup_transfer_target` and `transfer_call` alongside the knowledge and data tools.
-- Verify the model-facing system instructions begin with `Who You Are`, use the tenant's seven configured values, and contain no gateway-appended transfer section.
+- Verify the model-facing system instructions begin with `Who You Are`, use the tenant's seven configured values, render pinned facts as plain `Title: spoken fact` lines, and contain no gateway-appended transfer section.
+- Ask one question fully covered by a pinned core fact and verify the assistant answers immediately without `knowledge_lookup`. Ask an adjacent unsupported question and verify it still calls `knowledge_lookup` instead of stretching the pinned fact.
 - Verify first assistant audio arrives and outbound audio stays clear over Telnyx.
 - Verify a knowledge lookup does not mention tool names, packets, scores, or system logic.
 - Verify a knowledge lookup either runs silently or follows only a self-contained holding phrase; the assistant must not begin a substantive answer, pause for the lookup, and then continue it.
