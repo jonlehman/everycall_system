@@ -9,6 +9,25 @@
 ## Logs
 - Render service logs for call-gateway
 - Look for: `xai_realtime_session_updated`, `assistant_response_canceled`, `xai_realtime_response_done`
+- For audio that stops and resumes, filter one call ID across
+  `assistant_audio_gap`, `assistant_audio_pump_trace`, and
+  `assistant_barge_in_decision`:
+  - `assistant_audio_gap` plus nonzero `underrunCount`/`reprimeCount` means the
+    Telnyx output queue ran dry while xAI was still producing the response.
+  - `assistant_barge_in_decision` with `decision=clear_applied` and
+    `clearSent=true` means playback was deliberately cleared after xAI reported
+    caller speech.
+  - `decision=clear_not_sent` means local audio state was interrupted but the
+    Telnyx media WebSocket was not open, so no carrier clear command was sent.
+  - `terminalGapCount` is queue-empty time that ended without playback resuming;
+    it is intentionally excluded from `underrunCount`.
+  - High `maxTimerLateMs` without an underrun points to gateway event-loop delay.
+  - `xai_realtime_response_done` with `audioReceived=false` points to a
+    tool-only or empty response; high `pendingPlaybackMs` means xAI finished
+    while Telnyx audio was still queued.
+- Tool-related silence can be isolated with
+  `xai_realtime_tool_response_requested`, `xai_realtime_tool_response_created`,
+  and `xai_realtime_tool_response_first_audio`.
 - For diagnosis, enable `REALTIME_TRACE=true` only on staging and confirm `xai_realtime_session_start` reports `model=grok-voice-think-fast-2.0`.
 
 ## Common Issues

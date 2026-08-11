@@ -21,6 +21,9 @@ const telephony = await import(pathToFileURL(
 const voiceControl = await import(pathToFileURL(
   path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/voiceRuntimeControl.js")
 ).href);
+const audioPumpTelemetry = await import(pathToFileURL(
+  path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/audioPumpTelemetry.js")
+).href);
 const migration = await import(pathToFileURL(
   path.join(process.cwd(), "scripts/migrate-xai-runtime-profiles.mjs")
 ).href);
@@ -424,5 +427,149 @@ assert.match(renderedPrompt, /call finish_session silently/);
 assert.match(renderedPrompt, /Use knowledge_lookup silently when the answer can follow promptly\./);
 assert.match(renderedPrompt, /Do not collect payment-card information by voice\./);
 assert.match(renderedPrompt, /The system delivers the configured opening before your first model-generated turn\. Do not repeat it\./);
+
+const smoothAudioTrace = audioPumpTelemetry.createAudioPumpTrace("resp_smooth", 0);
+audioPumpTelemetry.noteAudioChunkQueued(smoothAudioTrace, 640, 0, 60);
+audioPumpTelemetry.noteAudioChunkQueued(smoothAudioTrace, 640, 40, 60);
+audioPumpTelemetry.noteAudioChunkQueued(smoothAudioTrace, 640, 80, 60);
+assert.equal(smoothAudioTrace.underrunCount, 0);
+assert.equal(smoothAudioTrace.queueDrainCount, 0);
+assert.equal(smoothAudioTrace.interChunkGapOverBufferTargetCount, 0);
+
+const starvedAudioTrace = audioPumpTelemetry.createAudioPumpTrace("resp_starved", 0);
+audioPumpTelemetry.noteAudioChunkQueued(starvedAudioTrace, 640, 0, 60);
+assert.equal(audioPumpTelemetry.beginAudioQueueGap(starvedAudioTrace, 100), true);
+assert.equal(audioPumpTelemetry.beginAudioQueueGap(starvedAudioTrace, 110), false);
+audioPumpTelemetry.noteAudioChunkQueued(starvedAudioTrace, 640, 225, 60);
+const resumedGapMs = audioPumpTelemetry.closeAudioQueueGap(starvedAudioTrace, 225);
+audioPumpTelemetry.noteAudioPumpReprimed(starvedAudioTrace);
+assert.equal(resumedGapMs, 125);
+assert.equal(starvedAudioTrace.queueDrainCount, 1);
+assert.equal(starvedAudioTrace.underrunCount, 1);
+assert.equal(starvedAudioTrace.reprimeCount, 1);
+assert.equal(starvedAudioTrace.totalUnderrunMs, 125);
+assert.equal(starvedAudioTrace.maxUnderrunMs, 125);
+assert.equal(starvedAudioTrace.maxInterChunkGapMs, 225);
+assert.equal(starvedAudioTrace.interChunkGapOverBufferTargetCount, 1);
+
+const terminalAudioTrace = audioPumpTelemetry.createAudioPumpTrace("resp_terminal", 0);
+audioPumpTelemetry.noteAudioChunkQueued(terminalAudioTrace, 640, 0, 60);
+audioPumpTelemetry.beginAudioQueueGap(terminalAudioTrace, 100);
+const terminalGapMs = audioPumpTelemetry.finishAudioQueueGapWithoutReprime(
+  terminalAudioTrace,
+  225
+);
+assert.equal(terminalGapMs, 125);
+assert.equal(terminalAudioTrace.queueDrainCount, 1);
+assert.equal(terminalAudioTrace.underrunCount, 0);
+assert.equal(terminalAudioTrace.reprimeCount, 0);
+assert.equal(terminalAudioTrace.terminalGapCount, 1);
+assert.equal(terminalAudioTrace.totalTerminalGapMs, 125);
+
+const interruptedAudioTrace = audioPumpTelemetry.createAudioPumpTrace("resp_interrupted", 0);
+audioPumpTelemetry.noteAudioChunkQueued(interruptedAudioTrace, 640, 0, 60);
+interruptedAudioTrace.framesSent = 4;
+interruptedAudioTrace.interruptedAtMs = 100;
+const interruptedResponseDoneTrace = audioPumpTelemetry.ensureAudioPumpTraceForResponse(
+  interruptedAudioTrace,
+  "resp_interrupted",
+  200
+);
+interruptedResponseDoneTrace.responseDoneAtMs = 200;
+assert.equal(interruptedResponseDoneTrace, interruptedAudioTrace);
+assert.equal(interruptedResponseDoneTrace.chunksQueued, 1);
+assert.equal(interruptedResponseDoneTrace.framesSent, 4);
+assert.equal(interruptedResponseDoneTrace.interruptedAtMs, 100);
+
+const playbackFirstTrace = audioPumpTelemetry.createAudioPumpTrace("resp_playback_first", 0);
+audioPumpTelemetry.noteAudioChunkQueued(playbackFirstTrace, 640, 0, 60);
+playbackFirstTrace.framesSent = 4;
+playbackFirstTrace.playbackDrainedAtMs = 100;
+assert.equal(
+  audioPumpTelemetry.shouldClearAudioPumpTraceAfterSummary(playbackFirstTrace, "playback_drained"),
+  false
+);
+const playbackFirstResponseDoneTrace = audioPumpTelemetry.ensureAudioPumpTraceForResponse(
+  playbackFirstTrace,
+  "resp_playback_first",
+  200
+);
+playbackFirstResponseDoneTrace.responseDoneAtMs = 200;
+assert.equal(playbackFirstResponseDoneTrace, playbackFirstTrace);
+assert.equal(playbackFirstResponseDoneTrace.chunksQueued, 1);
+assert.equal(playbackFirstResponseDoneTrace.framesSent, 4);
+assert.equal(
+  audioPumpTelemetry.shouldClearAudioPumpTraceAfterSummary(playbackFirstResponseDoneTrace, "playback_drained"),
+  true
+);
+
+const cappedGapTrace = audioPumpTelemetry.createAudioPumpTrace("resp_gap_cap", 0);
+const gapLogDecisions = Array.from({ length: 10 }, () => (
+  audioPumpTelemetry.shouldLogAudioGap(cappedGapTrace, 125, 60)
+));
+assert.deepEqual(gapLogDecisions, [true, true, true, true, true, true, true, true, false, false]);
+assert.equal(cappedGapTrace.gapLogsEmitted, 8);
+
+const retainedAudioTrace = audioPumpTelemetry.ensureAudioPumpTraceForResponse(
+  starvedAudioTrace,
+  null,
+  300
+);
+assert.equal(retainedAudioTrace, starvedAudioTrace);
+const replacementAudioTrace = audioPumpTelemetry.ensureAudioPumpTraceForResponse(
+  starvedAudioTrace,
+  "resp_next",
+  300
+);
+assert.notEqual(replacementAudioTrace, starvedAudioTrace);
+assert.equal(replacementAudioTrace.responseId, "resp_next");
+assert.equal(audioPumpTelemetry.calculatePendingPlaybackMs(5, 80), 110);
+
+const callGatewaySource = readFileSync(
+  path.join(process.cwd(), "apps/call-gateway/src/server.ts"),
+  "utf8"
+);
+const productionAllowlist = callGatewaySource.match(
+  /const PRODUCTION_INFO_LOG_ALLOWLIST = new Set\(\[([\s\S]*?)\]\);/
+)?.[1] || "";
+for (const eventName of [
+  "assistant_audio_pump_trace",
+  "assistant_audio_gap",
+  "assistant_barge_in_decision",
+  "assistant_barge_in_applied"
+]) {
+  assert.match(
+    productionAllowlist,
+    new RegExp(`"${eventName}"`),
+    `${eventName} must remain visible in production process logs`
+  );
+}
+assert.match(
+  callGatewaySource,
+  /decision: clearSent \? "clear_applied" : "clear_not_sent"/,
+  "a closed Telnyx socket must not be logged as an applied clear"
+);
+
+const forbiddenDiagnosticFields = /\b(transcript|prompt|phone|phoneNumber|payloadBase64|argumentsText|toolResultPayload)\b/;
+for (const eventName of ["assistant_audio_gap", "assistant_barge_in_decision"]) {
+  let searchFrom = 0;
+  let occurrences = 0;
+  const marker = `logInfo("${eventName}", {`;
+  while (true) {
+    const start = callGatewaySource.indexOf(marker, searchFrom);
+    if (start < 0) break;
+    const end = callGatewaySource.indexOf("});", start);
+    assert.notEqual(end, -1, `${eventName} log block must be complete`);
+    const logBlock = callGatewaySource.slice(start, end + 3);
+    assert.doesNotMatch(
+      logBlock,
+      forbiddenDiagnosticFields,
+      `${eventName} must not emit caller content, prompts, audio, or tool arguments`
+    );
+    occurrences += 1;
+    searchFrom = end + 3;
+  }
+  assert.ok(occurrences > 0, `${eventName} must be emitted by the gateway`);
+}
 
 console.log(JSON.stringify({ ok: true, checked: "xai_realtime_payloads" }, null, 2));

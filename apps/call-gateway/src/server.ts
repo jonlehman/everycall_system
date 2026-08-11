@@ -80,6 +80,18 @@ import {
   shouldForwardTelnyxInputTrack,
   TELNYX_INPUT_STREAM_TRACK
 } from "./telephonyStreamControl.js";
+import {
+  beginAudioQueueGap,
+  calculatePendingPlaybackMs,
+  closeAudioQueueGap,
+  ensureAudioPumpTraceForResponse,
+  finishAudioQueueGapWithoutReprime,
+  noteAudioChunkQueued,
+  noteAudioPumpReprimed,
+  shouldClearAudioPumpTraceAfterSummary,
+  shouldLogAudioGap,
+  type AudioPumpTrace
+} from "./audioPumpTelemetry.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -121,6 +133,12 @@ const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "xai_realtime_session_updated",
   "xai_realtime_response_done",
   "xai_realtime_turn_latency",
+  "xai_realtime_tool_response_requested",
+  "xai_realtime_tool_response_created",
+  "xai_realtime_tool_response_first_audio",
+  "assistant_audio_pump_trace",
+  "assistant_audio_gap",
+  "assistant_barge_in_decision",
   "assistant_barge_in_applied",
   "telnyx_call_control_answer_requested",
   "telnyx_call_control_answer_accepted",
@@ -169,21 +187,6 @@ type UsageTotals = {
   outputAudioTokens: number;
   estimatedCostMicrosUsd: number;
   responseCount: number;
-};
-
-type AudioPumpTrace = {
-  responseId: string | null;
-  chunksQueued: number;
-  framesSent: number;
-  underrunCount: number;
-  underrunStartAtMs: number | null;
-  totalUnderrunMs: number;
-  maxUnderrunMs: number;
-  timerLateCount: number;
-  totalTimerLateMs: number;
-  maxTimerLateMs: number;
-  catchupBurstCount: number;
-  maxBurstFrames: number;
 };
 
 type TransferLookupMatch = {
@@ -705,48 +708,53 @@ function createFunctionCallOutputEvent(callId: string, output: unknown) {
   };
 }
 
-function createAudioPumpTrace(responseId?: string | null): AudioPumpTrace {
-  return {
-    responseId: responseId || null,
-    chunksQueued: 0,
-    framesSent: 0,
-    underrunCount: 0,
-    underrunStartAtMs: null,
-    totalUnderrunMs: 0,
-    maxUnderrunMs: 0,
-    timerLateCount: 0,
-    totalTimerLateMs: 0,
-    maxTimerLateMs: 0,
-    catchupBurstCount: 0,
-    maxBurstFrames: 0
-  };
-}
-
 function ensureAudioPumpTrace(session: StreamSession, responseId?: string | null) {
   const normalizedResponseId = String(responseId || session.currentResponseId || "").trim() || null;
-  if (!session.audioPumpTrace || session.audioPumpTrace.responseId !== normalizedResponseId) {
-    session.audioPumpTrace = createAudioPumpTrace(normalizedResponseId);
-  }
+  session.audioPumpTrace = ensureAudioPumpTraceForResponse(
+    session.audioPumpTrace,
+    normalizedResponseId,
+    performance.now()
+  );
   return session.audioPumpTrace;
 }
 
-function closeAudioUnderrun(trace: AudioPumpTrace | null | undefined, nowMs: number) {
-  if (!trace || trace.underrunStartAtMs === null) return;
-  const durationMs = Math.max(0, nowMs - trace.underrunStartAtMs);
-  trace.totalUnderrunMs += durationMs;
-  trace.maxUnderrunMs = Math.max(trace.maxUnderrunMs, durationMs);
-  trace.underrunStartAtMs = null;
+function logAssistantAudioGap(
+  session: StreamSession,
+  trace: AudioPumpTrace,
+  gapMs: number | null,
+  source: "reprime" | "response_done" | "session_end"
+) {
+  if (gapMs === null) return;
+  if (!shouldLogAudioGap(
+    trace,
+    gapMs,
+    outboundJitterBufferFrames * outboundAudioFrameMs
+  )) return;
+  logInfo("assistant_audio_gap", {
+    callSid: session.callSid,
+    responseId: trace.responseId || undefined,
+    source,
+    gapMs: Number(gapMs.toFixed(3)),
+    bufferTargetFrames: outboundJitterBufferFrames,
+    bufferTargetMs: outboundJitterBufferFrames * outboundAudioFrameMs,
+    queuedFrames: session.outputQueue?.length || 0,
+    bufferedBytes: session.outputBuffer?.length || 0
+  });
 }
 
 function logAudioPumpTraceSummary(
   session: StreamSession,
-  stage: "response_done" | "playback_drained" | "interrupted"
+  stage: "response_done" | "playback_drained" | "interrupted" | "session_end"
 ) {
   const trace = session.audioPumpTrace;
   if (!trace) return;
-  closeAudioUnderrun(trace, performance.now());
+  const nowMs = performance.now();
+  finishAudioQueueGapWithoutReprime(trace, nowMs);
+  if (stage === "playback_drained") {
+    trace.playbackDrainedAtMs = nowMs;
+  }
   if (trace.chunksQueued === 0 && trace.framesSent === 0) {
-    if (stage === "playback_drained" || stage === "interrupted") {
+    if (shouldClearAudioPumpTraceAfterSummary(trace, stage)) {
       session.audioPumpTrace = null;
     }
     return;
@@ -755,18 +763,36 @@ function logAudioPumpTraceSummary(
     callSid: session.callSid,
     stage,
     responseId: trace.responseId || undefined,
+    traceWindowMs: Number((nowMs - trace.startedAtMs).toFixed(3)),
     chunksQueued: trace.chunksQueued,
+    chunkBytes: trace.chunkBytes,
+    interChunkGapCount: trace.interChunkGapCount,
+    maxInterChunkGapMs: Number(trace.maxInterChunkGapMs.toFixed(3)),
+    interChunkGapOverBufferTargetCount: trace.interChunkGapOverBufferTargetCount,
     framesSent: trace.framesSent,
+    queueDrainCount: trace.queueDrainCount,
     underrunCount: trace.underrunCount,
     totalUnderrunMs: Number(trace.totalUnderrunMs.toFixed(3)),
     maxUnderrunMs: Number(trace.maxUnderrunMs.toFixed(3)),
+    reprimeCount: trace.reprimeCount,
+    terminalGapCount: trace.terminalGapCount,
+    totalTerminalGapMs: Number(trace.totalTerminalGapMs.toFixed(3)),
+    maxTerminalGapMs: Number(trace.maxTerminalGapMs.toFixed(3)),
     timerLateCount: trace.timerLateCount,
     totalTimerLateMs: Number(trace.totalTimerLateMs.toFixed(3)),
     maxTimerLateMs: Number(trace.maxTimerLateMs.toFixed(3)),
     catchupBurstCount: trace.catchupBurstCount,
     maxBurstFrames: trace.maxBurstFrames,
+    bufferTargetFrames: outboundJitterBufferFrames,
+    bufferTargetMs: outboundJitterBufferFrames * outboundAudioFrameMs,
+    responseDone: trace.responseDoneAtMs !== null,
+    playbackDrained: trace.playbackDrainedAtMs !== null,
+    interrupted: trace.interruptedAtMs !== null,
     queuedFramesRemaining: session.outputQueue?.length || 0,
-    bufferedBytesRemaining: session.outputBuffer?.length || 0
+    bufferedBytesRemaining: session.outputBuffer?.length || 0,
+    outputPrimed: Boolean(session.outputPrimed),
+    outputTimerActive: Boolean(session.outputTimer),
+    telnyxStreamOpen: session.telnyxWs?.readyState === WebSocket.OPEN
   };
   logInfo("assistant_audio_pump_trace", payload);
   logRealtimeDetailEntry(session, {
@@ -774,7 +800,7 @@ function logAudioPumpTraceSummary(
     kind: "assistant_audio_pump_trace",
     ...payload
   });
-  if (stage === "playback_drained" || stage === "interrupted") {
+  if (shouldClearAudioPumpTraceAfterSummary(trace, stage)) {
     session.audioPumpTrace = null;
   }
 }
@@ -835,8 +861,9 @@ function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined
 }
 
 function clearTelnyxMedia(ws: WebSocket | undefined) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
   ws.send(JSON.stringify(buildTelnyxClearEvent()));
+  return true;
 }
 
 function decodeInboundAudioPayload(encoded: string) {
@@ -850,8 +877,12 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
     session.outputQueue = [];
   }
   const trace = ensureAudioPumpTrace(session);
-  trace.chunksQueued += 1;
-  closeAudioUnderrun(trace, performance.now());
+  noteAudioChunkQueued(
+    trace,
+    pcmChunk.length,
+    performance.now(),
+    outboundJitterBufferFrames * outboundAudioFrameMs
+  );
   noteAssistantAudioChunkQueued(session);
   let offset = 0;
   while (buffer.length - offset >= frameSize) {
@@ -873,8 +904,7 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
   const trace = ensureAudioPumpTrace(session);
   if (!session.outputQueue || session.outputQueue.length === 0) {
     if (session.currentResponseId && trace.underrunStartAtMs === null) {
-      trace.underrunCount += 1;
-      trace.underrunStartAtMs = nowMs;
+      beginAudioQueueGap(trace, nowMs);
     }
     return 0;
   }
@@ -882,7 +912,6 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
     session.outputNextFrameAtMs = nowMs;
   }
 
-  closeAudioUnderrun(trace, nowMs);
   const lateMs = Math.max(0, nowMs - session.outputNextFrameAtMs);
   if (lateMs >= 5) {
     trace.timerLateCount += 1;
@@ -932,6 +961,12 @@ function startOutputPump(session: StreamSession) {
       if (!hasBufferedFramesReady(session)) {
         return;
       }
+      const trace = ensureAudioPumpTrace(session);
+      const gapMs = closeAudioQueueGap(trace, nowMs);
+      if (gapMs !== null) {
+        noteAudioPumpReprimed(trace);
+        logAssistantAudioGap(session, trace, gapMs, "reprime");
+      }
       session.outputPrimed = true;
       session.outputNextFrameAtMs = nowMs;
     }
@@ -941,6 +976,8 @@ function startOutputPump(session: StreamSession) {
       // current assistant response is still active so the next chunk can re-prime
       // a small jitter buffer instead of forcing a full pump restart.
       if (session.currentResponseId) {
+        const trace = ensureAudioPumpTrace(session);
+        beginAudioQueueGap(trace, session.outputNextFrameAtMs || nowMs);
         session.outputPrimed = false;
         session.outputNextFrameAtMs = null;
         return;
@@ -964,12 +1001,60 @@ function startOutputPump(session: StreamSession) {
 }
 
 async function interruptAssistantForCallerSpeech(session: StreamSession | undefined, reason: string) {
-  if (!session || !hasPendingAssistantAudio(session)) return false;
+  if (!session) return false;
+  const assistantPending = hasPendingAssistantAudio(session);
+  if (!assistantPending) {
+    logInfo("assistant_barge_in_decision", {
+      callSid: session.callSid,
+      callControlId: session.callControlId,
+      reason,
+      decision: "no_pending_audio",
+      clearSent: false,
+      assistantPending: false,
+      queuedFrames: session.outputQueue?.length || 0,
+      bufferedBytes: session.outputBuffer?.length || 0,
+      outputPrimed: Boolean(session.outputPrimed),
+      assistantAudioMsSent: Math.max(0, Number(session.assistantAudioMsSent || 0))
+    });
+    return false;
+  }
   const plan = buildAssistantInterruptionPlan(session, reason);
-  if (!plan.shouldInterrupt) return false;
+  if (!plan.shouldInterrupt) {
+    logInfo("assistant_barge_in_decision", {
+      callSid: session.callSid,
+      callControlId: session.callControlId,
+      reason,
+      decision: "debounced",
+      clearSent: false,
+      assistantPending,
+      responseId: plan.responseId || undefined,
+      queuedFrames: session.outputQueue?.length || 0,
+      bufferedBytes: session.outputBuffer?.length || 0,
+      outputPrimed: Boolean(session.outputPrimed),
+      assistantAudioMsSent: Math.max(0, Number(session.assistantAudioMsSent || 0))
+    });
+    return false;
+  }
 
-  clearTelnyxMedia(session.telnyxWs);
+  const clearSent = clearTelnyxMedia(session.telnyxWs);
+  logInfo("assistant_barge_in_decision", {
+    callSid: session.callSid,
+    callControlId: session.callControlId,
+    reason,
+    decision: clearSent ? "clear_applied" : "clear_not_sent",
+    clearSent,
+    assistantPending,
+    responseId: plan.responseId || undefined,
+    queuedFrames: plan.queuedFramesDropped,
+    bufferedBytes: plan.bufferedBytesDropped,
+    outputPrimed: Boolean(session.outputPrimed),
+    assistantAudioMsSent: Math.max(0, Number(session.assistantAudioMsSent || 0))
+  });
   applyAssistantInterruption(session, plan);
+  if (session.audioPumpTrace) {
+    session.audioPumpTrace.interruptedAtMs = performance.now();
+  }
+  logAudioPumpTraceSummary(session, "interrupted");
   if (session.knowledgeCallState) {
     await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
       source: "barge_in",
@@ -979,7 +1064,6 @@ async function interruptAssistantForCallerSpeech(session: StreamSession | undefi
       buffered_bytes_dropped: plan.bufferedBytesDropped
     });
   }
-  logAudioPumpTraceSummary(session, "interrupted");
   logInfo("assistant_barge_in_applied", {
     callSid: session.callSid,
     callControlId: session.callControlId,
@@ -988,7 +1072,8 @@ async function interruptAssistantForCallerSpeech(session: StreamSession | undefi
     assistantItemId: plan.assistantItemId || undefined,
     truncatedAudioMs: plan.truncatedAudioMs,
     queuedFramesDropped: plan.queuedFramesDropped,
-    bufferedBytesDropped: plan.bufferedBytesDropped
+    bufferedBytesDropped: plan.bufferedBytesDropped,
+    clearSent
   });
   return true;
 }
@@ -1531,6 +1616,7 @@ async function endCallSession(session: StreamSession | undefined, reason: string
     });
   }
 
+  logAudioPumpTraceSummary(session, "session_end");
   logInfo("gateway_call_session_end", {
     callSid: session.callSid,
     callControlId: session.callControlId,
@@ -2463,6 +2549,19 @@ function connectXAiRealtime(session: StreamSession) {
     }
 
     if (type === "response.done") {
+      const responseDoneAtMs = performance.now();
+      const responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
+      const audioTrace = ensureAudioPumpTrace(session, responseId);
+      audioTrace.responseDoneAtMs = responseDoneAtMs;
+      const queuedFramesAtDone = session.outputQueue?.length || 0;
+      const bufferedBytesAtDone = session.outputBuffer?.length || 0;
+      const pendingPlaybackMs = calculatePendingPlaybackMs(
+        queuedFramesAtDone,
+        bufferedBytesAtDone
+      );
+      const outputPrimedAtDone = Boolean(session.outputPrimed);
+      const outputTimerActiveAtDone = Boolean(session.outputTimer);
+      const underrunOpenAtDone = audioTrace.underrunStartAtMs !== null;
       markAssistantResponseFinished(session);
       noteAssistantResponseCompleted(session);
       const statusDetails = payloadMsg?.response?.status_details || payloadMsg?.status_details;
@@ -2483,7 +2582,7 @@ function connectXAiRealtime(session: StreamSession) {
       void persistCallUsage(session);
       logInfo("xai_realtime_response_done", {
         callSid: session.callSid,
-        responseId: payloadMsg?.response?.id || payloadMsg?.response_id,
+        responseId: responseId || undefined,
         status: payloadMsg?.response?.status || payloadMsg?.status,
         statusDetailsType: statusDetails?.type,
         statusDetailsReason: statusDetails?.reason,
@@ -2491,11 +2590,19 @@ function connectXAiRealtime(session: StreamSession) {
         errorCode: statusDetails?.error?.code,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
-        estimatedCostMicrosUsd: estimateUsageCostMicrosUsd(usage)
+        estimatedCostMicrosUsd: estimateUsageCostMicrosUsd(usage),
+        audioReceived: audioTrace.chunksQueued > 0,
+        audioChunksReceived: audioTrace.chunksQueued,
+        audioBytesReceived: audioTrace.chunkBytes,
+        queuedFramesAtDone,
+        bufferedBytesAtDone,
+        pendingPlaybackMs,
+        outputPrimedAtDone,
+        outputTimerActiveAtDone,
+        underrunOpenAtDone
       });
       logAudioPumpTraceSummary(session, "response_done");
       if (session.pendingToolSpeechWait) {
-        const responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
         if (session.pendingToolSpeechWait.responseId && session.pendingToolSpeechWait.responseId === responseId) {
           logRealtimeDetailEntry(session, {
             ts: new Date().toISOString(),
@@ -2510,6 +2617,7 @@ function connectXAiRealtime(session: StreamSession) {
         }
       }
       if (!hasPendingAssistantAudio(session)) {
+        session.audioPumpTrace = null;
         flushQueuedAssistantResponses(session);
       }
       return;
@@ -2613,6 +2721,19 @@ function connectXAiRealtime(session: StreamSession) {
 
     if (type === "input_audio_buffer.speech_started") {
       if (session.transferState?.status === "pending" || session.aiDetached) {
+        logInfo("assistant_barge_in_decision", {
+          callSid: session.callSid,
+          callControlId: session.callControlId,
+          reason: "caller_speech_detected_realtime",
+          decision: "transfer_ignored",
+          clearSent: false,
+          assistantPending: hasPendingAssistantAudio(session),
+          responseId: session.currentResponseId || undefined,
+          queuedFrames: session.outputQueue?.length || 0,
+          bufferedBytes: session.outputBuffer?.length || 0,
+          outputPrimed: Boolean(session.outputPrimed),
+          assistantAudioMsSent: Math.max(0, Number(session.assistantAudioMsSent || 0))
+        });
         return;
       }
       await interruptAssistantForCallerSpeech(session, "caller_speech_detected_realtime");
