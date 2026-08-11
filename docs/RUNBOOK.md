@@ -28,6 +28,21 @@
 - Tool-related silence can be isolated with
   `xai_realtime_tool_response_requested`, `xai_realtime_tool_response_created`,
   and `xai_realtime_tool_response_first_audio`.
+- For a slow `knowledge_lookup`, correlate `knowledge_lookup_timing` with those
+  response events:
+  - `endpointToToolCallReadyMs` measures how long xAI took after caller
+    endpointing to finish selecting and constructing the tool call.
+  - `knowledgeRuntimeWallClockMs` and its planner/embedding/retrieval components
+    measure the tenant knowledge runtime itself.
+  - `toolCallReadyToXAiResultDispatchMs` measures the complete gateway tool
+    path, while `endpointToXAiResultDispatchMs` measures endpointing through the
+    dispatch attempt. `appToolResultForwardMs` is the separate EveryCall app
+    callback; `appToolResultForwardOutcome` says whether it was configured and
+    succeeded. `xaiSocketOpenAtResultDispatch` confirms whether the xAI socket
+    was open when the result was dispatched.
+  - `xai_realtime_tool_response_created.waitMs` and
+    `xai_realtime_tool_response_first_audio.responseCreatedToFirstAudioMs`
+    measure xAI after the lookup result was returned.
 - For diagnosis, enable `REALTIME_TRACE=true` only on staging and confirm `xai_realtime_session_start` reports `model=grok-voice-think-fast-2.0`.
 
 ## Common Issues

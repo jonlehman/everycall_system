@@ -92,6 +92,7 @@ import {
   shouldLogAudioGap,
   type AudioPumpTrace
 } from "./audioPumpTelemetry.js";
+import { buildKnowledgeLookupTimingDetails } from "./knowledgeLookupTelemetry.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -136,6 +137,7 @@ const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "xai_realtime_tool_response_requested",
   "xai_realtime_tool_response_created",
   "xai_realtime_tool_response_first_audio",
+  "knowledge_lookup_timing",
   "assistant_audio_pump_trace",
   "assistant_audio_gap",
   "assistant_barge_in_decision",
@@ -160,6 +162,12 @@ type PendingToolCall = {
   name: string;
   callId: string;
   argumentsText: string;
+};
+
+type ToolCallTimingContext = {
+  sourceType: string;
+  speechStoppedAtMs: number | null;
+  toolCallReadyAtMs: number;
 };
 
 type FinishSessionArgs = {
@@ -689,8 +697,9 @@ function toWebSocketUrl(baseUrl: string) {
 }
 
 function sendXAiEvent(ws: WebSocket | undefined, payload: Record<string, unknown>) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
   ws.send(JSON.stringify(payload));
+  return true;
 }
 
 function createAudioTextResponseEvent(response: Record<string, unknown> = {}) {
@@ -1854,7 +1863,7 @@ async function forwardToolResult(
   payload: Record<string, unknown>,
   validation: { status: string; errors: string[] }
 ) {
-  if (!appBaseUrl || !gatewayToolResultToken) return;
+  if (!appBaseUrl || !gatewayToolResultToken) return "not_configured" as const;
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
@@ -1866,7 +1875,7 @@ async function forwardToolResult(
         },
         body: JSON.stringify({ call_id: callId, tenant_key: tenantKey, tool, payload, validation })
       });
-      if (resp.ok) return;
+      if (resp.ok) return "succeeded" as const;
       throw new Error(`status_${resp.status}`);
     } catch (err) {
       if (attempt === maxAttempts) {
@@ -1876,11 +1885,12 @@ async function forwardToolResult(
           attempts: maxAttempts,
           message: err instanceof Error ? err.message : "unknown"
         });
-        return;
+        return "failed" as const;
       }
       await sleep(100 * 2 ** (attempt - 1));
     }
   }
+  return "failed" as const;
 }
 
 function noteToolResponseRequested(session: StreamSession, tool: string, callId: string) {
@@ -1933,7 +1943,13 @@ function logRealtimeToolPayloads(session: StreamSession, params: {
   });
 }
 
-async function executeToolCall(session: StreamSession, name: string, callId: string, argsText: string) {
+async function executeToolCall(
+  session: StreamSession,
+  name: string,
+  callId: string,
+  argsText: string,
+  timing: ToolCallTimingContext
+) {
   let args: Record<string, unknown> = {};
   try {
     args = argsText ? JSON.parse(argsText) : {};
@@ -1942,6 +1958,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
   }
 
   if (name === "knowledge_lookup") {
+    const executionStartedAtMs = performance.now();
     const query = String((args as any).query || "");
     if (!session.promptPayload) {
       throw new Error("missing_prompt_payload");
@@ -1954,15 +1971,18 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       buildId: session.promptPayload.knowledge_runtime.active_build_id,
       callState: session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state
     });
+    const runtimeCompletedAtMs = performance.now();
     const nextState = mergeRuntimeTurnState(
       session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state,
       runtimeResult
     );
     session.knowledgeCallState = nextState;
+    const callStatePersistStartedAtMs = performance.now();
     await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, nextState, {
       runtime_mode: runtimeResult.runtime_bundle.runtime_mode,
       source: "knowledge_lookup"
     });
+    const callStatePersistCompletedAtMs = performance.now();
 
     const toolOutput = formatKnowledgeRuntimeToolOutput(runtimeResult);
     logRealtimeDetailEntry(session, {
@@ -2003,7 +2023,6 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     });
     logInfo("knowledge_lookup_tool_called", {
       callSid: session.callSid,
-      query,
       coverageItemCount: Array.isArray(runtimeResult.answer_packet.coverage) ? runtimeResult.answer_packet.coverage.length : 0,
       cardCount: Array.isArray(runtimeResult.answer_packet.used_card_ids) ? runtimeResult.answer_packet.used_card_ids.length : 0,
       factCount: Array.isArray(runtimeResult.answer_packet.used_fact_ids) ? runtimeResult.answer_packet.used_fact_ids.length : 0,
@@ -2056,7 +2075,8 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
         ? estimatePayloadBytes(runtimeResult.retrieval_telemetry.embedding_response_payloads)
         : undefined
     });
-    await forwardToolResult(
+    const appToolResultForwardStartedAtMs = performance.now();
+    const appToolResultForwardOutcome = await forwardToolResult(
       session.callSid,
       session.tenantKey,
       name,
@@ -2071,9 +2091,30 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       },
       { status: "accepted", errors: [] }
     );
+    const appToolResultForwardCompletedAtMs = performance.now();
     const toolResultEvent = createFunctionCallOutputEvent(callId, toolOutput);
     const responseEvent = createAudioTextResponseEvent({});
-    sendXAiEvent(session.XAiWs, toolResultEvent);
+    const xaiSocketOpenAtResultDispatch = sendXAiEvent(session.XAiWs, toolResultEvent);
+    const resultDispatchAtMs = performance.now();
+    logInfo("knowledge_lookup_timing", {
+      callSid: session.callSid,
+      callId,
+      ...buildKnowledgeLookupTimingDetails({
+        sourceType: timing.sourceType,
+        speechStoppedAtMs: timing.speechStoppedAtMs,
+        toolCallReadyAtMs: timing.toolCallReadyAtMs,
+        executionStartedAtMs,
+        runtimeCompletedAtMs,
+        callStatePersistStartedAtMs,
+        callStatePersistCompletedAtMs,
+        appToolResultForwardStartedAtMs,
+        appToolResultForwardCompletedAtMs,
+        appToolResultForwardOutcome,
+        resultDispatchAtMs,
+        xaiSocketOpenAtResultDispatch,
+        retrieval: runtimeResult.retrieval_telemetry
+      })
+    });
     logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
@@ -2345,6 +2386,11 @@ async function handleToolCallEvent(
   argsText: string,
   sourceType: string
 ) {
+  const timing: ToolCallTimingContext = {
+    sourceType,
+    speechStoppedAtMs: session.callerTurnTiming?.speechStoppedAtMs ?? null,
+    toolCallReadyAtMs: performance.now()
+  };
   const attempt = beginToolExecution(session, name, callId);
   if (!attempt.shouldExecute) {
     logInfo("xai_realtime_tool_event_deduped", {
@@ -2358,7 +2404,7 @@ async function handleToolCallEvent(
   }
 
   try {
-    await executeToolCall(session, name, callId, argsText);
+    await executeToolCall(session, name, callId, argsText, timing);
     completeToolExecution(session, attempt.key);
   } catch (err) {
     failToolExecution(session, attempt.key);

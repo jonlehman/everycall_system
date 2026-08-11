@@ -24,6 +24,9 @@ const voiceControl = await import(pathToFileURL(
 const audioPumpTelemetry = await import(pathToFileURL(
   path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/audioPumpTelemetry.js")
 ).href);
+const knowledgeLookupTelemetry = await import(pathToFileURL(
+  path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/knowledgeLookupTelemetry.js")
+).href);
 const migration = await import(pathToFileURL(
   path.join(process.cwd(), "scripts/migrate-xai-runtime-profiles.mjs")
 ).href);
@@ -525,6 +528,128 @@ assert.notEqual(replacementAudioTrace, starvedAudioTrace);
 assert.equal(replacementAudioTrace.responseId, "resp_next");
 assert.equal(audioPumpTelemetry.calculatePendingPlaybackMs(5, 80), 110);
 
+const knowledgeTimingDetails = knowledgeLookupTelemetry.buildKnowledgeLookupTimingDetails({
+  sourceType: "response.function_call_arguments.done",
+  speechStoppedAtMs: 1000,
+  toolCallReadyAtMs: 1400,
+  executionStartedAtMs: 1420,
+  runtimeCompletedAtMs: 1900,
+  callStatePersistStartedAtMs: 1900,
+  callStatePersistCompletedAtMs: 1950,
+  appToolResultForwardStartedAtMs: 1980,
+  appToolResultForwardCompletedAtMs: 2050,
+  appToolResultForwardOutcome: "succeeded",
+  resultDispatchAtMs: 2060,
+  xaiSocketOpenAtResultDispatch: true,
+  retrieval: {
+    asset_cache_hit: true,
+    asset_fetch_ms: 2,
+    recent_conversation_summary_ms: 8,
+    planner_ms: 210,
+    embedding_ms: 90,
+    retrieval_ms: 40,
+    packet_ms: 15,
+    runtime_core_ms: 355,
+    runtime_bundle_persist_ms: 20,
+    coverage_gap_persist_ms: 10,
+    total_gateway_turn_ms: 480
+  }
+});
+assert.deepEqual(knowledgeTimingDetails, {
+  sourceType: "response.function_call_arguments.done",
+  endpointToToolCallReadyMs: 400,
+  toolCallReadyToExecutionStartMs: 20,
+  knowledgeRuntimeWallClockMs: 480,
+  knowledgeCallStatePersistMs: 50,
+  runtimeToCallStatePersistStartMs: 0,
+  callStatePersistCompletedToAppForwardStartMs: 30,
+  appToolResultForwardMs: 70,
+  appForwardCompletedToXAiResultDispatchMs: 10,
+  appToolResultForwardOutcome: "succeeded",
+  toolCallReadyToXAiResultDispatchMs: 660,
+  endpointToXAiResultDispatchMs: 1060,
+  xaiSocketOpenAtResultDispatch: true,
+  assetCacheHit: true,
+  assetFetchMs: 2,
+  recentConversationSummaryMs: 8,
+  plannerMs: 210,
+  embeddingMs: 90,
+  retrievalMs: 40,
+  packetMs: 15,
+  runtimeCoreMs: 355,
+  runtimeBundlePersistMs: 20,
+  coverageGapPersistMs: 10,
+  totalGatewayTurnMs: 480
+});
+const noEndpointTimingDetails = knowledgeLookupTelemetry.buildKnowledgeLookupTimingDetails({
+  sourceType: "response.output_item.done",
+  speechStoppedAtMs: null,
+  toolCallReadyAtMs: 10,
+  executionStartedAtMs: 10,
+  runtimeCompletedAtMs: 10,
+  callStatePersistStartedAtMs: 10,
+  callStatePersistCompletedAtMs: 10,
+  appToolResultForwardStartedAtMs: 10,
+  appToolResultForwardCompletedAtMs: 10,
+  appToolResultForwardOutcome: "not_configured",
+  resultDispatchAtMs: 10,
+  xaiSocketOpenAtResultDispatch: false,
+  retrieval: {
+    asset_cache_hit: true,
+    asset_fetch_ms: 0,
+    recent_conversation_summary_ms: 0,
+    planner_ms: 0,
+    embedding_ms: 0,
+    retrieval_ms: 0,
+    packet_ms: 0,
+    runtime_core_ms: 0,
+    runtime_bundle_persist_ms: 0,
+    coverage_gap_persist_ms: 0,
+    total_gateway_turn_ms: 0
+  }
+});
+assert.equal(noEndpointTimingDetails.endpointToToolCallReadyMs, undefined);
+assert.equal(noEndpointTimingDetails.endpointToXAiResultDispatchMs, undefined);
+assert.equal(noEndpointTimingDetails.xaiSocketOpenAtResultDispatch, false);
+assert.equal(noEndpointTimingDetails.appToolResultForwardOutcome, "not_configured");
+for (const zeroMetric of [
+  "assetFetchMs",
+  "recentConversationSummaryMs",
+  "plannerMs",
+  "embeddingMs",
+  "retrievalMs",
+  "packetMs",
+  "runtimeCoreMs",
+  "runtimeBundlePersistMs",
+  "coverageGapPersistMs",
+  "totalGatewayTurnMs"
+]) {
+  assert.equal(noEndpointTimingDetails[zeroMetric], 0, `${zeroMetric} must preserve a measured zero`);
+}
+assert.equal(
+  knowledgeLookupTelemetry.buildKnowledgeLookupTimingDetails({
+    sourceType: "response.output_item.done",
+    speechStoppedAtMs: Number.NaN,
+    toolCallReadyAtMs: 10,
+    executionStartedAtMs: 10,
+    runtimeCompletedAtMs: 10,
+    callStatePersistStartedAtMs: 10,
+    callStatePersistCompletedAtMs: 10,
+    appToolResultForwardStartedAtMs: 10,
+    appToolResultForwardCompletedAtMs: 10,
+    appToolResultForwardOutcome: "failed",
+    resultDispatchAtMs: 10,
+    xaiSocketOpenAtResultDispatch: false,
+    retrieval: { planner_ms: Number.NaN }
+  }).plannerMs,
+  undefined
+);
+assert.doesNotMatch(
+  JSON.stringify(knowledgeTimingDetails),
+  /"(?:query|transcript|prompt|phone|payload|arguments|callerName)"\s*:/i,
+  "knowledge lookup timing details must not contain caller content or tool payloads"
+);
+
 const callGatewaySource = readFileSync(
   path.join(process.cwd(), "apps/call-gateway/src/server.ts"),
   "utf8"
@@ -536,7 +661,8 @@ for (const eventName of [
   "assistant_audio_pump_trace",
   "assistant_audio_gap",
   "assistant_barge_in_decision",
-  "assistant_barge_in_applied"
+  "assistant_barge_in_applied",
+  "knowledge_lookup_timing"
 ]) {
   assert.match(
     productionAllowlist,
@@ -571,5 +697,23 @@ for (const eventName of ["assistant_audio_gap", "assistant_barge_in_decision"]) 
   }
   assert.ok(occurrences > 0, `${eventName} must be emitted by the gateway`);
 }
+const knowledgeTimingLogStart = callGatewaySource.indexOf('logInfo("knowledge_lookup_timing", {');
+assert.notEqual(knowledgeTimingLogStart, -1, "knowledge lookup timing must be emitted by the gateway");
+const knowledgeTimingLogEnd = callGatewaySource.indexOf("});", knowledgeTimingLogStart);
+assert.notEqual(knowledgeTimingLogEnd, -1, "knowledge lookup timing log block must be complete");
+assert.doesNotMatch(
+  callGatewaySource.slice(knowledgeTimingLogStart, knowledgeTimingLogEnd + 3),
+  forbiddenDiagnosticFields,
+  "knowledge lookup timing process logs must not include caller content or tool payloads"
+);
+const legacyKnowledgeLogStart = callGatewaySource.indexOf('logInfo("knowledge_lookup_tool_called", {');
+assert.notEqual(legacyKnowledgeLogStart, -1, "legacy knowledge lookup summary must remain available");
+const legacyKnowledgeLogEnd = callGatewaySource.indexOf("});", legacyKnowledgeLogStart);
+assert.notEqual(legacyKnowledgeLogEnd, -1, "legacy knowledge lookup summary must be complete");
+assert.doesNotMatch(
+  callGatewaySource.slice(legacyKnowledgeLogStart, legacyKnowledgeLogEnd + 3),
+  /\bquery\b/,
+  "verbose process logs must not emit the caller's raw knowledge query"
+);
 
 console.log(JSON.stringify({ ok: true, checked: "xai_realtime_payloads" }, null, 2));

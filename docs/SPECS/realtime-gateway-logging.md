@@ -38,6 +38,12 @@ Define what the gateway logs for each call and how logs are accessed.
   playback remained queued when xAI completed the response.
 - `xai_realtime_tool_response_requested`, `xai_realtime_tool_response_created`,
   and `xai_realtime_tool_response_first_audio`: isolate tool-related dead air.
+- `knowledge_lookup_timing`: separates caller endpoint-to-tool selection,
+  knowledge runtime, call-state persistence, internal result forwarding, and
+  the result-dispatch attempt back to xAI, including whether the socket was
+  open. It includes the runtime's planner, embedding,
+  retrieval, packet, and persistence durations without the caller query or
+  knowledge payload.
 
 ## Access
 - Logs are downloadable via an authenticated endpoint.
