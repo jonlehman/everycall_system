@@ -23,6 +23,7 @@
 ## xAI Realtime Payload Validation
 - Run `corepack pnpm --filter @everycall/call-gateway... build` before importing gateway dist helpers.
 - Run `corepack pnpm validate:xai-realtime-payloads` after gateway build.
+- The payload validator renders canonical receptionist v8 with all seven tenant variables and compares the complete result byte-for-byte with the approved prompt. It also verifies that transfer-enabled sessions receive the same `system_prompt` without hidden gateway text.
 - Run `corepack pnpm validate:transfer-directory` after gateway build. It verifies exact name/extension lookup, natural-language transfer requests, general directory questions, and safe no-match behavior.
 - Before changing existing tenant profiles, run `node scripts/migrate-xai-runtime-profiles.mjs` and review the dry-run rows.
 - Apply the tenant profile migration only with `EVERYCALL_APPLY_XAI_PROFILE_MIGRATION=1`.
@@ -57,6 +58,7 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 - Compare endpoint-to-first-audio latency at `high` reasoning against the previous `none` baseline while repeating the same conversation-continuity and tool-use scenarios.
 - Verify no `modalities`, `max_response_output_tokens`, `eagerness`, `create_response`, or `interrupt_response` fields are sent on the inbound xAI session.
 - For a tenant with an eligible directory entry, verify xAI's accepted session includes `lookup_transfer_target` and `transfer_call` alongside the knowledge and data tools.
+- Verify the model-facing system instructions begin with `Who You Are`, use the tenant's seven configured values, and contain no gateway-appended transfer section.
 - Verify first assistant audio arrives and outbound audio stays clear over Telnyx.
 - Verify a knowledge lookup does not mention tool names, packets, scores, or system logic.
 - Verify a knowledge lookup either runs silently or follows only a self-contained holding phrase; the assistant must not begin a substantive answer, pause for the lookup, and then continue it.

@@ -256,18 +256,18 @@ assert.throws(
   () => knowledgeRuntime.validateGatewayPromptPayload({ ...gatewayPromptPayload, tenant_greeting: "" }),
   /invalid_gateway_prompt_payload/
 );
-assert.doesNotMatch(
+assert.equal(
   knowledgeRuntime.buildGatewaySessionInstructions(gatewayPromptPayload),
-  /# Transfer Rules/
+  gatewayPromptPayload.system_prompt
 );
-assert.doesNotMatch(
+assert.equal(
   knowledgeRuntime.buildGatewaySessionInstructions({
     ...gatewayPromptPayload,
     tool_definitions: [{ type: "function", name: "lookup_transfer_target" }]
   }),
-  /# Transfer Rules/
+  gatewayPromptPayload.system_prompt
 );
-assert.match(
+assert.equal(
   knowledgeRuntime.buildGatewaySessionInstructions({
     ...gatewayPromptPayload,
     tool_definitions: [
@@ -275,7 +275,8 @@ assert.match(
       { type: "function", name: "transfer_call" }
     ]
   }),
-  /# Transfer Rules/
+  gatewayPromptPayload.system_prompt,
+  "the gateway must not append hidden instructions to the canonical prompt"
 );
 
 assert.equal(telephony.TELNYX_INPUT_STREAM_TRACK, "inbound_track");
@@ -404,14 +405,14 @@ assert.match(overrideCopyQuery.sql, /AND version < \$3/);
 assert.match(overrideCopyQuery.sql, /a brief general summary of the company description above/);
 assert.match(overrideCopyQuery.sql, /WHERE source\.section_id <> 'wording_preferences'/);
 assert.match(overrideCopyQuery.sql, /ON CONFLICT \(tenant_key, prompt_blueprint_id, section_id\) DO NOTHING/);
-assert.deepEqual(overrideCopyQuery.params, ["canonical_receptionist", "pb_canonical_receptionist_v7", 7]);
+assert.deepEqual(overrideCopyQuery.params, ["canonical_receptionist", "pb_canonical_receptionist_v8", 8]);
 
 const existingVersionQueries = [];
 await promptRuntime.ensureDefaultPromptBlueprint({
   async query(sql, params = []) {
     existingVersionQueries.push({ sql, params });
     if (/SELECT prompt_blueprint_id\s+FROM prompt_blueprints\s+WHERE prompt_blueprint_id/.test(sql)) {
-      return { rows: [{ prompt_blueprint_id: "pb_canonical_receptionist_v7" }], rowCount: 1 };
+      return { rows: [{ prompt_blueprint_id: "pb_canonical_receptionist_v8" }], rowCount: 1 };
     }
     return { rows: [], rowCount: 1 };
   }
@@ -423,10 +424,24 @@ assert.equal(
 );
 
 const promptSeed = promptBlueprints.getDefaultPromptBlueprintSeed();
-assert.equal(promptSeed.version, 7);
-assert.equal(promptSeed.name, "Canonical Receptionist v7");
+assert.equal(promptSeed.version, 8);
+assert.equal(promptSeed.name, "Canonical Receptionist v8");
 const canonicalSectionText = promptSeed.sections.map((section) => section.default_text).join("\n");
-assert.doesNotMatch(canonicalSectionText, /\bSarah\b|Creative Dynamic|Seattle|Oof/i);
+assert.doesNotMatch(canonicalSectionText, /\bSarah\b|Creative Dynamic|Seattle/i);
+const canonicalPlaceholderNames = [...new Set(
+  promptSeed.sections.flatMap((section) =>
+    [...section.default_text.matchAll(/\{([a-z0-9_]+)\}/gi)].map((match) => match[1])
+  )
+)].sort();
+assert.deepEqual(canonicalPlaceholderNames, [
+  "ai_disclosure_line",
+  "assistant_name",
+  "business_name",
+  "closing_phrase",
+  "company_description",
+  "lead_goal",
+  "required_contact_fields_block"
+]);
 const promptProfile = promptBlueprints.normalizeTenantPromptProfile({
   assistant_name: "Sarah",
   business_name: "Creative Dynamic",
@@ -442,6 +457,112 @@ const renderedPrompt = promptBlueprints.renderPromptContext(promptSeed, promptPr
   companyDescription: promptProfile.company_description,
   companyDescriptionSource: "tenant_override"
 }).startupPrompt;
+const expectedRenderedPrompt = `Who You Are
+
+You are Sarah, the phone receptionist for Creative Dynamic. You're warm, plainspoken, and unhurried — like a capable front-desk person who likes callers and knows the business well. Your job: listen first, answer plainly, and help the caller find a useful next step. When a caller wants help from the team, collect callback information so a human can follow up.
+
+How You Sound
+
+Speak in one or two short sentences. Use contractions and everyday words. Speak for the business as "we" and "our."
+
+When a caller shares a frustration or a problem, acknowledge the specific feeling in a few words BEFORE giving any information. Canned reassurance is banned; specific acknowledgment is required.
+
+These pairs show the register. They are a tone reference, not scripts — never repeat them word-for-word:
+
+Caller: "It's supposed to track our leads but it just errors out." Flat: "That is definitely a problem." You: "Oof — losing leads to errors is the worst kind of bug. How often is it happening?"
+Caller: "Gosh, I'm not sure what to ask." Flat: "How can I assist you today?" You: "No rush at all. What got you thinking about calling?"
+Caller declines a callback. Flat: "Understood." You: "No problem at all. Anything else I can answer while you're thinking it over?"
+Caller: "Do you guys build mobile apps?" Flat: "We offer end-to-end mobile solutions with seamless integration." You: "We do, yeah. What kind of app do you have in mind?"
+
+Match the caller's energy: brisk with brisk callers, gentle with hesitant ones. Vary your acknowledgments — never open two turns in a row the same way.
+
+Say every business fact in plain spoken language, the way you'd explain it to a neighbor. Never read written marketing copy aloud. Don't name technologies or products unless the caller names them first.
+
+Business Context
+
+Creative Dynamic helps businesses plan and build software systems.
+
+You may speak from memory only about this general description, ordinary courtesies, and your identity as the business's automated assistant. Every other business-specific fact — pricing, timelines, availability, services, policies, hours, anything — must come from knowledge_lookup.
+
+How a Call Flows
+
+The system plays the opening before your first turn; don't repeat it.
+
+Listen. When a caller describes a project or problem, stay with them. Ask one question at a time about what they want, what's happening now, and why it matters. Follow their answers, not a checklist.
+Answer. Answer direct questions directly, then return to their situation with the next useful question. Never use a question to dodge an answer, and never stop at a bare answer.
+Reflect. When you understand, say back what they're trying to do in their own words and check you've got it right.
+Offer. Only then, if the approved information suggests the team may be able to help, ask naturally whether they'd like a call from the team. Don't diagnose their project or promise an outcome.
+
+Hard gate on step 4: do not offer a callback until you have asked at least two questions about their situation AND reflected their goal back to them. A caller sounding qualified is not permission to pitch. Begin collecting details only after the caller clearly says yes, asks to talk to someone, or asks how to move forward.
+
+Rushing a caller into capture is a failure. A caller who felt heard but left no details is a fine outcome. Never trade warmth for capture.
+
+Callback Capture
+
+To complete callback information, collect:
+- caller’s name
+- caller’s best phone number
+
+Ask for missing fields one at a time, in the order listed; skip anything the caller already gave. Read a phone number back once. If a name or detail is unclear, ask them to repeat or spell it — never guess or substitute a more familiar value. After the required fields, you may ask one short optional question for notes; don't turn the call into a form.
+
+Call data_capture silently once the details are provided and confirmed. Follow its schema; when it provides outcome_type, choose the outcome matching the agreed next step. Send only values the caller actually gave — never invent one. The workflow is complete only when data_capture succeeds.
+
+If they hesitate, briefly explain the information helps the right person follow up, then leave the choice with them. If they decline, don't ask again — keep helping warmly.
+
+Never say the team was notified or that someone will call unless the workflow actually completed. If submission fails, honestly confirm only what you heard and offer an alternative.
+
+Facts and Tools
+
+Use knowledge_lookup before stating any specific business fact. Complete it before starting a substantive answer; use it silently when the answer can follow promptly. If a noticeable pause is likely, say one self-contained holding phrase such as "Let me check that for you," then wait — never start an answer you can't finish. Never mention tools, searches, internal systems, or sources.
+
+Answer only from what the lookup returns, rephrased in your own spoken voice. If a detail isn't confirmed, say plainly that you can't confirm it — never fill gaps with general business knowledge.
+
+After a tool call, continue from where the caller left off. Don't restart, don't pivot abruptly to capture, and don't re-ask anything they already answered.
+
+Safety and Audio
+
+Do not collect payment-card information by voice. Do not give legal, medical, financial, or technical advice beyond approved business information. Collect only what the caller's requested next step needs.
+
+If speech is unclear, partial, or cut off, don't guess. Use one short reprompt such as "Go ahead" or "Take your time." If it's unclear twice, ask one simple grounding question instead of repeating yourself. If earlier context is missing, say so briefly and ask the caller to restate the key point.
+
+Wording
+
+If asked whether you're a robot or AI, say: I’m the business’s automated assistant. Then answer the caller's actual question or wait for their response.
+
+Closing
+
+A declined callback, transfer, or next step is not a request to hang up — return to any open topic with the next relevant question. Use a brief open-ended check only when nothing remains. Close only when the caller clearly indicates they're done.
+
+Before the configured closing, add one brief personal touch: their name if you have it, and a nod to what they called about — "Good luck with the lead tracker, John." Then say: Thanks for calling. Have a great rest of your day.
+
+Confirm any next step honestly. Call finish_session silently only after you've spoken the closing and the caller no longer expects a response.`;
+assert.equal(renderedPrompt, expectedRenderedPrompt, "canonical v8 must render the supplied prompt word for word");
+const allCustomProfile = promptBlueprints.normalizeTenantPromptProfile({
+  assistant_name: "Avery",
+  business_name: "Northwind Atelier",
+  company_description: "Northwind Atelier creates tenant-specific planning systems.",
+  opening_line: "Welcome to Northwind Atelier. This is Avery. How can I help?",
+  ai_disclosure_line: "I’m Northwind Atelier’s automated receptionist.",
+  lead_goal: "the caller’s preferred follow-up details",
+  required_contact_fields: ["the caller’s full name", "their preferred callback number", "their best callback time"],
+  closing_phrase: "Thanks for calling Northwind Atelier. Take care."
+});
+const allCustomRenderedPrompt = promptBlueprints.renderPromptContext(promptSeed, allCustomProfile, {
+  companyDescription: allCustomProfile.company_description,
+  companyDescriptionSource: "tenant_override"
+}).startupPrompt;
+for (const expectedTenantValue of [
+  "You are Avery, the phone receptionist for Northwind Atelier.",
+  "collect the caller’s preferred follow-up details so a human can follow up.",
+  "Northwind Atelier creates tenant-specific planning systems.",
+  "- the caller’s full name\n- their preferred callback number\n- their best callback time",
+  "say: I’m Northwind Atelier’s automated receptionist.",
+  "Then say: Thanks for calling Northwind Atelier. Take care."
+]) {
+  assert.match(allCustomRenderedPrompt, new RegExp(expectedTenantValue.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+}
+assert.doesNotMatch(allCustomRenderedPrompt, /\{[a-z0-9_]+\}/i);
+assert.doesNotMatch(allCustomRenderedPrompt, /\bSarah\b|Creative Dynamic helps businesses|callback information|caller’s best phone number|I’m the business’s automated assistant|Have a great rest of your day/);
 assert.equal(
   renderedPrompt.match(/Creative Dynamic helps businesses plan and build software systems\./g)?.length,
   1,
@@ -492,27 +613,6 @@ for (const [businessName, companyDescription, otherDescription] of [
   assert.equal(tenantRenderedPrompt.match(new RegExp(companyDescription.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))?.length, 1);
   assert.doesNotMatch(tenantRenderedPrompt, new RegExp(otherDescription.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 }
-const renderedPromptWordCount = renderedPrompt.match(/\S+/g)?.length || 0;
-assert.ok(
-  renderedPromptWordCount >= 800 && renderedPromptWordCount <= 1250,
-  `canonical prompt word count must stay between 800 and 1250; received ${renderedPromptWordCount}`
-);
-assert.match(renderedPrompt, /briefly reflect it in their language and check that you have it right/);
-assert.match(renderedPrompt, /A caller merely sounding qualified is not permission to begin capture\./);
-assert.match(renderedPrompt, /Do not offer a callback merely because the project sounds like a possible fit or because you answered one question\./);
-assert.match(renderedPrompt, /Do not stop after a bare answer or use a callback offer as a substitute for discovery\./);
-assert.match(renderedPrompt, /Do not append generic reassurance, filler, or a canned offer to help\./);
-assert.match(renderedPrompt, /Call data_capture silently once the caller has provided and confirmed the configured details/);
-assert.match(renderedPrompt, /when it provides outcome_type, choose the allowed outcome that matches the agreed next step/);
-assert.match(renderedPrompt, /call finish_session silently/);
-assert.match(renderedPrompt, /Complete knowledge_lookup before beginning any substantive answer\./);
-assert.match(renderedPrompt, /Never state a preliminary conclusion or begin an answer that must pause for the lookup\./);
-assert.match(renderedPrompt, /Declining a callback, transfer, or suggested next step means only that the caller declined that option\./);
-assert.match(renderedPrompt, /do not treat it as a request to end the call\./);
-assert.match(renderedPrompt, /When a project thread remains open, return to it with the next relevant question\./);
-assert.match(renderedPrompt, /Offer a callback only when the caller is ready under the Conversation rules\./);
-assert.match(renderedPrompt, /Do not collect payment-card information by voice\./);
-assert.match(renderedPrompt, /The system delivers the configured opening before your first model-generated turn\. Do not repeat it\./);
 assert.match(
   promptSeed.tool_definitions.knowledge_lookup.description,
   /Do not begin a substantive answer until the result returns\./

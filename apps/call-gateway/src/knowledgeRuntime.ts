@@ -119,14 +119,6 @@ function estimateTokenCount(value: unknown) {
   return Math.ceil(Buffer.byteLength(String(text || ""), "utf8") / 4);
 }
 
-function runtimeToolNames(toolDefinitions: Array<Record<string, unknown>> = []) {
-  return new Set(
-    toolDefinitions
-      .map((item) => normalizeText(item?.name))
-      .filter(Boolean)
-  );
-}
-
 function cacheKey(tenantKey: string, buildId: string) {
   return `${tenantKey}:${buildId}`;
 }
@@ -319,19 +311,7 @@ export function isKnowledgeReceptionistPromptPayload(payload: GatewayPromptPaylo
 }
 
 export function buildGatewaySessionInstructions(payload: GatewayPromptPayload) {
-  const toolNames = runtimeToolNames(payload.tool_definitions);
-  const transferRules = toolNames.has("lookup_transfer_target") && toolNames.has("transfer_call")
-    ? `# Transfer Rules
-- If the caller asks for a person, extension, who is available, or transfer options, use lookup_transfer_target before assuming you know the destination.
-- For a general directory question, pass the caller's natural wording to lookup_transfer_target and present the returned configured names briefly.
-- Never reveal, read back, or hint at the private forwarding number.
-- If lookup_transfer_target returns more than one match, ask one short clarification question.
-- If lookup_transfer_target returns one clear match, ask one short confirmation question about whether the caller wants to be transferred now.
-- Only call transfer_call after the caller clearly says yes to that confirmation question.
-- Only use a target_id returned by lookup_transfer_target in this same call.
-- If a transfer attempt does not connect, apologize briefly and offer to take a message or try another person.`
-    : "";
-  return [payload.system_prompt, transferRules].filter(Boolean).join("\n\n");
+  return payload.system_prompt;
 }
 
 export function initializeKnowledgeCallState(payload: GatewayPromptPayload): CallState {

@@ -62,7 +62,7 @@ The gateway must receive a single JSON payload with the following top-level fiel
 
 ## Gateway Rules
 - The gateway must never send instructions not provided in this payload.
-- The gateway must not merge or mutate prompt text beyond basic concatenation.
+- The gateway must send `system_prompt` unchanged. It must not append, prepend, merge, or otherwise mutate model-facing instructions, including when optional transfer tools are present.
 - The gateway must use only `tenant_greeting` for the opening and must not fall back to a global or cross-tenant greeting.
 - If the payload is missing required fields, the gateway must reject the session.
 

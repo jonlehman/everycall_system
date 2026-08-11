@@ -85,6 +85,7 @@
 
 ## xAI Grok Realtime Cutover
 - All realtime paths pin `grok-voice-think-fast-2.0`; stored runtime-profile model values cannot override the provider/model.
+- Canonical receptionist v8 is seeded automatically and leaves v7 archived for rollback. Its seven tenant values come from the tenant prompt profile plus the resolved company description; the gateway sends the resulting `system_prompt` unchanged, while the forced tenant greeting and tool definitions remain separate session fields.
 - Configure `XAI_API_KEY` and `XAI_REALTIME_AUDIO_RATE_PER_MINUTE_USD=0.05`. The inbound default voice is the runtime-profile value, with `ara` as the code-owned fallback.
 - Apply `migrations/0033_xai_realtime_cutover.sql`, `migrations/0034_xai_luna_turn_taking.sql`, `migrations/0035_xai_high_reasoning.sql`, `migrations/0036_xai_ara_echo_resistance.sql`, and `migrations/0037_xai_faster_turn_endpointing.sql` in order. Canonical prompt version initialization copies valid tenant section overrides forward transactionally.
 - The browser demo token endpoint returns an xAI ephemeral token, WebSocket URL, subprotocol, and `session.update` event.

@@ -1,6 +1,7 @@
 # Decisions
 
 ## 2026-08-11
+- Use canonical receptionist v8 as the exact supplied receptionist prompt, with only the seven tenant substitutions `assistant_name`, `business_name`, `lead_goal`, `company_description`, `required_contact_fields_block`, `ai_disclosure_line`, and `closing_phrase`. Send the rendered `system_prompt` to xAI unchanged; do not append transfer instructions in the gateway. Keep transfer constraints in the tool definitions and deterministic gateway validation, and keep v7 archived for rollback.
 - Treat xAI caller transcription events as cumulative snapshots within one VAD speech turn. Persist the first snapshot as one caller `call_events` row and update that row as corrected or longer snapshots arrive. Collapse legacy adjacent cumulative snapshots on every transcript read so existing call detail, export, notification, analysis, summary, and knowledge-context paths present one caller line per turn.
 
 ## 2026-08-10
