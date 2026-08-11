@@ -92,6 +92,7 @@ import {
   shouldLogAudioGap,
   type AudioPumpTrace
 } from "./audioPumpTelemetry.js";
+import { evaluateFinishSessionPolicy } from "./finishSessionPolicy.js";
 import { buildKnowledgeLookupTimingDetails } from "./knowledgeLookupTelemetry.js";
 
 const env = readCallGatewayEnv(process.env);
@@ -142,6 +143,7 @@ const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "assistant_audio_gap",
   "assistant_barge_in_decision",
   "assistant_barge_in_applied",
+  "assistant_finish_session_rejected",
   "telnyx_call_control_answer_requested",
   "telnyx_call_control_answer_accepted",
   "telnyx_bidirectional_payload_mode_normalized"
@@ -295,6 +297,7 @@ type StreamSession = {
   telnyxStreamBaseUrl?: string;
   ignoreNextStreamingStopped?: boolean;
   callerTurnTiming?: RealtimeTurnTiming | null;
+  lastAssistantTranscript?: string | null;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -328,6 +331,7 @@ function createStreamSession(
     outputNextFrameAtMs: null,
     outputPrimed: false,
     currentResponseId: null,
+    lastAssistantTranscript: null,
     currentAssistantItemId: null,
     assistantAudioActive: false,
     assistantAudioMsSent: 0,
@@ -2338,6 +2342,48 @@ async function executeToolCall(
   if (name === "finish_session") {
     const finishSessionArgs = args as FinishSessionArgs;
     const reason = String(finishSessionArgs.reason || "assistant_completed_call");
+    const runtimeProfile = session.promptPayload?.knowledge_runtime?.approved_configuration?.runtime_profile;
+    const finishPolicy = evaluateFinishSessionPolicy({
+      requireSpokenClose: runtimeProfile?.tool_policy?.allow_finish_session_only_after_spoken_close !== false,
+      lastAssistantTranscript: session.lastAssistantTranscript ?? null,
+      configuredClosingPhrase: String(
+        session.promptPayload?.knowledge_runtime?.tenant_prompt_profile?.closing_phrase
+        || runtimeProfile?.wording_defaults?.closing_phrase
+        || ""
+      )
+    });
+    if (!finishPolicy.allowed) {
+      logInfo("assistant_finish_session_rejected", {
+        callSid: session.callSid,
+        callId,
+        reason: finishPolicy.reason
+      });
+      const rejection = {
+        status: "rejected",
+        reason: finishPolicy.reason,
+        instruction: "The call remains active. Continue naturally, and finish only after the caller is clearly done and you have spoken the configured closing."
+      };
+      await forwardToolResult(
+        session.callSid,
+        session.tenantKey,
+        name,
+        rejection,
+        { status: "rejected", errors: [finishPolicy.reason] }
+      );
+      const toolResultEvent = createFunctionCallOutputEvent(callId, rejection);
+      const responseEvent = createAudioTextResponseEvent({});
+      sendXAiEvent(session.XAiWs, toolResultEvent);
+      logRealtimeToolPayloads(session, {
+        callSid: session.callSid,
+        tool: name,
+        callId,
+        toolResultEvent,
+        responseEvent
+      });
+      noteToolResponseRequested(session, name, callId);
+      requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+      return;
+    }
     logInfo("assistant_finish_session_requested", {
       callSid: session.callSid,
       callId,
@@ -2737,6 +2783,9 @@ function connectXAiRealtime(session: StreamSession) {
 
     if (type === "response.output_audio_transcript.done" || type === "response.audio_transcript.done") {
       const transcript = payloadMsg.transcript || payloadMsg.text || payloadMsg.data || "";
+      if (transcript) {
+        session.lastAssistantTranscript = String(transcript);
+      }
       if (transcript && pool) {
         await pool.query(
           `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
@@ -2766,6 +2815,7 @@ function connectXAiRealtime(session: StreamSession) {
     }
 
     if (type === "input_audio_buffer.speech_started") {
+      session.lastAssistantTranscript = null;
       if (session.transferState?.status === "pending" || session.aiDetached) {
         logInfo("assistant_barge_in_decision", {
           callSid: session.callSid,

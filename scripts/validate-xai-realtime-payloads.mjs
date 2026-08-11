@@ -27,6 +27,9 @@ const audioPumpTelemetry = await import(pathToFileURL(
 const knowledgeLookupTelemetry = await import(pathToFileURL(
   path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/knowledgeLookupTelemetry.js")
 ).href);
+const finishSessionPolicy = await import(pathToFileURL(
+  path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/finishSessionPolicy.js")
+).href);
 const migration = await import(pathToFileURL(
   path.join(process.cwd(), "scripts/migrate-xai-runtime-profiles.mjs")
 ).href);
@@ -328,14 +331,14 @@ assert.match(overrideCopyQuery.sql, /AND version < \$3/);
 assert.match(overrideCopyQuery.sql, /a brief general summary of the company description above/);
 assert.match(overrideCopyQuery.sql, /WHERE source\.section_id <> 'wording_preferences'/);
 assert.match(overrideCopyQuery.sql, /ON CONFLICT \(tenant_key, prompt_blueprint_id, section_id\) DO NOTHING/);
-assert.deepEqual(overrideCopyQuery.params, ["canonical_receptionist", "pb_canonical_receptionist_v6", 6]);
+assert.deepEqual(overrideCopyQuery.params, ["canonical_receptionist", "pb_canonical_receptionist_v7", 7]);
 
 const existingVersionQueries = [];
 await promptRuntime.ensureDefaultPromptBlueprint({
   async query(sql, params = []) {
     existingVersionQueries.push({ sql, params });
     if (/SELECT prompt_blueprint_id\s+FROM prompt_blueprints\s+WHERE prompt_blueprint_id/.test(sql)) {
-      return { rows: [{ prompt_blueprint_id: "pb_canonical_receptionist_v6" }], rowCount: 1 };
+      return { rows: [{ prompt_blueprint_id: "pb_canonical_receptionist_v7" }], rowCount: 1 };
     }
     return { rows: [], rowCount: 1 };
   }
@@ -347,8 +350,8 @@ assert.equal(
 );
 
 const promptSeed = promptBlueprints.getDefaultPromptBlueprintSeed();
-assert.equal(promptSeed.version, 6);
-assert.equal(promptSeed.name, "Canonical Receptionist v6");
+assert.equal(promptSeed.version, 7);
+assert.equal(promptSeed.name, "Canonical Receptionist v7");
 const canonicalSectionText = promptSeed.sections.map((section) => section.default_text).join("\n");
 assert.doesNotMatch(canonicalSectionText, /\bSarah\b|Creative Dynamic|Seattle|Oof/i);
 const promptProfile = promptBlueprints.normalizeTenantPromptProfile({
@@ -418,18 +421,65 @@ for (const [businessName, companyDescription, otherDescription] of [
 }
 const renderedPromptWordCount = renderedPrompt.match(/\S+/g)?.length || 0;
 assert.ok(
-  renderedPromptWordCount >= 800 && renderedPromptWordCount <= 1000,
-  `canonical prompt word count must stay between 800 and 1000; received ${renderedPromptWordCount}`
+  renderedPromptWordCount >= 800 && renderedPromptWordCount <= 1250,
+  `canonical prompt word count must stay between 800 and 1250; received ${renderedPromptWordCount}`
 );
 assert.match(renderedPrompt, /briefly reflect it in their language and check that you have it right/);
 assert.match(renderedPrompt, /A caller merely sounding qualified is not permission to begin capture\./);
+assert.match(renderedPrompt, /Do not offer a callback merely because the project sounds like a possible fit or because you answered one question\./);
+assert.match(renderedPrompt, /Do not stop after a bare answer or use a callback offer as a substitute for discovery\./);
 assert.match(renderedPrompt, /Do not append generic reassurance, filler, or a canned offer to help\./);
 assert.match(renderedPrompt, /Call data_capture silently once the caller has provided and confirmed the configured details/);
 assert.match(renderedPrompt, /when it provides outcome_type, choose the allowed outcome that matches the agreed next step/);
 assert.match(renderedPrompt, /call finish_session silently/);
-assert.match(renderedPrompt, /Use knowledge_lookup silently when the answer can follow promptly\./);
+assert.match(renderedPrompt, /Complete knowledge_lookup before beginning any substantive answer\./);
+assert.match(renderedPrompt, /Never state a preliminary conclusion or begin an answer that must pause for the lookup\./);
+assert.match(renderedPrompt, /Declining a callback, transfer, or suggested next step means only that the caller declined that option\./);
+assert.match(renderedPrompt, /do not treat it as a request to end the call\./);
+assert.match(renderedPrompt, /When a project thread remains open, return to it with the next relevant question\./);
+assert.match(renderedPrompt, /Offer a callback only when the caller is ready under the Conversation rules\./);
 assert.match(renderedPrompt, /Do not collect payment-card information by voice\./);
 assert.match(renderedPrompt, /The system delivers the configured opening before your first model-generated turn\. Do not repeat it\./);
+assert.match(
+  promptSeed.tool_definitions.knowledge_lookup.description,
+  /Do not begin a substantive answer until the result returns\./
+);
+assert.match(
+  promptSeed.tool_definitions.finish_session.description,
+  /Declining a callback, transfer, or suggested next step alone is not permission to finish\./
+);
+assert.deepEqual(
+  finishSessionPolicy.evaluateFinishSessionPolicy({
+    requireSpokenClose: true,
+    lastAssistantTranscript: "Understood.",
+    configuredClosingPhrase: "Thanks for calling. Have a great rest of your day."
+  }),
+  { allowed: false, reason: "spoken_close_required" }
+);
+assert.deepEqual(
+  finishSessionPolicy.evaluateFinishSessionPolicy({
+    requireSpokenClose: true,
+    lastAssistantTranscript: "Thanks for calling — have a great rest of your day!",
+    configuredClosingPhrase: "Thanks for calling. Have a great rest of your day."
+  }),
+  { allowed: true, reason: "spoken_close_confirmed" }
+);
+assert.deepEqual(
+  finishSessionPolicy.evaluateFinishSessionPolicy({
+    requireSpokenClose: false,
+    lastAssistantTranscript: "Understood.",
+    configuredClosingPhrase: "Thanks for calling. Have a great rest of your day."
+  }),
+  { allowed: true, reason: "policy_disabled" }
+);
+assert.deepEqual(
+  finishSessionPolicy.evaluateFinishSessionPolicy({
+    requireSpokenClose: true,
+    lastAssistantTranscript: "Thanks for calling.",
+    configuredClosingPhrase: ""
+  }),
+  { allowed: false, reason: "configured_closing_missing" }
+);
 
 const smoothAudioTrace = audioPumpTelemetry.createAudioPumpTrace("resp_smooth", 0);
 audioPumpTelemetry.noteAudioChunkQueued(smoothAudioTrace, 640, 0, 60);
@@ -662,6 +712,7 @@ for (const eventName of [
   "assistant_audio_gap",
   "assistant_barge_in_decision",
   "assistant_barge_in_applied",
+  "assistant_finish_session_rejected",
   "knowledge_lookup_timing"
 ]) {
   assert.match(
@@ -674,6 +725,13 @@ assert.match(
   callGatewaySource,
   /decision: clearSent \? "clear_applied" : "clear_not_sent"/,
   "a closed Telnyx socket must not be logged as an applied clear"
+);
+assert.match(callGatewaySource, /evaluateFinishSessionPolicy\(/);
+assert.match(callGatewaySource, /logInfo\("assistant_finish_session_rejected"/);
+assert.match(
+  callGatewaySource,
+  /if \(type === "input_audio_buffer\.speech_started"\) \{\s+session\.lastAssistantTranscript = null;/,
+  "a new caller turn must invalidate any closing spoken on an earlier turn"
 );
 
 const forbiddenDiagnosticFields = /\b(transcript|prompt|phone|phoneNumber|payloadBase64|argumentsText|toolResultPayload)\b/;

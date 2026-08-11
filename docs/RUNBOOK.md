@@ -28,6 +28,11 @@
 - Tool-related silence can be isolated with
   `xai_realtime_tool_response_requested`, `xai_realtime_tool_response_created`,
   and `xai_realtime_tool_response_first_audio`.
+- `assistant_finish_session_rejected` means the model tried to end the call
+  before speaking the configured closing. The gateway leaves the call active
+  and returns control to the assistant; correlate the event with the transcript
+  to determine whether a declined callback or transfer was mistaken for a
+  goodbye.
 - For a slow `knowledge_lookup`, correlate `knowledge_lookup_timing` with those
   response events:
   - `endpointToToolCallReadyMs` measures how long xAI took after caller

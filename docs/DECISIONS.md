@@ -1,6 +1,7 @@
 # Decisions
 
 ## 2026-08-10
+- Use canonical receptionist v7 to keep knowledge lookups from splitting substantive answers, require enough project understanding before offering a callback, treat a declined callback or transfer as declining only that option, and reserve `finish_session` for a clear mutual close. Enforce the existing spoken-close policy in the gateway so an early finish request leaves the call active and returns control to the assistant. Keep v6 archived for rollback.
 - Use `tenant_prompt_profiles.company_description` as the only tenant-specific business description in the canonical receptionist prompt. Canonical receptionist v6 keeps that description tenant-scoped and reduces the model prompt to concise, state-based guidance while retaining grounded lookup, capture, closing, safety, and conditional transfer rules; v5 remains archived for rollback.
 - Deliver the configured tenant opening verbatim with xAI `force_message` after `session.updated`, with `interruptible=true`, instead of asking the model to reproduce it from the system prompt. Keep separate sales-demo and browser-demo greeting acknowledgement contracts isolated.
 - Use xAI `ara` as the default EveryCall receptionist voice, superseding the initial `luna` cutover default.

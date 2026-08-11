@@ -44,6 +44,9 @@ Define what the gateway logs for each call and how logs are accessed.
   open. It includes the runtime's planner, embedding,
   retrieval, packet, and persistence durations without the caller query or
   knowledge payload.
+- `assistant_finish_session_rejected`: records an opaque call/tool correlation
+  and safe rejection reason when the model requests `finish_session` before
+  the configured closing has been spoken. It does not include transcript text.
 
 ## Access
 - Logs are downloadable via an authenticated endpoint.

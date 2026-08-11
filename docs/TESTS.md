@@ -59,6 +59,10 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 - For a tenant with an eligible directory entry, verify xAI's accepted session includes `lookup_transfer_target` and `transfer_call` alongside the knowledge and data tools.
 - Verify first assistant audio arrives and outbound audio stays clear over Telnyx.
 - Verify a knowledge lookup does not mention tool names, packets, scores, or system logic.
+- Verify a knowledge lookup either runs silently or follows only a self-contained holding phrase; the assistant must not begin a substantive answer, pause for the lookup, and then continue it.
+- Describe a project in stages and verify the assistant asks relevant follow-up questions and reflects the need before offering a callback; a plausible fit or one answered question is not enough.
+- Decline an offered callback with “No thanks” and verify the assistant does not call `finish_session`, repeat the offer, or assume the call is over. It should continue helping and close only after a clear mutual ending.
+- After a project-related answer, verify the assistant naturally continues the caller’s current thread when more understanding would help instead of stopping or jumping directly to a callback offer.
 - Verify data capture happens only after the caller provides the value.
 - Verify transfer lookup asks for confirmation before transfer.
 - Verify silence and uncertain answers end with a clear next step.
