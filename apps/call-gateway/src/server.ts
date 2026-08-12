@@ -54,12 +54,14 @@ import {
   beginToolExecution,
   completeToolExecution,
   dequeueAssistantResponseRequest,
+  discardQueuedAssistantResponses,
   enqueueAssistantResponseRequest,
   failToolExecution,
   hasActiveAssistantResponse,
   markAssistantResponseCreated,
   markAssistantResponseFinished,
-  normalizeToolExecutionKey
+  normalizeToolExecutionKey,
+  type AssistantResponseRequest
 } from "./toolResponseControl.js";
 import {
   buildRealtimeForceMessageEvent,
@@ -98,6 +100,24 @@ import {
 } from "./audioPumpTelemetry.js";
 import { evaluateFinishSessionPolicy } from "./finishSessionPolicy.js";
 import { buildKnowledgeLookupTimingDetails } from "./knowledgeLookupTelemetry.js";
+import {
+  claimDataCaptureContinuation,
+  createDataCaptureControlState,
+  fingerprintDataCaptureArgs,
+  getCompletedDataCapture,
+  recordCompletedDataCapture,
+  type DataCaptureControlState,
+  type DataCaptureValidation
+} from "./dataCaptureControl.js";
+import {
+  createToolResponseTimingState,
+  finishToolResponse,
+  matchAssistantResponseCreated,
+  matchToolResponseFirstAudio,
+  trackAssistantResponseDispatch,
+  type ToolResponseMetadata,
+  type ToolResponseTimingState
+} from "./toolResponseTiming.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -121,7 +141,13 @@ const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "raw").toLowerCase();
 const outboundAudioFrameMs = 20;
-const outboundJitterBufferFrames = Math.max(1, Number(process.env.TELNYX_OUTBOUND_BUFFER_FRAMES || "3"));
+// The former 60 ms cushion repeatedly drained during measured xAI chunk gaps.
+// Four hundred ms absorbs the observed 382 ms starvation and reduces a 461 ms
+// starvation to roughly one audio-frame boundary, while remaining overrideable.
+const configuredOutboundJitterBufferFrames = Number(process.env.TELNYX_OUTBOUND_BUFFER_FRAMES || "20");
+const outboundJitterBufferFrames = Number.isFinite(configuredOutboundJitterBufferFrames)
+  ? Math.max(1, Math.floor(configuredOutboundJitterBufferFrames))
+  : 20;
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
 const verboseGatewayLogging = String(process.env.GATEWAY_VERBOSE_LOGGING || "false").toLowerCase() === "true";
@@ -148,6 +174,10 @@ const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "assistant_barge_in_decision",
   "assistant_barge_in_applied",
   "assistant_finish_session_rejected",
+  "data_capture_duplicate_suppressed",
+  "data_capture_response_suppressed",
+  "xai_realtime_queued_responses_discarded",
+  "xai_realtime_post_finish_response_suppressed",
   "caller_transcript_turn_coalesced",
   "telnyx_call_control_answer_requested",
   "telnyx_call_control_answer_accepted",
@@ -175,19 +205,11 @@ type ToolCallTimingContext = {
   sourceType: string;
   speechStoppedAtMs: number | null;
   toolCallReadyAtMs: number;
+  callerTurnSequence: number;
 };
 
 type FinishSessionArgs = {
   reason?: string;
-};
-
-type PendingToolSpeechWait = {
-  tool: string;
-  callId: string;
-  requestedAtMs: number;
-  responseCreatedAtMs?: number | null;
-  responseId?: string | null;
-  firstAudioLogged?: boolean;
 };
 
 type UsageTotals = {
@@ -297,10 +319,15 @@ type StreamSession = {
   pendingToolCall?: PendingToolCall | null;
   realtimeLogPath?: string;
   responseCreatePending?: boolean;
-  queuedAssistantResponses?: Array<{ reason: string; response: Record<string, unknown>; dedupeKey?: string | null }>;
+  activeAssistantResponseDedupeKey?: string | null;
+  queuedAssistantResponses?: AssistantResponseRequest[];
   executingToolCallKeys?: Set<string>;
   completedToolCallKeys?: Set<string>;
-  pendingToolSpeechWait?: PendingToolSpeechWait | null;
+  toolExecutionTail?: Promise<void>;
+  toolResponseTiming?: ToolResponseTimingState;
+  dataCaptureControl?: DataCaptureControlState;
+  callerTurnSequence?: number;
+  finishSessionAccepted?: boolean;
   audioPumpTrace?: AudioPumpTrace | null;
   suppressXAiReconnect?: boolean;
   aiDetached?: boolean;
@@ -355,10 +382,15 @@ function createStreamSession(
     lastInterruptionAtMs: null,
     lastInterruptionReason: null,
     responseCreatePending: false,
+    activeAssistantResponseDedupeKey: null,
     queuedAssistantResponses: [],
     executingToolCallKeys: new Set<string>(),
     completedToolCallKeys: new Set<string>(),
-    pendingToolSpeechWait: null,
+    toolExecutionTail: Promise.resolve(),
+    toolResponseTiming: createToolResponseTimingState(),
+    dataCaptureControl: createDataCaptureControlState(),
+    callerTurnSequence: 0,
+    finishSessionAccepted: false,
     audioPumpTrace: null,
     suppressXAiReconnect: false,
     aiDetached: false,
@@ -906,17 +938,34 @@ function requestAssistantResponse(
   session: StreamSession,
   reason: string,
   response: Record<string, unknown> = {},
-  dedupeKey?: string | null
+  dedupeKey?: string | null,
+  toolResponse?: ToolResponseMetadata | null
 ) {
-  const result = enqueueAssistantResponseRequest(session, { reason, response, dedupeKey });
-  if (result.action === "duplicate_queued") {
+  if (session.finishSessionAccepted) {
+    logInfo("xai_realtime_post_finish_response_suppressed", {
+      callSid: session.callSid,
+      reason,
+      dedupeKey: dedupeKey || undefined,
+      tool: toolResponse?.tool,
+      callId: toolResponse?.callId
+    });
+    return "suppressed_after_finish" as const;
+  }
+  const result = enqueueAssistantResponseRequest(session, {
+    reason,
+    response,
+    dedupeKey,
+    toolResponse
+  });
+  if (result.action === "duplicate_active" || result.action === "duplicate_queued") {
     logInfo("xai_realtime_response_request_deduped", {
       callSid: session.callSid,
       reason,
       dedupeKey: dedupeKey || undefined,
+      duplicateState: result.action,
       queueDepth: result.queueDepth
     });
-    return;
+    return result.action;
   }
 
   if (result.action === "queued") {
@@ -927,10 +976,57 @@ function requestAssistantResponse(
       queueDepth: result.queueDepth,
       activeResponseId: session.currentResponseId || undefined
     });
-    return;
+    return result.action;
   }
 
-  sendXAiEvent(session.XAiWs, createAudioTextResponseEvent(result.request.response));
+  dispatchAssistantResponseRequest(session, result.request);
+  return result.action;
+}
+
+function dispatchAssistantResponseRequest(
+  session: StreamSession,
+  request: AssistantResponseRequest
+) {
+  const responseEvent = createAudioTextResponseEvent(request.response);
+  const sent = sendXAiEvent(session.XAiWs, responseEvent);
+  if (!sent) {
+    markAssistantResponseFinished(session);
+    logError("xai_realtime_response_dispatch_failed", {
+      callSid: session.callSid,
+      reason: request.reason,
+      dedupeKey: request.dedupeKey || undefined,
+      tool: request.toolResponse?.tool,
+      callId: request.toolResponse?.callId
+    });
+    return false;
+  }
+
+  const timingState = session.toolResponseTiming || createToolResponseTimingState();
+  session.toolResponseTiming = timingState;
+  const wait = trackAssistantResponseDispatch(
+    timingState,
+    request.toolResponse || null,
+    performance.now()
+  );
+  if (wait) {
+    logInfo("xai_realtime_tool_response_requested", {
+      callSid: session.callSid,
+      tool: wait.tool,
+      callId: wait.callId,
+      traceFile: session.realtimeLogPath || ensureSessionRealtimeLogPath(session),
+      toolResultPayloadBytes: wait.toolResultPayloadBytes,
+      responseCreatePayloadBytes: estimatePayloadBytes(responseEvent)
+    });
+    logRealtimeDetailEntry(session, {
+      ts: new Date().toISOString(),
+      kind: "tool_response_create_send",
+      callSid: session.callSid,
+      tool: wait.tool,
+      callId: wait.callId,
+      payload: responseEvent
+    });
+  }
+  return true;
 }
 
 function flushQueuedAssistantResponses(session: StreamSession) {
@@ -943,7 +1039,7 @@ function flushQueuedAssistantResponses(session: StreamSession) {
     dedupeKey: next.dedupeKey || undefined,
     remainingQueueDepth: session.queuedAssistantResponses?.length || 0
   });
-  sendXAiEvent(session.XAiWs, createAudioTextResponseEvent(next.response));
+  dispatchAssistantResponseRequest(session, next);
 }
 
 function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined, payloadBase64: string) {
@@ -1480,7 +1576,9 @@ async function detachAiForTransferredCall(session: StreamSession, source: string
   session.aiDetached = true;
   session.suppressXAiReconnect = true;
   session.pendingToolCall = null;
-  session.pendingToolSpeechWait = null;
+  session.toolResponseTiming = createToolResponseTimingState();
+  session.queuedAssistantResponses = [];
+  session.activeAssistantResponseDedupeKey = null;
   session.outputQueue = [];
   session.outputBuffer = Buffer.alloc(0);
   if (session.outputTimer) {
@@ -1524,7 +1622,9 @@ async function reattachAiAfterFailedTransfer(session: StreamSession, reason: str
   session.XAiReady = false;
   session.XAiSessionUpdated = false;
   session.pendingToolCall = null;
-  session.pendingToolSpeechWait = null;
+  session.toolResponseTiming = createToolResponseTimingState();
+  session.queuedAssistantResponses = [];
+  session.activeAssistantResponseDedupeKey = null;
   session.outputQueue = [];
   session.outputBuffer = Buffer.alloc(0);
   if (session.outputTimer) {
@@ -1986,19 +2086,20 @@ async function forwardToolResult(
   return "failed" as const;
 }
 
-function noteToolResponseRequested(session: StreamSession, tool: string, callId: string) {
-  session.pendingToolSpeechWait = {
-    tool,
-    callId,
-    requestedAtMs: performance.now(),
-    responseCreatedAtMs: null,
-    responseId: null,
-    firstAudioLogged: false
-  };
-}
-
 function estimatePayloadBytes(value: unknown) {
   return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function createToolResponseMetadata(
+  tool: string,
+  callId: string,
+  toolResultEvent: Record<string, unknown>
+): ToolResponseMetadata {
+  return {
+    tool,
+    callId,
+    toolResultPayloadBytes: estimatePayloadBytes(toolResultEvent)
+  };
 }
 
 function logRealtimeToolPayloads(session: StreamSession, params: {
@@ -2006,7 +2107,6 @@ function logRealtimeToolPayloads(session: StreamSession, params: {
   tool: string;
   callId: string;
   toolResultEvent: Record<string, unknown>;
-  responseEvent?: Record<string, unknown>;
 }) {
   logRealtimeDetailEntry(session, {
     ts: new Date().toISOString(),
@@ -2015,24 +2115,6 @@ function logRealtimeToolPayloads(session: StreamSession, params: {
     tool: params.tool,
     callId: params.callId,
     payload: params.toolResultEvent
-  });
-  if (params.responseEvent) {
-    logRealtimeDetailEntry(session, {
-      ts: new Date().toISOString(),
-      kind: "tool_response_create_send",
-      callSid: params.callSid,
-      tool: params.tool,
-      callId: params.callId,
-      payload: params.responseEvent
-    });
-  }
-  logInfo("xai_realtime_tool_response_requested", {
-    callSid: params.callSid,
-    tool: params.tool,
-    callId: params.callId,
-    traceFile: session.realtimeLogPath || ensureSessionRealtimeLogPath(session),
-    toolResultPayloadBytes: estimatePayloadBytes(params.toolResultEvent),
-    responseCreatePayloadBytes: params.responseEvent ? estimatePayloadBytes(params.responseEvent) : undefined
   });
 }
 
@@ -2186,7 +2268,6 @@ async function executeToolCall(
     );
     const appToolResultForwardCompletedAtMs = performance.now();
     const toolResultEvent = createFunctionCallOutputEvent(callId, toolOutput);
-    const responseEvent = createAudioTextResponseEvent({});
     const xaiSocketOpenAtResultDispatch = sendXAiEvent(session.XAiWs, toolResultEvent);
     const resultDispatchAtMs = performance.now();
     logInfo("knowledge_lookup_timing", {
@@ -2212,11 +2293,15 @@ async function executeToolCall(
       callSid: session.callSid,
       tool: name,
       callId,
-      toolResultEvent,
-      responseEvent
+      toolResultEvent
     });
-    noteToolResponseRequested(session, name, callId);
-    requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+    requestAssistantResponse(
+      session,
+      "tool_result",
+      {},
+      normalizeToolExecutionKey(name, callId),
+      createToolResponseMetadata(name, callId, toolResultEvent)
+    );
     return;
   }
 
@@ -2232,46 +2317,100 @@ async function executeToolCall(
       { status: "accepted", errors: [] }
     );
     const toolResultEvent = createFunctionCallOutputEvent(callId, lookupResult);
-    const responseEvent = createAudioTextResponseEvent({});
     sendXAiEvent(session.XAiWs, toolResultEvent);
     logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
       callId,
-      toolResultEvent,
-      responseEvent
+      toolResultEvent
     });
-    noteToolResponseRequested(session, name, callId);
-    requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+    requestAssistantResponse(
+      session,
+      "tool_result",
+      {},
+      normalizeToolExecutionKey(name, callId),
+      createToolResponseMetadata(name, callId, toolResultEvent)
+    );
     return;
   }
 
   if (name === "data_capture") {
+    const captureControl = session.dataCaptureControl || createDataCaptureControlState();
+    session.dataCaptureControl = captureControl;
+    const fingerprint = fingerprintDataCaptureArgs(args);
+    const completed = getCompletedDataCapture(captureControl, fingerprint);
     const schema = session.promptPayload?.field_schema || {};
-    const validation = validateAgainstSchema(schema, args);
-    if (validation.status === "accepted" && session.promptPayload) {
-      const nextState = applyCapturedFieldsToCallState(
-        session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state,
-        args
+    let validation: DataCaptureValidation = completed || validateAgainstSchema(schema, args);
+    if (!completed) {
+      if (validation.status === "accepted" && session.promptPayload) {
+        const nextState = applyCapturedFieldsToCallState(
+          session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state,
+          args
+        );
+        session.knowledgeCallState = nextState;
+        await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, nextState, {
+          source: "data_capture"
+        });
+      }
+      const forwardOutcome = await forwardToolResult(
+        session.callSid,
+        session.tenantKey,
+        name,
+        args,
+        validation
       );
-      session.knowledgeCallState = nextState;
-      await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, nextState, {
-        source: "data_capture"
+      if (validation.status === "accepted" && forwardOutcome !== "succeeded") {
+        validation = {
+          status: "invalid",
+          errors: ["capture_persistence_failed"]
+        };
+      }
+      if (validation.status === "accepted") {
+        recordCompletedDataCapture(captureControl, fingerprint, validation);
+      }
+    } else {
+      logInfo("data_capture_duplicate_suppressed", {
+        callSid: session.callSid,
+        callId,
+        callerTurnSequence: timing.callerTurnSequence
       });
     }
-    await forwardToolResult(session.callSid, session.tenantKey, name, args, validation);
-    const toolResultEvent = createFunctionCallOutputEvent(callId, validation);
-    const responseEvent = createAudioTextResponseEvent({});
+    const toolOutput = completed
+      ? {
+          ...validation,
+          duplicate: true,
+          instruction: "These exact values are already recorded. Do not call data_capture again unless the caller provides a correction or a new value. Continue from the caller's latest turn."
+        }
+      : validation;
+    const toolResultEvent = createFunctionCallOutputEvent(callId, toolOutput);
     sendXAiEvent(session.XAiWs, toolResultEvent);
     logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
       callId,
-      toolResultEvent,
-      responseEvent
+      toolResultEvent
     });
-    noteToolResponseRequested(session, name, callId);
-    requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+    const callerTurnSequence = timing.callerTurnSequence;
+    if (!claimDataCaptureContinuation(captureControl, callerTurnSequence)) {
+      logInfo("data_capture_response_suppressed", {
+        callSid: session.callSid,
+        callId,
+        callerTurnSequence,
+        duplicate: Boolean(completed)
+      });
+      return;
+    }
+    requestAssistantResponse(
+      session,
+      "data_capture_result",
+      completed
+        ? {
+            instructions: "The identical data capture already succeeded. Do not call data_capture again unless the caller corrects or adds a value. Continue naturally from the caller's latest turn."
+          }
+        : {},
+      `data_capture:turn:${callerTurnSequence}`,
+      createToolResponseMetadata(name, callId, toolResultEvent)
+    );
     return;
   }
 
@@ -2287,17 +2426,20 @@ async function executeToolCall(
       };
       await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, output);
-      const responseEvent = createAudioTextResponseEvent({});
       sendXAiEvent(session.XAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
         callId,
-        toolResultEvent,
-        responseEvent
+        toolResultEvent
       });
-      noteToolResponseRequested(session, name, callId);
-      requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+      requestAssistantResponse(
+        session,
+        "tool_result",
+        {},
+        normalizeToolExecutionKey(name, callId),
+        createToolResponseMetadata(name, callId, toolResultEvent)
+      );
       return;
     }
 
@@ -2309,16 +2451,13 @@ async function executeToolCall(
       };
       await forwardToolResult(session.callSid, session.tenantKey, name, confirmationOutput, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, confirmationOutput);
-      const responseEvent = createAudioTextResponseEvent({});
       sendXAiEvent(session.XAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
         callId,
-        toolResultEvent,
-        responseEvent
+        toolResultEvent
       });
-      noteToolResponseRequested(session, name, callId);
       requestAssistantResponse(
         session,
         "transfer_confirmation_required",
@@ -2327,7 +2466,8 @@ async function executeToolCall(
             ? `You have identified ${pendingCandidate.targetName}${pendingCandidate.targetExtension ? ` at extension ${pendingCandidate.targetExtension}` : ""}, but the caller has not explicitly confirmed the transfer yet. Ask one short confirmation question such as whether they want to be transferred now.`
             : "Before transferring, ask one short confirmation question to make sure the caller wants to be transferred now."
         },
-        normalizeToolExecutionKey(name, `${callId}:confirmation_required`)
+        normalizeToolExecutionKey(name, `${callId}:confirmation_required`),
+        createToolResponseMetadata(name, callId, toolResultEvent)
       );
       return;
     }
@@ -2339,17 +2479,20 @@ async function executeToolCall(
       };
       await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, output);
-      const responseEvent = createAudioTextResponseEvent({});
       sendXAiEvent(session.XAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
         callId,
-        toolResultEvent,
-        responseEvent
+        toolResultEvent
       });
-      noteToolResponseRequested(session, name, callId);
-      requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+      requestAssistantResponse(
+        session,
+        "tool_result",
+        {},
+        normalizeToolExecutionKey(name, callId),
+        createToolResponseMetadata(name, callId, toolResultEvent)
+      );
       return;
     }
 
@@ -2413,17 +2556,20 @@ async function executeToolCall(
       });
       await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, output);
-      const responseEvent = createAudioTextResponseEvent({});
       sendXAiEvent(session.XAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
         callId,
-        toolResultEvent,
-        responseEvent
+        toolResultEvent
       });
-      noteToolResponseRequested(session, name, callId);
-      requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+      requestAssistantResponse(
+        session,
+        "tool_result",
+        {},
+        normalizeToolExecutionKey(name, callId),
+        createToolResponseMetadata(name, callId, toolResultEvent)
+      );
       return;
     }
   }
@@ -2460,17 +2606,20 @@ async function executeToolCall(
         { status: "rejected", errors: [finishPolicy.reason] }
       );
       const toolResultEvent = createFunctionCallOutputEvent(callId, rejection);
-      const responseEvent = createAudioTextResponseEvent({});
       sendXAiEvent(session.XAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
         callId,
-        toolResultEvent,
-        responseEvent
+        toolResultEvent
       });
-      noteToolResponseRequested(session, name, callId);
-      requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+      requestAssistantResponse(
+        session,
+        "tool_result",
+        {},
+        normalizeToolExecutionKey(name, callId),
+        createToolResponseMetadata(name, callId, toolResultEvent)
+      );
       return;
     }
     logInfo("assistant_finish_session_requested", {
@@ -2488,6 +2637,17 @@ async function executeToolCall(
       toolResultEvent
     });
 
+    session.finishSessionAccepted = true;
+    const discardedResponses = discardQueuedAssistantResponses(session);
+    if (discardedResponses.length > 0) {
+      logInfo("xai_realtime_queued_responses_discarded", {
+        callSid: session.callSid,
+        reason: "finish_session_accepted",
+        discardedCount: discardedResponses.length,
+        discardedToolResponseCount: discardedResponses.filter((entry) => entry.toolResponse).length
+      });
+    }
+
     const queuedFrames = session.outputQueue?.length || 0;
     const drainMs = Math.min(Math.max(queuedFrames * 20 + 1200, 1200), 4000);
     if (session.hangupTimer) {
@@ -2501,17 +2661,20 @@ async function executeToolCall(
 
   await forwardToolResult(session.callSid, session.tenantKey, name, args, { status: "accepted", errors: [] });
   const toolResultEvent = createFunctionCallOutputEvent(callId, { status: "accepted" });
-  const responseEvent = createAudioTextResponseEvent({});
   sendXAiEvent(session.XAiWs, toolResultEvent);
   logRealtimeToolPayloads(session, {
     callSid: session.callSid,
     tool: name,
     callId,
-    toolResultEvent,
-    responseEvent
+    toolResultEvent
   });
-  noteToolResponseRequested(session, name, callId);
-  requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
+  requestAssistantResponse(
+    session,
+    "tool_result",
+    {},
+    normalizeToolExecutionKey(name, callId),
+    createToolResponseMetadata(name, callId, toolResultEvent)
+  );
 }
 
 async function handleToolCallEvent(
@@ -2524,7 +2687,8 @@ async function handleToolCallEvent(
   const timing: ToolCallTimingContext = {
     sourceType,
     speechStoppedAtMs: session.callerTurnTiming?.speechStoppedAtMs ?? null,
-    toolCallReadyAtMs: performance.now()
+    toolCallReadyAtMs: performance.now(),
+    callerTurnSequence: session.callerTurnSequence || 0
   };
   const attempt = beginToolExecution(session, name, callId);
   if (!attempt.shouldExecute) {
@@ -2545,6 +2709,33 @@ async function handleToolCallEvent(
     failToolExecution(session, attempt.key);
     throw err;
   }
+}
+
+function queueToolCallEvent(
+  session: StreamSession,
+  name: string,
+  callId: string,
+  argsText: string,
+  sourceType: string
+) {
+  const previous = session.toolExecutionTail || Promise.resolve();
+  const execution = previous
+    .catch(() => undefined)
+    .then(async () => {
+      try {
+        await handleToolCallEvent(session, name, callId, argsText, sourceType);
+      } catch (err) {
+        logError("xai_realtime_tool_execution_failed", {
+          callSid: session.callSid,
+          tool: name,
+          callId,
+          sourceType,
+          message: err instanceof Error ? err.message : "unknown"
+        });
+      }
+    });
+  session.toolExecutionTail = execution;
+  return execution;
 }
 
 function connectXAiRealtime(session: StreamSession) {
@@ -2683,10 +2874,11 @@ function connectXAiRealtime(session: StreamSession) {
 
     if (type === "response.created") {
       const responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
+      const responseCreatedAtMs = performance.now();
       const turnCreated = noteRealtimeTurnResponseCreated(
         session.callerTurnTiming,
         responseId,
-        performance.now()
+        responseCreatedAtMs
       );
       if (turnCreated) {
         logRealtimeDetailEntry(session, {
@@ -2698,24 +2890,29 @@ function connectXAiRealtime(session: StreamSession) {
         });
       }
       ensureAudioPumpTrace(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
-      if (session.pendingToolSpeechWait && !session.pendingToolSpeechWait.responseId) {
-        session.pendingToolSpeechWait.responseCreatedAtMs = performance.now();
-        session.pendingToolSpeechWait.responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
-        const waitMs = Number((session.pendingToolSpeechWait.responseCreatedAtMs - session.pendingToolSpeechWait.requestedAtMs).toFixed(3));
+      const timingState = session.toolResponseTiming || createToolResponseTimingState();
+      session.toolResponseTiming = timingState;
+      const toolWait = matchAssistantResponseCreated(
+        timingState,
+        responseId,
+        responseCreatedAtMs
+      );
+      if (toolWait) {
+        const waitMs = Number((responseCreatedAtMs - toolWait.requestedAtMs).toFixed(3));
         logInfo("xai_realtime_tool_response_created", {
           callSid: session.callSid,
-          tool: session.pendingToolSpeechWait.tool,
-          callId: session.pendingToolSpeechWait.callId,
-          responseId: session.pendingToolSpeechWait.responseId || undefined,
+          tool: toolWait.tool,
+          callId: toolWait.callId,
+          responseId: toolWait.responseId || undefined,
           waitMs
         });
         logRealtimeDetailEntry(session, {
           ts: new Date().toISOString(),
           kind: "tool_response_created",
           callSid: session.callSid,
-          tool: session.pendingToolSpeechWait.tool,
-          callId: session.pendingToolSpeechWait.callId,
-          responseId: session.pendingToolSpeechWait.responseId,
+          tool: toolWait.tool,
+          callId: toolWait.callId,
+          responseId: toolWait.responseId,
           waitMs,
           payload: payloadMsg
         });
@@ -2783,19 +2980,20 @@ function connectXAiRealtime(session: StreamSession) {
         underrunOpenAtDone
       });
       logAudioPumpTraceSummary(session, "response_done");
-      if (session.pendingToolSpeechWait) {
-        if (session.pendingToolSpeechWait.responseId && session.pendingToolSpeechWait.responseId === responseId) {
-          logRealtimeDetailEntry(session, {
-            ts: new Date().toISOString(),
-            kind: "tool_response_done",
-            callSid: session.callSid,
-            tool: session.pendingToolSpeechWait.tool,
-            callId: session.pendingToolSpeechWait.callId,
-            responseId,
-            payload: payloadMsg
-          });
-          session.pendingToolSpeechWait = null;
-        }
+      const completedToolWait = finishToolResponse(
+        session.toolResponseTiming || createToolResponseTimingState(),
+        responseId
+      );
+      if (completedToolWait) {
+        logRealtimeDetailEntry(session, {
+          ts: new Date().toISOString(),
+          kind: "tool_response_done",
+          callSid: session.callSid,
+          tool: completedToolWait.tool,
+          callId: completedToolWait.callId,
+          responseId,
+          payload: payloadMsg
+        });
       }
       if (!hasPendingAssistantAudio(session)) {
         session.audioPumpTrace = null;
@@ -2838,16 +3036,22 @@ function connectXAiRealtime(session: StreamSession) {
           });
           session.callerTurnTiming = null;
         }
-        if (session.pendingToolSpeechWait && !session.pendingToolSpeechWait.firstAudioLogged) {
-          const waitMs = Number((performance.now() - session.pendingToolSpeechWait.requestedAtMs).toFixed(3));
-          const responseCreatedToFirstAudioMs = session.pendingToolSpeechWait.responseCreatedAtMs
-            ? Number((performance.now() - session.pendingToolSpeechWait.responseCreatedAtMs).toFixed(3))
-            : undefined;
+        const audioResponseId = payloadMsg?.response_id || payloadMsg?.response?.id || null;
+        const firstAudio = matchToolResponseFirstAudio(
+          session.toolResponseTiming || createToolResponseTimingState(),
+          audioResponseId,
+          performance.now()
+        );
+        if (firstAudio) {
+          const waitMs = Number(firstAudio.waitMs.toFixed(3));
+          const responseCreatedToFirstAudioMs = firstAudio.responseCreatedToFirstAudioMs === null
+            ? undefined
+            : Number(firstAudio.responseCreatedToFirstAudioMs.toFixed(3));
           logInfo("xai_realtime_tool_response_first_audio", {
             callSid: session.callSid,
-            tool: session.pendingToolSpeechWait.tool,
-            callId: session.pendingToolSpeechWait.callId,
-            responseId: payloadMsg?.response_id || payloadMsg?.response?.id || null,
+            tool: firstAudio.wait.tool,
+            callId: firstAudio.wait.callId,
+            responseId: audioResponseId,
             waitMs,
             responseCreatedToFirstAudioMs
           });
@@ -2855,13 +3059,12 @@ function connectXAiRealtime(session: StreamSession) {
             ts: new Date().toISOString(),
             kind: "tool_response_first_audio",
             callSid: session.callSid,
-            tool: session.pendingToolSpeechWait.tool,
-            callId: session.pendingToolSpeechWait.callId,
-            responseId: payloadMsg?.response_id || payloadMsg?.response?.id || null,
+            tool: firstAudio.wait.tool,
+            callId: firstAudio.wait.callId,
+            responseId: audioResponseId,
             waitMs,
             responseCreatedToFirstAudioMs
           });
-          session.pendingToolSpeechWait.firstAudioLogged = true;
         }
         noteAssistantResponseCreated(session, payloadMsg?.response_id || payloadMsg?.response?.id || null);
         noteAssistantOutputItem(session, payloadMsg?.item_id || payloadMsg?.item?.id || payloadMsg?.output_item?.id || null);
@@ -2909,6 +3112,7 @@ function connectXAiRealtime(session: StreamSession) {
     if (type === "input_audio_buffer.speech_started") {
       logCallerTranscriptTurnSummary(session, "next_speech_started");
       session.callerTranscriptTurn = createCallerTranscriptTurnState();
+      session.callerTurnSequence = (session.callerTurnSequence || 0) + 1;
       session.lastAssistantTranscript = null;
       if (session.transferState?.status === "pending" || session.aiDetached) {
         logInfo("assistant_barge_in_decision", {
@@ -2948,7 +3152,7 @@ function connectXAiRealtime(session: StreamSession) {
       const argsText = payloadMsg.arguments || session.pendingToolCall?.argumentsText || "";
       if (!name || !callId) return;
       session.pendingToolCall = null;
-      await handleToolCallEvent(session, String(name), String(callId), String(argsText || ""), "response.function_call_arguments.done");
+      await queueToolCallEvent(session, String(name), String(callId), String(argsText || ""), "response.function_call_arguments.done");
       return;
     }
 
@@ -2961,7 +3165,7 @@ function connectXAiRealtime(session: StreamSession) {
         const callId = String(item?.call_id || item?.id || "");
         const argsText = String(item?.arguments || "");
         if (!name || !callId) return;
-        await handleToolCallEvent(session, name, callId, argsText, "response.output_item.done");
+        await queueToolCallEvent(session, name, callId, argsText, "response.output_item.done");
       }
     }
   });
@@ -3457,7 +3661,9 @@ server.listen(port, () => {
   logInfo("call_gateway_started", {
     port,
     bidirectionalPayloadMode: resolveBidirectionalPayloadMode(),
-    rtpPayloadType
+    rtpPayloadType,
+    outboundBufferFrames: outboundJitterBufferFrames,
+    outboundBufferMs: outboundJitterBufferFrames * outboundAudioFrameMs
   });
   void preloadActiveBuildAssetsOnStartup();
 });

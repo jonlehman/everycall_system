@@ -38,6 +38,17 @@ Define what the gateway logs for each call and how logs are accessed.
   playback remained queued when xAI completed the response.
 - `xai_realtime_tool_response_requested`, `xai_realtime_tool_response_created`,
   and `xai_realtime_tool_response_first_audio`: isolate tool-related dead air.
+  Requests are recorded when `response.create` is actually dispatched; created,
+  first-audio, and done events are matched by response ID so overlapping tool
+  activity cannot overwrite another tool's timing.
+- `data_capture_duplicate_suppressed` records that an exact successful capture
+  payload was reused without another persistence callback.
+- `data_capture_response_suppressed` records that an additional capture in the
+  same caller speech turn did not create another assistant continuation.
+- `xai_realtime_queued_responses_discarded` records stale continuations removed
+  after an accepted finish request.
+- `xai_realtime_post_finish_response_suppressed` records a late continuation
+  rejected during the final audio-drain window.
 - `knowledge_lookup_timing`: separates caller endpoint-to-tool selection,
   knowledge runtime, call-state persistence, internal result forwarding, and
   the result-dispatch attempt back to xAI, including whether the socket was

@@ -70,3 +70,9 @@ The input schema is **dynamic** and must match the `field_schema` provided by Ev
 - The gateway must not add tools beyond those provided by EveryCall.
 - The gateway must validate `data_capture` arguments against `field_schema`.
 - The gateway must forward tool payloads and validation results to EveryCall.
+- Tool calls execute serially within a call so persistence and assistant continuations cannot race.
+- An exact repeated `data_capture` payload is idempotent: the gateway reuses the successful result without repeating persistence or the EveryCall callback.
+- The gateway permits at most one `data_capture`-driven assistant continuation per caller speech turn. A later caller correction or newly supplied value remains eligible because it has a different payload and/or caller turn.
+- An accepted `finish_session` discards queued assistant continuations so no stale capture acknowledgement can play after the spoken closing.
+- Assistant continuations arriving after an accepted `finish_session` are suppressed during the audio-drain window.
+- A capture is not reported as accepted to the model when the EveryCall persistence callback fails.

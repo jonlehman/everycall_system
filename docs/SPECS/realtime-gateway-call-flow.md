@@ -26,10 +26,13 @@ Define the step-by-step sequence of events for an inbound call.
    - Gateway relays audio to caller.
 
 5. **Tool Calls**
+   - Gateway serializes tool execution in provider event order for the current call.
    - If xAI requests `knowledge_lookup`, gateway performs lookup and returns relevant knowledge matches, overrides, and guardrails.
    - If xAI requests `data_capture`, gateway validates payload against schema and forwards it to EveryCall.
+   - Exact repeated capture payloads do not repeat persistence. Only one capture continuation may be generated for one caller speech turn.
 
 6. **Call End**
+   - Once the spoken-close policy accepts `finish_session`, gateway drops any stale queued assistant continuations before draining audio and hanging up.
    - Call ends via caller hangup or gateway hangup.
    - Gateway closes Realtime session and finalizes logs.
    - Gateway sends any final tool payloads to EveryCall.

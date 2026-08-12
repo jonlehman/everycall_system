@@ -27,7 +27,16 @@
     while Telnyx audio was still queued.
 - Tool-related silence can be isolated with
   `xai_realtime_tool_response_requested`, `xai_realtime_tool_response_created`,
-  and `xai_realtime_tool_response_first_audio`.
+  and `xai_realtime_tool_response_first_audio`. These events are matched per
+  response ID; different tool call IDs must never overwrite one another's
+  timing.
+- Repeated capture activity is visible as `data_capture_duplicate_suppressed`
+  and `data_capture_response_suppressed`. The former prevents repeat
+  persistence of the exact values; the latter caps capture-driven speech at one
+  continuation per caller turn. `xai_realtime_queued_responses_discarded` at an
+  accepted finish confirms stale responses were removed before hangup;
+  `xai_realtime_post_finish_response_suppressed` identifies a later response
+  request rejected during the drain window.
 - `assistant_finish_session_rejected` means the model tried to end the call
   before speaking the configured closing. The gateway leaves the call active
   and returns control to the assistant; correlate the event with the transcript
@@ -65,6 +74,11 @@
 - Wrong knowledge answers: verify compiled knowledge retrieval, overrides, and guardrails.
 - Realtime session update rejected: inspect the xAI error `param`, confirm the selected voice is valid, and confirm G.711 μ-law is configured end-to-end.
 - Static or missing outbound audio after the Grok Voice Think Fast 2.0 switch: verify the xAI `session.update` payload uses `session.audio.input.format.type: "audio/pcmu"` and `session.audio.output.format.type: "audio/pcmu"` with JSON transport, and that Telnyx is configured for G.711 μ-law at 8 kHz. Flat `input_audio_format` / `output_audio_format` fields can leave xAI on its default 24 kHz PCM and must not be used.
+- Audible mid-response stop/start with `timerLateCount=0` and nonzero underruns:
+  confirm `call_gateway_started` reports `outboundBufferFrames=20` and
+  `outboundBufferMs=400`. `TELNYX_OUTBOUND_BUFFER_FRAMES` may override the
+  default; values below 20 trade lower response-start latency for less
+  protection against xAI inter-chunk starvation.
 - Transfer lookup returns `not_found` when the caller asks who is available: run `corepack pnpm validate:transfer-directory` and confirm the gateway treats a general directory question as a request for all configured transfer targets; a transfer still requires explicit caller confirmation.
 
 ## Outbound Sales Calling

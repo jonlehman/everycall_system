@@ -19,11 +19,15 @@ Define behavior when realtime sessions or tool calls fail.
    - Forward raw payload and errors to EveryCall.
    - Continue call without gateway injecting instructions.
 
-4. **Knowledge lookup returns no strong matches**
+4. **Data capture persistence callback fails**
+   - Do not mark the capture complete or cache its idempotency fingerprint.
+   - Return an unsuccessful capture result so the assistant cannot claim that follow-up was arranged.
+
+5. **Knowledge lookup returns no strong matches**
    - Return empty cards/facts/overrides and only default guardrails.
    - Do not invent an answer.
 
-5. **EveryCall prompt payload missing/invalid**
+6. **EveryCall prompt payload missing/invalid**
    - Reject session creation.
    - Log error and notify EveryCall.
 

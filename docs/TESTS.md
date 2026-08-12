@@ -63,12 +63,14 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 - Verify the model-facing system instructions begin with `Who You Are`, use the tenant's seven configured values, render pinned facts as plain `Title: spoken fact` lines, and contain no gateway-appended transfer section.
 - Ask one question fully covered by a pinned core fact and verify the assistant answers immediately without `knowledge_lookup`. Ask an adjacent unsupported question and verify it still calls `knowledge_lookup` instead of stretching the pinned fact.
 - Verify first assistant audio arrives and outbound audio stays clear over Telnyx.
+- Verify `call_gateway_started` and `assistant_audio_pump_trace` report a 20-frame/400-ms outbound buffer by default. During a multi-sentence answer, verify xAI inter-chunk gaps do not produce an audible stop/start.
 - Verify a knowledge lookup does not mention tool names, packets, scores, or system logic.
 - Verify a knowledge lookup either runs silently or follows only a self-contained holding phrase; the assistant must not begin a substantive answer, pause for the lookup, and then continue it.
 - Describe a project in stages and verify the assistant asks relevant follow-up questions and reflects the need before offering a callback; a plausible fit or one answered question is not enough.
 - Decline an offered callback with “No thanks” and verify the assistant does not call `finish_session`, repeat the offer, or assume the call is over. It should continue helping and close only after a clear mutual ending.
 - After a project-related answer, verify the assistant naturally continues the caller’s current thread when more understanding would help instead of stopping or jumping directly to a callback offer.
 - Verify data capture happens only after the caller provides the value.
+- After confirming callback details, verify an exact repeated `data_capture` payload produces one persistence callback and no extra assistant line after the spoken closing. Confirm the Render log shows duplicate/continuation suppression when Grok retries it.
 - Verify transfer lookup asks for confirmation before transfer.
 - Verify silence and uncertain answers end with a clear next step.
 - Read an alphanumeric value such as `A7K-92Q`, then verify the assistant repeats and captures every character in order.
@@ -76,6 +78,7 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 - Place a speakerphone call at normal volume; verify Ara does not treat her own playback as caller speech, while a clearly spoken caller interruption still stops playback.
 - Interrupt the assistant mid-sentence; verify xAI handles model-side barge-in, EveryCall sends Telnyx `clear`, and the assistant handles the new utterance without replaying stale audio.
 - Verify `xai_realtime_turn_latency` records endpoint-to-first-audio timing for ordinary caller turns and turns with tool calls.
+- Trigger two tool continuations close together and verify each `xai_realtime_tool_response_created` and first-audio event retains the correct tool call ID and internally consistent timing.
 - Verify `telnyx_call_control_answer_requested` occurs before prompt/bootstrap completion and records a low `webhookToAnswerRequestMs`; confirm the PSTN call is answered on the first ring.
 - Speak one sentence slowly enough to produce multiple xAI transcription updates. Verify the saved and exported transcript contains one complete caller line for that VAD turn, and verify Render emits `caller_transcript_turn_coalesced` with multiple snapshots but no transcript text.
 

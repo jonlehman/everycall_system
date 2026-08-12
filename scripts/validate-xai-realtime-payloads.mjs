@@ -30,6 +30,15 @@ const knowledgeLookupTelemetry = await import(pathToFileURL(
 const finishSessionPolicy = await import(pathToFileURL(
   path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/finishSessionPolicy.js")
 ).href);
+const dataCaptureControl = await import(pathToFileURL(
+  path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/dataCaptureControl.js")
+).href);
+const toolResponseControl = await import(pathToFileURL(
+  path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/toolResponseControl.js")
+).href);
+const toolResponseTiming = await import(pathToFileURL(
+  path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/toolResponseTiming.js")
+).href);
 const migration = await import(pathToFileURL(
   path.join(process.cwd(), "scripts/migrate-xai-runtime-profiles.mjs")
 ).href);
@@ -675,6 +684,127 @@ assert.deepEqual(
   }),
   { allowed: true, reason: "policy_disabled" }
 );
+
+const captureState = dataCaptureControl.createDataCaptureControlState();
+const captureFingerprint = dataCaptureControl.fingerprintDataCaptureArgs({
+  first_name: "Test",
+  outcome_type: "callback"
+});
+assert.equal(
+  captureFingerprint,
+  dataCaptureControl.fingerprintDataCaptureArgs({
+    outcome_type: "callback",
+    first_name: "Test"
+  }),
+  "capture deduplication must not depend on object key order"
+);
+assert.equal(dataCaptureControl.getCompletedDataCapture(captureState, captureFingerprint), null);
+dataCaptureControl.recordCompletedDataCapture(captureState, captureFingerprint, {
+  status: "accepted",
+  errors: []
+});
+assert.deepEqual(
+  dataCaptureControl.getCompletedDataCapture(captureState, captureFingerprint),
+  { status: "accepted", errors: [] }
+);
+assert.equal(dataCaptureControl.claimDataCaptureContinuation(captureState, 3), true);
+assert.equal(dataCaptureControl.claimDataCaptureContinuation(captureState, 3), false);
+assert.equal(dataCaptureControl.claimDataCaptureContinuation(captureState, 4), true);
+
+const responseControlSession = {
+  currentResponseId: null,
+  responseCreatePending: false,
+  activeAssistantResponseDedupeKey: null,
+  queuedAssistantResponses: []
+};
+const firstCaptureResponse = toolResponseControl.enqueueAssistantResponseRequest(
+  responseControlSession,
+  {
+    reason: "data_capture_result",
+    response: {},
+    dedupeKey: "data_capture:turn:7",
+    toolResponse: { tool: "data_capture", callId: "capture_a" }
+  }
+);
+assert.equal(firstCaptureResponse.action, "send_now");
+assert.equal(
+  toolResponseControl.enqueueAssistantResponseRequest(responseControlSession, {
+    reason: "data_capture_result",
+    response: {},
+    dedupeKey: "data_capture:turn:7",
+    toolResponse: { tool: "data_capture", callId: "capture_b" }
+  }).action,
+  "duplicate_active",
+  "one caller turn must not create overlapping capture continuations"
+);
+toolResponseControl.markAssistantResponseCreated(responseControlSession, "response_capture_a");
+assert.equal(
+  toolResponseControl.enqueueAssistantResponseRequest(responseControlSession, {
+    reason: "tool_result",
+    response: {},
+    dedupeKey: "finish_recovery",
+    toolResponse: { tool: "finish_session", callId: "finish_a" }
+  }).action,
+  "queued"
+);
+const discardedResponses = toolResponseControl.discardQueuedAssistantResponses(responseControlSession);
+assert.equal(discardedResponses.length, 1);
+assert.equal(discardedResponses[0].toolResponse.callId, "finish_a");
+
+const responseTimingState = toolResponseTiming.createToolResponseTimingState();
+toolResponseTiming.trackAssistantResponseDispatch(responseTimingState, null, 0);
+toolResponseTiming.trackAssistantResponseDispatch(
+  responseTimingState,
+  { tool: "data_capture", callId: "capture_a", toolResultPayloadBytes: 180 },
+  10
+);
+toolResponseTiming.trackAssistantResponseDispatch(
+  responseTimingState,
+  { tool: "knowledge_lookup", callId: "lookup_b", toolResultPayloadBytes: 3400 },
+  20
+);
+assert.equal(
+  toolResponseTiming.matchAssistantResponseCreated(responseTimingState, "normal_response", 25),
+  null,
+  "ordinary responses must consume their own dispatch slot without stealing tool attribution"
+);
+const captureWait = toolResponseTiming.matchAssistantResponseCreated(
+  responseTimingState,
+  "capture_response",
+  30
+);
+const lookupWait = toolResponseTiming.matchAssistantResponseCreated(
+  responseTimingState,
+  "lookup_response",
+  40
+);
+assert.equal(captureWait.callId, "capture_a");
+assert.equal(lookupWait.callId, "lookup_b");
+assert.equal(
+  toolResponseTiming.matchToolResponseFirstAudio(
+    responseTimingState,
+    "lookup_response",
+    90
+  ).wait.callId,
+  "lookup_b"
+);
+assert.equal(
+  toolResponseTiming.matchToolResponseFirstAudio(
+    responseTimingState,
+    "capture_response",
+    100
+  ).wait.callId,
+  "capture_a",
+  "first-audio timing must resolve by response ID rather than a shared scalar slot"
+);
+assert.equal(
+  toolResponseTiming.finishToolResponse(responseTimingState, "capture_response").callId,
+  "capture_a"
+);
+assert.equal(
+  toolResponseTiming.finishToolResponse(responseTimingState, "lookup_response").callId,
+  "lookup_b"
+);
 assert.deepEqual(
   finishSessionPolicy.evaluateFinishSessionPolicy({
     requireSpokenClose: true,
@@ -916,6 +1046,10 @@ for (const eventName of [
   "assistant_barge_in_decision",
   "assistant_barge_in_applied",
   "assistant_finish_session_rejected",
+  "data_capture_duplicate_suppressed",
+  "data_capture_response_suppressed",
+  "xai_realtime_queued_responses_discarded",
+  "xai_realtime_post_finish_response_suppressed",
   "caller_transcript_turn_coalesced",
   "knowledge_lookup_timing"
 ]) {
@@ -929,6 +1063,11 @@ assert.match(
   callGatewaySource,
   /decision: clearSent \? "clear_applied" : "clear_not_sent"/,
   "a closed Telnyx socket must not be logged as an applied clear"
+);
+assert.match(
+  callGatewaySource,
+  /TELNYX_OUTBOUND_BUFFER_FRAMES \|\| "20"/,
+  "the production audio pump must default to a 400 ms outbound jitter buffer"
 );
 assert.match(callGatewaySource, /evaluateFinishSessionPolicy\(/);
 assert.match(callGatewaySource, /logInfo\("assistant_finish_session_rejected"/);
@@ -944,7 +1083,7 @@ assert.match(
 );
 assert.match(
   callGatewaySource,
-  /if \(type === "input_audio_buffer\.speech_started"\) \{[\s\S]*?session\.callerTranscriptTurn = createCallerTranscriptTurnState\(\);\s+session\.lastAssistantTranscript = null;/,
+  /if \(type === "input_audio_buffer\.speech_started"\) \{[\s\S]*?session\.callerTranscriptTurn = createCallerTranscriptTurnState\(\);[\s\S]*?session\.lastAssistantTranscript = null;/,
   "a new caller turn must invalidate any closing spoken on an earlier turn"
 );
 
