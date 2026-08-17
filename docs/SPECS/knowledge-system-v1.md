@@ -28,8 +28,10 @@ The user-facing product should not expose raw `knowledge_facts` by default.
 
 - `knowledge_build_facts` remains the source of truth. System-managed pin metadata identifies stable facts that may be placed directly in the receptionist prompt; there is no second tenant fact store.
 - Every canonical fact remains vector indexed. The prompt-only spoken form never replaces or weakens the source fact used for lookup.
-- OpenAI rates facts for stability and receptionist usefulness, performs the editorial selection, rewrites finalists into one neutral atomic spoken line, and independently audits each exact rendered `Title: spoken fact` line. Incomplete AI stages fail closed.
-- Deterministic code rejects instruction or marketing leakage and unsafe semantic changes, and enforces tenant isolation, a 600-token prompt budget, a 20-fact ceiling, retrieval eligibility, refresh hysteresis, and a three-swap limit. It does not select or order facts by numeric score.
+- OpenAI independently scores a new or materially changed fact for stability, safety, and importance to a phone receptionist, and produces its neutral atomic spoken form. An unchanged rating-input hash reuses the saved rating and wording without another OpenAI review.
+- SQL orders eligible facts by score descending with stable fingerprint and fact-ID tie-breakers. Deterministic code rejects instruction or marketing leakage and unsafe semantic changes, deduplicates fingerprints, and enforces tenant isolation, a 600-token prompt budget, and a 20-fact ceiling.
+- The resulting tenant/build section, selected fact IDs, rating version, and checksum are materialized in `knowledge_core_fact_prompt_sections`. Calls inject that saved block and do not run selection or scoring.
+- Adding, changing, or deleting knowledge causes the next build to rerank and rematerialize the section. Deletion and reranking require no OpenAI call; only facts with changed rating inputs are scored.
 - The internal admin shows active-build pins and the append-only change history. Tenants do not manually manage pins in v1.
 - If an active build has no pins, the entire `What You Know By Heart` section and its two prompt references are omitted, leaving the restored OpenAI prompt byte-for-byte unchanged.
 

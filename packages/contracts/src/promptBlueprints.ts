@@ -694,6 +694,20 @@ function renderCoreFactsBlock(values: CoreFactPromptValue[]) {
   return lines.join("\n");
 }
 
+function normalizeStoredCoreFactsBlock(value: string) {
+  const lines: string[] = [];
+  let estimatedTokens = 0;
+  for (const rawLine of String(value || "").split(/\r?\n/)) {
+    const line = normalizeText(rawLine).replace(/\s+/g, " ");
+    if (!line || CORE_FACT_INSTRUCTION_PATTERN.test(line)) continue;
+    const lineTokens = Math.ceil(new TextEncoder().encode(`${line}\n`).length / 4);
+    if (estimatedTokens + lineTokens > CORE_FACTS_BLOCK_TOKEN_BUDGET) break;
+    lines.push(line);
+    estimatedTokens += lineTokens;
+  }
+  return lines.join("\n");
+}
+
 function renderSamplePhraseGroupsBlock(groups: Record<SamplePhraseGroupId, string[]>) {
   const parts: string[] = [];
   const labels: Array<[SamplePhraseGroupId, string]> = [
@@ -970,6 +984,7 @@ export function renderPromptContext(
     companyDescription?: string;
     sectionOverrides?: Record<string, string>;
     coreFacts?: CoreFactPromptValue[];
+    coreFactsBlock?: string;
   } = {}
 ): PromptRenderContext {
   const blueprint = normalizePromptBlueprintBundle(blueprintInput);
@@ -977,7 +992,9 @@ export function renderPromptContext(
   const sectionOverrides = asObject(options.sectionOverrides);
   const companyDescription = normalizeText(options.companyDescription || tenantProfile.company_description);
   const samplePhraseGroupsBlock = renderSamplePhraseGroupsBlock(blueprint.sample_phrase_groups);
-  const coreFactsBlock = renderCoreFactsBlock(options.coreFacts || []);
+  const coreFactsBlock = typeof options.coreFactsBlock === "string"
+    ? normalizeStoredCoreFactsBlock(options.coreFactsBlock)
+    : renderCoreFactsBlock(options.coreFacts || []);
   const renderValues = {
     assistant_name: tenantProfile.assistant_name,
     business_name: tenantProfile.business_name,

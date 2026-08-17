@@ -63,15 +63,6 @@ CREATE TABLE IF NOT EXISTS knowledge_core_fact_pin_changes (
 CREATE INDEX IF NOT EXISTS knowledge_core_fact_pin_changes_tenant_idx
   ON knowledge_core_fact_pin_changes (tenant_key, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS knowledge_core_fact_refresh_state (
-  tenant_key TEXT PRIMARY KEY REFERENCES tenants(tenant_key) ON DELETE CASCADE,
-  active_build_id TEXT NOT NULL,
-  calls_at_last_refresh BIGINT NOT NULL DEFAULT 0,
-  last_refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  selector_version TEXT NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 COMMENT ON COLUMN knowledge_build_facts.is_core_fact_pinned IS
   'System-managed flag for facts rendered into the receptionist What You Know By Heart prompt section.';
 

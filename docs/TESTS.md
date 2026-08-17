@@ -30,6 +30,9 @@
 - Run `corepack pnpm validate:core-facts` after building `@everycall/contracts`.
 - The validator reconstructs the pre-Grok OpenAI v3 section set and verifies its SHA-256 baseline, tool definitions, and sample phrases. With no pins, the entire rendered prompt must equal v3 byte-for-byte.
 - With pins, verify only the conditional section, memory allowance, and lookup exception are added. Instruction-like text must be rejected, the rendered block must stay within 600 tokens and 20 facts, and tenant/build isolation must hold.
+- Verify an unchanged rating-input hash causes zero OpenAI scoring calls and carries its saved score, spoken text, model, and rated timestamp forward. Changing the canonical claim, qualifiers, boundaries, or tenant scoring context must invalidate the hash and score only that fact.
+- Verify the legacy backfill refuses missing-fact model calls unless `EVERYCALL_ALLOW_CORE_FACT_OPENAI_SCORING=1` is explicitly set.
+- Verify deterministic score-descending selection, stable tie-breaking, deletion-only reranking without OpenAI, materialized-section checksums, and call-start injection from the saved database block.
 - In a live canary, ask one question fully covered by a pin and verify there is no lookup. Then ask an adjacent unsupported question and verify `knowledge_lookup` still runs.
 
 Use these after any change to prompts, knowledge lookup, or barge-in handling.

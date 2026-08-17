@@ -460,7 +460,7 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
   const [users, setUsers] = useState([]);
   const [builds, setBuilds] = useState([]);
   const [activeBuild, setActiveBuild] = useState(null);
-  const [coreFacts, setCoreFacts] = useState({ activeBuildId: null, pins: [], history: [] });
+  const [coreFacts, setCoreFacts] = useState({ activeBuildId: null, pins: [], section: null, history: [] });
   const [billingReview, setBillingReview] = useState({ billing: null, pricingCatalog: { plans: [], defaultTrialDays: null } });
   const [pricingDraft, setPricingDraft] = useState(buildPricingDraft(null, null));
   const [pricingSaving, setPricingSaving] = useState(false);
@@ -583,6 +583,7 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
       setCoreFacts({
         activeBuildId: coreFactsData?.activeBuildId || null,
         pins: Array.isArray(coreFactsData?.pins) ? coreFactsData.pins : [],
+        section: coreFactsData?.section || null,
         history: Array.isArray(coreFactsData?.history) ? coreFactsData.history : []
       });
       setBillingReview(nextBillingReview);
@@ -2246,8 +2247,8 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
           <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="m-0 text-lg font-semibold">Pinned Core Facts <span className="text-sm font-normal text-slate-500">(internal)</span></h2>
-                <div className="mt-1 text-sm text-slate-500">Read-only runtime facts automatically selected for the active knowledge build.</div>
+                <h2 className="m-0 text-lg font-semibold">What You Know By Heart <span className="text-sm font-normal text-slate-500">(internal)</span></h2>
+                <div className="mt-1 text-sm text-slate-500">Read-only tenant prompt content, deterministically ranked from saved per-fact OpenAI scores.</div>
               </div>
               <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
                 {coreFacts.pins.length} pinned · {coreFacts.activeBuildId || 'no active build'}
@@ -2269,6 +2270,12 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
             ) : (
               <div className="mt-4 text-sm text-slate-500">No core facts are pinned for the active build.</div>
             )}
+            {coreFacts.section ? (
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                Saved section · {coreFacts.section.token_count || 0} estimated tokens · checksum {String(coreFacts.section.section_checksum || '').slice(0, 12)}
+                {coreFacts.section.materialized_at ? ` · Materialized ${formatDateTimeDisplay(coreFacts.section.materialized_at)}` : ''}
+              </div>
+            ) : null}
             <div className="mt-5 border-t border-slate-200 pt-4">
               <div className="text-sm font-semibold text-slate-900">Recent Pin Changes</div>
               {coreFacts.history.length ? (

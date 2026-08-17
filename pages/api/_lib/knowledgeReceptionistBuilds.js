@@ -5,7 +5,10 @@ import { performance } from "node:perf_hooks";
 import { executePlannerPgvectorRuntime } from "@everycall/contracts";
 import { extractTextFromDocumentBuffer } from "./knowledgeReceptionistFiles.js";
 import { buildSourceChunksForSourceItem, compileKnowledgeBuildArtifacts } from "./knowledgeReceptionistCompiler.js";
-import { recordCoreFactActivationChanges } from "./knowledgeCoreFacts.js";
+import {
+  materializeCoreFactPromptSection,
+  recordCoreFactActivationChanges
+} from "./knowledgeCoreFacts.js";
 import { loadTenantDomainAssignments, resolveTenantDomainAssignments, syncCanonicalKnowledgePacks } from "./knowledgeReceptionistPacks.js";
 import { ensureTenantPromptProfileCompanyDescriptionSnapshot } from "./promptBlueprints.js";
 import { loadTenantBootstrapProfile } from "./tenantBootstrapProfiles.js";
@@ -3223,12 +3226,15 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
          fact_role, support_type, source_span_refs_json, source_chunk_ids_json, qualifier_json,
          boundary_json, support_metadata_json, search_text, is_core_fact_pinned, core_fact_fingerprint,
          core_fact_title, core_fact_spoken_text, core_fact_score, core_fact_rank, core_fact_reason,
-         core_fact_selector_version, core_fact_selected_at
+         core_fact_selector_version, core_fact_selected_at, core_fact_rating_input_hash,
+         core_fact_is_stable, core_fact_is_safe_to_speak, core_fact_rating_version,
+         core_fact_rating_model, core_fact_rated_at
        )
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13::jsonb, $14::jsonb,
          $15, $16, $17, $18, $19, $20, $21, $22, $23::jsonb, $24::jsonb, $25::jsonb,
-         $26::jsonb, $27::jsonb, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37
+         $26::jsonb, $27::jsonb, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37,
+         $38, $39, $40, $41, $42, $43
        )`,
       [
         fact.knowledge_fact_id,
@@ -3267,10 +3273,22 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
         Number.isFinite(Number(fact.core_fact_rank)) ? Number(fact.core_fact_rank) : null,
         fact.core_fact_reason || null,
         fact.core_fact_selector_version || null,
-        fact.core_fact_selected_at || null
+        fact.core_fact_selected_at || null,
+        fact.core_fact_rating_input_hash || null,
+        fact.core_fact_is_stable === true,
+        fact.core_fact_is_safe_to_speak === true,
+        fact.core_fact_rating_version || null,
+        fact.core_fact_rating_model || null,
+        fact.core_fact_rated_at || null
       ]
     );
   }
+
+  await materializeCoreFactPromptSection(db, {
+    tenantKey: buildInfo.tenant_key,
+    buildId: buildInfo.build_id,
+    reason: "knowledge_build_materialized"
+  });
 
   for (const card of sanitizedCards) {
     await db.query(
@@ -3408,7 +3426,9 @@ async function loadBuildAssetsFromDb(db, tenantKey, buildId) {
     db.query(
       `SELECT knowledge_fact_id, claim_text, fact_role, search_text, source_ref_ids_json,
               is_core_fact_pinned, core_fact_fingerprint, core_fact_title, core_fact_spoken_text,
-              core_fact_score, core_fact_rank, core_fact_reason, core_fact_selector_version, core_fact_selected_at
+              core_fact_score, core_fact_rank, core_fact_reason, core_fact_selector_version, core_fact_selected_at,
+              core_fact_rating_input_hash, core_fact_is_stable, core_fact_is_safe_to_speak,
+              core_fact_rating_version, core_fact_rating_model, core_fact_rated_at
        FROM knowledge_build_facts
        WHERE tenant_key = $1
          AND build_id = $2
@@ -3461,6 +3481,12 @@ async function loadBuildAssetsFromDb(db, tenantKey, buildId) {
       core_fact_reason: row.core_fact_reason,
       core_fact_selector_version: row.core_fact_selector_version,
       core_fact_selected_at: row.core_fact_selected_at,
+      core_fact_rating_input_hash: row.core_fact_rating_input_hash,
+      core_fact_is_stable: row.core_fact_is_stable === true,
+      core_fact_is_safe_to_speak: row.core_fact_is_safe_to_speak === true,
+      core_fact_rating_version: row.core_fact_rating_version,
+      core_fact_rating_model: row.core_fact_rating_model,
+      core_fact_rated_at: row.core_fact_rated_at,
       source_ref_ids_json: Array.isArray(row.source_ref_ids_json) ? row.source_ref_ids_json : []
     }))
   };

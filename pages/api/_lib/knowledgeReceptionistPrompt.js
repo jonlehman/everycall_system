@@ -10,7 +10,7 @@ import {
 } from "@everycall/contracts";
 import { getKnowledgeBuild, loadActiveKnowledgeBuildAssets } from "./knowledgeReceptionistBuilds.js";
 import { loadApprovedConfigurationArtifacts } from "./knowledgeReceptionistConfig.js";
-import { loadPinnedCoreFacts } from "./knowledgeCoreFacts.js";
+import { loadMaterializedCoreFactSection } from "./knowledgeCoreFacts.js";
 import { buildPromptToolDefinitions, loadPromptRuntimeContext } from "./promptBlueprints.js";
 import { loadTenantBusinessHours } from "./tenantBusinessHours.js";
 
@@ -355,16 +355,20 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
     throw new Error(buildId ? "build_not_found" : "no_active_build");
   }
 
-  const [{ businessCallIntent, overrides, guardrails, callOutcomeSchema, runtimeProfile }, setupInterviewIntent, coreFacts] = await Promise.all([
+  const [{ businessCallIntent, overrides, guardrails, callOutcomeSchema, runtimeProfile }, setupInterviewIntent, materializedCoreFacts] = await Promise.all([
     loadApprovedConfigurationArtifacts(db, tenantKey),
     runtimeEntryMode === "setup_interview" ? loadSetupInterviewIntent(db, tenantKey) : Promise.resolve(null),
-    loadPinnedCoreFacts(db, tenantKey, activeBuildContext.activeBuildId)
+    loadMaterializedCoreFactSection(db, tenantKey, activeBuildContext.activeBuildId)
   ]);
+  const explicitCoreFactsOverride = input.coreFactsOverride || input.core_facts_override;
+  const useExplicitCoreFacts = Array.isArray(explicitCoreFactsOverride);
+  const coreFacts = useExplicitCoreFacts ? explicitCoreFactsOverride : materializedCoreFacts.facts;
   const promptRuntime = await loadPromptRuntimeContext(db, tenantKey, {
     promptBlueprintOverride: input.promptBlueprintOverride || input.prompt_blueprint_override || null,
     tenantPromptProfileOverride: input.tenantPromptProfileOverride || input.tenant_prompt_profile_override || null,
     sectionOverridesOverride: input.sectionOverridesOverride || input.section_overrides_override || null,
-    coreFactsOverride: input.coreFactsOverride || input.core_facts_override || coreFacts
+    coreFactsOverride: coreFacts,
+    coreFactsBlockOverride: useExplicitCoreFacts ? null : materializedCoreFacts.factsBlockText
   });
 
   const intentSummary = summarizeIntent(
@@ -382,7 +386,8 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
     },
     intentSummary,
     promptRuntime,
-    coreFacts
+    coreFacts,
+    coreFactSection: materializedCoreFacts
   };
 }
 

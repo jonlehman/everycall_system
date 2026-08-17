@@ -52,10 +52,9 @@
 
 ## What You Know By Heart
 - Canonical receptionist v10 is the restored OpenAI v3 prompt plus only the conditional by-heart section, its memory allowance, and its lookup exception. When an active build has no pins, the rendered prompt must be byte-for-byte identical to OpenAI v3.
-- Run `corepack pnpm audit:core-facts-rollout` before deployment. Migration `0039_automatic_core_fact_pins.sql` is additive; if it is already recorded, do not replay it.
-- Run `corepack pnpm backfill:core-facts` for a dry run. Apply only after reviewing every proposed fact and spoken line with `EVERYCALL_APPLY_CORE_FACT_BACKFILL=1 corepack pnpm backfill:core-facts`. Target one tenant with `EVERYCALL_CORE_FACT_BACKFILL_TENANT=<tenant_key>`.
-- Add `EVERYCALL_RESELECT_EXISTING_CORE_FACTS=1` only when intentionally replacing an existing selection. Otherwise existing pins remain unchanged.
-- The hourly `/api/cron/knowledge-core-facts` job processes at most one due tenant. A tenant becomes due after seven days or 50 completed calls; at most three pins may change in one refresh.
+- Run `corepack pnpm audit:core-facts-rollout` before deployment. Migrations `0039_automatic_core_fact_pins.sql` and `0040_event_driven_core_fact_sections.sql` are additive and applied individually by `corepack pnpm migrate:core-facts` when `EVERYCALL_APPLY_CORE_FACT_MIGRATION=1` is set.
+- Run `corepack pnpm backfill:core-facts` for a no-egress dry run. It reuses complete saved ratings and fails with an aggregate count if any fact still requires OpenAI scoring. After explicit data-flow approval, allow only those missing ratings with `EVERYCALL_ALLOW_CORE_FACT_OPENAI_SCORING=1`. Apply with `EVERYCALL_APPLY_CORE_FACT_BACKFILL=1 corepack pnpm backfill:core-facts`; target one tenant with `EVERYCALL_CORE_FACT_BACKFILL_TENANT=<tenant_key>`.
+- There is no periodic selector. A knowledge build or explicit backfill deterministically ranks saved scores, materializes the tenant/build section, and records its checksum. Calls only load the saved section.
 - Run `corepack pnpm validate:core-facts`, `corepack pnpm validate:realtime2-payloads`, `corepack pnpm typecheck`, and `corepack pnpm build` before release.
 
 ## Billing Portal

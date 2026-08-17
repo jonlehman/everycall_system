@@ -9,10 +9,6 @@
       "schedule": "*/1 * * * *"
     },
     {
-      "path": "/api/cron/knowledge-core-facts",
-      "schedule": "17 * * * *"
-    },
-    {
       "path": "/api/cron/demo-sessions",
       "schedule": "0 0 * * *"
     },

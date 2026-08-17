@@ -3,7 +3,7 @@ import { backfillActiveBuildCoreFacts } from "../pages/api/_lib/knowledgeCoreFac
 
 const { Pool } = pg;
 const APPLY_ENV = "EVERYCALL_APPLY_CORE_FACT_BACKFILL";
-const REPLACE_ENV = "EVERYCALL_RESELECT_EXISTING_CORE_FACTS";
+const ALLOW_OPENAI_SCORING_ENV = "EVERYCALL_ALLOW_CORE_FACT_OPENAI_SCORING";
 const TARGET_TENANT_ENV = "EVERYCALL_CORE_FACT_BACKFILL_TENANT";
 
 function normalizeText(value) {
@@ -17,11 +17,16 @@ async function assertMigrationApplied(pool) {
        FROM information_schema.columns
        WHERE table_schema = 'public'
          AND table_name = 'knowledge_build_facts'
-         AND column_name = 'is_core_fact_pinned'
+         AND column_name = 'core_fact_rating_input_hash'
+     ) AND EXISTS (
+       SELECT 1
+       FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_name = 'knowledge_core_fact_prompt_sections'
      ) AS ready`
   );
   if (result.rows?.[0]?.ready !== true) {
-    throw new Error("migration_0039_required_run_pnpm_db_migrate_first");
+    throw new Error("core_fact_migrations_0039_and_0040_required");
   }
 }
 
@@ -29,7 +34,7 @@ async function main() {
   const databaseUrl = normalizeText(process.env.DATABASE_URL);
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
   const apply = normalizeText(process.env[APPLY_ENV]) === "1";
-  const replaceExisting = normalizeText(process.env[REPLACE_ENV]) === "1";
+  const allowModelScoring = normalizeText(process.env[ALLOW_OPENAI_SCORING_ENV]) === "1";
   const targetTenant = normalizeText(process.env[TARGET_TENANT_ENV]);
   const pool = new Pool({ connectionString: databaseUrl, max: 2 });
   try {
@@ -65,7 +70,7 @@ async function main() {
         tenantKey: row.tenant_key,
         buildId: row.active_build_id,
         apply,
-        replaceExisting
+        allowModelScoring
       });
       coreFactRuns.push(run);
       console.error(JSON.stringify({ event: "core_fact_backfill_tenant_completed", ...run }));
@@ -73,7 +78,8 @@ async function main() {
     console.log(JSON.stringify({
       mode: apply ? "apply" : "dry_run",
       applyEnvironmentVariable: APPLY_ENV,
-      replaceExisting,
+      openAiScoringAllowed: allowModelScoring,
+      openAiScoringEnvironmentVariable: ALLOW_OPENAI_SCORING_ENV,
       targetTenant: targetTenant || null,
       coreFactRuns
     }, null, 2));

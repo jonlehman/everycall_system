@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     const tenantKey = String(req.query?.tenantKey || "").trim();
     if (!tenantKey) return res.status(400).json({ error: "missing_tenant_key" });
 
-    const [activeBuildResult, pinsResult, historyResult] = await Promise.all([
+    const [activeBuildResult, pinsResult, sectionResult, historyResult] = await Promise.all([
       pool.query(
         `SELECT active_build_id
          FROM tenant_active_knowledge_builds
@@ -29,7 +29,9 @@ export default async function handler(req, res) {
       pool.query(
         `SELECT knowledge_fact_id, claim_text, fact_role, core_fact_title, core_fact_spoken_text,
                 core_fact_score, core_fact_reason, core_fact_fingerprint, core_fact_rank,
-                core_fact_selected_at
+                core_fact_selected_at, core_fact_rating_input_hash, core_fact_is_stable,
+                core_fact_is_safe_to_speak, core_fact_rating_version, core_fact_rating_model,
+                core_fact_rated_at
          FROM knowledge_build_facts
          WHERE tenant_key = $1
            AND build_id = (
@@ -39,6 +41,19 @@ export default async function handler(req, res) {
            )
            AND is_core_fact_pinned = TRUE
          ORDER BY core_fact_rank ASC NULLS LAST, core_fact_selected_at ASC, knowledge_fact_id ASC`,
+        [tenantKey]
+      ),
+      pool.query(
+        `SELECT build_id, facts_block_text, section_text, selected_fact_ids_json,
+                section_checksum, token_count, rating_version, materialized_at, updated_at
+         FROM knowledge_core_fact_prompt_sections
+         WHERE tenant_key = $1
+           AND build_id = (
+             SELECT active_build_id
+             FROM tenant_active_knowledge_builds
+             WHERE tenant_key = $1
+           )
+         LIMIT 1`,
         [tenantKey]
       ),
       pool.query(
@@ -57,6 +72,7 @@ export default async function handler(req, res) {
       ok: true,
       activeBuildId: activeBuildResult.rows[0]?.active_build_id || null,
       pins: pinsResult.rows || [],
+      section: sectionResult.rows?.[0] || null,
       history: historyResult.rows || []
     });
   } catch (err) {

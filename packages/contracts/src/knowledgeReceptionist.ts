@@ -210,7 +210,13 @@ export const knowledgeFactSchema = z.object({
   core_fact_rank: z.number().int().positive().nullable().optional(),
   core_fact_reason: nullableStringSchema.optional(),
   core_fact_selector_version: nullableStringSchema.optional(),
-  core_fact_selected_at: nullableStringSchema.optional()
+  core_fact_selected_at: nullableStringSchema.optional(),
+  core_fact_rating_input_hash: nullableStringSchema.optional(),
+  core_fact_is_stable: z.boolean().default(false),
+  core_fact_is_safe_to_speak: z.boolean().default(false),
+  core_fact_rating_version: nullableStringSchema.optional(),
+  core_fact_rating_model: nullableStringSchema.optional(),
+  core_fact_rated_at: nullableStringSchema.optional()
 });
 
 export const knowledgeCardSchema = z.object({
