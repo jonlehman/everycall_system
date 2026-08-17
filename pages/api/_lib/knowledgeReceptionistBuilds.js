@@ -5,6 +5,7 @@ import { performance } from "node:perf_hooks";
 import { executePlannerPgvectorRuntime } from "@everycall/contracts";
 import { extractTextFromDocumentBuffer } from "./knowledgeReceptionistFiles.js";
 import { buildSourceChunksForSourceItem, compileKnowledgeBuildArtifacts } from "./knowledgeReceptionistCompiler.js";
+import { recordCoreFactActivationChanges } from "./knowledgeCoreFacts.js";
 import { loadTenantDomainAssignments, resolveTenantDomainAssignments, syncCanonicalKnowledgePacks } from "./knowledgeReceptionistPacks.js";
 import { ensureTenantPromptProfileCompanyDescriptionSnapshot } from "./promptBlueprints.js";
 import { loadTenantBootstrapProfile } from "./tenantBootstrapProfiles.js";
@@ -3220,12 +3221,14 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
          predicate, object_text, normalized_value_json, confidence, source_ref_ids_json, scope_json,
          content_class, risk_level, claim_text, evidence_text, knowledge_topic_id, knowledge_subtopic_id,
          fact_role, support_type, source_span_refs_json, source_chunk_ids_json, qualifier_json,
-         boundary_json, support_metadata_json, search_text
+         boundary_json, support_metadata_json, search_text, is_core_fact_pinned, core_fact_fingerprint,
+         core_fact_title, core_fact_spoken_text, core_fact_score, core_fact_rank, core_fact_reason,
+         core_fact_selector_version, core_fact_selected_at
        )
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13::jsonb, $14::jsonb,
          $15, $16, $17, $18, $19, $20, $21, $22, $23::jsonb, $24::jsonb, $25::jsonb,
-         $26::jsonb, $27::jsonb, $28
+         $26::jsonb, $27::jsonb, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37
        )`,
       [
         fact.knowledge_fact_id,
@@ -3255,7 +3258,16 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
         JSON.stringify(fact.qualifier_json || {}),
         JSON.stringify(fact.boundary_json || {}),
         JSON.stringify(fact.support_metadata_json || {}),
-        fact.search_text || fact.claim_text
+        fact.search_text || fact.claim_text,
+        fact.is_core_fact_pinned === true,
+        fact.core_fact_fingerprint || null,
+        fact.core_fact_title || null,
+        fact.core_fact_spoken_text || null,
+        Number.isFinite(Number(fact.core_fact_score)) ? Number(fact.core_fact_score) : null,
+        Number.isFinite(Number(fact.core_fact_rank)) ? Number(fact.core_fact_rank) : null,
+        fact.core_fact_reason || null,
+        fact.core_fact_selector_version || null,
+        fact.core_fact_selected_at || null
       ]
     );
   }
@@ -3394,7 +3406,9 @@ async function loadBuildAssetsFromDb(db, tenantKey, buildId) {
       [tenantKey, buildId]
     ),
     db.query(
-      `SELECT knowledge_fact_id, claim_text, fact_role, search_text, source_ref_ids_json
+      `SELECT knowledge_fact_id, claim_text, fact_role, search_text, source_ref_ids_json,
+              is_core_fact_pinned, core_fact_fingerprint, core_fact_title, core_fact_spoken_text,
+              core_fact_score, core_fact_rank, core_fact_reason, core_fact_selector_version, core_fact_selected_at
        FROM knowledge_build_facts
        WHERE tenant_key = $1
          AND build_id = $2
@@ -3438,6 +3452,15 @@ async function loadBuildAssetsFromDb(db, tenantKey, buildId) {
       claim_text: row.claim_text,
       fact_role: row.fact_role,
       search_text: row.search_text,
+      is_core_fact_pinned: row.is_core_fact_pinned === true,
+      core_fact_fingerprint: row.core_fact_fingerprint,
+      core_fact_title: row.core_fact_title,
+      core_fact_spoken_text: row.core_fact_spoken_text,
+      core_fact_score: row.core_fact_score === null || row.core_fact_score === undefined ? null : Number(row.core_fact_score),
+      core_fact_rank: row.core_fact_rank === null || row.core_fact_rank === undefined ? null : Number(row.core_fact_rank),
+      core_fact_reason: row.core_fact_reason,
+      core_fact_selector_version: row.core_fact_selector_version,
+      core_fact_selected_at: row.core_fact_selected_at,
       source_ref_ids_json: Array.isArray(row.source_ref_ids_json) ? row.source_ref_ids_json : []
     }))
   };
@@ -4971,6 +4994,13 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId) {
       actor: "system:publish_build"
     });
 
+    await recordCoreFactActivationChanges(client, {
+      tenantKey,
+      buildId,
+      previousBuildId: currentActiveBuildId,
+      reason: "build_published"
+    });
+
     if (currentActiveBuildId && currentActiveBuildId !== buildId) {
       await client.query(
         `UPDATE knowledge_builds
@@ -5043,6 +5073,13 @@ export async function rollbackKnowledgeBuild(db, tenantKey, buildId) {
        WHERE build_id = $1`,
       [currentActiveBuildId]
     );
+
+    await recordCoreFactActivationChanges(client, {
+      tenantKey,
+      buildId,
+      previousBuildId: currentActiveBuildId,
+      reason: "build_rollback"
+    });
 
     invalidateBuildAssetCache(tenantKey, buildId);
     invalidateBuildAssetCache(tenantKey, currentActiveBuildId);

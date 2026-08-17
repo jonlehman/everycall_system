@@ -10,6 +10,7 @@ import {
 } from "@everycall/contracts";
 import { getKnowledgeBuild, loadActiveKnowledgeBuildAssets } from "./knowledgeReceptionistBuilds.js";
 import { loadApprovedConfigurationArtifacts } from "./knowledgeReceptionistConfig.js";
+import { loadPinnedCoreFacts } from "./knowledgeCoreFacts.js";
 import { buildPromptToolDefinitions, loadPromptRuntimeContext } from "./promptBlueprints.js";
 import { loadTenantBusinessHours } from "./tenantBusinessHours.js";
 
@@ -346,22 +347,25 @@ async function maybeAssembleBusinessHoursTurn(db, tenantKey, query, build, confi
 
 async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input = {}) {
   const buildId = normalizeText(input.buildId || input.build_id);
-  const build = buildId
-    ? await getKnowledgeBuild(db, tenantKey, buildId)
-    : (await loadActiveKnowledgeBuildAssets(db, tenantKey, { useCache: true })).build;
+  const activeBuildContext = buildId
+    ? { build: await getKnowledgeBuild(db, tenantKey, buildId), activeBuildId: buildId }
+    : await loadActiveKnowledgeBuildAssets(db, tenantKey, { useCache: true });
+  const build = activeBuildContext.build;
   if (!build) {
     throw new Error(buildId ? "build_not_found" : "no_active_build");
   }
 
-  const [{ businessCallIntent, overrides, guardrails, callOutcomeSchema, runtimeProfile }, setupInterviewIntent, promptRuntime] = await Promise.all([
+  const [{ businessCallIntent, overrides, guardrails, callOutcomeSchema, runtimeProfile }, setupInterviewIntent, coreFacts] = await Promise.all([
     loadApprovedConfigurationArtifacts(db, tenantKey),
     runtimeEntryMode === "setup_interview" ? loadSetupInterviewIntent(db, tenantKey) : Promise.resolve(null),
-    loadPromptRuntimeContext(db, tenantKey, {
-      promptBlueprintOverride: input.promptBlueprintOverride || input.prompt_blueprint_override || null,
-      tenantPromptProfileOverride: input.tenantPromptProfileOverride || input.tenant_prompt_profile_override || null,
-      sectionOverridesOverride: input.sectionOverridesOverride || input.section_overrides_override || null
-    })
+    loadPinnedCoreFacts(db, tenantKey, activeBuildContext.activeBuildId)
   ]);
+  const promptRuntime = await loadPromptRuntimeContext(db, tenantKey, {
+    promptBlueprintOverride: input.promptBlueprintOverride || input.prompt_blueprint_override || null,
+    tenantPromptProfileOverride: input.tenantPromptProfileOverride || input.tenant_prompt_profile_override || null,
+    sectionOverridesOverride: input.sectionOverridesOverride || input.section_overrides_override || null,
+    coreFactsOverride: input.coreFactsOverride || input.core_facts_override || coreFacts
+  });
 
   const intentSummary = summarizeIntent(
     runtimeEntryMode === "setup_interview" ? setupInterviewIntent : businessCallIntent,
@@ -377,7 +381,8 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
       call_outcome_schema: normalizeCallOutcomeSchema(callOutcomeSchema) || undefined
     },
     intentSummary,
-    promptRuntime
+    promptRuntime,
+    coreFacts
   };
 }
 
@@ -410,7 +415,7 @@ export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) 
   const runtimeEntryMode = normalizeText(input.runtimeEntryMode || input.runtime_entry_mode) || "customer_call";
   const callId = normalizeText(input.callId || input.call_id || input.callSid || input.call_sid) || createId("call");
   const gatewayContext = await loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input);
-  const { build, configuration, intentSummary, promptRuntime } = gatewayContext;
+  const { build, configuration, intentSummary, promptRuntime, coreFacts } = gatewayContext;
   const initialCallState = createInitialCallState({
     tenantKey,
     callId,
@@ -425,6 +430,7 @@ export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) 
     tenantPromptProfile: promptRuntime.tenantProfile,
     promptBlueprint: promptRuntime.blueprint,
     renderedPromptSections: promptRuntime.rendered.renderedSections,
+    coreFacts,
     sectionOverrides: promptRuntime.sectionOverrides,
     companyContextSummary: promptRuntime.tenantProfile.company_description,
     businessCallIntentSummary: intentSummary.summary,
@@ -436,7 +442,8 @@ export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) 
         active_build_id: build.build_id,
         company_context_summary: promptRuntime.tenantProfile.company_description,
         business_call_intent_summary: intentSummary.summary,
-        tenant_prompt_profile: promptRuntime.tenantProfile
+        tenant_prompt_profile: promptRuntime.tenantProfile,
+        core_fact_count: coreFacts.length
       })
     }
   };

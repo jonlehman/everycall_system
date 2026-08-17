@@ -50,6 +50,14 @@
   - `EVERYCALL_APPLY_REALTIME2_PROFILE_MIGRATION=1 node scripts/migrate-realtime2-runtime-profiles.mjs`
 - Manual canary calls must cover greeting, direct question, knowledge lookup, data capture, transfer lookup/confirmation, alphanumeric readback, barge-in, silence/background noise, and tool failure.
 
+## What You Know By Heart
+- Canonical receptionist v10 is the restored OpenAI v3 prompt plus only the conditional by-heart section, its memory allowance, and its lookup exception. When an active build has no pins, the rendered prompt must be byte-for-byte identical to OpenAI v3.
+- Run `corepack pnpm audit:core-facts-rollout` before deployment. Migration `0039_automatic_core_fact_pins.sql` is additive; if it is already recorded, do not replay it.
+- Run `corepack pnpm backfill:core-facts` for a dry run. Apply only after reviewing every proposed fact and spoken line with `EVERYCALL_APPLY_CORE_FACT_BACKFILL=1 corepack pnpm backfill:core-facts`. Target one tenant with `EVERYCALL_CORE_FACT_BACKFILL_TENANT=<tenant_key>`.
+- Add `EVERYCALL_RESELECT_EXISTING_CORE_FACTS=1` only when intentionally replacing an existing selection. Otherwise existing pins remain unchanged.
+- The hourly `/api/cron/knowledge-core-facts` job processes at most one due tenant. A tenant becomes due after seven days or 50 completed calls; at most three pins may change in one refresh.
+- Run `corepack pnpm validate:core-facts`, `corepack pnpm validate:realtime2-payloads`, `corepack pnpm typecheck`, and `corepack pnpm build` before release.
+
 ## Billing Portal
 - `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` should point at the live EveryCall portal configuration in Stripe.
 - Plan changes are self-serve in Stripe Customer Portal and are expected to be next-renewal changes inside EveryCall.

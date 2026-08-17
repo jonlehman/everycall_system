@@ -944,7 +944,8 @@ export async function loadPromptRuntimeContext(
   {
     promptBlueprintOverride = null,
     tenantPromptProfileOverride = null,
-    sectionOverridesOverride = null
+    sectionOverridesOverride = null,
+    coreFactsOverride = []
   } = {}
 ) {
   const [liveBlueprint, liveProfileState, liveOverridesState] = await Promise.all([
@@ -987,7 +988,8 @@ export async function loadPromptRuntimeContext(
   const rendered = renderPromptContext(blueprint, tenantProfile, {
     companyDescription,
     companyDescriptionSource,
-    sectionOverrides: rawSectionOverrides
+    sectionOverrides: rawSectionOverrides,
+    coreFacts: Array.isArray(coreFactsOverride) ? coreFactsOverride : []
   });
   return {
     blueprint,

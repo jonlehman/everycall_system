@@ -26,6 +26,12 @@
 - Before changing existing tenant profiles, run `node scripts/migrate-realtime2-runtime-profiles.mjs` and review any `manual_review` rows.
 - Apply the tenant profile migration only with `EVERYCALL_APPLY_REALTIME2_PROFILE_MIGRATION=1`.
 
+## What You Know By Heart
+- Run `corepack pnpm validate:core-facts` after building `@everycall/contracts`.
+- The validator reconstructs the pre-Grok OpenAI v3 section set and verifies its SHA-256 baseline, tool definitions, and sample phrases. With no pins, the entire rendered prompt must equal v3 byte-for-byte.
+- With pins, verify only the conditional section, memory allowance, and lookup exception are added. Instruction-like text must be rejected, the rendered block must stay within 600 tokens and 20 facts, and tenant/build isolation must hold.
+- In a live canary, ask one question fully covered by a pin and verify there is no lookup. Then ask an adjacent unsupported question and verify `knowledge_lookup` still runs.
+
 Use these after any change to prompts, knowledge lookup, or barge-in handling.
 
 ## Script 1: Emergency + Knowledge + Pre-Close

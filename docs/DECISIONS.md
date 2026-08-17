@@ -1,5 +1,9 @@
 # Decisions
 
+## 2026-08-17
+- Keep the restored OpenAI canonical receptionist v3 prompt byte-for-byte unchanged for tenants without pinned core facts. Canonical v10 adds only a conditional `What You Know By Heart` section, one matching memory allowance, and one lookup exception; the validation suite reconstructs and hashes the v3 baseline to prevent unrelated prompt drift.
+- Store automatic by-heart selection on canonical `knowledge_build_facts` rows. OpenAI rates and editorially selects stable facts, rewrites finalists into atomic spoken lines, and independently audits the exact rendered lines. Deterministic code enforces safety, tenant isolation, token/pin limits, and refresh hysteresis, but does not rank relevance.
+
 ## 2026-02-28
 - Use OpenAI Realtime in `call-gateway` for voice responses (Render deployment).
 - Admin/client app deployed on Vercel; call gateway on Render.

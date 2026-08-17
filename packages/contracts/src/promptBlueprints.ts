@@ -3,6 +3,7 @@ export type PromptBlueprintStatus = "draft" | "active" | "archived";
 export type PromptBlueprintSectionId =
   | "role_objective"
   | "business_context"
+  | "core_facts"
   | "priority_order"
   | "personality_tone"
   | "variety"
@@ -106,6 +107,11 @@ export type PromptRenderContext = {
   companyDescriptionSource: "tenant_override" | "active_build_summary" | "blank";
 };
 
+export type CoreFactPromptValue = {
+  title: string;
+  spoken_text: string;
+};
+
 export type RuntimeToolDefinition = {
   type: "function";
   name: RuntimeToolName;
@@ -126,6 +132,10 @@ const DEFAULT_LEAD_GOAL = "callback information";
 const DEFAULT_REQUIRED_CONTACT_FIELDS = ["caller’s name", "caller’s best phone number"];
 const DEFAULT_AI_DISCLOSURE = "I’m the business’s automated assistant.";
 const DEFAULT_CLOSING_PHRASE = "Thanks for calling. Have a great rest of your day.";
+const CORE_FACTS_BLOCK_TOKEN_BUDGET = 600;
+const CORE_FACTS_MEMORY_BULLET = "- the approved facts listed in What You Know By Heart below";
+const CORE_FACTS_LOOKUP_RULE = "When What You Know By Heart fully covers the caller's question, answer from it without knowledge_lookup; otherwise follow every lookup requirement below unchanged.";
+const CORE_FACT_INSTRUCTION_PATTERN = /\b(ignore (all |any )?(previous|prior) instructions?|system prompt|developer message|assistant instructions?|call (a )?tool|knowledge_lookup|data_capture|finish_session)\b/i;
 
 const SECTION_SEEDS: PromptSectionSeed[] = [
   {
@@ -159,7 +169,20 @@ REQUIRED CALLBACK INFORMATION:
 {assistant_name} may answer WITHOUT a tool only for:
 - greetings and basic conversational courtesies
 - {assistant_name}'s identity as the business’s automated assistant
-- the general statement that {basic_no_tool_allowed_statement}`
+- the general statement that {basic_no_tool_allowed_statement}
+- the approved facts listed in What You Know By Heart below`
+  },
+  {
+    section_id: "core_facts",
+    title: "What You Know By Heart",
+    is_template: true,
+    allowed_placeholders: ["core_facts_block"],
+    default_text: `# What You Know By Heart
+These facts are approved for you to state from memory, rephrased in your own spoken words:
+
+{core_facts_block}
+
+If a caller's question is fully answered by these facts, answer immediately without a lookup or holding phrase. If any part of the question goes beyond them, use knowledge_lookup for that part. Never stretch or combine these facts to cover something they don't plainly say.`
   },
   {
     section_id: "priority_order",
@@ -338,6 +361,8 @@ If no callback submission workflow is available in the current environment:
     is_template: false,
     allowed_placeholders: [],
     default_text: `# Tools
+When What You Know By Heart fully covers the caller's question, answer from it without knowledge_lookup; otherwise follow every lookup requirement below unchanged.
+
 Use knowledge_lookup whenever tenant-specific facts, policies, capabilities, service details, or business claims are needed.
 
 Sarah MUST use knowledge_lookup BEFORE answering any tenant-specific fact, including:
@@ -652,6 +677,23 @@ function renderRequiredContactFieldsPhrase(values: string[]) {
   return "the required callback details";
 }
 
+function renderCoreFactsBlock(values: CoreFactPromptValue[]) {
+  const lines: string[] = [];
+  let estimatedTokens = 0;
+  for (const item of Array.isArray(values) ? values : []) {
+    const title = normalizeText(item?.title).replace(/[\r\n:]+/g, " ").replace(/\s+/g, " ");
+    const spokenText = normalizeText(item?.spoken_text).replace(/[\r\n]+/g, " ").replace(/\s+/g, " ");
+    if (!title || !spokenText) continue;
+    if (CORE_FACT_INSTRUCTION_PATTERN.test(title) || CORE_FACT_INSTRUCTION_PATTERN.test(spokenText)) continue;
+    const line = `${title}: ${spokenText}`;
+    const lineTokens = Math.ceil(new TextEncoder().encode(`${line}\n`).length / 4);
+    if (estimatedTokens + lineTokens > CORE_FACTS_BLOCK_TOKEN_BUDGET) break;
+    lines.push(line);
+    estimatedTokens += lineTokens;
+  }
+  return lines.join("\n");
+}
+
 function renderSamplePhraseGroupsBlock(groups: Record<SamplePhraseGroupId, string[]>) {
   const parts: string[] = [];
   const labels: Array<[SamplePhraseGroupId, string]> = [
@@ -747,9 +789,9 @@ export function getPromptSectionSeeds() {
 export function getDefaultPromptBlueprintSeed() {
   return {
     blueprint_key: "canonical_receptionist",
-    version: 3,
+    version: 10,
     status: "active" as PromptBlueprintStatus,
-    name: "Canonical Receptionist v3",
+    name: "Canonical Receptionist v10",
     sample_phrase_groups: normalizeSamplePhraseGroups(DEFAULT_SAMPLE_PHRASE_GROUPS),
     tool_definitions: {
       knowledge_lookup: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup.parameter_descriptions } },
@@ -927,6 +969,7 @@ export function renderPromptContext(
     companyDescriptionSource?: "tenant_override" | "active_build_summary" | "blank";
     companyDescription?: string;
     sectionOverrides?: Record<string, string>;
+    coreFacts?: CoreFactPromptValue[];
   } = {}
 ): PromptRenderContext {
   const blueprint = normalizePromptBlueprintBundle(blueprintInput);
@@ -934,10 +977,12 @@ export function renderPromptContext(
   const sectionOverrides = asObject(options.sectionOverrides);
   const companyDescription = normalizeText(options.companyDescription || tenantProfile.company_description);
   const samplePhraseGroupsBlock = renderSamplePhraseGroupsBlock(blueprint.sample_phrase_groups);
+  const coreFactsBlock = renderCoreFactsBlock(options.coreFacts || []);
   const renderValues = {
     assistant_name: tenantProfile.assistant_name,
     business_name: tenantProfile.business_name,
     company_description: companyDescription,
+    core_facts_block: coreFactsBlock,
     lead_goal: tenantProfile.lead_goal,
     required_contact_fields_block: renderRequiredContactFieldsBlock(tenantProfile.required_contact_fields),
     required_contact_fields_phrase: renderRequiredContactFieldsPhrase(tenantProfile.required_contact_fields),
@@ -950,7 +995,16 @@ export function renderPromptContext(
   const renderedSections = blueprint.sections
     .map((section) => {
       const overrideText = normalizeText(sectionOverrides[section.section_id]);
-      const textSource = overrideText || section.default_text;
+      if (section.section_id === "core_facts" && !coreFactsBlock) {
+        return null;
+      }
+      let textSource = overrideText || section.default_text;
+      if (!coreFactsBlock && section.section_id === "business_context") {
+        textSource = textSource.replace(`\n${CORE_FACTS_MEMORY_BULLET}`, "");
+      }
+      if (!coreFactsBlock && section.section_id === "tools") {
+        textSource = textSource.replace(`${CORE_FACTS_LOOKUP_RULE}\n\n`, "");
+      }
       const placeholders = extractPlaceholders(textSource);
       const renderedText = interpolateTemplate(textSource, renderValues).trim();
       if (section.section_id === "sample_phrase_guidance" && !samplePhraseGroupsBlock) {
