@@ -19,8 +19,7 @@ The gateway must receive a single JSON payload with the following top-level fiel
 - The authoritative EveryCall system prompt defining call flow and tool usage.
 
 **`tenant_greeting`**
-- Non-empty tenant-specific greeting spoken verbatim after xAI accepts the session.
-- The gateway sends it as one interruptible `force_message`; it is not interpolated into the model-facing system prompt and no greeting `response.create` follows it.
+- Tenant-specific greeting and naming details.
 
 **`tenant_knowledge`**
 - Object containing tenant-scoped runtime knowledge.
@@ -50,11 +49,11 @@ The gateway must receive a single JSON payload with the following top-level fiel
 - The gateway stores this schema and uses it to validate data capture payloads.
 
 **`tool_definitions`**
-- Array of tool definitions compatible with xAI Grok Realtime tool calling.
+- Array of tool definitions compatible with OpenAI Realtime tool calling.
 - Must include tools for knowledge lookup and data capture.
 
 **`session_config`**
-- Realtime session settings (model, voice, reasoning, xAI VAD, transcription, and audio formats).
+- Realtime session settings (model, voice, VAD, transcription, max tokens).
 - The gateway must apply these settings exactly and must not override them.
 
 **`metadata`** (optional)
@@ -62,8 +61,7 @@ The gateway must receive a single JSON payload with the following top-level fiel
 
 ## Gateway Rules
 - The gateway must never send instructions not provided in this payload.
-- The gateway must send `system_prompt` unchanged. It must not append, prepend, merge, or otherwise mutate model-facing instructions, including when optional transfer tools are present.
-- The gateway must use only `tenant_greeting` for the opening and must not fall back to a global or cross-tenant greeting.
+- The gateway must not merge or mutate prompt text beyond basic concatenation.
 - If the payload is missing required fields, the gateway must reject the session.
 
 ## Example Payload (Redacted)
@@ -96,12 +94,7 @@ The gateway must receive a single JSON payload with the following top-level fiel
     {"type": "function", "name": "knowledge_lookup", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}}},
     {"type": "function", "name": "data_capture", "parameters": {"type": "object", "properties": {"first_name": {"type": "string"}}}}
   ],
-  "session_config": {
-    "model": "grok-voice-think-fast-2.0",
-    "voice": "ara",
-    "reasoning": { "effort": "high" },
-    "turn_detection": { "type": "server_vad", "threshold": 0.9, "silence_duration_ms": 200 }
-  },
+  "session_config": { "model": "gpt-realtime-2.1", "voice": "marin" },
   "metadata": { "tenant_id": "t_123" }
 }
 ```

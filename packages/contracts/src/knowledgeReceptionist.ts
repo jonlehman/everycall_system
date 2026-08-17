@@ -201,16 +201,7 @@ export const knowledgeFactSchema = z.object({
   confidence: z.number().min(0).max(1),
   source_ref_ids: stringArraySchema,
   scope: jsonRecordSchema,
-  content_class: z.string().min(1),
-  is_core_fact_pinned: z.boolean().default(false),
-  core_fact_fingerprint: nullableStringSchema.optional(),
-  core_fact_title: nullableStringSchema.optional(),
-  core_fact_spoken_text: nullableStringSchema.optional(),
-  core_fact_score: z.number().min(0).max(1).nullable().optional(),
-  core_fact_rank: z.number().int().positive().nullable().optional(),
-  core_fact_reason: nullableStringSchema.optional(),
-  core_fact_selector_version: nullableStringSchema.optional(),
-  core_fact_selected_at: nullableStringSchema.optional()
+  content_class: z.string().min(1)
 });
 
 export const knowledgeCardSchema = z.object({
@@ -390,17 +381,19 @@ export const knowledgeReadinessStateSchema = z.object({
 export const knowledgeRuntimeSessionConfigSchema = z.object({
   model: z.string().min(1),
   voice: z.string().min(1),
-  reasoning: z.object({
-    effort: z.enum(["high", "none"])
-  }).optional(),
+  max_output_tokens: z.number().int().positive().optional(),
   turn_detection: z.object({
     type: z.string().min(1),
+    eagerness: z.string().min(1).optional(),
     threshold: z.number().optional(),
     prefix_padding_ms: z.number().int().nonnegative().optional(),
     silence_duration_ms: z.number().int().nonnegative().optional(),
-    idle_timeout_ms: z.number().int().nonnegative().nullable().optional()
+    idle_timeout_ms: z.number().int().nonnegative().nullable().optional(),
+    create_response: z.boolean().optional(),
+    interrupt_response: z.boolean().optional()
   }),
   transcription_model: z.string().min(1).optional(),
+  noise_reduction: z.string().min(1).optional(),
   input_audio_format: z.string().min(1).optional(),
   output_audio_format: z.string().min(1).optional()
 });
@@ -548,7 +541,7 @@ export const knowledgeGatewayRuntimeContextSchema = z.object({
 
 export const gatewayPromptPayloadSchema = z.object({
   system_prompt: z.string().min(1),
-  tenant_greeting: z.string().trim().min(1),
+  tenant_greeting: z.string(),
   field_schema: jsonRecordSchema,
   tool_definitions: arbitraryObjectArraySchema,
   session_config: knowledgeRuntimeSessionConfigSchema,

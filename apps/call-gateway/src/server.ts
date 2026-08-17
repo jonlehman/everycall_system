@@ -5,11 +5,8 @@ import path from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
 import { readCallGatewayEnv } from "@everycall/config";
 import type { CallState } from "@everycall/contracts";
-import { estimateBillableMinutes, estimateTelephonyCostMicrosUsd, usdToMicros } from "@everycall/contracts/callCosting";
-import {
-  buildTranscriptFromEvents,
-  selectPreferredTranscriptSnapshot
-} from "@everycall/contracts/callTranscript";
+import { estimateAiCostMicrosUsd, estimateBillableMinutes, estimateTelephonyCostMicrosUsd, usdToMicros } from "@everycall/contracts/callCosting";
+import { buildTranscriptFromEvents } from "@everycall/contracts/callTranscript";
 import {
   INTERNAL_AUTH_PURPOSES,
   getInternalServiceToken,
@@ -54,70 +51,20 @@ import {
   beginToolExecution,
   completeToolExecution,
   dequeueAssistantResponseRequest,
-  discardQueuedAssistantResponses,
   enqueueAssistantResponseRequest,
   failToolExecution,
   hasActiveAssistantResponse,
   markAssistantResponseCreated,
   markAssistantResponseFinished,
-  normalizeToolExecutionKey,
-  type AssistantResponseRequest
+  normalizeToolExecutionKey
 } from "./toolResponseControl.js";
 import {
-  buildRealtimeForceMessageEvent,
-  buildXAiRealtimeHeaders,
+  buildOpenAiRealtimeHeaders,
   buildRealtimeResponseCreateEvent,
-  buildRealtimeSessionUpdateEvent
+  buildRealtimeSessionUpdateEvent,
+  resolveRealtimeApiShape,
+  type RealtimeApiShape
 } from "./realtimePayloads.js";
-import { beginInboundCallStartup } from "./inboundCallStartup.js";
-import {
-  classifyTransferConfirmation,
-  normalizeTransferLookupText,
-  rankTransferMatches
-} from "./transferDirectory.js";
-import {
-  finishRealtimeTurnTiming,
-  noteRealtimeTurnResponseCreated,
-  startRealtimeTurnTiming,
-  type RealtimeTurnTiming
-} from "./realtimeTurnTiming.js";
-import {
-  buildTelnyxClearEvent,
-  shouldForwardTelnyxInputTrack,
-  TELNYX_INPUT_STREAM_TRACK
-} from "./telephonyStreamControl.js";
-import {
-  beginAudioQueueGap,
-  calculatePendingPlaybackMs,
-  closeAudioQueueGap,
-  ensureAudioPumpTraceForResponse,
-  finishAudioQueueGapWithoutReprime,
-  noteAudioChunkQueued,
-  noteAudioPumpReprimed,
-  shouldClearAudioPumpTraceAfterSummary,
-  shouldLogAudioGap,
-  type AudioPumpTrace
-} from "./audioPumpTelemetry.js";
-import { evaluateFinishSessionPolicy } from "./finishSessionPolicy.js";
-import { buildKnowledgeLookupTimingDetails } from "./knowledgeLookupTelemetry.js";
-import {
-  claimDataCaptureContinuation,
-  createDataCaptureControlState,
-  fingerprintDataCaptureArgs,
-  getCompletedDataCapture,
-  recordCompletedDataCapture,
-  type DataCaptureControlState,
-  type DataCaptureValidation
-} from "./dataCaptureControl.js";
-import {
-  createToolResponseTimingState,
-  finishToolResponse,
-  matchAssistantResponseCreated,
-  matchToolResponseFirstAudio,
-  trackAssistantResponseDispatch,
-  type ToolResponseMetadata,
-  type ToolResponseTimingState
-} from "./toolResponseTiming.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -133,21 +80,13 @@ const gatewayErrorToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PUR
 const callSummaryFinalizeToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PURPOSES.callSummaryFinalize);
 const gatewayDebugLogToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PURPOSES.gatewayDebugLog);
 const callGatewayBaseUrl = process.env.CALL_GATEWAY_BASE_URL || "";
-const XAiKey = process.env.XAI_API_KEY || "";
-const XAI_REALTIME_MODEL = "grok-voice-think-fast-2.0";
-const XAI_REALTIME_VOICE = "ara";
+const openAiKey = process.env.OPENAI_API_KEY || "";
 const signatureRequired = (process.env.TELNYX_SIGNATURE_REQUIRED || "true").toLowerCase() !== "false";
 const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "raw").toLowerCase();
 const outboundAudioFrameMs = 20;
-// The former 60 ms cushion repeatedly drained during measured xAI chunk gaps.
-// Four hundred ms absorbs the observed 382 ms starvation and reduces a 461 ms
-// starvation to roughly one audio-frame boundary, while remaining overrideable.
-const configuredOutboundJitterBufferFrames = Number(process.env.TELNYX_OUTBOUND_BUFFER_FRAMES || "20");
-const outboundJitterBufferFrames = Number.isFinite(configuredOutboundJitterBufferFrames)
-  ? Math.max(1, Math.floor(configuredOutboundJitterBufferFrames))
-  : 20;
+const outboundJitterBufferFrames = Math.max(1, Number(process.env.TELNYX_OUTBOUND_BUFFER_FRAMES || "3"));
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
 const verboseGatewayLogging = String(process.env.GATEWAY_VERBOSE_LOGGING || "false").toLowerCase() === "true";
@@ -161,26 +100,10 @@ const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "gateway_call_session_end",
   "knowledge_build_assets_startup_preload_started",
   "knowledge_build_assets_startup_preload_completed",
-  "xai_realtime_session_start",
-  "xai_realtime_session_updated",
-  "xai_realtime_response_done",
-  "xai_realtime_turn_latency",
-  "xai_realtime_tool_response_requested",
-  "xai_realtime_tool_response_created",
-  "xai_realtime_tool_response_first_audio",
-  "knowledge_lookup_timing",
-  "assistant_audio_pump_trace",
-  "assistant_audio_gap",
-  "assistant_barge_in_decision",
-  "assistant_barge_in_applied",
-  "assistant_finish_session_rejected",
-  "data_capture_duplicate_suppressed",
-  "data_capture_response_suppressed",
-  "xai_realtime_queued_responses_discarded",
-  "xai_realtime_post_finish_response_suppressed",
-  "caller_transcript_turn_coalesced",
-  "telnyx_call_control_answer_requested",
-  "telnyx_call_control_answer_accepted",
+  "openai_realtime_session_start",
+  "openai_realtime_session_updated",
+  "openai_realtime_response_done",
+  "assistant_response_canceled",
   "telnyx_bidirectional_payload_mode_normalized"
 ]);
 
@@ -201,15 +124,17 @@ type PendingToolCall = {
   argumentsText: string;
 };
 
-type ToolCallTimingContext = {
-  sourceType: string;
-  speechStoppedAtMs: number | null;
-  toolCallReadyAtMs: number;
-  callerTurnSequence: number;
-};
-
 type FinishSessionArgs = {
   reason?: string;
+};
+
+type PendingToolSpeechWait = {
+  tool: string;
+  callId: string;
+  requestedAtMs: number;
+  responseCreatedAtMs?: number | null;
+  responseId?: string | null;
+  firstAudioLogged?: boolean;
 };
 
 type UsageTotals = {
@@ -224,6 +149,21 @@ type UsageTotals = {
   outputAudioTokens: number;
   estimatedCostMicrosUsd: number;
   responseCount: number;
+};
+
+type AudioPumpTrace = {
+  responseId: string | null;
+  chunksQueued: number;
+  framesSent: number;
+  underrunCount: number;
+  underrunStartAtMs: number | null;
+  totalUnderrunMs: number;
+  maxUnderrunMs: number;
+  timerLateCount: number;
+  totalTimerLateMs: number;
+  maxTimerLateMs: number;
+  catchupBurstCount: number;
+  maxBurstFrames: number;
 };
 
 type TransferLookupMatch = {
@@ -273,14 +213,6 @@ type TransferLegClientState = {
   target_id: string;
 };
 
-type CallerTranscriptTurnState = {
-  rowId: string | null;
-  text: string;
-  snapshotsReceived: number;
-  databaseWrites: number;
-  summaryLogged: boolean;
-};
-
 type StreamSession = {
   callControlId: string;
   callSid: string;
@@ -289,9 +221,9 @@ type StreamSession = {
   isShuttingDown?: boolean;
   telnyxStreamId?: string;
   telnyxWs?: WebSocket;
-  XAiWs?: WebSocket;
-  XAiReady?: boolean;
-  XAiSessionUpdated?: boolean;
+  openAiWs?: WebSocket;
+  openAiReady?: boolean;
+  openAiSessionUpdated?: boolean;
   reconnectAttempted?: boolean;
   promptPayload?: GatewayPromptPayload;
   knowledgeCallState?: CallState | null;
@@ -312,6 +244,7 @@ type StreamSession = {
   rtpTimestamp?: number;
   rtpSsrc?: number;
   realtimeModel?: string;
+  realtimeApiShape?: RealtimeApiShape;
   aiInputRateMicrosUsd?: number;
   aiOutputRateMicrosUsd?: number;
   callAnsweredAt?: string | null;
@@ -319,31 +252,21 @@ type StreamSession = {
   pendingToolCall?: PendingToolCall | null;
   realtimeLogPath?: string;
   responseCreatePending?: boolean;
-  activeAssistantResponseDedupeKey?: string | null;
-  queuedAssistantResponses?: AssistantResponseRequest[];
+  queuedAssistantResponses?: Array<{ reason: string; response: Record<string, unknown>; dedupeKey?: string | null }>;
   executingToolCallKeys?: Set<string>;
   completedToolCallKeys?: Set<string>;
-  toolExecutionTail?: Promise<void>;
-  toolResponseTiming?: ToolResponseTimingState;
-  dataCaptureControl?: DataCaptureControlState;
-  callerTurnSequence?: number;
-  finishSessionAccepted?: boolean;
+  pendingToolSpeechWait?: PendingToolSpeechWait | null;
   audioPumpTrace?: AudioPumpTrace | null;
-  suppressXAiReconnect?: boolean;
+  suppressOpenAiReconnect?: boolean;
   aiDetached?: boolean;
   transferState?: TransferState | null;
   pendingReconnectAssistantResponse?: PendingReconnectAssistantResponse | null;
   pendingTransferCandidate?: PendingTransferCandidate | null;
   telnyxStreamBaseUrl?: string;
   ignoreNextStreamingStopped?: boolean;
-  callerTurnTiming?: RealtimeTurnTiming | null;
-  lastAssistantTranscript?: string | null;
-  callerTranscriptTurn?: CallerTranscriptTurnState | null;
-  callerTranscriptPersistenceTail?: Promise<void>;
 };
 
 const streamSessions = new Map<string, StreamSession>();
-const inboundSessionBootstraps = new Map<string, Promise<StreamSession | undefined>>();
 
 function createStreamSession(
   callControlId: string,
@@ -360,10 +283,10 @@ function createStreamSession(
     callActive: true,
     isShuttingDown: false,
     reconnectAttempted: false,
-    XAiSessionUpdated: false,
+    openAiSessionUpdated: false,
     greetingSent: false,
-    aiInputRateMicrosUsd: 0,
-    aiOutputRateMicrosUsd: usdToMicros(xAiAudioRatePerMinuteUsd),
+    aiInputRateMicrosUsd: realtimeInputRateMicrosUsd,
+    aiOutputRateMicrosUsd: realtimeOutputRateMicrosUsd,
     callAnsweredAt: null,
     usageTotals: emptyUsageTotals(),
     promptPayload,
@@ -373,26 +296,18 @@ function createStreamSession(
     outputNextFrameAtMs: null,
     outputPrimed: false,
     currentResponseId: null,
-    lastAssistantTranscript: null,
-    callerTranscriptTurn: null,
-    callerTranscriptPersistenceTail: Promise.resolve(),
     currentAssistantItemId: null,
     assistantAudioActive: false,
     assistantAudioMsSent: 0,
     lastInterruptionAtMs: null,
     lastInterruptionReason: null,
     responseCreatePending: false,
-    activeAssistantResponseDedupeKey: null,
     queuedAssistantResponses: [],
     executingToolCallKeys: new Set<string>(),
     completedToolCallKeys: new Set<string>(),
-    toolExecutionTail: Promise.resolve(),
-    toolResponseTiming: createToolResponseTimingState(),
-    dataCaptureControl: createDataCaptureControlState(),
-    callerTurnSequence: 0,
-    finishSessionAccepted: false,
+    pendingToolSpeechWait: null,
     audioPumpTrace: null,
-    suppressXAiReconnect: false,
+    suppressOpenAiReconnect: false,
     aiDetached: false,
     transferState: null,
     pendingReconnectAssistantResponse: null,
@@ -400,73 +315,6 @@ function createStreamSession(
     ignoreNextStreamingStopped: false,
     ...(realtimeLogPath ? { realtimeLogPath } : {})
   };
-}
-
-function createCallerTranscriptTurnState(): CallerTranscriptTurnState {
-  return {
-    rowId: null,
-    text: "",
-    snapshotsReceived: 0,
-    databaseWrites: 0,
-    summaryLogged: false
-  };
-}
-
-function logCallerTranscriptTurnSummary(session: StreamSession, source: string) {
-  const turn = session.callerTranscriptTurn;
-  if (!turn || turn.summaryLogged || turn.snapshotsReceived < 2) return;
-  turn.summaryLogged = true;
-  logInfo("caller_transcript_turn_coalesced", {
-    callSid: session.callSid,
-    source,
-    snapshotsReceived: turn.snapshotsReceived,
-    snapshotsCollapsed: Math.max(0, turn.snapshotsReceived - 1),
-    databaseWrites: turn.databaseWrites,
-    finalTextCharacters: turn.text.length
-  });
-}
-
-async function persistCallerTranscriptSnapshot(session: StreamSession, transcript: string) {
-  if (!pool) return;
-  const turn = session.callerTranscriptTurn || createCallerTranscriptTurnState();
-  session.callerTranscriptTurn = turn;
-  turn.snapshotsReceived += 1;
-
-  const preferredText = selectPreferredTranscriptSnapshot(turn.text, transcript);
-  if (!preferredText || preferredText === turn.text) return;
-  turn.text = preferredText;
-  const textToPersist = preferredText;
-
-  const persistence = (session.callerTranscriptPersistenceTail || Promise.resolve())
-    .catch(() => undefined)
-    .then(async () => {
-      if (turn.rowId) {
-        await pool.query(
-          `UPDATE call_events
-           SET text = $1
-           WHERE id = $2 AND call_sid = $3 AND role = 'caller'`,
-          [textToPersist, turn.rowId, session.callSid]
-        );
-      } else {
-        const inserted = await pool.query(
-          `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
-           VALUES ($1, $2, $3, $4, 'message')
-           RETURNING id`,
-          [session.callSid, session.tenantKey, "caller", textToPersist]
-        );
-        turn.rowId = inserted.rows?.[0]?.id ? String(inserted.rows[0].id) : null;
-      }
-      turn.databaseWrites += 1;
-    });
-  session.callerTranscriptPersistenceTail = persistence;
-  try {
-    await persistence;
-  } catch (err) {
-    logError("caller_transcript_persist_failed", {
-      callSid: session.callSid,
-      message: err instanceof Error ? err.message : "unknown"
-    });
-  }
 }
 
 function logPrewarmOutcome(callSid: string, tenantKey: string, source: string, result: { status: "ready" | "failed"; fetchMs: number; cacheHit: boolean; message?: string; buildId?: string }) {
@@ -490,13 +338,19 @@ function logPrewarmOutcome(callSid: string, tenantKey: string, source: string, r
   });
 }
 
-function parsePositiveRate(value: string | undefined, fallback: number) {
+function parseUsdRatePerMillion(value: string | undefined, fallback: number) {
   const parsed = Number(value || "");
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-const xAiAudioRatePerMinuteUsd = parsePositiveRate(process.env.XAI_REALTIME_AUDIO_RATE_PER_MINUTE_USD, 0.05);
-const telnyxEstimatedInboundRatePerMinuteUsd = parsePositiveRate(process.env.TELNYX_ESTIMATED_INBOUND_RATE_PER_MINUTE_USD, 0.0055);
+const realtimeInputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_INPUT_RATE_PER_1M_USD, 4);
+const realtimeCachedInputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_CACHED_INPUT_RATE_PER_1M_USD, 0.4);
+const realtimeAudioInputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_AUDIO_INPUT_RATE_PER_1M_USD, 32);
+const realtimeOutputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_OUTPUT_RATE_PER_1M_USD, 24);
+const realtimeAudioOutputRatePer1MUsd = parseUsdRatePerMillion(process.env.OPENAI_REALTIME_AUDIO_OUTPUT_RATE_PER_1M_USD, 64);
+const realtimeInputRateMicrosUsd = usdToMicros(realtimeInputRatePer1MUsd);
+const realtimeOutputRateMicrosUsd = usdToMicros(realtimeOutputRatePer1MUsd);
+const telnyxEstimatedInboundRatePerMinuteUsd = parseUsdRatePerMillion(process.env.TELNYX_ESTIMATED_INBOUND_RATE_PER_MINUTE_USD, 0.0055);
 const telnyxEstimatedInboundRateMicrosUsd = usdToMicros(telnyxEstimatedInboundRatePerMinuteUsd);
 
 function emptyUsageTotals(): UsageTotals {
@@ -544,7 +398,7 @@ function collectUsage(payloadMsg: any) {
   };
 }
 
-function estimateUsageCostMicrosUsd(_usage: {
+function estimateUsageCostMicrosUsd(usage: {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens?: number | null;
@@ -555,16 +409,28 @@ function estimateUsageCostMicrosUsd(_usage: {
   outputTextTokens?: number | null;
   outputAudioTokens?: number | null;
 }) {
-  return 0;
+  return estimateAiCostMicrosUsd({
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cachedInputTokens: usage.cachedInputTokens,
+    cachedInputTextTokens: usage.cachedInputTextTokens,
+    cachedInputAudioTokens: usage.cachedInputAudioTokens,
+    inputTextTokens: usage.inputTextTokens,
+    inputAudioTokens: usage.inputAudioTokens,
+    outputTextTokens: usage.outputTextTokens,
+    outputAudioTokens: usage.outputAudioTokens
+  }, {
+    textInputRatePer1MUsd: realtimeInputRatePer1MUsd,
+    cachedInputRatePer1MUsd: realtimeCachedInputRatePer1MUsd,
+    audioInputRatePer1MUsd: realtimeAudioInputRatePer1MUsd,
+    textOutputRatePer1MUsd: realtimeOutputRatePer1MUsd,
+    audioOutputRatePer1MUsd: realtimeAudioOutputRatePer1MUsd
+  });
 }
 
 async function persistCallUsage(session: StreamSession) {
   if (!pool) return;
   const usage = session.usageTotals || emptyUsageTotals();
-  const startedAtMs = session.callAnsweredAt ? Date.parse(session.callAnsweredAt) : Date.now();
-  usage.estimatedCostMicrosUsd = usdToMicros(
-    (Math.max(0, Date.now() - startedAtMs) / 60000) * xAiAudioRatePerMinuteUsd
-  );
   try {
     await pool.query(
       `UPDATE calls
@@ -598,8 +464,8 @@ async function persistCallUsage(session: StreamSession) {
         usage.inputAudioTokens,
         usage.outputTextTokens,
         usage.outputAudioTokens,
-        0,
-        usdToMicros(xAiAudioRatePerMinuteUsd),
+        session.aiInputRateMicrosUsd ?? realtimeInputRateMicrosUsd,
+        session.aiOutputRateMicrosUsd ?? realtimeOutputRateMicrosUsd,
         usage.estimatedCostMicrosUsd,
         usage.responseCount
       ]
@@ -654,7 +520,7 @@ function logBidirectionalPayloadModeNormalization() {
 function getTelnyxStreamingStartPayload(baseUrl: string, callControlId: string) {
   return {
     stream_url: buildTelnyxMediaStreamUrl(baseUrl, callControlId),
-    stream_track: TELNYX_INPUT_STREAM_TRACK,
+    stream_track: "both_tracks",
     stream_bidirectional_mode: resolveBidirectionalPayloadMode(),
     stream_bidirectional_codec: "PCMU",
     stream_bidirectional_sampling_rate: 8000,
@@ -816,14 +682,22 @@ function toWebSocketUrl(baseUrl: string) {
   return baseUrl;
 }
 
-function sendXAiEvent(ws: WebSocket | undefined, payload: Record<string, unknown>) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+function sendOpenAiEvent(ws: WebSocket | undefined, payload: Record<string, unknown>) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify(payload));
-  return true;
 }
 
-function createAudioTextResponseEvent(response: Record<string, unknown> = {}) {
-  return buildRealtimeResponseCreateEvent(response);
+function createAudioTextResponseEvent(response: Record<string, unknown> = {}, apiShape: RealtimeApiShape = "legacy") {
+  return buildRealtimeResponseCreateEvent(response, apiShape);
+}
+
+function buildOpenAiSafetyIdentifier(session: StreamSession) {
+  const configured = String(process.env.OPENAI_SAFETY_IDENTIFIER || "").trim();
+  if (configured) return configured;
+  return crypto
+    .createHash("sha256")
+    .update(`everycall:${session.tenantKey}:${session.callSid}`)
+    .digest("hex");
 }
 
 function createFunctionCallOutputEvent(callId: string, output: unknown) {
@@ -837,53 +711,48 @@ function createFunctionCallOutputEvent(callId: string, output: unknown) {
   };
 }
 
+function createAudioPumpTrace(responseId?: string | null): AudioPumpTrace {
+  return {
+    responseId: responseId || null,
+    chunksQueued: 0,
+    framesSent: 0,
+    underrunCount: 0,
+    underrunStartAtMs: null,
+    totalUnderrunMs: 0,
+    maxUnderrunMs: 0,
+    timerLateCount: 0,
+    totalTimerLateMs: 0,
+    maxTimerLateMs: 0,
+    catchupBurstCount: 0,
+    maxBurstFrames: 0
+  };
+}
+
 function ensureAudioPumpTrace(session: StreamSession, responseId?: string | null) {
   const normalizedResponseId = String(responseId || session.currentResponseId || "").trim() || null;
-  session.audioPumpTrace = ensureAudioPumpTraceForResponse(
-    session.audioPumpTrace,
-    normalizedResponseId,
-    performance.now()
-  );
+  if (!session.audioPumpTrace || session.audioPumpTrace.responseId !== normalizedResponseId) {
+    session.audioPumpTrace = createAudioPumpTrace(normalizedResponseId);
+  }
   return session.audioPumpTrace;
 }
 
-function logAssistantAudioGap(
-  session: StreamSession,
-  trace: AudioPumpTrace,
-  gapMs: number | null,
-  source: "reprime" | "response_done" | "session_end"
-) {
-  if (gapMs === null) return;
-  if (!shouldLogAudioGap(
-    trace,
-    gapMs,
-    outboundJitterBufferFrames * outboundAudioFrameMs
-  )) return;
-  logInfo("assistant_audio_gap", {
-    callSid: session.callSid,
-    responseId: trace.responseId || undefined,
-    source,
-    gapMs: Number(gapMs.toFixed(3)),
-    bufferTargetFrames: outboundJitterBufferFrames,
-    bufferTargetMs: outboundJitterBufferFrames * outboundAudioFrameMs,
-    queuedFrames: session.outputQueue?.length || 0,
-    bufferedBytes: session.outputBuffer?.length || 0
-  });
+function closeAudioUnderrun(trace: AudioPumpTrace | null | undefined, nowMs: number) {
+  if (!trace || trace.underrunStartAtMs === null) return;
+  const durationMs = Math.max(0, nowMs - trace.underrunStartAtMs);
+  trace.totalUnderrunMs += durationMs;
+  trace.maxUnderrunMs = Math.max(trace.maxUnderrunMs, durationMs);
+  trace.underrunStartAtMs = null;
 }
 
 function logAudioPumpTraceSummary(
   session: StreamSession,
-  stage: "response_done" | "playback_drained" | "interrupted" | "session_end"
+  stage: "response_done" | "playback_drained" | "interrupted"
 ) {
   const trace = session.audioPumpTrace;
   if (!trace) return;
-  const nowMs = performance.now();
-  finishAudioQueueGapWithoutReprime(trace, nowMs);
-  if (stage === "playback_drained") {
-    trace.playbackDrainedAtMs = nowMs;
-  }
+  closeAudioUnderrun(trace, performance.now());
   if (trace.chunksQueued === 0 && trace.framesSent === 0) {
-    if (shouldClearAudioPumpTraceAfterSummary(trace, stage)) {
+    if (stage === "playback_drained" || stage === "interrupted") {
       session.audioPumpTrace = null;
     }
     return;
@@ -892,36 +761,18 @@ function logAudioPumpTraceSummary(
     callSid: session.callSid,
     stage,
     responseId: trace.responseId || undefined,
-    traceWindowMs: Number((nowMs - trace.startedAtMs).toFixed(3)),
     chunksQueued: trace.chunksQueued,
-    chunkBytes: trace.chunkBytes,
-    interChunkGapCount: trace.interChunkGapCount,
-    maxInterChunkGapMs: Number(trace.maxInterChunkGapMs.toFixed(3)),
-    interChunkGapOverBufferTargetCount: trace.interChunkGapOverBufferTargetCount,
     framesSent: trace.framesSent,
-    queueDrainCount: trace.queueDrainCount,
     underrunCount: trace.underrunCount,
     totalUnderrunMs: Number(trace.totalUnderrunMs.toFixed(3)),
     maxUnderrunMs: Number(trace.maxUnderrunMs.toFixed(3)),
-    reprimeCount: trace.reprimeCount,
-    terminalGapCount: trace.terminalGapCount,
-    totalTerminalGapMs: Number(trace.totalTerminalGapMs.toFixed(3)),
-    maxTerminalGapMs: Number(trace.maxTerminalGapMs.toFixed(3)),
     timerLateCount: trace.timerLateCount,
     totalTimerLateMs: Number(trace.totalTimerLateMs.toFixed(3)),
     maxTimerLateMs: Number(trace.maxTimerLateMs.toFixed(3)),
     catchupBurstCount: trace.catchupBurstCount,
     maxBurstFrames: trace.maxBurstFrames,
-    bufferTargetFrames: outboundJitterBufferFrames,
-    bufferTargetMs: outboundJitterBufferFrames * outboundAudioFrameMs,
-    responseDone: trace.responseDoneAtMs !== null,
-    playbackDrained: trace.playbackDrainedAtMs !== null,
-    interrupted: trace.interruptedAtMs !== null,
     queuedFramesRemaining: session.outputQueue?.length || 0,
-    bufferedBytesRemaining: session.outputBuffer?.length || 0,
-    outputPrimed: Boolean(session.outputPrimed),
-    outputTimerActive: Boolean(session.outputTimer),
-    telnyxStreamOpen: session.telnyxWs?.readyState === WebSocket.OPEN
+    bufferedBytesRemaining: session.outputBuffer?.length || 0
   };
   logInfo("assistant_audio_pump_trace", payload);
   logRealtimeDetailEntry(session, {
@@ -929,7 +780,7 @@ function logAudioPumpTraceSummary(
     kind: "assistant_audio_pump_trace",
     ...payload
   });
-  if (shouldClearAudioPumpTraceAfterSummary(trace, stage)) {
+  if (stage === "playback_drained" || stage === "interrupted") {
     session.audioPumpTrace = null;
   }
 }
@@ -938,108 +789,44 @@ function requestAssistantResponse(
   session: StreamSession,
   reason: string,
   response: Record<string, unknown> = {},
-  dedupeKey?: string | null,
-  toolResponse?: ToolResponseMetadata | null
+  dedupeKey?: string | null
 ) {
-  if (session.finishSessionAccepted) {
-    logInfo("xai_realtime_post_finish_response_suppressed", {
+  const result = enqueueAssistantResponseRequest(session, { reason, response, dedupeKey });
+  if (result.action === "duplicate_queued") {
+    logInfo("openai_realtime_response_request_deduped", {
       callSid: session.callSid,
       reason,
       dedupeKey: dedupeKey || undefined,
-      tool: toolResponse?.tool,
-      callId: toolResponse?.callId
-    });
-    return "suppressed_after_finish" as const;
-  }
-  const result = enqueueAssistantResponseRequest(session, {
-    reason,
-    response,
-    dedupeKey,
-    toolResponse
-  });
-  if (result.action === "duplicate_active" || result.action === "duplicate_queued") {
-    logInfo("xai_realtime_response_request_deduped", {
-      callSid: session.callSid,
-      reason,
-      dedupeKey: dedupeKey || undefined,
-      duplicateState: result.action,
       queueDepth: result.queueDepth
     });
-    return result.action;
+    return;
   }
 
   if (result.action === "queued") {
-    logInfo("xai_realtime_response_queued", {
+    logInfo("openai_realtime_response_queued", {
       callSid: session.callSid,
       reason,
       dedupeKey: dedupeKey || undefined,
       queueDepth: result.queueDepth,
       activeResponseId: session.currentResponseId || undefined
     });
-    return result.action;
+    return;
   }
 
-  dispatchAssistantResponseRequest(session, result.request);
-  return result.action;
-}
-
-function dispatchAssistantResponseRequest(
-  session: StreamSession,
-  request: AssistantResponseRequest
-) {
-  const responseEvent = createAudioTextResponseEvent(request.response);
-  const sent = sendXAiEvent(session.XAiWs, responseEvent);
-  if (!sent) {
-    markAssistantResponseFinished(session);
-    logError("xai_realtime_response_dispatch_failed", {
-      callSid: session.callSid,
-      reason: request.reason,
-      dedupeKey: request.dedupeKey || undefined,
-      tool: request.toolResponse?.tool,
-      callId: request.toolResponse?.callId
-    });
-    return false;
-  }
-
-  const timingState = session.toolResponseTiming || createToolResponseTimingState();
-  session.toolResponseTiming = timingState;
-  const wait = trackAssistantResponseDispatch(
-    timingState,
-    request.toolResponse || null,
-    performance.now()
-  );
-  if (wait) {
-    logInfo("xai_realtime_tool_response_requested", {
-      callSid: session.callSid,
-      tool: wait.tool,
-      callId: wait.callId,
-      traceFile: session.realtimeLogPath || ensureSessionRealtimeLogPath(session),
-      toolResultPayloadBytes: wait.toolResultPayloadBytes,
-      responseCreatePayloadBytes: estimatePayloadBytes(responseEvent)
-    });
-    logRealtimeDetailEntry(session, {
-      ts: new Date().toISOString(),
-      kind: "tool_response_create_send",
-      callSid: session.callSid,
-      tool: wait.tool,
-      callId: wait.callId,
-      payload: responseEvent
-    });
-  }
-  return true;
+  sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent(result.request.response, session.realtimeApiShape));
 }
 
 function flushQueuedAssistantResponses(session: StreamSession) {
   if (hasActiveAssistantResponse(session)) return;
   const next = dequeueAssistantResponseRequest(session);
   if (!next) return;
-  logInfo("xai_realtime_response_flushed", {
+  logInfo("openai_realtime_response_flushed", {
     callSid: session.callSid,
     reason: next.reason,
     dedupeKey: next.dedupeKey || undefined,
     remainingQueueDepth: session.queuedAssistantResponses?.length || 0
   });
-  dispatchAssistantResponseRequest(session, next);
+  sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent(next.response, session.realtimeApiShape));
 }
 
 function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined, payloadBase64: string) {
@@ -1053,12 +840,6 @@ function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined
   );
 }
 
-function clearTelnyxMedia(ws: WebSocket | undefined) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-  ws.send(JSON.stringify(buildTelnyxClearEvent()));
-  return true;
-}
-
 function decodeInboundAudioPayload(encoded: string) {
   return Buffer.from(encoded, "base64");
 }
@@ -1070,12 +851,8 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
     session.outputQueue = [];
   }
   const trace = ensureAudioPumpTrace(session);
-  noteAudioChunkQueued(
-    trace,
-    pcmChunk.length,
-    performance.now(),
-    outboundJitterBufferFrames * outboundAudioFrameMs
-  );
+  trace.chunksQueued += 1;
+  closeAudioUnderrun(trace, performance.now());
   noteAssistantAudioChunkQueued(session);
   let offset = 0;
   while (buffer.length - offset >= frameSize) {
@@ -1097,7 +874,8 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
   const trace = ensureAudioPumpTrace(session);
   if (!session.outputQueue || session.outputQueue.length === 0) {
     if (session.currentResponseId && trace.underrunStartAtMs === null) {
-      beginAudioQueueGap(trace, nowMs);
+      trace.underrunCount += 1;
+      trace.underrunStartAtMs = nowMs;
     }
     return 0;
   }
@@ -1105,6 +883,7 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
     session.outputNextFrameAtMs = nowMs;
   }
 
+  closeAudioUnderrun(trace, nowMs);
   const lateMs = Math.max(0, nowMs - session.outputNextFrameAtMs);
   if (lateMs >= 5) {
     trace.timerLateCount += 1;
@@ -1154,12 +933,6 @@ function startOutputPump(session: StreamSession) {
       if (!hasBufferedFramesReady(session)) {
         return;
       }
-      const trace = ensureAudioPumpTrace(session);
-      const gapMs = closeAudioQueueGap(trace, nowMs);
-      if (gapMs !== null) {
-        noteAudioPumpReprimed(trace);
-        logAssistantAudioGap(session, trace, gapMs, "reprime");
-      }
       session.outputPrimed = true;
       session.outputNextFrameAtMs = nowMs;
     }
@@ -1169,8 +942,6 @@ function startOutputPump(session: StreamSession) {
       // current assistant response is still active so the next chunk can re-prime
       // a small jitter buffer instead of forcing a full pump restart.
       if (session.currentResponseId) {
-        const trace = ensureAudioPumpTrace(session);
-        beginAudioQueueGap(trace, session.outputNextFrameAtMs || nowMs);
         session.outputPrimed = false;
         session.outputNextFrameAtMs = null;
         return;
@@ -1186,7 +957,6 @@ function startOutputPump(session: StreamSession) {
       if (!(session.outputBuffer && session.outputBuffer.length > 0) && !session.currentResponseId) {
         logAudioPumpTraceSummary(session, "playback_drained");
         noteAssistantPlaybackDrained(session);
-        flushQueuedAssistantResponses(session);
       }
       return;
     }
@@ -1194,60 +964,14 @@ function startOutputPump(session: StreamSession) {
 }
 
 async function interruptAssistantForCallerSpeech(session: StreamSession | undefined, reason: string) {
-  if (!session) return false;
-  const assistantPending = hasPendingAssistantAudio(session);
-  if (!assistantPending) {
-    logInfo("assistant_barge_in_decision", {
-      callSid: session.callSid,
-      callControlId: session.callControlId,
-      reason,
-      decision: "no_pending_audio",
-      clearSent: false,
-      assistantPending: false,
-      queuedFrames: session.outputQueue?.length || 0,
-      bufferedBytes: session.outputBuffer?.length || 0,
-      outputPrimed: Boolean(session.outputPrimed),
-      assistantAudioMsSent: Math.max(0, Number(session.assistantAudioMsSent || 0))
-    });
-    return false;
-  }
+  if (!session || !hasPendingAssistantAudio(session)) return false;
   const plan = buildAssistantInterruptionPlan(session, reason);
-  if (!plan.shouldInterrupt) {
-    logInfo("assistant_barge_in_decision", {
-      callSid: session.callSid,
-      callControlId: session.callControlId,
-      reason,
-      decision: "debounced",
-      clearSent: false,
-      assistantPending,
-      responseId: plan.responseId || undefined,
-      queuedFrames: session.outputQueue?.length || 0,
-      bufferedBytes: session.outputBuffer?.length || 0,
-      outputPrimed: Boolean(session.outputPrimed),
-      assistantAudioMsSent: Math.max(0, Number(session.assistantAudioMsSent || 0))
-    });
-    return false;
-  }
+  if (!plan.shouldInterrupt) return false;
 
-  const clearSent = clearTelnyxMedia(session.telnyxWs);
-  logInfo("assistant_barge_in_decision", {
-    callSid: session.callSid,
-    callControlId: session.callControlId,
-    reason,
-    decision: clearSent ? "clear_applied" : "clear_not_sent",
-    clearSent,
-    assistantPending,
-    responseId: plan.responseId || undefined,
-    queuedFrames: plan.queuedFramesDropped,
-    bufferedBytes: plan.bufferedBytesDropped,
-    outputPrimed: Boolean(session.outputPrimed),
-    assistantAudioMsSent: Math.max(0, Number(session.assistantAudioMsSent || 0))
-  });
-  applyAssistantInterruption(session, plan);
-  if (session.audioPumpTrace) {
-    session.audioPumpTrace.interruptedAtMs = performance.now();
+  for (const event of plan.events) {
+    sendOpenAiEvent(session.openAiWs, event);
   }
-  logAudioPumpTraceSummary(session, "interrupted");
+  applyAssistantInterruption(session, plan);
   if (session.knowledgeCallState) {
     await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
       source: "barge_in",
@@ -1257,7 +981,8 @@ async function interruptAssistantForCallerSpeech(session: StreamSession | undefi
       buffered_bytes_dropped: plan.bufferedBytesDropped
     });
   }
-  logInfo("assistant_barge_in_applied", {
+  logAudioPumpTraceSummary(session, "interrupted");
+  logInfo("assistant_response_canceled", {
     callSid: session.callSid,
     callControlId: session.callControlId,
     reason,
@@ -1265,8 +990,7 @@ async function interruptAssistantForCallerSpeech(session: StreamSession | undefi
     assistantItemId: plan.assistantItemId || undefined,
     truncatedAudioMs: plan.truncatedAudioMs,
     queuedFramesDropped: plan.queuedFramesDropped,
-    bufferedBytesDropped: plan.bufferedBytesDropped,
-    clearSent
+    bufferedBytesDropped: plan.bufferedBytesDropped
   });
   return true;
 }
@@ -1348,14 +1072,14 @@ async function markCallCompleted(callSid: string, answeredAtHint: string | null 
   }
 }
 
-async function markCallAnswered(callSid: string, answeredAtHint: string | null = null) {
+async function markCallAnswered(callSid: string) {
   if (!pool) return;
   try {
     await pool.query(
       `UPDATE calls
-       SET answered_at = COALESCE(answered_at, $2::timestamptz, NOW())
+       SET answered_at = COALESCE(answered_at, NOW())
        WHERE call_sid = $1`,
-      [callSid, answeredAtHint]
+      [callSid]
     );
   } catch (err) {
     logError("call_answered_update_failed", {
@@ -1368,6 +1092,75 @@ async function markCallAnswered(callSid: string, answeredAtHint: string | null =
 function normalizeOptionalText(value: unknown) {
   const text = String(value || "").trim();
   return text || null;
+}
+
+function normalizeTransferLookupText(value: unknown) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeDigitsOnly(value: unknown) {
+  return String(value || "").replace(/[^\d]/g, "");
+}
+
+function levenshteinDistance(leftInput: string, rightInput: string) {
+  const left = String(leftInput || "");
+  const right = String(rightInput || "");
+  if (left === right) return 0;
+  if (!left.length) return right.length;
+  if (!right.length) return left.length;
+
+  const previous: number[] = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    let diagonal = previous[0] ?? 0;
+    previous[0] = row;
+    for (let column = 1; column <= right.length; column += 1) {
+      const temp = previous[column] ?? column;
+      const current = previous[column] ?? column;
+      const leftCost = previous[column - 1] ?? (column - 1);
+      if (left[row - 1] === right[column - 1]) {
+        previous[column] = diagonal;
+      } else {
+        previous[column] = Math.min(current + 1, leftCost + 1, diagonal + 1);
+      }
+      diagonal = temp;
+    }
+  }
+  return previous[right.length] ?? right.length;
+}
+
+function isCloseTransferNameToken(queryToken: string, targetToken: string) {
+  if (!queryToken || !targetToken) return false;
+  if (queryToken === targetToken) return true;
+  if (Math.abs(queryToken.length - targetToken.length) > 1) return false;
+  if (queryToken.charAt(0) !== targetToken.charAt(0)) return false;
+  return levenshteinDistance(queryToken, targetToken) <= 1;
+}
+
+function hasFuzzyTransferTokenMatch(targetName: string, normalizedQuery: string) {
+  const queryTokens = normalizedQuery.split(" ").filter(Boolean);
+  const targetTokens = normalizeTransferLookupText(targetName).split(" ").filter(Boolean);
+  if (!queryTokens.length || !targetTokens.length) return false;
+  return queryTokens.every((queryToken) =>
+    targetTokens.some((targetToken) => isCloseTransferNameToken(queryToken, targetToken))
+  );
+}
+
+function classifyTransferConfirmation(text: string) {
+  const normalized = normalizeTransferLookupText(text);
+  if (!normalized) return "neutral" as const;
+  if (/\b(no|nope|nah|not now|dont|don't|do not|cancel|stop|wait|hold on|never mind)\b/.test(normalized)) {
+    return "rejected" as const;
+  }
+  if (
+    /\b(yes|yeah|yep|sure|ok|okay|please|go ahead|that works|sounds good|do it|connect me|transfer me)\b/.test(normalized)
+  ) {
+    return "confirmed" as const;
+  }
+  return "neutral" as const;
 }
 
 function buildTransferTargetId(id: number) {
@@ -1437,6 +1230,48 @@ async function loadTransferTargetsForTenant(tenantKey: string): Promise<Transfer
     transfer_extension: normalizeOptionalText(row.transfer_extension),
     forward_to_number: String(row.forward_to_number || "").trim()
   }));
+}
+
+function rankTransferMatches(targets: TransferTargetRow[], query: string) {
+  const normalizedQuery = normalizeTransferLookupText(query);
+  if (!normalizedQuery) return [];
+
+  const queryDigits = normalizeDigitsOnly(query);
+  if (queryDigits) {
+    const extensionMatches = targets.filter((target) => normalizeDigitsOnly(target.transfer_extension) === queryDigits);
+    if (extensionMatches.length) {
+      return extensionMatches;
+    }
+  }
+
+  const exactFullNameMatches = targets.filter((target) => normalizeTransferLookupText(target.name) === normalizedQuery);
+  if (exactFullNameMatches.length) {
+    return exactFullNameMatches;
+  }
+
+  const startsWithMatches = targets.filter((target) => normalizeTransferLookupText(target.name).startsWith(normalizedQuery));
+  if (startsWithMatches.length) {
+    return startsWithMatches;
+  }
+
+  const exactTokenMatches = targets.filter((target) => normalizeTransferLookupText(target.name).split(" ").includes(normalizedQuery));
+  if (exactTokenMatches.length) {
+    return exactTokenMatches;
+  }
+
+  const fuzzyTokenMatches = targets.filter((target) => hasFuzzyTransferTokenMatch(target.name, normalizedQuery));
+  if (fuzzyTokenMatches.length) {
+    return fuzzyTokenMatches;
+  }
+
+  if (normalizedQuery.length >= 3) {
+    const includesMatches = targets.filter((target) => normalizeTransferLookupText(target.name).includes(normalizedQuery));
+    if (includesMatches.length) {
+      return includesMatches;
+    }
+  }
+
+  return [];
 }
 
 async function lookupTransferTarget(tenantKey: string, query: string) {
@@ -1532,10 +1367,9 @@ function notePendingTransferLookup(session: StreamSession, lookupResult: {
 
 function noteCallerTransferConfirmation(session: StreamSession, transcript: string) {
   const pendingCandidate = session.pendingTransferCandidate;
-  if (!pendingCandidate) return;
+  if (!pendingCandidate || pendingCandidate.confirmed) return;
   const classification = classifyTransferConfirmation(transcript);
   if (classification === "confirmed") {
-    if (pendingCandidate.confirmed) return;
     pendingCandidate.confirmed = true;
     pendingCandidate.confirmedAt = new Date().toISOString();
     logInfo("call_transfer_confirmation_received", {
@@ -1556,29 +1390,15 @@ function noteCallerTransferConfirmation(session: StreamSession, transcript: stri
       targetExtension: pendingCandidate.targetExtension || undefined
     });
     session.pendingTransferCandidate = null;
-    return;
-  }
-  if (pendingCandidate.confirmed) {
-    pendingCandidate.confirmed = false;
-    pendingCandidate.confirmedAt = null;
-    logInfo("call_transfer_confirmation_revised", {
-      callSid: session.callSid,
-      callControlId: session.callControlId,
-      targetId: pendingCandidate.targetId,
-      targetName: pendingCandidate.targetName,
-      targetExtension: pendingCandidate.targetExtension || undefined
-    });
   }
 }
 
 async function detachAiForTransferredCall(session: StreamSession, source: string) {
   if (session.aiDetached) return;
   session.aiDetached = true;
-  session.suppressXAiReconnect = true;
+  session.suppressOpenAiReconnect = true;
   session.pendingToolCall = null;
-  session.toolResponseTiming = createToolResponseTimingState();
-  session.queuedAssistantResponses = [];
-  session.activeAssistantResponseDedupeKey = null;
+  session.pendingToolSpeechWait = null;
   session.outputQueue = [];
   session.outputBuffer = Buffer.alloc(0);
   if (session.outputTimer) {
@@ -1587,10 +1407,10 @@ async function detachAiForTransferredCall(session: StreamSession, source: string
   }
   session.outputNextFrameAtMs = null;
 
-  if (session.XAiWs && session.XAiWs.readyState === WebSocket.OPEN) {
-    session.XAiWs.close();
+  if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
+    session.openAiWs.close();
   }
-  delete session.XAiWs;
+  delete session.openAiWs;
   session.ignoreNextStreamingStopped = true;
 
   try {
@@ -1618,13 +1438,11 @@ async function reattachAiAfterFailedTransfer(session: StreamSession, reason: str
   }
 
   session.aiDetached = false;
-  session.suppressXAiReconnect = false;
-  session.XAiReady = false;
-  session.XAiSessionUpdated = false;
+  session.suppressOpenAiReconnect = false;
+  session.openAiReady = false;
+  session.openAiSessionUpdated = false;
   session.pendingToolCall = null;
-  session.toolResponseTiming = createToolResponseTimingState();
-  session.queuedAssistantResponses = [];
-  session.activeAssistantResponseDedupeKey = null;
+  session.pendingToolSpeechWait = null;
   session.outputQueue = [];
   session.outputBuffer = Buffer.alloc(0);
   if (session.outputTimer) {
@@ -1643,7 +1461,7 @@ async function reattachAiAfterFailedTransfer(session: StreamSession, reason: str
     return true;
   } catch (err) {
     session.aiDetached = true;
-    session.suppressXAiReconnect = true;
+    session.suppressOpenAiReconnect = true;
     logError("telnyx_stream_restart_failed_after_transfer_failure", {
       callSid: session.callSid,
       callControlId: session.callControlId,
@@ -1804,12 +1622,6 @@ async function endCallSession(session: StreamSession | undefined, reason: string
   if (!session || session.isShuttingDown) return;
   session.isShuttingDown = true;
   session.callActive = false;
-  try {
-    await session.callerTranscriptPersistenceTail;
-  } catch {
-    // Persistence failures are logged where the queued write is performed.
-  }
-  logCallerTranscriptTurnSummary(session, "session_end");
   await persistCallUsage(session);
   if (session.knowledgeCallState) {
     await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
@@ -1818,7 +1630,6 @@ async function endCallSession(session: StreamSession | undefined, reason: string
     });
   }
 
-  logAudioPumpTraceSummary(session, "session_end");
   logInfo("gateway_call_session_end", {
     callSid: session.callSid,
     callControlId: session.callControlId,
@@ -1836,8 +1647,8 @@ async function endCallSession(session: StreamSession | undefined, reason: string
     session.hangupTimer = null;
   }
 
-  if (session.XAiWs && session.XAiWs.readyState === WebSocket.OPEN) {
-    session.XAiWs.close();
+  if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
+    session.openAiWs.close();
   }
 
   await finalizeCallSummary(session);
@@ -1970,46 +1781,6 @@ async function recoverSessionForCallControlId(callControlId: string, source: str
   return session;
 }
 
-async function initializeInboundCallSession(params: {
-  callControlId: string;
-  callSid: string;
-  tenantKey: string;
-  to: string;
-  from: string;
-}) {
-  const { callControlId, callSid, tenantKey, to, from } = params;
-  const promptPayload = await fetchPromptPayload(tenantKey, callSid, to, from);
-  await safePrewarmBuildAssets(callSid, tenantKey, promptPayload.knowledge_runtime.active_build_id, "call_initiated");
-  const realtimeLogPath = realtimeDebug || realtimeTrace ? initRealtimeLog(callSid) : undefined;
-  const knowledgeCallState = initializeKnowledgeCallState(promptPayload);
-  await persistKnowledgeCallState(pool, tenantKey, callSid, knowledgeCallState, {
-    source: "call_initiated"
-  });
-  const session = createStreamSession(
-    callControlId,
-    callSid,
-    tenantKey,
-    promptPayload,
-    knowledgeCallState,
-    realtimeLogPath
-  );
-  streamSessions.set(callControlId, session);
-  return session;
-}
-
-async function waitForInboundSessionBootstrap(callControlId: string, source: string) {
-  const pending = inboundSessionBootstraps.get(callControlId);
-  if (!pending) return undefined;
-  logInfo("inbound_session_bootstrap_wait", { callControlId, source });
-  const session = await pending;
-  logInfo("inbound_session_bootstrap_wait_completed", {
-    callControlId,
-    source,
-    ready: Boolean(session)
-  });
-  return session;
-}
-
 async function preloadActiveBuildAssetsOnStartup() {
   if (!pool) return;
   const started = Date.now();
@@ -2056,7 +1827,7 @@ async function forwardToolResult(
   payload: Record<string, unknown>,
   validation: { status: string; errors: string[] }
 ) {
-  if (!appBaseUrl || !gatewayToolResultToken) return "not_configured" as const;
+  if (!appBaseUrl || !gatewayToolResultToken) return;
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
@@ -2068,7 +1839,7 @@ async function forwardToolResult(
         },
         body: JSON.stringify({ call_id: callId, tenant_key: tenantKey, tool, payload, validation })
       });
-      if (resp.ok) return "succeeded" as const;
+      if (resp.ok) return;
       throw new Error(`status_${resp.status}`);
     } catch (err) {
       if (attempt === maxAttempts) {
@@ -2078,28 +1849,26 @@ async function forwardToolResult(
           attempts: maxAttempts,
           message: err instanceof Error ? err.message : "unknown"
         });
-        return "failed" as const;
+        return;
       }
       await sleep(100 * 2 ** (attempt - 1));
     }
   }
-  return "failed" as const;
+}
+
+function noteToolResponseRequested(session: StreamSession, tool: string, callId: string) {
+  session.pendingToolSpeechWait = {
+    tool,
+    callId,
+    requestedAtMs: performance.now(),
+    responseCreatedAtMs: null,
+    responseId: null,
+    firstAudioLogged: false
+  };
 }
 
 function estimatePayloadBytes(value: unknown) {
   return Buffer.byteLength(JSON.stringify(value), "utf8");
-}
-
-function createToolResponseMetadata(
-  tool: string,
-  callId: string,
-  toolResultEvent: Record<string, unknown>
-): ToolResponseMetadata {
-  return {
-    tool,
-    callId,
-    toolResultPayloadBytes: estimatePayloadBytes(toolResultEvent)
-  };
 }
 
 function logRealtimeToolPayloads(session: StreamSession, params: {
@@ -2107,6 +1876,7 @@ function logRealtimeToolPayloads(session: StreamSession, params: {
   tool: string;
   callId: string;
   toolResultEvent: Record<string, unknown>;
+  responseEvent?: Record<string, unknown>;
 }) {
   logRealtimeDetailEntry(session, {
     ts: new Date().toISOString(),
@@ -2116,15 +1886,27 @@ function logRealtimeToolPayloads(session: StreamSession, params: {
     callId: params.callId,
     payload: params.toolResultEvent
   });
+  if (params.responseEvent) {
+    logRealtimeDetailEntry(session, {
+      ts: new Date().toISOString(),
+      kind: "tool_response_create_send",
+      callSid: params.callSid,
+      tool: params.tool,
+      callId: params.callId,
+      payload: params.responseEvent
+    });
+  }
+  logInfo("openai_realtime_tool_response_requested", {
+    callSid: params.callSid,
+    tool: params.tool,
+    callId: params.callId,
+    traceFile: session.realtimeLogPath || ensureSessionRealtimeLogPath(session),
+    toolResultPayloadBytes: estimatePayloadBytes(params.toolResultEvent),
+    responseCreatePayloadBytes: params.responseEvent ? estimatePayloadBytes(params.responseEvent) : undefined
+  });
 }
 
-async function executeToolCall(
-  session: StreamSession,
-  name: string,
-  callId: string,
-  argsText: string,
-  timing: ToolCallTimingContext
-) {
+async function executeToolCall(session: StreamSession, name: string, callId: string, argsText: string) {
   let args: Record<string, unknown> = {};
   try {
     args = argsText ? JSON.parse(argsText) : {};
@@ -2133,7 +1915,6 @@ async function executeToolCall(
   }
 
   if (name === "knowledge_lookup") {
-    const executionStartedAtMs = performance.now();
     const query = String((args as any).query || "");
     if (!session.promptPayload) {
       throw new Error("missing_prompt_payload");
@@ -2146,18 +1927,15 @@ async function executeToolCall(
       buildId: session.promptPayload.knowledge_runtime.active_build_id,
       callState: session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state
     });
-    const runtimeCompletedAtMs = performance.now();
     const nextState = mergeRuntimeTurnState(
       session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state,
       runtimeResult
     );
     session.knowledgeCallState = nextState;
-    const callStatePersistStartedAtMs = performance.now();
     await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, nextState, {
       runtime_mode: runtimeResult.runtime_bundle.runtime_mode,
       source: "knowledge_lookup"
     });
-    const callStatePersistCompletedAtMs = performance.now();
 
     const toolOutput = formatKnowledgeRuntimeToolOutput(runtimeResult);
     logRealtimeDetailEntry(session, {
@@ -2198,6 +1976,7 @@ async function executeToolCall(
     });
     logInfo("knowledge_lookup_tool_called", {
       callSid: session.callSid,
+      query,
       coverageItemCount: Array.isArray(runtimeResult.answer_packet.coverage) ? runtimeResult.answer_packet.coverage.length : 0,
       cardCount: Array.isArray(runtimeResult.answer_packet.used_card_ids) ? runtimeResult.answer_packet.used_card_ids.length : 0,
       factCount: Array.isArray(runtimeResult.answer_packet.used_fact_ids) ? runtimeResult.answer_packet.used_fact_ids.length : 0,
@@ -2250,8 +2029,7 @@ async function executeToolCall(
         ? estimatePayloadBytes(runtimeResult.retrieval_telemetry.embedding_response_payloads)
         : undefined
     });
-    const appToolResultForwardStartedAtMs = performance.now();
-    const appToolResultForwardOutcome = await forwardToolResult(
+    await forwardToolResult(
       session.callSid,
       session.tenantKey,
       name,
@@ -2266,42 +2044,18 @@ async function executeToolCall(
       },
       { status: "accepted", errors: [] }
     );
-    const appToolResultForwardCompletedAtMs = performance.now();
     const toolResultEvent = createFunctionCallOutputEvent(callId, toolOutput);
-    const xaiSocketOpenAtResultDispatch = sendXAiEvent(session.XAiWs, toolResultEvent);
-    const resultDispatchAtMs = performance.now();
-    logInfo("knowledge_lookup_timing", {
-      callSid: session.callSid,
-      callId,
-      ...buildKnowledgeLookupTimingDetails({
-        sourceType: timing.sourceType,
-        speechStoppedAtMs: timing.speechStoppedAtMs,
-        toolCallReadyAtMs: timing.toolCallReadyAtMs,
-        executionStartedAtMs,
-        runtimeCompletedAtMs,
-        callStatePersistStartedAtMs,
-        callStatePersistCompletedAtMs,
-        appToolResultForwardStartedAtMs,
-        appToolResultForwardCompletedAtMs,
-        appToolResultForwardOutcome,
-        resultDispatchAtMs,
-        xaiSocketOpenAtResultDispatch,
-        retrieval: runtimeResult.retrieval_telemetry
-      })
-    });
+    const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
+    sendOpenAiEvent(session.openAiWs, toolResultEvent);
     logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
       callId,
-      toolResultEvent
+      toolResultEvent,
+      responseEvent
     });
-    requestAssistantResponse(
-      session,
-      "tool_result",
-      {},
-      normalizeToolExecutionKey(name, callId),
-      createToolResponseMetadata(name, callId, toolResultEvent)
-    );
+    noteToolResponseRequested(session, name, callId);
+    requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
     return;
   }
 
@@ -2317,100 +2071,46 @@ async function executeToolCall(
       { status: "accepted", errors: [] }
     );
     const toolResultEvent = createFunctionCallOutputEvent(callId, lookupResult);
-    sendXAiEvent(session.XAiWs, toolResultEvent);
+    const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
+    sendOpenAiEvent(session.openAiWs, toolResultEvent);
     logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
       callId,
-      toolResultEvent
+      toolResultEvent,
+      responseEvent
     });
-    requestAssistantResponse(
-      session,
-      "tool_result",
-      {},
-      normalizeToolExecutionKey(name, callId),
-      createToolResponseMetadata(name, callId, toolResultEvent)
-    );
+    noteToolResponseRequested(session, name, callId);
+    requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
     return;
   }
 
   if (name === "data_capture") {
-    const captureControl = session.dataCaptureControl || createDataCaptureControlState();
-    session.dataCaptureControl = captureControl;
-    const fingerprint = fingerprintDataCaptureArgs(args);
-    const completed = getCompletedDataCapture(captureControl, fingerprint);
     const schema = session.promptPayload?.field_schema || {};
-    let validation: DataCaptureValidation = completed || validateAgainstSchema(schema, args);
-    if (!completed) {
-      if (validation.status === "accepted" && session.promptPayload) {
-        const nextState = applyCapturedFieldsToCallState(
-          session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state,
-          args
-        );
-        session.knowledgeCallState = nextState;
-        await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, nextState, {
-          source: "data_capture"
-        });
-      }
-      const forwardOutcome = await forwardToolResult(
-        session.callSid,
-        session.tenantKey,
-        name,
-        args,
-        validation
+    const validation = validateAgainstSchema(schema, args);
+    if (validation.status === "accepted" && session.promptPayload) {
+      const nextState = applyCapturedFieldsToCallState(
+        session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state,
+        args
       );
-      if (validation.status === "accepted" && forwardOutcome !== "succeeded") {
-        validation = {
-          status: "invalid",
-          errors: ["capture_persistence_failed"]
-        };
-      }
-      if (validation.status === "accepted") {
-        recordCompletedDataCapture(captureControl, fingerprint, validation);
-      }
-    } else {
-      logInfo("data_capture_duplicate_suppressed", {
-        callSid: session.callSid,
-        callId,
-        callerTurnSequence: timing.callerTurnSequence
+      session.knowledgeCallState = nextState;
+      await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, nextState, {
+        source: "data_capture"
       });
     }
-    const toolOutput = completed
-      ? {
-          ...validation,
-          duplicate: true,
-          instruction: "These exact values are already recorded. Do not call data_capture again unless the caller provides a correction or a new value. Continue from the caller's latest turn."
-        }
-      : validation;
-    const toolResultEvent = createFunctionCallOutputEvent(callId, toolOutput);
-    sendXAiEvent(session.XAiWs, toolResultEvent);
+    await forwardToolResult(session.callSid, session.tenantKey, name, args, validation);
+    const toolResultEvent = createFunctionCallOutputEvent(callId, validation);
+    const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
+    sendOpenAiEvent(session.openAiWs, toolResultEvent);
     logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
       callId,
-      toolResultEvent
+      toolResultEvent,
+      responseEvent
     });
-    const callerTurnSequence = timing.callerTurnSequence;
-    if (!claimDataCaptureContinuation(captureControl, callerTurnSequence)) {
-      logInfo("data_capture_response_suppressed", {
-        callSid: session.callSid,
-        callId,
-        callerTurnSequence,
-        duplicate: Boolean(completed)
-      });
-      return;
-    }
-    requestAssistantResponse(
-      session,
-      "data_capture_result",
-      completed
-        ? {
-            instructions: "The identical data capture already succeeded. Do not call data_capture again unless the caller corrects or adds a value. Continue naturally from the caller's latest turn."
-          }
-        : {},
-      `data_capture:turn:${callerTurnSequence}`,
-      createToolResponseMetadata(name, callId, toolResultEvent)
-    );
+    noteToolResponseRequested(session, name, callId);
+    requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
     return;
   }
 
@@ -2426,20 +2126,17 @@ async function executeToolCall(
       };
       await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, output);
-      sendXAiEvent(session.XAiWs, toolResultEvent);
+      const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
+      sendOpenAiEvent(session.openAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
         callId,
-        toolResultEvent
+        toolResultEvent,
+        responseEvent
       });
-      requestAssistantResponse(
-        session,
-        "tool_result",
-        {},
-        normalizeToolExecutionKey(name, callId),
-        createToolResponseMetadata(name, callId, toolResultEvent)
-      );
+      noteToolResponseRequested(session, name, callId);
+      requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
       return;
     }
 
@@ -2451,13 +2148,16 @@ async function executeToolCall(
       };
       await forwardToolResult(session.callSid, session.tenantKey, name, confirmationOutput, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, confirmationOutput);
-      sendXAiEvent(session.XAiWs, toolResultEvent);
+      const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
+      sendOpenAiEvent(session.openAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
         callId,
-        toolResultEvent
+        toolResultEvent,
+        responseEvent
       });
+      noteToolResponseRequested(session, name, callId);
       requestAssistantResponse(
         session,
         "transfer_confirmation_required",
@@ -2466,8 +2166,7 @@ async function executeToolCall(
             ? `You have identified ${pendingCandidate.targetName}${pendingCandidate.targetExtension ? ` at extension ${pendingCandidate.targetExtension}` : ""}, but the caller has not explicitly confirmed the transfer yet. Ask one short confirmation question such as whether they want to be transferred now.`
             : "Before transferring, ask one short confirmation question to make sure the caller wants to be transferred now."
         },
-        normalizeToolExecutionKey(name, `${callId}:confirmation_required`),
-        createToolResponseMetadata(name, callId, toolResultEvent)
+        normalizeToolExecutionKey(name, `${callId}:confirmation_required`)
       );
       return;
     }
@@ -2479,20 +2178,17 @@ async function executeToolCall(
       };
       await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, output);
-      sendXAiEvent(session.XAiWs, toolResultEvent);
+      const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
+      sendOpenAiEvent(session.openAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
         callId,
-        toolResultEvent
+        toolResultEvent,
+        responseEvent
       });
-      requestAssistantResponse(
-        session,
-        "tool_result",
-        {},
-        normalizeToolExecutionKey(name, callId),
-        createToolResponseMetadata(name, callId, toolResultEvent)
-      );
+      noteToolResponseRequested(session, name, callId);
+      requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
       return;
     }
 
@@ -2532,7 +2228,7 @@ async function executeToolCall(
       };
       await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, output);
-      sendXAiEvent(session.XAiWs, toolResultEvent);
+      sendOpenAiEvent(session.openAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
@@ -2556,20 +2252,17 @@ async function executeToolCall(
       });
       await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: "accepted", errors: [] });
       const toolResultEvent = createFunctionCallOutputEvent(callId, output);
-      sendXAiEvent(session.XAiWs, toolResultEvent);
+      const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
+      sendOpenAiEvent(session.openAiWs, toolResultEvent);
       logRealtimeToolPayloads(session, {
         callSid: session.callSid,
         tool: name,
         callId,
-        toolResultEvent
+        toolResultEvent,
+        responseEvent
       });
-      requestAssistantResponse(
-        session,
-        "tool_result",
-        {},
-        normalizeToolExecutionKey(name, callId),
-        createToolResponseMetadata(name, callId, toolResultEvent)
-      );
+      noteToolResponseRequested(session, name, callId);
+      requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
       return;
     }
   }
@@ -2577,51 +2270,6 @@ async function executeToolCall(
   if (name === "finish_session") {
     const finishSessionArgs = args as FinishSessionArgs;
     const reason = String(finishSessionArgs.reason || "assistant_completed_call");
-    const runtimeProfile = session.promptPayload?.knowledge_runtime?.approved_configuration?.runtime_profile;
-    const finishPolicy = evaluateFinishSessionPolicy({
-      requireSpokenClose: runtimeProfile?.tool_policy?.allow_finish_session_only_after_spoken_close !== false,
-      lastAssistantTranscript: session.lastAssistantTranscript ?? null,
-      configuredClosingPhrase: String(
-        session.promptPayload?.knowledge_runtime?.tenant_prompt_profile?.closing_phrase
-        || runtimeProfile?.wording_defaults?.closing_phrase
-        || ""
-      )
-    });
-    if (!finishPolicy.allowed) {
-      logInfo("assistant_finish_session_rejected", {
-        callSid: session.callSid,
-        callId,
-        reason: finishPolicy.reason
-      });
-      const rejection = {
-        status: "rejected",
-        reason: finishPolicy.reason,
-        instruction: "The call remains active. Continue naturally, and finish only after the caller is clearly done and you have spoken the configured closing."
-      };
-      await forwardToolResult(
-        session.callSid,
-        session.tenantKey,
-        name,
-        rejection,
-        { status: "rejected", errors: [finishPolicy.reason] }
-      );
-      const toolResultEvent = createFunctionCallOutputEvent(callId, rejection);
-      sendXAiEvent(session.XAiWs, toolResultEvent);
-      logRealtimeToolPayloads(session, {
-        callSid: session.callSid,
-        tool: name,
-        callId,
-        toolResultEvent
-      });
-      requestAssistantResponse(
-        session,
-        "tool_result",
-        {},
-        normalizeToolExecutionKey(name, callId),
-        createToolResponseMetadata(name, callId, toolResultEvent)
-      );
-      return;
-    }
     logInfo("assistant_finish_session_requested", {
       callSid: session.callSid,
       callId,
@@ -2629,24 +2277,13 @@ async function executeToolCall(
     });
     await forwardToolResult(session.callSid, session.tenantKey, name, { reason }, { status: "accepted", errors: [] });
     const toolResultEvent = createFunctionCallOutputEvent(callId, { status: "accepted", reason });
-    sendXAiEvent(session.XAiWs, toolResultEvent);
+    sendOpenAiEvent(session.openAiWs, toolResultEvent);
     logRealtimeToolPayloads(session, {
       callSid: session.callSid,
       tool: name,
       callId,
       toolResultEvent
     });
-
-    session.finishSessionAccepted = true;
-    const discardedResponses = discardQueuedAssistantResponses(session);
-    if (discardedResponses.length > 0) {
-      logInfo("xai_realtime_queued_responses_discarded", {
-        callSid: session.callSid,
-        reason: "finish_session_accepted",
-        discardedCount: discardedResponses.length,
-        discardedToolResponseCount: discardedResponses.filter((entry) => entry.toolResponse).length
-      });
-    }
 
     const queuedFrames = session.outputQueue?.length || 0;
     const drainMs = Math.min(Math.max(queuedFrames * 20 + 1200, 1200), 4000);
@@ -2661,20 +2298,17 @@ async function executeToolCall(
 
   await forwardToolResult(session.callSid, session.tenantKey, name, args, { status: "accepted", errors: [] });
   const toolResultEvent = createFunctionCallOutputEvent(callId, { status: "accepted" });
-  sendXAiEvent(session.XAiWs, toolResultEvent);
+  const responseEvent = createAudioTextResponseEvent({}, session.realtimeApiShape);
+  sendOpenAiEvent(session.openAiWs, toolResultEvent);
   logRealtimeToolPayloads(session, {
     callSid: session.callSid,
     tool: name,
     callId,
-    toolResultEvent
+    toolResultEvent,
+    responseEvent
   });
-  requestAssistantResponse(
-    session,
-    "tool_result",
-    {},
-    normalizeToolExecutionKey(name, callId),
-    createToolResponseMetadata(name, callId, toolResultEvent)
-  );
+  noteToolResponseRequested(session, name, callId);
+  requestAssistantResponse(session, "tool_result", {}, normalizeToolExecutionKey(name, callId));
 }
 
 async function handleToolCallEvent(
@@ -2684,15 +2318,9 @@ async function handleToolCallEvent(
   argsText: string,
   sourceType: string
 ) {
-  const timing: ToolCallTimingContext = {
-    sourceType,
-    speechStoppedAtMs: session.callerTurnTiming?.speechStoppedAtMs ?? null,
-    toolCallReadyAtMs: performance.now(),
-    callerTurnSequence: session.callerTurnSequence || 0
-  };
   const attempt = beginToolExecution(session, name, callId);
   if (!attempt.shouldExecute) {
-    logInfo("xai_realtime_tool_event_deduped", {
+    logInfo("openai_realtime_tool_event_deduped", {
       callSid: session.callSid,
       tool: name,
       callId,
@@ -2703,7 +2331,7 @@ async function handleToolCallEvent(
   }
 
   try {
-    await executeToolCall(session, name, callId, argsText, timing);
+    await executeToolCall(session, name, callId, argsText);
     completeToolExecution(session, attempt.key);
   } catch (err) {
     failToolExecution(session, attempt.key);
@@ -2711,81 +2339,58 @@ async function handleToolCallEvent(
   }
 }
 
-function queueToolCallEvent(
-  session: StreamSession,
-  name: string,
-  callId: string,
-  argsText: string,
-  sourceType: string
-) {
-  const previous = session.toolExecutionTail || Promise.resolve();
-  const execution = previous
-    .catch(() => undefined)
-    .then(async () => {
-      try {
-        await handleToolCallEvent(session, name, callId, argsText, sourceType);
-      } catch (err) {
-        logError("xai_realtime_tool_execution_failed", {
-          callSid: session.callSid,
-          tool: name,
-          callId,
-          sourceType,
-          message: err instanceof Error ? err.message : "unknown"
-        });
-      }
-    });
-  session.toolExecutionTail = execution;
-  return execution;
-}
-
-function connectXAiRealtime(session: StreamSession) {
-  if (!XAiKey) {
-    logError("xai_realtime_missing_key", { callSid: session.callSid });
-    void notifyGatewayError(session.callSid, session.tenantKey, "xai_realtime_missing_key", "XAI_API_KEY is missing");
-    void endCallSession(session, "xai_key_missing", true);
+function connectOpenAiRealtime(session: StreamSession) {
+  if (!openAiKey) {
+    logError("openai_realtime_missing_key", { callSid: session.callSid });
+    void notifyGatewayError(session.callSid, session.tenantKey, "openai_realtime_missing_key", "OPENAI_API_KEY is missing");
+    void endCallSession(session, "openai_key_missing", true);
     return;
   }
   const payload = session.promptPayload;
   if (!payload) {
-    logError("xai_realtime_missing_prompt_payload", { callSid: session.callSid });
+    logError("openai_realtime_missing_prompt_payload", { callSid: session.callSid });
     void notifyGatewayError(
       session.callSid,
       session.tenantKey,
-      "xai_realtime_missing_prompt_payload",
+      "openai_realtime_missing_prompt_payload",
       "Prompt payload was not present when realtime connection was attempted"
     );
     void endCallSession(session, "prompt_payload_missing", true);
     return;
   }
 
-  session.XAiReady = false;
-  const model = XAI_REALTIME_MODEL;
-  const voice = String(payload.session_config.voice || XAI_REALTIME_VOICE).trim() || XAI_REALTIME_VOICE;
+  session.openAiReady = false;
+  const model = payload.session_config.model;
+  const apiShape = resolveRealtimeApiShape(process.env.OPENAI_REALTIME_API_SHAPE, model);
+  session.realtimeApiShape = apiShape;
   const instructions = buildSessionInstructions(payload);
-  const url = `wss://api.x.ai/v1/realtime?model=${encodeURIComponent(model)}`;
+  const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
   const ws = new WebSocket(url, {
-    headers: buildXAiRealtimeHeaders(XAiKey)
+    headers: buildOpenAiRealtimeHeaders({
+      apiKey: openAiKey,
+      apiShape,
+      safetyIdentifier: buildOpenAiSafetyIdentifier(session)
+    })
   });
-  session.XAiWs = ws;
+  session.openAiWs = ws;
 
   ws.on("open", () => {
-    session.XAiReady = true;
-    logInfo("xai_realtime_session_start", {
+    session.openAiReady = true;
+    logInfo("openai_realtime_session_start", {
       callSid: session.callSid,
       model,
-      voice,
-      turnDetectionType: "server_vad",
+      apiShape,
+      voice: payload.session_config.voice,
+      turnDetectionType: payload.session_config.turn_detection?.type,
       inputAudioFormat: payload.session_config.input_audio_format || "g711_ulaw",
       outputAudioFormat: payload.session_config.output_audio_format || "g711_ulaw"
     });
 
     const sessionUpdate = buildRealtimeSessionUpdateEvent({
+      apiShape,
       instructions,
       tools: payload.tool_definitions,
-      sessionConfig: {
-        ...payload.session_config,
-        voice
-      }
+      sessionConfig: payload.session_config
     });
 
     logRealtimeEntry(session, {
@@ -2793,12 +2398,13 @@ function connectXAiRealtime(session: StreamSession) {
       kind: "outbound",
       callSid: session.callSid,
       type: "session.update",
+      apiShape,
       instructions,
       tools: payload.tool_definitions,
       payload: sessionUpdate
     });
 
-    sendXAiEvent(ws, sessionUpdate);
+    sendOpenAiEvent(ws, sessionUpdate);
   });
 
   ws.on("message", async (data) => {
@@ -2814,17 +2420,11 @@ function connectXAiRealtime(session: StreamSession) {
 
     if (type === "session.updated") {
       session.realtimeModel = payloadMsg?.session?.model || model;
-      session.XAiSessionUpdated = true;
-      const acceptedInputAudioFormat = payloadMsg?.session?.audio?.input?.format?.type;
-      const acceptedOutputAudioFormat = payloadMsg?.session?.audio?.output?.format?.type;
-      logInfo("xai_realtime_session_updated", {
+      session.openAiSessionUpdated = true;
+      logInfo("openai_realtime_session_updated", {
         callSid: session.callSid,
         model: session.realtimeModel,
-        voice: payloadMsg?.session?.voice,
-        reasoningEffort: payloadMsg?.session?.reasoning?.effort,
-        turnDetection: payloadMsg?.session?.turn_detection,
-        inputAudioFormat: acceptedInputAudioFormat,
-        outputAudioFormat: acceptedOutputAudioFormat
+        apiShape: session.realtimeApiShape
       });
       if (session.pendingReconnectAssistantResponse) {
         const pendingResponse = session.pendingReconnectAssistantResponse;
@@ -2837,31 +2437,23 @@ function connectXAiRealtime(session: StreamSession) {
         );
       }
       if (!session.greetingSent) {
-        const greetingEvent = buildRealtimeForceMessageEvent(payload.tenant_greeting, {
-          interruptible: true
-        });
         session.greetingSent = true;
-        logInfo("xai_realtime_greeting_requested", {
+        logInfo("openai_realtime_greeting_requested", {
           callSid: session.callSid,
-          callControlId: session.callControlId,
-          mode: "force_message",
-          interruptible: true
+          callControlId: session.callControlId
         });
-        logRealtimeEntry(session, {
-          ts: new Date().toISOString(),
-          kind: "outbound",
-          callSid: session.callSid,
-          type: "conversation.item.create",
-          purpose: "tenant_greeting",
-          payload: greetingEvent
-        });
-        sendXAiEvent(ws, greetingEvent);
+        requestAssistantResponse(
+          session,
+          "greeting",
+          {},
+          "greeting"
+        );
       }
       return;
     }
 
     if (type === "error") {
-      logError("xai_realtime_server_error", {
+      logError("openai_realtime_server_error", {
         callSid: session.callSid,
         errorType: payloadMsg?.error?.type,
         errorCode: payloadMsg?.error?.code,
@@ -2873,53 +2465,32 @@ function connectXAiRealtime(session: StreamSession) {
     }
 
     if (type === "response.created") {
-      const responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
-      const responseCreatedAtMs = performance.now();
-      const turnCreated = noteRealtimeTurnResponseCreated(
-        session.callerTurnTiming,
-        responseId,
-        responseCreatedAtMs
-      );
-      if (turnCreated) {
-        logRealtimeDetailEntry(session, {
-          ts: new Date().toISOString(),
-          kind: "turn_response_created",
-          callSid: session.callSid,
-          responseId,
-          ...turnCreated
-        });
-      }
       ensureAudioPumpTrace(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
-      const timingState = session.toolResponseTiming || createToolResponseTimingState();
-      session.toolResponseTiming = timingState;
-      const toolWait = matchAssistantResponseCreated(
-        timingState,
-        responseId,
-        responseCreatedAtMs
-      );
-      if (toolWait) {
-        const waitMs = Number((responseCreatedAtMs - toolWait.requestedAtMs).toFixed(3));
-        logInfo("xai_realtime_tool_response_created", {
+      if (session.pendingToolSpeechWait && !session.pendingToolSpeechWait.responseId) {
+        session.pendingToolSpeechWait.responseCreatedAtMs = performance.now();
+        session.pendingToolSpeechWait.responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
+        const waitMs = Number((session.pendingToolSpeechWait.responseCreatedAtMs - session.pendingToolSpeechWait.requestedAtMs).toFixed(3));
+        logInfo("openai_realtime_tool_response_created", {
           callSid: session.callSid,
-          tool: toolWait.tool,
-          callId: toolWait.callId,
-          responseId: toolWait.responseId || undefined,
+          tool: session.pendingToolSpeechWait.tool,
+          callId: session.pendingToolSpeechWait.callId,
+          responseId: session.pendingToolSpeechWait.responseId || undefined,
           waitMs
         });
         logRealtimeDetailEntry(session, {
           ts: new Date().toISOString(),
           kind: "tool_response_created",
           callSid: session.callSid,
-          tool: toolWait.tool,
-          callId: toolWait.callId,
-          responseId: toolWait.responseId,
+          tool: session.pendingToolSpeechWait.tool,
+          callId: session.pendingToolSpeechWait.callId,
+          responseId: session.pendingToolSpeechWait.responseId,
           waitMs,
           payload: payloadMsg
         });
       }
       markAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
       noteAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
-      logInfo("xai_realtime_response_created", {
+      logInfo("openai_realtime_response_created", {
         callSid: session.callSid,
         responseId: payloadMsg?.response?.id || payloadMsg?.response_id
       });
@@ -2927,19 +2498,6 @@ function connectXAiRealtime(session: StreamSession) {
     }
 
     if (type === "response.done") {
-      const responseDoneAtMs = performance.now();
-      const responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
-      const audioTrace = ensureAudioPumpTrace(session, responseId);
-      audioTrace.responseDoneAtMs = responseDoneAtMs;
-      const queuedFramesAtDone = session.outputQueue?.length || 0;
-      const bufferedBytesAtDone = session.outputBuffer?.length || 0;
-      const pendingPlaybackMs = calculatePendingPlaybackMs(
-        queuedFramesAtDone,
-        bufferedBytesAtDone
-      );
-      const outputPrimedAtDone = Boolean(session.outputPrimed);
-      const outputTimerActiveAtDone = Boolean(session.outputTimer);
-      const underrunOpenAtDone = audioTrace.underrunStartAtMs !== null;
       markAssistantResponseFinished(session);
       noteAssistantResponseCompleted(session);
       const statusDetails = payloadMsg?.response?.status_details || payloadMsg?.status_details;
@@ -2958,9 +2516,9 @@ function connectXAiRealtime(session: StreamSession) {
       totals.estimatedCostMicrosUsd += estimateUsageCostMicrosUsd(usage);
       session.usageTotals = totals;
       void persistCallUsage(session);
-      logInfo("xai_realtime_response_done", {
+      logInfo("openai_realtime_response_done", {
         callSid: session.callSid,
-        responseId: responseId || undefined,
+        responseId: payloadMsg?.response?.id || payloadMsg?.response_id,
         status: payloadMsg?.response?.status || payloadMsg?.status,
         statusDetailsType: statusDetails?.type,
         statusDetailsReason: statusDetails?.reason,
@@ -2968,37 +2526,25 @@ function connectXAiRealtime(session: StreamSession) {
         errorCode: statusDetails?.error?.code,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
-        estimatedCostMicrosUsd: estimateUsageCostMicrosUsd(usage),
-        audioReceived: audioTrace.chunksQueued > 0,
-        audioChunksReceived: audioTrace.chunksQueued,
-        audioBytesReceived: audioTrace.chunkBytes,
-        queuedFramesAtDone,
-        bufferedBytesAtDone,
-        pendingPlaybackMs,
-        outputPrimedAtDone,
-        outputTimerActiveAtDone,
-        underrunOpenAtDone
+        estimatedCostMicrosUsd: estimateUsageCostMicrosUsd(usage)
       });
       logAudioPumpTraceSummary(session, "response_done");
-      const completedToolWait = finishToolResponse(
-        session.toolResponseTiming || createToolResponseTimingState(),
-        responseId
-      );
-      if (completedToolWait) {
-        logRealtimeDetailEntry(session, {
-          ts: new Date().toISOString(),
-          kind: "tool_response_done",
-          callSid: session.callSid,
-          tool: completedToolWait.tool,
-          callId: completedToolWait.callId,
-          responseId,
-          payload: payloadMsg
-        });
+      if (session.pendingToolSpeechWait) {
+        const responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
+        if (!session.pendingToolSpeechWait.responseId || session.pendingToolSpeechWait.responseId === responseId) {
+          logRealtimeDetailEntry(session, {
+            ts: new Date().toISOString(),
+            kind: "tool_response_done",
+            callSid: session.callSid,
+            tool: session.pendingToolSpeechWait.tool,
+            callId: session.pendingToolSpeechWait.callId,
+            responseId,
+            payload: payloadMsg
+          });
+          session.pendingToolSpeechWait = null;
+        }
       }
-      if (!hasPendingAssistantAudio(session)) {
-        session.audioPumpTrace = null;
-        flushQueuedAssistantResponses(session);
-      }
+      flushQueuedAssistantResponses(session);
       return;
     }
 
@@ -3019,39 +2565,16 @@ function connectXAiRealtime(session: StreamSession) {
     if (type === "response.output_audio.delta" || type === "response.audio.delta" || type === "output_audio.delta") {
       const audioBase64 = payloadMsg.delta || payloadMsg.audio?.delta || payloadMsg.audio?.data || payloadMsg.data || "";
       if (audioBase64) {
-        const turnLatency = finishRealtimeTurnTiming(session.callerTurnTiming, performance.now());
-        if (turnLatency) {
-          logInfo("xai_realtime_turn_latency", {
+        if (session.pendingToolSpeechWait && !session.pendingToolSpeechWait.firstAudioLogged) {
+          const waitMs = Number((performance.now() - session.pendingToolSpeechWait.requestedAtMs).toFixed(3));
+          const responseCreatedToFirstAudioMs = session.pendingToolSpeechWait.responseCreatedAtMs
+            ? Number((performance.now() - session.pendingToolSpeechWait.responseCreatedAtMs).toFixed(3))
+            : undefined;
+          logInfo("openai_realtime_tool_response_first_audio", {
             callSid: session.callSid,
-            responseId: payloadMsg?.response_id || payloadMsg?.response?.id || turnLatency.response_id || undefined,
-            endpointToResponseCreatedMs: turnLatency.endpoint_to_response_created_ms ?? undefined,
-            responseCreatedToFirstAudioMs: turnLatency.response_created_to_first_audio_ms ?? undefined,
-            endpointToFirstAudioMs: turnLatency.endpoint_to_first_audio_ms
-          });
-          logRealtimeDetailEntry(session, {
-            ts: new Date().toISOString(),
-            kind: "turn_first_audio",
-            callSid: session.callSid,
-            ...turnLatency
-          });
-          session.callerTurnTiming = null;
-        }
-        const audioResponseId = payloadMsg?.response_id || payloadMsg?.response?.id || null;
-        const firstAudio = matchToolResponseFirstAudio(
-          session.toolResponseTiming || createToolResponseTimingState(),
-          audioResponseId,
-          performance.now()
-        );
-        if (firstAudio) {
-          const waitMs = Number(firstAudio.waitMs.toFixed(3));
-          const responseCreatedToFirstAudioMs = firstAudio.responseCreatedToFirstAudioMs === null
-            ? undefined
-            : Number(firstAudio.responseCreatedToFirstAudioMs.toFixed(3));
-          logInfo("xai_realtime_tool_response_first_audio", {
-            callSid: session.callSid,
-            tool: firstAudio.wait.tool,
-            callId: firstAudio.wait.callId,
-            responseId: audioResponseId,
+            tool: session.pendingToolSpeechWait.tool,
+            callId: session.pendingToolSpeechWait.callId,
+            responseId: payloadMsg?.response_id || payloadMsg?.response?.id || null,
             waitMs,
             responseCreatedToFirstAudioMs
           });
@@ -3059,12 +2582,13 @@ function connectXAiRealtime(session: StreamSession) {
             ts: new Date().toISOString(),
             kind: "tool_response_first_audio",
             callSid: session.callSid,
-            tool: firstAudio.wait.tool,
-            callId: firstAudio.wait.callId,
-            responseId: audioResponseId,
+            tool: session.pendingToolSpeechWait.tool,
+            callId: session.pendingToolSpeechWait.callId,
+            responseId: payloadMsg?.response_id || payloadMsg?.response?.id || null,
             waitMs,
             responseCreatedToFirstAudioMs
           });
+          session.pendingToolSpeechWait.firstAudioLogged = true;
         }
         noteAssistantResponseCreated(session, payloadMsg?.response_id || payloadMsg?.response?.id || null);
         noteAssistantOutputItem(session, payloadMsg?.item_id || payloadMsg?.item?.id || payloadMsg?.output_item?.id || null);
@@ -3075,9 +2599,6 @@ function connectXAiRealtime(session: StreamSession) {
 
     if (type === "response.output_audio_transcript.done" || type === "response.audio_transcript.done") {
       const transcript = payloadMsg.transcript || payloadMsg.text || payloadMsg.data || "";
-      if (transcript) {
-        session.lastAssistantTranscript = String(transcript);
-      }
       if (transcript && pool) {
         await pool.query(
           `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
@@ -3088,46 +2609,21 @@ function connectXAiRealtime(session: StreamSession) {
       return;
     }
 
-    if (
-      type === "conversation.item.input_audio_transcription.updated"
-      || type === "conversation.item.input_audio_transcription.completed"
-      || type === "input_audio_transcription.updated"
-      || type === "input_audio_transcription.completed"
-    ) {
+    if (type === "conversation.item.input_audio_transcription.completed" || type === "input_audio_transcription.completed") {
       const transcript = payloadMsg.transcript || payloadMsg.text || "";
       if (transcript && pool) {
-        if (type.endsWith(".completed")) {
-          noteCallerTransferConfirmation(session, String(transcript));
-        }
-        await persistCallerTranscriptSnapshot(session, String(transcript));
+        noteCallerTransferConfirmation(session, String(transcript));
+        await pool.query(
+          `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
+           VALUES ($1, $2, $3, $4, 'message')`,
+          [session.callSid, session.tenantKey, "caller", String(transcript)]
+        );
       }
       return;
     }
 
-    if (type === "input_audio_buffer.speech_stopped") {
-      session.callerTurnTiming = startRealtimeTurnTiming(performance.now());
-      return;
-    }
-
     if (type === "input_audio_buffer.speech_started") {
-      logCallerTranscriptTurnSummary(session, "next_speech_started");
-      session.callerTranscriptTurn = createCallerTranscriptTurnState();
-      session.callerTurnSequence = (session.callerTurnSequence || 0) + 1;
-      session.lastAssistantTranscript = null;
       if (session.transferState?.status === "pending" || session.aiDetached) {
-        logInfo("assistant_barge_in_decision", {
-          callSid: session.callSid,
-          callControlId: session.callControlId,
-          reason: "caller_speech_detected_realtime",
-          decision: "transfer_ignored",
-          clearSent: false,
-          assistantPending: hasPendingAssistantAudio(session),
-          responseId: session.currentResponseId || undefined,
-          queuedFrames: session.outputQueue?.length || 0,
-          bufferedBytes: session.outputBuffer?.length || 0,
-          outputPrimed: Boolean(session.outputPrimed),
-          assistantAudioMsSent: Math.max(0, Number(session.assistantAudioMsSent || 0))
-        });
         return;
       }
       await interruptAssistantForCallerSpeech(session, "caller_speech_detected_realtime");
@@ -3152,7 +2648,7 @@ function connectXAiRealtime(session: StreamSession) {
       const argsText = payloadMsg.arguments || session.pendingToolCall?.argumentsText || "";
       if (!name || !callId) return;
       session.pendingToolCall = null;
-      await queueToolCallEvent(session, String(name), String(callId), String(argsText || ""), "response.function_call_arguments.done");
+      await handleToolCallEvent(session, String(name), String(callId), String(argsText || ""), "response.function_call_arguments.done");
       return;
     }
 
@@ -3165,52 +2661,52 @@ function connectXAiRealtime(session: StreamSession) {
         const callId = String(item?.call_id || item?.id || "");
         const argsText = String(item?.arguments || "");
         if (!name || !callId) return;
-        await queueToolCallEvent(session, name, callId, argsText, "response.output_item.done");
+        await handleToolCallEvent(session, name, callId, argsText, "response.output_item.done");
       }
     }
   });
 
   ws.on("close", () => {
-    logInfo("xai_realtime_session_closed", {
+    logInfo("openai_realtime_session_closed", {
       callSid: session.callSid,
       reconnectAttempted: Boolean(session.reconnectAttempted),
-      XAiReady: Boolean(session.XAiReady),
-      XAiSessionUpdated: Boolean(session.XAiSessionUpdated)
+      openAiReady: Boolean(session.openAiReady),
+      openAiSessionUpdated: Boolean(session.openAiSessionUpdated)
     });
 
     if (session.isShuttingDown || !session.callActive) return;
-    if (session.suppressXAiReconnect || session.aiDetached) return;
+    if (session.suppressOpenAiReconnect || session.aiDetached) return;
 
-    const wasInitialized = Boolean(session.XAiReady && session.XAiSessionUpdated);
+    const wasInitialized = Boolean(session.openAiReady && session.openAiSessionUpdated);
     if (!wasInitialized) {
       void notifyGatewayError(
         session.callSid,
         session.tenantKey,
-        "xai_realtime_session_init_failed",
+        "openai_realtime_session_init_failed",
         "Realtime session closed before initialization completed"
       );
-      void endCallSession(session, "xai_init_failed", true);
+      void endCallSession(session, "openai_init_failed", true);
       return;
     }
 
     if (!session.reconnectAttempted) {
       session.reconnectAttempted = true;
-      logInfo("xai_realtime_reconnect_attempt", { callSid: session.callSid });
-      connectXAiRealtime(session);
+      logInfo("openai_realtime_reconnect_attempt", { callSid: session.callSid });
+      connectOpenAiRealtime(session);
       return;
     }
 
     void notifyGatewayError(
       session.callSid,
       session.tenantKey,
-      "xai_realtime_disconnected",
+      "openai_realtime_disconnected",
       "Realtime session disconnected and reconnect attempt failed"
     );
-    void endCallSession(session, "xai_disconnect_after_retry", true);
+    void endCallSession(session, "openai_disconnect_after_retry", true);
   });
 
   ws.on("error", (err) => {
-    logError("xai_realtime_session_error", {
+    logError("openai_realtime_session_error", {
       callSid: session.callSid,
       message: err instanceof Error ? err.message : "unknown"
     });
@@ -3218,7 +2714,6 @@ function connectXAiRealtime(session: StreamSession) {
 }
 
 app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: "256kb" }), async (req, res) => {
-  const webhookReceivedAtMs = Date.now();
   const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
   logInfo("telnyx_call_control_request", {
     path: req.path,
@@ -3324,16 +2819,10 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
       [callSid, tenantKey, from, to]
     );
 
-    logInfo("telnyx_call_control_answer_requested", {
-      callSid,
-      callControlId,
-      webhookToAnswerRequestMs: Date.now() - webhookReceivedAtMs
-    });
-    const startup = beginInboundCallStartup(
-      () => telnyxCallAction(callControlId, "answer", {}),
-      () => initializeInboundCallSession({ callControlId, callSid, tenantKey, to, from })
-    );
-    const trackedBootstrap = startup.bootstrapPromise.catch(async (err) => {
+    let promptPayload: GatewayPromptPayload;
+    try {
+      promptPayload = await fetchPromptPayload(tenantKey, callSid, to, from);
+    } catch (err) {
       logError("prompt_payload_fetch_failed", {
         callSid,
         tenantKey,
@@ -3354,26 +2843,24 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
         "prompt_payload_fetch_failed",
         true
       );
-      return undefined;
+      return res.status(200).send("ok");
+    }
+
+    await safePrewarmBuildAssets(callSid, tenantKey, promptPayload.knowledge_runtime.active_build_id, "call_initiated");
+    const realtimeLogPath = realtimeDebug || realtimeTrace ? initRealtimeLog(callSid) : undefined;
+    const knowledgeCallState = initializeKnowledgeCallState(promptPayload);
+    await persistKnowledgeCallState(pool, tenantKey, callSid, knowledgeCallState, {
+      source: "call_initiated"
     });
-    inboundSessionBootstraps.set(callControlId, trackedBootstrap);
+    streamSessions.set(callControlId, createStreamSession(callControlId, callSid, tenantKey, promptPayload, knowledgeCallState, realtimeLogPath));
 
     try {
-      await startup.answerPromise;
-      logInfo("telnyx_call_control_answer_accepted", {
-        callSid,
-        callControlId,
-        webhookToAnswerAcceptedMs: Date.now() - webhookReceivedAtMs
-      });
+      await telnyxCallAction(callControlId, "answer", {});
     } catch (err) {
       logError("telnyx_call_control_answer_error", {
         callSid,
         message: err instanceof Error ? err.message : "unknown"
       });
-    }
-    await trackedBootstrap;
-    if (inboundSessionBootstraps.get(callControlId) === trackedBootstrap) {
-      inboundSessionBootstraps.delete(callControlId);
     }
 
     return res.status(200).send("ok");
@@ -3417,14 +2904,7 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
       return res.status(200).send("ok");
     }
 
-    const answeredAt = normalizeOptionalText(payload.data?.occurred_at || payload.occurred_at)
-      || new Date().toISOString();
-    await markCallAnswered(callControlId, answeredAt);
-
     let session = streamSessions.get(callControlId);
-    if (!session) {
-      session = await waitForInboundSessionBootstrap(callControlId, "call_answered");
-    }
     if (!session) {
       const callSid = callControlId;
       logInfo("call_answered_session_recovery_attempt", { callSid, callControlId });
@@ -3445,7 +2925,8 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
     }
 
     if (session) {
-      session.callAnsweredAt = session.callAnsweredAt || answeredAt;
+      session.callAnsweredAt = session.callAnsweredAt || new Date().toISOString();
+      await markCallAnswered(session.callSid);
       const streamUrl = `${toWebSocketUrl(callGatewayBaseUrl || buildBaseUrl(req))}/v1/telnyx/stream`;
       session.telnyxStreamBaseUrl = streamUrl;
       try {
@@ -3583,9 +3064,6 @@ wss.on("connection", (ws, req) => {
       }
       let session = streamSessions.get(callControlId);
       if (!session) {
-        session = await waitForInboundSessionBootstrap(callControlId, "stream_start");
-      }
-      if (!session) {
         logInfo("stream_start_session_recovery_attempt", { callControlId, streamId });
         try {
           session = await recoverSessionForCallControlId(callControlId, "stream_start_recovery");
@@ -3617,7 +3095,7 @@ wss.on("connection", (ws, req) => {
         mediaSampleRate: payload.start?.media_format?.sample_rate,
         mediaChannels: payload.start?.media_format?.channels
       });
-      connectXAiRealtime(session);
+      connectOpenAiRealtime(session);
       return;
     }
 
@@ -3626,14 +3104,14 @@ wss.on("connection", (ws, req) => {
       const encoded = payload.media?.payload;
       const track = String(payload.media?.track || payload.track || "").toLowerCase();
       if (!streamId || !encoded) return;
-      if (!shouldForwardTelnyxInputTrack(track)) return;
+      if (track && !track.includes("inbound")) return;
       const callControlId = streamIdToCall.get(streamId);
       if (!callControlId) return;
       const session = streamSessions.get(callControlId);
-      if (!session?.XAiWs) return;
+      if (!session?.openAiWs) return;
       if (session.transferState?.status === "pending" || session.aiDetached) return;
       const pcm = decodeInboundAudioPayload(encoded);
-      sendXAiEvent(session.XAiWs, {
+      sendOpenAiEvent(session.openAiWs, {
         type: "input_audio_buffer.append",
         audio: pcm.toString("base64")
       });
@@ -3661,9 +3139,7 @@ server.listen(port, () => {
   logInfo("call_gateway_started", {
     port,
     bidirectionalPayloadMode: resolveBidirectionalPayloadMode(),
-    rtpPayloadType,
-    outboundBufferFrames: outboundJitterBufferFrames,
-    outboundBufferMs: outboundJitterBufferFrames * outboundAudioFrameMs
+    rtpPayloadType
   });
   void preloadActiveBuildAssetsOnStartup();
 });

@@ -58,7 +58,7 @@ function status(overrides = {}) {
     users: overrides.users || baseUsers,
     billingState: { ...baseBillingState, ...(overrides.billingState || {}) },
     promptProfile: overrides.promptProfile || {},
-    runtimeProfile: overrides.runtimeProfile || { greeting_text: "Thanks for calling Demo Plumbing.", session_config_json: { voice: "eve" } },
+    runtimeProfile: overrides.runtimeProfile || { greeting_text: "Thanks for calling Demo Plumbing.", session_config_json: { voice: "marin" } },
     uploadedDocuments: overrides.uploadedDocuments || [],
     session: ownerSession,
     activeUser: ownerUser

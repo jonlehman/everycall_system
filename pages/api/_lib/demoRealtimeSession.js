@@ -45,6 +45,7 @@ function buildDemoTenantProfile(bundle = {}) {
     assistant_name: "Sarah",
     business_name: businessName,
     company_description: summary,
+    basic_no_tool_allowed_statement: summary,
     opening_line: `Hi, thanks for calling ${businessName}. This is Sarah. How can I help you?`
   });
 }
@@ -129,7 +130,7 @@ export function buildDemoRealtimeInstructions(bundle = {}) {
     "- Speak in English by default.",
     "- Only switch to another language if the caller clearly starts speaking that language first.",
     "- Do not collect or store sensitive information.",
-    "- Keep responses focused, usually one to three natural conversational sentences.",
+    "- Keep responses short, usually one or two sentences.",
     buildDemoFactPack(bundle)
   ];
 
@@ -170,7 +171,7 @@ There are no live tools in this demonstration.
   return [
     rendered.startupPrompt,
     "# Live Demonstration Rules",
-    "- Keep each response focused, usually one to three natural conversational sentences.",
+    "- Keep each response to one or two short sentences.",
     "- Answer direct questions before continuing and ask only one question at a time.",
     "- Do not collect payment-card data or other sensitive information.",
     "- Speak in English by default and change language only if the caller clearly does so first.",
@@ -179,40 +180,43 @@ There are no live tools in this demonstration.
 }
 
 function resolveDemoRealtimeModel() {
-  return "grok-voice-think-fast-2.0";
+  const configured = normalizeText(process.env.OPENAI_DEMO_REALTIME_MODEL);
+  if (!configured || configured === "gpt-realtime") {
+    return "gpt-realtime-2.1";
+  }
+  return configured;
 }
 
 function resolveDemoTranscriptionModel() {
-  return "grok-transcribe";
+  return normalizeText(process.env.OPENAI_DEMO_TRANSCRIPTION_MODEL || process.env.OPENAI_REALTIME_TRANSCRIPTION_MODEL)
+    || "gpt-4o-mini-transcribe";
 }
 
 export function buildDemoRealtimeSessionPayload(bundle = {}) {
   const model = resolveDemoRealtimeModel();
-  const voice = "ara";
+  const voice = normalizeText(process.env.OPENAI_DEMO_REALTIME_VOICE || process.env.OPENAI_REALTIME_VOICE) || "marin";
   const transcriptionModel = resolveDemoTranscriptionModel();
 
   return {
     session: {
+      type: "realtime",
+      model,
       instructions: buildDemoRealtimeInstructions(bundle),
-      voice,
-      reasoning: { effort: "high" },
-      turn_detection: {
-        type: "server_vad",
-        threshold: 0.9,
-        silence_duration_ms: 200
-      },
       audio: {
         input: {
-          format: { type: "audio/pcm", rate: 24000 },
-          transport: "json",
           transcription: {
             model: transcriptionModel,
-            language_hint: "en"
+            language: "en"
+          },
+          turn_detection: {
+            type: "semantic_vad",
+            eagerness: "high",
+            create_response: true,
+            interrupt_response: true
           }
         },
         output: {
-          format: { type: "audio/pcm", rate: 24000 },
-          transport: "json"
+          voice
         }
       }
     },

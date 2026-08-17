@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD)
 
 ## Summary
-EveryCall is a multi-tenant voice receptionist platform for service businesses. It answers inbound calls, collects key details, and routes the next step through follow-up workflows or tenant-configured blind transfers. The product is centered on a thin, realtime gateway that executes an EveryCall system prompt plus tenant-specific greeting and compiled knowledge content. Conversational logic lives in the EveryCall system; the gateway handles call control, tool execution, data persistence, and logging. The current production path uses Telnyx + xAI Grok Realtime in `call-gateway`, with a Next.js admin/client portal.
+EveryCall is a multi-tenant voice receptionist platform for service businesses. It answers inbound calls, collects key details, and routes the next step through follow-up workflows or tenant-configured blind transfers. The product is centered on a thin, realtime gateway that executes an EveryCall system prompt plus tenant-specific greeting and compiled knowledge content. Conversational logic lives in the EveryCall system; the gateway handles call control, tool execution, data persistence, and logging. The current production path uses Telnyx + OpenAI Realtime in `call-gateway`, with a Next.js admin/client portal.
 
 ## Users
 - Callers: want fast, empathetic intake and clear next steps.
@@ -25,7 +25,7 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 
 ## Scope (Current)
 - Inbound calls only
-- Realtime voice via xAI
+- Realtime voice via OpenAI
 - EveryCall system prompt + tenant greeting + tenant knowledge payload (sent at session start)
 - Knowledge-backed answers via tool calls when needed
 - Structured data capture via tool calls (no transcript scraping)
@@ -55,13 +55,14 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 - Tenant greeting + tenant knowledge payload are injected at session start and are the only tenant-specific logic.
 - If a question is not covered by approved knowledge or general knowledge, the assistant must say it does not know and offer a callback.
 
-## Realtime Session Settings
-- Model: `grok-voice-think-fast-2.0`, pinned by each realtime entry point.
-- Voice: `ara`
-- Realtime endpoint: `wss://api.x.ai/v1/realtime`.
-- Turn detection: xAI-native `server_vad` with a `0.9` activation threshold and a 200 ms silence endpoint. The higher threshold reduces speakerphone echo triggers while preserving caller barge-in; the shorter endpoint reduces the pause after the caller finishes.
-- Transcription model: `grok-transcribe`
-- Reasoning effort: `high` to prioritize conversation continuity, instruction following, and tool judgment; production canaries must track the latency impact.
+## Realtime Session Settings (Stored in Admin, Not Hardcoded)
+- Model: `gpt-realtime-2.1`, supplied to the gateway as `session_config.model` by the admin/runtime profile.
+- Voice: `marin`
+- Realtime API shape: the gateway auto-selects the Realtime 2 nested session schema from the supplied model. `OPENAI_REALTIME_API_SHAPE` overrides shape only; rollback requires a deliberate runtime-profile model pin as well as the legacy shape override.
+- Turn detection: `semantic_vad`. Eagerness `high`. Automatic response and interruption enabled.
+- Transcription model: `gpt-4o-mini-transcribe`
+- Noise reduction: `far_field`
+- Max output tokens: `4096`
 - Tools: enabled for knowledge lookup and data capture; tool definitions are provided by EveryCall.
 
 ## Tooling & Data Capture

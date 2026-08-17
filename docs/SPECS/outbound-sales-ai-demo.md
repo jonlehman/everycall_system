@@ -27,11 +27,11 @@ The warm queue contains the current prospect plus the next 10 eligible records. 
 ## Call Lifecycle
 
 1. The console creates a `sales_call_sessions` row and asks the Telnyx browser SDK to call the displayed prospect number.
-2. A dedicated Telnyx Credential Connection and WebSocket credential park that operator leg rather than dialing the prospect itself.
+2. A dedicated Telnyx Credential Connection and WebRTC credential park that operator leg rather than dialing the prospect itself.
 3. The sales gateway verifies the signature, sales connection, parked state, current prospect eligibility, and ready demo.
-4. The gateway creates a conference anchored to the operator, then concurrently dials the prospect and a private xAI SIP standby.
-5. The xAI webhook is signature-verified and nonce-correlated to the call. The gateway accepts the Realtime call with the prepared prompt and opens its server monitor while automatic responses remain disabled.
-6. `AI Ready` requires the accepted xAI session and the Telnyx AI leg to be connected. The AI remains outside the human conference.
+4. The gateway creates a conference anchored to the operator, then concurrently dials the prospect and a private OpenAI SIP standby.
+5. The OpenAI webhook is signature-verified and nonce-correlated to the call. The gateway accepts the Realtime call with the prepared prompt and opens its server monitor while automatic responses remain disabled.
+6. `AI Ready` requires the accepted OpenAI session and the Telnyx AI leg to be connected. The AI remains outside the human conference.
 7. `Start Demo` joins that existing leg, confirms the participant, enables responses, and says exactly: `Thanks for calling [business name]. How can I help you?`
 8. `Pause AI` cancels the current response and clears provider output audio. `End Demo` removes and hangs up only the AI leg. `End Call` tears down all remaining provider resources.
 
@@ -52,6 +52,6 @@ Recording an outcome advances the queue and creates a durable follow-up job. Sma
 - Vercel hosts the console, admin APIs, maintenance cron, and signup handoff.
 - The maintenance cron is inert unless `SALES_OUTBOUND_ENABLED=true`, so code can deploy before the migration and provider canary without starting background work.
 - Render hosts one isolated `everycall-sales-call-gateway` instance.
-- Telnyx uses a dedicated sales Call Control Application plus a separate parked-operator Credential Connection; Telnyx and xAI use only dedicated `SALES_*` credentials.
-- Live provider readiness requires a controlled canary after secrets, webhook URLs, and the parked WebSocket credential are configured.
+- Telnyx uses a dedicated sales Call Control Application plus a separate parked-operator Credential Connection; Telnyx and OpenAI use only dedicated `SALES_*` credentials.
+- Live provider readiness requires a controlled canary after secrets, webhook URLs, and the parked WebRTC credential are configured.
 - Trial duration is outside this feature and continues to use the existing product setting.

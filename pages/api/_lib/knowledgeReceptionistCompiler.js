@@ -1,15 +1,9 @@
 import crypto from "node:crypto";
 import { z } from "zod";
 import { callOpenAiJsonModel, embedOpenAiTexts } from "@everycall/contracts";
-import { loadCoreFactCompanyDescription, selectColdStartCoreFacts } from "./knowledgeCoreFacts.js";
 
 function normalizeText(value) {
   return String(value || "").trim();
-}
-
-function normalizeCoreFactImportance(value) {
-  const score = Number(value);
-  return Number.isFinite(score) ? Math.max(0, Math.min(100, Math.round(score))) : 0;
 }
 
 const BUILD_PROGRESS_LOG_ENABLED = ["1", "true", "yes", "on"].includes(String(process.env.KNOWLEDGE_BUILD_PROGRESS_LOG || "").trim().toLowerCase());
@@ -239,12 +233,7 @@ function normalizeArtifactFact(value, index = 0) {
     qualifiers: normalizeStringList(item.qualifiers || item.qualifier_notes || item.conditions),
     boundary_notes: normalizeStringList(item.boundary_notes || item.boundaries || item.limits || item.exclusions),
     next_steps: normalizeStringList(item.next_steps || item.process_steps || item.follow_up || item.actions),
-    source_chunk_ids: normalizeStringList(item.source_chunk_ids || item.chunk_ids || item.source_chunk_indices || item.chunk_indices || item.chunks),
-    core_fact_importance_score: normalizeCoreFactImportance(item.core_fact_importance_score),
-    core_fact_stable_for_months: item.core_fact_stable_for_months === true,
-    core_fact_title: normalizeText(item.core_fact_title),
-    core_fact_spoken_text: normalizeText(item.core_fact_spoken_text),
-    core_fact_reason: normalizeText(item.core_fact_reason)
+    source_chunk_ids: normalizeStringList(item.source_chunk_ids || item.chunk_ids || item.source_chunk_indices || item.chunk_indices || item.chunks)
   };
 }
 
@@ -378,12 +367,7 @@ const SOURCE_ARTIFACT_SCHEMA = z.object({
     qualifiers: z.array(z.string().min(1)).default([]),
     boundary_notes: z.array(z.string().min(1)).default([]),
     next_steps: z.array(z.string().min(1)).default([]),
-    source_chunk_ids: z.array(z.string().min(1)).default([]),
-    core_fact_importance_score: z.number().int().min(0).max(100).default(0),
-    core_fact_stable_for_months: z.boolean().default(false),
-    core_fact_title: z.string().default(""),
-    core_fact_spoken_text: z.string().default(""),
-    core_fact_reason: z.string().default("")
+    source_chunk_ids: z.array(z.string().min(1)).default([])
   })).max(48).default([])
 });
 
@@ -853,19 +837,6 @@ function buildArtifactExtractionSystemPrompt() {
     "If source.page_type is quote_form or contact_form, keep cards and facts limited to that source's request workflow, contact methods, and consent/compliance details. Do not emit company-overview, ownership, or team cards from those sources.",
     "Cards are retrieval-oriented answerable units, not whole-page summaries.",
     "Facts preserve richer detail such as applicability, exclusions, limits, scope, process, next steps, and ambiguity.",
-    "As you create each fact, independently rate how important it is for the receptionist's small 'known by heart' set.",
-    "Use core_fact_importance_score 90-100 only for universal, frequently asked, stable business facts that callers should hear without lookup; 70-89 for common stable facts; 40-69 for useful lookup-only detail; and 0-39 for facts that should not be pinned.",
-    "Set core_fact_stable_for_months false and score 0 for dated or upcoming events, current availability, promotions or free offers, exact project-price ranges, temporary staffing, changing schedules, or any claim likely to change within six months.",
-    "Event operations are lookup-only even without a printed date: games, seasons, rosters, voting, open gyms, championships, event venues, event eligibility, and participant lists can change and must score 0.",
-    "Website contact forms, prompts to send a message, and web-only submission instructions score 0 because a caller is already on the phone.",
-    "A business address or office location is by-heart material only when the fact itself contains a complete speakable address, including enough city and state context for a caller to use it. Score partial street-only addresses 0.",
-    "Score third-party rebates, incentive programs, utility-program qualifications, building-code requirements, regulatory guidance, and generic technical or how-to advice 0. They are lookup-only even when they are useful content.",
-    "Score 0 for questions, page headings, bylines, privacy or website-administration copy, marketing fragments, generic advice, incomplete prose, and anything conflicting with the approved company description.",
-    "Treat headline-style prefixes, calls to action, second-person sales language, and broad claims about innovation, success, results, ROI, or being tailored as marketing unless the sentence contains a concrete operational fact callers commonly ask for.",
-    "Treat manufacturer or product claims centered on broad benefits such as beauty, performance, flexibility, efficiency, quality, or durability as marketing unless the same fact provides a concrete product type, specification, or option that answers a common caller question.",
-    "The approved company description is authoritative. If it says the company is based in one city, score a different headquarters or base location 0 even when the cities are nearby or in the same metro area.",
-    "For every fact marked core_fact_stable_for_months, provide a short caller-language core_fact_title and one clean atomic core_fact_spoken_text so the later AI editor can judge it. You may delete promotional adjectives, broad benefit clauses, and unrelated trailing material, but keep every remaining word in its original order.",
-    "Never add, substitute, infer, broaden, combine, or contradict in core_fact_spoken_text. Never delete a number, negation, limit, exception, or modal qualifier such as can, may, or must. For unstable facts, return empty strings for the title and spoken text.",
     "Do not invent details not present in the source chunks.",
     "If the source is ambiguous, preserve the ambiguity explicitly in facts.",
     "If a source contains business-relevant information, emit at least 1 card and at least 3 facts for that source item.",
@@ -873,9 +844,8 @@ function buildArtifactExtractionSystemPrompt() {
   ].join("\n");
 }
 
-function buildArtifactExtractionUserPrompt(batchItems, topicInventory, companyDescription = "") {
+function buildArtifactExtractionUserPrompt(batchItems, topicInventory) {
   return JSON.stringify({
-    approved_company_description: normalizeText(companyDescription),
     topic_inventory: topicInventory,
     allowed_fact_roles: [
       "overview",
@@ -1026,12 +996,7 @@ function buildSourceArtifactBatchJsonSchema(allowedSourceRefIds) {
             qualifiers: stringArraySchema(12),
             boundary_notes: stringArraySchema(12),
             next_steps: stringArraySchema(12),
-            source_chunk_ids: stringArraySchema(24),
-            core_fact_importance_score: { type: "integer", minimum: 0, maximum: 100 },
-            core_fact_stable_for_months: { type: "boolean" },
-            core_fact_title: { type: "string", maxLength: 80 },
-            core_fact_spoken_text: { type: "string", maxLength: 320 },
-            core_fact_reason: { type: "string", maxLength: 180 }
+            source_chunk_ids: stringArraySchema(24)
           })
         }
       })
@@ -2328,7 +2293,7 @@ async function runTopicInventoryStage(db, buildInfo, sourceRecords, sourceSummar
   return { topicInventory, topicRows };
 }
 
-async function runSourceArtifactStage(db, buildInfo, sourceRecords, topicRows, warnings, buildModel, companyDescription = "") {
+async function runSourceArtifactStage(db, buildInfo, sourceRecords, topicRows, warnings, buildModel) {
   const existing = await loadExistingSourceArtifacts(db, buildInfo);
   const pendingRecords = sourceRecords.filter((record) => !isUsableStatus(existing.get(record.sourceRefId)?.status));
   const topicInventoryPrompt = topicInventoryToPromptShape(topicRows);
@@ -2372,7 +2337,7 @@ async function runSourceArtifactStage(db, buildInfo, sourceRecords, topicRows, w
       const result = await callOpenAiJsonModel({
         model: buildModel,
         system: buildArtifactExtractionSystemPrompt(),
-        user: buildArtifactExtractionUserPrompt(batch.map((item) => item.promptItem), topicInventoryPrompt, companyDescription),
+        user: buildArtifactExtractionUserPrompt(batch.map((item) => item.promptItem), topicInventoryPrompt),
         schema: NORMALIZED_SOURCE_ARTIFACT_BATCH_SCHEMA,
         jsonSchemaName: "knowledge_build_source_artifact_batch",
         jsonSchema: buildSourceArtifactBatchJsonSchema(itemIds),
@@ -2494,13 +2459,6 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
         evidence_text: fact.claim_text,
         fact_role: normalizeText(fact.fact_role) || "detail",
         support_type: normalizeText(fact.support_type) || "source_backed",
-        core_fact_creation_rating: {
-          importance_score: normalizeCoreFactImportance(fact.core_fact_importance_score),
-          stable_for_months: fact.core_fact_stable_for_months === true,
-          title: normalizeText(fact.core_fact_title),
-          spoken_text: normalizeText(fact.core_fact_spoken_text),
-          reason: normalizeText(fact.core_fact_reason)
-        },
         source_span_refs_json: [],
         source_chunk_ids_json: [],
         qualifier_json: { statements: uniqueValues(fact.qualifiers || []) },
@@ -2524,17 +2482,6 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
       current.boundary_json = {
         statements: uniqueValues([...(current.boundary_json?.statements || []), ...(fact.boundary_notes || [])])
       };
-      const incomingImportance = normalizeCoreFactImportance(fact.core_fact_importance_score);
-      const currentImportance = normalizeCoreFactImportance(current.core_fact_creation_rating?.importance_score);
-      if (incomingImportance > currentImportance) {
-        current.core_fact_creation_rating = {
-          importance_score: incomingImportance,
-          stable_for_months: fact.core_fact_stable_for_months === true,
-          title: normalizeText(fact.core_fact_title),
-          spoken_text: normalizeText(fact.core_fact_spoken_text),
-          reason: normalizeText(fact.core_fact_reason)
-        };
-      }
       current.support_metadata_json = {
         ...(current.support_metadata_json || {}),
         next_steps: uniqueValues([...(current.support_metadata_json?.next_steps || []), ...(fact.next_steps || [])]),
@@ -2685,11 +2632,7 @@ async function embedArtifacts(cards, facts, buildInfo) {
 export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
   const buildModel = process.env.OPENAI_KNOWLEDGE_BUILD_MODEL || "gpt-4.1";
   const warnings = [];
-  const [sourceCompileRecords, companyDescription] = await Promise.all([
-    loadSourceCompileRecords(db, buildInfo),
-    loadCoreFactCompanyDescription(db, buildInfo.tenant_key)
-  ]);
-  const sourceRecords = selectSourceCompileRecords(sourceCompileRecords, warnings);
+  const sourceRecords = selectSourceCompileRecords(await loadSourceCompileRecords(db, buildInfo), warnings);
   const sourceChunks = sourceRecords.flatMap((record) => record.sourceChunks);
   logCompilerProgress("compiler_started", {
     buildId: buildInfo.build_id,
@@ -2709,15 +2652,7 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
     subtopicCount: topicRows.subtopics.length
   });
 
-  const sourceArtifactRows = await runSourceArtifactStage(
-    db,
-    buildInfo,
-    sourceRecords,
-    topicRows,
-    warnings,
-    buildModel,
-    companyDescription
-  );
+  const sourceArtifactRows = await runSourceArtifactStage(db, buildInfo, sourceRecords, topicRows, warnings, buildModel);
   const artifactMap = new Map(sourceArtifactRows.map((row) => [row.source_ref_id, row]));
   const extractedBySource = sourceRecords.map((record) => {
     const stored = artifactMap.get(record.sourceRefId);
@@ -2754,27 +2689,7 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
       fact_count: consolidated.facts.length
     })
   });
-  const coreFactSelection = await selectColdStartCoreFacts({
-    facts: consolidated.facts,
-    companyDescription,
-    model: process.env.OPENAI_CORE_FACTS_MODEL || process.env.OPENAI_KNOWLEDGE_BUILD_MODEL || "gpt-4.1"
-  });
-  warnings.push(...coreFactSelection.warnings);
-  logCompilerProgress("core_fact_selection_completed", {
-    pinnedFactCount: coreFactSelection.pins.length,
-    tokenCount: coreFactSelection.tokenCount,
-    selectorVersion: coreFactSelection.selectorVersion,
-    usedFallback: coreFactSelection.usedFallback
-  });
-  await updateBuildCheckpoint(db, buildInfo.build_id, {
-    core_fact_selection_stage: stageCheckpoint("core_fact_selection", {
-      pinned_fact_count: coreFactSelection.pins.length,
-      token_count: coreFactSelection.tokenCount,
-      selector_version: coreFactSelection.selectorVersion,
-      used_fallback: coreFactSelection.usedFallback
-    })
-  });
-  const embedded = await embedArtifacts(consolidated.cards, coreFactSelection.facts, buildInfo);
+  const embedded = await embedArtifacts(consolidated.cards, consolidated.facts, buildInfo);
   logCompilerProgress("artifact_embeddings_completed", {
     cardVectorCount: embedded.cardVectors.length,
     factVectorCount: embedded.factVectors.length,
@@ -2793,7 +2708,7 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
     topics: topicRows.topics,
     subtopics: topicRows.subtopics,
     cards: consolidated.cards,
-    facts: coreFactSelection.facts,
+    facts: consolidated.facts,
     cardVectors: embedded.cardVectors,
     factVectors: embedded.factVectors,
     topicInventorySummary: {

@@ -15,7 +15,7 @@
 - [Realtime Gateway Prompt Contract](/home/jonle/everycall/docs/SPECS/realtime-gateway-prompt-contract.md)
 - [Knowledge System V1](/home/jonle/everycall/docs/SPECS/knowledge-system-v1.md)
 - [Voice Sample API](/home/jonle/everycall/pages/api/v1/voice/sample.js)
-- xAI Grok Realtime and ephemeral-token guides: https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech and https://docs.x.ai/developers/model-capabilities/audio/ephemeral-tokens
+- OpenAI Realtime WebRTC guide: https://developers.openai.com/api/docs/guides/realtime-webrtc
 
 ## Summary
 EveryCall should offer a public live demo on `everycall.io` where a visitor:
@@ -80,7 +80,7 @@ The demo may reuse or extract safe read-only logic, such as:
 
 - URL normalization
 - website fetch hardening patterns
-- xAI Grok Realtime session configuration defaults
+- OpenAI Realtime session configuration defaults
 - content extraction helpers where they do not require tenant/build context
 
 Any reuse should happen through demo-specific wrappers or extracted pure helpers, not by calling tenant workflows.
@@ -89,7 +89,7 @@ Any reuse should happen through demo-specific wrappers or extracted pure helpers
 
 ### Frontend
 - public page on `everycall.io`
-- browser-based voice conversation using xAI Grok Realtime over WebSocket
+- browser-based voice conversation using OpenAI Realtime over WebRTC
 - microphone input from the visitor
 - remote audio played in the page
 - data channel used for live transcript and state updates
@@ -137,7 +137,7 @@ Visitor clicks:
 Browser:
 - requests mic permission
 - requests ephemeral Realtime session token from backend
-- establishes WebSocket session to xAI
+- establishes WebRTC session to OpenAI
 - streams live conversation in page
 
 Page shows:
@@ -256,7 +256,7 @@ This is faster and simpler than running the full layered knowledge-build compile
 ## Realtime Demo Runtime
 
 ### Transport
-Use browser-to-xAI WebSocket for the live demo.
+Use browser-to-OpenAI WebRTC for the live demo.
 
 Why:
 - no phone number needed
@@ -274,10 +274,10 @@ Backend should:
 ### Frontend Responsibility
 Frontend should:
 - request microphone access
-- open `session.websocketUrl` with `[session.websocketProtocol]`
-- send the returned `session.update` event once the socket opens
-- capture, resample, and encode microphone audio as 24 kHz PCM16
-- send audio through `input_audio_buffer.append` and play decoded response audio deltas
+- create `RTCPeerConnection`
+- add local audio track
+- open data channel
+- connect using backend-provided token/session handshake
 - render transcript and state changes
 
 ### Session Limits
@@ -376,14 +376,7 @@ Response:
   "ok": true,
   "demoSessionId": "demo_123",
   "session": {
-    "clientSecret": "...",
-    "expiresAt": 1780000000,
-    "websocketUrl": "wss://api.x.ai/v1/realtime?model=grok-voice-think-fast-2.0",
-    "websocketProtocol": "xai-client-secret....",
-    "update": {
-      "type": "session.update",
-      "session": {}
-    }
+    "clientSecret": "..."
   }
 }
 ```
@@ -535,7 +528,7 @@ The real tenant onboarding should still perform its own real website build.
 - return ready/failed state
 
 ### Phase 2: Browser Voice Demo
-- add WebSocket frontend
+- add WebRTC frontend
 - add ephemeral Realtime token endpoint
 - add transcript + session states
 - add session timeout / end controls
@@ -560,7 +553,7 @@ For v1, ship this exact slice:
 - public page with URL field
 - scrape max 5 pages
 - generate compact demo bundle
-- live browser voice demo via WebSocket
+- live browser voice demo via WebRTC
 - no phone number
 - no tools
 - no tenant creation

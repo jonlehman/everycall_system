@@ -24,18 +24,6 @@ The user-facing product should not expose raw `knowledge_facts` by default.
 5. User feedback is preserved as events before it changes artifacts.
 6. Raw facts should not be silently rewritten by AI.
 
-## Automatic Core-Fact Pins
-
-- `knowledge_build_facts` remains the only source of truth. A system-managed pin flag and spoken paraphrase metadata identify the stable facts placed directly in the receptionist prompt; no separate tenant-managed fact store exists.
-- Every fact, pinned or not, remains in the vector index. A lookup for a pinned subject therefore returns the same canonical fact row.
-- At ingestion, AI assigns every created fact a calibrated 0–100 importance score for the receptionist's by-heart set, a stability judgment, and a conservative `Title: speakable sentence` form. Every AI-rated stable fact with a safe complete line reaches a second AI editorial pass; numeric scores are context for that editor, not a code cutoff or ordering rule. A dedicated AI pass reduces each finalist to one neutral atomic spoken fact, deterministic deletion-only checks validate that rewrite, and an independent AI audit then approves or rejects each exact rendered title-and-sentence line while separately classifying whether any marketing language remains. Deterministic code does not select or rank relevance; it only rejects known instruction or marketing leakage and enforces tenant isolation, schema and semantic safety, retrieval eligibility, hysteresis, a 600-token prompt budget, and a 20-fact ceiling.
-- Existing builds receive the same AI rating, editorial review, and independent audit during controlled backfill. Any incomplete AI stage fails closed rather than substituting deterministic relevance scoring.
-- The canonical fact remains unchanged for embedding and lookup. Its prompt-only spoken form may reduce the source to one atomic fact only by deleting one narrowly allowlisted trailing promotional clause introduced by a comma. Isolated words and embedded or restrictive phrases are never treated as universally promotional; every other omission is unsafe by default. The remaining prefix must be textually unchanged, and every number, negation, limit, exception, and modal qualifier must remain. The rewrite may never add, substitute, or reorder content.
-- A finalist with an individually unsafe rewrite is dropped before the independent audit; other safely rewritten finalists may continue. A missing, incomplete, or failed rewrite response fails the complete selection closed.
-- Refinement runs in batches, not per call. Retrieval logs establish candidate eligibility but do not rank facts. AI reviews every eligible candidate with every incumbent, returns the complete ordered set, and can replace at most three pins per cycle.
-- The internal admin shows the current active-build pins and an append-only pin change log. Tenants do not manage pins in v1.
-- If an active build has no pins, the prompt omits the entire by-heart section and every reference to it.
-
 ## Artifact Layers
 
 ### 1. Authoring Layer

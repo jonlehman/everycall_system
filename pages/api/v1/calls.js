@@ -283,7 +283,7 @@ export default async function handler(req, res) {
         { label: "Requested Date", getValue: (row) => row.requested_date },
         { label: "Requested Time", getValue: (row) => row.requested_time },
         { label: "Client Notes", getValue: (row) => row.state_json?.client_notes || "" },
-        { label: "Transcript Combined", getValue: (row) => sanitizeTranscriptText(row.transcript_combined || "") },
+        { label: "Transcript Combined", getValue: (row) => row.transcript_combined },
         { label: "Routing JSON", getValue: (row) => row.routing_json },
         { label: "State JSON", getValue: (row) => row.state_json }
       ];
@@ -312,12 +312,7 @@ export default async function handler(req, res) {
          LIMIT 1`,
         [tenantKey, String(callSid)]
       );
-      const call = detail.rows[0] || null;
-      if (call) {
-        call.transcript = sanitizeTranscriptText(call.transcript || "");
-        call.transcript_combined = sanitizeTranscriptText(call.transcript_combined || call.transcript || "");
-      }
-      return res.status(200).json({ call });
+      return res.status(200).json({ call: detail.rows[0] || null });
     }
 
     if (req.method === "POST") {
@@ -575,7 +570,7 @@ export default async function handler(req, res) {
 
         let updated = 0;
         for (const row of missing.rows) {
-          const transcript = sanitizeTranscriptText(row.transcript_combined || row.transcript || "");
+          const transcript = row.transcript_combined || row.transcript || "";
           const generated = await generateSummaryFromTranscript(transcript);
           if (!generated) continue;
           await pool.query(

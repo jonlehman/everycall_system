@@ -1,16 +1,12 @@
-import type { ToolResponseMetadata } from "./toolResponseTiming.js";
-
-export type AssistantResponseRequest = {
+type AssistantResponseRequest = {
   reason: string;
   response: Record<string, unknown>;
   dedupeKey?: string | null | undefined;
-  toolResponse?: ToolResponseMetadata | null | undefined;
 };
 
 type ToolResponseAwareSession = {
   currentResponseId?: string | null;
   responseCreatePending?: boolean;
-  activeAssistantResponseDedupeKey?: string | null;
   queuedAssistantResponses?: AssistantResponseRequest[];
   executingToolCallKeys?: Set<string>;
   completedToolCallKeys?: Set<string>;
@@ -49,12 +45,8 @@ export function hasActiveAssistantResponse(session: ToolResponseAwareSession) {
   return Boolean(session.responseCreatePending || normalizeText(session.currentResponseId));
 }
 
-export function markAssistantResponseRequested(
-  session: ToolResponseAwareSession,
-  request?: AssistantResponseRequest | null
-) {
+export function markAssistantResponseRequested(session: ToolResponseAwareSession) {
   session.responseCreatePending = true;
-  session.activeAssistantResponseDedupeKey = normalizeText(request?.dedupeKey) || null;
 }
 
 export function markAssistantResponseCreated(session: ToolResponseAwareSession, responseId?: string | null) {
@@ -65,7 +57,6 @@ export function markAssistantResponseCreated(session: ToolResponseAwareSession, 
 export function markAssistantResponseFinished(session: ToolResponseAwareSession) {
   session.responseCreatePending = false;
   session.currentResponseId = null;
-  session.activeAssistantResponseDedupeKey = null;
 }
 
 export function enqueueAssistantResponseRequest(
@@ -75,9 +66,6 @@ export function enqueueAssistantResponseRequest(
   const queue = ensureQueue(session);
   const dedupeKey = normalizeText(request.dedupeKey);
   if (dedupeKey) {
-    if (normalizeText(session.activeAssistantResponseDedupeKey) === dedupeKey) {
-      return { action: "duplicate_active" as const, queueDepth: queue.length };
-    }
     const duplicateQueued = queue.some((entry) => normalizeText(entry.dedupeKey) === dedupeKey);
     if (duplicateQueued) {
       return { action: "duplicate_queued" as const, queueDepth: queue.length };
@@ -88,23 +76,20 @@ export function enqueueAssistantResponseRequest(
     queue.push({
       reason: normalizeText(request.reason) || "queued_response",
       response: request.response || {},
-      dedupeKey: dedupeKey || null,
-      toolResponse: request.toolResponse || null
+      dedupeKey: dedupeKey || null
     });
     return { action: "queued" as const, queueDepth: queue.length };
   }
 
-  const normalizedRequest = {
-    reason: normalizeText(request.reason) || "response",
-    response: request.response || {},
-    dedupeKey: dedupeKey || null,
-    toolResponse: request.toolResponse || null
-  };
-  markAssistantResponseRequested(session, normalizedRequest);
+  markAssistantResponseRequested(session);
   return {
     action: "send_now" as const,
     queueDepth: queue.length,
-    request: normalizedRequest
+    request: {
+      reason: normalizeText(request.reason) || "response",
+      response: request.response || {},
+      dedupeKey: dedupeKey || null
+    }
   };
 }
 
@@ -115,14 +100,8 @@ export function dequeueAssistantResponseRequest(session: ToolResponseAwareSessio
   const queue = ensureQueue(session);
   const next = queue.shift();
   if (!next) return null;
-  markAssistantResponseRequested(session, next);
+  markAssistantResponseRequested(session);
   return next;
-}
-
-export function discardQueuedAssistantResponses(session: ToolResponseAwareSession) {
-  const queue = ensureQueue(session);
-  const discarded = queue.splice(0, queue.length);
-  return discarded;
 }
 
 export function beginToolExecution(session: ToolResponseAwareSession, name: string, callId: string) {

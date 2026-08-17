@@ -1,6 +1,5 @@
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { requireSession } from "../../_lib/auth.js";
-import { sanitizeTranscriptText } from "@everycall/contracts/callTranscript";
 
 const DEFAULT_LIMIT = 30;
 
@@ -24,19 +23,14 @@ export default async function handler(req, res) {
     if (callSid) {
       const detail = await pool.query(
         `SELECT c.call_sid, c.status, c.from_number, c.to_number, c.summary, c.urgency, c.disposition, c.created_at,
-                d.transcript, d.transcript_combined, d.extracted_json, d.routing_json
+                d.transcript, d.extracted_json, d.routing_json
          FROM calls c
          LEFT JOIN call_details d ON d.call_sid = c.call_sid
          WHERE c.tenant_key = $1 AND c.call_sid = $2
          LIMIT 1`,
         [tenantKey, String(callSid)]
       );
-      const callDetail = detail.rows[0] || null;
-      if (callDetail) {
-        callDetail.transcript = sanitizeTranscriptText(callDetail.transcript_combined || callDetail.transcript || "");
-        delete callDetail.transcript_combined;
-      }
-      return res.status(200).json({ configured: true, detail: callDetail });
+      return res.status(200).json({ configured: true, detail: detail.rows[0] || null });
     }
 
     const limit = Math.max(1, Math.min(Number(req.query?.limit) || DEFAULT_LIMIT, 100));

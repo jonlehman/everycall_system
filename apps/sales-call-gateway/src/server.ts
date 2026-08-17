@@ -3,7 +3,7 @@ import pg from "pg";
 import { logError, logInfo } from "@everycall/observability";
 import { createSalesCallGateway } from "./gateway.js";
 import { createPostgresSalesGatewayRepository } from "./repository.js";
-import { createSalesXAIRealtimeClient } from "./salesXAIRealtime.js";
+import { createSalesOpenAIRealtimeClient } from "./salesOpenAIRealtime.js";
 import { createSalesTelnyxClient } from "./salesTelnyxClient.js";
 
 function requiredEnv(name: string): string {
@@ -27,9 +27,9 @@ const telnyxOperatorConnectionId = requiredEnv(
   "SALES_TELNYX_OPERATOR_CONNECTION_ID"
 );
 requiredEnv("SALES_TELNYX_CALLER_ID");
-requiredEnv("SALES_XAI_API_KEY");
-requiredEnv("SALES_XAI_PHONE_NUMBER");
-const xaiWebhookSecret = requiredEnv("SALES_XAI_WEBHOOK_SECRET");
+requiredEnv("SALES_OPENAI_API_KEY");
+requiredEnv("SALES_OPENAI_PROJECT_ID");
+const openaiWebhookSecret = requiredEnv("SALES_OPENAI_WEBHOOK_SECRET");
 const port = Math.max(1, Math.min(65_535, Number(process.env.PORT) || 3102));
 
 const pool = new pg.Pool({
@@ -38,17 +38,17 @@ const pool = new pg.Pool({
 });
 const repository = createPostgresSalesGatewayRepository(pool);
 const telnyx = createSalesTelnyxClient();
-const xai = createSalesXAIRealtimeClient();
+const openai = createSalesOpenAIRealtimeClient();
 const gateway = createSalesCallGateway({
   repository,
   telnyx,
-  xai,
+  openai,
   internalAuthEnv: { INTERNAL_SERVICE_SECRET: internalServiceSecret },
   telnyxPublicKey,
   telnyxOperatorConnectionId,
-  xaiWebhookSecret,
+  openaiWebhookSecret,
   requireTelnyxSignature: booleanEnv("SALES_TELNYX_SIGNATURE_REQUIRED", true),
-  requireXAISignature: booleanEnv("SALES_XAI_SIGNATURE_REQUIRED", true),
+  requireOpenAISignature: booleanEnv("SALES_OPENAI_SIGNATURE_REQUIRED", true),
   aiDemoMaxSeconds: Number(process.env.SALES_AI_DEMO_MAX_SECONDS) || 600,
   logger: {
     info: (event, fields = {}) => logInfo(event, fields as any),

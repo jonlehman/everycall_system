@@ -3,11 +3,11 @@
 ## Goal
 Build a white-labeled, multi-tenant voice platform for service businesses using:
 - Telnyx for telephony ingress/egress
-- xAI Grok Realtime for conversational audio responses
+- OpenAI Realtime for conversational audio responses
 
 ## Core Services
 - `call-gateway`: receives Telnyx webhooks, validates signatures, resolves tenant by called number.
-- `sales-call-gateway`: isolated, single-instance outbound-sales conference controller for parked browser operator legs, prospect legs, and xAI SIP standby legs.
+- `sales-call-gateway`: isolated, single-instance outbound-sales conference controller for parked browser operator legs, prospect legs, and OpenAI SIP standby legs.
 - `api-gateway`: tenant/admin APIs, auth/RBAC, portal backend surface.
 - `worker`: async side effects (retries, notifications, post-call tasks).
 - `db`: system-of-record for tenants, contacts, calls, leads, and compiled tenant knowledge.
@@ -17,7 +17,7 @@ Build a white-labeled, multi-tenant voice platform for service businesses using:
 2. `call-gateway` verifies signature and resolves tenant.
 3. `call-gateway` creates/updates call session and emits `call.inbound.received`.
 4. `call-gateway` receives EveryCall prompt payload (system prompt, tenant greeting, tenant knowledge, field schema, tool definitions, session config).
-5. xAI Grok Realtime generates responses inside `call-gateway` using the provided instructions.
+5. OpenAI Realtime generates responses inside `call-gateway` using the provided instructions.
 6. `call-gateway` plays audio to caller, handles tool calls, and persists timeline events.
 7. `worker` performs post-call tasks as needed.
 
@@ -36,8 +36,8 @@ Build a white-labeled, multi-tenant voice platform for service businesses using:
 ## Outbound Sales Isolation
 - The sales console and its tables are admin-only and separate from tenants, production calls, and public-demo sessions.
 - A dedicated Telnyx sales connection and credential park the browser operator leg before the sales gateway creates a conference.
-- The sales gateway uses only `SALES_TELNYX_*` and `SALES_XAI_*` credentials and verifies both providers' webhook signatures.
-- xAI Grok Realtime monitor sockets and per-call locks are process-local, so the sales gateway runs as exactly one service instance until shared session coordination is introduced.
+- The sales gateway uses only `SALES_TELNYX_*` and `SALES_OPENAI_*` credentials and verifies both providers' webhook signatures.
+- OpenAI Realtime monitor sockets and per-call locks are process-local, so the sales gateway runs as exactly one service instance until shared session coordination is introduced.
 - The only production handoff is a single-use invitation into the existing intake and onboarding transaction.
 
 ## Security Requirements

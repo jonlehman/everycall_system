@@ -21,12 +21,16 @@ function isInteractiveGuideTarget(target) {
 }
 
 const voiceOptions = [
-  { value: 'luna', label: 'Luna', description: 'Gentle, patient, and nurturing' },
-  { value: 'eve', label: 'Eve', description: 'Warm and natural' },
-  { value: 'ara', label: 'Ara', description: 'Clear and friendly' },
-  { value: 'leo', label: 'Leo', description: 'Confident and natural' },
-  { value: 'rex', label: 'Rex', description: 'Direct and composed' },
-  { value: 'sal', label: 'Sal', description: 'Conversational and relaxed' }
+  { value: 'alloy', label: 'Alloy', description: 'Balanced' },
+  { value: 'ash', label: 'Ash', description: 'Clear' },
+  { value: 'ballad', label: 'Ballad', description: 'Warm' },
+  { value: 'coral', label: 'Coral', description: 'Expressive' },
+  { value: 'echo', label: 'Echo', description: 'Conversational' },
+  { value: 'sage', label: 'Sage', description: 'Calm' },
+  { value: 'shimmer', label: 'Shimmer', description: 'Bright' },
+  { value: 'verse', label: 'Verse', description: 'Animated' },
+  { value: 'marin', label: 'Marin', description: 'Best Quality' },
+  { value: 'cedar', label: 'Cedar', description: 'Best Quality' }
 ];
 
 const guideByContext = {
@@ -112,7 +116,7 @@ export default function ReceptionistBasicsPage() {
     emergencyBehavior: 'Immediate Transfer',
     afterHours: 'Collect details and dispatch callback',
     businessHoursConfig: defaultHoursConfig,
-    voiceType: 'luna'
+    voiceType: 'marin'
   });
 
   const sampleAudioRef = useRef(null);
@@ -147,7 +151,7 @@ export default function ReceptionistBasicsPage() {
           routing?.business_hours_config || { businessHours: routing?.business_hours || '', timezone },
           timezone
         ),
-        voiceType: runtimeProfile?.session_config?.voice || 'luna'
+        voiceType: runtimeProfile?.session_config?.voice || 'marin'
       });
       setSetupStatusChip(statusChipFromTask(setupStatusData?.tasks?.basics, { tone: 'warn', label: 'Ready to review' }));
       setStatus({ message: 'Sales receptionist basics loaded.', tone: 'ok' });

@@ -20,15 +20,11 @@
 - The script logs into both a tenant and admin account, performs read-only page/API checks, verifies billing/dashboard/knowledge surfaces, and logs out.
 - It does not create tenants, publish builds, send SMS, or modify live configuration.
 
-## xAI Realtime Payload Validation
+## Realtime 2 Payload Validation
 - Run `corepack pnpm --filter @everycall/call-gateway... build` before importing gateway dist helpers.
-- Run `corepack pnpm validate:xai-realtime-payloads` after gateway build.
-- The payload validator renders canonical receptionist v9 with all seven tenant values plus the automatic `core_facts_block` and compares the complete result byte-for-byte with the approved prompt. It also verifies the full by-heart section and its two references disappear when there are no pins, name precedes phone in callback capture, and transfer-enabled sessions receive the same `system_prompt` without hidden gateway text.
-- Run `corepack pnpm validate:core-facts` to verify AI-at-creation rating fields, AI editorial ordering, exact rendered-line independent auditing with a required marketing-language classification and final known-leak fail-safe, missing-rating retry and fail-closed behavior, absence of numeric score cutoffs or score-order fallback, AI-ordered refinement, 600-token/20-pin defenses, instruction-like safety rejection, deletion-only atomic spoken rewrites limited to narrow comma-delimited trailing promotional clauses plus adversarial domain-term/embedded-qualifier/inversion cases, retrieval hysteresis, three-swap cap, idempotent migration, pin constraints, and continued vector indexing of every canonical fact.
-- Before rollout, run `corepack pnpm audit:core-facts-rollout`; it reports migration names and v8/v9 override counts without printing tenant prompt text or secrets.
-- Run `corepack pnpm validate:transfer-directory` after gateway build. It verifies exact name/extension lookup, natural-language transfer requests, general directory questions, and safe no-match behavior.
-- Before changing existing tenant profiles, run `node scripts/migrate-xai-runtime-profiles.mjs` and review the dry-run rows.
-- Apply the tenant profile migration only with `EVERYCALL_APPLY_XAI_PROFILE_MIGRATION=1`.
+- Run `corepack pnpm validate:realtime2-payloads` after gateway build.
+- Before changing existing tenant profiles, run `node scripts/migrate-realtime2-runtime-profiles.mjs` and review any `manual_review` rows.
+- Apply the tenant profile migration only with `EVERYCALL_APPLY_REALTIME2_PROFILE_MIGRATION=1`.
 
 Use these after any change to prompts, knowledge lookup, or barge-in handling.
 
@@ -53,34 +49,16 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 - Interrupt the assistant mid-sentence with "Sorry—one sec."
 - Verify assistant speech stops immediately.
 
-## Grok Voice Think Fast 2.0 Calls
-- Verify `xai_realtime_session_start` reports `model=grok-voice-think-fast-2.0`.
-- Verify `xai_realtime_session_updated` reports `voice=ara`, `reasoningEffort=high`, `turnDetection.type=server_vad`, `turnDetection.threshold=0.9`, `inputAudioFormat=audio/pcmu`, and `outputAudioFormat=audio/pcmu` before the forced tenant greeting.
-- Verify the opening is one interruptible `force_message`, matches the tenant’s configured greeting verbatim, is not followed by a greeting `response.create`, and never contains another tenant’s identity.
-- Compare endpoint-to-first-audio latency at `high` reasoning against the previous `none` baseline while repeating the same conversation-continuity and tool-use scenarios.
-- Verify no `modalities`, `max_response_output_tokens`, `eagerness`, `create_response`, or `interrupt_response` fields are sent on the inbound xAI session.
-- For a tenant with an eligible directory entry, verify xAI's accepted session includes `lookup_transfer_target` and `transfer_call` alongside the knowledge and data tools.
-- Verify the model-facing system instructions begin with `Who You Are`, use the tenant's seven configured values, render pinned facts as plain `Title: spoken fact` lines, and contain no gateway-appended transfer section.
-- Ask one question fully covered by a pinned core fact and verify the assistant answers immediately without `knowledge_lookup`. Ask an adjacent unsupported question and verify it still calls `knowledge_lookup` instead of stretching the pinned fact.
+## GPT-Realtime-2.1 Canary Calls
+- Verify `openai_realtime_session_start` reports `model=gpt-realtime-2.1` and `apiShape=realtime2`.
 - Verify first assistant audio arrives and outbound audio stays clear over Telnyx.
-- Verify `call_gateway_started` and `assistant_audio_pump_trace` report a 20-frame/400-ms outbound buffer by default. During a multi-sentence answer, verify xAI inter-chunk gaps do not produce an audible stop/start.
 - Verify a knowledge lookup does not mention tool names, packets, scores, or system logic.
-- Verify a knowledge lookup either runs silently or follows only a self-contained holding phrase; the assistant must not begin a substantive answer, pause for the lookup, and then continue it.
-- Describe a project in stages and verify the assistant asks relevant follow-up questions and reflects the need before offering a callback; a plausible fit or one answered question is not enough.
-- Decline an offered callback with “No thanks” and verify the assistant does not call `finish_session`, repeat the offer, or assume the call is over. It should continue helping and close only after a clear mutual ending.
-- After a project-related answer, verify the assistant naturally continues the caller’s current thread when more understanding would help instead of stopping or jumping directly to a callback offer.
 - Verify data capture happens only after the caller provides the value.
-- After confirming callback details, verify an exact repeated `data_capture` payload produces one persistence callback and no extra assistant line after the spoken closing. Confirm the Render log shows duplicate/continuation suppression when Grok retries it.
 - Verify transfer lookup asks for confirmation before transfer.
 - Verify silence and uncertain answers end with a clear next step.
 - Read an alphanumeric value such as `A7K-92Q`, then verify the assistant repeats and captures every character in order.
 - Pause briefly with ordinary background noise present; verify there is no spurious caller turn, duplicate response, or premature close.
-- Place a speakerphone call at normal volume; verify Ara does not treat her own playback as caller speech, while a clearly spoken caller interruption still stops playback.
-- Interrupt the assistant mid-sentence; verify xAI handles model-side barge-in, EveryCall sends Telnyx `clear`, and the assistant handles the new utterance without replaying stale audio.
-- Verify `xai_realtime_turn_latency` records endpoint-to-first-audio timing for ordinary caller turns and turns with tool calls.
-- Trigger two tool continuations close together and verify each `xai_realtime_tool_response_created` and first-audio event retains the correct tool call ID and internally consistent timing.
-- Verify `telnyx_call_control_answer_requested` occurs before prompt/bootstrap completion and records a low `webhookToAnswerRequestMs`; confirm the PSTN call is answered on the first ring.
-- Speak one sentence slowly enough to produce multiple xAI transcription updates. Verify the saved and exported transcript contains one complete caller line for that VAD turn, and verify Render emits `caller_transcript_turn_coalesced` with multiple snapshots but no transcript text.
+- Interrupt the assistant mid-sentence; verify audio stops promptly and the assistant handles the new utterance without replaying stale audio.
 
 ## Outbound Sales System
 - Run `corepack pnpm validate:sales-system`.
@@ -90,8 +68,8 @@ Use these after any change to prompts, knowledge lookup, or barge-in handling.
 - Before pilot traffic, make one controlled live provider call and verify:
   - the operator leg is parked on the dedicated sales connection
   - the prospect and AI standby dial concurrently
-  - `AI Ready` requires both the accepted xAI session and the Telnyx AI leg
+  - `AI Ready` requires both the accepted OpenAI session and the Telnyx AI leg
   - `Start Demo` joins the existing AI leg and begins with the configured business greeting
   - operator audio stays live, `Pause AI` cancels speech and clears buffered audio, and `End Demo` removes only the AI
-  - duplicate Telnyx/xAI webhooks do not repeat commands
+  - duplicate Telnyx/OpenAI webhooks do not repeat commands
   - ending either human leg tears down the conference and unused AI standby

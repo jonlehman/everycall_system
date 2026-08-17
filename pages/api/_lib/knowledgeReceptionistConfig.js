@@ -115,17 +115,17 @@ const DEFAULT_STAGE_PLAYBOOK = [
 ];
 
 export const DEFAULT_RUNTIME_SESSION_CONFIG = {
-  model: "grok-voice-think-fast-2.0",
-  voice: "ara",
-  reasoning: {
-    effort: "high"
-  },
+  model: "gpt-realtime-2.1",
+  voice: "marin",
+  max_output_tokens: 4096,
   turn_detection: {
-    type: "server_vad",
-    threshold: 0.9,
-    silence_duration_ms: 200
+    type: "semantic_vad",
+    eagerness: "high",
+    create_response: true,
+    interrupt_response: true
   },
-  transcription_model: "grok-transcribe",
+  transcription_model: "gpt-4o-mini-transcribe",
+  noise_reduction: "far_field",
   input_audio_format: "g711_ulaw",
   output_audio_format: "g711_ulaw"
 };
@@ -1021,39 +1021,41 @@ export async function saveCallOutcomeSchema(db, tenantKey, payload = {}, actor =
 function normalizeSessionConfig(value) {
   const source = asObject(value);
   const turnDetection = asObject(source.turn_detection || source.turnDetection);
-  const reasoning = asObject(source.reasoning);
-  const reasoningEffort = normalizeText(reasoning.effort || source.reasoning_effort || source.reasoningEffort).toLowerCase();
-  const silenceDurationMs = Number.isFinite(Number(turnDetection.silence_duration_ms ?? turnDetection.silenceDurationMs))
-    ? Math.max(0, Math.min(10_000, Number(turnDetection.silence_duration_ms ?? turnDetection.silenceDurationMs)))
-    : DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.silence_duration_ms;
-  const normalizedTurnDetection = {
-    type: "server_vad",
-    threshold: Number.isFinite(Number(turnDetection.threshold))
-      ? Math.max(0.1, Math.min(0.9, Number(turnDetection.threshold)))
-      : DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.threshold,
-    silence_duration_ms: silenceDurationMs
-  };
-  if (Number.isFinite(Number(turnDetection.prefix_padding_ms ?? turnDetection.prefixPaddingMs))) {
-    normalizedTurnDetection.prefix_padding_ms = Math.max(
-      0,
-      Math.min(10_000, Number(turnDetection.prefix_padding_ms ?? turnDetection.prefixPaddingMs))
-    );
-  }
-  if (turnDetection.idle_timeout_ms === null || turnDetection.idleTimeoutMs === null) {
-    normalizedTurnDetection.idle_timeout_ms = null;
-  } else if (Number.isFinite(Number(turnDetection.idle_timeout_ms ?? turnDetection.idleTimeoutMs))) {
-    normalizedTurnDetection.idle_timeout_ms = Math.max(
-      0,
-      Math.min(10_000, Number(turnDetection.idle_timeout_ms ?? turnDetection.idleTimeoutMs))
-    );
-  }
+  const turnDetectionType = normalizeText(turnDetection.type) || DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.type;
   return {
     model: normalizeText(source.model) || DEFAULT_RUNTIME_SESSION_CONFIG.model,
     voice: normalizeText(source.voice) || DEFAULT_RUNTIME_SESSION_CONFIG.voice,
-    reasoning: { effort: reasoningEffort === "none" ? "none" : "high" },
-    turn_detection: normalizedTurnDetection,
+    max_output_tokens: Number.isFinite(Number(source.max_output_tokens ?? source.maxOutputTokens))
+      ? Number(source.max_output_tokens ?? source.maxOutputTokens)
+      : DEFAULT_RUNTIME_SESSION_CONFIG.max_output_tokens,
+    turn_detection: {
+      type: turnDetectionType,
+      eagerness: normalizeText(turnDetection.eagerness) || DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.eagerness,
+      threshold: Number.isFinite(Number(turnDetection.threshold))
+        ? Number(turnDetection.threshold)
+        : 0.75,
+      prefix_padding_ms: Number.isFinite(Number(turnDetection.prefix_padding_ms ?? turnDetection.prefixPaddingMs))
+        ? Number(turnDetection.prefix_padding_ms ?? turnDetection.prefixPaddingMs)
+        : 300,
+      silence_duration_ms: Number.isFinite(Number(turnDetection.silence_duration_ms ?? turnDetection.silenceDurationMs))
+        ? Number(turnDetection.silence_duration_ms ?? turnDetection.silenceDurationMs)
+        : 600,
+      idle_timeout_ms: turnDetection.idle_timeout_ms === null || turnDetection.idleTimeoutMs === null
+        ? null
+        : Number.isFinite(Number(turnDetection.idle_timeout_ms ?? turnDetection.idleTimeoutMs))
+          ? Number(turnDetection.idle_timeout_ms ?? turnDetection.idleTimeoutMs)
+          : null,
+      create_response: turnDetection.create_response === undefined
+        ? DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.create_response
+        : Boolean(turnDetection.create_response),
+      interrupt_response: turnDetection.interrupt_response === undefined
+        ? DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.interrupt_response
+        : Boolean(turnDetection.interrupt_response)
+    },
     transcription_model: normalizeText(source.transcription_model || source.transcriptionModel)
       || DEFAULT_RUNTIME_SESSION_CONFIG.transcription_model,
+    noise_reduction: normalizeText(source.noise_reduction || source.noiseReduction)
+      || DEFAULT_RUNTIME_SESSION_CONFIG.noise_reduction,
     input_audio_format: normalizeText(source.input_audio_format || source.inputAudioFormat)
       || DEFAULT_RUNTIME_SESSION_CONFIG.input_audio_format,
     output_audio_format: normalizeText(source.output_audio_format || source.outputAudioFormat)

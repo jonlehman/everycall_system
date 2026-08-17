@@ -19,7 +19,7 @@ export type SalesCallContext = {
   aiTelnyxCallControlId: string | null;
   aiTelnyxLegId: string | null;
   aiTelnyxSessionId: string | null;
-  xaiCallId: string | null;
+  openaiCallId: string | null;
   providerErrorCode: string | null;
   providerErrorMessage: string | null;
   outcome: string | null;
@@ -69,8 +69,8 @@ export type SalesCallPatch = {
   aiTelnyxLegId?: string | null;
   ai_telnyx_session_id?: string | null;
   aiTelnyxSessionId?: string | null;
-  xai_call_id?: string | null;
-  xaiCallId?: string | null;
+  openai_call_id?: string | null;
+  openaiCallId?: string | null;
   provider_error_code?: string | null;
   providerErrorCode?: string | null;
   provider_error_message?: string | null;
@@ -200,7 +200,7 @@ function serializeCallContext(row: Record<string, unknown> | undefined): SalesCa
     aiTelnyxCallControlId: nullableText(row.ai_telnyx_call_control_id),
     aiTelnyxLegId: nullableText(row.ai_telnyx_leg_id),
     aiTelnyxSessionId: nullableText(row.ai_telnyx_session_id),
-    xaiCallId: nullableText(row.xai_call_id),
+    openaiCallId: nullableText(row.openai_call_id),
     providerErrorCode: nullableText(row.provider_error_code),
     providerErrorMessage: nullableText(row.provider_error_message),
     outcome: nullableText(row.outcome),
@@ -268,7 +268,7 @@ const PATCH_COLUMNS: ReadonlyArray<{
     snake: "ai_telnyx_session_id",
     column: "ai_telnyx_session_id"
   },
-  { camel: "xaiCallId", snake: "xai_call_id", column: "xai_call_id" },
+  { camel: "openaiCallId", snake: "openai_call_id", column: "openai_call_id" },
   {
     camel: "providerErrorCode",
     snake: "provider_error_code",
@@ -512,8 +512,8 @@ export function createPostgresSalesGatewayRepository(
       const callLegId = text(payload.call_leg_id);
       const callSessionId = text(payload.call_session_id);
       const conferenceId = text(payload.conference_id);
-      const xaiCallId = text(payload.call_id ?? payload.xai_call_id);
-      if (!callControlId && !callLegId && !callSessionId && !conferenceId && !xaiCallId) {
+      const openaiCallId = text(payload.call_id ?? payload.openai_call_id);
+      if (!callControlId && !callLegId && !callSessionId && !conferenceId && !openaiCallId) {
         return null;
       }
       const result = await pool.query(
@@ -535,10 +535,10 @@ export function createPostgresSalesGatewayRepository(
                   COALESCE(ai_telnyx_session_id, '')
                 ))
             OR ($4 <> '' AND $4 = COALESCE(conference_id, ''))
-            OR ($5 <> '' AND $5 = COALESCE(xai_call_id, ''))
+            OR ($5 <> '' AND $5 = COALESCE(openai_call_id, ''))
          ORDER BY created_at DESC
          LIMIT 1`,
-        [callControlId, callLegId, callSessionId, conferenceId, xaiCallId]
+        [callControlId, callLegId, callSessionId, conferenceId, openaiCallId]
       );
       return nullableText(result.rows[0]?.sales_call_id);
     },
@@ -584,7 +584,7 @@ export function createPostgresSalesGatewayRepository(
              )
              OR
              (
-               s.xai_call_id IS NOT NULL
+               s.openai_call_id IS NOT NULL
                AND s.ai_state IN (
                  'sip_connected',
                  'accepting',

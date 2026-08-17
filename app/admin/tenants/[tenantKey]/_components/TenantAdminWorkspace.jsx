@@ -460,7 +460,6 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
   const [users, setUsers] = useState([]);
   const [builds, setBuilds] = useState([]);
   const [activeBuild, setActiveBuild] = useState(null);
-  const [coreFacts, setCoreFacts] = useState({ activeBuildId: null, pins: [], history: [] });
   const [billingReview, setBillingReview] = useState({ billing: null, pricingCatalog: { plans: [], defaultTrialDays: null } });
   const [pricingDraft, setPricingDraft] = useState(buildPricingDraft(null, null));
   const [pricingSaving, setPricingSaving] = useState(false);
@@ -557,14 +556,13 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
     setLoading(true);
     setStatus('Loading tenant...');
     try {
-      const [tenantData, usersData, buildData, billingData, integrationData, connectorData, coreFactsData] = await Promise.all([
+      const [tenantData, usersData, buildData, billingData, integrationData, connectorData] = await Promise.all([
         fetchJson(`/api/v1/tenants?tenantKey=${encodeURIComponent(tenantKey)}`),
         fetchJson(`/api/v1/tenant/users?tenantKey=${encodeURIComponent(tenantKey)}`),
         fetchJson(`/api/v1/knowledge/builds?tenantKey=${encodeURIComponent(tenantKey)}`),
         fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/billing`).catch(() => ({ channelHealth: [], smsFailovers: [] })),
         fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/integrations/webhooks`).catch(() => ({ connections: [], deliveries: [] })),
-        fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/integrations/connectors`).catch(() => ({ connections: [], deliveries: [] })),
-        fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/knowledge/core-facts`).catch(() => ({ activeBuildId: null, pins: [], history: [] }))
+        fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/integrations/connectors`).catch(() => ({ connections: [], deliveries: [] }))
       ]);
       const [guardrailData, overrideData] = await Promise.all([
         fetchJson(`/api/v1/knowledge/guardrails?tenantKey=${encodeURIComponent(tenantKey)}`).catch(() => ({ guardrails: [] })),
@@ -580,11 +578,6 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
       setUsers(Array.isArray(usersData?.users) ? usersData.users : []);
       setBuilds(Array.isArray(buildData?.builds) ? buildData.builds : []);
       setActiveBuild(buildData?.activeBuild || null);
-      setCoreFacts({
-        activeBuildId: coreFactsData?.activeBuildId || null,
-        pins: Array.isArray(coreFactsData?.pins) ? coreFactsData.pins : [],
-        history: Array.isArray(coreFactsData?.history) ? coreFactsData.history : []
-      });
       setBillingReview(nextBillingReview);
       setPricingDraft(buildPricingDraft(nextBillingReview.billing, nextBillingReview.pricingCatalog));
       setDemoExtensionDays((current) => current || String(nextBillingReview.pricingCatalog?.defaultTrialDays || 14));
@@ -2243,49 +2236,6 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
 
           {showKnowledge ? (
           <>
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="m-0 text-lg font-semibold">Pinned Core Facts <span className="text-sm font-normal text-slate-500">(internal)</span></h2>
-                <div className="mt-1 text-sm text-slate-500">Read-only runtime facts automatically selected for the active knowledge build.</div>
-              </div>
-              <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
-                {coreFacts.pins.length} pinned · {coreFacts.activeBuildId || 'no active build'}
-              </div>
-            </div>
-            {coreFacts.pins.length ? (
-              <div className="mt-4 grid gap-2">
-                {coreFacts.pins.map((fact) => (
-                  <div key={fact.knowledge_fact_id} className="rounded-lg border border-slate-200 p-3 text-sm">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="font-medium text-slate-900">#{fact.core_fact_rank ?? '-'} · {fact.core_fact_title || fact.claim_text}</div>
-                      <div className="text-xs text-slate-500">{fact.fact_role || 'detail'}{fact.core_fact_score !== null && fact.core_fact_score !== undefined ? ` · score ${Number(fact.core_fact_score).toFixed(2)}` : ''}</div>
-                    </div>
-                    {fact.core_fact_spoken_text ? <div className="mt-1 text-slate-600">{fact.core_fact_spoken_text}</div> : null}
-                    <div className="mt-2 text-xs text-slate-500">Reason: {fact.core_fact_reason || 'Not recorded'}{fact.core_fact_selected_at ? ` · Selected ${formatDateTimeDisplay(fact.core_fact_selected_at)}` : ''}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-4 text-sm text-slate-500">No core facts are pinned for the active build.</div>
-            )}
-            <div className="mt-5 border-t border-slate-200 pt-4">
-              <div className="text-sm font-semibold text-slate-900">Recent Pin Changes</div>
-              {coreFacts.history.length ? (
-                <div className="mt-2 grid gap-2">
-                  {coreFacts.history.slice(0, 8).map((change) => (
-                    <div key={change.change_id} className="text-xs text-slate-600">
-                      <span className="font-medium text-slate-800">{formatLabel(change.change_type) || 'Changed'}</span>
-                      {' · '}{change.title || change.claim_text || change.fact_fingerprint || change.knowledge_fact_id}
-                      {change.reason ? ` · ${change.reason}` : ''}
-                      {change.created_at ? ` · ${formatDateTimeDisplay(change.created_at)}` : ''}
-                    </div>
-                  ))}
-                </div>
-              ) : <div className="mt-2 text-sm text-slate-500">No pin changes recorded yet.</div>}
-            </div>
-          </section>
-
           <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <h2 className="m-0 text-lg font-semibold">Knowledge Builds</h2>
             <div className={`mt-3 inline-flex rounded-full px-2 py-1 text-xs font-medium ${activeRuntimeReady ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}>

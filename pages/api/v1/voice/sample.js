@@ -11,12 +11,16 @@ const MAX_SAMPLE_TEXT_LENGTH = 600;
 const PREVIEW_TIMEOUT_MS = 20000;
 const PREVIEW_SAMPLE_RATE_HZ = 24000;
 const REALTIME_VOICES = new Set([
-  "luna",
-  "eve",
-  "ara",
-  "leo",
-  "rex",
-  "sal"
+  "alloy",
+  "ash",
+  "ballad",
+  "coral",
+  "echo",
+  "sage",
+  "shimmer",
+  "verse",
+  "marin",
+  "cedar"
 ]);
 
 function normalizeText(value) {
@@ -80,28 +84,80 @@ function buildPreviewPromptPayload(runtimeProfile, voice) {
   };
 }
 
-export function buildPreviewSessionUpdate({ instructions, promptPayload, voice }) {
+export function isRealtime2Model(model) {
+  const normalized = String(model || "").trim().toLowerCase();
+  return normalized === "gpt-realtime-2"
+    || normalized.startsWith("gpt-realtime-2.")
+    || normalized.startsWith("gpt-realtime-2-");
+}
+
+export function resolveRealtimeApiShape(configured, model) {
+  const normalized = String(configured || "").trim().toLowerCase();
+  if (["realtime2", "realtime_2", "v2", "current", "nested"].includes(normalized)) return "realtime2";
+  if (["legacy", "v1", "classic"].includes(normalized)) return "legacy";
+  return isRealtime2Model(model) ? "realtime2" : "legacy";
+}
+
+function realtime2AudioFormat(value, fallback = "pcm16") {
+  const normalized = String(value || fallback).trim().toLowerCase();
+  if (normalized === "pcm16" || normalized === "pcm" || normalized === "audio/pcm") {
+    return { type: "audio/pcm", rate: 24000 };
+  }
+  if (["g711_ulaw", "ulaw", "pcmu", "audio/pcmu"].includes(normalized)) {
+    return { type: "audio/pcmu" };
+  }
+  if (["g711_alaw", "alaw", "pcma", "audio/pcma"].includes(normalized)) {
+    return { type: "audio/pcma" };
+  }
+  return realtime2AudioFormat(fallback, "pcm16");
+}
+
+export function buildPreviewSessionUpdate({ apiShape, instructions, promptPayload, voice }) {
+  if (apiShape === "realtime2") {
+    return {
+      type: "session.update",
+      session: {
+        type: "realtime",
+        instructions,
+        tools: Array.isArray(promptPayload.tool_definitions) ? promptPayload.tool_definitions : [],
+        output_modalities: ["audio"],
+        audio: {
+          output: {
+            format: realtime2AudioFormat("pcm16"),
+            voice
+          }
+        },
+        max_output_tokens: promptPayload?.session_config?.max_output_tokens ?? 4096
+      }
+    };
+  }
   return {
     type: "session.update",
     session: {
+      modalities: ["audio", "text"],
       instructions,
       tools: Array.isArray(promptPayload.tool_definitions) ? promptPayload.tool_definitions : [],
+      output_audio_format: "pcm16",
       voice,
-      reasoning: { effort: "high" },
-      audio: {
-        output: {
-          format: { type: "audio/pcm", rate: PREVIEW_SAMPLE_RATE_HZ },
-          transport: "json"
-        }
-      }
+      max_response_output_tokens: promptPayload?.session_config?.max_output_tokens ?? 4096
     }
   };
 }
 
-function buildPreviewResponseCreate(sampleText) {
+function buildPreviewResponseCreate(apiShape, sampleText) {
+  if (apiShape === "realtime2") {
+    return {
+      type: "response.create",
+      response: {
+        output_modalities: ["audio"],
+        instructions: createRealtimePreviewInstructions(sampleText)
+      }
+    };
+  }
   return {
     type: "response.create",
     response: {
+      modalities: ["audio", "text"],
       instructions: createRealtimePreviewInstructions(sampleText)
     }
   };
@@ -109,12 +165,14 @@ function buildPreviewResponseCreate(sampleText) {
 
 async function requestRealtimePreview({ apiKey, promptPayload, sampleText }) {
   return new Promise((resolve, reject) => {
-    const model = "grok-voice-think-fast-2.0";
-    const voice = String(promptPayload?.session_config?.voice || "ara").trim() || "ara";
+    const model = String(promptPayload?.session_config?.model || "gpt-realtime-2.1").trim() || "gpt-realtime-2.1";
+    const apiShape = resolveRealtimeApiShape(process.env.OPENAI_REALTIME_API_SHAPE, model);
+    const voice = String(promptPayload?.session_config?.voice || "marin").trim() || "marin";
     const instructions = normalizeText(promptPayload?.system_prompt);
-    const ws = new WebSocket(`wss://api.x.ai/v1/realtime?model=${encodeURIComponent(model)}`, {
+    const ws = new WebSocket(`wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`, {
       headers: {
-        Authorization: `Bearer ${apiKey}`
+        Authorization: `Bearer ${apiKey}`,
+        ...(apiShape === "legacy" ? { "OpenAI-Beta": "realtime=v1" } : {})
       }
     });
 
@@ -158,7 +216,7 @@ async function requestRealtimePreview({ apiKey, promptPayload, sampleText }) {
     }
 
     ws.on("open", () => {
-      ws.send(JSON.stringify(buildPreviewSessionUpdate({ instructions, promptPayload, voice })));
+      ws.send(JSON.stringify(buildPreviewSessionUpdate({ apiShape, instructions, promptPayload, voice })));
     });
 
     ws.on("message", (data) => {
@@ -171,7 +229,7 @@ async function requestRealtimePreview({ apiKey, promptPayload, sampleText }) {
 
       const type = String(event?.type || "");
       if (type === "session.updated") {
-        ws.send(JSON.stringify(buildPreviewResponseCreate(sampleText)));
+        ws.send(JSON.stringify(buildPreviewResponseCreate(apiShape, sampleText)));
         return;
       }
 
@@ -269,7 +327,7 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: "method_not_allowed" });
     }
 
-    const voice = String(req.method === "POST" ? body.voice : req.query?.voice || "ara").toLowerCase();
+    const voice = String(req.method === "POST" ? body.voice : req.query?.voice || "marin").toLowerCase();
     if (!REALTIME_VOICES.has(voice)) {
       return res.status(400).json({ error: "invalid_voice" });
     }
@@ -277,9 +335,9 @@ export default async function handler(req, res) {
     const sampleText = normalizeText(req.method === "POST" ? body.text : req.query?.text || DEFAULT_SAMPLE_TEXT)
       .slice(0, MAX_SAMPLE_TEXT_LENGTH) || DEFAULT_SAMPLE_TEXT;
 
-    const apiKey = process.env.XAI_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: "missing_xai_key" });
+      return res.status(500).json({ error: "missing_openai_key" });
     }
 
     const runtimeProfile = await loadKnowledgeRuntimeProfile(pool, tenantKey).catch(() => null);

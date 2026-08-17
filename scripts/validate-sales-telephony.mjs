@@ -14,12 +14,12 @@ import {
 } from "../apps/sales-call-gateway/src/salesTelnyxClient.js";
 import {
   buildSalesDemoGreeting,
-  buildSalesXAISipUri,
+  buildSalesOpenAISipUri,
   buildSalesRealtimeAcceptPayload,
-  createSalesXAIRealtimeClient,
-  normalizeSalesXAIIncomingCallEvent,
-  verifySalesXAIWebhook
-} from "../apps/sales-call-gateway/src/salesXAIRealtime.js";
+  createSalesOpenAIRealtimeClient,
+  normalizeSalesOpenAIIncomingCallEvent,
+  verifySalesOpenAIWebhook
+} from "../apps/sales-call-gateway/src/salesOpenAIRealtime.js";
 import {
   createInMemorySalesRealtimeRegistry,
   createSalesCallOrchestrator
@@ -137,7 +137,7 @@ async function validateTelnyxAdapter() {
       assert: ({ body }) => {
         assert.equal(body.command_id, aiCommandId);
         assert.equal(body.connection_id, "sales-call-control-app");
-        assert.equal(body.to, "sip:proj_test@sip.api.xai.com;transport=tls");
+        assert.equal(body.to, "sip:proj_test@sip.api.openai.com;transport=tls");
         assert.equal(body.sip_transport_protocol, "TLS");
         assert.equal(body.send_silence_when_idle, true);
         assert.deepEqual(body.sip_headers, [{ name: "User-to-User", value: "encoded-uui" }]);
@@ -190,8 +190,8 @@ async function validateTelnyxAdapter() {
   });
   assert.equal(prospect.call.call_control_id, "prospect-control");
 
-  const ai = await client.dialXAISipStandby({
-    sipUri: "sip:proj_test@sip.api.xai.com;transport=tls",
+  const ai = await client.dialOpenAISipStandby({
+    sipUri: "sip:proj_test@sip.api.openai.com;transport=tls",
     userToUser: "encoded-uui",
     commandId: aiCommandId
   });
@@ -514,34 +514,44 @@ class FakeWebSocket {
   }
 }
 
-async function validateXAIAdapter() {
+async function validateOpenAIAdapter() {
   assert.equal(
-    buildSalesXAISipUri("+18005550199"),
-    "sip:+18005550199@sip.voice.x.ai;transport=tls"
+    buildSalesOpenAISipUri("proj_sales123"),
+    "sip:proj_sales123@sip.api.openai.com;transport=tls"
   );
   const session = buildSalesRealtimeAcceptPayload({
     instructions: "Use only this temporary demo fact bundle.",
-    model: "grok-voice-think-fast-2.0",
-    voice: "eve"
+    model: "gpt-realtime-2.1",
+    voice: "marin"
   });
-  assert.equal(session.turn_detection.create_response, false);
-  assert.equal(session.turn_detection.interrupt_response, true);
+  assert.equal(session.type, "realtime");
+  assert.equal(session.audio.input.turn_detection.create_response, false);
+  assert.equal(session.audio.input.turn_detection.interrupt_response, true);
   assert.deepEqual(session.tools, []);
 
   const queue = createQueuedFetch([
     {
+      assert: ({ url, options, body }) => {
+        assert.equal(url, "https://openai.test/v1/realtime/calls/rtc_sales_1/accept");
+        assert.equal(options.headers.Authorization, "Bearer openai-test-key");
+        assert.equal(options.headers["X-Client-Request-Id"], "accept-request-1");
+        assert.equal(body.audio.input.turn_detection.create_response, false);
+      },
+      body: null
+    },
+    {
       assert: ({ url, options }) => {
-        assert.equal(url, "https://xai.test/v1/realtime/calls/rtc_sales_1/hangup");
+        assert.equal(url, "https://openai.test/v1/realtime/calls/rtc_sales_1/hangup");
         assert.equal(options.body, undefined);
       },
       body: null
     }
   ]);
-  const client = createSalesXAIRealtimeClient({
-    apiKey: "xai-test-key",
-    phoneNumber: "+18005550199",
-    baseUrl: "https://xai.test/v1",
-    realtimeWebSocketUrl: "wss://xai.test/v1/realtime",
+  const client = createSalesOpenAIRealtimeClient({
+    apiKey: "openai-test-key",
+    projectId: "proj_sales123",
+    baseUrl: "https://openai.test/v1",
+    realtimeWebSocketUrl: "wss://openai.test/v1/realtime",
     fetchImpl: queue.fetchImpl,
     WebSocketImpl: FakeWebSocket,
     sleep: async () => {}
@@ -556,10 +566,9 @@ async function validateXAIAdapter() {
     correlationId: "trace-1"
   });
   const socket = FakeWebSocket.instances.at(-1);
-  assert.equal(socket.url, "wss://xai.test/v1/realtime?call_id=rtc_sales_1");
-  assert.equal(socket.options.headers.Authorization, "Bearer xai-test-key");
-  assert.equal(JSON.parse(socket.sent[0]).type, "session.update");
-  socket.sent.length = 0;
+  assert.equal(socket.url, "wss://openai.test/v1/realtime?call_id=rtc_sales_1");
+  assert.equal(socket.options.headers.Authorization, "Bearer openai-test-key");
+  assert.deepEqual(socket.sent, [], "Opening the monitor must not make the standby AI speak.");
 
   const quietPause = controller.pause();
   assert.equal(quietPause.cancel_event, null);
@@ -577,9 +586,9 @@ async function validateXAIAdapter() {
   const startEvents = socket.sent.map((value) => JSON.parse(value));
   assert.equal(startEvents.length, 2);
   assert.equal(startEvents[0].type, "response.create");
-  assert.equal(startEvents[0].response.modalities[0], "audio");
+  assert.equal(startEvents[0].response.output_modalities[0], "audio");
   assert.equal(startEvents[1].type, "session.update");
-  assert.equal(startEvents[1].session.turn_detection.create_response, true);
+  assert.equal(startEvents[1].session.audio.input.turn_detection.create_response, true);
   assert.match(
     startEvents[0].response.instructions,
     /"Thanks for calling Acme Appliance Repair\. How can I help you\?"/
@@ -588,7 +597,7 @@ async function validateXAIAdapter() {
   const paused = controller.pause();
   assert.equal(paused.cancel_event.response_id, "resp-greeting-1");
   const pauseEvents = socket.sent.slice(2).map((value) => JSON.parse(value));
-  assert.equal(pauseEvents[0].session.turn_detection.create_response, false);
+  assert.equal(pauseEvents[0].session.audio.input.turn_detection.create_response, false);
   assert.equal(pauseEvents[1].type, "response.cancel");
   assert.equal(pauseEvents[1].response_id, "resp-greeting-1");
   assert.equal(pauseEvents[2].type, "output_audio_buffer.clear");
@@ -600,11 +609,11 @@ async function validateXAIAdapter() {
   controller.close();
   assert.equal(queue.remaining(), 0);
 
-  const webhookKey = Buffer.from("xai-webhook-test-secret", "utf8");
+  const webhookKey = Buffer.from("openai-webhook-test-secret", "utf8");
   const secret = `whsec_${webhookKey.toString("base64")}`;
   const webhookBody = JSON.stringify({
     object: "event",
-    id: "evt-xai-1",
+    id: "evt-openai-1",
     type: "realtime.call.incoming",
     created_at: 1785200000,
     data: {
@@ -619,13 +628,13 @@ async function validateXAIAdapter() {
       }]
     }
   });
-  const webhookId = "wh_xai_1";
+  const webhookId = "wh_openai_1";
   const webhookTimestamp = "1785200000";
   const webhookSignature = crypto
     .createHmac("sha256", webhookKey)
     .update(`${webhookId}.${webhookTimestamp}.${webhookBody}`, "utf8")
     .digest("base64");
-  assert.equal(verifySalesXAIWebhook({
+  assert.equal(verifySalesOpenAIWebhook({
     rawBody: webhookBody,
     headers: {
       "webhook-id": webhookId,
@@ -635,15 +644,15 @@ async function validateXAIAdapter() {
     secret,
     nowMs: Number(webhookTimestamp) * 1000
   }), true);
-  const incoming = normalizeSalesXAIIncomingCallEvent(webhookBody);
-  assert.equal(incoming.xai_call_id, "rtc_sales_1");
+  const incoming = normalizeSalesOpenAIIncomingCallEvent(webhookBody);
+  assert.equal(incoming.openai_call_id, "rtc_sales_1");
   assert.equal(incoming.sales_call_id, "sales-call-1");
   assert.equal(incoming.patch.ai_state, "incoming");
 
-  const timeoutClient = createSalesXAIRealtimeClient({
-    apiKey: "xai-test-key",
-    phoneNumber: "+18005550199",
-    baseUrl: "https://xai.test/v1",
+  const timeoutClient = createSalesOpenAIRealtimeClient({
+    apiKey: "openai-test-key",
+    projectId: "proj_sales123",
+    baseUrl: "https://openai.test/v1",
     fetchImpl: () => new Promise(() => {}),
     maxAttempts: 1,
     requestTimeoutMs: 25
@@ -658,10 +667,10 @@ async function validateXAIAdapter() {
       return true;
     }
   );
-  const stalledBodyClient = createSalesXAIRealtimeClient({
-    apiKey: "xai-test-key",
-    phoneNumber: "+18005550199",
-    baseUrl: "https://xai.test/v1",
+  const stalledBodyClient = createSalesOpenAIRealtimeClient({
+    apiKey: "openai-test-key",
+    projectId: "proj_sales123",
+    baseUrl: "https://openai.test/v1",
     fetchImpl: async () => ({
       ok: true,
       status: 200,
@@ -689,15 +698,15 @@ async function validateOrchestrator() {
     callId: "rtc-sales-1",
     isOpen: true,
     startDemo({ businessName }) {
-      events.push("xai:greeting");
+      events.push("openai:greeting");
       return { greeting: buildSalesDemoGreeting(businessName) };
     },
     pause() {
-      events.push("xai:pause");
+      events.push("openai:pause");
       return { type: "paused" };
     },
     close() {
-      events.push("xai:close");
+      events.push("openai:close");
       this.isOpen = false;
     }
   };
@@ -719,7 +728,7 @@ async function validateOrchestrator() {
         }
       };
     },
-    async dialXAISipStandby() {
+    async dialOpenAISipStandby() {
       events.push("telnyx:dial_ai");
       return {
         call: {
@@ -750,26 +759,26 @@ async function validateOrchestrator() {
       return { data: { result: "ok" } };
     }
   };
-  const xai = {
+  const openai = {
     buildSipUri() {
-      return "sip:proj_sales123@sip.api.xai.com;transport=tls";
+      return "sip:proj_sales123@sip.api.openai.com;transport=tls";
     },
     async acceptIncomingCall() {
-      events.push("xai:accept");
+      events.push("openai:accept");
       return { ai_state: "accepted" };
     },
     async connectMonitor() {
-      events.push("xai:monitor_open_silent");
+      events.push("openai:monitor_open_silent");
       return controller;
     },
     async hangupCall() {
-      events.push("xai:hangup");
+      events.push("openai:hangup");
       return { ai_state: "ended" };
     }
   };
   const orchestrator = createSalesCallOrchestrator({
     telnyx,
-    xai,
+    openai,
     realtimeRegistry: runtime,
     now: () => new Date("2026-07-28T12:00:00Z")
   });
@@ -855,27 +864,27 @@ async function validateOrchestrator() {
   const standby = await orchestrator.prepareAIStandby({
     salesCallId: "sales-call-1",
     correlationId: "trace-1",
-    xaiCallId: "rtc-sales-1",
+    openaiCallId: "rtc-sales-1",
     aiTelnyxCallControlId: "ai-control",
     realtimeSession: buildSalesRealtimeAcceptPayload({
       instructions: "Temporary sales demo only."
     })
   });
   assert.equal(standby.patch.ai_state, "ready");
-  assert.equal(events.includes("xai:greeting"), false);
+  assert.equal(events.includes("openai:greeting"), false);
 
   const demo = await orchestrator.startDemo({
     salesCallId: "sales-call-1",
     correlationId: "trace-1",
     conferenceId: "conf-sales-1",
     aiTelnyxCallControlId: "ai-control",
-    xaiCallId: "rtc-sales-1",
+    openaiCallId: "rtc-sales-1",
     businessName: "Acme Appliance Repair"
   });
   assert.equal(demo.patch.state, "ai_live");
   assert.deepEqual(
-    events.slice(events.indexOf("telnyx:join_ai"), events.indexOf("xai:greeting") + 1),
-    ["telnyx:join_ai", "telnyx:ai_join_confirmed", "xai:greeting"]
+    events.slice(events.indexOf("telnyx:join_ai"), events.indexOf("openai:greeting") + 1),
+    ["telnyx:join_ai", "telnyx:ai_join_confirmed", "openai:greeting"]
   );
 
   const paused = await orchestrator.pauseAI({ salesCallId: "sales-call-1" });
@@ -886,11 +895,11 @@ async function validateOrchestrator() {
     correlationId: "trace-1",
     conferenceId: "conf-sales-1",
     aiTelnyxCallControlId: "ai-control",
-    xaiCallId: "rtc-sales-1"
+    openaiCallId: "rtc-sales-1"
   });
   assert.equal(endedDemo.patch.state, "demo_ended");
   assert.ok(events.includes("telnyx:leave_ai"));
-  assert.ok(events.includes("xai:hangup"));
+  assert.ok(events.includes("openai:hangup"));
   assert.ok(events.includes("telnyx:hangup:ai-control"));
   assert.equal(runtime.size(), 0);
   const endDemoEvents = events.slice(beforeEndDemo);
@@ -903,7 +912,7 @@ async function validateOrchestrator() {
     correlationId: "trace-2",
     conferenceId: "conf-sales-2",
     aiTelnyxCallControlId: "ai-control-2",
-    xaiCallId: "rtc-sales-2"
+    openaiCallId: "rtc-sales-2"
   });
   assert.equal(noAnswer.patch.state, "closed");
   assert.equal(noAnswer.patch.outcome, "no_answer");
@@ -911,7 +920,7 @@ async function validateOrchestrator() {
 
   const failureEvents = [];
   const failingOrchestrator = createSalesCallOrchestrator({
-    xai,
+    openai,
     now: () => new Date("2026-07-28T12:00:00Z"),
     telnyx: {
       ...telnyx,
@@ -924,7 +933,7 @@ async function validateOrchestrator() {
           }
         };
       },
-      async dialXAISipStandby() {
+      async dialOpenAISipStandby() {
         throw new SalesProviderError("AI dial unavailable", {
           provider: "telnyx",
           operation: "dial",
@@ -957,7 +966,7 @@ async function validateOrchestrator() {
 
   const fallbackEvents = [];
   const fallbackOrchestrator = createSalesCallOrchestrator({
-    xai,
+    openai,
     telnyx: {
       ...telnyx,
       async endConference() {
@@ -981,7 +990,7 @@ async function validateOrchestrator() {
   assert.ok(fallbackEvents.includes("hangup:prospect-fallback"));
 
   const incompleteOrchestrator = createSalesCallOrchestrator({
-    xai,
+    openai,
     telnyx: {
       ...telnyx,
       async endConference() {
@@ -1008,7 +1017,7 @@ async function validateOrchestrator() {
 
 await validateProviderUtilities();
 await validateTelnyxAdapter();
-await validateXAIAdapter();
+await validateOpenAIAdapter();
 await validateOrchestrator();
 
 console.log("Sales telephony validation passed.");

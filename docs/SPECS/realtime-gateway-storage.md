@@ -10,12 +10,6 @@ The gateway stores:
 - Realtime event log pointers or local file path
 - Tool call records (request, response, validation status)
 
-Caller transcription `updated` and `completed` events are cumulative snapshots,
-not separate utterances. The gateway stores one caller `call_events` row per VAD
-speech turn and updates it as later snapshots arrive. Shared transcript readers
-also collapse legacy adjacent cumulative snapshots so previously stored calls
-remain readable without deleting audit rows.
-
 ## Forwarded to EveryCall
 The gateway forwards:
 - Data capture tool payloads

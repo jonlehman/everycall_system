@@ -1,7 +1,7 @@
 # PRD: EveryCall Realtime Gateway (V1, Clean-Slate)
 
 ## Purpose
-A thin realtime gateway that executes a call flow defined by the EveryCall system, augmented only by tenant greeting + knowledge retrieval. The gateway handles call control (initiate, hang up), initial realtime AI call, realtime AI calls to its exposed tools, data persistence, and logging. It should enable the realtime AI to behave like xAI's realtime demo: natural, responsive, and tool-driven when needed.
+A thin realtime gateway that executes a call flow defined by the EveryCall system, augmented only by tenant greeting + knowledge retrieval. The gateway handles call control (initiate, hang up), initial realtime AI call, realtime AI calls to its exposed tools, data persistence, and logging. It should enable the realtime AI to behave like OpenAI's realtime demo: natural, responsive, and tool-driven when needed.
 
 ## Core Principle
 - All conversational logic lives in the EveryCall system.
@@ -12,19 +12,20 @@ A thin realtime gateway that executes a call flow defined by the EveryCall syste
   - Data capture tool handling
   - Data persistence and logging
 
-## Realtime Session Configuration
+## Realtime Session Configuration (Admin-stored, not hard-coded)
 Must match the web demo configuration:
 
-- Model: `grok-voice-think-fast-2.0`, pinned by the gateway
-- Voice: `ara`
-- Realtime endpoint: `wss://api.x.ai/v1/realtime`
-- Turn detection: xAI-native `server_vad`
-  - activation threshold: `0.9` to reduce speakerphone echo triggers
-  - silence endpoint: `200 ms`
-  - automatic response and model interruption are owned by xAI
-- Reasoning effort: `high` for stronger conversation continuity and instruction following; measure endpoint-to-first-audio latency during rollout
-- Transcription model: `grok-transcribe`
+- Model: `gpt-realtime-2.1`, supplied by the admin/runtime profile as `session_config.model`
+- Voice: `marin`
+- Realtime API shape: auto-select the Realtime 2 nested session schema from `session_config.model`; `OPENAI_REALTIME_API_SHAPE` is a shape-only override and does not select the model.
+- Turn detection: `semantic_vad`
+  - eagerness: `high`
+  - create response: enabled
+  - interrupt response: enabled
+- Transcription model: `gpt-4o-mini-transcribe`
+- Noise reduction: `far_field`
 - Input/output audio format: `g711_ulaw`
+- Max output tokens: `4096`
 - Tools: enabled (Knowledge lookup + Data capture)
 
 ## Prompt & Instruction Model

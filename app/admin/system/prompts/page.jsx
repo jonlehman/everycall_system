@@ -895,6 +895,13 @@ export default function AdminPromptConfigPage() {
                   onChange={(event) => updateTenantProfile('required_contact_fields', splitLines(event.target.value))}
                 />
               </TenantFieldBlock>
+
+              <TenantFieldBlock label="Basic No-Tool Allowed Statement" hint="Narrow business statement allowed without `knowledge_lookup`." state={tenantFieldSources.basic_no_tool_allowed_statement} draftValue={draftTenantProfile.basic_no_tool_allowed_statement}>
+                <TextArea
+                  value={draftTenantProfile.basic_no_tool_allowed_statement || ''}
+                  onChange={(event) => updateTenantProfile('basic_no_tool_allowed_statement', event.target.value)}
+                />
+              </TenantFieldBlock>
             </div>
           </div>
         )}

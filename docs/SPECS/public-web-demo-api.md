@@ -152,14 +152,8 @@ Returns the current state of an existing public demo session.
 ## Reserved For Next Slice
 
 ### `POST /api/v1/demo/realtime/token`
-
-The browser must open `session.websocketUrl` with
-`[session.websocketProtocol]` as the WebSocket subprotocol. After `open`, it
-must send `session.update` exactly once before streaming PCM16 audio as
-`input_audio_buffer.append` events. The browser must never put the ephemeral
-secret in a query string or expose the server-side `XAI_API_KEY`.
 - Creates the browser Realtime session handshake for a ready demo session.
-- Must never expose the normal xAI secret to the browser.
+- Must never expose the normal OpenAI secret to the browser.
 
 ### `POST /api/v1/demo/events`
 - Optional analytics/event intake for the public demo frontend.

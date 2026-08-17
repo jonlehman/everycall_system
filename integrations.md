@@ -58,7 +58,7 @@ This is cleaner than maintaining separate delivery paths for leads vs non-leads.
 These are the integrations EveryCall already depends on or should treat as core platform dependencies:
 
 - `Telnyx` for voice numbers, call ingress, SMS, and delivery callbacks
-- `xAI Grok Realtime` for voice conversation
+- `OpenAI Realtime` for voice conversation
 - `Stripe` for subscription billing
 - `Email provider` for lead and call notifications
 - `Worker` for async delivery, retries, and side effects

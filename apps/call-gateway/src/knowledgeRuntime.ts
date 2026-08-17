@@ -1,7 +1,6 @@
 import { performance } from "node:perf_hooks";
 import {
   buildBusinessHoursAnswerPacket,
-  buildTranscriptFromEvents,
   buildPlannerOpenAiRequestBody,
   buildRuntimeEmbeddingsRequestBody,
   executePlannerPgvectorRuntime,
@@ -117,6 +116,14 @@ function uniqueValues(values: string[]) {
 function estimateTokenCount(value: unknown) {
   const text = typeof value === "string" ? value : JSON.stringify(value);
   return Math.ceil(Buffer.byteLength(String(text || ""), "utf8") / 4);
+}
+
+function runtimeToolNames(toolDefinitions: Array<Record<string, unknown>> = []) {
+  return new Set(
+    toolDefinitions
+      .map((item) => normalizeText(item?.name))
+      .filter(Boolean)
+  );
 }
 
 function cacheKey(tenantKey: string, buildId: string) {
@@ -297,9 +304,6 @@ export function validateGatewayPromptPayload(input: unknown): GatewayPromptPaylo
   if (!normalizeText(payload.system_prompt)) {
     throw new Error("invalid_gateway_prompt_payload");
   }
-  if (!normalizeText(payload.tenant_greeting)) {
-    throw new Error("invalid_gateway_prompt_payload");
-  }
   if (!normalizeText(payload.knowledge_runtime?.active_build_id)) {
     throw new Error("invalid_gateway_prompt_payload");
   }
@@ -311,7 +315,18 @@ export function isKnowledgeReceptionistPromptPayload(payload: GatewayPromptPaylo
 }
 
 export function buildGatewaySessionInstructions(payload: GatewayPromptPayload) {
-  return payload.system_prompt;
+  const toolNames = runtimeToolNames(payload.tool_definitions);
+  const transferRules = toolNames.has("lookup_transfer_target") && toolNames.has("transfer_call")
+    ? `# Transfer Rules
+- If the caller asks for a person or extension, use lookup_transfer_target before assuming you know the destination.
+- Never reveal, read back, or hint at the private forwarding number.
+- If lookup_transfer_target returns more than one match, ask one short clarification question.
+- If lookup_transfer_target returns one clear match, ask one short confirmation question about whether the caller wants to be transferred now.
+- Only call transfer_call after the caller clearly says yes to that confirmation question.
+- Only use a target_id returned by lookup_transfer_target in this same call.
+- If a transfer attempt does not connect, apologize briefly and offer to take a message or try another person.`
+    : "";
+  return [payload.system_prompt, transferRules].filter(Boolean).join("\n\n");
 }
 
 export function initializeKnowledgeCallState(payload: GatewayPromptPayload): CallState {
@@ -408,19 +423,15 @@ export async function prewarmKnowledgeBuildAssets(pool: PoolLike, tenantKey: str
 
 async function loadRecentConversationSummary(pool: Queryable, callId: string) {
   const res = await pool.query(
-    `SELECT role, text, event_type
+    `SELECT role, text
      FROM call_events
      WHERE call_sid = $1
      ORDER BY created_at DESC
-     LIMIT 40`,
+     LIMIT 6`,
     [callId]
   );
   const rows = (res.rows || []).slice().reverse();
-  return buildTranscriptFromEvents(rows)
-    .split("\n")
-    .filter(Boolean)
-    .slice(-6)
-    .join(" | ");
+  return rows.map((row) => `${normalizeText(row.role || "speaker")}: ${normalizeText(row.text)}`).filter(Boolean).join(" | ");
 }
 
 export async function fetchKnowledgeRuntimeTurn(

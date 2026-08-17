@@ -476,7 +476,7 @@ async function main() {
       body: {
         profile: {
           greetingText: "Thanks for calling North Sound Plumbing. Tell me what you need.",
-          sessionConfig: { voice: "eve" },
+          sessionConfig: { voice: "marin" },
           wordingDefaults: {
             aiDisclosure: "I'm North Sound Plumbing's automated assistant.",
             uncertaintyPhrase: "I want to make sure I get that right.",

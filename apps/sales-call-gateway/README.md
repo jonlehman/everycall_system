@@ -15,13 +15,12 @@ sessions.
   any operator `call.initiated` event whose payload is not `state=parked`, hangs
   up that unsafe leg, and does not dial the prospect or AI.
 - Send the dedicated Telnyx webhooks to `/webhooks/telnyx`.
-- Register the dedicated E.164 number with xAI as a Direct SIP number and send
-  its signed Realtime webhook to `/webhooks/xai`.
+- Send OpenAI Realtime SIP webhooks to `/webhooks/openai`.
 - Keep both webhook signature checks enabled.
 
 Required runtime values are configured in `render.yaml`: `DATABASE_URL`,
 `INTERNAL_SERVICE_SECRET`, the `SALES_TELNYX_*` values, and the
-`SALES_XAI_*` values.
+`SALES_OPENAI_*` values.
 
 The admin/API deployment must set `SALES_CALL_GATEWAY_BASE_URL` to this
 service's private or authenticated base URL and use the same
@@ -29,7 +28,7 @@ service's private or authenticated base URL and use the same
 
 ## Scaling limitation
 
-Deploy exactly one instance. Active xAI control WebSockets and call locks are
+Deploy exactly one instance. Active OpenAI control WebSockets and call locks are
 process-local. The database persists call state and event deduplication, and the
 service reconnects recoverable Realtime monitors before it starts listening,
 but multi-instance socket ownership is intentionally not implemented.
