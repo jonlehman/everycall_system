@@ -1343,6 +1343,16 @@ export async function backfillActiveBuildCoreFacts(db, {
       throw new Error("core_fact_active_build_changed");
     }
     const previousPins = await loadPinnedCoreFacts(client, normalizedTenantKey, normalizedBuildId);
+    await client.query(
+      `UPDATE knowledge_build_facts
+       SET is_core_fact_pinned = FALSE,
+           core_fact_rank = NULL,
+           core_fact_selected_at = NULL
+       WHERE tenant_key = $1
+         AND build_id = $2
+         AND is_core_fact_pinned = TRUE`,
+      [normalizedTenantKey, normalizedBuildId]
+    );
     for (const fact of spokenRewrite.facts) {
       await client.query(
         `UPDATE knowledge_build_facts

@@ -561,6 +561,11 @@ assert.match(coreFactSource, /CORE_FACT_SPOKEN_MAX_CHARS = 200/);
 assert.match(coreFactSource, /rewriteActivePinnedCoreFactsForSpeech/);
 assert.match(coreFactSource, /AND is_core_fact_pinned = TRUE/);
 assert.match(coreFactSource, /materializeExistingPinnedCoreFactPromptSection/);
+const backfillPreviousPinsOffset = coreFactSource.indexOf("const previousPins = await loadPinnedCoreFacts(client, normalizedTenantKey, normalizedBuildId)");
+const backfillClearPinsOffset = coreFactSource.indexOf("SET is_core_fact_pinned = FALSE", backfillPreviousPinsOffset);
+const backfillWriteRatingsOffset = coreFactSource.indexOf("for (const fact of spokenRewrite.facts)", backfillPreviousPinsOffset);
+assert.ok(backfillPreviousPinsOffset >= 0 && backfillClearPinsOffset > backfillPreviousPinsOffset && backfillWriteRatingsOffset > backfillClearPinsOffset,
+  "backfill must snapshot and unpin old rows before writing blank v2 spoken fields");
 assert.doesNotMatch(coreFactSource, /runCoreFactRefinementJobs|CORE_FACT_REFRESH_CALLS|CORE_FACT_REFRESH_DAYS/);
 const buildSource = await fs.readFile(new URL("../pages/api/_lib/knowledgeReceptionistBuilds.js", import.meta.url), "utf8");
 assert.match(buildSource, /refreshNoToolStatement: true/, "website publication must refresh the persisted no-tool statement");
