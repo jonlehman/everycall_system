@@ -3,6 +3,10 @@ import { requireSession, resolveTenantKey } from "../../../../_lib/auth.js";
 import { requireTenantBillingAccess, requireTenantRoles } from "../../../../_lib/billing.js";
 import { runKnowledgeBuildJobs } from "../../../../_lib/knowledgeReceptionistBuilds.js";
 
+export const config = {
+  maxDuration: 300
+};
+
 function fail(res, status, error, message) {
   return res.status(status).json({ ok: false, error, message });
 }
@@ -37,7 +41,8 @@ export default async function handler(req, res) {
     const result = await runKnowledgeBuildJobs(pool, {
       tenantKey,
       buildId,
-      maxBuilds: 1
+      maxBuilds: 1,
+      workerId: `knowledge-manual:${process.env.VERCEL_REGION || "local"}:${process.pid}`
     });
     return res.status(200).json({ ok: true, ...result });
   } catch (err) {

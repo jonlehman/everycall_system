@@ -28,11 +28,13 @@
 
 ## What You Know By Heart
 - Run `corepack pnpm validate:core-facts` after building `@everycall/contracts`.
+- Run `corepack pnpm validate:knowledge-build-leases` after changing knowledge-build scheduling or terminal-state handling. It verifies exclusive claims, heartbeats, expiry takeover, token-scoped release, and that published builds cannot be reclaimed.
 - The validator reconstructs the pre-Grok OpenAI v3 section set and verifies its SHA-256 baseline, tool definitions, and sample phrases, then verifies the exact v11 additions separately.
 - With no pins, verify the entire by-heart section and every reference to it are absent. With pins, instruction-like text must be rejected, the rendered block must stay within 600 tokens and 20 facts, and tenant/build isolation must hold.
 - Verify an unchanged rating-input hash causes zero OpenAI scoring calls and carries its saved score, spoken text, model, and rated timestamp forward. Changing the canonical claim, qualifiers, boundaries, or tenant scoring context must invalidate the hash and score only that fact.
 - Verify the legacy backfill refuses missing-fact model calls unless `EVERYCALL_ALLOW_CORE_FACT_OPENAI_SCORING=1` is explicitly set.
 - Verify deterministic score-descending selection, stable tie-breaking, deletion-only reranking without OpenAI, pin-only spoken rewrites, materialized-section checksums, and call-start injection from the saved database block.
+- Verify a rewrite that introduces `we`, `our`, or `us` when the canonical supplier fact is third-person is rejected. If both the initial and repair rewrites remain unsafe, verify only that fact is excluded and the build continues.
 - In a live canary, ask one question fully covered by a pin and verify there is no lookup. Then ask an adjacent unsupported question and verify `knowledge_lookup` still runs.
 
 ## Receptionist v11 Acceptance

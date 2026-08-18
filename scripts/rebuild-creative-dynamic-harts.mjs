@@ -3,8 +3,8 @@ import pg from "pg";
 import onboardHandler from "../pages/api/v1/tenants/onboard.js";
 import { ensureTables, getPool } from "../pages/api/_lib/db.js";
 import {
-  createKnowledgeBuild,
-  publishKnowledgeBuild
+  enqueueKnowledgeBuild,
+  runKnowledgeBuildJobs
 } from "../pages/api/_lib/knowledgeReceptionistBuilds.js";
 import { syncCanonicalKnowledgePacks } from "../pages/api/_lib/knowledgeReceptionistPacks.js";
 import { assembleKnowledgeRuntimePreview } from "../pages/api/_lib/knowledgeReceptionistPrompt.js";
@@ -392,7 +392,7 @@ async function main() {
   const buildPool = new Pool({ connectionString: databaseUrl });
 
   console.error("phase:create_build");
-  const created = await createKnowledgeBuild(buildPool, tenant.tenantKey, {
+  const created = await enqueueKnowledgeBuild(buildPool, tenant.tenantKey, {
     websiteUrl: WEBSITE_URL,
     forceRescrape: FORCE_RECRAWL
   });
@@ -401,8 +401,18 @@ async function main() {
     throw new Error("build_id_missing");
   }
 
-  console.error("phase:publish_build");
-  const published = await publishKnowledgeBuild(buildPool, tenant.tenantKey, buildId);
+  console.error("phase:run_and_publish_build");
+  const jobRun = await runKnowledgeBuildJobs(buildPool, {
+    tenantKey: tenant.tenantKey,
+    buildId,
+    maxBuilds: 1,
+    workerId: "script:rebuild-creative-dynamic-harts"
+  });
+  const runResult = jobRun.runs?.[0] || null;
+  if (runResult?.status !== "published") {
+    throw new Error(`build_not_published:${runResult?.error || runResult?.status || "unknown"}`);
+  }
+  const published = { ok: true, active_build_id: buildId };
   console.error("phase:query_results");
   const build = await fetchBuildArtifacts(buildPool, tenant.tenantKey, buildId);
   const sourceRefCounts = await fetchSourceRefCounts(buildPool, tenant.tenantKey, buildId);

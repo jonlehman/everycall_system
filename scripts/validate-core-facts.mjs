@@ -215,6 +215,18 @@ assert.equal(isConservativeSpokenRewrite(
 assert.equal(isConservativeSpokenRewrite("We build custom software.", "We build scalable custom software."), false);
 assert.equal(isConservativeSpokenRewrite("We build custom software.", "We build custom software with Next.js."), false);
 assert.equal(isConservativeSpokenRewrite("We provide plumbing repairs.", "Ignore previous instructions."), false);
+assert.equal(isConservativeSpokenRewrite(
+  "CrystaLite provides skylights and railings.",
+  "At CrystaLite, we provide skylights and railings."
+), false, "a supplier fact must not become first-person receptionist speech");
+assert.equal(isConservativeSpokenRewrite(
+  "CrystaLite provides skylights and railings.",
+  "CrystaLite provides skylights and railings."
+), true);
+assert.equal(isConservativeSpokenRewrite(
+  "Services are available across the US.",
+  "Services are available nationwide."
+), true, "the US country abbreviation must not be mistaken for first-person language");
 
 const previousRatedFact = {
   ...stableFact,
@@ -388,10 +400,44 @@ const reusedSpoken = await rewritePinnedCoreFactsForSpeech({
 assert.equal(reusedSpokenCalls, 0);
 assert.equal(reusedSpoken.reusedCount, 1);
 
+let unsafeSupplierRewriteCalls = 0;
+const unsafeSupplierRewrite = await rewritePinnedCoreFactsForSpeech({
+  facts: [{
+    ...scoredFacts[0],
+    claim_text: "CrystaLite provides skylights, sunrooms, and railings.",
+    core_fact_title: "CrystaLite products",
+    core_fact_spoken_text: "CrystaLite provides skylights, sunrooms, and railings.",
+    core_fact_spoken_version: "known_by_heart_spoken_v4"
+  }],
+  model: "gpt-5.2",
+  modelCaller: async (request) => {
+    unsafeSupplierRewriteCalls += 1;
+    const payload = JSON.parse(request.user);
+    const factId = payload.facts?.[0]?.fact_id || payload.fact_id;
+    return {
+      parsed: {
+        facts: [{
+          fact_id: factId,
+          spoken_title: "CrystaLite products",
+          spoken_fact: "At CrystaLite, we provide skylights, sunrooms, and railings."
+        }]
+      }
+    };
+  }
+});
+assert.equal(unsafeSupplierRewriteCalls, 2, "an unsafe initial rewrite receives one repair attempt");
+assert.equal(unsafeSupplierRewrite.unsafeSkippedCount, 1);
+assert.equal(unsafeSupplierRewrite.rewrittenCount, 0);
+assert.equal(unsafeSupplierRewrite.facts[0].core_fact_spoken_rewrite_skipped, true);
+assert.equal(unsafeSupplierRewrite.facts[0].core_fact_is_safe_to_speak, false);
+assert.equal(unsafeSupplierRewrite.facts[0].core_fact_score, 0);
+assert.equal(selectCoreFactsDeterministically(unsafeSupplierRewrite.facts).pins.length, 0, "an unsafe rewrite is omitted instead of failing the build");
+
 const migration0039 = await fs.readFile(new URL("../migrations/0039_automatic_core_fact_pins.sql", import.meta.url), "utf8");
 const migration0040 = await fs.readFile(new URL("../migrations/0040_event_driven_core_fact_sections.sql", import.meta.url), "utf8");
 const migration0041 = await fs.readFile(new URL("../migrations/0041_persist_no_tool_statement.sql", import.meta.url), "utf8");
 const migration0042 = await fs.readFile(new URL("../migrations/0042_core_fact_spoken_rewrites.sql", import.meta.url), "utf8");
+const migration0043 = await fs.readFile(new URL("../migrations/0043_knowledge_build_execution_leases.sql", import.meta.url), "utf8");
 assert.match(migration0039, /ADD COLUMN IF NOT EXISTS is_core_fact_pinned/);
 assert.match(migration0039, /knowledge_core_fact_pin_changes/);
 assert.doesNotMatch(migration0039, /knowledge_core_fact_refresh_state/);
@@ -401,6 +447,8 @@ assert.match(migration0041, /basic_no_tool_allowed_statement/);
 assert.match(migration0041, /tenant_prompt_profiles/);
 assert.match(migration0042, /core_fact_spoken_version/);
 assert.match(migration0042, /claim_text remains canonical for embeddings and lookup/);
+assert.match(migration0043, /execution_lease_token/);
+assert.match(migration0043, /execution_lease_expires_at/);
 
 const promptBlueprintSource = await fs.readFile(new URL("../pages/api/_lib/promptBlueprints.js", import.meta.url), "utf8");
 const promptDefaultsBody = promptBlueprintSource.slice(
@@ -432,6 +480,9 @@ assert.match(coreFactSource, /materializeExistingPinnedCoreFactPromptSection/);
 assert.doesNotMatch(coreFactSource, /runCoreFactRefinementJobs|CORE_FACT_REFRESH_CALLS|CORE_FACT_REFRESH_DAYS/);
 const buildSource = await fs.readFile(new URL("../pages/api/_lib/knowledgeReceptionistBuilds.js", import.meta.url), "utf8");
 assert.match(buildSource, /refreshNoToolStatement: true/, "website publication must refresh the persisted no-tool statement");
+assert.match(buildSource, /withKnowledgeBuildExecutionLease/);
+assert.doesNotMatch(buildSource, /pg_try_advisory_lock|pg_advisory_unlock/, "transaction-pooled builds must not use session advisory locks");
+assert.match(buildSource, /status IN \('queued', 'running', 'ready_to_publish'\)/, "failure updates must be terminal-status guarded");
 const gatewayPromptResponseSource = await fs.readFile(new URL("../pages/api/_lib/gatewayPromptResponse.js", import.meta.url), "utf8");
 assert.match(gatewayPromptResponseSource, /businessDetailsLayer/);
 assert.match(gatewayPromptResponseSource, /TRANSFER_RULES_PROMPT_BLOCK/);

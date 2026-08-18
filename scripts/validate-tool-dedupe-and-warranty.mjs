@@ -218,7 +218,8 @@ async function main() {
     const beforeArtifacts = beforeBuildId ? await fetchWarrantyArtifacts(pool, beforeBuildId) : null;
 
     const created = await createKnowledgeBuild(pool, TENANT_KEY, {
-      websiteUrl: WEBSITE_URL
+      websiteUrl: WEBSITE_URL,
+      allowUnleasedForValidation: true
     });
     const buildId = String(created?.build?.build_id || "");
     if (!buildId) {
@@ -228,7 +229,7 @@ async function main() {
       throw new Error(`build_not_ready_to_publish:${created?.status || "unknown"}`);
     }
 
-    await publishKnowledgeBuild(pool, TENANT_KEY, buildId);
+    await publishKnowledgeBuild(pool, TENANT_KEY, buildId, { allowUnleasedForValidation: true });
     const afterArtifacts = await fetchWarrantyArtifacts(pool, buildId);
     const runtimePreviewResults = await validateWarrantyQueries(pool, buildId);
     const toolDedupeResults = await validateToolDedupeSimulation();

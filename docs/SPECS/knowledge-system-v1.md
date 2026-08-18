@@ -30,11 +30,13 @@ The user-facing product should not expose raw `knowledge_facts` by default.
 - Every canonical fact remains vector indexed. The prompt-only spoken form never replaces or weakens the source fact used for lookup.
 - OpenAI independently scores a new or materially changed fact for stability, safety, and importance to a phone receptionist. An unchanged rating-input hash reuses the saved rating without another OpenAI review.
 - After deterministic selection, only pinned candidates receive a separate versioned spoken-register rewrite: a neutral label plus one sentence of at most 200 characters. The rewrite may paraphrase but may not add, infer, combine, or broaden facts; validators remove or reject marketing language, title duplication, new technology names, changed numbers/negations/limits, and phone-unfriendly jargon.
+- Spoken rewrites must preserve narrative identity: they may not introduce first-person language when the canonical fact is third-person supplier or manufacturer copy. If the initial rewrite and one repair attempt remain unsafe, the candidate is excluded from pins while its canonical fact remains available to lookup; one rejected pin never fails the whole build.
 - SQL orders eligible facts by score descending with stable fingerprint and fact-ID tie-breakers. Deterministic code rejects instruction or marketing leakage and unsafe semantic changes, deduplicates fingerprints, and enforces tenant isolation, a 600-token prompt budget, and a 20-fact ceiling.
 - The resulting tenant/build section, selected fact IDs, rating version, and checksum are materialized in `knowledge_core_fact_prompt_sections`. Calls inject that saved block and do not run selection or scoring.
 - Adding, changing, or deleting knowledge causes the next build to rerank and rematerialize the section. Deletion and reranking require no OpenAI call; only facts with changed rating inputs are scored.
 - The internal admin shows active-build pins and the append-only change history. Tenants do not manually manage pins in v1.
 - If an active build has no pins, the entire `What You Know By Heart` section and every sentence that refers to it are omitted. Independent canonical behavior changes remain present.
+- Background build execution uses a durable token/expiry/heartbeat lease stored on `knowledge_builds`. Only the lease owner may complete, publish, or fail scheduled work, and terminal published state cannot be overwritten by a stale execution.
 
 ## Artifact Layers
 

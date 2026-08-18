@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-08-18
+- Serialize knowledge-build cron and manual runners with a durable row lease containing a unique token, owner, expiry, and heartbeat. Do not use PostgreSQL session advisory locks because production uses Neon's transaction-pooled endpoint.
+- Require the active lease token for scheduled ready/publish/failure transitions. A stale or duplicate worker may not overwrite a terminal build, especially a build that is already published.
+- Treat an unsafe spoken-register rewrite as a fact-local exclusion: keep the canonical fact for embeddings and lookup, remove it from prompt pins, record a warning, and continue the build. Spoken rewrites may not introduce first-person language absent from the canonical fact, preventing supplier impersonation.
+
 ## 2026-08-17
 - Keep the restored OpenAI canonical receptionist v3 prompt byte-for-byte unchanged for tenants without pinned core facts. Canonical v10 adds only a conditional `What You Know By Heart` section, one matching memory allowance, and one lookup exception; the validation suite reconstructs and hashes the v3 baseline to prevent unrelated prompt drift.
 - Rate a fact for `What You Know By Heart` only when its canonical content, relevant qualifiers, or tenant scoring context changes. Reuse the saved OpenAI rating for an identical rating-input hash; never periodically ask OpenAI to reconsider unchanged facts.

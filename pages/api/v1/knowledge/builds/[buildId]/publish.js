@@ -1,7 +1,7 @@
 import { getPool } from "../../../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../../../_lib/auth.js";
 import { requireTenantBillingAccess, requireTenantRoles } from "../../../../_lib/billing.js";
-import { publishKnowledgeBuild } from "../../../../_lib/knowledgeReceptionistBuilds.js";
+import { publishKnowledgeBuildWithExecutionLease } from "../../../../_lib/knowledgeReceptionistBuilds.js";
 
 function fail(res, status, error, message) {
   return res.status(status).json({ ok: false, error, message });
@@ -34,7 +34,9 @@ export default async function handler(req, res) {
       return fail(res, 400, "build_id_required", "Build ID is required.");
     }
 
-    const result = await publishKnowledgeBuild(pool, tenantKey, buildId);
+    const result = await publishKnowledgeBuildWithExecutionLease(pool, tenantKey, buildId, {
+      owner: `knowledge-publish:${process.env.VERCEL_REGION || "local"}:${process.pid}`
+    });
     return res.status(200).json({ ok: true, ...result });
   } catch (err) {
     const message = String(err?.message || "unknown");
@@ -46,6 +48,9 @@ export default async function handler(req, res) {
     }
     if (message === "build_not_ready_to_publish") {
       return fail(res, 409, "build_not_ready_to_publish", "Only ready-to-publish builds can be activated.");
+    }
+    if (message === "knowledge_build_execution_lease_unavailable") {
+      return fail(res, 409, "knowledge_build_execution_lease_unavailable", "This build is already being processed. Try again shortly.");
     }
     return fail(res, 500, "build_publish_error", message);
   }

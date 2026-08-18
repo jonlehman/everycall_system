@@ -1,6 +1,10 @@
 import { ensureTables, getPool } from "../_lib/db.js";
 import { runKnowledgeBuildJobs } from "../_lib/knowledgeReceptionistBuilds.js";
 
+export const config = {
+  maxDuration: 300
+};
+
 function isAuthorized(req) {
   const configured = String(process.env.CRON_SECRET || "").trim();
   if (!configured) return false;
@@ -26,9 +30,16 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "database_unavailable" });
     }
     await ensureTables(pool);
-    const result = await runKnowledgeBuildJobs(pool, {});
+    const result = await runKnowledgeBuildJobs(pool, {
+      workerId: `knowledge-cron:${process.env.VERCEL_REGION || "local"}:${process.pid}`
+    });
+    console.log(JSON.stringify({ event: "knowledge_build_cron_result", ...result }));
     return res.status(200).json({ ok: true, result });
   } catch (err) {
+    console.error(JSON.stringify({
+      event: "knowledge_build_cron_failed",
+      error: err?.message || "unknown"
+    }));
     return res.status(500).json({ error: "knowledge_build_cron_error", message: err?.message || "unknown" });
   }
 }

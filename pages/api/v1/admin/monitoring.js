@@ -4,6 +4,10 @@ import { runKnowledgeBuildJobs } from "../../_lib/knowledgeReceptionistBuilds.js
 import { ASYNC_JOB_TYPES, enqueueAsyncJob } from "../../../../lib/asyncJobs.js";
 import { buildStableEventId, INTEGRATION_EVENT_TYPES } from "../../_lib/outboundIntegrations.js";
 
+export const config = {
+  maxDuration: 300
+};
+
 function normalizeText(value) {
   return String(value || "").trim();
 }
@@ -309,7 +313,8 @@ export default async function handler(req, res) {
       const result = await runKnowledgeBuildJobs(pool, {
         tenantKey,
         buildId,
-        maxBuilds: 1
+        maxBuilds: 1,
+        workerId: `knowledge-admin:${process.env.VERCEL_REGION || "local"}:${process.pid}`
       });
       await writeAuditLog(pool, {
         tenantKey,

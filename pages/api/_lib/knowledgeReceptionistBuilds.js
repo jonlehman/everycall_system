@@ -12,6 +12,10 @@ import {
 import { loadTenantDomainAssignments, resolveTenantDomainAssignments, syncCanonicalKnowledgePacks } from "./knowledgeReceptionistPacks.js";
 import { ensureTenantPromptProfileCompanyDescriptionSnapshot } from "./promptBlueprints.js";
 import { loadTenantBootstrapProfile } from "./tenantBootstrapProfiles.js";
+import {
+  markKnowledgeBuildFailedIfLeaseOwned,
+  withKnowledgeBuildExecutionLease
+} from "./knowledgeBuildLease.js";
 
 function readPositiveIntEnv(name, fallback) {
   const value = Number.parseInt(String(process.env[name] || ""), 10);
@@ -3729,12 +3733,14 @@ export async function retrieveBuildRuntimeBundle(db, tenantKey, buildId, query, 
   };
 }
 
-async function updateBuildAfterValidation(db, buildId, counts, validationSummary, extraWarnings = []) {
+async function updateBuildAfterValidation(db, buildId, counts, validationSummary, extraWarnings = [], {
+  executionLeaseToken = ""
+} = {}) {
   const blockers = Array.isArray(validationSummary?.blockers) ? validationSummary.blockers : [];
   const warnings = uniqueValues([...(validationSummary?.warnings || []), ...extraWarnings]);
   const nextStatus = blockers.length ? "qa_blocked" : "ready_to_publish";
 
-  await db.query(
+  const updated = await db.query(
     `UPDATE knowledge_builds
      SET status = $2,
          artifact_counts_json = $3::jsonb,
@@ -3742,7 +3748,11 @@ async function updateBuildAfterValidation(db, buildId, counts, validationSummary
          warnings_json = $5::jsonb,
          validation_summary_json = $6::jsonb,
          updated_at = NOW()
-     WHERE build_id = $1`,
+     WHERE build_id = $1
+       AND (
+         $7 = ''
+         OR (execution_lease_token = $7 AND execution_lease_expires_at > NOW())
+       )`,
     [
       buildId,
       nextStatus,
@@ -3756,9 +3766,13 @@ async function updateBuildAfterValidation(db, buildId, counts, validationSummary
         warnings: warnings.length
       }),
       JSON.stringify(warnings),
-      JSON.stringify(validationSummary)
+      JSON.stringify(validationSummary),
+      normalizeText(executionLeaseToken)
     ]
   );
+  if (normalizeText(executionLeaseToken) && updated.rowCount !== 1) {
+    throw new Error("knowledge_build_execution_lease_lost");
+  }
 
   return nextStatus;
 }
@@ -4369,33 +4383,6 @@ async function loadKnowledgeBuildExecutionInput(db, tenantKey, buildId) {
   };
 }
 
-async function withKnowledgeBuildExecutionLock(db, tenantKey, buildId, work) {
-  const canBorrowClient = typeof db?.connect === "function" && typeof db?.release !== "function";
-  const client = canBorrowClient ? await db.connect() : db;
-  const ownsClient = canBorrowClient;
-  try {
-    const lockRes = await client.query(
-      `SELECT pg_try_advisory_lock(hashtext($1), hashtext($2)) AS locked`,
-      [normalizeText(tenantKey), normalizeText(buildId)]
-    );
-    if (!lockRes.rows[0]?.locked) {
-      return { locked: false, result: null };
-    }
-    try {
-      return { locked: true, result: await work(client) };
-    } finally {
-      await client.query(
-        `SELECT pg_advisory_unlock(hashtext($1), hashtext($2))`,
-        [normalizeText(tenantKey), normalizeText(buildId)]
-      ).catch(() => {});
-    }
-  } finally {
-    if (ownsClient && typeof client?.release === "function") {
-      client.release();
-    }
-  }
-}
-
 export async function listKnowledgeReceptionistBuilds(db, tenantKey) {
   await assertSliceTablesReady(db);
   const [buildsRes, pointerRes, assignments, bootstrapProfile, batchStatsByBuild, rowStatsByBuild, persistedArtifactStatsByBuild] = await Promise.all([
@@ -4412,6 +4399,10 @@ export async function listKnowledgeReceptionistBuilds(db, tenantKey) {
               kb.warnings_json,
               kb.validation_summary_json,
               kb.analysis_checkpoint_json,
+              kb.execution_lease_owner,
+              kb.execution_lease_heartbeat_at,
+              kb.execution_lease_expires_at,
+              kb.execution_attempt_count,
               kb.published_at,
               kb.supersedes_build_id,
               kb.created_at,
@@ -4483,7 +4474,7 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
     params.push(buildId);
     where.push(`build_id = $${params.length}`);
   }
-  where.push(`status IN ('queued', 'running')`);
+  where.push(`status IN ('queued', 'running', 'ready_to_publish')`);
   if (!buildId && KNOWLEDGE_BUILD_JOB_MAX_AUTO_RESUME_AGE_MINUTES > 0) {
     params.push(KNOWLEDGE_BUILD_JOB_MAX_AUTO_RESUME_AGE_MINUTES);
     where.push(`updated_at >= NOW() - ($${params.length}::int * INTERVAL '1 minute')`);
@@ -4494,29 +4485,55 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
     `SELECT build_id, tenant_key, status, created_at, updated_at
      FROM knowledge_builds
      WHERE ${where.join(" AND ")}
-     ORDER BY CASE WHEN status = 'queued' THEN 0 ELSE 1 END,
+     ORDER BY CASE WHEN status = 'ready_to_publish' THEN 0 WHEN status = 'queued' THEN 1 ELSE 2 END,
               updated_at ASC,
               created_at ASC
      LIMIT $${params.length}`,
     params
   );
 
+  const executionOwner = normalizeText(options.workerId)
+    || `knowledge-build:${process.env.VERCEL_REGION || "local"}:${process.pid}:${crypto.randomUUID()}`;
   const runs = [];
   for (const row of result.rows || []) {
-    const lockedResult = await withKnowledgeBuildExecutionLock(db, row.tenant_key, row.build_id, async (client) => {
-      const executionInput = await loadKnowledgeBuildExecutionInput(client, row.tenant_key, row.build_id);
+    const leasedResult = await withKnowledgeBuildExecutionLease(db, {
+      tenantKey: row.tenant_key,
+      buildId: row.build_id,
+      owner: executionOwner
+    }, async ({ token, lease, assertOwned, heartbeat }) => {
       try {
-        const buildResult = await createKnowledgeBuild(client, row.tenant_key, {
+        await assertOwned();
+        if (normalizeText(lease?.status).toLowerCase() === "ready_to_publish") {
+          await publishKnowledgeBuild(db, row.tenant_key, row.build_id, {
+            executionLeaseToken: token
+          });
+          return {
+            buildId: normalizeText(row.build_id),
+            tenantKey: normalizeText(row.tenant_key),
+            action: "processed",
+            status: "published",
+            autoPublished: true,
+            resumedReadyBuild: true
+          };
+        }
+        const executionInput = await loadKnowledgeBuildExecutionInput(db, row.tenant_key, row.build_id);
+        const buildResult = await createKnowledgeBuild(db, row.tenant_key, {
           buildId: executionInput.buildId,
           buildKind: executionInput.buildKind,
           baseBuildId: executionInput.baseBuildId,
           websiteUrl: executionInput.websiteUrl,
           assignments: executionInput.assignments,
           uploadedDocumentIds: executionInput.uploadedDocumentIds,
-          setupInterviewSessionIds: executionInput.setupInterviewSessionIds
+          setupInterviewSessionIds: executionInput.setupInterviewSessionIds,
+          executionLeaseToken: token,
+          assertExecutionLease: assertOwned
         });
         if (normalizeText(buildResult?.status).toLowerCase() === "ready_to_publish") {
-          await publishKnowledgeBuild(client, row.tenant_key, executionInput.buildId);
+          await heartbeat();
+          await assertOwned();
+          await publishKnowledgeBuild(db, row.tenant_key, executionInput.buildId, {
+            executionLeaseToken: token
+          });
           return {
             buildId: executionInput.buildId,
             tenantKey: row.tenant_key,
@@ -4532,9 +4549,16 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
           status: buildResult.status
         };
       } catch (err) {
-        return {
-          buildId: executionInput.buildId,
+        const failureMessages = extractKnowledgeBuildFailureMessages(err);
+        await markKnowledgeBuildFailedIfLeaseOwned(db, {
           tenantKey: row.tenant_key,
+          buildId: row.build_id,
+          token,
+          failureMessages
+        }).catch(() => false);
+        return {
+          buildId: normalizeText(row.build_id),
+          tenantKey: normalizeText(row.tenant_key),
           action: "failed",
           status: "failed",
           error: normalizeText(err?.message || "build_failed")
@@ -4542,16 +4566,16 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
       }
     });
 
-    if (!lockedResult.locked) {
+    if (!leasedResult.acquired) {
       runs.push({
         buildId: normalizeText(row.build_id),
         tenantKey: normalizeText(row.tenant_key),
-        action: "skipped_locked",
+        action: "skipped_leased",
         status: normalizeText(row.status).toLowerCase()
       });
       continue;
     }
-    runs.push(lockedResult.result || {
+    runs.push(leasedResult.result || {
       buildId: normalizeText(row.build_id),
       tenantKey: normalizeText(row.tenant_key),
       action: "processed",
@@ -4587,6 +4611,14 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
   const setupInterviewSessionIds = normalizeIdArray(input.setupInterviewSessionIds || input.setup_interview_session_ids);
   const forceRescrape = input.forceRescrape === true
     || String(input.forceRescrape || input.force_rescrape || "").toLowerCase() === "true";
+  const executionLeaseToken = normalizeText(input.executionLeaseToken || input.execution_lease_token);
+  const allowUnleasedForValidation = input.allowUnleasedForValidation === true;
+  const assertExecutionLease = typeof input.assertExecutionLease === "function"
+    ? input.assertExecutionLease
+    : null;
+  if (!enqueueOnly && !executionLeaseToken && !allowUnleasedForValidation) {
+    throw new Error("knowledge_build_execution_lease_required");
+  }
 
   if (buildKind === "document_overlay" && !uploadedDocumentIds.length) {
     uploadedDocumentIds = await loadApprovedUploadedDocumentIds(db, tenantKey);
@@ -4792,7 +4824,7 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
       ? "compiling"
       : (discoveryCompleted ? "raw_source_persisting" : "discovering");
 
-    await db.query(
+    const runningUpdate = await db.query(
       `UPDATE knowledge_builds
        SET status = 'running',
            build_kind = $2,
@@ -4800,9 +4832,18 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
            source_fingerprint_json = $4::jsonb,
            warnings_json = '[]'::jsonb,
            updated_at = NOW()
-       WHERE build_id = $1`,
-      [buildId, buildKind, baseBuildId || null, JSON.stringify(inputFingerprint)]
+       WHERE build_id = $1
+         AND status IN ('queued', 'running', 'failed')
+         AND (
+           ($5 <> '' AND execution_lease_token = $5 AND execution_lease_expires_at > NOW())
+           OR ($5 = '' AND execution_lease_token IS NULL)
+         )`,
+      [buildId, buildKind, baseBuildId || null, JSON.stringify(inputFingerprint), executionLeaseToken]
     );
+    if (executionLeaseToken && runningUpdate.rowCount !== 1) {
+      throw new Error("knowledge_build_execution_lease_lost");
+    }
+    if (assertExecutionLease) await assertExecutionLease();
     await db.query(
       `UPDATE source_intake_sessions
        SET status = $2,
@@ -4904,8 +4945,10 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
     });
     const compiled = await compileKnowledgeBuildArtifacts({
       db,
-      buildInfo: rawBuildInfo
+      buildInfo: rawBuildInfo,
+      assertExecutionLease
     });
+    if (assertExecutionLease) await assertExecutionLease();
 
     const nextStatus = await withTransaction(db, async (client) => {
       const { counts, compilerWarnings } = await insertCompiledArtifacts(
@@ -4931,7 +4974,8 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
         buildId,
         counts,
         validationSummary,
-        uniqueValues([...extraWarnings, ...compilerWarnings])
+        uniqueValues([...extraWarnings, ...compilerWarnings]),
+        { executionLeaseToken }
       );
     });
 
@@ -4949,23 +4993,30 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
     };
   } catch (err) {
     const failureMessages = extractKnowledgeBuildFailureMessages(err);
-    await db.query(
-      `UPDATE knowledge_builds
-       SET status = 'failed',
-           warnings_json = $2::jsonb,
-           updated_at = NOW()
-       WHERE build_id = $1`,
-      [buildId, JSON.stringify(failureMessages)]
-    );
-    await db.query(
-      `UPDATE source_intake_sessions
-       SET status = 'failed',
-           errors_json = $2::jsonb,
-           completed_at = NOW(),
-           updated_at = NOW()
-       WHERE source_intake_session_id = $1`,
-      [intakeSessionId, JSON.stringify(failureMessages)]
-    );
+    const failedBuild = await markKnowledgeBuildFailedIfLeaseOwned(db, {
+      tenantKey,
+      buildId,
+      token: executionLeaseToken,
+      failureMessages,
+      allowUnleasedForValidation
+    });
+    if (failedBuild) {
+      await db.query(
+        `UPDATE source_intake_sessions
+         SET status = 'failed',
+             errors_json = $2::jsonb,
+             completed_at = NOW(),
+             updated_at = NOW()
+         WHERE source_intake_session_id = $1`,
+        [intakeSessionId, JSON.stringify(failureMessages)]
+      );
+    } else {
+      logBuildProgress("failure_status_update_suppressed", {
+        buildId,
+        reason: executionLeaseToken ? "lease_lost_or_terminal_status" : "terminal_status",
+        error: failureMessages[0] || "build_failed"
+      });
+    }
     throw err;
   }
 }
@@ -4974,7 +5025,13 @@ export async function createWebsiteKnowledgeBuild(db, tenantKey, input = {}) {
   return createKnowledgeBuild(db, tenantKey, input);
 }
 
-export async function publishKnowledgeBuild(db, tenantKey, buildId) {
+export async function publishKnowledgeBuild(db, tenantKey, buildId, {
+  executionLeaseToken = "",
+  allowUnleasedForValidation = false
+} = {}) {
+  if (!normalizeText(executionLeaseToken) && allowUnleasedForValidation !== true) {
+    throw new Error("knowledge_build_execution_lease_required");
+  }
   await assertSliceTablesReady(db);
   const result = await withTransaction(db, async (client) => {
     const buildRes = await client.query(
@@ -4982,10 +5039,15 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId) {
        FROM knowledge_builds
        WHERE tenant_key = $1
          AND build_id = $2
+         AND (
+           $3 = ''
+           OR (execution_lease_token = $3 AND execution_lease_expires_at > NOW())
+         )
        FOR UPDATE`,
-      [tenantKey, buildId]
+      [tenantKey, buildId, normalizeText(executionLeaseToken)]
     );
     if (!buildRes.rowCount) {
+      if (normalizeText(executionLeaseToken)) throw new Error("knowledge_build_execution_lease_lost");
       throw new Error("build_not_found");
     }
     const status = normalizeText(buildRes.rows[0]?.status);
@@ -5051,6 +5113,37 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId) {
   });
   setBuildAssetCache(tenantKey, buildId, result.prewarmedAssets);
   return { ok: result.ok, active_build_id: result.active_build_id, previous_build_id: result.previous_build_id, cache_prewarmed: true };
+}
+
+export async function publishKnowledgeBuildWithExecutionLease(db, tenantKey, buildId, {
+  owner = "knowledge-build-manual-publish"
+} = {}) {
+  const leased = await withKnowledgeBuildExecutionLease(db, {
+    tenantKey,
+    buildId,
+    owner
+  }, async ({ token, assertOwned }) => {
+    await assertOwned();
+    return publishKnowledgeBuild(db, tenantKey, buildId, {
+      executionLeaseToken: token
+    });
+  });
+  if (!leased.acquired) {
+    const existing = await db.query(
+      `SELECT status
+       FROM knowledge_builds
+       WHERE tenant_key = $1
+         AND build_id = $2
+       LIMIT 1`,
+      [normalizeText(tenantKey), normalizeText(buildId)]
+    );
+    if (!existing.rowCount) throw new Error("build_not_found");
+    if (normalizeText(existing.rows[0]?.status) !== "ready_to_publish") {
+      throw new Error("build_not_ready_to_publish");
+    }
+    throw new Error("knowledge_build_execution_lease_unavailable");
+  }
+  return leased.result;
 }
 
 export async function rollbackKnowledgeBuild(db, tenantKey, buildId) {

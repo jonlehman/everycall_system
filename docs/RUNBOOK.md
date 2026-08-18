@@ -53,11 +53,13 @@
 
 ## What You Know By Heart
 - Canonical Receptionist v11 is the restored OpenAI v3 prompt plus the conditional by-heart accommodations and the reviewed v11 capture/closing/humor rules. With no pins, omit the by-heart section and every by-heart reference; the v11 behavior rules remain.
-- Apply only migrations `0041_persist_no_tool_statement.sql` and `0042_core_fact_spoken_rewrites.sql` with `EVERYCALL_APPLY_RECEPTIONIST_V11_MIGRATIONS=1 corepack pnpm migrate:receptionist-v11`.
+- Apply migrations `0041_persist_no_tool_statement.sql`, `0042_core_fact_spoken_rewrites.sql`, and `0043_knowledge_build_execution_leases.sql` with `EVERYCALL_APPLY_RECEPTIONIST_V11_MIGRATIONS=1 corepack pnpm migrate:receptionist-v11`.
 - Run `corepack pnpm backfill:core-facts` for a no-egress dry run. It reuses complete saved ratings and fails with an aggregate count if any fact still requires OpenAI scoring. After explicit data-flow approval, allow only those missing ratings with `EVERYCALL_ALLOW_CORE_FACT_OPENAI_SCORING=1`. Apply with `EVERYCALL_APPLY_CORE_FACT_BACKFILL=1 corepack pnpm backfill:core-facts`; target one tenant with `EVERYCALL_CORE_FACT_BACKFILL_TENANT=<tenant_key>`.
 - To rewrite only a tenant's current pins without re-scoring or exporting all facts, set `EVERYCALL_REWRITE_PINNED_CORE_FACTS=1` and `EVERYCALL_PINNED_CORE_FACT_TENANT=<tenant_key>`, then run `corepack pnpm rewrite:pinned-core-facts`.
 - There is no periodic selector. A knowledge build or explicit backfill deterministically ranks saved scores, materializes the tenant/build section, and records its checksum. Calls only load the saved section.
 - Run `corepack pnpm validate:receptionist-v11`, `corepack pnpm validate:realtime2-payloads`, `corepack pnpm typecheck`, and `corepack pnpm build` before release.
+- Knowledge-build cron and manual runners share a database row lease. Defaults are a 180-second expiry and a 30-second heartbeat. `execution_lease_owner`, `execution_lease_heartbeat_at`, `execution_lease_expires_at`, and `execution_attempt_count` are returned by the build-list API for diagnosis.
+- If a serverless invocation terminates, do not manually clear a healthy lease. The cron resumes after expiry. A published build must never be changed to failed by a stale worker; investigate any terminal-status mismatch before repairing it with an audited, build-specific transaction.
 - The synthetic Realtime battery requires explicit API-cost approval: `EVERYCALL_RUN_RECEPTIONIST_V11_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v11:realtime`. Optional comma-separated filters are `EVERYCALL_RECEPTIONIST_V11_ACCEPTANCE_MODES` and `EVERYCALL_RECEPTIONIST_V11_ACCEPTANCE_CASES`.
 
 ## Realtime Prompt Layering

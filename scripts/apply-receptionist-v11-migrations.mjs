@@ -6,7 +6,8 @@ const { Pool } = pg;
 const REQUIRED_APPROVAL = "EVERYCALL_APPLY_RECEPTIONIST_V11_MIGRATIONS";
 const MIGRATIONS = [
   "0041_persist_no_tool_statement.sql",
-  "0042_core_fact_spoken_rewrites.sql"
+  "0042_core_fact_spoken_rewrites.sql",
+  "0043_knowledge_build_execution_leases.sql"
 ];
 
 function normalizeText(value) {

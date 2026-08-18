@@ -372,7 +372,7 @@ async function main() {
       }
     };
 
-    const publish2 = await publishKnowledgeBuild(publishProxy, tenantA, build2.build_id);
+    const publish2 = await publishKnowledgeBuild(publishProxy, tenantA, build2.build_id, { allowUnleasedForValidation: true });
     const afterPublishPointer = (await pool.query(`SELECT active_build_id, previous_build_id FROM tenant_active_knowledge_builds WHERE tenant_key = $1`, [tenantA])).rows[0] || null;
     const afterPublishStatuses = (await pool.query(`SELECT build_id, status FROM knowledge_builds WHERE tenant_key = $1 AND build_id = ANY($2::text[]) ORDER BY build_id`, [tenantA, [build1.build_id, build2.build_id]])).rows;
     summary.atomicity.publish = {

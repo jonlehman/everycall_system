@@ -2689,7 +2689,11 @@ async function embedArtifacts(cards, facts, buildInfo) {
   };
 }
 
-export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
+export async function compileKnowledgeBuildArtifacts({ db, buildInfo, assertExecutionLease = null }) {
+  const assertLease = async () => {
+    if (typeof assertExecutionLease === "function") await assertExecutionLease();
+  };
+  await assertLease();
   const buildModel = process.env.OPENAI_KNOWLEDGE_BUILD_MODEL || "gpt-4.1";
   const warnings = [];
   const [sourceCompileRecords, companyDescription] = await Promise.all([
@@ -2708,12 +2712,14 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
   });
 
   const sourceSummaries = await runSourceSummaryStage(db, buildInfo, sourceRecords, buildModel, warnings);
+  await assertLease();
   const sourceSummaryDigest = buildSourceSummaryDigest(sourceSummaries);
 
   logCompilerProgress("topic_inventory_started", {
     summaryCount: sourceSummaries.length
   });
   const { topicInventory, topicRows } = await runTopicInventoryStage(db, buildInfo, sourceRecords, sourceSummaries, buildModel, warnings);
+  await assertLease();
   logCompilerProgress("topic_inventory_completed", {
     topicCount: topicRows.topics.length,
     subtopicCount: topicRows.subtopics.length
@@ -2728,6 +2734,7 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
     buildModel,
     companyDescription
   );
+  await assertLease();
   const artifactMap = new Map(sourceArtifactRows.map((row) => [row.source_ref_id, row]));
   const extractedBySource = sourceRecords.map((record) => {
     const stored = artifactMap.get(record.sourceRefId);
@@ -2770,6 +2777,7 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
     companyDescription,
     model: process.env.OPENAI_CORE_FACTS_MODEL || process.env.OPENAI_KNOWLEDGE_BUILD_MODEL || "gpt-4.1"
   });
+  await assertLease();
   logCompilerProgress("core_fact_rating_completed", {
     factCount: coreFactRating.facts.length,
     reusedRatingCount: coreFactRating.reusedCount,
@@ -2790,10 +2798,15 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
     facts: coreFactRating.facts,
     model: process.env.OPENAI_CORE_FACTS_SPOKEN_MODEL || "gpt-5.2"
   });
+  for (const skipped of coreFactSpokenRewrite.unsafeSkippedFacts || []) {
+    warnings.push(`core_fact_spoken_rewrite_skipped:${skipped.factId}:${skipped.rejectionReason}`);
+  }
+  await assertLease();
   logCompilerProgress("core_fact_spoken_rewrite_completed", {
     selectedCandidateCount: coreFactSpokenRewrite.selectedCandidateCount,
     rewrittenCount: coreFactSpokenRewrite.rewrittenCount,
     reusedCount: coreFactSpokenRewrite.reusedCount,
+    unsafeSkippedCount: coreFactSpokenRewrite.unsafeSkippedCount,
     spokenVersion: coreFactSpokenRewrite.spokenVersion
   });
   await updateBuildCheckpoint(db, buildInfo.build_id, {
@@ -2801,10 +2814,12 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
       selected_candidate_count: coreFactSpokenRewrite.selectedCandidateCount,
       rewritten_count: coreFactSpokenRewrite.rewrittenCount,
       reused_count: coreFactSpokenRewrite.reusedCount,
+      unsafe_skipped_count: coreFactSpokenRewrite.unsafeSkippedCount,
       spoken_version: coreFactSpokenRewrite.spokenVersion
     })
   });
   const embedded = await embedArtifacts(consolidated.cards, coreFactSpokenRewrite.facts, buildInfo);
+  await assertLease();
   logCompilerProgress("artifact_embeddings_completed", {
     cardVectorCount: embedded.cardVectors.length,
     factVectorCount: embedded.factVectors.length,
