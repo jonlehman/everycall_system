@@ -28,12 +28,21 @@
 
 ## What You Know By Heart
 - Run `corepack pnpm validate:core-facts` after building `@everycall/contracts`.
-- The validator reconstructs the pre-Grok OpenAI v3 section set and verifies its SHA-256 baseline, tool definitions, and sample phrases. With no pins, the entire rendered prompt must equal v3 byte-for-byte.
-- With pins, verify only the conditional section, memory allowance, and lookup exception are added. Instruction-like text must be rejected, the rendered block must stay within 600 tokens and 20 facts, and tenant/build isolation must hold.
+- The validator reconstructs the pre-Grok OpenAI v3 section set and verifies its SHA-256 baseline, tool definitions, and sample phrases, then verifies the exact v11 additions separately.
+- With no pins, verify the entire by-heart section and every reference to it are absent. With pins, instruction-like text must be rejected, the rendered block must stay within 600 tokens and 20 facts, and tenant/build isolation must hold.
 - Verify an unchanged rating-input hash causes zero OpenAI scoring calls and carries its saved score, spoken text, model, and rated timestamp forward. Changing the canonical claim, qualifiers, boundaries, or tenant scoring context must invalidate the hash and score only that fact.
 - Verify the legacy backfill refuses missing-fact model calls unless `EVERYCALL_ALLOW_CORE_FACT_OPENAI_SCORING=1` is explicitly set.
-- Verify deterministic score-descending selection, stable tie-breaking, deletion-only reranking without OpenAI, materialized-section checksums, and call-start injection from the saved database block.
+- Verify deterministic score-descending selection, stable tie-breaking, deletion-only reranking without OpenAI, pin-only spoken rewrites, materialized-section checksums, and call-start injection from the saved database block.
 - In a live canary, ask one question fully covered by a pin and verify there is no lookup. Then ask an adjacent unsupported question and verify `knowledge_lookup` still runs.
+
+## Receptionist v11 Acceptance
+- Run `corepack pnpm validate:receptionist-v11` for exact prompt rules and deterministic `finish_session` enforcement.
+- With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V11_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v11:realtime`.
+- Run capture, joke, pinned-fact, decline, and cache cases under both `legacy` and `layered` ordering.
+- Capture must show: callback offer, explicit caller yes, name request, later phone request, number read-back as a question, caller confirmation, optional-note wait if used, closing without `finish_session`, caller goodbye, then `finish_session`.
+- Pinned-fact answers must use no lookup, no holding phrase, no marketing language, and no unprompted technology name.
+- Decline must be warm, must not re-ask for a callback, and must not call `finish_session` immediately.
+- Cache verification uses an identical-tenant pair for legacy and a cross-tenant pair for layered. Record input tokens, cached tokens, and hit rate; Realtime cache placement is best-effort, so retain the raw observation even when an identical legacy call misses.
 
 Use these after any change to prompts, knowledge lookup, or barge-in handling.
 

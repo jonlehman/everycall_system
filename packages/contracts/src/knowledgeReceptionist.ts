@@ -216,7 +216,10 @@ export const knowledgeFactSchema = z.object({
   core_fact_is_safe_to_speak: z.boolean().default(false),
   core_fact_rating_version: nullableStringSchema.optional(),
   core_fact_rating_model: nullableStringSchema.optional(),
-  core_fact_rated_at: nullableStringSchema.optional()
+  core_fact_rated_at: nullableStringSchema.optional(),
+  core_fact_spoken_version: nullableStringSchema.optional(),
+  core_fact_spoken_model: nullableStringSchema.optional(),
+  core_fact_spoken_at: nullableStringSchema.optional()
 });
 
 export const knowledgeCardSchema = z.object({

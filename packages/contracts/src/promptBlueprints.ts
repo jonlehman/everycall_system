@@ -1,4 +1,14 @@
 export type PromptBlueprintStatus = "draft" | "active" | "archived";
+export type PromptRenderMode = "legacy" | "layered";
+
+export const TRANSFER_RULES_PROMPT_BLOCK = `# Transfer Rules
+- If the caller asks for a person or extension, use lookup_transfer_target before assuming you know the destination.
+- Never reveal, read back, or hint at the private forwarding number.
+- If lookup_transfer_target returns more than one match, ask one short clarification question.
+- If lookup_transfer_target returns one clear match, ask one short confirmation question about whether the caller wants to be transferred now.
+- Only call transfer_call after the caller clearly says yes to that confirmation question.
+- Only use a target_id returned by lookup_transfer_target in this same call.
+- If a transfer attempt does not connect, apologize briefly and offer to take a message or try another person.`;
 
 export type PromptBlueprintSectionId =
   | "role_objective"
@@ -105,6 +115,12 @@ export type PromptRenderContext = {
   renderedSections: RenderedPromptSection[];
   startupPrompt: string;
   companyDescriptionSource: "tenant_override" | "active_build_summary" | "blank";
+  promptMode: PromptRenderMode;
+  promptLayers: {
+    canonical: string;
+    businessDetails: string;
+    volatile: string;
+  };
 };
 
 export type CoreFactPromptValue = {
@@ -182,7 +198,10 @@ These facts are approved for you to state from memory, rephrased in your own spo
 
 {core_facts_block}
 
-If a caller's question is fully answered by these facts, answer immediately without a lookup or holding phrase. If any part of the question goes beyond them, use knowledge_lookup for that part. Never stretch or combine these facts to cover something they don't plainly say.`
+If a caller's question is fully answered by these facts, answer immediately without a lookup or holding phrase. If any part of the question goes beyond them, use knowledge_lookup for that part. Never stretch or combine these facts to cover something they don't plainly say.
+Keep the answer in the same plain spoken register as the stored facts; do not polish it into marketing language.
+Do not introduce marketing adjectives such as “tailored,” “scalable,” “robust,” or “enterprise-grade.”
+Do not volunteer a technology or product name from this section unless the caller asked about it.`
   },
   {
     section_id: "priority_order",
@@ -217,7 +236,8 @@ If these priorities conflict, choose warmth and understanding before lead captur
 - Avoid sounding robotic, salesy, formal, corporate, or overly polished.
 - Vary wording naturally from call to call.
 - Do not rely on canned phrases or repeat the same phrase pattern over and over.
-- Do not intentionally stop mid-sentence, trail off awkwardly, or overuse filler words.`
+- Do not intentionally stop mid-sentence, trail off awkwardly, or overuse filler words.
+- If a caller clearly makes a joke, it's fine to respond with one light line before returning to helping — e.g. Caller: "Can your AI build my patio?" You: "Ha — not yet anyway. Our AI sticks to screens. Anything software-side I can help with?" Never force humor; one light line at most.`
   },
   {
     section_id: "variety",
@@ -321,6 +341,8 @@ That turn should do one of these:
     default_text: `# Lead Capture Rules
 - Sarah’s primary conversion action is a callback request.
 - The callback request requires {required_contact_fields_phrase}.
+- During callback capture and closing, do one thing per turn: offer the callback, OR ask for one detail, OR confirm, OR close. Never combine these in one turn.
+- Ask whether the caller would like a callback and wait for their yes before asking for any contact detail.
 - Ask for them one at a time.
 - If the caller already gave one, ask only for the missing one.
 - Keep the request natural and low-pressure.
@@ -352,7 +374,7 @@ If no callback submission workflow is available in the current environment:
 - Do not change a caller-provided name into a more common name.
 - If the caller’s name is unclear, ask them to repeat it or spell it.
 - If the phone number is unclear, ask them to repeat it.
-- After collecting the phone number, read it back once naturally to confirm accuracy.
+- After collecting the phone number, read it back once and end with a short question — like "Did I get that right?" — then wait for the caller to confirm before moving on.
 - If any part is uncertain, ask for clarification instead of guessing.`
   },
   {
@@ -541,7 +563,9 @@ Exit when:
 - Thank the caller.
 - Use this closing style when it fits: {closing_phrase}
 - Do not claim an action was completed unless it actually was.
-- If callback information was collected but no working submission workflow exists, simply confirm the captured details and end politely.`
+- If callback information was collected but no working submission workflow exists, simply confirm the captured details and end politely.
+- Never ask a question and end the call in the same turn. If you ask the optional note question, stop speaking and wait for the caller's answer.
+- Call finish_session only after you have spoken the closing AND the caller has responded or clearly said goodbye. Never call finish_session in a turn where you asked a question.`
   },
   {
     section_id: "final_reminder",
@@ -651,6 +675,21 @@ function titleCase(value: string) {
 
 function toJsonClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function canonicalizeJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => canonicalizeJsonValue(item));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, canonicalizeJsonValue(entry)])
+  );
 }
 
 function extractPlaceholders(text: string) {
@@ -803,9 +842,9 @@ export function getPromptSectionSeeds() {
 export function getDefaultPromptBlueprintSeed() {
   return {
     blueprint_key: "canonical_receptionist",
-    version: 10,
+    version: 11,
     status: "active" as PromptBlueprintStatus,
-    name: "Canonical Receptionist v10",
+    name: "Canonical Receptionist v11",
     sample_phrase_groups: normalizeSamplePhraseGroups(DEFAULT_SAMPLE_PHRASE_GROUPS),
     tool_definitions: {
       knowledge_lookup: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup.parameter_descriptions } },
@@ -976,6 +1015,144 @@ export function validateTenantPromptProfile(profile: TenantPromptProfile) {
   };
 }
 
+function renderLayeredCanonicalSection(section: PromptBlueprintSection, samplePhraseGroupsBlock: string) {
+  const source = section.default_text;
+  let text = source;
+  switch (section.section_id) {
+    case "role_objective":
+      text = `# Role & Objective
+You are the phone receptionist for the business described in the Business Details section near the end of this prompt. Use the assistant name and speak for the business exactly as specified there.
+
+Your job is to:
+- answer the caller’s question clearly and naturally
+- help the caller feel understood
+- move the conversation forward without sounding pushy
+- collect the callback information specified in Business Details from interested callers so a human team member can follow up
+
+PRIMARY BUSINESS GOAL:
+- For qualified or interested callers, attempt to collect the specified callback information once the caller seems understood and receptive to the next step.
+
+REQUIRED CALLBACK INFORMATION:
+- Collect the fields specified in Business Details.`;
+      break;
+    case "business_context":
+      text = `# Business Information Boundaries
+You may answer WITHOUT a tool only for:
+- greetings and basic conversational courtesies
+- your identity as the business’s automated assistant
+- the persisted no-tool statement in Business Details`;
+      break;
+    case "core_facts":
+      text = "";
+      break;
+    case "readiness_before_callback_capture":
+      text = source
+        .replace("{assistant_name} should", "You should")
+        .replace("- {assistant_name} has", "- you have")
+        .replace("after {assistant_name} summarizes", "after you summarize");
+      break;
+    case "lead_capture_rules":
+      text = source
+        .replace("- Sarah’s primary conversion action is a callback request.", "- Your primary conversion action is a callback request.")
+        .replace("{required_contact_fields_phrase}", "the callback details specified in Business Details")
+        .replaceAll("Sarah", "you");
+      break;
+    case "tools":
+      text = source
+        .replace(`${CORE_FACTS_LOOKUP_RULE}\n\n`, "")
+        .replace("Sarah MUST", "You MUST");
+      break;
+    case "conversation_flow":
+      text = source
+        .replace("{assistant_name} can", "you can")
+        .replace("{assistant_name} decides", "you decide");
+      break;
+    case "wording_preferences":
+      text = `# Wording Preferences
+- Use the exact opening line specified in Business Details on the first turn.
+- If asked whether you are a robot or AI, use the exact AI disclosure specified in Business Details.
+- Keep all other wording flexible and natural.
+- Do not volunteer a technology or product name unless the caller asked about it.
+- Do not repeat stock phrases just because they appear in this prompt.`;
+      break;
+    case "closing":
+      text = source.replace(
+        "- Use this closing style when it fits: {closing_phrase}",
+        "- Use the exact closing phrase or style specified in Business Details when it fits."
+      );
+      break;
+    case "sample_phrase_guidance":
+      text = samplePhraseGroupsBlock
+        ? `# Sample Phrase Guidance\n${samplePhraseGroupsBlock}`
+        : "";
+      break;
+    default:
+      break;
+  }
+  const unresolved = extractPlaceholders(text);
+  if (unresolved.length) {
+    throw new Error(`layered_canonical_contains_placeholders:${section.section_id}:${unresolved.join(",")}`);
+  }
+  return normalizeText(text);
+}
+
+function renderLayeredBusinessDetails(
+  blueprint: PromptBlueprintBundle,
+  tenantProfile: TenantPromptProfile,
+  renderValues: Record<string, string>,
+  coreFactsBlock: string,
+  sectionOverrides: Record<string, unknown>
+) {
+  const parts = [
+    "# Business Details",
+    `Assistant name: ${tenantProfile.assistant_name}`,
+    `Business name: ${tenantProfile.business_name}`,
+    `Company description: ${renderValues.company_description}`,
+    `Lead goal: ${tenantProfile.lead_goal}`,
+    `Required callback information:\n${renderValues.required_contact_fields_block}`,
+    `Exact opening line: ${tenantProfile.opening_line}`,
+    `AI disclosure: ${tenantProfile.ai_disclosure_line}`,
+    `Persisted no-tool statement: ${tenantProfile.basic_no_tool_allowed_statement}`,
+    `Closing phrase: ${tenantProfile.closing_phrase}`
+  ];
+  if (coreFactsBlock) {
+    parts.push(`# What You Know By Heart
+These facts are approved to state from memory, rephrased in your own spoken words:
+
+${coreFactsBlock}
+
+If a caller's question is fully answered by these facts, answer immediately without a lookup or holding phrase. If any part goes beyond them, use knowledge_lookup for that part. Never stretch or combine these facts to cover something they don't plainly say.
+Keep the answer in the same plain spoken register as the stored facts; do not polish it into marketing language.
+Do not introduce marketing adjectives such as “tailored,” “scalable,” “robust,” or “enterprise-grade.”
+Do not volunteer a technology or product name from this section unless the caller asked about it.`);
+  }
+
+  const renderedOverrides: string[] = [];
+  for (const section of blueprint.sections) {
+    const overrideText = normalizeText(sectionOverrides[section.section_id]);
+    if (!overrideText) continue;
+    if (section.section_id === "core_facts" && !coreFactsBlock) continue;
+    let textSource = overrideText;
+    if (!coreFactsBlock && section.section_id === "business_context") {
+      textSource = textSource.replace(`\n${CORE_FACTS_MEMORY_BULLET}`, "");
+    }
+    if (!coreFactsBlock && section.section_id === "tools") {
+      textSource = textSource.replace(`${CORE_FACTS_LOOKUP_RULE}\n\n`, "");
+    }
+    const rendered = interpolateTemplate(textSource, renderValues).trim();
+    if (rendered) {
+      renderedOverrides.push(`## ${SECTION_TITLE_BY_ID[section.section_id]}\n${rendered}`);
+    }
+  }
+  if (renderedOverrides.length) {
+    parts.push(`# Tenant-Specific Prompt Overrides
+These instructions override the same-topic canonical instructions above.
+
+${renderedOverrides.join("\n\n")}`);
+  }
+  return parts.filter(Boolean).join("\n\n");
+}
+
 export function renderPromptContext(
   blueprintInput: PromptBlueprintBundle | unknown,
   tenantProfileInput: TenantPromptProfile | unknown,
@@ -985,6 +1162,7 @@ export function renderPromptContext(
     sectionOverrides?: Record<string, string>;
     coreFacts?: CoreFactPromptValue[];
     coreFactsBlock?: string;
+    promptMode?: PromptRenderMode;
   } = {}
 ): PromptRenderContext {
   const blueprint = normalizePromptBlueprintBundle(blueprintInput);
@@ -1009,6 +1187,41 @@ export function renderPromptContext(
     basic_no_tool_allowed_statement: tenantProfile.basic_no_tool_allowed_statement,
     sample_phrase_groups_block: samplePhraseGroupsBlock
   };
+  const promptMode: PromptRenderMode = options.promptMode === "layered" ? "layered" : "legacy";
+  if (promptMode === "layered") {
+    const renderedSections = blueprint.sections
+      .map((section) => {
+        const text = renderLayeredCanonicalSection(section, samplePhraseGroupsBlock);
+        if (!text) return null;
+        return {
+          section_id: section.section_id,
+          section_order: section.section_order,
+          title: SECTION_TITLE_BY_ID[section.section_id],
+          text,
+          source: "canonical",
+          placeholders: []
+        } satisfies RenderedPromptSection;
+      })
+      .filter(Boolean) as RenderedPromptSection[];
+    const canonical = renderedSections.map((section) => section.text).join("\n\n");
+    const businessDetails = renderLayeredBusinessDetails(
+      blueprint,
+      tenantProfile,
+      renderValues,
+      coreFactsBlock,
+      sectionOverrides
+    );
+    const volatile = "";
+    return {
+      blueprint,
+      tenantProfile,
+      renderedSections,
+      startupPrompt: [canonical, businessDetails, volatile].filter(Boolean).join("\n\n"),
+      companyDescriptionSource: options.companyDescriptionSource || "blank",
+      promptMode,
+      promptLayers: { canonical, businessDetails, volatile }
+    };
+  }
   const renderedSections = blueprint.sections
     .map((section) => {
       const overrideText = normalizeText(sectionOverrides[section.section_id]);
@@ -1043,7 +1256,13 @@ export function renderPromptContext(
     tenantProfile,
     renderedSections,
     startupPrompt: renderedSections.map((section) => section.text).join("\n\n"),
-    companyDescriptionSource: options.companyDescriptionSource || "blank"
+    companyDescriptionSource: options.companyDescriptionSource || "blank",
+    promptMode,
+    promptLayers: {
+      canonical: renderedSections.map((section) => section.text).join("\n\n"),
+      businessDetails: "",
+      volatile: ""
+    }
   };
 }
 
@@ -1054,7 +1273,9 @@ export function buildRuntimeToolDefinitions(
 ) {
   const blueprint = normalizePromptBlueprintBundle(blueprintInput);
   const properties = asObject(asObject(fieldSchema).properties);
-  const required = Array.isArray(asObject(fieldSchema).required) ? (asObject(fieldSchema).required as unknown as string[]) : undefined;
+  const required = Array.isArray(asObject(fieldSchema).required)
+    ? [...(asObject(fieldSchema).required as unknown as string[])].sort((left, right) => left.localeCompare(right))
+    : undefined;
   const result: RuntimeToolDefinition[] = [
     {
       type: "function",
@@ -1078,7 +1299,7 @@ export function buildRuntimeToolDefinitions(
       parameters: {
         ...fieldSchema,
         properties: Object.fromEntries(
-          Object.entries(properties).map(([fieldName, schema]) => {
+          Object.entries(properties).sort(([left], [right]) => left.localeCompare(right)).map(([fieldName, schema]) => {
             const schemaObject = asObject(schema);
             const description = fieldName === "outcome_type"
               ? (blueprint.tool_definitions.data_capture.outcome_type_description || DEFAULT_TOOL_DEFINITIONS.data_capture.outcome_type_description)
@@ -1149,7 +1370,7 @@ export function buildRuntimeToolDefinitions(
       }
     );
   }
-  return result;
+  return result.map((tool) => canonicalizeJsonValue(tool) as RuntimeToolDefinition);
 }
 
 export function listPromptSectionTitles() {

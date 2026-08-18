@@ -1,3 +1,4 @@
+import { TRANSFER_RULES_PROMPT_BLOCK } from "@everycall/contracts";
 import { buildPromptToolDefinitions } from "./promptBlueprints.js";
 
 const DEFAULT_FIELD_SCHEMA = {
@@ -37,9 +38,17 @@ export function buildGatewayPromptResponse(gatewayPrompt, buildFieldSchemaFromOu
   const toolDefinitions = buildPromptToolDefinitions(gatewayPrompt.promptBlueprint, fieldSchema, {
     includeTransferTools
   });
+  const promptRenderMode = gatewayPrompt.promptRenderMode || "legacy";
+  const transferRulesBlock = includeTransferTools ? TRANSFER_RULES_PROMPT_BLOCK : "";
+  const systemPrompt = promptRenderMode === "layered" && transferRulesBlock
+    ? [gatewayPrompt.systemPrompt, transferRulesBlock].filter(Boolean).join("\n\n")
+    : gatewayPrompt.systemPrompt;
+  const businessDetailsLayer = promptRenderMode === "layered"
+    ? [gatewayPrompt.promptLayers?.businessDetails || "", transferRulesBlock].filter(Boolean).join("\n\n")
+    : (gatewayPrompt.promptLayers?.businessDetails || "");
 
   return {
-    system_prompt: gatewayPrompt.systemPrompt,
+    system_prompt: systemPrompt,
     tenant_greeting: gatewayPrompt.tenantPromptProfile?.opening_line || "",
     knowledge_runtime: {
       active_build_id: gatewayPrompt.build.build_id,
@@ -57,6 +66,12 @@ export function buildGatewayPromptResponse(gatewayPrompt, buildFieldSchemaFromOu
       },
       tenant_prompt_profile: gatewayPrompt.tenantPromptProfile || {},
       rendered_prompt_sections: gatewayPrompt.renderedPromptSections || [],
+      prompt_render_mode: promptRenderMode,
+      prompt_layers: {
+        canonical: gatewayPrompt.promptLayers?.canonical || gatewayPrompt.systemPrompt,
+        business_details: businessDetailsLayer,
+        volatile: gatewayPrompt.promptLayers?.volatile || ""
+      },
       approved_configuration: gatewayPrompt.approvedConfiguration,
       token_counts: gatewayPrompt.tokenCounts
     },
@@ -66,7 +81,8 @@ export function buildGatewayPromptResponse(gatewayPrompt, buildFieldSchemaFromOu
     metadata: {
       tenantKey,
       callSid,
-      transferDirectoryEnabled: Boolean(includeTransferTools)
+      transferDirectoryEnabled: Boolean(includeTransferTools),
+      promptRenderMode
     }
   };
 }

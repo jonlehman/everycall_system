@@ -4,7 +4,8 @@ import { callOpenAiJsonModel, embedOpenAiTexts } from "@everycall/contracts";
 import {
   loadCoreFactCompanyDescription,
   loadReusableCoreFactRatings,
-  rateChangedCoreFacts
+  rateChangedCoreFacts,
+  rewritePinnedCoreFactsForSpeech
 } from "./knowledgeCoreFacts.js";
 
 function normalizeText(value) {
@@ -2785,7 +2786,25 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
       rating_version: coreFactRating.ratingVersion
     })
   });
-  const embedded = await embedArtifacts(consolidated.cards, coreFactRating.facts, buildInfo);
+  const coreFactSpokenRewrite = await rewritePinnedCoreFactsForSpeech({
+    facts: coreFactRating.facts,
+    model: process.env.OPENAI_CORE_FACTS_SPOKEN_MODEL || "gpt-5.2"
+  });
+  logCompilerProgress("core_fact_spoken_rewrite_completed", {
+    selectedCandidateCount: coreFactSpokenRewrite.selectedCandidateCount,
+    rewrittenCount: coreFactSpokenRewrite.rewrittenCount,
+    reusedCount: coreFactSpokenRewrite.reusedCount,
+    spokenVersion: coreFactSpokenRewrite.spokenVersion
+  });
+  await updateBuildCheckpoint(db, buildInfo.build_id, {
+    core_fact_spoken_rewrite_stage: stageCheckpoint("core_fact_spoken_rewrite", {
+      selected_candidate_count: coreFactSpokenRewrite.selectedCandidateCount,
+      rewritten_count: coreFactSpokenRewrite.rewrittenCount,
+      reused_count: coreFactSpokenRewrite.reusedCount,
+      spoken_version: coreFactSpokenRewrite.spokenVersion
+    })
+  });
+  const embedded = await embedArtifacts(consolidated.cards, coreFactSpokenRewrite.facts, buildInfo);
   logCompilerProgress("artifact_embeddings_completed", {
     cardVectorCount: embedded.cardVectors.length,
     factVectorCount: embedded.factVectors.length,
@@ -2804,7 +2823,7 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo }) {
     topics: topicRows.topics,
     subtopics: topicRows.subtopics,
     cards: consolidated.cards,
-    facts: coreFactRating.facts,
+    facts: coreFactSpokenRewrite.facts,
     cardVectors: embedded.cardVectors,
     factVectors: embedded.factVectors,
     topicInventorySummary: {

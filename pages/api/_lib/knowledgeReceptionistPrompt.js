@@ -368,7 +368,8 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
     tenantPromptProfileOverride: input.tenantPromptProfileOverride || input.tenant_prompt_profile_override || null,
     sectionOverridesOverride: input.sectionOverridesOverride || input.section_overrides_override || null,
     coreFactsOverride: coreFacts,
-    coreFactsBlockOverride: useExplicitCoreFacts ? null : materializedCoreFacts.factsBlockText
+    coreFactsBlockOverride: useExplicitCoreFacts ? null : materializedCoreFacts.factsBlockText,
+    promptRenderModeOverride: input.promptRenderMode || input.prompt_render_mode || null
   });
 
   const intentSummary = summarizeIntent(
@@ -435,6 +436,8 @@ export async function assembleKnowledgeGatewayPrompt(db, tenantKey, input = {}) 
     tenantPromptProfile: promptRuntime.tenantProfile,
     promptBlueprint: promptRuntime.blueprint,
     renderedPromptSections: promptRuntime.rendered.renderedSections,
+    promptRenderMode: promptRuntime.rendered.promptMode,
+    promptLayers: promptRuntime.rendered.promptLayers,
     coreFacts,
     sectionOverrides: promptRuntime.sectionOverrides,
     companyContextSummary: promptRuntime.tenantProfile.company_description,

@@ -20,13 +20,19 @@ async function assertMigrationApplied(pool) {
          AND column_name = 'core_fact_rating_input_hash'
      ) AND EXISTS (
        SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'knowledge_build_facts'
+         AND column_name = 'core_fact_spoken_version'
+     ) AND EXISTS (
+       SELECT 1
        FROM information_schema.tables
        WHERE table_schema = 'public'
          AND table_name = 'knowledge_core_fact_prompt_sections'
      ) AS ready`
   );
   if (result.rows?.[0]?.ready !== true) {
-    throw new Error("core_fact_migrations_0039_and_0040_required");
+    throw new Error("core_fact_migrations_0039_0040_and_0042_required");
   }
 }
 
@@ -79,6 +85,7 @@ async function main() {
       mode: apply ? "apply" : "dry_run",
       applyEnvironmentVariable: APPLY_ENV,
       openAiScoringAllowed: allowModelScoring,
+      openAiSpokenRewriteAllowed: allowModelScoring,
       openAiScoringEnvironmentVariable: ALLOW_OPENAI_SCORING_ENV,
       targetTenant: targetTenant || null,
       coreFactRuns

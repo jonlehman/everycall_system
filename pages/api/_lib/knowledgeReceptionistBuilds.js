@@ -3228,13 +3228,14 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
          core_fact_title, core_fact_spoken_text, core_fact_score, core_fact_rank, core_fact_reason,
          core_fact_selector_version, core_fact_selected_at, core_fact_rating_input_hash,
          core_fact_is_stable, core_fact_is_safe_to_speak, core_fact_rating_version,
-         core_fact_rating_model, core_fact_rated_at
+         core_fact_rating_model, core_fact_rated_at, core_fact_spoken_version, core_fact_spoken_model,
+         core_fact_spoken_at
        )
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13::jsonb, $14::jsonb,
          $15, $16, $17, $18, $19, $20, $21, $22, $23::jsonb, $24::jsonb, $25::jsonb,
          $26::jsonb, $27::jsonb, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37,
-         $38, $39, $40, $41, $42, $43
+         $38, $39, $40, $41, $42, $43, $44, $45, $46
        )`,
       [
         fact.knowledge_fact_id,
@@ -3279,7 +3280,10 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
         fact.core_fact_is_safe_to_speak === true,
         fact.core_fact_rating_version || null,
         fact.core_fact_rating_model || null,
-        fact.core_fact_rated_at || null
+        fact.core_fact_rated_at || null,
+        fact.core_fact_spoken_version || null,
+        fact.core_fact_spoken_model || null,
+        fact.core_fact_spoken_at || null
       ]
     );
   }
@@ -3428,7 +3432,8 @@ async function loadBuildAssetsFromDb(db, tenantKey, buildId) {
               is_core_fact_pinned, core_fact_fingerprint, core_fact_title, core_fact_spoken_text,
               core_fact_score, core_fact_rank, core_fact_reason, core_fact_selector_version, core_fact_selected_at,
               core_fact_rating_input_hash, core_fact_is_stable, core_fact_is_safe_to_speak,
-              core_fact_rating_version, core_fact_rating_model, core_fact_rated_at
+              core_fact_rating_version, core_fact_rating_model, core_fact_rated_at,
+              core_fact_spoken_version, core_fact_spoken_model, core_fact_spoken_at
        FROM knowledge_build_facts
        WHERE tenant_key = $1
          AND build_id = $2
@@ -3487,6 +3492,9 @@ async function loadBuildAssetsFromDb(db, tenantKey, buildId) {
       core_fact_rating_version: row.core_fact_rating_version,
       core_fact_rating_model: row.core_fact_rating_model,
       core_fact_rated_at: row.core_fact_rated_at,
+      core_fact_spoken_version: row.core_fact_spoken_version,
+      core_fact_spoken_model: row.core_fact_spoken_model,
+      core_fact_spoken_at: row.core_fact_spoken_at,
       source_ref_ids_json: Array.isArray(row.source_ref_ids_json) ? row.source_ref_ids_json : []
     }))
   };
@@ -5017,7 +5025,8 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId) {
 
     await ensureTenantPromptProfileCompanyDescriptionSnapshot(client, tenantKey, {
       buildId,
-      actor: "system:publish_build"
+      actor: "system:publish_build",
+      refreshNoToolStatement: true
     });
 
     await recordCoreFactActivationChanges(client, {

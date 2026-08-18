@@ -24,6 +24,15 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function resolvePromptRenderMode(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  if (["layered", "layered_v1", "true", "1", "on", "yes"].includes(normalized)) return "layered";
+  if (["legacy", "current", "false", "0", "off", "no"].includes(normalized)) return "legacy";
+  return String(process.env.OPENAI_REALTIME_LAYERED_PROMPT_ENABLED || "true").toLowerCase() === "true"
+    ? "layered"
+    : "legacy";
+}
+
 function truncateText(value, limit = 320) {
   const text = normalizeText(value);
   if (!text) return "";
@@ -328,6 +337,7 @@ export async function ensureTenantPromptProfileCompanyDescriptionSnapshot(db, te
 
   const activeBuildRes = await db.query(
     `SELECT tp.company_description AS prompt_company_description,
+            tp.basic_no_tool_allowed_statement AS prompt_no_tool_statement,
             bp.company_description AS bootstrap_company_description
      FROM tenants t
      LEFT JOIN tenant_prompt_profiles tp
@@ -339,32 +349,45 @@ export async function ensureTenantPromptProfileCompanyDescriptionSnapshot(db, te
     [normalizedTenantKey]
   );
   const promptCompanyDescription = normalizeText(activeBuildRes.rows?.[0]?.prompt_company_description);
+  const promptNoToolStatement = normalizeText(activeBuildRes.rows?.[0]?.prompt_no_tool_statement);
   const bootstrapCompanyDescription = normalizeText(activeBuildRes.rows?.[0]?.bootstrap_company_description);
-  if (promptCompanyDescription) {
-    return { changed: false, company_description: promptCompanyDescription };
-  }
-  if (bootstrapCompanyDescription) {
-    return { changed: false, company_description: bootstrapCompanyDescription };
+  const refreshNoToolStatement = options.refreshNoToolStatement === true;
+  if (promptCompanyDescription && promptNoToolStatement && !refreshNoToolStatement) {
+    return {
+      changed: false,
+      company_description: promptCompanyDescription,
+      basic_no_tool_allowed_statement: promptNoToolStatement
+    };
   }
 
-  const buildDerivedCompanyDescription = await loadBuildDerivedCompanyDescriptionForBuild(
-    db,
-    normalizedTenantKey,
-    options.buildId
-  ) || await loadBuildDerivedCompanyDescription(db, normalizedTenantKey);
-  const snapshotValue = normalizeText(buildDerivedCompanyDescription);
-  if (!snapshotValue) {
-    return { changed: false, company_description: "" };
+  const buildDerivedCompanyDescription = refreshNoToolStatement || (!promptCompanyDescription && !bootstrapCompanyDescription)
+    ? await loadBuildDerivedCompanyDescriptionForBuild(
+        db,
+        normalizedTenantKey,
+        options.buildId
+      ) || await loadBuildDerivedCompanyDescription(db, normalizedTenantKey)
+    : "";
+  const companyDescriptionSnapshot = normalizeText(
+    promptCompanyDescription || bootstrapCompanyDescription || buildDerivedCompanyDescription
+  );
+  const noToolStatementSnapshot = normalizeText(
+    refreshNoToolStatement
+      ? (buildDerivedCompanyDescription || companyDescriptionSnapshot)
+      : (promptNoToolStatement || buildDerivedCompanyDescription || companyDescriptionSnapshot)
+  );
+  if (!companyDescriptionSnapshot && !noToolStatementSnapshot) {
+    return { changed: false, company_description: "", basic_no_tool_allowed_statement: "" };
   }
 
   await db.query(
     `INSERT INTO tenant_prompt_profiles (
        tenant_key,
        company_description,
+       basic_no_tool_allowed_statement,
        updated_by_id,
        updated_at
      )
-     VALUES ($1, $2, $3, NOW())
+     VALUES ($1, $2, $3, $4, NOW())
      ON CONFLICT (tenant_key)
      DO UPDATE SET company_description = CASE
                         WHEN tenant_prompt_profiles.company_description IS NULL
@@ -372,32 +395,52 @@ export async function ensureTenantPromptProfileCompanyDescriptionSnapshot(db, te
                         THEN EXCLUDED.company_description
                         ELSE tenant_prompt_profiles.company_description
                       END,
+                   basic_no_tool_allowed_statement = CASE
+                        WHEN $5::boolean
+                          OR tenant_prompt_profiles.basic_no_tool_allowed_statement IS NULL
+                          OR BTRIM(tenant_prompt_profiles.basic_no_tool_allowed_statement) = ''
+                        THEN EXCLUDED.basic_no_tool_allowed_statement
+                        ELSE tenant_prompt_profiles.basic_no_tool_allowed_statement
+                      END,
                    updated_by_id = CASE
                         WHEN tenant_prompt_profiles.company_description IS NULL
                           OR BTRIM(tenant_prompt_profiles.company_description) = ''
+                          OR $5::boolean
+                          OR tenant_prompt_profiles.basic_no_tool_allowed_statement IS NULL
+                          OR BTRIM(tenant_prompt_profiles.basic_no_tool_allowed_statement) = ''
                         THEN EXCLUDED.updated_by_id
                         ELSE tenant_prompt_profiles.updated_by_id
                       END,
                    updated_at = CASE
                         WHEN tenant_prompt_profiles.company_description IS NULL
                           OR BTRIM(tenant_prompt_profiles.company_description) = ''
+                          OR $5::boolean
+                          OR tenant_prompt_profiles.basic_no_tool_allowed_statement IS NULL
+                          OR BTRIM(tenant_prompt_profiles.basic_no_tool_allowed_statement) = ''
                         THEN NOW()
                         ELSE tenant_prompt_profiles.updated_at
                       END`,
     [
       normalizedTenantKey,
-      snapshotValue,
-      actorId(options.actor || "system:build_snapshot")
+      companyDescriptionSnapshot || null,
+      noToolStatementSnapshot || null,
+      actorId(options.actor || "system:build_snapshot"),
+      refreshNoToolStatement
     ]
   );
 
-  await writeAuditLog(db, normalizedTenantKey, options.actor || "system:build_snapshot", "tenant.prompt_profile.company_description_snapshot", {
+  await writeAuditLog(db, normalizedTenantKey, options.actor || "system:build_snapshot", "tenant.prompt_profile.knowledge_snapshot", {
     target_tenant: normalizedTenantKey,
     source: "active_build_summary",
-    build_id: normalizeText(options.buildId) || null
+    build_id: normalizeText(options.buildId) || null,
+    refreshed_no_tool_statement: refreshNoToolStatement
   });
 
-  return { changed: true, company_description: snapshotValue };
+  return {
+    changed: true,
+    company_description: companyDescriptionSnapshot,
+    basic_no_tool_allowed_statement: noToolStatementSnapshot
+  };
 }
 
 async function loadTenantName(db, tenantKey) {
@@ -412,14 +455,23 @@ async function loadTenantName(db, tenantKey) {
 }
 
 async function buildTenantPromptProfileDefaults(db, tenantKey) {
-  const [tenant, buildSummary, bootstrapProfile] = await Promise.all([
+  const [tenant, bootstrapProfile, storedProfileRes] = await Promise.all([
     loadTenantName(db, tenantKey),
-    loadBuildDerivedCompanyDescription(db, tenantKey),
-    loadTenantBootstrapProfile(db, tenantKey)
+    loadTenantBootstrapProfile(db, tenantKey),
+    db.query(
+      `SELECT company_description, basic_no_tool_allowed_statement
+       FROM tenant_prompt_profiles
+       WHERE tenant_key = $1
+       LIMIT 1`,
+      [tenantKey]
+    )
   ]);
   const defaults = getDefaultTenantPromptProfile();
   const bootstrapDescription = normalizeText(bootstrapProfile?.company_description);
-  const companyDescription = bootstrapDescription || buildSummary;
+  const storedCompanyDescription = normalizeText(storedProfileRes.rows?.[0]?.company_description);
+  const companyDescription = storedCompanyDescription || bootstrapDescription;
+  const noToolStatement = normalizeText(storedProfileRes.rows?.[0]?.basic_no_tool_allowed_statement)
+    || companyDescription;
   return normalizeTenantPromptProfile({
     tenant_key: tenantKey,
     assistant_name: defaults.assistant_name,
@@ -432,7 +484,7 @@ async function buildTenantPromptProfileDefaults(db, tenantKey) {
     lead_goal: defaults.lead_goal,
     required_contact_fields: defaults.required_contact_fields,
     closing_phrase: defaults.closing_phrase,
-    basic_no_tool_allowed_statement: companyDescription
+    basic_no_tool_allowed_statement: noToolStatement
   });
 }
 
@@ -655,7 +707,6 @@ export async function savePromptBlueprint(db, input = {}, actor = null) {
 }
 
 export async function loadTenantPromptProfile(db, tenantKey) {
-  await ensureTenantPromptProfileCompanyDescriptionSnapshot(db, tenantKey);
   const defaults = await buildTenantPromptProfileDefaults(db, tenantKey);
   const res = await db.query(
     `SELECT tenant_key, assistant_name, business_name, company_description, opening_line, ai_disclosure_line,
@@ -671,7 +722,6 @@ export async function loadTenantPromptProfile(db, tenantKey) {
 }
 
 export async function loadTenantPromptProfileEditorState(db, tenantKey) {
-  await ensureTenantPromptProfileCompanyDescriptionSnapshot(db, tenantKey);
   const defaults = await buildTenantPromptProfileDefaults(db, tenantKey);
   const res = await db.query(
     `SELECT tenant_key, assistant_name, business_name, company_description, opening_line, ai_disclosure_line,
@@ -946,7 +996,8 @@ export async function loadPromptRuntimeContext(
     tenantPromptProfileOverride = null,
     sectionOverridesOverride = null,
     coreFactsOverride = [],
-    coreFactsBlockOverride = null
+    coreFactsBlockOverride = null,
+    promptRenderModeOverride = null
   } = {}
 ) {
   const [liveBlueprint, liveProfileState, liveOverridesState] = await Promise.all([
@@ -991,6 +1042,7 @@ export async function loadPromptRuntimeContext(
     companyDescriptionSource,
     sectionOverrides: rawSectionOverrides,
     coreFacts: Array.isArray(coreFactsOverride) ? coreFactsOverride : [],
+    promptMode: resolvePromptRenderMode(promptRenderModeOverride),
     ...(typeof coreFactsBlockOverride === "string" ? { coreFactsBlock: coreFactsBlockOverride } : {})
   });
   return {

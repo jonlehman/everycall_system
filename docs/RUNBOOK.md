@@ -8,8 +8,9 @@
 
 ## Logs
 - Render service logs for call-gateway
-- Look for: `openai_realtime_session_updated`, `assistant_response_canceled`, `openai_realtime_response_done`
+- Look for: `openai_realtime_session_updated`, `assistant_response_canceled`, `openai_realtime_response_done`, `assistant_finish_session_rejected`
 - For the GPT-Realtime-2.1 rollout/canary, enable `REALTIME_TRACE=true` only on staging or a controlled canary and confirm `openai_realtime_session_start` logs `model=gpt-realtime-2.1` and `apiShape=realtime2`.
+- `openai_realtime_response_done` includes `cachedInputTokens`, `cacheHitRate`, `cumulativeCacheHitRate`, and `promptRenderMode`. A zero on one call is not proof caching is disabled; Realtime caching is best-effort.
 
 ## Common Issues
 - Assistant interrupts caller: check barge-in cancel logic and audio queue clearing.
@@ -51,11 +52,19 @@
 - Manual canary calls must cover greeting, direct question, knowledge lookup, data capture, transfer lookup/confirmation, alphanumeric readback, barge-in, silence/background noise, and tool failure.
 
 ## What You Know By Heart
-- Canonical receptionist v10 is the restored OpenAI v3 prompt plus only the conditional by-heart section, its memory allowance, and its lookup exception. When an active build has no pins, the rendered prompt must be byte-for-byte identical to OpenAI v3.
-- Run `corepack pnpm audit:core-facts-rollout` before deployment. Migrations `0039_automatic_core_fact_pins.sql` and `0040_event_driven_core_fact_sections.sql` are additive and applied individually by `corepack pnpm migrate:core-facts` when `EVERYCALL_APPLY_CORE_FACT_MIGRATION=1` is set.
+- Canonical Receptionist v11 is the restored OpenAI v3 prompt plus the conditional by-heart accommodations and the reviewed v11 capture/closing/humor rules. With no pins, omit the by-heart section and every by-heart reference; the v11 behavior rules remain.
+- Apply only migrations `0041_persist_no_tool_statement.sql` and `0042_core_fact_spoken_rewrites.sql` with `EVERYCALL_APPLY_RECEPTIONIST_V11_MIGRATIONS=1 corepack pnpm migrate:receptionist-v11`.
 - Run `corepack pnpm backfill:core-facts` for a no-egress dry run. It reuses complete saved ratings and fails with an aggregate count if any fact still requires OpenAI scoring. After explicit data-flow approval, allow only those missing ratings with `EVERYCALL_ALLOW_CORE_FACT_OPENAI_SCORING=1`. Apply with `EVERYCALL_APPLY_CORE_FACT_BACKFILL=1 corepack pnpm backfill:core-facts`; target one tenant with `EVERYCALL_CORE_FACT_BACKFILL_TENANT=<tenant_key>`.
+- To rewrite only a tenant's current pins without re-scoring or exporting all facts, set `EVERYCALL_REWRITE_PINNED_CORE_FACTS=1` and `EVERYCALL_PINNED_CORE_FACT_TENANT=<tenant_key>`, then run `corepack pnpm rewrite:pinned-core-facts`.
 - There is no periodic selector. A knowledge build or explicit backfill deterministically ranks saved scores, materializes the tenant/build section, and records its checksum. Calls only load the saved section.
-- Run `corepack pnpm validate:core-facts`, `corepack pnpm validate:realtime2-payloads`, `corepack pnpm typecheck`, and `corepack pnpm build` before release.
+- Run `corepack pnpm validate:receptionist-v11`, `corepack pnpm validate:realtime2-payloads`, `corepack pnpm typecheck`, and `corepack pnpm build` before release.
+- The synthetic Realtime battery requires explicit API-cost approval: `EVERYCALL_RUN_RECEPTIONIST_V11_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v11:realtime`. Optional comma-separated filters are `EVERYCALL_RECEPTIONIST_V11_ACCEPTANCE_MODES` and `EVERYCALL_RECEPTIONIST_V11_ACCEPTANCE_CASES`.
+
+## Realtime Prompt Layering
+- Default: `OPENAI_REALTIME_LAYERED_PROMPT_ENABLED=true`.
+- Immediate rollback: set `OPENAI_REALTIME_LAYERED_PROMPT_ENABLED=false` on the prompt-serving app and redeploy; this restores legacy tenant-first ordering without changing the canonical blueprint.
+- Layer 1 contains no tenant values. Layer 2 contains Business Details, stored by-heart facts, persisted no-tool statement, and transfer rules. Layer 3 is empty.
+- Verify `openai_realtime_session_start` reports `promptRenderMode=layered`, a canonical-prefix estimate above 1,024 tokens, and a stable tool-schema hash.
 
 ## Billing Portal
 - `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` should point at the live EveryCall portal configuration in Stripe.

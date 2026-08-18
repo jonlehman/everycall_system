@@ -34,7 +34,8 @@ export default async function handler(req, res) {
 
     const gatewayPrompt = await assembleKnowledgeGatewayPrompt(pool, tenantKey, {
       callSid,
-      runtimeEntryMode: String(body.runtimeEntryMode || "").trim() || "customer_call"
+      runtimeEntryMode: String(body.runtimeEntryMode || "").trim() || "customer_call",
+      promptRenderMode: String(body.promptRenderMode || body.prompt_render_mode || "").trim() || null
     });
 
     const transferDirectoryResult = await pool.query(

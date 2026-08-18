@@ -55,3 +55,11 @@
 - Keep prepared sales demo bundles for 30 days and maintain the current prospect plus 10 upcoming prospects as the warm queue.
 - Treat phone eligibility and Smartlead email suppression as separate channel states. Record outcomes durably and route eligible email follow-up asynchronously.
 - Assisted signup sends a short-lived, single-use prefilled link to the prospect. The prospect creates their own password and submits through the existing onboarding transaction; sales-demo artifacts are never promoted into tenant data.
+
+## 2026-08-17
+- Canonical Receptionist v11 preserves the restored pre-Grok OpenAI prompt and its by-heart accommodations, then adds the reviewed callback-consent, one-action-per-turn, phone-confirmation, closing/`finish_session`, and light-humor rules.
+- The gateway enforces the closing invariant independently of the model: `finish_session` is rejected when the latest assistant turn asks a question or when no later caller turn follows the closing.
+- Render Realtime prompts as a byte-stable canonical layer, one contiguous Business Details layer, and an empty volatile layer. `OPENAI_REALTIME_LAYERED_PROMPT_ENABLED=false` is the rollback; layered rendering is the default after the v11 comparative battery produced an 82.01% cross-tenant cache hit on the second layered call.
+- Realtime prompt caching remains automatic and best-effort. Record cached input tokens and per-response/cumulative hit rates, but do not send the Responses-only `prompt_cache_key` field in a Realtime session.
+- Persist `basic_no_tool_allowed_statement` on the tenant prompt profile and refresh it only when a website build is published, never during call prompt loading.
+- Score only new or materially changed canonical facts. Deterministically select saved scores, then rewrite only selected pins into a versioned spoken label and sentence; canonical claims remain authoritative for embeddings and lookup.

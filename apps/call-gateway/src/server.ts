@@ -65,6 +65,10 @@ import {
   resolveRealtimeApiShape,
   type RealtimeApiShape
 } from "./realtimePayloads.js";
+import {
+  evaluateFinishSessionRequest,
+  noteFinishSessionDialogueTurn
+} from "./finishSessionControl.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -126,6 +130,12 @@ type PendingToolCall = {
 
 type FinishSessionArgs = {
   reason?: string;
+};
+
+type PendingFinishSession = {
+  callId: string;
+  reason: string;
+  requestedResponseId: string | null;
 };
 
 type PendingToolSpeechWait = {
@@ -264,6 +274,12 @@ type StreamSession = {
   pendingTransferCandidate?: PendingTransferCandidate | null;
   telnyxStreamBaseUrl?: string;
   ignoreNextStreamingStopped?: boolean;
+  dialogueTurnSequence?: number;
+  lastCallerTranscriptSequence?: number;
+  lastAssistantTranscriptSequence?: number;
+  lastCallerTranscript?: string;
+  lastAssistantTranscript?: string;
+  pendingFinishSession?: PendingFinishSession | null;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -313,6 +329,12 @@ function createStreamSession(
     pendingReconnectAssistantResponse: null,
     pendingTransferCandidate: null,
     ignoreNextStreamingStopped: false,
+    dialogueTurnSequence: 0,
+    lastCallerTranscriptSequence: 0,
+    lastAssistantTranscriptSequence: 0,
+    lastCallerTranscript: "",
+    lastAssistantTranscript: "",
+    pendingFinishSession: null,
     ...(realtimeLogPath ? { realtimeLogPath } : {})
   };
 }
@@ -1906,6 +1928,55 @@ function logRealtimeToolPayloads(session: StreamSession, params: {
   });
 }
 
+async function finalizePendingFinishSession(session: StreamSession) {
+  const pending = session.pendingFinishSession;
+  if (!pending) return;
+  session.pendingFinishSession = null;
+  const decision = evaluateFinishSessionRequest(session);
+  const output = decision.accepted
+    ? { status: "accepted", reason: pending.reason }
+    : { status: "rejected", reason: decision.reason, next_step: "wait_for_caller" };
+  await forwardToolResult(
+    session.callSid,
+    session.tenantKey,
+    "finish_session",
+    output,
+    { status: decision.accepted ? "accepted" : "rejected", errors: decision.accepted ? [] : [decision.reason] }
+  );
+  const toolResultEvent = createFunctionCallOutputEvent(pending.callId, output);
+  sendOpenAiEvent(session.openAiWs, toolResultEvent);
+  logRealtimeToolPayloads(session, {
+    callSid: session.callSid,
+    tool: "finish_session",
+    callId: pending.callId,
+    toolResultEvent
+  });
+  if (!decision.accepted) {
+    logInfo("assistant_finish_session_rejected", {
+      callSid: session.callSid,
+      callId: pending.callId,
+      requestedResponseId: pending.requestedResponseId || undefined,
+      reason: decision.reason,
+      lastAssistantTranscriptSequence: session.lastAssistantTranscriptSequence || 0,
+      lastCallerTranscriptSequence: session.lastCallerTranscriptSequence || 0
+    });
+    return;
+  }
+
+  const queuedFrames = session.outputQueue?.length || 0;
+  const drainMs = Math.min(Math.max(queuedFrames * 20 + 1200, 1200), 4000);
+  if (session.hangupTimer) clearTimeout(session.hangupTimer);
+  session.hangupTimer = setTimeout(() => {
+    void endCallSession(session, "assistant_finish_session", true);
+  }, drainMs);
+  logInfo("assistant_finish_session_accepted", {
+    callSid: session.callSid,
+    callId: pending.callId,
+    reason: pending.reason,
+    drainMs
+  });
+}
+
 async function executeToolCall(session: StreamSession, name: string, callId: string, argsText: string) {
   let args: Record<string, unknown> = {};
   try {
@@ -2275,24 +2346,11 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       callId,
       reason
     });
-    await forwardToolResult(session.callSid, session.tenantKey, name, { reason }, { status: "accepted", errors: [] });
-    const toolResultEvent = createFunctionCallOutputEvent(callId, { status: "accepted", reason });
-    sendOpenAiEvent(session.openAiWs, toolResultEvent);
-    logRealtimeToolPayloads(session, {
-      callSid: session.callSid,
-      tool: name,
+    session.pendingFinishSession = {
       callId,
-      toolResultEvent
-    });
-
-    const queuedFrames = session.outputQueue?.length || 0;
-    const drainMs = Math.min(Math.max(queuedFrames * 20 + 1200, 1200), 4000);
-    if (session.hangupTimer) {
-      clearTimeout(session.hangupTimer);
-    }
-    session.hangupTimer = setTimeout(() => {
-      void endCallSession(session, "assistant_finish_session", true);
-    }, drainMs);
+      reason,
+      requestedResponseId: session.currentResponseId || null
+    };
     return;
   }
 
@@ -2381,6 +2439,12 @@ function connectOpenAiRealtime(session: StreamSession) {
       model,
       apiShape,
       voice: payload.session_config.voice,
+      promptRenderMode: payload.knowledge_runtime.prompt_render_mode || "legacy",
+      canonicalPrefixTokensEstimate: Math.ceil(Buffer.byteLength(
+        String(payload.knowledge_runtime.prompt_layers?.canonical || payload.system_prompt || ""),
+        "utf8"
+      ) / 4),
+      toolSchemaHash: crypto.createHash("sha256").update(JSON.stringify(payload.tool_definitions || [])).digest("hex"),
       turnDetectionType: payload.session_config.turn_detection?.type,
       inputAudioFormat: payload.session_config.input_audio_format || "g711_ulaw",
       outputAudioFormat: payload.session_config.output_audio_format || "g711_ulaw"
@@ -2526,6 +2590,16 @@ function connectOpenAiRealtime(session: StreamSession) {
         errorCode: statusDetails?.error?.code,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
+        cachedInputTokens: usage.cachedInputTokens,
+        cachedInputTextTokens: usage.cachedInputTextTokens,
+        cachedInputAudioTokens: usage.cachedInputAudioTokens,
+        cacheHitRate: usage.inputTokens > 0
+          ? Number((usage.cachedInputTokens / usage.inputTokens).toFixed(4))
+          : 0,
+        cumulativeCacheHitRate: totals.inputTokens > 0
+          ? Number((totals.cachedInputTokens / totals.inputTokens).toFixed(4))
+          : 0,
+        promptRenderMode: session.promptPayload?.knowledge_runtime.prompt_render_mode || "legacy",
         estimatedCostMicrosUsd: estimateUsageCostMicrosUsd(usage)
       });
       logAudioPumpTraceSummary(session, "response_done");
@@ -2544,6 +2618,7 @@ function connectOpenAiRealtime(session: StreamSession) {
           session.pendingToolSpeechWait = null;
         }
       }
+      await finalizePendingFinishSession(session);
       flushQueuedAssistantResponses(session);
       return;
     }
@@ -2599,6 +2674,7 @@ function connectOpenAiRealtime(session: StreamSession) {
 
     if (type === "response.output_audio_transcript.done" || type === "response.audio_transcript.done") {
       const transcript = payloadMsg.transcript || payloadMsg.text || payloadMsg.data || "";
+      if (transcript) noteFinishSessionDialogueTurn(session, "assistant", String(transcript));
       if (transcript && pool) {
         await pool.query(
           `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type)
@@ -2611,6 +2687,7 @@ function connectOpenAiRealtime(session: StreamSession) {
 
     if (type === "conversation.item.input_audio_transcription.completed" || type === "input_audio_transcription.completed") {
       const transcript = payloadMsg.transcript || payloadMsg.text || "";
+      if (transcript) noteFinishSessionDialogueTurn(session, "caller", String(transcript));
       if (transcript && pool) {
         noteCallerTransferConfirmation(session, String(transcript));
         await pool.query(

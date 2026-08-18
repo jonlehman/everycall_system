@@ -11,6 +11,7 @@ import {
   persistCoverageGapEvents,
   selectMatchedGuardrails as selectSharedMatchedGuardrails,
   selectMatchedOverrides as selectSharedMatchedOverrides,
+  TRANSFER_RULES_PROMPT_BLOCK,
   type CallState
 } from "@everycall/contracts";
 
@@ -37,6 +38,12 @@ export type GatewayPromptPayload = {
     prompt_blueprint?: Record<string, unknown>;
     tenant_prompt_profile?: Record<string, unknown>;
     rendered_prompt_sections?: Array<Record<string, unknown>>;
+    prompt_render_mode?: "legacy" | "layered" | string;
+    prompt_layers?: {
+      canonical?: string;
+      business_details?: string;
+      volatile?: string;
+    };
     approved_configuration: {
       runtime_profile: {
         session_config: any;
@@ -317,14 +324,8 @@ export function isKnowledgeReceptionistPromptPayload(payload: GatewayPromptPaylo
 export function buildGatewaySessionInstructions(payload: GatewayPromptPayload) {
   const toolNames = runtimeToolNames(payload.tool_definitions);
   const transferRules = toolNames.has("lookup_transfer_target") && toolNames.has("transfer_call")
-    ? `# Transfer Rules
-- If the caller asks for a person or extension, use lookup_transfer_target before assuming you know the destination.
-- Never reveal, read back, or hint at the private forwarding number.
-- If lookup_transfer_target returns more than one match, ask one short clarification question.
-- If lookup_transfer_target returns one clear match, ask one short confirmation question about whether the caller wants to be transferred now.
-- Only call transfer_call after the caller clearly says yes to that confirmation question.
-- Only use a target_id returned by lookup_transfer_target in this same call.
-- If a transfer attempt does not connect, apologize briefly and offer to take a message or try another person.`
+    && !payload.system_prompt.includes(TRANSFER_RULES_PROMPT_BLOCK)
+    ? TRANSFER_RULES_PROMPT_BLOCK
     : "";
   return [payload.system_prompt, transferRules].filter(Boolean).join("\n\n");
 }
