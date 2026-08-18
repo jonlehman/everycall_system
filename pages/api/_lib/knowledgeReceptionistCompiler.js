@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { z } from "zod";
 import { callOpenAiJsonModel, embedOpenAiTexts } from "@everycall/contracts";
 import {
+  CORE_FACT_RATING_VERSION,
   loadCoreFactCompanyDescription,
   loadReusableCoreFactRatings,
   rateChangedCoreFacts,
@@ -247,8 +248,7 @@ function normalizeArtifactFact(value, index = 0) {
     source_chunk_ids: normalizeStringList(item.source_chunk_ids || item.chunk_ids || item.source_chunk_indices || item.chunk_indices || item.chunks),
     core_fact_importance_score: normalizeCoreFactImportance(item.core_fact_importance_score),
     core_fact_stable_for_months: item.core_fact_stable_for_months === true,
-    core_fact_title: normalizeText(item.core_fact_title),
-    core_fact_spoken_text: normalizeText(item.core_fact_spoken_text),
+    core_fact_safe_to_state_as_fact: item.core_fact_safe_to_state_as_fact === true,
     core_fact_reason: normalizeText(item.core_fact_reason)
   };
 }
@@ -386,8 +386,7 @@ const SOURCE_ARTIFACT_SCHEMA = z.object({
     source_chunk_ids: z.array(z.string().min(1)).default([]),
     core_fact_importance_score: z.number().int().min(0).max(100).default(0),
     core_fact_stable_for_months: z.boolean().default(false),
-    core_fact_title: z.string().default(""),
-    core_fact_spoken_text: z.string().default(""),
+    core_fact_safe_to_state_as_fact: z.boolean().default(false),
     core_fact_reason: z.string().default("")
   })).max(48).default([])
 });
@@ -859,20 +858,15 @@ function buildArtifactExtractionSystemPrompt() {
     "If source.page_type is quote_form or contact_form, keep cards and facts limited to that source's request workflow, contact methods, and consent/compliance details. Do not emit company-overview, ownership, or team cards from those sources.",
     "Cards are retrieval-oriented answerable units, not whole-page summaries.",
     "Facts preserve richer detail such as applicability, exclusions, limits, scope, process, next steps, and ambiguity.",
-    "As you create each fact, independently rate how important it is for the receptionist's small 'known by heart' set.",
-    "Use core_fact_importance_score 90-100 only for universal, frequently asked, stable business facts that callers should hear without lookup; 70-89 for common stable facts; 40-69 for useful lookup-only detail; and 0-39 for facts that should not be pinned.",
-    "Set core_fact_stable_for_months false and score 0 for dated or upcoming events, current availability, promotions or free offers, exact project-price ranges, temporary staffing, changing schedules, or any claim likely to change within six months.",
-    "Event operations are lookup-only even without a printed date: games, seasons, rosters, voting, open gyms, championships, event venues, event eligibility, and participant lists can change and must score 0.",
-    "Website contact forms, prompts to send a message, and web-only submission instructions score 0 because a caller is already on the phone.",
-    "A business address or office location is by-heart material only when the fact itself contains a complete speakable address, including enough city and state context for a caller to use it. Score partial street-only addresses 0.",
-    "Score third-party rebates, incentive programs, utility-program qualifications, building-code requirements, regulatory guidance, and generic technical or how-to advice 0. They are lookup-only even when they are useful content.",
-    "Score 0 for questions, page headings, bylines, privacy or website-administration copy, marketing fragments, generic advice, incomplete prose, and anything conflicting with the approved company description.",
-    "Score 0 for instructional, sensitive, ambiguous, or unsupported text that would be unsafe to state without more context.",
-    "Treat headline-style prefixes, calls to action, second-person sales language, and broad claims about innovation, success, results, ROI, or being tailored as marketing unless the sentence contains a concrete operational fact callers commonly ask for.",
-    "Treat manufacturer or product claims centered on broad benefits such as beauty, performance, flexibility, efficiency, quality, or durability as marketing unless the same fact provides a concrete product type, specification, or option that answers a common caller question.",
-    "The approved company description is authoritative. If it says the company is based in one city, score a different headquarters or base location 0 even when the cities are nearby or in the same metro area.",
-    "For every fact marked core_fact_stable_for_months, provide a short caller-language core_fact_title and one clean atomic core_fact_spoken_text that can be saved with the score and deterministically ranked. You may delete promotional adjectives, broad benefit clauses, and unrelated trailing material, but keep every remaining word in its original order.",
-    "Never add, substitute, infer, broaden, combine, or contradict in core_fact_spoken_text. Never delete a number, negation, limit, exception, or modal qualifier such as can, may, or must. For unstable facts, return empty strings for the title and spoken text.",
+    "As you create each fact, independently rate the importance of its actual factual meaning to callers and the receptionist's small 'known by heart' set.",
+    "Use core_fact_importance_score 90-100 for fundamental identity, main-service, service-area, or other frequently needed facts; 70-89 for common customer-relevant facts; 40-69 for useful secondary detail; and 0-39 for niche or low-value detail.",
+    "Rate factual meaning, not writing quality. Do not lower core_fact_importance_score because the source uses marketing language, jargon, headline-style prefixes, calls to action, second-person sales language, awkward grammar, long sentences, duplicated titles, or wording that is unsuitable to say aloud. Ignore promotional style and rate the concrete fact underneath it.",
+    "Do not force core_fact_importance_score to zero because a fact is unstable or unsafe. Record those as separate fields; later deterministic selection applies them as separate eligibility gates.",
+    "Set core_fact_stable_for_months false for dated or upcoming events, current availability, promotions or free offers, exact project-price ranges, temporary staffing, changing schedules, or any claim likely to change within six months. Event operations can be unstable even without a printed date.",
+    "Set core_fact_safe_to_state_as_fact false when the factual claim itself is ambiguous, unsupported, instructional, sensitive, contradictory, incomplete beyond recovery, or unsafe to state without additional context. Do not mark it unsafe merely because its wording needs a spoken-register rewrite.",
+    "Website contact forms, prompts to send a message, web-only submission instructions, questions, page headings, bylines, privacy copy, and website-administration copy normally have low importance because they do not contain a useful business fact for a phone caller.",
+    "A partial address, third-party rebate, incentive program, utility qualification, code requirement, regulatory guidance, or generic how-to fact may be important, but use stability and factual-safety fields to keep it out of the by-heart set when it needs changing or additional context.",
+    "The approved company description is authoritative. If a fact conflicts with it, set core_fact_safe_to_state_as_fact false even when the conflicting claim would otherwise describe an important topic.",
     "Do not invent details not present in the source chunks.",
     "If the source is ambiguous, preserve the ambiguity explicitly in facts.",
     "If a source contains business-relevant information, emit at least 1 card and at least 3 facts for that source item.",
@@ -1036,8 +1030,7 @@ function buildSourceArtifactBatchJsonSchema(allowedSourceRefIds) {
             source_chunk_ids: stringArraySchema(24),
             core_fact_importance_score: { type: "integer", minimum: 0, maximum: 100 },
             core_fact_stable_for_months: { type: "boolean" },
-            core_fact_title: { type: "string", maxLength: 80 },
-            core_fact_spoken_text: { type: "string", maxLength: 320 },
+            core_fact_safe_to_state_as_fact: { type: "boolean" },
             core_fact_reason: { type: "string", maxLength: 180 }
           })
         }
@@ -2502,10 +2495,10 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
         fact_role: normalizeText(fact.fact_role) || "detail",
         support_type: normalizeText(fact.support_type) || "source_backed",
         core_fact_creation_rating: {
+          rating_version: CORE_FACT_RATING_VERSION,
           importance_score: normalizeCoreFactImportance(fact.core_fact_importance_score),
           stable_for_months: fact.core_fact_stable_for_months === true,
-          title: normalizeText(fact.core_fact_title),
-          spoken_text: normalizeText(fact.core_fact_spoken_text),
+          safe_to_state_as_fact: fact.core_fact_safe_to_state_as_fact === true,
           reason: normalizeText(fact.core_fact_reason)
         },
         source_span_refs_json: [],
@@ -2535,10 +2528,10 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
       const currentImportance = normalizeCoreFactImportance(current.core_fact_creation_rating?.importance_score);
       if (incomingImportance > currentImportance) {
         current.core_fact_creation_rating = {
+          rating_version: CORE_FACT_RATING_VERSION,
           importance_score: incomingImportance,
           stable_for_months: fact.core_fact_stable_for_months === true,
-          title: normalizeText(fact.core_fact_title),
-          spoken_text: normalizeText(fact.core_fact_spoken_text),
+          safe_to_state_as_fact: fact.core_fact_safe_to_state_as_fact === true,
           reason: normalizeText(fact.core_fact_reason)
         };
       }

@@ -11,6 +11,8 @@ import {
 import { cleanGeneratedCompanyDescription } from "../pages/api/_lib/promptBlueprints.js";
 import {
   CORE_FACT_MAX_PINS,
+  CORE_FACT_MIN_SCORE,
+  CORE_FACT_RATING_VERSION,
   CORE_FACT_SPOKEN_MAX_CHARS,
   CORE_FACT_SPOKEN_VERSION,
   CORE_FACT_TOKEN_BUDGET,
@@ -23,6 +25,7 @@ import {
   materializeCoreFactPromptSection,
   rateChangedCoreFacts,
   rewritePinnedCoreFactsForSpeech,
+  selectCoreFactCandidatesDeterministically,
   selectCoreFactsDeterministically
 } from "../pages/api/_lib/knowledgeCoreFacts.js";
 
@@ -254,7 +257,7 @@ const previousRatedFact = {
   core_fact_rating_input_hash: createCoreFactRatingInputHash(stableFact, {
     companyDescription: "Example Plumbing provides residential plumbing repairs."
   }),
-  core_fact_rating_version: "known_by_heart_rating_v1",
+  core_fact_rating_version: CORE_FACT_RATING_VERSION,
   core_fact_rating_model: "gpt-4.1",
   core_fact_rated_at: "2026-08-01T00:00:00.000Z"
 };
@@ -301,9 +304,7 @@ const changedResult = await rateChangedCoreFacts({
           fact_id: item.fact_id,
           heart_score: 91,
           stable_for_months: true,
-          safe_to_speak: true,
-          title: "Service area",
-          spoken_fact: item.canonical_fact,
+          safe_to_state_as_fact: true,
           reason: "Frequently requested and stable."
         }))
       }
@@ -314,6 +315,9 @@ assert.equal(changedResult.reusedCount, 1);
 assert.equal(changedResult.modelRatedCount, 1);
 assert.equal(changedPayload.facts.length, 1, "only the materially changed fact may be sent to OpenAI");
 assert.equal(changedPayload.facts[0].canonical_fact, changedFact.claim_text);
+assert.equal(changedResult.facts[1].core_fact_score, 0.91);
+assert.equal(changedResult.facts[1].core_fact_title, null, "importance rating must not generate spoken wording");
+assert.equal(changedResult.facts[1].core_fact_spoken_text, null, "importance rating must remain independent of spoken wording");
 let blockedBackfillCalls = 0;
 await assert.rejects(
   rateChangedCoreFacts({
@@ -332,10 +336,10 @@ assert.equal(blockedBackfillCalls, 0);
 let creationModelCalls = 0;
 const creationRatedFact = fact(2, "We install water heaters.", "Water heaters", {
   core_fact_creation_rating: {
+    rating_version: CORE_FACT_RATING_VERSION,
     importance_score: 88,
     stable_for_months: true,
-    title: "Water heaters",
-    spoken_text: "We install water heaters.",
+    safe_to_state_as_fact: true,
     reason: "Common stable service."
   }
 });
@@ -349,6 +353,54 @@ const creationResult = await rateChangedCoreFacts({
 assert.equal(creationModelCalls, 0);
 assert.equal(creationResult.creationRatedCount, 1);
 assert.equal(creationResult.facts[0].core_fact_score, 0.88);
+assert.equal(creationResult.facts[0].core_fact_title, null);
+assert.equal(creationResult.facts[0].core_fact_spoken_text, null);
+
+let wordingRatingRequest = null;
+const marketingWrittenFact = fact(4, "Premium custom showers are expertly engineered to bring seamless style and robust performance to your home.", "Custom showers");
+const wordingIndependentResult = await rateChangedCoreFacts({
+  facts: [marketingWrittenFact],
+  modelCaller: async (request) => {
+    wordingRatingRequest = request;
+    return {
+      parsed: {
+        facts: [{
+          fact_id: marketingWrittenFact.knowledge_fact_id,
+          heart_score: 92,
+          stable_for_months: true,
+          safe_to_state_as_fact: true,
+          reason: "A main service callers commonly ask about."
+        }]
+      }
+    };
+  }
+});
+assert.match(wordingRatingRequest.system, /Rate the factual meaning, not the writing\./);
+assert.match(wordingRatingRequest.system, /Do not lower heart_score because the source uses marketing language/);
+assert.equal(wordingIndependentResult.facts[0].core_fact_score, 0.92, "marketing prose must not reduce factual importance");
+assert.equal(wordingIndependentResult.facts[0].core_fact_is_safe_to_speak, true, "wording quality must not make the underlying fact unsafe");
+assert.equal(wordingIndependentResult.facts[0].core_fact_title, null);
+assert.equal(wordingIndependentResult.facts[0].core_fact_spoken_text, null);
+
+const importantButIneligibleFact = fact(5, "A seasonal rebate may be available this month.", "Rebates");
+const importantButIneligibleResult = await rateChangedCoreFacts({
+  facts: [importantButIneligibleFact],
+  modelCaller: async () => ({
+    parsed: {
+      facts: [{
+        fact_id: importantButIneligibleFact.knowledge_fact_id,
+        heart_score: 87,
+        stable_for_months: false,
+        safe_to_state_as_fact: false,
+        reason: "Important to callers, but temporary and context-dependent."
+      }]
+    }
+  })
+});
+assert.equal(importantButIneligibleResult.facts[0].core_fact_score, 0.87, "stability and safety gates must not overwrite importance");
+assert.equal(importantButIneligibleResult.facts[0].core_fact_is_stable, false);
+assert.equal(importantButIneligibleResult.facts[0].core_fact_is_safe_to_speak, false);
+assert.equal(selectCoreFactCandidatesDeterministically(importantButIneligibleResult.facts).length, 0);
 
 const scoredFacts = Array.from({ length: 30 }, (_, index) => {
   const item = fact(index + 100, `We provide stable service ${index + 1}.`, `Service ${index + 1}`);
@@ -374,14 +426,23 @@ assert.deepEqual(
 );
 const deletionSelection = selectCoreFactsDeterministically(scoredFacts.slice(1));
 assert.equal(deletionSelection.pins[0].knowledge_fact_id, scoredFacts[1].knowledge_fact_id, "deletion must rerank locally without OpenAI");
+const thresholdFacts = [
+  { ...scoredFacts[0], knowledge_fact_id: "fact_threshold", core_fact_score: CORE_FACT_MIN_SCORE },
+  { ...scoredFacts[1], knowledge_fact_id: "fact_below_threshold", core_fact_score: CORE_FACT_MIN_SCORE - 0.01 }
+];
+assert.deepEqual(
+  selectCoreFactCandidatesDeterministically(thresholdFacts).map((item) => item.knowledge_fact_id),
+  ["fact_threshold"],
+  "the importance floor must apply before spoken rewriting"
+);
 
 let spokenRewritePayload = null;
 const spokenRewrite = await rewritePinnedCoreFactsForSpeech({
   facts: [{
     ...scoredFacts[0],
     claim_text: "We create tailored software solutions for unique business needs—systems engineered to align with your goals and processes.",
-    core_fact_title: "Custom business software",
-    core_fact_spoken_text: "We create tailored software solutions for unique business needs—systems engineered to align with your goals and processes."
+    core_fact_title: null,
+    core_fact_spoken_text: null
   }],
   model: "gpt-4.1",
   modelCaller: async (request) => {
@@ -442,8 +503,8 @@ assert.equal(unsafeSupplierRewriteCalls, 2, "an unsafe initial rewrite receives 
 assert.equal(unsafeSupplierRewrite.unsafeSkippedCount, 1);
 assert.equal(unsafeSupplierRewrite.rewrittenCount, 0);
 assert.equal(unsafeSupplierRewrite.facts[0].core_fact_spoken_rewrite_skipped, true);
-assert.equal(unsafeSupplierRewrite.facts[0].core_fact_is_safe_to_speak, false);
-assert.equal(unsafeSupplierRewrite.facts[0].core_fact_score, 0);
+assert.equal(unsafeSupplierRewrite.facts[0].core_fact_is_safe_to_speak, true, "spoken wording failure must not change fact-level safety");
+assert.equal(unsafeSupplierRewrite.facts[0].core_fact_score, scoredFacts[0].core_fact_score, "spoken wording failure must not erase factual importance");
 assert.equal(selectCoreFactsDeterministically(unsafeSupplierRewrite.facts).pins.length, 0, "an unsafe rewrite is omitted instead of failing the build");
 
 const migration0039 = await fs.readFile(new URL("../migrations/0039_automatic_core_fact_pins.sql", import.meta.url), "utf8");
@@ -548,9 +609,9 @@ for (const [id, tenant, build, score, rankSeed] of [
        core_fact_reason, core_fact_selector_version, core_fact_rating_input_hash,
        core_fact_is_stable, core_fact_is_safe_to_speak, core_fact_rating_version, core_fact_rating_model, core_fact_rated_at
      ) VALUES ($1, $2, $3, 'trade_smb', 'plumbing', $6, 'service_detail', $7,
-       $4, $6, $7, $5, 'Stable service.', 'known_by_heart_rating_v1', $4,
-       TRUE, TRUE, 'known_by_heart_rating_v1', 'gpt-4.1', NOW())`,
-    [id, tenant, build, `${id}-fingerprint`, score, rankSeed, `${rankSeed} fact.`]
+       $4, $6, $7, $5, 'Stable service.', $8, $4,
+       TRUE, TRUE, $8, 'gpt-4.1', NOW())`,
+    [id, tenant, build, `${id}-fingerprint`, score, rankSeed, `${rankSeed} fact.`, CORE_FACT_RATING_VERSION]
   );
 }
 
