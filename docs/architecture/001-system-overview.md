@@ -21,6 +21,12 @@ Build a white-labeled, multi-tenant voice platform for service businesses using:
 6. `call-gateway` plays audio to caller, handles tool calls, and persists timeline events.
 7. `worker` performs post-call tasks as needed.
 
+## Knowledge Build Flow
+1. Each crawled website page or uploaded document is normalized into one page-level evidence document with visible line breaks preserved.
+2. Normal sources are retained without a minimum line length. A genuinely oversized source is bounded independently at 12,000 estimated tokens, keeping its beginning and end.
+3. Existing cross-page request budgets batch page summaries, assemble the site-wide topic inventory, and extract page facts/cards against that inventory.
+4. Source references remain page-level; legacy segment/chunk tables store one compatibility document row per source in new builds.
+
 ## Multi-Tenancy Boundaries
 - Every persisted domain record includes `tenant_id`.
 - Every API request must carry authenticated tenant context.

@@ -72,8 +72,8 @@ These artifacts are optimized for retrieval, not direct user authoring.
 
 ## Data Flow
 1. Crawl tenant website or ingest manual knowledge entries.
-2. Normalize pages into clean `site_sections`.
-3. Extract atomic `knowledge_facts` from sections and manual entries.
+2. Normalize each source into one page-level evidence document.
+3. Extract atomic `knowledge_facts` from page documents and manual entries.
 4. Group facts into `knowledge_cards`.
 5. Generate `guardrail_question_tests` from tenant knowledge and review templates.
 6. Capture user feedback on draft answers.
@@ -82,6 +82,13 @@ These artifacts are optimized for retrieval, not direct user authoring.
    - `answer_override`
    - `guardrail`
    - `fact_correction_proposal`
+
+## Page-Level Source Documents
+- Website pages and uploaded documents are presented to the build-time AI as whole page-level documents, not arbitrary line groups. Separate source lines are document structure, not separate candidate facts.
+- Visible nonempty lines are retained regardless of character or word count, and their line breaks remain in the document. Cleanup may remove executable/style content and explicit legal/call-to-action boilerplate, but may not use a generic minimum-length rule.
+- Page provenance is sufficient. The legacy `source_segments` and `source_chunks` tables remain for schema compatibility, but new builds write one row per source to each and mark the chunk as `page_document`.
+- `KNOWLEDGE_BUILD_SOURCE_PAGE_TOKEN_BUDGET` defaults to 12,000 estimated tokens. Only a source that exceeds that budget is truncated; the compiler keeps the beginning and end, records truncation metadata, and inserts an internal omission marker that may never be treated as evidence.
+- Cross-page request batching remains independent: summaries, site-wide topic inventory, and fact/card extraction continue to batch multiple page documents under their existing stage budgets.
 
 ## Feedback Routing
 Every edit/comment becomes a `knowledge_feedback_event` first.

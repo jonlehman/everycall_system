@@ -39,6 +39,12 @@
 - Verify a rewrite that introduces `we`, `our`, or `us` when the canonical supplier fact is third-person is rejected. If both the initial and repair rewrites remain unsafe, verify only that fact is excluded and the build continues.
 - In a live canary, ask one question fully covered by a pin and verify there is no lookup. Then ask an adjacent unsupported question and verify `knowledge_lookup` still runs.
 
+## Knowledge Source Page Documents
+- Run `corepack pnpm validate:knowledge-source-pages` after changing website/document extraction, source normalization, evidence persistence, or compiler inputs.
+- The validator confirms that short lines such as `Cashmere, WA 98815` survive website, demo, and plain-text extraction; footer contact content is retained; more than 4,000 lines are not silently cut off; and a normal page becomes exactly one page document with line breaks intact.
+- It also verifies that a genuinely oversized source stays within its per-page token budget while retaining both its beginning and end, that repeat normalization is stable, and that short fallback facts survive while the internal omission marker cannot become a fact.
+- This validator is included in `corepack pnpm validate:receptionist-v11`.
+
 ## Receptionist v11 Acceptance
 - Run `corepack pnpm validate:receptionist-v11` for exact prompt rules and deterministic `finish_session` enforcement.
 - With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V11_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v11:realtime`.

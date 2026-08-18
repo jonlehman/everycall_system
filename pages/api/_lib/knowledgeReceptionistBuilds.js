@@ -4,7 +4,11 @@ import net from "node:net";
 import { performance } from "node:perf_hooks";
 import { executePlannerPgvectorRuntime } from "@everycall/contracts";
 import { extractTextFromDocumentBuffer } from "./knowledgeReceptionistFiles.js";
-import { buildSourceChunksForSourceItem, compileKnowledgeBuildArtifacts } from "./knowledgeReceptionistCompiler.js";
+import {
+  buildBudgetedSourcePage,
+  buildSourceChunksForSourceItem,
+  compileKnowledgeBuildArtifacts
+} from "./knowledgeReceptionistCompiler.js";
 import {
   materializeCoreFactPromptSection,
   recordCoreFactActivationChanges
@@ -591,10 +595,10 @@ function looksLikeBoilerplate(line) {
   if (text.includes("privacy policy") || text.includes("terms of service")) return true;
   if (text.includes("copyright")) return true;
   if (text.includes("book online") || text.includes("call today")) return true;
-  return text.split(/\s+/).length < 4 && !/\d/.test(text);
+  return false;
 }
 
-function extractStructuredPageContent(html) {
+export function extractStructuredPageContent(html) {
   const source = String(html || "");
   const title = cleanLineText(source.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "");
   const body = source.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] || source;
@@ -602,12 +606,7 @@ function extractStructuredPageContent(html) {
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
-    .replace(/<header[\s\S]*?<\/header>/gi, " ")
-    .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
-    .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
-    .replace(/<aside[\s\S]*?<\/aside>/gi, " ")
-    .replace(/<form[\s\S]*?<\/form>/gi, " ");
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ");
 
   const headings = uniqueValues([
     ...extractTagTextList(stripped, "h1"),
@@ -618,19 +617,19 @@ function extractStructuredPageContent(html) {
   const lines = decodeHtmlEntities(
     stripped
       .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/(main|article|section|div|p|ul|ol|li|table|tr|td|h1|h2|h3|h4|h5|h6)>/gi, "\n")
-      .replace(/<(main|article|section|div|p|ul|ol|li|table|tr|td|h1|h2|h3|h4|h5|h6)\b[^>]*>/gi, "\n")
+      .replace(/<\/(main|article|section|header|footer|nav|aside|form|address|div|p|ul|ol|li|table|tr|td|h1|h2|h3|h4|h5|h6)>/gi, "\n")
+      .replace(/<(main|article|section|header|footer|nav|aside|form|address|div|p|ul|ol|li|table|tr|td|h1|h2|h3|h4|h5|h6)\b[^>]*>/gi, "\n")
       .replace(/<[^>]+>/g, " ")
   )
     .split(/\n+/)
     .map(cleanLineText)
-    .filter((line) => line.length >= 24 && !looksLikeBoilerplate(line));
+    .filter((line) => line && !looksLikeBoilerplate(line));
 
   return {
     title,
     headings,
     lines,
-    text: lines.join(" ")
+    text: lines.join("\n")
   };
 }
 
@@ -1232,13 +1231,11 @@ function inferCardType(pageType) {
   return "general";
 }
 
-function splitPlainTextToLines(text, limit = 4000) {
+export function splitPlainTextToLines(text) {
   return String(text || "")
     .split(/\n+/)
-    .flatMap((line) => line.split(/(?<=[.!?])\s+/))
     .map(cleanLineText)
-    .filter((line) => line.length >= 24 && !looksLikeBoilerplate(line))
-    .slice(0, limit);
+    .filter((line) => line && !looksLikeBoilerplate(line));
 }
 
 function classifyTextPageType(title, text, fallback = "unknown_mixed") {
@@ -1289,11 +1286,18 @@ function normalizeSourceItem(item) {
       locatorAlias = "";
     }
   }
-  const lines = Array.isArray(item?.lines) && item.lines.length
+  const rawLines = Array.isArray(item?.lines) && item.lines.length
     ? item.lines.map((value) => cleanLineText(value)).filter(Boolean)
     : splitPlainTextToLines(text);
   const headings = Array.isArray(item?.headings) ? item.headings.map((value) => cleanLineText(value)).filter(Boolean) : [];
   const metadata = item?.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata) ? { ...item.metadata } : {};
+  const pageDocument = buildBudgetedSourcePage({
+    lines: rawLines,
+    text,
+    metadata
+  });
+  const lines = pageDocument.lines;
+  const sourceText = pageDocument.text;
   const classification = analyzeSourceClassification({
     sourceChannel,
     sourceKind: normalizeText(item?.sourceKind || item?.source_kind) || "text",
@@ -1303,7 +1307,7 @@ function normalizeSourceItem(item) {
     title: title || locatorAlias || "Knowledge Source",
     headings,
     lines,
-    text: text || lines.join(" "),
+    text: sourceText,
     pageType: normalizeText(item?.pageType || item?.page_type) || normalizeText(metadata.page_type),
     documentClass: normalizeText(item?.documentClass || item?.document_class),
     contentClass: normalizeText(item?.contentClass || item?.content_class)
@@ -1323,7 +1327,8 @@ function normalizeSourceItem(item) {
     classification_margin: classification.scoreMargin,
     classification_reasons: classification.reasons,
     classification_candidates: classification.candidates,
-    classification_signals: classification.signals
+    classification_signals: classification.signals,
+    page_document: pageDocument.metadata
   };
 
   return {
@@ -1335,7 +1340,7 @@ function normalizeSourceItem(item) {
     title: title || locatorAlias || "Knowledge Source",
     headings,
     lines,
-    text: text || lines.join(" "),
+    text: sourceText,
     pageType,
     documentClass,
     contentClass,
@@ -2798,7 +2803,7 @@ function buildSourcePersistenceBatches(records) {
   let segmentCount = 0;
   let chunkCount = 0;
   for (const record of records) {
-    const nextSegmentCount = segmentCount + record.sourceItem.lines.length;
+    const nextSegmentCount = segmentCount + (record.sourceItem.text ? 1 : 0);
     const nextChunkCount = chunkCount + record.sourceChunks.length;
     const wouldOverflow = current.length && (
       current.length >= SOURCE_PERSIST_BATCH_SIZE
@@ -2812,7 +2817,7 @@ function buildSourcePersistenceBatches(records) {
       chunkCount = 0;
     }
     current.push(record);
-    segmentCount += record.sourceItem.lines.length;
+    segmentCount += record.sourceItem.text ? 1 : 0;
     chunkCount += record.sourceChunks.length;
   }
   if (current.length) {
@@ -2881,20 +2886,22 @@ async function bulkUpsertSourceRefs(db, buildInfo, sourceIntakeSessionId, record
 }
 
 async function bulkUpsertSourceSegments(db, buildInfo, records) {
-  const rows = records.flatMap((record) => record.sourceItem.lines.map((line, index) => ({
+  const rows = records.filter((record) => normalizeText(record.sourceItem.text)).map((record) => ({
     tenant_key: buildInfo.tenant_key,
     build_id: buildInfo.build_id,
     source_ref_id: record.sourceRefId,
     heading_path: (record.sourceItem.headings || []).join(" > ") || null,
-    segment_index: index,
-    text_span: line,
-    content_hash: stableHash(line),
+    segment_index: 0,
+    text_span: record.sourceItem.text,
+    content_hash: stableHash(record.sourceItem.text),
     metadata_json: {
       title: record.sourceItem.title || null,
       source_locator: record.sourceItem.sourceLocator,
-      source_channel: record.sourceItem.sourceChannel
+      source_channel: record.sourceItem.sourceChannel,
+      segment_kind: "page_document",
+      page_document: record.sourceItem.metadata?.page_document || {}
     }
-  })));
+  }));
   let inserted = 0;
   for (const batch of chunkArray(rows, SOURCE_SEGMENT_INSERT_ROW_LIMIT)) {
     if (!batch.length) continue;

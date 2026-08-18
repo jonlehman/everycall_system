@@ -115,7 +115,7 @@ function extractPdfText(buffer) {
   }
 
   return uniqueValues(fragments)
-    .filter((line) => line.split(/\s+/).length >= 2)
+    .filter(Boolean)
     .join("\n");
 }
 

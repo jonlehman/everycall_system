@@ -62,6 +62,13 @@
 - If a serverless invocation terminates, do not manually clear a healthy lease. The cron resumes after expiry. A published build must never be changed to failed by a stale worker; investigate any terminal-status mismatch before repairing it with an audited, build-specific transaction.
 - The synthetic Realtime battery requires explicit API-cost approval: `EVERYCALL_RUN_RECEPTIONIST_V11_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v11:realtime`. Optional comma-separated filters are `EVERYCALL_RECEPTIONIST_V11_ACCEPTANCE_MODES` and `EVERYCALL_RECEPTIONIST_V11_ACCEPTANCE_CASES`.
 
+## Knowledge Source Page Budgets
+- `KNOWLEDGE_BUILD_SOURCE_PAGE_TOKEN_BUDGET` defaults to `12000`. It applies independently to each normalized website page or uploaded document before raw build-source persistence and AI compilation.
+- Normal sources remain lossless after visible-text cleanup: there is no minimum line length and no five-line chunking. New builds store one compatibility `source_segments` row and one compatibility `source_chunks` row per source page/document.
+- An oversized source retains roughly 75% of its available budget from the beginning and 25% from the end, separated by an internal omission marker. Inspect `source_intake_items.metadata_json->'page_document'` or `source_chunks.metadata_json->'page_document'` for original/stored token estimates and truncation counts.
+- The independent cross-page request budgets remain separate: source summary `18000`, topic window `18000`, and source artifact extraction `22000` estimated input tokens by default.
+- Changing this setting affects only future ingestion/rebuilds; it does not mutate active tenant knowledge. Run `corepack pnpm validate:knowledge-source-pages` before release.
+
 ## Realtime Prompt Layering
 - Default: `OPENAI_REALTIME_LAYERED_PROMPT_ENABLED=true`.
 - Immediate rollback: set `OPENAI_REALTIME_LAYERED_PROMPT_ENABLED=false` on the prompt-serving app and redeploy; this restores legacy tenant-first ordering without changing the canonical blueprint.

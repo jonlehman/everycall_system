@@ -1,6 +1,7 @@
 # Decisions
 
 ## 2026-08-18
+- Compile each website page or uploaded document as one page-level AI evidence document rather than arbitrary five-line chunks. Preserve every nonempty visible line regardless of length, retain line breaks, and keep provenance at the source-page level. Bound genuinely oversized sources at 12,000 estimated tokens by retaining the beginning and end with explicit truncation metadata; keep the existing cross-page summary, topic, and artifact request budgets unchanged. The legacy `source_segments` and `source_chunks` tables remain compatibility containers with one page-document row per source.
 - Rate `What You Know By Heart` importance from the fact's actual meaning and caller value only. Keep stability and fact-level safety as separate eligibility gates, and assess marketing language, jargon, duplicated headings, or other writing defects only in the post-ranking spoken-register rewrite. A failed rewrite may exclude a pin but may not erase its factual-importance score.
 - Bound generated company descriptions at the last complete sentence within 320 characters, reject dangling conjunctions or prepositions, and refresh both the company description and persisted no-tool statement together when a website build is published.
 - Serialize knowledge-build cron and manual runners with a durable row lease containing a unique token, owner, expiry, and heartbeat. Do not use PostgreSQL session advisory locks because production uses Neon's transaction-pooled endpoint.

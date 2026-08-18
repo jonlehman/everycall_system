@@ -138,21 +138,10 @@ function looksLikeBoilerplate(line) {
   if (text.includes("cookie policy") || text.includes("copyright")) return true;
   if (text.includes("book online") || text.includes("call today")) return true;
   if (text.includes("all rights reserved")) return true;
-  return text.split(/\s+/).length < 4 && !/\d/.test(text);
+  return false;
 }
 
-function looksLikeStructuredShortFact(line) {
-  const text = normalizeText(line);
-  if (!text) return false;
-  return /\b\d{1,2}:\d{2}\s?(?:am|pm)\b/i.test(text)
-    || /\b\d{1,2}\s?(?:am|pm)\b/i.test(text)
-    || /\b(mon|monday|tue|tuesday|wed|wednesday|thu|thursday|fri|friday|sat|saturday|sun|sunday)\b/i.test(text)
-    || /\b(?:phone|call|text|email|hours|open|closed)\b/i.test(text)
-    || /\b\d{3}[-.)\s]\d{3}[-.\s]\d{4}\b/.test(text)
-    || /@/.test(text);
-}
-
-function extractStructuredPageContent(html) {
+export function extractStructuredPageContent(html) {
   const source = String(html || "");
   const title = cleanLineText(source.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "");
   const meta = extractMetaMap(source);
@@ -161,12 +150,7 @@ function extractStructuredPageContent(html) {
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
-    .replace(/<header[\s\S]*?<\/header>/gi, " ")
-    .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
-    .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
-    .replace(/<aside[\s\S]*?<\/aside>/gi, " ")
-    .replace(/<form[\s\S]*?<\/form>/gi, " ");
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ");
 
   const headings = uniqueValues([
     ...extractTagTextList(stripped, "h1"),
@@ -177,20 +161,20 @@ function extractStructuredPageContent(html) {
   const lines = decodeHtmlEntities(
     stripped
       .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/(main|article|section|div|p|ul|ol|li|table|tr|td|h1|h2|h3|h4|h5|h6)>/gi, "\n")
-      .replace(/<(main|article|section|div|p|ul|ol|li|table|tr|td|h1|h2|h3|h4|h5|h6)\b[^>]*>/gi, "\n")
+      .replace(/<\/(main|article|section|header|footer|nav|aside|form|address|div|p|ul|ol|li|table|tr|td|h1|h2|h3|h4|h5|h6)>/gi, "\n")
+      .replace(/<(main|article|section|header|footer|nav|aside|form|address|div|p|ul|ol|li|table|tr|td|h1|h2|h3|h4|h5|h6)\b[^>]*>/gi, "\n")
       .replace(/<[^>]+>/g, " ")
   )
     .split(/\n+/)
     .map(cleanLineText)
-    .filter((line) => (line.length >= 24 || looksLikeStructuredShortFact(line)) && !looksLikeBoilerplate(line));
+    .filter((line) => line && !looksLikeBoilerplate(line));
 
   return {
     title,
     meta,
     headings,
     lines,
-    text: lines.join(" ")
+    text: lines.join("\n")
   };
 }
 
