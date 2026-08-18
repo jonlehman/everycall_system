@@ -28,6 +28,7 @@
 
 ## What You Know By Heart
 - Run `corepack pnpm validate:core-facts` after building `@everycall/contracts`.
+- Verify an overlong generated company description ends at a complete sentence within 320 characters, never on a dangling conjunction or preposition, and website publication refreshes the company description and persisted no-tool statement from the same generated snapshot.
 - Run `corepack pnpm validate:knowledge-build-leases` after changing knowledge-build scheduling or terminal-state handling. It verifies exclusive claims, heartbeats, expiry takeover, token-scoped release, and that published builds cannot be reclaimed.
 - The validator reconstructs the pre-Grok OpenAI v3 section set and verifies its SHA-256 baseline, tool definitions, and sample phrases, then verifies the exact v11 additions separately.
 - With no pins, verify the entire by-heart section and every reference to it are absent. With pins, instruction-like text must be rejected, the rendered block must stay within 600 tokens and 20 facts, and tenant/build isolation must hold.

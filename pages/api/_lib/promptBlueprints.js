@@ -46,15 +46,44 @@ function looksLikeWeakCompanyDescription(value) {
   return /\b(privacy|terms|policy|warranty|guarantee|financing|payment|insurance|contact us|call us|after hours|faq|service area|locations?)\b/.test(text);
 }
 
-function cleanGeneratedCompanyDescription(value) {
+const DANGLING_DESCRIPTION_END_PATTERN = /(?:[,;:\-–—]\s*)?\b(?:and|or|with|for|to|of|in|on|at|by|from|including|plus|such as|as well as)$/i;
+
+function stripDanglingDescriptionEnding(value) {
+  let text = normalizeText(value).replace(/[,;:\-–—]+$/g, "").trim();
+  while (DANGLING_DESCRIPTION_END_PATTERN.test(text)) {
+    text = text.replace(DANGLING_DESCRIPTION_END_PATTERN, "").replace(/[,;:\-–—]+$/g, "").trim();
+  }
+  return text;
+}
+
+function lastCompleteSentenceWithin(value, limit) {
+  const bounded = String(value || "").slice(0, limit);
+  const endings = [...bounded.matchAll(/[.!?…](?=\s+(?:[A-Z“”"']|$)|$)/g)];
+  const lastEnding = endings.at(-1);
+  if (!lastEnding || Number(lastEnding.index) < 79) return "";
+  return bounded.slice(0, Number(lastEnding.index) + 1).trim();
+}
+
+export function cleanGeneratedCompanyDescription(value) {
   const text = normalizeText(value)
     .replace(/^["'“”]+|["'“”]+$/g, "")
     .replace(/\s+/g, " ");
   if (!text) return "";
-  const bounded = text.length > COMPANY_DESCRIPTION_MAX_CHARS
-    ? text.slice(0, COMPANY_DESCRIPTION_MAX_CHARS).replace(/\s+\S*$/, "").trim()
-    : text;
-  return bounded || text.slice(0, COMPANY_DESCRIPTION_MAX_CHARS).trim();
+  let bounded = text;
+  if (bounded.length > COMPANY_DESCRIPTION_MAX_CHARS) {
+    bounded = lastCompleteSentenceWithin(bounded, COMPANY_DESCRIPTION_MAX_CHARS)
+      || bounded.slice(0, COMPANY_DESCRIPTION_MAX_CHARS - 1).replace(/\s+\S*$/, "").trim();
+  }
+  bounded = stripDanglingDescriptionEnding(bounded);
+  if (!bounded) return "";
+  if (!/[.!?…]$/.test(bounded)) {
+    if (bounded.length >= COMPANY_DESCRIPTION_MAX_CHARS) {
+      bounded = bounded.slice(0, COMPANY_DESCRIPTION_MAX_CHARS - 1).replace(/\s+\S*$/, "").trim();
+      bounded = stripDanglingDescriptionEnding(bounded);
+    }
+    bounded = `${bounded}.`;
+  }
+  return bounded.slice(0, COMPANY_DESCRIPTION_MAX_CHARS);
 }
 
 function isUsableGeneratedCompanyDescription(value) {
@@ -63,6 +92,8 @@ function isUsableGeneratedCompanyDescription(value) {
   if (text.length > COMPANY_DESCRIPTION_MAX_CHARS) return false;
   if (text.split(/\s+/).length < 8) return false;
   if (/\b(privacy policy|terms and conditions|cookie policy|contact us page|faq page)\b/i.test(text)) return false;
+  if (!/[.!?…]$/.test(text)) return false;
+  if (DANGLING_DESCRIPTION_END_PATTERN.test(text.replace(/[.!?…]+$/, "").trim())) return false;
   return true;
 }
 
@@ -368,7 +399,9 @@ export async function ensureTenantPromptProfileCompanyDescriptionSnapshot(db, te
       ) || await loadBuildDerivedCompanyDescription(db, normalizedTenantKey)
     : "";
   const companyDescriptionSnapshot = normalizeText(
-    promptCompanyDescription || bootstrapCompanyDescription || buildDerivedCompanyDescription
+    refreshNoToolStatement
+      ? (buildDerivedCompanyDescription || promptCompanyDescription || bootstrapCompanyDescription)
+      : (promptCompanyDescription || bootstrapCompanyDescription || buildDerivedCompanyDescription)
   );
   const noToolStatementSnapshot = normalizeText(
     refreshNoToolStatement
@@ -390,7 +423,8 @@ export async function ensureTenantPromptProfileCompanyDescriptionSnapshot(db, te
      VALUES ($1, $2, $3, $4, NOW())
      ON CONFLICT (tenant_key)
      DO UPDATE SET company_description = CASE
-                        WHEN tenant_prompt_profiles.company_description IS NULL
+                        WHEN $5::boolean
+                          OR tenant_prompt_profiles.company_description IS NULL
                           OR BTRIM(tenant_prompt_profiles.company_description) = ''
                         THEN EXCLUDED.company_description
                         ELSE tenant_prompt_profiles.company_description
@@ -433,6 +467,7 @@ export async function ensureTenantPromptProfileCompanyDescriptionSnapshot(db, te
     target_tenant: normalizedTenantKey,
     source: "active_build_summary",
     build_id: normalizeText(options.buildId) || null,
+    refreshed_company_description: refreshNoToolStatement,
     refreshed_no_tool_statement: refreshNoToolStatement
   });
 

@@ -8,6 +8,7 @@ import {
   getPromptSectionSeeds,
   renderPromptContext
 } from "@everycall/contracts";
+import { cleanGeneratedCompanyDescription } from "../pages/api/_lib/promptBlueprints.js";
 import {
   CORE_FACT_MAX_PINS,
   CORE_FACT_SPOKEN_MAX_CHARS,
@@ -37,6 +38,18 @@ const V11_PHONE_CONFIRMATION_RULE = `- After collecting the phone number, read i
 const V10_PHONE_CONFIRMATION_RULE = `- After collecting the phone number, read it back once naturally to confirm accuracy.`;
 const V11_CLOSING_QUESTION_RULE = `\n- Never ask a question and end the call in the same turn. If you ask the optional note question, stop speaking and wait for the caller's answer.`;
 const V11_FINISH_SESSION_RULE = `\n- Call finish_session only after you have spoken the closing AND the caller has responded or clearly said goodbye. Never call finish_session in a turn where you asked a question.`;
+
+const overlongCompanyDescription = "Wenatchee Valley Glass serves Chelan and Douglas Counties, installing custom glass shower enclosures, premium entry, patio, and interior doors, skylights, sunrooms, and glass railing systems. They offer products from trusted brands, focusing on quality, durability, energy efficiency, and enhancing home aesthetics and improved comfort throughout the home.";
+assert.equal(
+  cleanGeneratedCompanyDescription(overlongCompanyDescription),
+  "Wenatchee Valley Glass serves Chelan and Douglas Counties, installing custom glass shower enclosures, premium entry, patio, and interior doors, skylights, sunrooms, and glass railing systems.",
+  "overlong company descriptions must stop at a complete sentence"
+);
+assert.equal(
+  cleanGeneratedCompanyDescription("Example Glass installs windows and"),
+  "Example Glass installs windows.",
+  "company descriptions must not end with a dangling conjunction"
+);
 
 function stableHash(value) {
   return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -461,6 +474,16 @@ const promptLoadBody = promptBlueprintSource.slice(
   promptBlueprintSource.indexOf("export async function saveTenantPromptProfile")
 );
 assert.doesNotMatch(promptLoadBody, /ensureTenantPromptProfileCompanyDescriptionSnapshot/, "call-start profile loading must be read-only");
+assert.match(
+  promptBlueprintSource,
+  /refreshNoToolStatement\s*\?\s*\(buildDerivedCompanyDescription \|\| promptCompanyDescription \|\| bootstrapCompanyDescription\)/,
+  "website publication must prefer the regenerated company description"
+);
+assert.match(
+  promptBlueprintSource,
+  /DO UPDATE SET company_description = CASE\s+WHEN \$5::boolean/,
+  "website publication must replace both persisted description fields atomically"
+);
 
 const compilerSource = await fs.readFile(new URL("../pages/api/_lib/knowledgeReceptionistCompiler.js", import.meta.url), "utf8");
 assert.match(compilerSource, /loadReusableCoreFactRatings/);

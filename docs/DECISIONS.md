@@ -1,6 +1,7 @@
 # Decisions
 
 ## 2026-08-18
+- Bound generated company descriptions at the last complete sentence within 320 characters, reject dangling conjunctions or prepositions, and refresh both the company description and persisted no-tool statement together when a website build is published.
 - Serialize knowledge-build cron and manual runners with a durable row lease containing a unique token, owner, expiry, and heartbeat. Do not use PostgreSQL session advisory locks because production uses Neon's transaction-pooled endpoint.
 - Require the active lease token for scheduled ready/publish/failure transitions. A stale or duplicate worker may not overwrite a terminal build, especially a build that is already published.
 - Treat an unsafe spoken-register rewrite as a fact-local exclusion: keep the canonical fact for embeddings and lookup, remove it from prompt pins, record a warning, and continue the build. Spoken rewrites may not introduce first-person language absent from the canonical fact, preventing supplier impersonation.
