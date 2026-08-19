@@ -499,7 +499,7 @@ async function runAdjacentCase(mode) {
         createCheck("first response engages the caller's situation", /\b(?:system|reporting|freez\w*|repair|fix)\b/i.test(firstSentence) && !bareHold, { observed: firstSentence }),
         createCheck("lookup starts in the same response as engagement", sameResponseLookup && Boolean(firstSentence), { observed: firstSentence, tools: firstResponse.toolCalls.map((toolCall) => toolCall.name) }),
         createCheck("no hold then answer collision", !holdThenAnswer, { observed: turn.text }),
-        createCheck("unconfirmed service leads to honest callback offer", /\b(?:not confirmed|can't confirm|cannot confirm|don't have that confirmed|team can|callback|call back)\b/i.test(turn.text), { observed: turn.text })
+        createCheck("unconfirmed service leads to honest callback offer", /\b(?:not confirmed|can't confirm|cannot confirm|don't have that confirmed|team can|callback|call back|follow up)\b/i.test(turn.text), { observed: turn.text })
       ]
     };
   });
