@@ -339,6 +339,7 @@ export default function ReceptionistKnowledgePage() {
   const [deletingDocumentId, setDeletingDocumentId] = useState('');
   const [buildBusyKind, setBuildBusyKind] = useState('');
   const [previewBusy, setPreviewBusy] = useState(false);
+  const [callerFaqBusy, setCallerFaqBusy] = useState(false);
   const [activeGuideKey, setActiveGuideKey] = useState('website');
   const [websiteSectionExpanded, setWebsiteSectionExpanded] = useState(false);
   const [documentsSectionExpanded, setDocumentsSectionExpanded] = useState(false);
@@ -362,6 +363,14 @@ export default function ReceptionistKnowledgePage() {
   const [uploadedDocuments, setUploadedDocuments] = useState([]);
   const [setupStatus, setSetupStatus] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [callerFaqConfirmation, setCallerFaqConfirmation] = useState(null);
+  const [callerFaqAnswers, setCallerFaqAnswers] = useState({
+    repairs_service: '',
+    estimates: '',
+    service_area: '',
+    hours: '',
+    emergency: ''
+  });
 
   const loadWorkspace = async ({ silent = false } = {}) => {
     if (!silent) {
@@ -372,11 +381,13 @@ export default function ReceptionistKnowledgePage() {
       const [
         buildData,
         documentData,
-        setupStatusData
+        setupStatusData,
+        callerFaqData
       ] = await Promise.all([
         fetchJson('/api/v1/knowledge/builds'),
         fetchJson('/api/v1/knowledge/uploaded-documents'),
-        fetchClientSetupStatus().catch(() => null)
+        fetchClientSetupStatus().catch(() => null),
+        fetchJson('/api/v1/knowledge/caller-faq-confirmation').catch(() => null)
       ]);
 
       const builds = buildData?.builds || [];
@@ -394,6 +405,7 @@ export default function ReceptionistKnowledgePage() {
         }));
       }
       setUploadedDocuments(Array.isArray(documentData?.documents) ? documentData.documents : []);
+      setCallerFaqConfirmation(callerFaqData?.confirmation || null);
       if (setupStatusData) {
         setSetupStatus(setupStatusData);
         emitClientSetupStatus(setupStatusData);
@@ -623,6 +635,38 @@ export default function ReceptionistKnowledgePage() {
       setStatus({ message: 'Could not generate an answer estimate.', tone: 'bad' });
     } finally {
       setPreviewBusy(false);
+    }
+  };
+
+  const submitCallerFaqConfirmation = async (event) => {
+    event.preventDefault();
+    setCallerFaqBusy(true);
+    setStatus({ message: 'Saving confirmed business facts...', tone: 'warn' });
+    try {
+      const data = await fetchJson('/api/v1/knowledge/caller-faq-confirmation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: callerFaqAnswers })
+      });
+      if (!data?.ok) {
+        setStatus({ message: data?.message || 'Could not save those business facts.', tone: 'bad' });
+        return;
+      }
+      const buildId = String(data?.build?.build_id || '').trim();
+      if (buildId) {
+        void fetch(`/api/v1/knowledge/builds/${encodeURIComponent(buildId)}/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        }).catch(() => {});
+      }
+      setCallerFaqConfirmation(data.confirmation || null);
+      await loadWorkspace({ silent: true });
+      setStatus({ message: 'Business facts confirmed. The knowledge update is queued and will publish automatically.', tone: 'ok' });
+    } catch {
+      setStatus({ message: 'Could not save those business facts.', tone: 'bad' });
+    } finally {
+      setCallerFaqBusy(false);
     }
   };
 
@@ -981,6 +1025,45 @@ export default function ReceptionistKnowledgePage() {
                     </>
                   ) : null}
                 </div>
+
+                {callerFaqConfirmation?.status === 'pending' ? (
+                  <form
+                    className="rounded-lg border border-amber-200 bg-amber-50 p-6 shadow-sm"
+                    onSubmit={submitCallerFaqConfirmation}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Five quick business facts</h4>
+                      <span className="badge warn">About 2 minutes</span>
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-slate-700">
+                      Your website did not clearly answer whether you handle repairs or service. Confirm these common caller questions once; enter “Not sure” for anything you do not want the receptionist to state.
+                    </p>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      {[
+                        ['repairs_service', 'Do you handle repairs or service?', 'We repair residential and commercial glass.'],
+                        ['estimates', 'How do estimates or quotes work?', 'We provide free estimates after reviewing the project.'],
+                        ['service_area', 'What area do you serve?', 'We serve Chelan and Douglas Counties.'],
+                        ['hours', 'What are your regular hours?', 'We are open Monday through Friday, 8 a.m. to 5 p.m.'],
+                        ['emergency', 'Do you offer emergency or after-hours help?', 'We do not offer emergency or after-hours service.']
+                      ].map(([field, label, placeholder]) => (
+                        <label key={field} className={field === 'emergency' ? 'md:col-span-2' : ''}>
+                          <span className="mb-2 block text-xs font-bold text-slate-700">{label}</span>
+                          <textarea
+                            className="min-h-20 w-full rounded border-[#E2E8F0] bg-white p-3 text-sm text-slate-900 focus:border-[#2563EB] focus:ring-[#2563EB]"
+                            value={callerFaqAnswers[field]}
+                            onChange={(inputEvent) => setCallerFaqAnswers((current) => ({ ...current, [field]: inputEvent.target.value }))}
+                            placeholder={placeholder}
+                            maxLength={500}
+                            required
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <Button className="mt-4" type="submit" disabled={callerFaqBusy}>
+                      {callerFaqBusy ? 'Saving...' : 'Confirm and update knowledge'}
+                    </Button>
+                  </form>
+                ) : null}
 
                 {buildState.builds.some((build) => isBuildActive(build)) ? (
                   <div className="text-sm text-slate-600">

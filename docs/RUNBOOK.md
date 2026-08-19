@@ -11,6 +11,7 @@
 - Look for: `openai_realtime_session_updated`, `assistant_response_canceled`, `openai_realtime_response_done`, `assistant_finish_session_rejected`
 - For the GPT-Realtime-2.1 rollout/canary, enable `REALTIME_TRACE=true` only on staging or a controlled canary and confirm `openai_realtime_session_start` logs `model=gpt-realtime-2.1` and `apiShape=realtime2`.
 - `openai_realtime_response_done` includes `cachedInputTokens`, `cacheHitRate`, `cumulativeCacheHitRate`, and `promptRenderMode`. A zero on one call is not proof caching is disabled; Realtime caching is best-effort.
+- The Realtime `OpenAI-Safety-Identifier` must be stable across calls without exposing a phone number. By default the gateway HMACs the normalized caller number with `OPENAI_SAFETY_IDENTIFIER_SECRET` (falling back to `INTERNAL_SERVICE_SECRET`); `OPENAI_SAFETY_IDENTIFIER` remains an explicit operator override.
 
 ## Common Issues
 - Assistant interrupts caller: check barge-in cancel logic and audio queue clearing.
@@ -52,15 +53,18 @@
 - Manual canary calls must cover greeting, direct question, knowledge lookup, data capture, transfer lookup/confirmation, alphanumeric readback, barge-in, silence/background noise, and tool failure.
 
 ## What You Know By Heart
-- Canonical Receptionist v11 is the restored OpenAI v3 prompt plus the conditional by-heart accommodations and the reviewed v11 capture/closing/humor rules. With no pins, omit the by-heart section and every by-heart reference; the v11 behavior rules remain.
+- Canonical Receptionist v12 is the restored OpenAI v3 prompt plus the conditional by-heart accommodations, all reviewed v11 rules, and the v12 lookup, name-accuracy, closing-loophole, FAQ-scoring, and first-person-register fixes. With no pins, omit the by-heart section and every by-heart reference.
 - Apply migrations `0041_persist_no_tool_statement.sql`, `0042_core_fact_spoken_rewrites.sql`, and `0043_knowledge_build_execution_leases.sql` with `EVERYCALL_APPLY_RECEPTIONIST_V11_MIGRATIONS=1 corepack pnpm migrate:receptionist-v11`.
+- Apply additive v12 migrations 0044 and 0045 with `EVERYCALL_APPLY_RECEPTIONIST_V12_MIGRATIONS=1 corepack pnpm migrate:receptionist-v12` before any v12 knowledge build.
+- The by-heart pipeline scores changed facts, has AI curate the eligible facts as one non-duplicative set, rewrites selected facts for first-person speech, and stores the completed section plus selected fact IDs in `knowledge_core_fact_prompt_sections`. Call startup only reads that stored section.
 - Run `corepack pnpm backfill:core-facts` for a no-egress dry run. It reuses complete saved ratings and fails with an aggregate count if any fact still requires OpenAI scoring. After explicit data-flow approval, allow only those missing ratings with `EVERYCALL_ALLOW_CORE_FACT_OPENAI_SCORING=1`. Apply with `EVERYCALL_APPLY_CORE_FACT_BACKFILL=1 corepack pnpm backfill:core-facts`; target one tenant with `EVERYCALL_CORE_FACT_BACKFILL_TENANT=<tenant_key>`.
 - To rewrite only a tenant's current pins without re-scoring or exporting all facts, set `EVERYCALL_REWRITE_PINNED_CORE_FACTS=1` and `EVERYCALL_PINNED_CORE_FACT_TENANT=<tenant_key>`, then run `corepack pnpm rewrite:pinned-core-facts`.
 - There is no periodic selector. A knowledge build or explicit backfill deterministically ranks saved scores, materializes the tenant/build section, and records its checksum. Calls only load the saved section.
-- Run `corepack pnpm validate:receptionist-v11`, `corepack pnpm validate:realtime2-payloads`, `corepack pnpm typecheck`, and `corepack pnpm build` before release.
+- Run `corepack pnpm validate:receptionist-v12`, `corepack pnpm validate:realtime2-payloads`, `corepack pnpm typecheck`, and `corepack pnpm build` before release.
 - Knowledge-build cron and manual runners share a database row lease. Defaults are a 180-second expiry and a 30-second heartbeat. `execution_lease_owner`, `execution_lease_heartbeat_at`, `execution_lease_expires_at`, and `execution_attempt_count` are returned by the build-list API for diagnosis.
 - If a serverless invocation terminates, do not manually clear a healthy lease. The cron resumes after expiry. A published build must never be changed to failed by a stale worker; investigate any terminal-status mismatch before repairing it with an audited, build-specific transaction.
-- The synthetic Realtime battery requires explicit API-cost approval: `EVERYCALL_RUN_RECEPTIONIST_V11_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v11:realtime`. Optional comma-separated filters are `EVERYCALL_RECEPTIONIST_V11_ACCEPTANCE_MODES` and `EVERYCALL_RECEPTIONIST_V11_ACCEPTANCE_CASES`.
+- The synthetic Realtime battery requires explicit API-cost approval: `EVERYCALL_RUN_RECEPTIONIST_V12_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v12:realtime`. Optional comma-separated filters are `EVERYCALL_RECEPTIONIST_V12_ACCEPTANCE_MODES` and `EVERYCALL_RECEPTIONIST_V12_ACCEPTANCE_CASES`.
+- A pending `tenant_caller_faq_confirmations` row appears as the one-time five-question card on `/client/receptionist/knowledge`. Submission creates confirmed setup-interview evidence and queues an overlay build. “Not sure” is accepted and is not compiled as a business fact.
 
 ## Knowledge Source Page Budgets
 - `KNOWLEDGE_BUILD_SOURCE_PAGE_TOKEN_BUDGET` defaults to `12000`. It applies independently to each normalized website page or uploaded document before raw build-source persistence and AI compilation.

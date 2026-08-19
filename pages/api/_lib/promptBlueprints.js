@@ -94,6 +94,8 @@ function isUsableGeneratedCompanyDescription(value) {
   if (/\b(privacy policy|terms and conditions|cookie policy|contact us page|faq page)\b/i.test(text)) return false;
   if (!/[.!?…]$/.test(text)) return false;
   if (DANGLING_DESCRIPTION_END_PATTERN.test(text.replace(/[.!?…]+$/, "").trim())) return false;
+  if (!/\b(?:we|our|us)\b/i.test(text)) return false;
+  if (/\b(?:they|their|the company|the business)\b/i.test(text)) return false;
   return true;
 }
 
@@ -290,6 +292,7 @@ async function generateCompanyDescriptionFromSourcePages({ businessName = "", so
   const system = [
     "You write concise company descriptions for a phone receptionist setup screen.",
     `Generate one plain-language description of the company in ${COMPANY_DESCRIPTION_MAX_CHARS} characters or fewer.`,
+    "Write in first-person business voice using we, our, or us. Do not refer to the business by name, as they, or as the company.",
     "Synthesize across the supplied website pages. Do not copy one page or preserve marketing fluff.",
     "Focus on what the company does, who it serves, service area if supported, and what callers usually need help with.",
     "Do not mention page titles, website navigation, forms, awards, warranties, policies, prices, or history unless central to the business.",
@@ -355,11 +358,14 @@ export async function loadBuildDerivedCompanyDescriptionForBuild(db, tenantKey, 
       });
     }
 
-    const localCandidate = firstLocalCompanyDescriptionCandidate(sourcePages);
-    if (localCandidate) return localCandidate;
+    const localCandidate = cleanGeneratedCompanyDescription(firstLocalCompanyDescriptionCandidate(sourcePages));
+    if (isUsableGeneratedCompanyDescription(localCandidate)) return localCandidate;
   }
 
-  return loadBuildDerivedCompanyDescriptionTopicFallback(db, tenantKey, normalizedBuildId);
+  const topicFallback = cleanGeneratedCompanyDescription(
+    await loadBuildDerivedCompanyDescriptionTopicFallback(db, tenantKey, normalizedBuildId)
+  );
+  return isUsableGeneratedCompanyDescription(topicFallback) ? topicFallback : "";
 }
 
 export async function ensureTenantPromptProfileCompanyDescriptionSnapshot(db, tenantKey, options = {}) {
@@ -408,6 +414,11 @@ export async function ensureTenantPromptProfileCompanyDescriptionSnapshot(db, te
       ? (buildDerivedCompanyDescription || companyDescriptionSnapshot)
       : (promptNoToolStatement || buildDerivedCompanyDescription || companyDescriptionSnapshot)
   );
+  if (refreshNoToolStatement
+    && (!isUsableGeneratedCompanyDescription(companyDescriptionSnapshot)
+      || !isUsableGeneratedCompanyDescription(noToolStatementSnapshot))) {
+    throw new Error("company_description_snapshot_invalid");
+  }
   if (!companyDescriptionSnapshot && !noToolStatementSnapshot) {
     return { changed: false, company_description: "", basic_no_tool_allowed_statement: "" };
   }

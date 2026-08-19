@@ -2,6 +2,7 @@ import { getPool } from "./db.js";
 import { releaseVoiceNumber } from "./telnyx.js";
 
 const TENANT_KEY_TABLES = [
+  "tenant_caller_faq_confirmations",
   "runtime_bundles",
   "call_transcript_analyses",
   "call_answered_questions",

@@ -14,6 +14,7 @@ export type PromptBlueprintSectionId =
   | "role_objective"
   | "business_context"
   | "core_facts"
+  | "adjacent_requests"
   | "priority_order"
   | "personality_tone"
   | "variety"
@@ -151,6 +152,8 @@ const DEFAULT_CLOSING_PHRASE = "Thanks for calling. Have a great rest of your da
 const CORE_FACTS_BLOCK_TOKEN_BUDGET = 600;
 const CORE_FACTS_MEMORY_BULLET = "- the approved facts listed in What You Know By Heart below";
 const CORE_FACTS_LOOKUP_RULE = "When What You Know By Heart fully covers the caller's question, answer from it without knowledge_lookup; otherwise follow every lookup requirement below unchanged.";
+const ADJACENT_REQUESTS_CORE_FACT_REFERENCE = "not plainly covered by What You Know By Heart:";
+const ADJACENT_REQUESTS_GENERIC_REFERENCE = "not plainly covered by the approved business information:";
 const CORE_FACT_INSTRUCTION_PATTERN = /\b(ignore (all |any )?(previous|prior) instructions?|system prompt|developer message|assistant instructions?|call (a )?tool|knowledge_lookup|data_capture|finish_session)\b/i;
 
 const SECTION_SEEDS: PromptSectionSeed[] = [
@@ -202,6 +205,28 @@ If a caller's question is fully answered by these facts, answer immediately with
 Keep the answer in the same plain spoken register as the stored facts; do not polish it into marketing language.
 Do not introduce marketing adjectives such as “tailored,” “scalable,” “robust,” or “enterprise-grade.”
 Do not volunteer a technology or product name from this section unless the caller asked about it.`
+  },
+  {
+    section_id: "adjacent_requests",
+    title: "Adjacent Requests",
+    is_template: false,
+    allowed_placeholders: [],
+    default_text: `# Adjacent Requests
+When a caller asks for something in the same line of work as the business but
+not plainly covered by What You Know By Heart:
+- Engage immediately and warmly — the topic is what we do; never treat it as
+  foreign. You may say things like "doors are exactly what we work on."
+- Do not claim we offer the specific service, quote details, or promise an
+  outcome until knowledge_lookup confirms it.
+- Respond to the caller's situation first with one short substantive sentence
+  and call knowledge_lookup at the same time, so the check runs while you're
+  speaking. Use a bare holding phrase only when you have nothing substantive
+  to say first.
+- Name the caller's actual problem or type of work in that first sentence.
+  Generic sympathy such as "that sounds frustrating" is not specific enough
+  by itself.
+- If the lookup can't confirm the specific service, say so plainly and offer
+  a callback so the team can answer — that's a good outcome, not a failure.`
   },
   {
     section_id: "priority_order",
@@ -343,6 +368,7 @@ That turn should do one of these:
 - The callback request requires {required_contact_fields_phrase}.
 - During callback capture and closing, do one thing per turn: offer the callback, OR ask for one detail, OR confirm, OR close. Never combine these in one turn.
 - Ask whether the caller would like a callback and wait for their yes before asking for any contact detail.
+- Vary how you offer a callback; never use the same sentence shape twice in one call.
 - Ask for them one at a time.
 - If the caller already gave one, ask only for the missing one.
 - Keep the request natural and low-pressure.
@@ -359,6 +385,9 @@ If the caller refuses:
 - do not pressure them
 - continue helping briefly if possible
 - do not keep asking for the same information
+- A callback refusal is not a closing signal. Acknowledge it warmly, offer or
+  continue one brief non-callback help turn, and stop speaking. Do not close in
+  that same turn unless the caller separately says they are done or goodbye.
 
 If no callback submission workflow is available in the current environment:
 - Sarah may still collect and confirm the caller’s name and phone number
@@ -373,7 +402,13 @@ If no callback submission workflow is available in the current environment:
 - Capture names and phone numbers carefully.
 - Do not change a caller-provided name into a more common name.
 - If the caller’s name is unclear, ask them to repeat it or spell it.
+- After the caller gives their name, say it back once in your reply ("Thanks,
+  John Lyman —") so they can correct you.
+- If the surname could be spelled more than one way, ask them to spell it.
+- Use exactly the confirmed name everywhere afterward, including in the
+  captured data — never re-derive or re-spell it later in the call.
 - If the phone number is unclear, ask them to repeat it.
+- Ask for the phone number plainly. Do not tell the caller to say it slowly; use the read-back confirmation to catch errors.
 - After collecting the phone number, read it back once and end with a short question — like "Did I get that right?" — then wait for the caller to confirm before moving on.
 - If any part is uncertain, ask for clarification instead of guessing.`
   },
@@ -404,11 +439,12 @@ When using knowledge_lookup:
 - do not mention internal tools, packets, scores, snippets, or system logic
 
 Before using knowledge_lookup:
-- give a very short natural preamble
-- keep it to a brief clause, not a full explanatory sentence
-- examples: “Let me check.” “One moment.” “Let me look.”
-- do not add extra explanation before calling the tool
-- vary the wording naturally
+- your first sentence should respond to what the caller actually said — a
+  brief, specific acknowledgment or engagement — spoken while the lookup runs
+- use a bare holding phrase ("Let me check.") only when you have nothing
+  substantive to say about their situation
+- never speak a holding phrase and the answer back-to-back; if the result is
+  ready when you begin speaking, skip the holding phrase and just answer
 
 After answering from knowledge_lookup:
 - return to the same conversational priorities and flow already established in this prompt
@@ -565,7 +601,10 @@ Exit when:
 - Do not claim an action was completed unless it actually was.
 - If callback information was collected but no working submission workflow exists, simply confirm the captured details and end politely.
 - Never ask a question and end the call in the same turn. If you ask the optional note question, stop speaking and wait for the caller's answer.
-- Call finish_session only after you have spoken the closing AND the caller has responded or clearly said goodbye. Never call finish_session in a turn where you asked a question.`
+- Call finish_session only after you have spoken the closing AND the caller has responded or clearly said goodbye. Never call finish_session in a turn where you asked a question.
+- When you invite the caller to add or ask anything, your turn ends there.
+  Never answer your own question with "otherwise..." or any similar
+  construction and continue into the closing in the same turn.`
   },
   {
     section_id: "final_reminder",
@@ -842,9 +881,9 @@ export function getPromptSectionSeeds() {
 export function getDefaultPromptBlueprintSeed() {
   return {
     blueprint_key: "canonical_receptionist",
-    version: 11,
+    version: 12,
     status: "active" as PromptBlueprintStatus,
-    name: "Canonical Receptionist v11",
+    name: "Canonical Receptionist v12",
     sample_phrase_groups: normalizeSamplePhraseGroups(DEFAULT_SAMPLE_PHRASE_GROUPS),
     tool_definitions: {
       knowledge_lookup: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup.parameter_descriptions } },
@@ -1009,6 +1048,13 @@ export function validateTenantPromptProfile(profile: TenantPromptProfile) {
     errors.push("required_contact_fields_required");
   }
   if (!normalizeText(profile.closing_phrase)) errors.push("closing_phrase_required");
+  if (normalizeText(profile.company_description) && !/[.!?…]$/.test(normalizeText(profile.company_description))) {
+    errors.push("company_description_sentence_punctuation_required");
+  }
+  if (normalizeText(profile.basic_no_tool_allowed_statement)
+    && !/[.!?…]$/.test(normalizeText(profile.basic_no_tool_allowed_statement))) {
+    errors.push("basic_no_tool_allowed_statement_sentence_punctuation_required");
+  }
   return {
     valid: errors.length === 0,
     errors
@@ -1044,6 +1090,9 @@ You may answer WITHOUT a tool only for:
       break;
     case "core_facts":
       text = "";
+      break;
+    case "adjacent_requests":
+      text = source.replace(ADJACENT_REQUESTS_CORE_FACT_REFERENCE, ADJACENT_REQUESTS_GENERIC_REFERENCE);
       break;
     case "readiness_before_callback_capture":
       text = source
@@ -1138,6 +1187,9 @@ Do not volunteer a technology or product name from this section unless the calle
     }
     if (!coreFactsBlock && section.section_id === "tools") {
       textSource = textSource.replace(`${CORE_FACTS_LOOKUP_RULE}\n\n`, "");
+    }
+    if (!coreFactsBlock && section.section_id === "adjacent_requests") {
+      textSource = textSource.replace(ADJACENT_REQUESTS_CORE_FACT_REFERENCE, ADJACENT_REQUESTS_GENERIC_REFERENCE);
     }
     const rendered = interpolateTemplate(textSource, renderValues).trim();
     if (rendered) {
@@ -1234,6 +1286,9 @@ export function renderPromptContext(
       }
       if (!coreFactsBlock && section.section_id === "tools") {
         textSource = textSource.replace(`${CORE_FACTS_LOOKUP_RULE}\n\n`, "");
+      }
+      if (!coreFactsBlock && section.section_id === "adjacent_requests") {
+        textSource = textSource.replace(ADJACENT_REQUESTS_CORE_FACT_REFERENCE, ADJACENT_REQUESTS_GENERIC_REFERENCE);
       }
       const placeholders = extractPlaceholders(textSource);
       const renderedText = interpolateTemplate(textSource, renderValues).trim();

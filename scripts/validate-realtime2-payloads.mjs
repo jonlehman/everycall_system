@@ -7,6 +7,9 @@ const modulePath = pathToFileURL(
 ).href;
 
 const realtime = await import(modulePath);
+const safetyIdentifier = await import(pathToFileURL(
+  path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/openAiSafetyIdentifier.js")
+).href);
 const migration = await import(pathToFileURL(
   path.join(process.cwd(), "scripts/migrate-realtime2-runtime-profiles.mjs")
 ).href);
@@ -48,6 +51,39 @@ const legacyHeaders = realtime.buildOpenAiRealtimeHeaders({
   apiShape: "legacy"
 });
 assert.equal(legacyHeaders["OpenAI-Beta"], "realtime=v1");
+
+const stableCallerIdentifier = safetyIdentifier.buildStableOpenAiSafetyIdentifier({
+  callerNumber: "+1 (206) 555-0199",
+  tenantKey: "tenant-a",
+  secret: "test-secret"
+});
+assert.equal(stableCallerIdentifier.length, 64);
+assert.equal(
+  stableCallerIdentifier,
+  safetyIdentifier.buildStableOpenAiSafetyIdentifier({
+    callerNumber: "+12065550199",
+    tenantKey: "tenant-b",
+    secret: "test-secret"
+  }),
+  "the same caller must keep one privacy-preserving safety identifier across calls and tenants"
+);
+assert.notEqual(
+  stableCallerIdentifier,
+  safetyIdentifier.buildStableOpenAiSafetyIdentifier({
+    callerNumber: "+12065550198",
+    tenantKey: "tenant-a",
+    secret: "test-secret"
+  }),
+  "different callers must not share a safety identifier"
+);
+assert.equal(
+  safetyIdentifier.buildStableOpenAiSafetyIdentifier({
+    callerNumber: "+12065550199",
+    configuredIdentifier: "operator-override",
+    secret: "test-secret"
+  }),
+  "operator-override"
+);
 
 const realtime2Session = realtime.buildRealtimeSessionUpdateEvent({
   apiShape: "realtime2",

@@ -13,6 +13,7 @@ import {
   CORE_FACT_MAX_PINS,
   CORE_FACT_MIN_SCORE,
   CORE_FACT_RATING_VERSION,
+  CORE_FACT_SET_SELECTOR_VERSION,
   CORE_FACT_SPOKEN_MAX_CHARS,
   CORE_FACT_SPOKEN_VERSION,
   CORE_FACT_TOKEN_BUDGET,
@@ -41,6 +42,13 @@ const V11_PHONE_CONFIRMATION_RULE = `- After collecting the phone number, read i
 const V10_PHONE_CONFIRMATION_RULE = `- After collecting the phone number, read it back once naturally to confirm accuracy.`;
 const V11_CLOSING_QUESTION_RULE = `\n- Never ask a question and end the call in the same turn. If you ask the optional note question, stop speaking and wait for the caller's answer.`;
 const V11_FINISH_SESSION_RULE = `\n- Call finish_session only after you have spoken the closing AND the caller has responded or clearly said goodbye. Never call finish_session in a turn where you asked a question.`;
+const V12_CALLBACK_VARIETY_RULE = `\n- Vary how you offer a callback; never use the same sentence shape twice in one call.`;
+const V12_CALLBACK_DECLINE_RULE = `\n- A callback refusal is not a closing signal. Acknowledge it warmly, offer or\n  continue one brief non-callback help turn, and stop speaking. Do not close in\n  that same turn unless the caller separately says they are done or goodbye.`;
+const V12_NAME_ACCURACY_RULES = `\n- After the caller gives their name, say it back once in your reply ("Thanks,\n  John Lyman —") so they can correct you.\n- If the surname could be spelled more than one way, ask them to spell it.\n- Use exactly the confirmed name everywhere afterward, including in the\n  captured data — never re-derive or re-spell it later in the call.`;
+const V12_PHONE_PLAIN_RULE = `\n- Ask for the phone number plainly. Do not tell the caller to say it slowly; use the read-back confirmation to catch errors.`;
+const V12_CLOSING_INVITATION_RULE = `\n- When you invite the caller to add or ask anything, your turn ends there.\n  Never answer your own question with "otherwise..." or any similar\n  construction and continue into the closing in the same turn.`;
+const V10_LOOKUP_PREAMBLE = `Before using knowledge_lookup:\n- give a very short natural preamble\n- keep it to a brief clause, not a full explanatory sentence\n- examples: “Let me check.” “One moment.” “Let me look.”\n- do not add extra explanation before calling the tool\n- vary the wording naturally`;
+const V12_LOOKUP_PREAMBLE = `Before using knowledge_lookup:\n- your first sentence should respond to what the caller actually said — a\n  brief, specific acknowledgment or engagement — spoken while the lookup runs\n- use a bare holding phrase ("Let me check.") only when you have nothing\n  substantive to say about their situation\n- never speak a holding phrase and the answer back-to-back; if the result is\n  ready when you begin speaking, skip the holding phrase and just answer`;
 
 const overlongCompanyDescription = "Wenatchee Valley Glass serves Chelan and Douglas Counties, installing custom glass shower enclosures, premium entry, patio, and interior doors, skylights, sunrooms, and glass railing systems. They offer products from trusted brands, focusing on quality, durability, energy efficiency, and enhancing home aesthetics and improved comfort throughout the home.";
 assert.equal(
@@ -60,47 +68,63 @@ function stableHash(value) {
 
 function restoreOpenAiV3Sections(sections) {
   return sections
-    .filter((section) => section.section_id !== "core_facts")
+    .filter((section) => !["core_facts", "adjacent_requests"].includes(section.section_id))
     .map((section, index) => ({
       ...section,
       section_order: index + 1,
       default_text: section.section_id === "business_context"
         ? section.default_text.replace(`\n${CORE_FACTS_MEMORY_BULLET}`, "")
         : section.section_id === "tools"
-          ? section.default_text.replace(`${CORE_FACTS_LOOKUP_RULE}\n\n`, "")
+          ? section.default_text
+              .replace(`${CORE_FACTS_LOOKUP_RULE}\n\n`, "")
+              .replace(V12_LOOKUP_PREAMBLE, V10_LOOKUP_PREAMBLE)
           : section.section_id === "personality_tone"
             ? section.default_text.replace(V11_HUMOR_RULE, "")
             : section.section_id === "lead_capture_rules"
               ? section.default_text
                   .replace(V11_CAPTURE_TURN_RULE, "")
                   .replace(V11_CALLBACK_CONSENT_RULE, "")
+                  .replace(V12_CALLBACK_VARIETY_RULE, "")
+                  .replace(V12_CALLBACK_DECLINE_RULE, "")
               : section.section_id === "name_and_phone_accuracy"
-                ? section.default_text.replace(V11_PHONE_CONFIRMATION_RULE, V10_PHONE_CONFIRMATION_RULE)
+                ? section.default_text
+                    .replace(V12_NAME_ACCURACY_RULES, "")
+                    .replace(V12_PHONE_PLAIN_RULE, "")
+                    .replace(V11_PHONE_CONFIRMATION_RULE, V10_PHONE_CONFIRMATION_RULE)
                 : section.section_id === "closing"
                   ? section.default_text
                       .replace(V11_CLOSING_QUESTION_RULE, "")
                       .replace(V11_FINISH_SESSION_RULE, "")
+                      .replace(V12_CLOSING_INVITATION_RULE, "")
                   : section.default_text
     }));
 }
 
 const promptSeed = getDefaultPromptBlueprintSeed();
 const restoredOpenAiV3Sections = restoreOpenAiV3Sections(getPromptSectionSeeds());
-assert.equal(promptSeed.version, 11);
+assert.equal(promptSeed.version, 12);
 assert.equal(stableHash(restoredOpenAiV3Sections), OPENAI_V3_SECTION_HASH, "the pre-Grok OpenAI prompt sections plus only the reviewed by-heart and v11 behavioral changes must remain byte-for-byte unchanged");
 assert.equal(stableHash(promptSeed.tool_definitions), OPENAI_V3_TOOL_DEFINITIONS_HASH, "the pre-Grok OpenAI tool definitions must remain unchanged");
 assert.equal(stableHash(promptSeed.sample_phrase_groups), OPENAI_V3_SAMPLE_PHRASES_HASH, "the pre-Grok OpenAI sample phrases must remain unchanged");
-const v11CanonicalText = getPromptSectionSeeds().map((section) => section.default_text).join("\n\n");
+const v12CanonicalText = getPromptSectionSeeds().map((section) => section.default_text).join("\n\n");
 for (const exactRule of [
   V11_HUMOR_RULE.trim(),
   V11_CAPTURE_TURN_RULE.trim(),
   V11_CALLBACK_CONSENT_RULE.trim(),
   V11_PHONE_CONFIRMATION_RULE,
   V11_CLOSING_QUESTION_RULE.trim(),
-  V11_FINISH_SESSION_RULE.trim()
+  V11_FINISH_SESSION_RULE.trim(),
+  V12_CALLBACK_VARIETY_RULE.trim(),
+  V12_CALLBACK_DECLINE_RULE.trim(),
+  V12_NAME_ACCURACY_RULES.trim(),
+  V12_PHONE_PLAIN_RULE.trim(),
+  V12_CLOSING_INVITATION_RULE.trim(),
+  V12_LOOKUP_PREAMBLE
 ]) {
-  assert.ok(v11CanonicalText.includes(exactRule), `missing exact v11 rule: ${exactRule}`);
+  assert.ok(v12CanonicalText.includes(exactRule), `missing exact v12 rule: ${exactRule}`);
 }
+assert.match(v12CanonicalText, /# Adjacent Requests/);
+assert.doesNotMatch(v12CanonicalText, /give a very short natural preamble/);
 
 const promptProfile = {
   assistant_name: "Sarah",
@@ -122,11 +146,11 @@ const openAiV3Blueprint = {
 };
 const coreFactBlueprint = {
   ...promptSeed,
-  prompt_blueprint_id: "pb_canonical_receptionist_v11_test"
+  prompt_blueprint_id: "pb_canonical_receptionist_v12_test"
 };
 const originalOpenAiPrompt = renderPromptContext(openAiV3Blueprint, promptProfile).startupPrompt;
 const emptyCoreFactsPrompt = renderPromptContext(coreFactBlueprint, promptProfile, { coreFactsBlock: "" }).startupPrompt;
-assert.notEqual(emptyCoreFactsPrompt, originalOpenAiPrompt, "v11 intentionally adds the reviewed behavioral fixes to the pre-Grok prompt");
+assert.notEqual(emptyCoreFactsPrompt, originalOpenAiPrompt, "v12 intentionally adds the reviewed behavioral fixes to the pre-Grok prompt");
 assert.doesNotMatch(emptyCoreFactsPrompt, /What You Know By Heart/);
 assert.doesNotMatch(emptyCoreFactsPrompt, /approved facts listed/);
 assert.match(emptyCoreFactsPrompt, /Never call finish_session in a turn where you asked a question\./);
@@ -238,11 +262,11 @@ assert.equal(isConservativeSpokenRewrite(
 assert.equal(isConservativeSpokenRewrite(
   "CrystaLite provides skylights and railings.",
   "CrystaLite provides skylights and railings."
-), true);
+), false, "stored spoken facts must use first-person business voice");
 assert.equal(isConservativeSpokenRewrite(
   "Services are available across the US.",
-  "Services are available nationwide."
-), true, "the US country abbreviation must not be mistaken for first-person language");
+  "We offer services nationwide."
+), true, "a third-person canonical business fact may be conservatively rewritten in first-person voice");
 
 const previousRatedFact = {
   ...stableFact,
@@ -305,6 +329,7 @@ const changedResult = await rateChangedCoreFacts({
           heart_score: 91,
           stable_for_months: true,
           safe_to_state_as_fact: true,
+          caller_question_categories: ["service_area"],
           reason: "Frequently requested and stable."
         }))
       }
@@ -340,6 +365,7 @@ const creationRatedFact = fact(2, "We install water heaters.", "Water heaters", 
     importance_score: 88,
     stable_for_months: true,
     safe_to_state_as_fact: true,
+    caller_question_categories: ["main_services"],
     reason: "Common stable service."
   }
 });
@@ -369,6 +395,7 @@ const wordingIndependentResult = await rateChangedCoreFacts({
           heart_score: 92,
           stable_for_months: true,
           safe_to_state_as_fact: true,
+          caller_question_categories: ["main_services"],
           reason: "A main service callers commonly ask about."
         }]
       }
@@ -392,6 +419,7 @@ const importantButIneligibleResult = await rateChangedCoreFacts({
         heart_score: 87,
         stable_for_months: false,
         safe_to_state_as_fact: false,
+        caller_question_categories: [],
         reason: "Important to callers, but temporary and context-dependent."
       }]
     }
@@ -436,6 +464,72 @@ assert.deepEqual(
   "the importance floor must apply before spoken rewriting"
 );
 
+const setCurationFacts = scoredFacts.slice(0, 20).map((item) => ({
+  ...item,
+  core_fact_spoken_version: CORE_FACT_SPOKEN_VERSION
+}));
+setCurationFacts[0] = {
+  ...setCurationFacts[0],
+  claim_text: "Our office is at 123 Main Street.",
+  core_fact_title: "Office address",
+  core_fact_spoken_text: "Our office is at 123 Main Street.",
+  core_fact_fingerprint: "address_fact_primary"
+};
+const duplicateAddressFact = {
+  ...setCurationFacts[1],
+  knowledge_fact_id: "fact_duplicate_address",
+  claim_text: "Our physical location is 123 Main Street.",
+  core_fact_title: "Physical location",
+  core_fact_spoken_text: "Our physical location is 123 Main Street.",
+  core_fact_fingerprint: "address_fact_duplicate"
+};
+const distinctExtraFacts = scoredFacts.slice(20, 22).map((item) => ({
+  ...item,
+  core_fact_spoken_version: CORE_FACT_SPOKEN_VERSION
+}));
+const initiallyCuratedFactIds = [
+  setCurationFacts[0].knowledge_fact_id,
+  duplicateAddressFact.knowledge_fact_id,
+  ...setCurationFacts.slice(2).map((item) => item.knowledge_fact_id)
+];
+const curatedFactIds = initiallyCuratedFactIds.filter((factId) => factId !== duplicateAddressFact.knowledge_fact_id);
+let setSelectorCalls = 0;
+const curatedSetRewrite = await rewritePinnedCoreFactsForSpeech({
+  facts: [...setCurationFacts, duplicateAddressFact, ...distinctExtraFacts],
+  modelCaller: async (request) => {
+    setSelectorCalls += 1;
+    if (request.jsonSchemaName === "known_by_heart_fact_set_selection") {
+      return {
+        parsed: {
+          selected_fact_ids: initiallyCuratedFactIds,
+          reason: "Initial selection still contains two address variants."
+        }
+      };
+    }
+    assert.equal(request.jsonSchemaName, "known_by_heart_fact_set_deduplication");
+    return {
+      parsed: {
+        selected_fact_ids: curatedFactIds,
+        reason: "Kept one address and distinct caller answers."
+      }
+    };
+  }
+});
+assert.equal(setSelectorCalls, 2, "the complete eligible fact set must receive AI selection and final redundancy-audit passes");
+assert.equal(curatedSetRewrite.setSelectionVersion, CORE_FACT_SET_SELECTOR_VERSION);
+assert.equal(curatedSetRewrite.selectedCandidateCount, CORE_FACT_MAX_PINS - 1);
+assert.equal(curatedSetRewrite.facts.find((item) => item.knowledge_fact_id === "fact_duplicate_address").core_fact_set_selection_excluded, true);
+assert.equal(curatedSetRewrite.facts.find((item) => item.knowledge_fact_id === "fact_duplicate_address").core_fact_spoken_text, "");
+assert.equal(selectCoreFactsDeterministically(curatedSetRewrite.facts).pins.length, CORE_FACT_MAX_PINS - 1);
+assert.equal(
+  isConservativeSpokenRewrite(
+    "Example Glass is open Monday through Friday, 8AM to 5PM.",
+    "We're open Monday through Friday, 8:00 AM to 5:00 PM."
+  ),
+  true,
+  "equivalent whole-hour formatting must not reject a faithful spoken rewrite"
+);
+
 let spokenRewritePayload = null;
 const spokenRewrite = await rewritePinnedCoreFactsForSpeech({
   facts: [{
@@ -451,6 +545,7 @@ const spokenRewrite = await rewritePinnedCoreFactsForSpeech({
       parsed: {
         facts: [{
           fact_id: "fact_100",
+          safe_in_first_person: true,
           spoken_title: "Custom business software",
           spoken_fact: "We build custom software around how your business works."
         }]
@@ -492,14 +587,15 @@ const unsafeSupplierRewrite = await rewritePinnedCoreFactsForSpeech({
       parsed: {
         facts: [{
           fact_id: factId,
-          spoken_title: "CrystaLite products",
-          spoken_fact: "At CrystaLite, we provide skylights, sunrooms, and railings."
+          safe_in_first_person: false,
+          spoken_title: "",
+          spoken_fact: ""
         }]
       }
     };
   }
 });
-assert.equal(unsafeSupplierRewriteCalls, 2, "an unsafe initial rewrite receives one repair attempt");
+assert.equal(unsafeSupplierRewriteCalls, 1, "a supplier fact that cannot safely use we voice is rejected without a repair attempt");
 assert.equal(unsafeSupplierRewrite.unsafeSkippedCount, 1);
 assert.equal(unsafeSupplierRewrite.rewrittenCount, 0);
 assert.equal(unsafeSupplierRewrite.facts[0].core_fact_spoken_rewrite_skipped, true);
@@ -512,6 +608,8 @@ const migration0040 = await fs.readFile(new URL("../migrations/0040_event_driven
 const migration0041 = await fs.readFile(new URL("../migrations/0041_persist_no_tool_statement.sql", import.meta.url), "utf8");
 const migration0042 = await fs.readFile(new URL("../migrations/0042_core_fact_spoken_rewrites.sql", import.meta.url), "utf8");
 const migration0043 = await fs.readFile(new URL("../migrations/0043_knowledge_build_execution_leases.sql", import.meta.url), "utf8");
+const migration0044 = await fs.readFile(new URL("../migrations/0044_receptionist_v12.sql", import.meta.url), "utf8");
+const migration0045 = await fs.readFile(new URL("../migrations/0045_core_fact_set_curation_metadata.sql", import.meta.url), "utf8");
 assert.match(migration0039, /ADD COLUMN IF NOT EXISTS is_core_fact_pinned/);
 assert.match(migration0039, /knowledge_core_fact_pin_changes/);
 assert.doesNotMatch(migration0039, /knowledge_core_fact_refresh_state/);
@@ -523,6 +621,11 @@ assert.match(migration0042, /core_fact_spoken_version/);
 assert.match(migration0042, /claim_text remains canonical for embeddings and lookup/);
 assert.match(migration0043, /execution_lease_token/);
 assert.match(migration0043, /execution_lease_expires_at/);
+assert.match(migration0044, /core_fact_caller_question_categories_json/);
+assert.match(migration0044, /tenant_caller_faq_confirmations/);
+assert.match(migration0045, /set_selector_version/);
+assert.match(migration0045, /set_selector_model/);
+assert.match(migration0045, /set_selector_reason/);
 
 const promptBlueprintSource = await fs.readFile(new URL("../pages/api/_lib/promptBlueprints.js", import.meta.url), "utf8");
 const promptDefaultsBody = promptBlueprintSource.slice(
@@ -592,6 +695,14 @@ await db.exec(`
     fact_role TEXT,
     claim_text TEXT NOT NULL
   );
+  CREATE TABLE knowledge_builds (
+    build_id TEXT PRIMARY KEY,
+    tenant_key TEXT NOT NULL REFERENCES tenants(tenant_key)
+  );
+  CREATE TABLE setup_interview_sessions (
+    setup_interview_session_id TEXT PRIMARY KEY,
+    tenant_key TEXT NOT NULL REFERENCES tenants(tenant_key)
+  );
 `);
 await db.exec(migration0039);
 await db.exec(migration0039);
@@ -599,6 +710,10 @@ await db.exec(migration0040);
 await db.exec(migration0040);
 await db.exec(migration0042);
 await db.exec(migration0042);
+await db.exec(migration0044);
+await db.exec(migration0044);
+await db.exec(migration0045);
+await db.exec(migration0045);
 await db.query(`INSERT INTO tenants (tenant_key) VALUES ('tenant_test'), ('tenant_other')`);
 
 for (const [id, tenant, build, score, rankSeed] of [

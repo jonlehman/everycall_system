@@ -2,12 +2,16 @@ import crypto from "node:crypto";
 import { z } from "zod";
 import { callOpenAiJsonModel, embedOpenAiTexts } from "@everycall/contracts";
 import {
+  CALLER_FAQ_CATEGORIES,
   CORE_FACT_RATING_VERSION,
   loadCoreFactCompanyDescription,
   loadReusableCoreFactRatings,
+  normalizeCallerFaqCategories,
   rateChangedCoreFacts,
   rewritePinnedCoreFactsForSpeech
 } from "./knowledgeCoreFacts.js";
+
+const CORE_FACT_CREATION_RATING_VERSION = "known_by_heart_creation_rating_v1";
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -249,6 +253,7 @@ function normalizeArtifactFact(value, index = 0) {
     core_fact_importance_score: normalizeCoreFactImportance(item.core_fact_importance_score),
     core_fact_stable_for_months: item.core_fact_stable_for_months === true,
     core_fact_safe_to_state_as_fact: item.core_fact_safe_to_state_as_fact === true,
+    core_fact_caller_question_categories: normalizeCallerFaqCategories(item.core_fact_caller_question_categories),
     core_fact_reason: normalizeText(item.core_fact_reason)
   };
 }
@@ -387,6 +392,7 @@ const SOURCE_ARTIFACT_SCHEMA = z.object({
     core_fact_importance_score: z.number().int().min(0).max(100).default(0),
     core_fact_stable_for_months: z.boolean().default(false),
     core_fact_safe_to_state_as_fact: z.boolean().default(false),
+    core_fact_caller_question_categories: z.array(z.enum(CALLER_FAQ_CATEGORIES)).max(CALLER_FAQ_CATEGORIES.length).default([]),
     core_fact_reason: z.string().default("")
   })).max(48).default([])
 });
@@ -1015,8 +1021,12 @@ function buildArtifactExtractionSystemPrompt() {
     "Cards are retrieval-oriented answerable units, not whole-page summaries.",
     "Facts preserve richer detail such as applicability, exclusions, limits, scope, process, next steps, and ambiguity.",
     "As you create each fact, independently rate the importance of its actual factual meaning to callers and the receptionist's small 'known by heart' set.",
-    "Use core_fact_importance_score 90-100 for fundamental identity, main-service, service-area, or other frequently needed facts; 70-89 for common customer-relevant facts; 40-69 for useful secondary detail; and 0-39 for niche or low-value detail.",
+    "Use core_fact_importance_score 95-100 for direct answers to universal caller questions: whether the business broadly does repairs, service, or maintenance; its estimate or quote policy; service area; regular hours; emergency or after-hours availability; and its main service lines.",
+    "Use 85-94 for fundamental identity and other facts callers frequently need. Use 40-84 for useful secondary detail. Use 0-39 for niche details, individual brands, manufacturers, product lines, catalog items, rebates, marketing claims, and technical implementation details. Brand and product facts belong in lookup material, not the known-by-heart set.",
+    "A fact centered on one named brand, manufacturer, supplier, model, product line, or a list of brands MUST score 0-39 even when it also says the business sells, offers, carries, or installs that item. Do not tag such a fact main_services. Score a separate generic statement of the underlying service highly instead.",
     "Rate factual meaning, not writing quality. Do not lower core_fact_importance_score because the source uses marketing language, jargon, headline-style prefixes, calls to action, second-person sales language, awkward grammar, long sentences, duplicated titles, or wording that is unsuitable to say aloud. Ignore promotional style and rate the concrete fact underneath it.",
+    "Classify direct answers in core_fact_caller_question_categories using repairs_service, estimates, service_area, hours, emergency, and main_services. Tag repairs_service only for a broad business or service-line statement that directly confirms or denies repairs, service, or maintenance. Do not tag repair tips, product symptoms, narrow examples, or commercial-only service as broad repair coverage for a business that also serves residential callers.",
+    "Tag estimates only for an actual estimate or quote policy, service_area only for where the business serves, hours only for regular business hours, and emergency only for explicit emergency or after-hours availability. Return an empty list when no category directly applies.",
     "Do not force core_fact_importance_score to zero because a fact is unstable or unsafe. Record those as separate fields; later deterministic selection applies them as separate eligibility gates.",
     "Set core_fact_stable_for_months false for dated or upcoming events, current availability, promotions or free offers, exact project-price ranges, temporary staffing, changing schedules, or any claim likely to change within six months. Event operations can be unstable even without a printed date.",
     "Set core_fact_safe_to_state_as_fact false when the factual claim itself is ambiguous, unsupported, instructional, sensitive, contradictory, incomplete beyond recovery, or unsafe to state without additional context. Do not mark it unsafe merely because its wording needs a spoken-register rewrite.",
@@ -1188,6 +1198,11 @@ function buildSourceArtifactBatchJsonSchema(allowedSourceRefIds) {
             core_fact_importance_score: { type: "integer", minimum: 0, maximum: 100 },
             core_fact_stable_for_months: { type: "boolean" },
             core_fact_safe_to_state_as_fact: { type: "boolean" },
+            core_fact_caller_question_categories: {
+              type: "array",
+              maxItems: CALLER_FAQ_CATEGORIES.length,
+              items: { type: "string", enum: CALLER_FAQ_CATEGORIES }
+            },
             core_fact_reason: { type: "string", maxLength: 180 }
           })
         }
@@ -2590,12 +2605,19 @@ async function runSourceArtifactStage(db, buildInfo, sourceRecords, topicRows, w
   const usableRows = sourceRecords
     .map((record) => updated.get(record.sourceRefId))
     .filter((row) => row && isUsableStatus(row.status));
+  const completedModelRows = usableRows.filter((row) => normalizeText(row.status) === "completed");
+  const fallbackRows = usableRows.filter((row) => normalizeText(row.status) === "fallback");
+  if (sourceRecords.length > 0 && completedModelRows.length === 0) {
+    warnings.push("source_artifact_stage_no_model_completed_sources");
+  }
 
   await updateBuildCheckpoint(db, buildInfo.build_id, {
     source_artifact_stage: stageCheckpoint("source_artifact", {
       total_sources: sourceRecords.length,
       completed_sources: usableRows.length,
       pending_sources: sourceRecords.length - usableRows.length,
+      model_completed_sources: completedModelRows.length,
+      fallback_sources: fallbackRows.length,
       batch_count: artifactBatches.length
     })
   });
@@ -2653,10 +2675,11 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
         fact_role: normalizeText(fact.fact_role) || "detail",
         support_type: normalizeText(fact.support_type) || "source_backed",
         core_fact_creation_rating: {
-          rating_version: CORE_FACT_RATING_VERSION,
+          rating_version: CORE_FACT_CREATION_RATING_VERSION,
           importance_score: normalizeCoreFactImportance(fact.core_fact_importance_score),
           stable_for_months: fact.core_fact_stable_for_months === true,
           safe_to_state_as_fact: fact.core_fact_safe_to_state_as_fact === true,
+          caller_question_categories: normalizeCallerFaqCategories(fact.core_fact_caller_question_categories),
           reason: normalizeText(fact.core_fact_reason)
         },
         source_span_refs_json: [],
@@ -2686,13 +2709,18 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
       const currentImportance = normalizeCoreFactImportance(current.core_fact_creation_rating?.importance_score);
       if (incomingImportance > currentImportance) {
         current.core_fact_creation_rating = {
-          rating_version: CORE_FACT_RATING_VERSION,
+          rating_version: CORE_FACT_CREATION_RATING_VERSION,
           importance_score: incomingImportance,
           stable_for_months: fact.core_fact_stable_for_months === true,
           safe_to_state_as_fact: fact.core_fact_safe_to_state_as_fact === true,
+          caller_question_categories: normalizeCallerFaqCategories(fact.core_fact_caller_question_categories),
           reason: normalizeText(fact.core_fact_reason)
         };
       }
+      current.core_fact_creation_rating.caller_question_categories = normalizeCallerFaqCategories([
+        ...(current.core_fact_creation_rating?.caller_question_categories || []),
+        ...(fact.core_fact_caller_question_categories || [])
+      ]);
       current.support_metadata_json = {
         ...(current.support_metadata_json || {}),
         next_steps: uniqueValues([...(current.support_metadata_json?.next_steps || []), ...(fact.next_steps || [])]),
@@ -2954,7 +2982,10 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo, assertExec
   }
   await assertLease();
   logCompilerProgress("core_fact_spoken_rewrite_completed", {
+    consideredCandidateCount: coreFactSpokenRewrite.consideredCandidateCount,
     selectedCandidateCount: coreFactSpokenRewrite.selectedCandidateCount,
+    setSelectionVersion: coreFactSpokenRewrite.setSelectionVersion,
+    setSelectionModel: coreFactSpokenRewrite.setSelectionModel,
     rewrittenCount: coreFactSpokenRewrite.rewrittenCount,
     reusedCount: coreFactSpokenRewrite.reusedCount,
     unsafeSkippedCount: coreFactSpokenRewrite.unsafeSkippedCount,
@@ -2962,7 +2993,11 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo, assertExec
   });
   await updateBuildCheckpoint(db, buildInfo.build_id, {
     core_fact_spoken_rewrite_stage: stageCheckpoint("core_fact_spoken_rewrite", {
+      considered_candidate_count: coreFactSpokenRewrite.consideredCandidateCount,
       selected_candidate_count: coreFactSpokenRewrite.selectedCandidateCount,
+      set_selection_version: coreFactSpokenRewrite.setSelectionVersion,
+      set_selection_model: coreFactSpokenRewrite.setSelectionModel,
+      set_selection_reason: coreFactSpokenRewrite.setSelectionReason,
       rewritten_count: coreFactSpokenRewrite.rewrittenCount,
       reused_count: coreFactSpokenRewrite.reusedCount,
       unsafe_skipped_count: coreFactSpokenRewrite.unsafeSkippedCount,
@@ -2990,6 +3025,11 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo, assertExec
     subtopics: topicRows.subtopics,
     cards: consolidated.cards,
     facts: coreFactSpokenRewrite.facts,
+    coreFactSetSelection: {
+      version: coreFactSpokenRewrite.setSelectionVersion,
+      model: coreFactSpokenRewrite.setSelectionModel,
+      reason: coreFactSpokenRewrite.setSelectionReason
+    },
     cardVectors: embedded.cardVectors,
     factVectors: embedded.factVectors,
     topicInventorySummary: {

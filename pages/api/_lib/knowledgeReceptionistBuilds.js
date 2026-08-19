@@ -15,6 +15,7 @@ import {
 } from "./knowledgeCoreFacts.js";
 import { loadTenantDomainAssignments, resolveTenantDomainAssignments, syncCanonicalKnowledgePacks } from "./knowledgeReceptionistPacks.js";
 import { ensureTenantPromptProfileCompanyDescriptionSnapshot } from "./promptBlueprints.js";
+import { syncCallerFaqConfirmationState } from "./knowledgeCallerFaqConfirmation.js";
 import { loadTenantBootstrapProfile } from "./tenantBootstrapProfiles.js";
 import {
   markKnowledgeBuildFailedIfLeaseOwned,
@@ -3239,6 +3240,7 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
          core_fact_title, core_fact_spoken_text, core_fact_score, core_fact_rank, core_fact_reason,
          core_fact_selector_version, core_fact_selected_at, core_fact_rating_input_hash,
          core_fact_is_stable, core_fact_is_safe_to_speak, core_fact_rating_version,
+         core_fact_caller_question_categories_json,
          core_fact_rating_model, core_fact_rated_at, core_fact_spoken_version, core_fact_spoken_model,
          core_fact_spoken_at
        )
@@ -3246,7 +3248,7 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13::jsonb, $14::jsonb,
          $15, $16, $17, $18, $19, $20, $21, $22, $23::jsonb, $24::jsonb, $25::jsonb,
          $26::jsonb, $27::jsonb, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37,
-         $38, $39, $40, $41, $42, $43, $44, $45, $46
+         $38, $39, $40, $41, $42::jsonb, $43, $44, $45, $46, $47
        )`,
       [
         fact.knowledge_fact_id,
@@ -3290,6 +3292,7 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
         fact.core_fact_is_stable === true,
         fact.core_fact_is_safe_to_speak === true,
         fact.core_fact_rating_version || null,
+        JSON.stringify(fact.core_fact_caller_question_categories_json || []),
         fact.core_fact_rating_model || null,
         fact.core_fact_rated_at || null,
         fact.core_fact_spoken_version || null,
@@ -3302,7 +3305,16 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
   await materializeCoreFactPromptSection(db, {
     tenantKey: buildInfo.tenant_key,
     buildId: buildInfo.build_id,
-    reason: "knowledge_build_materialized"
+    reason: "knowledge_build_materialized",
+    setSelectionVersion: compiled.coreFactSetSelection?.version,
+    setSelectionModel: compiled.coreFactSetSelection?.model,
+    setSelectionReason: compiled.coreFactSetSelection?.reason
+  });
+
+  await syncCallerFaqConfirmationState(db, {
+    tenantKey: buildInfo.tenant_key,
+    buildId: buildInfo.build_id,
+    facts: sanitizedFacts
   });
 
   for (const card of sanitizedCards) {
@@ -3443,7 +3455,8 @@ async function loadBuildAssetsFromDb(db, tenantKey, buildId) {
               is_core_fact_pinned, core_fact_fingerprint, core_fact_title, core_fact_spoken_text,
               core_fact_score, core_fact_rank, core_fact_reason, core_fact_selector_version, core_fact_selected_at,
               core_fact_rating_input_hash, core_fact_is_stable, core_fact_is_safe_to_speak,
-              core_fact_rating_version, core_fact_rating_model, core_fact_rated_at,
+              core_fact_rating_version, core_fact_caller_question_categories_json,
+              core_fact_rating_model, core_fact_rated_at,
               core_fact_spoken_version, core_fact_spoken_model, core_fact_spoken_at
        FROM knowledge_build_facts
        WHERE tenant_key = $1
@@ -3501,6 +3514,9 @@ async function loadBuildAssetsFromDb(db, tenantKey, buildId) {
       core_fact_is_stable: row.core_fact_is_stable === true,
       core_fact_is_safe_to_speak: row.core_fact_is_safe_to_speak === true,
       core_fact_rating_version: row.core_fact_rating_version,
+      core_fact_caller_question_categories_json: Array.isArray(row.core_fact_caller_question_categories_json)
+        ? row.core_fact_caller_question_categories_json
+        : [],
       core_fact_rating_model: row.core_fact_rating_model,
       core_fact_rated_at: row.core_fact_rated_at,
       core_fact_spoken_version: row.core_fact_spoken_version,
@@ -3743,7 +3759,13 @@ export async function retrieveBuildRuntimeBundle(db, tenantKey, buildId, query, 
 async function updateBuildAfterValidation(db, buildId, counts, validationSummary, extraWarnings = [], {
   executionLeaseToken = ""
 } = {}) {
-  const blockers = Array.isArray(validationSummary?.blockers) ? validationSummary.blockers : [];
+  const blockers = uniqueValues([
+    ...(Array.isArray(validationSummary?.blockers) ? validationSummary.blockers : []),
+    ...(extraWarnings.includes("source_artifact_stage_no_model_completed_sources")
+      ? ["source_artifact_stage_no_model_completed_sources"]
+      : [])
+  ]);
+  const persistedValidationSummary = { ...(validationSummary || {}), blockers };
   const warnings = uniqueValues([...(validationSummary?.warnings || []), ...extraWarnings]);
   const nextStatus = blockers.length ? "qa_blocked" : "ready_to_publish";
 
@@ -3773,7 +3795,7 @@ async function updateBuildAfterValidation(db, buildId, counts, validationSummary
         warnings: warnings.length
       }),
       JSON.stringify(warnings),
-      JSON.stringify(validationSummary),
+      JSON.stringify(persistedValidationSummary),
       normalizeText(executionLeaseToken)
     ]
   );

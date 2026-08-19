@@ -45,7 +45,8 @@ export default async function handler(req, res) {
       ),
       pool.query(
         `SELECT build_id, facts_block_text, section_text, selected_fact_ids_json,
-                section_checksum, token_count, rating_version, materialized_at, updated_at
+                section_checksum, token_count, rating_version, set_selector_version,
+                set_selector_model, set_selector_reason, materialized_at, updated_at
          FROM knowledge_core_fact_prompt_sections
          WHERE tenant_key = $1
            AND build_id = (

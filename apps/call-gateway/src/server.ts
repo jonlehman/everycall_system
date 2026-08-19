@@ -69,6 +69,7 @@ import {
   evaluateFinishSessionRequest,
   noteFinishSessionDialogueTurn
 } from "./finishSessionControl.js";
+import { buildStableOpenAiSafetyIdentifier } from "./openAiSafetyIdentifier.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -227,6 +228,7 @@ type StreamSession = {
   callControlId: string;
   callSid: string;
   tenantKey: string;
+  callerNumber?: string;
   callActive?: boolean;
   isShuttingDown?: boolean;
   telnyxStreamId?: string;
@@ -290,12 +292,14 @@ function createStreamSession(
   tenantKey: string,
   promptPayload: GatewayPromptPayload,
   knowledgeCallState: CallState,
+  callerNumber?: string,
   realtimeLogPath?: string
 ): StreamSession {
   return {
     callControlId,
     callSid,
     tenantKey,
+    ...(String(callerNumber || "").trim() ? { callerNumber: String(callerNumber || "").trim() } : {}),
     callActive: true,
     isShuttingDown: false,
     reconnectAttempted: false,
@@ -714,12 +718,12 @@ function createAudioTextResponseEvent(response: Record<string, unknown> = {}, ap
 }
 
 function buildOpenAiSafetyIdentifier(session: StreamSession) {
-  const configured = String(process.env.OPENAI_SAFETY_IDENTIFIER || "").trim();
-  if (configured) return configured;
-  return crypto
-    .createHash("sha256")
-    .update(`everycall:${session.tenantKey}:${session.callSid}`)
-    .digest("hex");
+  return buildStableOpenAiSafetyIdentifier({
+    callerNumber: session.callerNumber,
+    tenantKey: session.tenantKey,
+    configuredIdentifier: process.env.OPENAI_SAFETY_IDENTIFIER,
+    secret: process.env.OPENAI_SAFETY_IDENTIFIER_SECRET || resolveInternalServiceSecret()
+  });
 }
 
 function createFunctionCallOutputEvent(callId: string, output: unknown) {
@@ -1797,6 +1801,7 @@ async function recoverSessionForCallControlId(callControlId: string, source: str
     recovered.tenantKey,
     recovered.promptPayload,
     recovered.knowledgeCallState,
+    recovered.from,
     realtimeLogPath
   );
   streamSessions.set(callControlId, session);
@@ -2929,7 +2934,15 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
     await persistKnowledgeCallState(pool, tenantKey, callSid, knowledgeCallState, {
       source: "call_initiated"
     });
-    streamSessions.set(callControlId, createStreamSession(callControlId, callSid, tenantKey, promptPayload, knowledgeCallState, realtimeLogPath));
+    streamSessions.set(callControlId, createStreamSession(
+      callControlId,
+      callSid,
+      tenantKey,
+      promptPayload,
+      knowledgeCallState,
+      from,
+      realtimeLogPath
+    ));
 
     try {
       await telnyxCallAction(callControlId, "answer", {});

@@ -28,31 +28,34 @@
 
 ## What You Know By Heart
 - Run `corepack pnpm validate:core-facts` after building `@everycall/contracts`. This verifies that factual-importance scoring is independent of source wording, the stability/safety/40-point gates are separate, and spoken rewrite failures do not erase importance scores.
-- A v2 backfill must snapshot existing pins and clear their pin flags before writing rerated rows; otherwise the pin-completeness constraint correctly rejects an old pin whose new spoken form is blank.
+- A v3 backfill must snapshot existing pins and clear their pin flags before writing rerated rows; otherwise the pin-completeness constraint correctly rejects an old pin whose new spoken form is blank.
 - Verify an overlong generated company description ends at a complete sentence within 320 characters, never on a dangling conjunction or preposition, and website publication refreshes the company description and persisted no-tool statement from the same generated snapshot.
 - Run `corepack pnpm validate:knowledge-build-leases` after changing knowledge-build scheduling or terminal-state handling. It verifies exclusive claims, heartbeats, expiry takeover, token-scoped release, and that published builds cannot be reclaimed.
-- The validator reconstructs the pre-Grok OpenAI v3 section set and verifies its SHA-256 baseline, tool definitions, and sample phrases, then verifies the exact v11 additions separately.
+- The validator reconstructs the pre-Grok OpenAI v3 section set and verifies its SHA-256 baseline, tool definitions, and sample phrases, then verifies the exact v11 and v12 additions separately.
 - With no pins, verify the entire by-heart section and every reference to it are absent. With pins, instruction-like text must be rejected, the rendered block must stay within 600 tokens and 20 facts, and tenant/build isolation must hold.
 - Verify an unchanged rating-input hash causes zero OpenAI scoring calls and carries its saved score, spoken text, model, and rated timestamp forward. Changing the canonical claim, qualifiers, boundaries, or tenant scoring context must invalidate the hash and score only that fact.
 - Verify the legacy backfill refuses missing-fact model calls unless `EVERYCALL_ALLOW_CORE_FACT_OPENAI_SCORING=1` is explicitly set.
-- Verify deterministic score-descending selection, stable tie-breaking, deletion-only reranking without OpenAI, pin-only spoken rewrites, materialized-section checksums, and call-start injection from the saved database block.
-- Verify a rewrite that introduces `we`, `our`, or `us` when the canonical supplier fact is third-person is rejected. If both the initial and repair rewrites remain unsafe, verify only that fact is excluded and the build continues.
+- Verify deterministic score ordering and stable tie-breaking before the versioned AI set-curation pass; verify the set pass removes semantic duplicates without merging or inventing facts, selected facts receive spoken rewrites, and call startup injects only the saved checksummed database block.
+- Verify every stored spoken pin uses `we`, `our`, or `us`. A third-person canonical business fact may be rewritten in first-person only when the model marks that subject change safe; supplier/manufacturer attribution must be rejected while the build continues.
+- Verify the materialized section stores its set-selector version, model, reason, selected fact IDs, and checksum so call startup never needs to rerun curation.
 - In a live canary, ask one question fully covered by a pin and verify there is no lookup. Then ask an adjacent unsupported question and verify `knowledge_lookup` still runs.
 
 ## Knowledge Source Page Documents
 - Run `corepack pnpm validate:knowledge-source-pages` after changing website/document extraction, source normalization, evidence persistence, or compiler inputs.
 - The validator confirms that short lines such as `Cashmere, WA 98815` survive website, demo, and plain-text extraction; footer contact content is retained; more than 4,000 lines are not silently cut off; and a normal page becomes exactly one page document with line breaks intact.
 - It also verifies that a genuinely oversized source stays within its per-page token budget while retaining both its beginning and end, that repeat normalization is stable, and that short fallback facts survive while the internal omission marker cannot become a fact.
-- This validator is included in `corepack pnpm validate:receptionist-v11`.
+- This validator is included in `corepack pnpm validate:receptionist-v12`.
 
-## Receptionist v11 Acceptance
-- Run `corepack pnpm validate:receptionist-v11` for exact prompt rules and deterministic `finish_session` enforcement.
-- With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V11_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v11:realtime`.
-- Run capture, joke, pinned-fact, decline, and cache cases under both `legacy` and `layered` ordering.
-- Capture must show: callback offer, explicit caller yes, name request, later phone request, number read-back as a question, caller confirmation, optional-note wait if used, closing without `finish_session`, caller goodbye, then `finish_session`.
+## Receptionist v12 Acceptance
+- Run `corepack pnpm validate:receptionist-v12` for the exact v12 prompt rules, v3 scorer/v6 rewrite and stored set-curation invariants, profile sentence-boundary validation, and deterministic `finish_session` enforcement.
+- With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V12_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v12:realtime`.
+- Run capture, joke, pinned-fact, decline, cache, and adjacent-request cases under both `legacy` and `layered` ordering.
+- Capture must show: callback offer, explicit caller yes, exact name echo/spelling if needed, later phone request, number read-back as a question, caller confirmation, optional-note wait if used, exact confirmed name in the close and `data_capture`, closing without `finish_session`, caller goodbye, then `finish_session`.
 - Pinned-fact answers must use no lookup, no holding phrase, no marketing language, and no unprompted technology name.
 - Decline must be warm, must not re-ask for a callback, and must not call `finish_session` immediately.
 - Cache verification uses an identical-tenant pair for legacy and a cross-tenant pair for layered. Record input tokens, cached tokens, and hit rate; Realtime cache placement is best-effort, so retain the raw observation even when an identical legacy call misses.
+- Payload validation verifies that the same normalized caller receives the same privacy-preserving Realtime safety identifier across calls and tenants, while different callers do not.
+- An adjacent request must produce a substantive first sentence and `knowledge_lookup` in the same model response, never a bare hold followed immediately by the answer. An unconfirmed result must lead to an honest callback offer.
 
 Use these after any change to prompts, knowledge lookup, or barge-in handling.
 

@@ -38,7 +38,10 @@ export function assistantTurnContainsQuestion(transcript: unknown) {
   const text = normalizeText(transcript);
   if (!text) return false;
   return /\?/.test(text)
-    || /(?:^|[.!]\s+)(?:who|what|when|where|why|how|would|could|can|may|is|are|do|does|did|have|has)\b[^.!?]*$/i.test(text);
+    || /(?:^|[.!]\s+)(?:who|what|when|where|why|how|would|could|can|may|is|are|do|does|did|have|has)\b[^.!?]*$/i.test(text)
+    || /\b(?:anything|something)\s+else\b[^.!?]*(?:share|tell|ask|add|mention|want|need)/i.test(text)
+    || /\b(?:share|tell|ask|add|mention)\b[^.!?]*(?:anything|something)\s+else\b/i.test(text)
+    || /\b(?:you can|feel free to)\s+(?:share|tell|ask|add|mention)\b/i.test(text);
 }
 
 export function evaluateFinishSessionRequest(state: FinishSessionDialogueState): FinishSessionDecision {

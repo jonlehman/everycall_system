@@ -11,7 +11,8 @@ import {
   buildRealtimeSessionUpdateEvent
 } from "../apps/call-gateway/dist/apps/call-gateway/src/realtimePayloads.js";
 
-const APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V11_REALTIME_ACCEPTANCE";
+const APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V12_REALTIME_ACCEPTANCE";
+const LEGACY_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V11_REALTIME_ACCEPTANCE";
 const MODEL = String(process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2.1").trim();
 const VOICE = String(process.env.OPENAI_REALTIME_VOICE || "marin").trim();
 const TIMEOUT_MS = 45_000;
@@ -81,6 +82,7 @@ const fieldSchema = {
   properties: {
     outcome_type: { type: "string", enum: ["callback", "information_only", "declined"] },
     first_name: { type: "string" },
+    last_name: { type: "string" },
     phone_e164: { type: "string" },
     project_summary: { type: "string" },
     note: { type: "string" }
@@ -144,7 +146,7 @@ class RealtimeAcceptanceSession {
   async connect() {
     const apiKey = normalizeText(process.env.OPENAI_API_KEY);
     if (!apiKey) throw new Error("OPENAI_API_KEY is required");
-    const safetyIdentifier = crypto.createHash("sha256").update(`everycall-v11-acceptance:${this.label}`).digest("hex");
+    const safetyIdentifier = crypto.createHash("sha256").update("everycall:realtime-receptionist").digest("hex");
     this.socket = new WebSocket(`wss://api.openai.com/v1/realtime?model=${encodeURIComponent(MODEL)}`, {
       headers: buildOpenAiRealtimeHeaders({ apiKey, apiShape: "realtime2", safetyIdentifier })
     });
@@ -223,6 +225,12 @@ class RealtimeAcceptanceSession {
 
   toolOutput(toolCall) {
     if (toolCall.name === "knowledge_lookup") {
+      const args = (() => {
+        try { return JSON.parse(toolCall.arguments || "{}"); } catch { return {}; }
+      })();
+      if (/\b(?:repair|fix|freez|stuck|sticking)\b/i.test(normalizeText(args.query))) {
+        return { status: "not_found", answer: "The approved information does not confirm repair work for existing systems." };
+      }
       return { status: "answered", answer: "Northstar Software builds custom internal software and serves Puget Sound." };
     }
     if (toolCall.name === "data_capture") return { status: "accepted" };
@@ -318,8 +326,16 @@ async function runCaptureCase(mode) {
       && !/\b(?:your name|name and|phone|number)\b/i.test(callback.offer?.text), { observed: callback.offer?.text }));
     const nameTurn = await session.callerTurn("Yes, please.");
     checks.push(createCheck("name requested only after yes", /\bname\b/i.test(nameTurn.text) && !/\b(phone|number)\b/i.test(nameTurn.text), { observed: nameTurn.text }));
-    const phoneTurn = await session.callerTurn("I'm Jordan Lee.");
-    checks.push(createCheck("phone requested on a later turn", /\b(phone|number)\b/i.test(phoneTurn.text), { observed: phoneTurn.text }));
+    const nameTurns = [await session.callerTurn("I'm John Lyman.")];
+    checks.push(createCheck("name is echoed exactly", /\bJohn Lyman\b/i.test(nameTurns[0].text), { observed: nameTurns[0].text }));
+    if (/\bspell\b/i.test(nameTurns.at(-1).text)) {
+      nameTurns.push(await session.callerTurn("L Y M A N."));
+    }
+    if (!/\b(phone|number)\b/i.test(nameTurns.at(-1).text)) {
+      nameTurns.push(await session.callerTurn("That's correct."));
+    }
+    const phoneTurn = nameTurns.at(-1);
+    checks.push(createCheck("phone requested after name capture", /\b(phone|number)\b/i.test(phoneTurn.text), { observed: phoneTurn.text }));
     const confirmationTurn = await session.callerTurn("206 555 0199.");
     checks.push(createCheck("number read-back asks and waits", normalizeDigits(confirmationTurn.text).includes("2065550199")
       && containsQuestion(confirmationTurn.text)
@@ -346,9 +362,17 @@ async function runCaptureCase(mode) {
       observed: goodbyeTurns.map((turn) => turn.text),
       tools: goodbyeTurns.flatMap((turn) => turn.toolCalls.map((toolCall) => toolCall.name))
     }));
-    const everyTurn = [...callback.turns, nameTurn, phoneTurn, confirmationTurn, closingTurn, ...goodbyeTurns];
+    const everyTurn = [...callback.turns, nameTurn, ...nameTurns, confirmationTurn, closingTurn, ...goodbyeTurns];
     checks.push(createCheck("finish never shares a question turn", everyTurn.every((turn) =>
       !containsQuestion(turn.text) || !turn.toolCalls.some((toolCall) => toolCall.name === "finish_session"))));
+    checks.push(createCheck("confirmed name is used in final close", /\bJohn Lyman\b/i.test(closingTurn.text), { observed: closingTurn.text }));
+    const captures = everyTurn.flatMap((turn) => turn.toolCalls)
+      .filter((toolCall) => toolCall.name === "data_capture")
+      .map((toolCall) => {
+        try { return JSON.parse(toolCall.arguments || "{}"); } catch { return {}; }
+      });
+    const capturedName = Object.assign({}, ...captures);
+    checks.push(createCheck("captured payload preserves confirmed name", capturedName.first_name === "John" && capturedName.last_name === "Lyman", { capturedName }));
     return { case: "capture", checks };
   });
 }
@@ -393,9 +417,34 @@ async function runDeclineCase(mode) {
       case: "decline",
       checks: [
         createCheck("callback was offered before decline", containsCallbackOffer(callback.offer?.text), { observed: callback.offer?.text }),
-        createCheck("decline is accepted warmly", /\b(no problem|no pressure|totally fine|of course|understand|absolutely|happy to help|anything else)\b/i.test(decline.text), { observed: decline.text }),
+        createCheck("decline is accepted warmly", /\b(no problem|no pressure|totally (?:fine|okay)|of course|understand|absolutely|happy to help|anything else)\b/i.test(decline.text), { observed: decline.text }),
         createCheck("no callback re-ask", !containsCallbackOffer(decline.text), { observed: decline.text }),
-        createCheck("no immediate hangup", !decline.toolCalls.some((toolCall) => toolCall.name === "finish_session"), { tools: decline.toolCalls.map((toolCall) => toolCall.name) })
+        createCheck("no immediate hangup", !containsClosing(decline.text)
+          && !decline.toolCalls.some((toolCall) => toolCall.name === "finish_session"), {
+          observed: decline.text,
+          tools: decline.toolCalls.map((toolCall) => toolCall.name)
+        })
+      ]
+    };
+  });
+}
+
+async function runAdjacentCase(mode) {
+  return withSession(mode, "adjacent", profileA, async (session) => {
+    await session.assistantTurn();
+    const turn = await session.callerTurn("Our old internal reporting system keeps freezing. Can you repair it?");
+    const firstResponse = turn.responses[0] || { transcripts: [], toolCalls: [] };
+    const firstSentence = normalizeText(firstResponse.transcripts.join(" "));
+    const sameResponseLookup = firstResponse.toolCalls.some((toolCall) => toolCall.name === "knowledge_lookup");
+    const bareHold = /^(?:let me check|one moment|let me look|please wait)\b/i.test(firstSentence);
+    const holdThenAnswer = /\b(?:let me check|one moment|let me look|please wait)[.!]?\s+(?:we|our|the approved|i found|it looks)/i.test(turn.text);
+    return {
+      case: "adjacent",
+      checks: [
+        createCheck("first response engages the caller's situation", /\b(?:system|reporting|freez\w*)\b/i.test(firstSentence) && !bareHold, { observed: firstSentence }),
+        createCheck("lookup starts in the same response as engagement", sameResponseLookup && Boolean(firstSentence), { observed: firstSentence, tools: firstResponse.toolCalls.map((toolCall) => toolCall.name) }),
+        createCheck("no hold then answer collision", !holdThenAnswer, { observed: turn.text }),
+        createCheck("unconfirmed service leads to honest callback offer", /\b(?:not confirmed|can't confirm|cannot confirm|don't have that confirmed|team can|callback|call back)\b/i.test(turn.text), { observed: turn.text })
       ]
     };
   });
@@ -427,14 +476,15 @@ async function runCacheCase(mode) {
 
 async function runMode(mode) {
   const cases = [];
-  const configuredCases = new Set(normalizeText(process.env.EVERYCALL_RECEPTIONIST_V11_ACCEPTANCE_CASES || "capture,joke,pinned_fact,decline,cache")
+  const configuredCases = new Set(normalizeText(process.env.EVERYCALL_RECEPTIONIST_V12_ACCEPTANCE_CASES || "capture,joke,pinned_fact,decline,cache,adjacent")
     .split(",").map((value) => normalizeText(value)).filter(Boolean));
   for (const [caseName, runner] of [
     ["capture", runCaptureCase],
     ["joke", runJokeCase],
     ["pinned_fact", runPinnedFactCase],
     ["decline", runDeclineCase],
-    ["cache", runCacheCase]
+    ["cache", runCacheCase],
+    ["adjacent", runAdjacentCase]
   ]) {
     if (!configuredCases.has(caseName)) continue;
     try {
@@ -450,14 +500,14 @@ async function runMode(mode) {
 }
 
 async function main() {
-  if (normalizeText(process.env[APPROVAL_ENV]) !== "1") {
+  if (normalizeText(process.env[APPROVAL_ENV]) !== "1" && normalizeText(process.env[LEGACY_APPROVAL_ENV]) !== "1") {
     throw new Error(`${APPROVAL_ENV}=1 is required`);
   }
   if (!normalizeText(process.env.OPENAI_API_KEY)) throw new Error("OPENAI_API_KEY is required");
   const results = [];
-  const modes = normalizeText(process.env.EVERYCALL_RECEPTIONIST_V11_ACCEPTANCE_MODES || "legacy,layered")
+  const modes = normalizeText(process.env.EVERYCALL_RECEPTIONIST_V12_ACCEPTANCE_MODES || "legacy,layered")
     .split(",").map((value) => normalizeText(value)).filter((value) => ["legacy", "layered"].includes(value));
-  if (!modes.length) throw new Error("receptionist_v11_acceptance_modes_required");
+  if (!modes.length) throw new Error("receptionist_v12_acceptance_modes_required");
   for (const mode of modes) results.push(await runMode(mode));
   const failedChecks = results.flatMap((result) => result.cases.flatMap((testCase) =>
     testCase.checks.filter((check) => !check.passed).map((check) => ({ mode: result.mode, case: testCase.case, ...check }))
