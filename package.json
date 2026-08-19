@@ -19,6 +19,7 @@
     "validate:billing-catalog": "node scripts/validate-billing-catalog.mjs",
     "validate:core-facts": "node scripts/validate-core-facts.mjs",
     "validate:knowledge-build-leases": "node scripts/validate-knowledge-build-leases.mjs",
+    "validate:knowledge-build-status-ui": "node scripts/validate-knowledge-build-header-status.mjs",
     "validate:knowledge-source-pages": "node --no-warnings scripts/validate-knowledge-source-pages.mjs",
     "validate:demo-realtime-session": "node --no-warnings scripts/validate-demo-realtime-session.mjs",
     "validate:knowledge-receptionist-cutover": "node scripts/validate-knowledge-receptionist-cutover.mjs",

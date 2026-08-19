@@ -9,6 +9,7 @@ import SectionPage from '../../_components/SectionPage';
 import { receptionistNavItems } from '../../_components/navigation';
 import { emitClientSetupStatus, fetchClientSetupStatus, statusChipFromTask } from '../../_components/setupStatus';
 import StepSection from '../../_components/StepSection';
+import { isKnowledgeBuildActive, resolveKnowledgeBuildHeaderStatus } from './buildHeaderStatus.mjs';
 
 function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
@@ -42,8 +43,7 @@ function formatLabel(value) {
 }
 
 function isBuildActive(build) {
-  const status = String(build?.status || '').trim().toLowerCase();
-  return status === 'queued' || status === 'running';
+  return isKnowledgeBuildActive(build);
 }
 
 function buildBadgeTone(status) {
@@ -212,6 +212,20 @@ function InlineInfoButton({ message }) {
       <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-72 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg group-hover:block group-focus-within:block">
         {message}
       </span>
+    </span>
+  );
+}
+
+function BuildHeaderStatus({ build, published = false }) {
+  const status = resolveKnowledgeBuildHeaderStatus(build, { published });
+  return (
+    <span
+      className={`badge ${status.tone}`}
+      role="status"
+      aria-live={status.active ? 'polite' : 'off'}
+      title={status.detail}
+    >
+      {status.label}
     </span>
   );
 }
@@ -622,6 +636,9 @@ export default function ReceptionistKnowledgePage() {
   const latestWebsiteBuild = buildState.builds.find((build) => {
     return isWebsiteBuildKind(build?.build_kind);
   }) || null;
+  const activeDocumentBuild = buildState.builds.find((build) => {
+    return String(build?.build_kind || '').trim().toLowerCase() === 'document_overlay' && isBuildActive(build);
+  }) || null;
   const latestDocumentBuild = buildState.builds.find((build) => String(build?.build_kind || '').trim().toLowerCase() === 'document_overlay') || null;
   const documentPendingState = buildDocumentPendingState({ approvedDocuments: approvedUploadedDocuments, latestLiveBuild });
   const hasPendingDocumentChanges = documentPendingState.hasPendingChanges;
@@ -726,9 +743,10 @@ export default function ReceptionistKnowledgePage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Website</h4>
                         <InlineInfoButton message={WEBSITE_TOOLTIP} />
-                        {websitePublished ? (
-                          <span className="badge ok">Published</span>
-                        ) : null}
+                        <BuildHeaderStatus
+                          build={activeWebsiteBuild || latestWebsiteBuild}
+                          published={websitePublished}
+                        />
                       </div>
                     </div>
                     <CollapseToggleButton
@@ -776,9 +794,10 @@ export default function ReceptionistKnowledgePage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="font-['Space_Grotesk'] text-xl font-bold text-[#1E293B]">Documents</h4>
                         <InlineInfoButton message={DOCUMENTS_TOOLTIP} />
-                        {documentsPublished ? (
-                          <span className="badge ok">Published</span>
-                        ) : null}
+                        <BuildHeaderStatus
+                          build={activeDocumentBuild || latestDocumentBuild}
+                          published={documentsPublished}
+                        />
                       </div>
                     </div>
                     <CollapseToggleButton
