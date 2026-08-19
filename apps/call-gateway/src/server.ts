@@ -91,7 +91,15 @@ const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "raw").toLowerCase();
 const outboundAudioFrameMs = 20;
-const outboundJitterBufferFrames = Math.max(1, Number(process.env.TELNYX_OUTBOUND_BUFFER_FRAMES || "3"));
+// PCMU is emitted in whole 20 ms frames. Thirteen frames is the nearest
+// representable, safer-side approximation of the 250 ms production trial.
+const defaultOutboundJitterBufferFrames = 13;
+const configuredOutboundJitterBufferFrames = Number(
+  process.env.TELNYX_OUTBOUND_BUFFER_FRAMES || defaultOutboundJitterBufferFrames
+);
+const outboundJitterBufferFrames = Number.isFinite(configuredOutboundJitterBufferFrames)
+  ? Math.max(1, Math.floor(configuredOutboundJitterBufferFrames))
+  : defaultOutboundJitterBufferFrames;
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
 const verboseGatewayLogging = String(process.env.GATEWAY_VERBOSE_LOGGING || "false").toLowerCase() === "true";
@@ -3229,7 +3237,9 @@ server.listen(port, () => {
   logInfo("call_gateway_started", {
     port,
     bidirectionalPayloadMode: resolveBidirectionalPayloadMode(),
-    rtpPayloadType
+    rtpPayloadType,
+    outboundBufferFrames: outboundJitterBufferFrames,
+    outboundBufferMs: outboundJitterBufferFrames * outboundAudioFrameMs
   });
   void preloadActiveBuildAssetsOnStartup();
 });

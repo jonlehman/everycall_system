@@ -96,6 +96,7 @@ The second 8/19 WVG call contained one possible early VAD handoff (“Got it—a
 
 ## GPT-Realtime-2.1 Canary Calls
 - Verify `openai_realtime_session_start` reports `model=gpt-realtime-2.1` and `apiShape=realtime2`.
+- Verify `call_gateway_started` reports `outboundBufferFrames=13` and `outboundBufferMs=260`, then listen for mid-sentence pauses or brief pitch artifacts during a normal caller canary.
 - Verify first assistant audio arrives and outbound audio stays clear over Telnyx.
 - Verify a knowledge lookup does not mention tool names, packets, scores, or system logic.
 - Verify data capture happens only after the caller provides the value.

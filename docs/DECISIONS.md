@@ -1,6 +1,7 @@
 # Decisions
 
 ## 2026-08-19
+- Trial a 13-frame (260 ms) outbound PCMU jitter buffer on the production call gateway. PCMU frames are 20 ms, so 260 ms is the nearest safer-side representation of the requested 250 ms target. Keep the value overrideable with `TELNYX_OUTBOUND_BUFFER_FRAMES` and expose the effective frame and millisecond values in `call_gateway_started` for deployment verification.
 - Canonical Receptionist v15 replaces the accumulated canonical rule text with the owner-approved condensed template. Preserve its exact generic wording as the source of truth, keep tenant values and the persisted `What You Know By Heart` block in the Business Details layer, keep the per-call volatile layer empty, and retain silent-only `knowledge_lookup` and `data_capture` tool schemas. Adjacent-request engagement begins only after lookup returns, and every callback offer is one short question followed by a wait for explicit consent.
 - Canonical Receptionist v14 makes `knowledge_lookup` fully silent. The response containing the tool call is function-call-only; after the fast lookup returns, the receptionist starts with the useful answer. Remove spoken lookup preambles, process narration, transitions, and latency filler.
 - Canonical Receptionist v13 keeps every v12 behavior and tenant binding, replaces realistic name examples with a first-name-plus-spelled-surname protocol, limits later address to first name only, and removes realistic assistant-name literals from the generic rule layer.
