@@ -1,6 +1,10 @@
 # Decisions
 
 ## 2026-08-19
+- Canonical Receptionist v13 keeps every v12 behavior and tenant binding, replaces realistic name examples with a first-name-plus-spelled-surname protocol, limits later address to first name only, and removes realistic assistant-name literals from the generic rule layer.
+- Typical assistant turns target about 25 spoken words: answer once, stop, do not narrate internal actions, and never repeat already confirmed contact data in the close. The full Realtime acceptance battery must report an average below 30 assistant words per turn.
+- Remove the older “confirm both back” and no-workflow detail-recap instructions because phone and surname already have explicit confirmation steps. `data_capture` is silent-only; after it succeeds, continue directly to the next question or the first-name-plus-closing-phrase close.
+- Treat the early “Got it—a cracked pane” interruption in the second 8/19 WVG call as a single VAD observation. v13 does not change turn-detection thresholds; revisit them only if the pattern recurs.
 - Canonical Receptionist v12 keeps the hashed pre-Grok OpenAI baseline and all v11 rules, replaces the conflicting bare lookup preamble with acknowledge-while-looking-up behavior, closes the implicit “anything else / otherwise” closing loophole, and gives caller names the same confirm-and-preserve discipline as phone numbers.
 - Treat implicit invitations to add, share, or ask something as unanswered assistant questions in the gateway `finish_session` guard, even when the model omits a question mark.
 - Score `What You Know By Heart` facts with the v3 universal caller-question taxonomy. Broad repairs/service, estimate policy, service area, hours, emergency availability, and main service lines outrank brands, product catalogs, rebates, and implementation details. Unchanged v3 rating-input hashes are still reused without another OpenAI review.

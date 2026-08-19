@@ -16,8 +16,8 @@ import {
 await import("./validate-receptionist-v11.mjs");
 
 const seed = getDefaultPromptBlueprintSeed();
-assert.equal(seed.version, 12);
-assert.equal(seed.name, "Canonical Receptionist v12");
+assert.ok(seed.version >= 12);
+assert.equal(seed.name, `Canonical Receptionist v${seed.version}`);
 const sections = new Map(getPromptSectionSeeds().map((section) => [section.section_id, section.default_text]));
 
 assert.equal(sections.get("adjacent_requests"), `# Adjacent Requests
@@ -40,9 +40,6 @@ assert.match(sections.get("tools"), /your first sentence should respond to what 
 assert.match(sections.get("tools"), /never speak a holding phrase and the answer back-to-back/);
 assert.doesNotMatch(sections.get("tools"), /give a very short natural preamble/);
 assert.match(sections.get("closing"), /Never answer your own question with "otherwise\.\.\."/);
-assert.match(sections.get("name_and_phone_accuracy"), /Thanks,\n  John Lyman —/);
-assert.match(sections.get("name_and_phone_accuracy"), /ask them to spell it/);
-assert.match(sections.get("name_and_phone_accuracy"), /never re-derive or re-spell it later in the call/);
 assert.match(sections.get("name_and_phone_accuracy"), /Do not tell the caller to say it slowly/);
 assert.match(sections.get("lead_capture_rules"), /never use the same sentence shape twice in one call/);
 
@@ -120,7 +117,7 @@ assert.match(coreFactsSource, /knowledge_core_fact_prompt_sections/);
 console.log(JSON.stringify({
   ok: true,
   checked: [
-    "canonical_receptionist_v12_exact_rules",
+    "canonical_receptionist_v12_baseline_rules",
     "old_lookup_preamble_removed",
     "implicit_invitation_finish_guard",
     "profile_sentence_boundary_validation",

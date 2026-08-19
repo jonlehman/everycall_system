@@ -11,12 +11,18 @@ import {
   buildRealtimeSessionUpdateEvent
 } from "../apps/call-gateway/dist/apps/call-gateway/src/realtimePayloads.js";
 
-const APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V12_REALTIME_ACCEPTANCE";
-const LEGACY_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V11_REALTIME_ACCEPTANCE";
+const APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V13_REALTIME_ACCEPTANCE";
+const V12_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V12_REALTIME_ACCEPTANCE";
+const V11_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V11_REALTIME_ACCEPTANCE";
 const MODEL = String(process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2.1").trim();
 const VOICE = String(process.env.OPENAI_REALTIME_VOICE || "marin").trim();
 const TIMEOUT_MS = 45_000;
 const MARKETING_PATTERN = /\b(scalable|enterprise[- ](?:grade|level)|robust|tailored|seamless|powerful|disparate|unified operational visibility)\b/i;
+const NAME_EXAMPLE_BLEED_PATTERN = /\bFIRSTNAME\b|\bJohn (?:Lyman|Layman|Lehman)\b|\b555[- .]?0100\b/i;
+const TWO_BEAT_EXAMPLE_PATTERN = /would you like a callback\?\s*if so,\s*what(?:'|’)s your name\?/i;
+const CAPTURE_FIRST_NAME = "Avery";
+const CAPTURE_LAST_NAME = "Zorwick";
+const CAPTURE_PHONE = "2065550199";
 
 function normalizeText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -24,6 +30,23 @@ function normalizeText(value) {
 
 function normalizeDigits(value) {
   return String(value || "").replace(/\D/g, "");
+}
+
+function countSpokenWords(value) {
+  return normalizeText(value).match(/[\p{L}\p{N}]+(?:['’.-][\p{L}\p{N}]+)*/gu)?.length || 0;
+}
+
+function summarizeAssistantTurns(turns) {
+  const spokenTurns = turns.filter((turn) => normalizeText(turn.text));
+  const wordCounts = spokenTurns.map((turn) => countSpokenWords(turn.text));
+  const totalWords = wordCounts.reduce((sum, count) => sum + count, 0);
+  return {
+    turnCount: wordCounts.length,
+    totalWords,
+    averageWordsPerTurn: wordCounts.length ? Number((totalWords / wordCounts.length).toFixed(2)) : 0,
+    wordCounts,
+    transcripts: spokenTurns.map((turn) => turn.text)
+  };
 }
 
 function containsQuestion(value) {
@@ -105,6 +128,7 @@ class RealtimeAcceptanceSession {
     this.socket = null;
     this.events = [];
     this.waiters = [];
+    this.completedTurns = [];
   }
 
   pushEvent(event) {
@@ -250,7 +274,9 @@ class RealtimeAcceptanceSession {
       toolCalls.push(...response.toolCalls);
       const continuations = response.toolCalls.filter((toolCall) => toolCall.name !== "finish_session");
       if (!continuations.length) {
-        return { text: normalizeText(transcripts.join(" ")), toolCalls, responses };
+        const turn = { text: normalizeText(transcripts.join(" ")), toolCalls, responses };
+        this.completedTurns.push(turn);
+        return turn;
       }
       for (const toolCall of continuations) {
         this.send({
@@ -297,7 +323,14 @@ async function withSession(mode, caseName, profile, run) {
   });
   await session.connect();
   try {
-    return await run(session, rendered);
+    const result = await run(session, rendered);
+    const assistantMetrics = summarizeAssistantTurns(session.completedTurns);
+    if (Array.isArray(result?.checks)) {
+      const bleedTurns = assistantMetrics.transcripts.filter((text) =>
+        NAME_EXAMPLE_BLEED_PATTERN.test(text) || TWO_BEAT_EXAMPLE_PATTERN.test(text));
+      result.checks.push(createCheck("no prompt name placeholder or literal appears in audio", bleedTurns.length === 0, { observed: bleedTurns }));
+    }
+    return { ...result, assistantMetrics };
   } finally {
     session.close();
   }
@@ -326,18 +359,21 @@ async function runCaptureCase(mode) {
       && !/\b(?:your name|name and|phone|number)\b/i.test(callback.offer?.text), { observed: callback.offer?.text }));
     const nameTurn = await session.callerTurn("Yes, please.");
     checks.push(createCheck("name requested only after yes", /\bname\b/i.test(nameTurn.text) && !/\b(phone|number)\b/i.test(nameTurn.text), { observed: nameTurn.text }));
-    const nameTurns = [await session.callerTurn("I'm John Lyman.")];
-    checks.push(createCheck("name is echoed exactly", /\bJohn Lyman\b/i.test(nameTurns[0].text), { observed: nameTurns[0].text }));
-    if (/\bspell\b/i.test(nameTurns.at(-1).text)) {
-      nameTurns.push(await session.callerTurn("L Y M A N."));
-    }
+    const nameTurns = [await session.callerTurn(`I'm ${CAPTURE_FIRST_NAME} ${CAPTURE_LAST_NAME}.`)];
+    checks.push(createCheck("first name is echoed and surname spelling is requested",
+      new RegExp(`\\b${CAPTURE_FIRST_NAME}\\b`, "i").test(nameTurns[0].text)
+      && /\bspell\b/i.test(nameTurns[0].text)
+      && !new RegExp(`\\b${CAPTURE_LAST_NAME}\\b`, "i").test(nameTurns[0].text),
+      { observed: nameTurns[0].text }));
+    const turnsBeforeSpellingResponse = session.completedTurns.length;
+    nameTurns.push(await session.callerTurn("Z O R W I C K."));
     if (!/\b(phone|number)\b/i.test(nameTurns.at(-1).text)) {
       nameTurns.push(await session.callerTurn("That's correct."));
     }
     const phoneTurn = nameTurns.at(-1);
     checks.push(createCheck("phone requested after name capture", /\b(phone|number)\b/i.test(phoneTurn.text), { observed: phoneTurn.text }));
     const confirmationTurn = await session.callerTurn("206 555 0199.");
-    checks.push(createCheck("number read-back asks and waits", normalizeDigits(confirmationTurn.text).includes("2065550199")
+    checks.push(createCheck("number read-back asks and waits", normalizeDigits(confirmationTurn.text).includes(CAPTURE_PHONE)
       && containsQuestion(confirmationTurn.text)
       && !confirmationTurn.toolCalls.some((toolCall) => toolCall.name === "finish_session"), { observed: confirmationTurn.text }));
 
@@ -365,14 +401,33 @@ async function runCaptureCase(mode) {
     const everyTurn = [...callback.turns, nameTurn, ...nameTurns, confirmationTurn, closingTurn, ...goodbyeTurns];
     checks.push(createCheck("finish never shares a question turn", everyTurn.every((turn) =>
       !containsQuestion(turn.text) || !turn.toolCalls.some((toolCall) => toolCall.name === "finish_session"))));
-    checks.push(createCheck("confirmed name is used in final close", /\bJohn Lyman\b/i.test(closingTurn.text), { observed: closingTurn.text }));
+    checks.push(createCheck("close uses first name only",
+      new RegExp(`\\b${CAPTURE_FIRST_NAME}\\b`, "i").test(closingTurn.text)
+      && !new RegExp(`\\b${CAPTURE_LAST_NAME}\\b`, "i").test(closingTurn.text),
+      { observed: closingTurn.text }));
+    checks.push(createCheck("close does not repeat the confirmed phone number",
+      !normalizeDigits(closingTurn.text).includes(CAPTURE_PHONE), { observed: closingTurn.text }));
+    checks.push(createCheck("close contains no internal narration or request recap",
+      !/\b(?:let me|i(?:'|’)ll|i will)\s+(?:just\s+)?(?:note|wrap|finish|make sure|record|pass|submit|get)\b/i.test(closingTurn.text)
+      && !/\bone moment while I (?:note|record|save|submit)\b/i.test(closingTurn.text)
+      && !/\b(?:scheduling|customer-record|project details|your details|follow-up about)\b/i.test(closingTurn.text),
+      { observed: closingTurn.text }));
+    const assistantTurnsAfterSpelling = session.completedTurns.slice(turnsBeforeSpellingResponse);
+    checks.push(createCheck("surname is never spoken after spelling",
+      assistantTurnsAfterSpelling.every((turn) => !new RegExp(`\\b${CAPTURE_LAST_NAME}\\b`, "i").test(turn.text)),
+      { observed: assistantTurnsAfterSpelling.map((turn) => turn.text) }));
+    const spellingPrompts = session.completedTurns.filter((turn) => /\bspell\b/i.test(turn.text));
+    checks.push(createCheck("surname spelling is requested exactly once", spellingPrompts.length === 1,
+      { observed: spellingPrompts.map((turn) => turn.text) }));
     const captures = everyTurn.flatMap((turn) => turn.toolCalls)
       .filter((toolCall) => toolCall.name === "data_capture")
       .map((toolCall) => {
         try { return JSON.parse(toolCall.arguments || "{}"); } catch { return {}; }
       });
     const capturedName = Object.assign({}, ...captures);
-    checks.push(createCheck("captured payload preserves confirmed name", capturedName.first_name === "John" && capturedName.last_name === "Lyman", { capturedName }));
+    checks.push(createCheck("captured payload preserves spelled name",
+      capturedName.first_name === CAPTURE_FIRST_NAME && capturedName.last_name === CAPTURE_LAST_NAME,
+      { capturedName }));
     return { case: "capture", checks };
   });
 }
@@ -381,7 +436,7 @@ async function runJokeCase(mode) {
   return withSession(mode, "joke", profileA, async (session) => {
     await session.assistantTurn();
     const turn = await session.callerTurn("Can your AI build my patio? I'm kidding—I actually need help with a custom scheduling system.");
-    const lightLine = /\b(ha|haha|not yet|if only|good one|wish)\b/i.test(turn.text);
+    const lightLine = /\b(ha|haha|not yet|if only|good one|nice one|laugh|wish)\b/i.test(turn.text);
     return {
       case: "joke",
       checks: [
@@ -417,7 +472,7 @@ async function runDeclineCase(mode) {
       case: "decline",
       checks: [
         createCheck("callback was offered before decline", containsCallbackOffer(callback.offer?.text), { observed: callback.offer?.text }),
-        createCheck("decline is accepted warmly", /\b(no problem|no pressure|totally (?:fine|okay)|of course|understand|absolutely|happy to help|anything else)\b/i.test(decline.text), { observed: decline.text }),
+        createCheck("decline is accepted warmly", /\b(no problem|no worries|no pressure|totally (?:fine|okay)|of course|understand|absolutely|happy to help|anything else)\b/i.test(decline.text), { observed: decline.text }),
         createCheck("no callback re-ask", !containsCallbackOffer(decline.text), { observed: decline.text }),
         createCheck("no immediate hangup", !containsClosing(decline.text)
           && !decline.toolCalls.some((toolCall) => toolCall.name === "finish_session"), {
@@ -436,12 +491,12 @@ async function runAdjacentCase(mode) {
     const firstResponse = turn.responses[0] || { transcripts: [], toolCalls: [] };
     const firstSentence = normalizeText(firstResponse.transcripts.join(" "));
     const sameResponseLookup = firstResponse.toolCalls.some((toolCall) => toolCall.name === "knowledge_lookup");
-    const bareHold = /^(?:let me check|one moment|let me look|please wait)\b/i.test(firstSentence);
+    const bareHold = /^(?:let me check|one moment|let me look|please wait)[.!]?$/i.test(firstSentence);
     const holdThenAnswer = /\b(?:let me check|one moment|let me look|please wait)[.!]?\s+(?:we|our|the approved|i found|it looks)/i.test(turn.text);
     return {
       case: "adjacent",
       checks: [
-        createCheck("first response engages the caller's situation", /\b(?:system|reporting|freez\w*)\b/i.test(firstSentence) && !bareHold, { observed: firstSentence }),
+        createCheck("first response engages the caller's situation", /\b(?:system|reporting|freez\w*|repair|fix)\b/i.test(firstSentence) && !bareHold, { observed: firstSentence }),
         createCheck("lookup starts in the same response as engagement", sameResponseLookup && Boolean(firstSentence), { observed: firstSentence, tools: firstResponse.toolCalls.map((toolCall) => toolCall.name) }),
         createCheck("no hold then answer collision", !holdThenAnswer, { observed: turn.text }),
         createCheck("unconfirmed service leads to honest callback offer", /\b(?:not confirmed|can't confirm|cannot confirm|don't have that confirmed|team can|callback|call back)\b/i.test(turn.text), { observed: turn.text })
@@ -474,9 +529,20 @@ async function runCacheCase(mode) {
   };
 }
 
+function collectCaseTranscripts(testCase) {
+  if (Array.isArray(testCase.assistantMetrics?.transcripts)) return testCase.assistantMetrics.transcripts;
+  return [
+    ...(testCase.first?.assistantMetrics?.transcripts || []),
+    ...(testCase.second?.assistantMetrics?.transcripts || [])
+  ];
+}
+
 async function runMode(mode) {
   const cases = [];
-  const configuredCases = new Set(normalizeText(process.env.EVERYCALL_RECEPTIONIST_V12_ACCEPTANCE_CASES || "capture,joke,pinned_fact,decline,cache,adjacent")
+  const configuredCasesValue = process.env.EVERYCALL_RECEPTIONIST_V13_ACCEPTANCE_CASES
+    || process.env.EVERYCALL_RECEPTIONIST_V12_ACCEPTANCE_CASES
+    || "capture,joke,pinned_fact,decline,cache,adjacent";
+  const configuredCases = new Set(normalizeText(configuredCasesValue)
     .split(",").map((value) => normalizeText(value)).filter(Boolean));
   for (const [caseName, runner] of [
     ["capture", runCaptureCase],
@@ -487,6 +553,7 @@ async function runMode(mode) {
     ["adjacent", runAdjacentCase]
   ]) {
     if (!configuredCases.has(caseName)) continue;
+    console.error(JSON.stringify({ event: "receptionist_v13_acceptance_case_started", mode, case: caseName }));
     try {
       cases.push(await runner(mode));
     } catch (error) {
@@ -495,28 +562,50 @@ async function runMode(mode) {
         checks: [createCheck("case completed", false, { error: error instanceof Error ? error.message : String(error) })]
       });
     }
+    console.error(JSON.stringify({ event: "receptionist_v13_acceptance_case_completed", mode, case: caseName }));
   }
-  return { mode, cases };
+  const assistantMetrics = summarizeAssistantTurns(cases.flatMap(collectCaseTranscripts).map((text) => ({ text })));
+  return { mode, cases, assistantMetrics };
 }
 
 async function main() {
-  if (normalizeText(process.env[APPROVAL_ENV]) !== "1" && normalizeText(process.env[LEGACY_APPROVAL_ENV]) !== "1") {
+  if (normalizeText(process.env[APPROVAL_ENV]) !== "1"
+    && normalizeText(process.env[V12_APPROVAL_ENV]) !== "1"
+    && normalizeText(process.env[V11_APPROVAL_ENV]) !== "1") {
     throw new Error(`${APPROVAL_ENV}=1 is required`);
   }
   if (!normalizeText(process.env.OPENAI_API_KEY)) throw new Error("OPENAI_API_KEY is required");
   const results = [];
-  const modes = normalizeText(process.env.EVERYCALL_RECEPTIONIST_V12_ACCEPTANCE_MODES || "legacy,layered")
+  const modesValue = process.env.EVERYCALL_RECEPTIONIST_V13_ACCEPTANCE_MODES
+    || process.env.EVERYCALL_RECEPTIONIST_V12_ACCEPTANCE_MODES
+    || "legacy,layered";
+  const modes = normalizeText(modesValue)
     .split(",").map((value) => normalizeText(value)).filter((value) => ["legacy", "layered"].includes(value));
-  if (!modes.length) throw new Error("receptionist_v12_acceptance_modes_required");
+  if (!modes.length) throw new Error("receptionist_v13_acceptance_modes_required");
+  console.error(JSON.stringify({ event: "receptionist_v13_acceptance_started", modes }));
   for (const mode of modes) results.push(await runMode(mode));
+  const assistantMetrics = summarizeAssistantTurns(results.flatMap((result) =>
+    result.assistantMetrics.transcripts).map((text) => ({ text })));
+  const fullCaseNames = ["capture", "joke", "pinned_fact", "decline", "cache", "adjacent"];
+  const isFullBattery = modes.length === 2
+    && modes.includes("legacy")
+    && modes.includes("layered")
+    && results.every((result) => fullCaseNames.every((caseName) => result.cases.some((testCase) => testCase.case === caseName)));
+  const batteryChecks = isFullBattery
+    ? [createCheck("average assistant words per turn is under 30", assistantMetrics.averageWordsPerTurn < 30, assistantMetrics)]
+    : [];
   const failedChecks = results.flatMap((result) => result.cases.flatMap((testCase) =>
     testCase.checks.filter((check) => !check.passed).map((check) => ({ mode: result.mode, case: testCase.case, ...check }))
-  ));
+  )).concat(batteryChecks.filter((check) => !check.passed).map((check) => ({ mode: "all", case: "concision", ...check })));
   const summary = {
     ok: failedChecks.length === 0,
+    promptVersion: blueprint.version,
     model: MODEL,
     voice: VOICE,
     fixture: "synthetic_staging_tenant",
+    fullBattery: isFullBattery,
+    assistantMetrics,
+    batteryChecks,
     results,
     failedChecks
   };

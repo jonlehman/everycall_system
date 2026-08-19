@@ -31,7 +31,7 @@
 - A v3 backfill must snapshot existing pins and clear their pin flags before writing rerated rows; otherwise the pin-completeness constraint correctly rejects an old pin whose new spoken form is blank.
 - Verify an overlong generated company description ends at a complete sentence within 320 characters, never on a dangling conjunction or preposition, and website publication refreshes the company description and persisted no-tool statement from the same generated snapshot.
 - Run `corepack pnpm validate:knowledge-build-leases` after changing knowledge-build scheduling or terminal-state handling. It verifies exclusive claims, heartbeats, expiry takeover, token-scoped release, and that published builds cannot be reclaimed.
-- The validator reconstructs the pre-Grok OpenAI v3 section set and verifies its SHA-256 baseline, tool definitions, and sample phrases, then verifies the exact v11 and v12 additions separately.
+- The validator reconstructs the pre-Grok OpenAI v3 section set and verifies its SHA-256 baseline, tool definitions, and sample phrases, then verifies the exact v11, v12, and v13 additions separately.
 - With no pins, verify the entire by-heart section and every reference to it are absent. With pins, instruction-like text must be rejected, the rendered block must stay within 600 tokens and 20 facts, and tenant/build isolation must hold.
 - Verify an unchanged rating-input hash causes zero OpenAI scoring calls and carries its saved score, spoken text, model, and rated timestamp forward. Changing the canonical claim, qualifiers, boundaries, or tenant scoring context must invalidate the hash and score only that fact.
 - Verify the legacy backfill refuses missing-fact model calls unless `EVERYCALL_ALLOW_CORE_FACT_OPENAI_SCORING=1` is explicitly set.
@@ -44,21 +44,24 @@
 - Run `corepack pnpm validate:knowledge-source-pages` after changing website/document extraction, source normalization, evidence persistence, or compiler inputs.
 - The validator confirms that short lines such as `Cashmere, WA 98815` survive website, demo, and plain-text extraction; footer contact content is retained; more than 4,000 lines are not silently cut off; and a normal page becomes exactly one page document with line breaks intact.
 - It also verifies that a genuinely oversized source stays within its per-page token budget while retaining both its beginning and end, that repeat normalization is stable, and that short fallback facts survive while the internal omission marker cannot become a fact.
-- This validator is included in `corepack pnpm validate:receptionist-v12`.
+- This validator is included in `corepack pnpm validate:receptionist-v13`.
 
-## Receptionist v12 Acceptance
-- Run `corepack pnpm validate:receptionist-v12` for the exact v12 prompt rules, v3 scorer/v6 rewrite and stored set-curation invariants, profile sentence-boundary validation, and deterministic `finish_session` enforcement.
-- With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V12_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v12:realtime`.
+## Receptionist v13 Acceptance
+- Run `corepack pnpm validate:receptionist-v13` for the exact v13 prompt rules, v3 scorer/v6 rewrite and stored set-curation invariants, profile sentence-boundary validation, and deterministic `finish_session` enforcement.
+- With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V13_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v13:realtime`.
 - Run capture, joke, pinned-fact, decline, cache, and adjacent-request cases under both `legacy` and `layered` ordering.
-- Capture must show: callback offer, explicit caller yes, exact name echo/spelling if needed, later phone request, number read-back as a question, caller confirmation, optional-note wait if used, exact confirmed name in the close and `data_capture`, closing without `finish_session`, caller goodbye, then `finish_session`.
+- Capture must show: callback offer, explicit caller yes, first-name echo, one surname-spelling request, exact spelled surname in silent `data_capture`, first-name-only address afterward, later phone request, number read-back as a question, caller confirmation, no narration or detail/phone recap in the close, closing without `finish_session`, caller goodbye, then `finish_session`.
+- Record assistant words for every turn across the battery; the combined average must remain below 30. No name placeholder, removed realistic name example, or two-beat negative example may appear in assistant audio.
 - Pinned-fact answers must use no lookup, no holding phrase, no marketing language, and no unprompted technology name.
 - Decline must be warm, must not re-ask for a callback, and must not call `finish_session` immediately.
 - Cache verification uses an identical-tenant pair for legacy and a cross-tenant pair for layered. Record input tokens, cached tokens, and hit rate; Realtime cache placement is best-effort, so retain the raw observation even when an identical legacy call misses.
 - Payload validation verifies that the same normalized caller receives the same privacy-preserving Realtime safety identifier across calls and tenants, while different callers do not.
-- v12 validation rejects any runtime-profile default path that calls build-derived AI generation during prompt loading; prompt assembly must read the persisted tenant snapshot.
+- v13 validation rejects any runtime-profile default path that calls build-derived AI generation during prompt loading; prompt assembly must read the persisted tenant snapshot.
 - An adjacent request must produce a substantive first sentence and `knowledge_lookup` in the same model response, never a bare hold followed immediately by the answer. An unconfirmed result must lead to an honest callback offer.
 
 Use these after any change to prompts, knowledge lookup, or barge-in handling.
+
+The second 8/19 WVG call contained one possible early VAD handoff (“Got it—a cracked pane” before the caller had finished). Record recurrence during canaries; do not retune turn detection from this single observation.
 
 ## Script 1: Emergency + Knowledge + Pre-Close
 - "My water heater is leaking. Do you do emergencies?"
