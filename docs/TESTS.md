@@ -62,6 +62,11 @@
 ## Receptionist v14 Acceptance
 - Run `corepack pnpm validate:receptionist-v14` for all v13 invariants plus silent `knowledge_lookup` prompt and tool-schema rules.
 - With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V14_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v14:realtime`.
+
+## Receptionist v15 Acceptance
+- Run `corepack pnpm validate:receptionist-v15` to verify the exact condensed template, legacy variable injection, byte-stable layered prefix, Business Details bindings, empty volatile layer, zero-fact hygiene, and silent tool rules.
+- With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V15_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v15:realtime` in both legacy and layered prompt modes.
+- The full behavioral battery covers capture, joke handling, pinned-fact answers, callback decline, cache usage, adjacent requests, exact surname capture, no phone recap, and average assistant turns below 30 words.
 - An adjacent request must emit a silent function-call-only `knowledge_lookup` response before the direct answer. No assistant audio may announce or narrate checking, searching, looking, thinking, or waiting. An unconfirmed result must still lead to an honest callback offer.
 
 Use these after any change to prompts, knowledge lookup, or barge-in handling.

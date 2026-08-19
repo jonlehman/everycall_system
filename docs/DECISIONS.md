@@ -1,6 +1,7 @@
 # Decisions
 
 ## 2026-08-19
+- Canonical Receptionist v15 replaces the accumulated canonical rule text with the owner-approved condensed template. Preserve its exact generic wording as the source of truth, keep tenant values and the persisted `What You Know By Heart` block in the Business Details layer, keep the per-call volatile layer empty, and retain silent-only `knowledge_lookup` and `data_capture` tool schemas. Adjacent-request engagement begins only after lookup returns, and every callback offer is one short question followed by a wait for explicit consent.
 - Canonical Receptionist v14 makes `knowledge_lookup` fully silent. The response containing the tool call is function-call-only; after the fast lookup returns, the receptionist starts with the useful answer. Remove spoken lookup preambles, process narration, transitions, and latency filler.
 - Canonical Receptionist v13 keeps every v12 behavior and tenant binding, replaces realistic name examples with a first-name-plus-spelled-surname protocol, limits later address to first name only, and removes realistic assistant-name literals from the generic rule layer.
 - Typical assistant turns target about 25 spoken words: answer once, stop, do not narrate internal actions, and never repeat already confirmed contact data in the close. The full Realtime acceptance battery must report an average below 30 assistant words per turn.
