@@ -35,6 +35,7 @@ const OPENAI_V3_TOOL_DEFINITIONS_HASH = "668c2316f6b295eed70a43d1cf8a6a8c393d5d1
 const OPENAI_V3_SAMPLE_PHRASES_HASH = "b2c8aa474caf6ef4a84c4898dd95d7fe5d342afdf548f8bedea83557e158e467";
 const OPENAI_V3_KNOWLEDGE_LOOKUP_DESCRIPTION = "Look up approved business-specific facts before answering tenant-specific questions or claims.";
 const OPENAI_V3_DATA_CAPTURE_DESCRIPTION = "Record structured caller details after the caller has already provided them. Use this silently or with minimal chatter.";
+const OPENAI_V3_FINISH_SESSION_DESCRIPTION = "Finish the phone session only after you have already spoken the closing sentence aloud. If the caller may still expect a reply, confirm first.";
 const CORE_FACTS_MEMORY_BULLET = "- the approved facts listed in What You Know By Heart below";
 const CORE_FACTS_LOOKUP_RULE = "When What You Know By Heart fully covers the caller's question, answer from it without knowledge_lookup; otherwise follow every lookup requirement below unchanged.";
 const OPENAI_V3_CONCISION_RULES = `- Be concise, but not abrupt.\n- Keep most replies to one or two short sentences.`;
@@ -138,20 +139,25 @@ const restoredOpenAiV3ToolDefinitions = {
     ...promptSeed.tool_definitions.data_capture,
     description: OPENAI_V3_DATA_CAPTURE_DESCRIPTION,
     behavior_mode: "SILENT_OR_MINIMAL"
+  },
+  finish_session: {
+    ...promptSeed.tool_definitions.finish_session,
+    description: OPENAI_V3_FINISH_SESSION_DESCRIPTION
   }
 };
-assert.equal(promptSeed.version, 15);
+assert.equal(promptSeed.version, 16);
 assert.equal(stableHash(restoredOpenAiV3ToolDefinitions), OPENAI_V3_TOOL_DEFINITIONS_HASH, "the pre-Grok OpenAI tool definitions must remain reconstructable byte-for-byte");
 assert.match(promptSeed.tool_definitions.data_capture.description, /Call this tool silently\. Never speak a lead-in, status update, or acknowledgment/);
 assert.equal(promptSeed.tool_definitions.data_capture.behavior_mode, "SILENT");
 assert.equal(stableHash(promptSeed.sample_phrase_groups), OPENAI_V3_SAMPLE_PHRASES_HASH, "the pre-Grok OpenAI sample phrases must remain unchanged");
-const v15CanonicalText = getPromptSectionSeeds().map((section) => section.default_text).filter(Boolean).join("\n\n");
-assert.match(v15CanonicalText, /^Role & Objective/);
-assert.match(v15CanonicalText, /You are the receptionist, not the technician, estimator, or expert\./);
-assert.match(v15CanonicalText, /Emit a function-call-only response with no speech or text of any kind\./);
-assert.match(v15CanonicalText, /Using data_capture: emit the call silently/);
-assert.match(v15CanonicalText, /Call finish_session only after you have spoken the closing AND the caller has responded or clearly said goodbye\./);
-assert.doesNotMatch(v15CanonicalText, /# Priority Order|# Conversation Flow|# Factual Boundaries & Uncertainty/);
+const v16CanonicalText = getPromptSectionSeeds().map((section) => section.default_text).filter(Boolean).join("\n\n");
+assert.match(v16CanonicalText, /^Role & Objective/);
+assert.match(v16CanonicalText, /You are the receptionist, not the technician, estimator, or expert\./);
+assert.match(v16CanonicalText, /Emit a function-call-only response with no speech or text of any kind\./);
+assert.match(v16CanonicalText, /Using data_capture: emit the call silently/);
+assert.match(v16CanonicalText, /Before ending any call, ask exactly: "Do you have any other questions\?"/);
+assert.match(v16CanonicalText, /call finish_session in that same turn/);
+assert.doesNotMatch(v16CanonicalText, /# Priority Order|# Conversation Flow|# Factual Boundaries & Uncertainty/);
 
 const promptProfile = {
   assistant_name: "Sarah",
@@ -166,12 +172,12 @@ const promptProfile = {
 };
 const coreFactBlueprint = {
   ...promptSeed,
-  prompt_blueprint_id: "pb_canonical_receptionist_v15_test"
+  prompt_blueprint_id: "pb_canonical_receptionist_v16_test"
 };
 const emptyCoreFactsPrompt = renderPromptContext(coreFactBlueprint, promptProfile, { coreFactsBlock: "" }).startupPrompt;
 assert.doesNotMatch(emptyCoreFactsPrompt, /What You Know By Heart/);
 assert.doesNotMatch(emptyCoreFactsPrompt, /approved facts in/);
-assert.match(emptyCoreFactsPrompt, /Never in a turn where you asked a question\./);
+assert.match(emptyCoreFactsPrompt, /Never call finish_session in a turn where you asked a question\./);
 const layeredWithoutFacts = renderPromptContext(coreFactBlueprint, promptProfile, {
   coreFactsBlock: "",
   promptMode: "layered"

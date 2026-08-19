@@ -11,7 +11,8 @@ import {
   buildRealtimeSessionUpdateEvent
 } from "../apps/call-gateway/dist/apps/call-gateway/src/realtimePayloads.js";
 
-const APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V15_REALTIME_ACCEPTANCE";
+const APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V16_REALTIME_ACCEPTANCE";
+const V15_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V15_REALTIME_ACCEPTANCE";
 const V14_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V14_REALTIME_ACCEPTANCE";
 const V13_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V13_REALTIME_ACCEPTANCE";
 const V12_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V12_REALTIME_ACCEPTANCE";
@@ -62,6 +63,14 @@ function containsCallbackOffer(value) {
 
 function containsClosing(value) {
   return /\b(thanks for calling|thank you for calling|have a (?:great|good|wonderful)|take care)\b/i.test(normalizeText(value));
+}
+
+function containsOtherQuestionsCheckpoint(value) {
+  return /\bdo you have any other questions\??$/i.test(normalizeText(value));
+}
+
+function isExactImmediateClosing(value) {
+  return normalizeText(value).toLowerCase() === "thanks for calling. goodbye.";
 }
 
 function containsOptionalNotePrompt(value) {
@@ -363,8 +372,9 @@ async function runCaptureCase(mode) {
     checks.push(createCheck("name requested only after yes", /\bname\b/i.test(nameTurn.text) && !/\b(phone|number)\b/i.test(nameTurn.text), { observed: nameTurn.text }));
     const nameTurns = [await session.callerTurn(`I'm ${CAPTURE_FIRST_NAME} ${CAPTURE_LAST_NAME}.`)];
     checks.push(createCheck("first name is echoed and surname spelling is requested",
-      new RegExp(`\\b${CAPTURE_FIRST_NAME}\\b`, "i").test(nameTurns[0].text)
+      new RegExp(`^${CAPTURE_FIRST_NAME}\\b`, "i").test(normalizeText(nameTurns[0].text))
       && /\bspell\b/i.test(nameTurns[0].text)
+      && !/^thanks\b/i.test(normalizeText(nameTurns[0].text))
       && !new RegExp(`\\b${CAPTURE_LAST_NAME}\\b`, "i").test(nameTurns[0].text),
       { observed: nameTurns[0].text }));
     const turnsBeforeSpellingResponse = session.completedTurns.length;
@@ -379,33 +389,25 @@ async function runCaptureCase(mode) {
       && containsQuestion(confirmationTurn.text)
       && !confirmationTurn.toolCalls.some((toolCall) => toolCall.name === "finish_session"), { observed: confirmationTurn.text }));
 
-    let closingTurn = await session.callerTurn("Yes, that's right.");
-    if ((containsQuestion(closingTurn.text) || containsOptionalNotePrompt(closingTurn.text)) && !containsClosing(closingTurn.text)) {
-      checks.push(createCheck("optional note question waits", !closingTurn.toolCalls.some((toolCall) => toolCall.name === "finish_session"), { observed: closingTurn.text }));
-      closingTurn = await session.callerTurn("Please note that weekday afternoons are best.");
+    let checkpointTurn = await session.callerTurn("Yes, that's right.");
+    if (containsOptionalNotePrompt(checkpointTurn.text) && !containsOtherQuestionsCheckpoint(checkpointTurn.text)) {
+      checks.push(createCheck("optional note question waits", !checkpointTurn.toolCalls.some((toolCall) => toolCall.name === "finish_session"), { observed: checkpointTurn.text }));
+      checkpointTurn = await session.callerTurn("Please note that weekday afternoons are best.");
     }
-    if ((containsQuestion(closingTurn.text) || containsOptionalNotePrompt(closingTurn.text)) && !containsClosing(closingTurn.text)) {
-      checks.push(createCheck("additional closing question waits", !closingTurn.toolCalls.some((toolCall) => toolCall.name === "finish_session"), { observed: closingTurn.text }));
-      closingTurn = await session.callerTurn("No, that's everything.");
-    }
-    checks.push(createCheck("closing turn contains no question or finish", containsClosing(closingTurn.text)
+    checks.push(createCheck("other-questions checkpoint is asked and waits", containsOtherQuestionsCheckpoint(checkpointTurn.text)
+      && !checkpointTurn.toolCalls.some((toolCall) => toolCall.name === "finish_session"), { observed: checkpointTurn.text }));
+    const closingTurn = await session.callerTurn("No, that's everything.");
+    checks.push(createCheck("closing is exact and contains no question", isExactImmediateClosing(closingTurn.text)
       && !containsQuestion(closingTurn.text)
-      && !closingTurn.toolCalls.some((toolCall) => toolCall.name === "finish_session"), { observed: closingTurn.text }));
-    const goodbyeTurns = [await session.callerTurn("Thanks, goodbye.")];
-    if (!goodbyeTurns[0].toolCalls.some((toolCall) => toolCall.name === "finish_session")) {
-      goodbyeTurns.push(await session.callerTurn("Goodbye."));
-    }
-    checks.push(createCheck("finish only after caller responds to closing", goodbyeTurns.some((turn) =>
-      turn.toolCalls.some((toolCall) => toolCall.name === "finish_session")), {
-      observed: goodbyeTurns.map((turn) => turn.text),
-      tools: goodbyeTurns.flatMap((turn) => turn.toolCalls.map((toolCall) => toolCall.name))
+      && closingTurn.toolCalls.some((toolCall) => toolCall.name === "finish_session"), {
+      observed: closingTurn.text,
+      tools: closingTurn.toolCalls.map((toolCall) => toolCall.name)
     }));
-    const everyTurn = [...callback.turns, nameTurn, ...nameTurns, confirmationTurn, closingTurn, ...goodbyeTurns];
+    const everyTurn = [...callback.turns, nameTurn, ...nameTurns, confirmationTurn, checkpointTurn, closingTurn];
     checks.push(createCheck("finish never shares a question turn", everyTurn.every((turn) =>
       !containsQuestion(turn.text) || !turn.toolCalls.some((toolCall) => toolCall.name === "finish_session"))));
-    checks.push(createCheck("close uses first name only",
-      new RegExp(`\\b${CAPTURE_FIRST_NAME}\\b`, "i").test(closingTurn.text)
-      && !new RegExp(`\\b${CAPTURE_LAST_NAME}\\b`, "i").test(closingTurn.text),
+    checks.push(createCheck("close does not use the caller's name",
+      !new RegExp(`\\b${CAPTURE_FIRST_NAME}\\b|\\b${CAPTURE_LAST_NAME}\\b`, "i").test(closingTurn.text),
       { observed: closingTurn.text }));
     checks.push(createCheck("close does not repeat the confirmed phone number",
       !normalizeDigits(closingTurn.text).includes(CAPTURE_PHONE), { observed: closingTurn.text }));
@@ -551,7 +553,8 @@ function collectCaseTranscripts(testCase) {
 
 async function runMode(mode) {
   const cases = [];
-  const configuredCasesValue = process.env.EVERYCALL_RECEPTIONIST_V15_ACCEPTANCE_CASES
+  const configuredCasesValue = process.env.EVERYCALL_RECEPTIONIST_V16_ACCEPTANCE_CASES
+    || process.env.EVERYCALL_RECEPTIONIST_V15_ACCEPTANCE_CASES
     || process.env.EVERYCALL_RECEPTIONIST_V14_ACCEPTANCE_CASES
     || process.env.EVERYCALL_RECEPTIONIST_V13_ACCEPTANCE_CASES
     || process.env.EVERYCALL_RECEPTIONIST_V12_ACCEPTANCE_CASES
@@ -567,7 +570,7 @@ async function runMode(mode) {
     ["adjacent", runAdjacentCase]
   ]) {
     if (!configuredCases.has(caseName)) continue;
-    console.error(JSON.stringify({ event: "receptionist_v15_acceptance_case_started", mode, case: caseName }));
+    console.error(JSON.stringify({ event: `receptionist_v${blueprint.version}_acceptance_case_started`, mode, case: caseName }));
     try {
       cases.push(await runner(mode));
     } catch (error) {
@@ -576,7 +579,7 @@ async function runMode(mode) {
         checks: [createCheck("case completed", false, { error: error instanceof Error ? error.message : String(error) })]
       });
     }
-    console.error(JSON.stringify({ event: "receptionist_v15_acceptance_case_completed", mode, case: caseName }));
+    console.error(JSON.stringify({ event: `receptionist_v${blueprint.version}_acceptance_case_completed`, mode, case: caseName }));
   }
   const assistantMetrics = summarizeAssistantTurns(cases.flatMap(collectCaseTranscripts).map((text) => ({ text })));
   return { mode, cases, assistantMetrics };
@@ -584,6 +587,7 @@ async function runMode(mode) {
 
 async function main() {
   if (normalizeText(process.env[APPROVAL_ENV]) !== "1"
+    && normalizeText(process.env[V15_APPROVAL_ENV]) !== "1"
     && normalizeText(process.env[V14_APPROVAL_ENV]) !== "1"
     && normalizeText(process.env[V13_APPROVAL_ENV]) !== "1"
     && normalizeText(process.env[V12_APPROVAL_ENV]) !== "1"
@@ -592,15 +596,16 @@ async function main() {
   }
   if (!normalizeText(process.env.OPENAI_API_KEY)) throw new Error("OPENAI_API_KEY is required");
   const results = [];
-  const modesValue = process.env.EVERYCALL_RECEPTIONIST_V15_ACCEPTANCE_MODES
+  const modesValue = process.env.EVERYCALL_RECEPTIONIST_V16_ACCEPTANCE_MODES
+    || process.env.EVERYCALL_RECEPTIONIST_V15_ACCEPTANCE_MODES
     || process.env.EVERYCALL_RECEPTIONIST_V14_ACCEPTANCE_MODES
     || process.env.EVERYCALL_RECEPTIONIST_V13_ACCEPTANCE_MODES
     || process.env.EVERYCALL_RECEPTIONIST_V12_ACCEPTANCE_MODES
     || "legacy,layered";
   const modes = normalizeText(modesValue)
     .split(",").map((value) => normalizeText(value)).filter((value) => ["legacy", "layered"].includes(value));
-  if (!modes.length) throw new Error("receptionist_v15_acceptance_modes_required");
-  console.error(JSON.stringify({ event: "receptionist_v15_acceptance_started", modes }));
+  if (!modes.length) throw new Error(`receptionist_v${blueprint.version}_acceptance_modes_required`);
+  console.error(JSON.stringify({ event: `receptionist_v${blueprint.version}_acceptance_started`, modes }));
   for (const mode of modes) results.push(await runMode(mode));
   const assistantMetrics = summarizeAssistantTurns(results.flatMap((result) =>
     result.assistantMetrics.transcripts).map((text) => ({ text })));

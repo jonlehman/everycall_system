@@ -286,8 +286,10 @@ type StreamSession = {
   ignoreNextStreamingStopped?: boolean;
   dialogueTurnSequence?: number;
   lastCallerTranscriptSequence?: number;
+  previousAssistantTranscriptSequence?: number;
   lastAssistantTranscriptSequence?: number;
   lastCallerTranscript?: string;
+  previousAssistantTranscript?: string;
   lastAssistantTranscript?: string;
   pendingFinishSession?: PendingFinishSession | null;
 };
@@ -343,8 +345,10 @@ function createStreamSession(
     ignoreNextStreamingStopped: false,
     dialogueTurnSequence: 0,
     lastCallerTranscriptSequence: 0,
+    previousAssistantTranscriptSequence: 0,
     lastAssistantTranscriptSequence: 0,
     lastCallerTranscript: "",
+    previousAssistantTranscript: "",
     lastAssistantTranscript: "",
     pendingFinishSession: null,
     ...(realtimeLogPath ? { realtimeLogPath } : {})
