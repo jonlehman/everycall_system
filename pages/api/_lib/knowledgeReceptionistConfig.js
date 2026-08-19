@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import { extractTextFromDocumentBuffer } from "./knowledgeReceptionistFiles.js";
 import { fetchWebsitePage } from "./knowledgeReceptionistBuilds.js";
-import { loadBuildDerivedCompanyDescription } from "./promptBlueprints.js";
 
 const DEFAULT_STAGE_IDS = [
   "opening",
@@ -1116,12 +1115,13 @@ function defaultGreetingText(tenantKey) {
 }
 
 async function loadDefaultCompanyDescription(db, tenantKey) {
-  const buildDerived = await loadBuildDerivedCompanyDescription(db, tenantKey);
-  if (buildDerived) return buildDerived;
   const res = await db.query(
     `SELECT t.name,
+            tp.company_description AS prompt_company_description,
             bp.company_description
      FROM tenants t
+     LEFT JOIN tenant_prompt_profiles tp
+       ON tp.tenant_key = t.tenant_key
      LEFT JOIN tenant_bootstrap_profiles bp
        ON bp.tenant_key = t.tenant_key
      WHERE t.tenant_key = $1
@@ -1129,6 +1129,8 @@ async function loadDefaultCompanyDescription(db, tenantKey) {
     [tenantKey]
   );
   const row = res.rows?.[0] || {};
+  const promptDescription = normalizeText(row.prompt_company_description);
+  if (promptDescription) return promptDescription;
   const bootstrapDescription = normalizeText(row.company_description);
   if (bootstrapDescription) return bootstrapDescription;
   const businessName = normalizeText(row.name);

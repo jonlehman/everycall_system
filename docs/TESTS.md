@@ -55,6 +55,7 @@
 - Decline must be warm, must not re-ask for a callback, and must not call `finish_session` immediately.
 - Cache verification uses an identical-tenant pair for legacy and a cross-tenant pair for layered. Record input tokens, cached tokens, and hit rate; Realtime cache placement is best-effort, so retain the raw observation even when an identical legacy call misses.
 - Payload validation verifies that the same normalized caller receives the same privacy-preserving Realtime safety identifier across calls and tenants, while different callers do not.
+- v12 validation rejects any runtime-profile default path that calls build-derived AI generation during prompt loading; prompt assembly must read the persisted tenant snapshot.
 - An adjacent request must produce a substantive first sentence and `knowledge_lookup` in the same model response, never a bare hold followed immediately by the answer. An unconfirmed result must lead to an honest callback offer.
 
 Use these after any change to prompts, knowledge lookup, or barge-in handling.

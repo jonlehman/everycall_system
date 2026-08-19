@@ -100,6 +100,9 @@ await assert.rejects(async () => normalizeCallerFaqAnswers({ repairs_service: "W
 const promptProfileSource = await fs.readFile(new URL("../pages/api/_lib/promptBlueprints.js", import.meta.url), "utf8");
 assert.match(promptProfileSource, /Write in first-person business voice using we, our, or us/);
 assert.match(promptProfileSource, /company_description_snapshot_invalid/);
+const receptionistConfigSource = await fs.readFile(new URL("../pages/api/_lib/knowledgeReceptionistConfig.js", import.meta.url), "utf8");
+assert.doesNotMatch(receptionistConfigSource, /loadBuildDerivedCompanyDescription/);
+assert.match(receptionistConfigSource, /tp\.company_description AS prompt_company_description/);
 const buildsSource = await fs.readFile(new URL("../pages/api/_lib/knowledgeReceptionistBuilds.js", import.meta.url), "utf8");
 assert.match(buildsSource, /syncCallerFaqConfirmationState/);
 assert.match(buildsSource, /source_artifact_stage_no_model_completed_sources/);
@@ -124,6 +127,7 @@ console.log(JSON.stringify({
     "same_response_audio_and_tool_events_supported",
     "one_time_faq_confirmation_pipeline",
     "first_person_company_snapshot_validation",
+    "prompt_loading_uses_stored_company_snapshot_without_ai",
     "ai_curated_stored_known_by_heart_section",
     "all-fallback_artifact_publish_block"
   ]
