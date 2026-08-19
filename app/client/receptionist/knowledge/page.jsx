@@ -456,6 +456,7 @@ export default function ReceptionistKnowledgePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           buildKind: normalizedBuildKind,
+          forceRescrape: isWebsiteBuild,
           baseBuildId: !isWebsiteBuild ? (buildState.activeBuild?.active_build_id || undefined) : undefined,
           websiteUrl: isWebsiteBuild ? (buildForm.websiteUrl.trim() || undefined) : undefined,
           uploadedDocumentIds: approvedDocumentIds

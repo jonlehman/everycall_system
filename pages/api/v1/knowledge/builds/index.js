@@ -25,6 +25,20 @@ function normalizeIdArray(value) {
   return value.map((item) => String(item || "").trim()).filter(Boolean);
 }
 
+export function normalizeKnowledgeBuildEnqueueInput(value) {
+  const body = typeof value === "object" && value ? value : {};
+  const buildKind = String(body.buildKind || body.build_kind || "").trim().toLowerCase();
+  return {
+    buildKind,
+    forceRescrape: buildKind === "website_base",
+    baseBuildId: body.baseBuildId || body.base_build_id,
+    websiteUrl: body.websiteUrl || body.website_url,
+    assignments: normalizeAssignments(body.assignments),
+    uploadedDocumentIds: normalizeIdArray(body.uploadedDocumentIds || body.uploaded_document_ids),
+    setupInterviewSessionIds: normalizeIdArray(body.setupInterviewSessionIds || body.setup_interview_session_ids)
+  };
+}
+
 function fail(res, status, error, message, extra = {}) {
   return res.status(status).json({ ok: false, error, message, ...extra });
 }
@@ -53,14 +67,7 @@ export default async function handler(req, res) {
       });
       if (!manager) return;
       const body = typeof req.body === "object" && req.body ? req.body : {};
-      const buildResult = await enqueueKnowledgeBuild(pool, tenantKey, {
-        buildKind: body.buildKind || body.build_kind,
-        baseBuildId: body.baseBuildId || body.base_build_id,
-        websiteUrl: body.websiteUrl || body.website_url,
-        assignments: normalizeAssignments(body.assignments),
-        uploadedDocumentIds: normalizeIdArray(body.uploadedDocumentIds || body.uploaded_document_ids),
-        setupInterviewSessionIds: normalizeIdArray(body.setupInterviewSessionIds || body.setup_interview_session_ids)
-      });
+      const buildResult = await enqueueKnowledgeBuild(pool, tenantKey, normalizeKnowledgeBuildEnqueueInput(body));
       return res.status(202).json({ ok: true, ...buildResult });
     }
 
