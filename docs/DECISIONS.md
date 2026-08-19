@@ -1,6 +1,7 @@
 # Decisions
 
 ## 2026-08-19
+- Canonical Receptionist v14 makes `knowledge_lookup` fully silent. The response containing the tool call is function-call-only; after the fast lookup returns, the receptionist starts with the useful answer. Remove spoken lookup preambles, process narration, transitions, and latency filler.
 - Canonical Receptionist v13 keeps every v12 behavior and tenant binding, replaces realistic name examples with a first-name-plus-spelled-surname protocol, limits later address to first name only, and removes realistic assistant-name literals from the generic rule layer.
 - Typical assistant turns target about 25 spoken words: answer once, stop, do not narrate internal actions, and never repeat already confirmed contact data in the close. The full Realtime acceptance battery must report an average below 30 assistant words per turn.
 - Remove the older “confirm both back” and no-workflow detail-recap instructions because phone and surname already have explicit confirmation steps. `data_capture` is silent-only; after it succeeds, continue directly to the next question or the first-name-plus-closing-phrase close.

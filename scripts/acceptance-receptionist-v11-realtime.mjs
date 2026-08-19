@@ -11,7 +11,8 @@ import {
   buildRealtimeSessionUpdateEvent
 } from "../apps/call-gateway/dist/apps/call-gateway/src/realtimePayloads.js";
 
-const APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V13_REALTIME_ACCEPTANCE";
+const APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V14_REALTIME_ACCEPTANCE";
+const V13_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V13_REALTIME_ACCEPTANCE";
 const V12_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V12_REALTIME_ACCEPTANCE";
 const V11_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V11_REALTIME_ACCEPTANCE";
 const MODEL = String(process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2.1").trim();
@@ -488,17 +489,27 @@ async function runAdjacentCase(mode) {
   return withSession(mode, "adjacent", profileA, async (session) => {
     await session.assistantTurn();
     const turn = await session.callerTurn("Our old internal reporting system keeps freezing. Can you repair it?");
-    const firstResponse = turn.responses[0] || { transcripts: [], toolCalls: [] };
-    const firstSentence = normalizeText(firstResponse.transcripts.join(" "));
-    const sameResponseLookup = firstResponse.toolCalls.some((toolCall) => toolCall.name === "knowledge_lookup");
-    const bareHold = /^(?:let me check|one moment|let me look|please wait)[.!]?$/i.test(firstSentence);
-    const holdThenAnswer = /\b(?:let me check|one moment|let me look|please wait)[.!]?\s+(?:we|our|the approved|i found|it looks)/i.test(turn.text);
+    const firstSpokenResponseIndex = turn.responses.findIndex((response) => normalizeText(response.transcripts.join(" ")));
+    const firstSpokenResponse = firstSpokenResponseIndex >= 0
+      ? turn.responses[firstSpokenResponseIndex]
+      : { transcripts: [], toolCalls: [] };
+    const firstSentence = normalizeText(firstSpokenResponse.transcripts.join(" "));
+    const lookupResponseIndex = turn.responses.findIndex((response) =>
+      response.toolCalls.some((toolCall) => toolCall.name === "knowledge_lookup"));
+    const toolCallResponseIsSilent = lookupResponseIndex >= 0
+      && firstSpokenResponseIndex > lookupResponseIndex
+      && !normalizeText(turn.responses[lookupResponseIndex]?.transcripts.join(" "));
+    const spokenLookupNarration = /\b(?:(?:let me|i(?:'ll| will))\s+(?:check|look|search|think)|let(?:'|’)s\s+talk\s+through|see how we can help|one moment|please wait|(?:check|look|search)(?:ing)?\s+(?:that|this|what|our|the))\b/i.test(turn.text);
     return {
       case: "adjacent",
       checks: [
-        createCheck("first response engages the caller's situation", /\b(?:system|reporting|freez\w*|repair|fix)\b/i.test(firstSentence) && !bareHold, { observed: firstSentence }),
-        createCheck("lookup starts in the same response as engagement", sameResponseLookup && Boolean(firstSentence), { observed: firstSentence, tools: firstResponse.toolCalls.map((toolCall) => toolCall.name) }),
-        createCheck("no hold then answer collision", !holdThenAnswer, { observed: turn.text }),
+        createCheck("first spoken response engages the caller's situation", /\b(?:system|reporting|freez\w*|repair|fix)\b/i.test(firstSentence), { observed: firstSentence }),
+        createCheck("knowledge lookup is a silent tool-only response before the answer", toolCallResponseIsSilent, {
+          observed: firstSentence,
+          lookupResponseIndex,
+          firstSpokenResponseIndex
+        }),
+        createCheck("no spoken lookup narration or filler", !spokenLookupNarration, { observed: turn.text }),
         createCheck("unconfirmed service leads to honest callback offer", /\b(?:not confirmed|can't confirm|cannot confirm|don't have that confirmed|team can|callback|call back|follow up)\b/i.test(turn.text), { observed: turn.text })
       ]
     };
@@ -539,7 +550,8 @@ function collectCaseTranscripts(testCase) {
 
 async function runMode(mode) {
   const cases = [];
-  const configuredCasesValue = process.env.EVERYCALL_RECEPTIONIST_V13_ACCEPTANCE_CASES
+  const configuredCasesValue = process.env.EVERYCALL_RECEPTIONIST_V14_ACCEPTANCE_CASES
+    || process.env.EVERYCALL_RECEPTIONIST_V13_ACCEPTANCE_CASES
     || process.env.EVERYCALL_RECEPTIONIST_V12_ACCEPTANCE_CASES
     || "capture,joke,pinned_fact,decline,cache,adjacent";
   const configuredCases = new Set(normalizeText(configuredCasesValue)
@@ -553,7 +565,7 @@ async function runMode(mode) {
     ["adjacent", runAdjacentCase]
   ]) {
     if (!configuredCases.has(caseName)) continue;
-    console.error(JSON.stringify({ event: "receptionist_v13_acceptance_case_started", mode, case: caseName }));
+    console.error(JSON.stringify({ event: "receptionist_v14_acceptance_case_started", mode, case: caseName }));
     try {
       cases.push(await runner(mode));
     } catch (error) {
@@ -562,7 +574,7 @@ async function runMode(mode) {
         checks: [createCheck("case completed", false, { error: error instanceof Error ? error.message : String(error) })]
       });
     }
-    console.error(JSON.stringify({ event: "receptionist_v13_acceptance_case_completed", mode, case: caseName }));
+    console.error(JSON.stringify({ event: "receptionist_v14_acceptance_case_completed", mode, case: caseName }));
   }
   const assistantMetrics = summarizeAssistantTurns(cases.flatMap(collectCaseTranscripts).map((text) => ({ text })));
   return { mode, cases, assistantMetrics };
@@ -570,19 +582,21 @@ async function runMode(mode) {
 
 async function main() {
   if (normalizeText(process.env[APPROVAL_ENV]) !== "1"
+    && normalizeText(process.env[V13_APPROVAL_ENV]) !== "1"
     && normalizeText(process.env[V12_APPROVAL_ENV]) !== "1"
     && normalizeText(process.env[V11_APPROVAL_ENV]) !== "1") {
     throw new Error(`${APPROVAL_ENV}=1 is required`);
   }
   if (!normalizeText(process.env.OPENAI_API_KEY)) throw new Error("OPENAI_API_KEY is required");
   const results = [];
-  const modesValue = process.env.EVERYCALL_RECEPTIONIST_V13_ACCEPTANCE_MODES
+  const modesValue = process.env.EVERYCALL_RECEPTIONIST_V14_ACCEPTANCE_MODES
+    || process.env.EVERYCALL_RECEPTIONIST_V13_ACCEPTANCE_MODES
     || process.env.EVERYCALL_RECEPTIONIST_V12_ACCEPTANCE_MODES
     || "legacy,layered";
   const modes = normalizeText(modesValue)
     .split(",").map((value) => normalizeText(value)).filter((value) => ["legacy", "layered"].includes(value));
-  if (!modes.length) throw new Error("receptionist_v13_acceptance_modes_required");
-  console.error(JSON.stringify({ event: "receptionist_v13_acceptance_started", modes }));
+  if (!modes.length) throw new Error("receptionist_v14_acceptance_modes_required");
+  console.error(JSON.stringify({ event: "receptionist_v14_acceptance_started", modes }));
   for (const mode of modes) results.push(await runMode(mode));
   const assistantMetrics = summarizeAssistantTurns(results.flatMap((result) =>
     result.assistantMetrics.transcripts).map((text) => ({ text })));

@@ -44,7 +44,7 @@
 - Run `corepack pnpm validate:knowledge-source-pages` after changing website/document extraction, source normalization, evidence persistence, or compiler inputs.
 - The validator confirms that short lines such as `Cashmere, WA 98815` survive website, demo, and plain-text extraction; footer contact content is retained; more than 4,000 lines are not silently cut off; and a normal page becomes exactly one page document with line breaks intact.
 - It also verifies that a genuinely oversized source stays within its per-page token budget while retaining both its beginning and end, that repeat normalization is stable, and that short fallback facts survive while the internal omission marker cannot become a fact.
-- This validator is included in `corepack pnpm validate:receptionist-v13`.
+- This validator is included in `corepack pnpm validate:receptionist-v14`.
 
 ## Receptionist v13 Acceptance
 - Run `corepack pnpm validate:receptionist-v13` for the exact v13 prompt rules, v3 scorer/v6 rewrite and stored set-curation invariants, profile sentence-boundary validation, and deterministic `finish_session` enforcement.
@@ -58,6 +58,11 @@
 - Payload validation verifies that the same normalized caller receives the same privacy-preserving Realtime safety identifier across calls and tenants, while different callers do not.
 - v13 validation rejects any runtime-profile default path that calls build-derived AI generation during prompt loading; prompt assembly must read the persisted tenant snapshot.
 - An adjacent request must produce a substantive first sentence and `knowledge_lookup` in the same model response, never a bare hold followed immediately by the answer. An unconfirmed result must lead to an honest callback offer.
+
+## Receptionist v14 Acceptance
+- Run `corepack pnpm validate:receptionist-v14` for all v13 invariants plus silent `knowledge_lookup` prompt and tool-schema rules.
+- With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V14_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v14:realtime`.
+- An adjacent request must emit a silent function-call-only `knowledge_lookup` response before the direct answer. No assistant audio may announce or narrate checking, searching, looking, thinking, or waiting. An unconfirmed result must still lead to an honest callback offer.
 
 Use these after any change to prompts, knowledge lookup, or barge-in handling.
 

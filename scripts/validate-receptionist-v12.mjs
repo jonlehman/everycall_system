@@ -20,7 +20,7 @@ assert.ok(seed.version >= 12);
 assert.equal(seed.name, `Canonical Receptionist v${seed.version}`);
 const sections = new Map(getPromptSectionSeeds().map((section) => [section.section_id, section.default_text]));
 
-assert.equal(sections.get("adjacent_requests"), `# Adjacent Requests
+const v12AdjacentRequests = `# Adjacent Requests
 When a caller asks for something in the same line of work as the business but
 not plainly covered by What You Know By Heart:
 - Engage immediately and warmly — the topic is what we do; never treat it as
@@ -35,9 +35,16 @@ not plainly covered by What You Know By Heart:
   Generic sympathy such as "that sounds frustrating" is not specific enough
   by itself.
 - If the lookup can't confirm the specific service, say so plainly and offer
-  a callback so the team can answer — that's a good outcome, not a failure.`);
-assert.match(sections.get("tools"), /your first sentence should respond to what the caller actually said/);
-assert.match(sections.get("tools"), /never speak a holding phrase and the answer back-to-back/);
+  a callback so the team can answer — that's a good outcome, not a failure.`;
+if (seed.version < 14) {
+  assert.equal(sections.get("adjacent_requests"), v12AdjacentRequests);
+  assert.match(sections.get("tools"), /your first sentence should respond to what the caller actually said/);
+  assert.match(sections.get("tools"), /never speak a holding phrase and the answer back-to-back/);
+} else {
+  assert.match(sections.get("adjacent_requests"), /Call knowledge_lookup in a function-call-only response/);
+  assert.match(sections.get("tools"), /wait for the tool result before speaking/);
+  assert.doesNotMatch(sections.get("tools"), /bare holding phrase/);
+}
 assert.doesNotMatch(sections.get("tools"), /give a very short natural preamble/);
 assert.match(sections.get("closing"), /Never answer your own question with "otherwise\.\.\."/);
 assert.match(sections.get("name_and_phone_accuracy"), /Do not tell the caller to say it slowly/);

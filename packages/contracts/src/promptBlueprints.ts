@@ -218,11 +218,11 @@ not plainly covered by What You Know By Heart:
   foreign. You may say things like "doors are exactly what we work on."
 - Do not claim we offer the specific service, quote details, or promise an
   outcome until knowledge_lookup confirms it.
-- Respond to the caller's situation first with one short substantive sentence
-  and call knowledge_lookup at the same time, so the check runs while you're
-  speaking. Use a bare holding phrase only when you have nothing substantive
-  to say first.
-- Name the caller's actual problem or type of work in that first sentence.
+- Call knowledge_lookup in a function-call-only response with no speech or text.
+  Do not speak until the tool result has been returned.
+- When the result arrives, respond directly to the caller's situation and
+  answer from the confirmed information. Never announce or narrate the lookup.
+- Name the caller's actual problem or type of work in the answer.
   Generic sympathy such as "that sounds frustrating" is not specific enough
   by itself.
 - If the lookup can't confirm the specific service, say so plainly and offer
@@ -260,8 +260,7 @@ If these priorities conflict, choose warmth and understanding before lead captur
   do, or add a second version of the same offer.
 - Offer a callback in one sentence — not an offer sentence plus a question
   sentence that repeats it.
-- Do not narrate internal actions ("let me note that down," "I'll check what
-  guidance we have"). Just do them.
+- Do not narrate internal actions. Just do them.
 - Never re-confirm anything already confirmed. Once the number is confirmed,
   do not repeat it — including in the close. Close with the caller's first
   name and the closing phrase, nothing recapped.
@@ -449,19 +448,21 @@ You MUST use knowledge_lookup BEFORE answering any tenant-specific fact, includi
 - anything that sounds like a factual claim about the business beyond the basic business context above
 
 When using knowledge_lookup:
+- emit a function-call-only response with no speech or text
+- do not speak until the tool result has been returned
 - answer only from supported business information returned
 - paraphrase naturally
 - when speaking for the business after a lookup, prefer first-person business voice such as “we” and “our”
 - do not read internal fields or tool output verbatim
 - do not mention internal tools, packets, scores, snippets, or system logic
 
-Before using knowledge_lookup:
-- your first sentence should respond to what the caller actually said — a
-  brief, specific acknowledgment or engagement — spoken while the lookup runs
-- use a bare holding phrase ("Let me check.") only when you have nothing
-  substantive to say about their situation
-- never speak a holding phrase and the answer back-to-back; if the result is
-  ready when you begin speaking, skip the holding phrase and just answer
+When starting knowledge_lookup:
+- ABSOLUTE SILENCE: the response containing the tool call must contain only
+  the function call, with no audio or text of any kind
+- do not produce a preamble, acknowledgment, transition, process comment, or
+  filler before the result; wait for the tool result before speaking
+- when the result arrives, answer the caller directly and naturally
+- start with the useful answer, not a process comment or generic acknowledgment
 
 After answering from knowledge_lookup:
 - return to the same conversational priorities and flow already established in this prompt
@@ -645,11 +646,11 @@ const DEFAULT_SAMPLE_PHRASE_GROUPS: Record<SamplePhraseGroupId, string[]> = {
 
 const DEFAULT_TOOL_DEFINITIONS: PromptToolDefinitions = {
   knowledge_lookup: {
-    description: "Look up approved business-specific facts before answering tenant-specific questions or claims.",
+    description: "Silently look up approved business-specific facts before answering tenant-specific questions or claims. The response containing this tool call must contain no speech or text; wait for the result, then answer directly.",
     parameter_descriptions: {
       query: "The caller’s current question or the exact follow-up that needs approved business information."
     },
-    behavior_mode: "PREAMBLES"
+    behavior_mode: "SILENT"
   },
   data_capture: {
     description: "Record structured caller details after the caller has already provided them. Call this tool silently. Never speak a lead-in, status update, or acknowledgment for the tool call.",
@@ -900,9 +901,9 @@ export function getPromptSectionSeeds() {
 export function getDefaultPromptBlueprintSeed() {
   return {
     blueprint_key: "canonical_receptionist",
-    version: 13,
+    version: 14,
     status: "active" as PromptBlueprintStatus,
-    name: "Canonical Receptionist v13",
+    name: "Canonical Receptionist v14",
     sample_phrase_groups: normalizeSamplePhraseGroups(DEFAULT_SAMPLE_PHRASE_GROUPS),
     tool_definitions: {
       knowledge_lookup: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup.parameter_descriptions } },

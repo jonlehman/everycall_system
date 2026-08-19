@@ -33,11 +33,16 @@ import {
 const OPENAI_V3_SECTION_HASH = "fd74beeb09e4f6ff3ef3e796f05c1b4b1302917cb53f6975baa518fc04ba0327";
 const OPENAI_V3_TOOL_DEFINITIONS_HASH = "668c2316f6b295eed70a43d1cf8a6a8c393d5d1ac19d2aeceb9b7c762239c897";
 const OPENAI_V3_SAMPLE_PHRASES_HASH = "b2c8aa474caf6ef4a84c4898dd95d7fe5d342afdf548f8bedea83557e158e467";
+const OPENAI_V3_KNOWLEDGE_LOOKUP_DESCRIPTION = "Look up approved business-specific facts before answering tenant-specific questions or claims.";
 const OPENAI_V3_DATA_CAPTURE_DESCRIPTION = "Record structured caller details after the caller has already provided them. Use this silently or with minimal chatter.";
 const CORE_FACTS_MEMORY_BULLET = "- the approved facts listed in What You Know By Heart below";
 const CORE_FACTS_LOOKUP_RULE = "When What You Know By Heart fully covers the caller's question, answer from it without knowledge_lookup; otherwise follow every lookup requirement below unchanged.";
 const OPENAI_V3_CONCISION_RULES = `- Be concise, but not abrupt.\n- Keep most replies to one or two short sentences.`;
 const V13_CONCISION_RULES = `- One idea per sentence. A typical turn is one or two short sentences —\n  around 25 spoken words. A substantive answer may take three sentences,\n  never more.\n- After you answer, stop. Do not restate the answer, summarize what we could\n  do, or add a second version of the same offer.\n- Offer a callback in one sentence — not an offer sentence plus a question\n  sentence that repeats it.\n- Do not narrate internal actions ("let me note that down," "I'll check what\n  guidance we have"). Just do them.\n- Never re-confirm anything already confirmed. Once the number is confirmed,\n  do not repeat it — including in the close. Close with the caller's first\n  name and the closing phrase, nothing recapped.`;
+const V14_CONCISION_RULES = V13_CONCISION_RULES.replace(
+  `- Do not narrate internal actions ("let me note that down," "I'll check what\n  guidance we have"). Just do them.`,
+  "- Do not narrate internal actions. Just do them."
+);
 const V11_HUMOR_RULE = `\n- If a caller clearly makes a joke, it's fine to respond with one light line before returning to helping — e.g. Caller: "Can your AI build my patio?" You: "Ha — not yet anyway. Our AI sticks to screens. Anything software-side I can help with?" Never force humor; one light line at most.`;
 const V13_CAPTURE_TURN_RULE = `\n- During callback capture and closing, do one thing per turn: offer the callback, OR ask for one detail, OR confirm, OR close. Never combine these in one turn.\n  (Wrong: "Would you like a callback? If so, what's your name?" — two beats.\n  Ask the callback question, stop, and wait for the answer.)`;
 const V11_CALLBACK_CONSENT_RULE = `\n- Ask whether the caller would like a callback and wait for their yes before asking for any contact detail.`;
@@ -52,6 +57,8 @@ const V12_PHONE_PLAIN_RULE = `\n- Ask for the phone number plainly. Do not tell 
 const V12_CLOSING_INVITATION_RULE = `\n- When you invite the caller to add or ask anything, your turn ends there.\n  Never answer your own question with "otherwise..." or any similar\n  construction and continue into the closing in the same turn.`;
 const V10_LOOKUP_PREAMBLE = `Before using knowledge_lookup:\n- give a very short natural preamble\n- keep it to a brief clause, not a full explanatory sentence\n- examples: “Let me check.” “One moment.” “Let me look.”\n- do not add extra explanation before calling the tool\n- vary the wording naturally`;
 const V12_LOOKUP_PREAMBLE = `Before using knowledge_lookup:\n- your first sentence should respond to what the caller actually said — a\n  brief, specific acknowledgment or engagement — spoken while the lookup runs\n- use a bare holding phrase ("Let me check.") only when you have nothing\n  substantive to say about their situation\n- never speak a holding phrase and the answer back-to-back; if the result is\n  ready when you begin speaking, skip the holding phrase and just answer`;
+const V14_SILENT_LOOKUP_RULES = `When starting knowledge_lookup:\n- ABSOLUTE SILENCE: the response containing the tool call must contain only\n  the function call, with no audio or text of any kind\n- do not produce a preamble, acknowledgment, transition, process comment, or\n  filler before the result; wait for the tool result before speaking\n- when the result arrives, answer the caller directly and naturally\n- start with the useful answer, not a process comment or generic acknowledgment`;
+const V14_SILENT_LOOKUP_BULLETS = `- emit a function-call-only response with no speech or text\n- do not speak until the tool result has been returned\n`;
 const V13_DATA_CAPTURE_TOOL_RULES = `When using data_capture:\n- emit the tool call silently, with no spoken lead-in, acknowledgment, or status update in the same response\n- after success, continue directly with the next needed question or the exact closing; do not say you are noting, saving, or wrapping up`;
 
 const overlongCompanyDescription = "Wenatchee Valley Glass serves Chelan and Douglas Counties, installing custom glass shower enclosures, premium entry, patio, and interior doors, skylights, sunrooms, and glass railing systems. They offer products from trusted brands, focusing on quality, durability, energy efficiency, and enhancing home aesthetics and improved comfort throughout the home.";
@@ -82,11 +89,12 @@ function restoreOpenAiV3Sections(sections) {
           ? section.default_text
               .replace(`${CORE_FACTS_LOOKUP_RULE}\n\n`, "")
               .replace(`${V13_DATA_CAPTURE_TOOL_RULES}\n\n`, "")
-              .replace(V12_LOOKUP_PREAMBLE, V10_LOOKUP_PREAMBLE)
+              .replace(V14_SILENT_LOOKUP_BULLETS, "")
+              .replace(V14_SILENT_LOOKUP_RULES, V10_LOOKUP_PREAMBLE)
               .replace("You MUST use knowledge_lookup", "Sarah MUST use knowledge_lookup")
           : section.section_id === "personality_tone"
             ? section.default_text
-                .replace(V13_CONCISION_RULES, OPENAI_V3_CONCISION_RULES)
+                .replace(V14_CONCISION_RULES, OPENAI_V3_CONCISION_RULES)
                 .replace(V11_HUMOR_RULE, "")
             : section.section_id === "lead_capture_rules"
               ? section.default_text
@@ -122,13 +130,18 @@ const promptSeed = getDefaultPromptBlueprintSeed();
 const restoredOpenAiV3Sections = restoreOpenAiV3Sections(getPromptSectionSeeds());
 const restoredOpenAiV3ToolDefinitions = {
   ...promptSeed.tool_definitions,
+  knowledge_lookup: {
+    ...promptSeed.tool_definitions.knowledge_lookup,
+    description: OPENAI_V3_KNOWLEDGE_LOOKUP_DESCRIPTION,
+    behavior_mode: "PREAMBLES"
+  },
   data_capture: {
     ...promptSeed.tool_definitions.data_capture,
     description: OPENAI_V3_DATA_CAPTURE_DESCRIPTION,
     behavior_mode: "SILENT_OR_MINIMAL"
   }
 };
-assert.equal(promptSeed.version, 13);
+assert.equal(promptSeed.version, 14);
 assert.equal(stableHash(restoredOpenAiV3Sections), OPENAI_V3_SECTION_HASH, "the pre-Grok OpenAI prompt sections plus only the reviewed by-heart and v11 behavioral changes must remain byte-for-byte unchanged");
 assert.equal(stableHash(restoredOpenAiV3ToolDefinitions), OPENAI_V3_TOOL_DEFINITIONS_HASH, "the pre-Grok OpenAI tool definitions must remain reconstructable byte-for-byte");
 assert.match(promptSeed.tool_definitions.data_capture.description, /Call this tool silently\. Never speak a lead-in, status update, or acknowledgment/);
@@ -136,7 +149,7 @@ assert.equal(promptSeed.tool_definitions.data_capture.behavior_mode, "SILENT");
 assert.equal(stableHash(promptSeed.sample_phrase_groups), OPENAI_V3_SAMPLE_PHRASES_HASH, "the pre-Grok OpenAI sample phrases must remain unchanged");
 const v13CanonicalText = getPromptSectionSeeds().map((section) => section.default_text).join("\n\n");
 for (const exactRule of [
-  V13_CONCISION_RULES,
+  V14_CONCISION_RULES,
   V11_HUMOR_RULE.trim(),
   V13_CAPTURE_TURN_RULE.trim(),
   V11_CALLBACK_CONSENT_RULE.trim(),
@@ -148,13 +161,14 @@ for (const exactRule of [
   V13_NAME_ACCURACY_RULES.trim(),
   V12_PHONE_PLAIN_RULE.trim(),
   V12_CLOSING_INVITATION_RULE.trim(),
-  V12_LOOKUP_PREAMBLE,
+  V14_SILENT_LOOKUP_RULES,
   V13_DATA_CAPTURE_TOOL_RULES
 ]) {
   assert.ok(v13CanonicalText.includes(exactRule), `missing exact v13 rule: ${exactRule}`);
 }
 assert.match(v13CanonicalText, /# Adjacent Requests/);
 assert.doesNotMatch(v13CanonicalText, /give a very short natural preamble/);
+assert.doesNotMatch(v13CanonicalText, /Use a bare holding phrase|spoken while the lookup runs/);
 assert.doesNotMatch(v13CanonicalText, /John (?:Lyman|Layman|Lehman)|Sarah MUST|Sarah’s primary|After that, Sarah|but Sarah/);
 assert.doesNotMatch(v13CanonicalText, /briefly confirm both back|simply confirm the captured details/);
 assert.match(v13CanonicalText, /Do not narrate the close or say you are wrapping up\./);
