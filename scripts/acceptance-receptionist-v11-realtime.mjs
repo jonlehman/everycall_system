@@ -11,7 +11,8 @@ import {
   buildRealtimeSessionUpdateEvent
 } from "../apps/call-gateway/dist/apps/call-gateway/src/realtimePayloads.js";
 
-const APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V16_REALTIME_ACCEPTANCE";
+const APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V17_REALTIME_ACCEPTANCE";
+const V16_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V16_REALTIME_ACCEPTANCE";
 const V15_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V15_REALTIME_ACCEPTANCE";
 const V14_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V14_REALTIME_ACCEPTANCE";
 const V13_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V13_REALTIME_ACCEPTANCE";
@@ -553,7 +554,8 @@ function collectCaseTranscripts(testCase) {
 
 async function runMode(mode) {
   const cases = [];
-  const configuredCasesValue = process.env.EVERYCALL_RECEPTIONIST_V16_ACCEPTANCE_CASES
+  const configuredCasesValue = process.env.EVERYCALL_RECEPTIONIST_V17_ACCEPTANCE_CASES
+    || process.env.EVERYCALL_RECEPTIONIST_V16_ACCEPTANCE_CASES
     || process.env.EVERYCALL_RECEPTIONIST_V15_ACCEPTANCE_CASES
     || process.env.EVERYCALL_RECEPTIONIST_V14_ACCEPTANCE_CASES
     || process.env.EVERYCALL_RECEPTIONIST_V13_ACCEPTANCE_CASES
@@ -587,6 +589,7 @@ async function runMode(mode) {
 
 async function main() {
   if (normalizeText(process.env[APPROVAL_ENV]) !== "1"
+    && normalizeText(process.env[V16_APPROVAL_ENV]) !== "1"
     && normalizeText(process.env[V15_APPROVAL_ENV]) !== "1"
     && normalizeText(process.env[V14_APPROVAL_ENV]) !== "1"
     && normalizeText(process.env[V13_APPROVAL_ENV]) !== "1"
@@ -596,7 +599,8 @@ async function main() {
   }
   if (!normalizeText(process.env.OPENAI_API_KEY)) throw new Error("OPENAI_API_KEY is required");
   const results = [];
-  const modesValue = process.env.EVERYCALL_RECEPTIONIST_V16_ACCEPTANCE_MODES
+  const modesValue = process.env.EVERYCALL_RECEPTIONIST_V17_ACCEPTANCE_MODES
+    || process.env.EVERYCALL_RECEPTIONIST_V16_ACCEPTANCE_MODES
     || process.env.EVERYCALL_RECEPTIONIST_V15_ACCEPTANCE_MODES
     || process.env.EVERYCALL_RECEPTIONIST_V14_ACCEPTANCE_MODES
     || process.env.EVERYCALL_RECEPTIONIST_V13_ACCEPTANCE_MODES

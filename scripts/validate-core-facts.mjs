@@ -145,19 +145,21 @@ const restoredOpenAiV3ToolDefinitions = {
     description: OPENAI_V3_FINISH_SESSION_DESCRIPTION
   }
 };
-assert.equal(promptSeed.version, 16);
+assert.equal(promptSeed.version, 17);
 assert.equal(stableHash(restoredOpenAiV3ToolDefinitions), OPENAI_V3_TOOL_DEFINITIONS_HASH, "the pre-Grok OpenAI tool definitions must remain reconstructable byte-for-byte");
 assert.match(promptSeed.tool_definitions.data_capture.description, /Call this tool silently\. Never speak a lead-in, status update, or acknowledgment/);
 assert.equal(promptSeed.tool_definitions.data_capture.behavior_mode, "SILENT");
 assert.equal(stableHash(promptSeed.sample_phrase_groups), OPENAI_V3_SAMPLE_PHRASES_HASH, "the pre-Grok OpenAI sample phrases must remain unchanged");
-const v16CanonicalText = getPromptSectionSeeds().map((section) => section.default_text).filter(Boolean).join("\n\n");
-assert.match(v16CanonicalText, /^Role & Objective/);
-assert.match(v16CanonicalText, /You are the receptionist, not the technician, estimator, or expert\./);
-assert.match(v16CanonicalText, /Emit a function-call-only response with no speech or text of any kind\./);
-assert.match(v16CanonicalText, /Using data_capture: emit the call silently/);
-assert.match(v16CanonicalText, /Before ending any call, ask exactly: "Do you have any other questions\?"/);
-assert.match(v16CanonicalText, /call finish_session in that same turn/);
-assert.doesNotMatch(v16CanonicalText, /# Priority Order|# Conversation Flow|# Factual Boundaries & Uncertainty/);
+const v17CanonicalText = getPromptSectionSeeds().map((section) => section.default_text).filter(Boolean).join("\n\n");
+assert.match(v17CanonicalText, /^Role & Objective/);
+assert.match(v17CanonicalText, /You are the receptionist, not the technician, estimator, or expert\./);
+assert.match(v17CanonicalText, /Emit a function-call-only response with no speech or text of any kind\./);
+assert.match(v17CanonicalText, /Using data_capture: emit the call silently/);
+assert.match(v17CanonicalText, /When capture is complete, ask the required other-questions checkpoint and wait\./);
+assert.match(v17CanonicalText, /Never continue directly from data_capture to the closing\./);
+assert.match(v17CanonicalText, /Before ending any call, ask exactly: "Do you have any other questions\?"/);
+assert.match(v17CanonicalText, /say exactly: "Thanks for calling\. Goodbye\." In that same turn, call finish_session\./);
+assert.doesNotMatch(v17CanonicalText, /# Priority Order|# Conversation Flow|# Factual Boundaries & Uncertainty/);
 
 const promptProfile = {
   assistant_name: "Sarah",
@@ -172,7 +174,7 @@ const promptProfile = {
 };
 const coreFactBlueprint = {
   ...promptSeed,
-  prompt_blueprint_id: "pb_canonical_receptionist_v16_test"
+  prompt_blueprint_id: "pb_canonical_receptionist_v17_test"
 };
 const emptyCoreFactsPrompt = renderPromptContext(coreFactBlueprint, promptProfile, { coreFactsBlock: "" }).startupPrompt;
 assert.doesNotMatch(emptyCoreFactsPrompt, /What You Know By Heart/);

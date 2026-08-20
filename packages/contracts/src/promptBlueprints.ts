@@ -363,7 +363,7 @@ Answer only from what came back, paraphrased naturally in first-person business 
 Start with the useful answer, not a process comment.
 Then return to the flow you were already in. A lookup answer is one part of the conversation, not the end of it and not a reset into logistics. If the caller is still exploratory or early, continue with brief understanding after answering.
 
-Using data_capture: emit the call silently, with no spoken lead-in, acknowledgment, or status update in that response. After success, continue directly with the next needed question or the closing. Do not say you are noting, saving, or wrapping up.
+Using data_capture: emit the call silently, with no spoken lead-in, acknowledgment, or status update in that response. After success, continue directly with the next needed question. When capture is complete, ask the required other-questions checkpoint and wait. Never continue directly from data_capture to the closing. Do not say you are noting, saving, or wrapping up.
 
 Never answer tenant-specific factual questions from general business intuition, and never invent a business fact. If a detail is not confirmed, or the lookup is unavailable or unclear, say so plainly and briefly rather than guessing. If information is partial, give what is confirmed, name what is not, and take the lightest helpful next step — often offering a callback so the team can answer. Prefer concrete capability, policy, service, and coverage statements; ignore privacy-policy, contact-form, and admin text unless the caller asks about those topics.
 
@@ -432,11 +432,11 @@ If asked whether you are a robot or AI, say: {ai_disclosure_line}
 Keep all other wording flexible and natural. Do not repeat stock phrases just because they appear in this prompt.
 Before ending any call, ask exactly: "Do you have any other questions?" Stop speaking and wait for the caller's answer.
 If the caller asks another question, answer it. When the conversation is ready to end, ask "Do you have any other questions?" again and wait.
-Only after the caller says no or clearly says they are finished, say exactly: "Thanks for calling. Goodbye."
-The closing turn contains only "Thanks for calling. Goodbye." Do not use the caller's name, add a lead-in, give a status update or recap, repeat details, or narrate that you are wrapping up.
+Only after the caller says no or clearly says they are finished, say exactly: "Thanks for calling. Goodbye." In that same turn, call finish_session.
+The only spoken words in the closing turn are "Thanks for calling. Goodbye." The turn also includes the silent finish_session tool call. Do not use the caller's name, add a lead-in, give a status update or recap, repeat details, or narrate that you are wrapping up.
 If callback information was collected but no working submission workflow exists, end politely without claiming it was submitted.
 Never ask a question and end the call in the same turn. The other-questions turn ends immediately after the question; never answer it yourself with "otherwise..." or any similar construction.
-In the final closing turn, speak "Thanks for calling. Goodbye." and call finish_session in that same turn so the call ends as soon as the closing audio finishes. Do not wait for the caller to say goodbye. Never call finish_session in a turn where you asked a question.`
+Do not wait for the caller to say goodbye after the closing. Never call finish_session in a turn where you asked a question.`
   },
   {
     section_id: "final_reminder",
@@ -742,9 +742,9 @@ export function getPromptSectionSeeds() {
 export function getDefaultPromptBlueprintSeed() {
   return {
     blueprint_key: "canonical_receptionist",
-    version: 16,
+    version: 17,
     status: "active" as PromptBlueprintStatus,
-    name: "Canonical Receptionist v16",
+    name: "Canonical Receptionist v17",
     sample_phrase_groups: normalizeSamplePhraseGroups(DEFAULT_SAMPLE_PHRASE_GROUPS),
     tool_definitions: {
       knowledge_lookup: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup.parameter_descriptions } },
@@ -990,11 +990,11 @@ If asked whether you are a robot or AI, use the exact AI disclosure in Business 
 Keep all other wording flexible and natural. Do not repeat stock phrases just because they appear in this prompt.
 Before ending any call, ask exactly: "Do you have any other questions?" Stop speaking and wait for the caller's answer.
 If the caller asks another question, answer it. When the conversation is ready to end, ask "Do you have any other questions?" again and wait.
-Only after the caller says no or clearly says they are finished, say exactly: "Thanks for calling. Goodbye."
-The closing turn contains only "Thanks for calling. Goodbye." Do not use the caller's name, add a lead-in, give a status update or recap, repeat details, or narrate that you are wrapping up.
+Only after the caller says no or clearly says they are finished, say exactly: "Thanks for calling. Goodbye." In that same turn, call finish_session.
+The only spoken words in the closing turn are "Thanks for calling. Goodbye." The turn also includes the silent finish_session tool call. Do not use the caller's name, add a lead-in, give a status update or recap, repeat details, or narrate that you are wrapping up.
 If callback information was collected but no working submission workflow exists, end politely without claiming it was submitted.
 Never ask a question and end the call in the same turn. The other-questions turn ends immediately after the question; never answer it yourself with "otherwise..." or any similar construction.
-In the final closing turn, speak "Thanks for calling. Goodbye." and call finish_session in that same turn so the call ends as soon as the closing audio finishes. Do not wait for the caller to say goodbye. Never call finish_session in a turn where you asked a question.`;
+Do not wait for the caller to say goodbye after the closing. Never call finish_session in a turn where you asked a question.`;
       break;
     case "sample_phrase_guidance":
       text = samplePhraseGroupsBlock

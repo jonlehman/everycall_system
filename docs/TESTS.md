@@ -69,9 +69,9 @@
 - The full behavioral battery covers capture, joke handling, pinned-fact answers, callback decline, cache usage, adjacent requests, exact surname capture, no phone recap, and average assistant turns below 30 words.
 - An adjacent request must emit a silent function-call-only `knowledge_lookup` response before the direct answer. No assistant audio may announce or narrate checking, searching, looking, thinking, or waiting. An unconfirmed result must still lead to an honest callback offer.
 
-## Receptionist v16 Acceptance
-- Run `corepack pnpm validate:receptionist-v16` for the v15 condensed-prompt invariants plus smooth first-name usage and the deterministic immediate-closing sequence.
-- With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V16_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v16:realtime` in both legacy and layered prompt modes.
+## Receptionist v17 Acceptance
+- Run `corepack pnpm validate:receptionist-v17` for the condensed-prompt invariants, smooth first-name usage, the deterministic immediate-closing sequence, and the prohibition on jumping from `data_capture` directly to closing.
+- With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V17_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v17:realtime` in both legacy and layered prompt modes.
 - Name capture must begin the surname-spelling question with the caller's first name. It must not say `Thanks` before the name or put a comma, dash, or deliberate pause immediately after it. After spelling, the surname is never spoken and the first name is not used as a routine acknowledgment or in the closing.
 - Before ending, the assistant must ask exactly `Do you have any other questions?`, stop, and wait. A question in response is answered before the checkpoint is asked again.
 - After the caller says no or clearly says they are finished, the final turn must contain exactly `Thanks for calling. Goodbye.` plus `finish_session`. It must not wait for another caller goodbye, and the gateway must reject a final turn that skipped the checkpoint.
