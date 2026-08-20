@@ -11,7 +11,8 @@ import {
   buildRealtimeSessionUpdateEvent
 } from "../apps/call-gateway/dist/apps/call-gateway/src/realtimePayloads.js";
 
-const APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V17_REALTIME_ACCEPTANCE";
+const APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V18_REALTIME_ACCEPTANCE";
+const V17_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V17_REALTIME_ACCEPTANCE";
 const V16_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V16_REALTIME_ACCEPTANCE";
 const V15_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V15_REALTIME_ACCEPTANCE";
 const V14_APPROVAL_ENV = "EVERYCALL_RUN_RECEPTIONIST_V14_REALTIME_ACCEPTANCE";
@@ -71,7 +72,7 @@ function containsOtherQuestionsCheckpoint(value) {
 }
 
 function isExactImmediateClosing(value) {
-  return normalizeText(value).toLowerCase() === "thanks for calling. goodbye.";
+  return normalizeText(value).toLowerCase() === `thanks for calling, ${CAPTURE_FIRST_NAME.toLowerCase()}. have a good one.`;
 }
 
 function containsOptionalNotePrompt(value) {
@@ -407,8 +408,9 @@ async function runCaptureCase(mode) {
     const everyTurn = [...callback.turns, nameTurn, ...nameTurns, confirmationTurn, checkpointTurn, closingTurn];
     checks.push(createCheck("finish never shares a question turn", everyTurn.every((turn) =>
       !containsQuestion(turn.text) || !turn.toolCalls.some((toolCall) => toolCall.name === "finish_session"))));
-    checks.push(createCheck("close does not use the caller's name",
-      !new RegExp(`\\b${CAPTURE_FIRST_NAME}\\b|\\b${CAPTURE_LAST_NAME}\\b`, "i").test(closingTurn.text),
+    checks.push(createCheck("close uses only the caller's first name",
+      new RegExp(`^Thanks for calling, ${CAPTURE_FIRST_NAME}\\. Have a good one\\.$`, "i").test(normalizeText(closingTurn.text))
+      && !new RegExp(`\\b${CAPTURE_LAST_NAME}\\b`, "i").test(closingTurn.text),
       { observed: closingTurn.text }));
     checks.push(createCheck("close does not repeat the confirmed phone number",
       !normalizeDigits(closingTurn.text).includes(CAPTURE_PHONE), { observed: closingTurn.text }));
@@ -589,6 +591,7 @@ async function runMode(mode) {
 
 async function main() {
   if (normalizeText(process.env[APPROVAL_ENV]) !== "1"
+    && normalizeText(process.env[V17_APPROVAL_ENV]) !== "1"
     && normalizeText(process.env[V16_APPROVAL_ENV]) !== "1"
     && normalizeText(process.env[V15_APPROVAL_ENV]) !== "1"
     && normalizeText(process.env[V14_APPROVAL_ENV]) !== "1"

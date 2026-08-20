@@ -50,7 +50,7 @@ export function assistantTurnContainsQuestion(transcript: unknown) {
 
 export function assistantTurnContainsClosing(transcript: unknown) {
   const text = normalizeText(transcript);
-  return /\bthanks for calling\b[.!\s]*\bgoodbye\b[.!]?$/i.test(text);
+  return /\bthanks for calling(?:,\s*[^.!?]+)?\.\s*have a good one\.[.!]?$/i.test(text);
 }
 
 export function callerClearlyFinished(transcript: unknown) {

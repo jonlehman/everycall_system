@@ -76,6 +76,11 @@
 - Before ending, the assistant must ask exactly `Do you have any other questions?`, stop, and wait. A question in response is answered before the checkpoint is asked again.
 - After the caller says no or clearly says they are finished, the final turn must contain exactly `Thanks for calling. Goodbye.` plus `finish_session`. It must not wait for another caller goodbye. The behavioral battery verifies the checkpoint; the gateway treats the Realtime model's `finish_session` invocation as authoritative and never rejects it from transcript-derived state.
 
+## Receptionist v18 Acceptance
+- Run `corepack pnpm validate:receptionist-v18` for every v17 invariant plus the first-name close and the prohibition on a function-call-only `finish_session` response.
+- With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V18_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v18:realtime` in both legacy and layered prompt modes.
+- After the caller answers the required other-questions checkpoint with no, the same model response must say exactly `Thanks for calling, FIRSTNAME. Have a good one.` and emit `finish_session`. If no confirmed first name is known, the exact fallback is `Thanks for calling. Have a good one.` The surname, phone number, recap, and narration remain forbidden.
+
 Use these after any change to prompts, knowledge lookup, or barge-in handling.
 
 The second 8/19 WVG call contained one possible early VAD handoff (“Got it—a cracked pane” before the caller had finished). Record recurrence during canaries; do not retune turn detection from this single observation.

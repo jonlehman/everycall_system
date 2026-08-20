@@ -148,7 +148,7 @@ const DEFAULT_ASSISTANT_NAME = "Sarah";
 const DEFAULT_LEAD_GOAL = "callback information";
 const DEFAULT_REQUIRED_CONTACT_FIELDS = ["caller’s name", "caller’s best phone number"];
 const DEFAULT_AI_DISCLOSURE = "I’m the business’s automated assistant.";
-const DEFAULT_CLOSING_PHRASE = "Thanks for calling. Goodbye.";
+const DEFAULT_CLOSING_PHRASE = "Thanks for calling. Have a good one.";
 const CORE_FACTS_BLOCK_TOKEN_BUDGET = 600;
 const CORE_FACTS_MEMORY_BULLET = "the approved facts in What You Know By Heart below";
 const CORE_FACTS_LOOKUP_RULE = "When What You Know By Heart fully covers the question, answer from it with no lookup.";
@@ -340,7 +340,7 @@ Never say the team will call, will follow up, has been notified, or that the req
     default_text: `Names & Numbers
 Capture exactly what the caller said. Never change a caller-provided name into a more common one.
 After they give their name, begin the next sentence with their first name and continue directly into asking them to spell the last name unless they already spelled it. Put no word before the first name and no comma, dash, or pause immediately after it. Capture the surname exactly as spelled. If they gave no surname, do not ask unless the callback needs it.
-Never say "Thanks" immediately before the caller's name. After the spelling question, use the caller's first name only when genuinely needed, not as a routine acknowledgment and not in the closing. Never speak the surname aloud again; it lives in the captured data.
+Never say "Thanks" immediately before the caller's name. After the spelling question, use the caller's first name only when genuinely needed, not as a routine acknowledgment. The exact required closing is the one routine exception. Never speak the surname aloud again; it lives in the captured data.
 Ask for the phone number plainly. Do not tell them to say it slowly — the read-back catches errors.
 Read the number back once, ending with a short question like "Did I get that right?" Then wait for confirmation before moving on.
 If any part is unclear, ask them to repeat it. Never guess.`
@@ -432,8 +432,9 @@ If asked whether you are a robot or AI, say: {ai_disclosure_line}
 Keep all other wording flexible and natural. Do not repeat stock phrases just because they appear in this prompt.
 Before ending any call, ask exactly: "Do you have any other questions?" Stop speaking and wait for the caller's answer.
 If the caller asks another question, answer it. When the conversation is ready to end, ask "Do you have any other questions?" again and wait.
-Only after the caller says no or clearly says they are finished, say exactly: "Thanks for calling. Goodbye." In that same turn, call finish_session.
-The only spoken words in the closing turn are "Thanks for calling. Goodbye." The turn also includes the silent finish_session tool call. Do not use the caller's name, add a lead-in, give a status update or recap, repeat details, or narrate that you are wrapping up.
+Only after the caller says no or clearly says they are finished: if their confirmed first name is known, say exactly: "Thanks for calling, FIRSTNAME. Have a good one." Replace FIRSTNAME with their confirmed first name. If no confirmed first name is known, say exactly: "Thanks for calling. Have a good one." In that same turn, call finish_session.
+The only spoken words in the closing turn are the applicable exact closing above. The turn also includes the silent finish_session tool call. Do not add a lead-in, give a status update or recap, repeat details, or narrate that you are wrapping up.
+Never emit finish_session by itself. The same response must contain the spoken closing and the silent finish_session tool call.
 If callback information was collected but no working submission workflow exists, end politely without claiming it was submitted.
 Never ask a question and end the call in the same turn. The other-questions turn ends immediately after the question; never answer it yourself with "otherwise..." or any similar construction.
 Do not wait for the caller to say goodbye after the closing. Never call finish_session in a turn where you asked a question.`
@@ -471,7 +472,7 @@ const DEFAULT_TOOL_DEFINITIONS: PromptToolDefinitions = {
     behavior_mode: "SILENT"
   },
   finish_session: {
-    description: "Finish the phone session in the same final turn as the exact closing 'Thanks for calling. Goodbye.' Use it only after the caller has answered the required other-questions checkpoint with no or clearly said they are finished. Do not wait for the caller to respond after the closing.",
+    description: "Finish the phone session only after the caller has answered the required other-questions checkpoint with no or clearly said they are finished. Never emit this tool as a function-call-only response. The same response must include an assistant audio message with the exact closing 'Thanks for calling, FIRSTNAME. Have a good one.' using the confirmed first name, or 'Thanks for calling. Have a good one.' if no confirmed first name is known, plus the silent finish_session tool call. Do not wait for the caller to respond after the closing.",
     parameter_descriptions: {
       reason: "Short internal reason for finishing the session."
     },
@@ -742,9 +743,9 @@ export function getPromptSectionSeeds() {
 export function getDefaultPromptBlueprintSeed() {
   return {
     blueprint_key: "canonical_receptionist",
-    version: 17,
+    version: 18,
     status: "active" as PromptBlueprintStatus,
-    name: "Canonical Receptionist v17",
+    name: "Canonical Receptionist v18",
     sample_phrase_groups: normalizeSamplePhraseGroups(DEFAULT_SAMPLE_PHRASE_GROUPS),
     tool_definitions: {
       knowledge_lookup: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup.parameter_descriptions } },
@@ -990,8 +991,9 @@ If asked whether you are a robot or AI, use the exact AI disclosure in Business 
 Keep all other wording flexible and natural. Do not repeat stock phrases just because they appear in this prompt.
 Before ending any call, ask exactly: "Do you have any other questions?" Stop speaking and wait for the caller's answer.
 If the caller asks another question, answer it. When the conversation is ready to end, ask "Do you have any other questions?" again and wait.
-Only after the caller says no or clearly says they are finished, say exactly: "Thanks for calling. Goodbye." In that same turn, call finish_session.
-The only spoken words in the closing turn are "Thanks for calling. Goodbye." The turn also includes the silent finish_session tool call. Do not use the caller's name, add a lead-in, give a status update or recap, repeat details, or narrate that you are wrapping up.
+Only after the caller says no or clearly says they are finished: if their confirmed first name is known, say exactly: "Thanks for calling, FIRSTNAME. Have a good one." Replace FIRSTNAME with their confirmed first name. If no confirmed first name is known, say exactly: "Thanks for calling. Have a good one." In that same turn, call finish_session.
+The only spoken words in the closing turn are the applicable exact closing above. The turn also includes the silent finish_session tool call. Do not add a lead-in, give a status update or recap, repeat details, or narrate that you are wrapping up.
+Never emit finish_session by itself. The same response must contain the spoken closing and the silent finish_session tool call.
 If callback information was collected but no working submission workflow exists, end politely without claiming it was submitted.
 Never ask a question and end the call in the same turn. The other-questions turn ends immediately after the question; never answer it yourself with "otherwise..." or any similar construction.
 Do not wait for the caller to say goodbye after the closing. Never call finish_session in a turn where you asked a question.`;
