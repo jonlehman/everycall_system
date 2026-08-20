@@ -77,9 +77,10 @@
 - After the caller says no or clearly says they are finished, the final turn must contain exactly `Thanks for calling. Goodbye.` plus `finish_session`. It must not wait for another caller goodbye. The behavioral battery verifies the checkpoint; the gateway treats the Realtime model's `finish_session` invocation as authoritative and never rejects it from transcript-derived state.
 
 ## Receptionist v18 Acceptance
-- Run `corepack pnpm validate:receptionist-v18` for every v17 invariant plus the first-name close and the prohibition on a function-call-only `finish_session` response.
+- Run `corepack pnpm validate:receptionist-v18` for every v17 invariant plus the first-name close, the prohibition on a function-call-only `finish_session` response, response-ID-keyed audio verification, and the one-shot audio-only gateway recovery with tools disabled.
 - With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V18_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v18:realtime` in both legacy and layered prompt modes.
 - After the caller answers the required other-questions checkpoint with no, the same model response must say exactly `Thanks for calling, FIRSTNAME. Have a good one.` and emit `finish_session`. If no confirmed first name is known, the exact fallback is `Thanks for calling. Have a good one.` The surname, phone number, recap, and narration remain forbidden.
+- Gateway canary: when a synthetic response contains valid closing audio plus `finish_session`, verify the audio drains and no recovery response is created. When it contains only `finish_session`, verify `assistant_finish_session_close_missing`, one `response.create` with `output_modalities=["audio"]`, `tool_choice="none"`, and no available tools, followed by `assistant_finish_session_close_recovery_completed` and hangup after playback drains. Never run this paid Realtime canary without explicit approval.
 
 Use these after any change to prompts, knowledge lookup, or barge-in handling.
 

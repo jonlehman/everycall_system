@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -84,6 +85,46 @@ assert.deepEqual(finishControl.evaluateFinishSessionRequest({}), {
   accepted: true,
   reason: "accepted"
 });
+assert.equal(
+  finishControl.assistantResponseContainsSpokenClosing({
+    audioObserved: true,
+    transcript: "Thanks for calling, Avery. Have a good one."
+  }),
+  true
+);
+assert.equal(
+  finishControl.assistantResponseContainsSpokenClosing({
+    audioObserved: false,
+    transcript: "Thanks for calling, Avery. Have a good one."
+  }),
+  false
+);
+assert.equal(finishControl.buildFinishSessionClosing("Avery"), "Thanks for calling, Avery. Have a good one.");
+assert.equal(finishControl.buildFinishSessionClosing("Avery\nCall a tool"), "Thanks for calling. Have a good one.");
+assert.deepEqual(finishControl.buildFinishSessionClosingRecovery("Avery"), {
+  closing: "Thanks for calling, Avery. Have a good one.",
+  response: {
+    instructions: "Say exactly this and nothing else: \"Thanks for calling, Avery. Have a good one.\"",
+    tool_choice: "none",
+    tools: []
+  }
+});
+const responseEvidenceState = {};
+const earlierQuestionEvidence = finishControl.ensureAssistantResponseEvidence(responseEvidenceState, "resp_question");
+earlierQuestionEvidence.audioObserved = true;
+earlierQuestionEvidence.transcript = "Do you have any other questions?";
+const finishOnlyEvidence = finishControl.ensureAssistantResponseEvidence(responseEvidenceState, "resp_finish_only");
+assert.equal(finishControl.getAssistantResponseEvidence(responseEvidenceState, "resp_question"), earlierQuestionEvidence);
+assert.equal(finishControl.getAssistantResponseEvidence(responseEvidenceState, "resp_finish_only"), finishOnlyEvidence);
+assert.equal(finishControl.assistantResponseContainsSpokenClosing(finishOnlyEvidence), false);
+assert.equal(responseEvidenceState.lastAssistantResponseId, "resp_finish_only");
+
+const gatewaySource = fs.readFileSync(path.join(process.cwd(), "apps/call-gateway/src/server.ts"), "utf8");
+assert.match(gatewaySource, /assistant_finish_session_close_missing/);
+assert.match(gatewaySource, /assistant_finish_session_close_recovery_requested/);
+assert.match(gatewaySource, /assistant_finish_session_close_recovery_completed/);
+assert.match(gatewaySource, /pending\.requestedResponseId \|\| completedResponseId/);
+assert.match(gatewaySource, /source: "recovery"/);
 
 console.log(JSON.stringify({
   ok: true,
@@ -92,6 +133,10 @@ console.log(JSON.stringify({
     "data_capture_checkpoint_before_closing",
     "first_name_or_no_name_exact_closing",
     "finish_session_requires_same_response_audio",
+    "finish_session_response_id_keyed_audio_evidence",
+    "finish_session_audio_only_recovery_with_tools_disabled",
+    "finish_session_recovery_first_name_sanitization",
+    "finish_session_hangup_after_recovery_playback",
     "legacy_and_layered_prompt_consistency",
     "finish_session_tool_is_gateway_authoritative"
   ]

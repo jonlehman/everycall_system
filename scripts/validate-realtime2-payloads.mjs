@@ -126,6 +126,15 @@ assert.deepEqual(realtime2Response.response.output_modalities, ["audio"]);
 assert.equal(realtime2Response.response.modalities, undefined);
 assert.equal(realtime2Response.response.instructions, "Say hello.");
 
+const closingRecoveryResponse = realtime.buildRealtimeResponseCreateEvent({
+  instructions: "Say exactly the required closing.",
+  tool_choice: "none",
+  tools: []
+}, "realtime2");
+assert.deepEqual(closingRecoveryResponse.response.output_modalities, ["audio"]);
+assert.equal(closingRecoveryResponse.response.tool_choice, "none");
+assert.deepEqual(closingRecoveryResponse.response.tools, []);
+
 const legacyResponse = realtime.buildRealtimeResponseCreateEvent({ instructions: "Say hello." }, "legacy");
 assert.deepEqual(legacyResponse.response.modalities, ["audio", "text"]);
 assert.equal(legacyResponse.response.output_modalities, undefined);

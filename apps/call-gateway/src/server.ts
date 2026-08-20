@@ -66,7 +66,13 @@ import {
   type RealtimeApiShape
 } from "./realtimePayloads.js";
 import {
+  assistantResponseContainsSpokenClosing,
+  buildFinishSessionClosingRecovery,
+  ensureAssistantResponseEvidence,
   evaluateFinishSessionRequest,
+  getAssistantResponseEvidence,
+  type AssistantResponseEvidence,
+  normalizeConfirmedFirstName,
   noteFinishSessionDialogueTurn
 } from "./finishSessionControl.js";
 import { buildStableOpenAiSafetyIdentifier } from "./openAiSafetyIdentifier.js";
@@ -100,6 +106,8 @@ const configuredOutboundJitterBufferFrames = Number(
 const outboundJitterBufferFrames = Number.isFinite(configuredOutboundJitterBufferFrames)
   ? Math.max(1, Math.floor(configuredOutboundJitterBufferFrames))
   : defaultOutboundJitterBufferFrames;
+const finishSessionPlaybackTailMs = Math.max(300, (outboundJitterBufferFrames * outboundAudioFrameMs) + 100);
+const finishSessionRecoveryTimeoutMs = 8000;
 const realtimeDebug = String(process.env.REALTIME_DEBUG || "false").toLowerCase() === "true";
 const realtimeTrace = String(process.env.REALTIME_TRACE || "false").toLowerCase() === "true";
 const verboseGatewayLogging = String(process.env.GATEWAY_VERBOSE_LOGGING || "false").toLowerCase() === "true";
@@ -117,6 +125,11 @@ const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "openai_realtime_session_updated",
   "openai_realtime_response_done",
   "assistant_response_canceled",
+  "assistant_finish_session_accepted",
+  "assistant_finish_session_close_missing",
+  "assistant_finish_session_close_recovery_requested",
+  "assistant_finish_session_close_recovery_completed",
+  "assistant_finish_session_playback_drained",
   "telnyx_bidirectional_payload_mode_normalized"
 ]);
 
@@ -145,6 +158,21 @@ type PendingFinishSession = {
   callId: string;
   reason: string;
   requestedResponseId: string | null;
+};
+
+type PendingClosingRecovery = {
+  callId: string;
+  reason: string;
+  closing: string;
+  responseId: string | null;
+  requestedAtMs: number;
+};
+
+type PendingFinishHangup = {
+  callId: string;
+  reason: string;
+  responseId: string;
+  source: "model" | "recovery";
 };
 
 type PendingToolSpeechWait = {
@@ -292,6 +320,10 @@ type StreamSession = {
   previousAssistantTranscript?: string;
   lastAssistantTranscript?: string;
   pendingFinishSession?: PendingFinishSession | null;
+  assistantResponseEvidence?: Map<string, AssistantResponseEvidence>;
+  lastAssistantResponseId?: string | null;
+  pendingClosingRecovery?: PendingClosingRecovery | null;
+  pendingFinishHangup?: PendingFinishHangup | null;
 };
 
 const streamSessions = new Map<string, StreamSession>();
@@ -351,6 +383,10 @@ function createStreamSession(
     previousAssistantTranscript: "",
     lastAssistantTranscript: "",
     pendingFinishSession: null,
+    assistantResponseEvidence: new Map<string, AssistantResponseEvidence>(),
+    lastAssistantResponseId: null,
+    pendingClosingRecovery: null,
+    pendingFinishHangup: null,
     ...(realtimeLogPath ? { realtimeLogPath } : {})
   };
 }
@@ -729,6 +765,56 @@ function createAudioTextResponseEvent(response: Record<string, unknown> = {}, ap
   return buildRealtimeResponseCreateEvent(response, apiShape);
 }
 
+function normalizeResponseId(value: unknown) {
+  return String(value || "").trim();
+}
+
+function getConfirmedFirstName(session: StreamSession) {
+  const capturedFields = session.knowledgeCallState?.captured_fields;
+  if (!capturedFields || typeof capturedFields !== "object" || Array.isArray(capturedFields)) return "";
+  const fields = capturedFields as Record<string, unknown>;
+  return fields.first_name ?? fields.firstName ?? "";
+}
+
+function armFinishSessionSafetyTimeout(session: StreamSession, reason: string) {
+  if (session.hangupTimer) clearTimeout(session.hangupTimer);
+  session.hangupTimer = setTimeout(() => {
+    logError("assistant_finish_session_close_recovery_timeout", {
+      callSid: session.callSid,
+      reason,
+      timeoutMs: finishSessionRecoveryTimeoutMs
+    });
+    void endCallSession(session, "assistant_finish_session_close_timeout", true);
+  }, finishSessionRecoveryTimeoutMs);
+}
+
+function scheduleFinishSessionHangupAfterPlayback(session: StreamSession) {
+  const pending = session.pendingFinishHangup;
+  if (!pending) return false;
+  const evidence = getAssistantResponseEvidence(session, pending.responseId);
+  if (!evidence?.playbackDrained && hasPendingAssistantAudio(session)) return false;
+
+  session.pendingFinishHangup = null;
+  if (session.hangupTimer) clearTimeout(session.hangupTimer);
+  session.hangupTimer = setTimeout(() => {
+    void endCallSession(session, "assistant_finish_session", true);
+  }, finishSessionPlaybackTailMs);
+  logInfo("assistant_finish_session_playback_drained", {
+    callSid: session.callSid,
+    callId: pending.callId,
+    responseId: pending.responseId,
+    source: pending.source,
+    tailMs: finishSessionPlaybackTailMs
+  });
+  return true;
+}
+
+function noteAssistantResponsePlaybackDrained(session: StreamSession, responseId: unknown) {
+  const evidence = ensureAssistantResponseEvidence(session, responseId);
+  if (evidence) evidence.playbackDrained = true;
+  scheduleFinishSessionHangupAfterPlayback(session);
+}
+
 function buildOpenAiSafetyIdentifier(session: StreamSession) {
   return buildStableOpenAiSafetyIdentifier({
     callerNumber: session.callerNumber,
@@ -993,8 +1079,10 @@ function startOutputPump(session: StreamSession) {
         session.outputBuffer = Buffer.alloc(0);
       }
       if (!(session.outputBuffer && session.outputBuffer.length > 0) && !session.currentResponseId) {
+        const drainedResponseId = session.audioPumpTrace?.responseId || session.lastAssistantResponseId || null;
         logAudioPumpTraceSummary(session, "playback_drained");
         noteAssistantPlaybackDrained(session);
+        noteAssistantResponsePlaybackDrained(session, drainedResponseId);
       }
       return;
     }
@@ -1945,19 +2033,82 @@ function logRealtimeToolPayloads(session: StreamSession, params: {
   });
 }
 
-async function finalizePendingFinishSession(session: StreamSession) {
+function requestFinishSessionClosingRecovery(session: StreamSession, pending: PendingFinishSession) {
+  const confirmedFirstName = normalizeConfirmedFirstName(getConfirmedFirstName(session));
+  const recovery = buildFinishSessionClosingRecovery(confirmedFirstName);
+  session.pendingClosingRecovery = {
+    callId: pending.callId,
+    reason: pending.reason,
+    closing: recovery.closing,
+    responseId: null,
+    requestedAtMs: performance.now()
+  };
+  armFinishSessionSafetyTimeout(session, "recovery_response_timeout");
+  requestAssistantResponse(
+    session,
+    "finish_session_close_recovery",
+    recovery.response,
+    `finish_session_close_recovery:${pending.callId}`
+  );
+  logInfo("assistant_finish_session_close_recovery_requested", {
+    callSid: session.callSid,
+    callId: pending.callId,
+    hasConfirmedFirstName: Boolean(confirmedFirstName),
+    timeoutMs: finishSessionRecoveryTimeoutMs
+  });
+}
+
+function finalizePendingClosingRecoveryResponse(session: StreamSession, completedResponseId: string | null) {
+  const pending = session.pendingClosingRecovery;
+  if (!pending) return;
+  const responseId = normalizeResponseId(completedResponseId || pending.responseId);
+  if (pending.responseId && responseId && pending.responseId !== responseId) return;
+  if (!responseId) return;
+
+  session.pendingClosingRecovery = null;
+  const evidence = getAssistantResponseEvidence(session, responseId);
+  const closingMatched = assistantResponseContainsSpokenClosing(evidence);
+  if (!evidence?.audioObserved) {
+    logError("assistant_finish_session_close_recovery_failed", {
+      callSid: session.callSid,
+      callId: pending.callId,
+      responseId,
+      reason: "no_audio_observed"
+    });
+    if (session.hangupTimer) clearTimeout(session.hangupTimer);
+    session.hangupTimer = setTimeout(() => {
+      void endCallSession(session, "assistant_finish_session_close_recovery_failed", true);
+    }, finishSessionPlaybackTailMs);
+    return;
+  }
+
+  session.pendingFinishHangup = {
+    callId: pending.callId,
+    reason: pending.reason,
+    responseId,
+    source: "recovery"
+  };
+  armFinishSessionSafetyTimeout(session, "recovery_playback_timeout");
+  scheduleFinishSessionHangupAfterPlayback(session);
+  logInfo("assistant_finish_session_close_recovery_completed", {
+    callSid: session.callSid,
+    callId: pending.callId,
+    responseId,
+    closingMatched,
+    recoveryMs: Number((performance.now() - pending.requestedAtMs).toFixed(3))
+  });
+}
+
+async function finalizePendingFinishSession(session: StreamSession, completedResponseId: string | null) {
   const pending = session.pendingFinishSession;
   if (!pending) return;
+  const responseId = normalizeResponseId(pending.requestedResponseId || completedResponseId);
+  if (pending.requestedResponseId && completedResponseId && pending.requestedResponseId !== completedResponseId) {
+    return;
+  }
   session.pendingFinishSession = null;
   const decision = evaluateFinishSessionRequest(session);
   const output = { status: "accepted", reason: pending.reason };
-  await forwardToolResult(
-    session.callSid,
-    session.tenantKey,
-    "finish_session",
-    output,
-    { status: decision.reason, errors: [] }
-  );
   const toolResultEvent = createFunctionCallOutputEvent(pending.callId, output);
   sendOpenAiEvent(session.openAiWs, toolResultEvent);
   logRealtimeToolPayloads(session, {
@@ -1966,18 +2117,43 @@ async function finalizePendingFinishSession(session: StreamSession) {
     callId: pending.callId,
     toolResultEvent
   });
-  const queuedFrames = session.outputQueue?.length || 0;
-  const drainMs = Math.min(Math.max(queuedFrames * 20 + 1200, 1200), 4000);
-  if (session.hangupTimer) clearTimeout(session.hangupTimer);
-  session.hangupTimer = setTimeout(() => {
-    void endCallSession(session, "assistant_finish_session", true);
-  }, drainMs);
+
+  const evidence = getAssistantResponseEvidence(session, responseId);
+  const closingAudioObserved = assistantResponseContainsSpokenClosing(evidence);
+  if (closingAudioObserved && responseId) {
+    session.pendingFinishHangup = {
+      callId: pending.callId,
+      reason: pending.reason,
+      responseId,
+      source: "model"
+    };
+    armFinishSessionSafetyTimeout(session, "model_close_playback_timeout");
+    scheduleFinishSessionHangupAfterPlayback(session);
+  } else {
+    logInfo("assistant_finish_session_close_missing", {
+      callSid: session.callSid,
+      callId: pending.callId,
+      responseId: responseId || undefined,
+      audioObserved: Boolean(evidence?.audioObserved),
+      transcriptObserved: Boolean(evidence?.transcript)
+    });
+    requestFinishSessionClosingRecovery(session, pending);
+  }
   logInfo("assistant_finish_session_accepted", {
     callSid: session.callSid,
     callId: pending.callId,
     reason: pending.reason,
-    drainMs
+    responseId: responseId || undefined,
+    closingAudioObserved,
+    recoveryRequested: !closingAudioObserved
   });
+  await forwardToolResult(
+    session.callSid,
+    session.tenantKey,
+    "finish_session",
+    output,
+    { status: decision.reason, errors: [] }
+  );
 }
 
 async function executeToolCall(session: StreamSession, name: string, callId: string, argsText: string) {
@@ -2352,7 +2528,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     session.pendingFinishSession = {
       callId,
       reason,
-      requestedResponseId: session.currentResponseId || null
+      requestedResponseId: session.currentResponseId || session.lastAssistantResponseId || null
     };
     return;
   }
@@ -2533,7 +2709,12 @@ function connectOpenAiRealtime(session: StreamSession) {
     }
 
     if (type === "response.created") {
-      ensureAudioPumpTrace(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
+      const responseId = normalizeResponseId(payloadMsg?.response?.id || payloadMsg?.response_id) || null;
+      ensureAssistantResponseEvidence(session, responseId);
+      if (session.pendingClosingRecovery && !session.pendingClosingRecovery.responseId && responseId) {
+        session.pendingClosingRecovery.responseId = responseId;
+      }
+      ensureAudioPumpTrace(session, responseId);
       if (session.pendingToolSpeechWait && !session.pendingToolSpeechWait.responseId) {
         session.pendingToolSpeechWait.responseCreatedAtMs = performance.now();
         session.pendingToolSpeechWait.responseId = payloadMsg?.response?.id || payloadMsg?.response_id || null;
@@ -2556,18 +2737,24 @@ function connectOpenAiRealtime(session: StreamSession) {
           payload: payloadMsg
         });
       }
-      markAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
-      noteAssistantResponseCreated(session, payloadMsg?.response?.id || payloadMsg?.response_id || null);
+      markAssistantResponseCreated(session, responseId);
+      noteAssistantResponseCreated(session, responseId);
       logInfo("openai_realtime_response_created", {
         callSid: session.callSid,
-        responseId: payloadMsg?.response?.id || payloadMsg?.response_id
+        responseId: responseId || undefined
       });
       return;
     }
 
     if (type === "response.done") {
+      const completedResponseId = normalizeResponseId(payloadMsg?.response?.id || payloadMsg?.response_id) || null;
+      const responseEvidence = ensureAssistantResponseEvidence(session, completedResponseId);
+      if (responseEvidence) responseEvidence.responseDone = true;
       markAssistantResponseFinished(session);
       noteAssistantResponseCompleted(session);
+      if ((session.outputQueue?.length || 0) > 0) {
+        startOutputPump(session);
+      }
       const statusDetails = payloadMsg?.response?.status_details || payloadMsg?.status_details;
       const usage = collectUsage(payloadMsg);
       const totals = session.usageTotals || emptyUsageTotals();
@@ -2622,7 +2809,8 @@ function connectOpenAiRealtime(session: StreamSession) {
           session.pendingToolSpeechWait = null;
         }
       }
-      await finalizePendingFinishSession(session);
+      finalizePendingClosingRecoveryResponse(session, completedResponseId);
+      await finalizePendingFinishSession(session, completedResponseId);
       flushQueuedAssistantResponses(session);
       return;
     }
@@ -2644,6 +2832,13 @@ function connectOpenAiRealtime(session: StreamSession) {
     if (type === "response.output_audio.delta" || type === "response.audio.delta" || type === "output_audio.delta") {
       const audioBase64 = payloadMsg.delta || payloadMsg.audio?.delta || payloadMsg.audio?.data || payloadMsg.data || "";
       if (audioBase64) {
+        const audioChunk = Buffer.from(audioBase64, "base64");
+        if (audioChunk.length === 0) return;
+        const responseEvidence = ensureAssistantResponseEvidence(
+          session,
+          payloadMsg?.response_id || payloadMsg?.response?.id || null
+        );
+        if (responseEvidence) responseEvidence.audioObserved = true;
         if (session.pendingToolSpeechWait && !session.pendingToolSpeechWait.firstAudioLogged) {
           const waitMs = Number((performance.now() - session.pendingToolSpeechWait.requestedAtMs).toFixed(3));
           const responseCreatedToFirstAudioMs = session.pendingToolSpeechWait.responseCreatedAtMs
@@ -2671,13 +2866,18 @@ function connectOpenAiRealtime(session: StreamSession) {
         }
         noteAssistantResponseCreated(session, payloadMsg?.response_id || payloadMsg?.response?.id || null);
         noteAssistantOutputItem(session, payloadMsg?.item_id || payloadMsg?.item?.id || payloadMsg?.output_item?.id || null);
-        enqueueOutputPcm(session, Buffer.from(audioBase64, "base64"));
+        enqueueOutputPcm(session, audioChunk);
       }
       return;
     }
 
     if (type === "response.output_audio_transcript.done" || type === "response.audio_transcript.done") {
       const transcript = payloadMsg.transcript || payloadMsg.text || payloadMsg.data || "";
+      const responseEvidence = ensureAssistantResponseEvidence(
+        session,
+        payloadMsg?.response_id || payloadMsg?.response?.id || null
+      );
+      if (responseEvidence && transcript) responseEvidence.transcript = String(transcript).replace(/\s+/g, " ").trim();
       if (transcript) noteFinishSessionDialogueTurn(session, "assistant", String(transcript));
       if (transcript && pool) {
         await pool.query(

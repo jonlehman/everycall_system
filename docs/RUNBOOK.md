@@ -9,6 +9,7 @@
 ## Logs
 - Render service logs for call-gateway
 - Look for: `openai_realtime_session_updated`, `assistant_response_canceled`, `openai_realtime_response_done`, `assistant_finish_session_accepted`
+- A normal close logs `assistant_finish_session_accepted` with `closingAudioObserved=true`, then `assistant_finish_session_playback_drained`. A recovered tool-only close logs `assistant_finish_session_close_missing`, `assistant_finish_session_close_recovery_requested`, `assistant_finish_session_close_recovery_completed`, and then playback drained. `assistant_finish_session_close_recovery_failed` or `_timeout` requires investigation.
 - `call_gateway_started` reports the effective outbound jitter buffer. The current production trial is 13 PCMU frames / 260 ms, configured with `TELNYX_OUTBOUND_BUFFER_FRAMES=13`.
 - `openai_realtime_session_start` reports `reasoningEffort`. Wenatchee Valley Glass is the scoped `low` trial; other tenants retain the model default unless their runtime profile explicitly overrides it.
 - For the GPT-Realtime-2.1 rollout/canary, enable `REALTIME_TRACE=true` only on staging or a controlled canary and confirm `openai_realtime_session_start` logs `model=gpt-realtime-2.1` and `apiShape=realtime2`.
@@ -17,7 +18,7 @@
 
 ## Common Issues
 - Assistant interrupts caller: check barge-in cancel logic and audio queue clearing.
-- Missing pre-close question: verify deterministic enforcement.
+- Call disconnects without a spoken goodbye: inspect the finish-session recovery events above and confirm the recovery `response.create` used audio output with `tool_choice=none`; the gateway must not restore transcript-based rejection of `finish_session`.
 - Wrong knowledge answers: verify compiled knowledge retrieval, overrides, and guardrails.
 - Realtime session update rejected: deliberately pin or migrate the affected tenant/runtime profile's `session_config.model` to `gpt-realtime-1.5`, set the gateway's `OPENAI_REALTIME_API_SHAPE=legacy`, restart the gateway, then inspect the Realtime trace payload and OpenAI error `param`.
 - No outbound audio after the GPT-Realtime-2.1 switch: verify output audio format remains `g711_ulaw` in admin session config and maps to `audio/pcmu` in the Realtime 2 session trace.

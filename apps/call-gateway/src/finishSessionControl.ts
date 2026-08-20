@@ -13,8 +13,75 @@ export type FinishSessionDecision = {
   reason: "accepted";
 };
 
+export type AssistantClosingEvidence = {
+  audioObserved?: boolean;
+  transcript?: unknown;
+};
+
+export type AssistantResponseEvidence = {
+  responseId: string;
+  transcript: string;
+  audioObserved: boolean;
+  playbackDrained: boolean;
+  responseDone: boolean;
+};
+
+export type AssistantResponseEvidenceState = {
+  assistantResponseEvidence?: Map<string, AssistantResponseEvidence>;
+  currentResponseId?: string | null;
+  lastAssistantResponseId?: string | null;
+};
+
+export type FinishSessionClosingRecovery = {
+  closing: string;
+  response: {
+    instructions: string;
+    tool_choice: "none";
+    tools: [];
+  };
+};
+
 function normalizeText(value: unknown) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeResponseId(value: unknown) {
+  return String(value || "").trim();
+}
+
+export function ensureAssistantResponseEvidence(state: AssistantResponseEvidenceState, responseId: unknown) {
+  const normalizedResponseId = normalizeResponseId(responseId)
+    || normalizeResponseId(state.currentResponseId)
+    || normalizeResponseId(state.lastAssistantResponseId);
+  if (!normalizedResponseId) return null;
+  if (!(state.assistantResponseEvidence instanceof Map)) {
+    state.assistantResponseEvidence = new Map<string, AssistantResponseEvidence>();
+  }
+  let evidence = state.assistantResponseEvidence.get(normalizedResponseId);
+  if (!evidence) {
+    evidence = {
+      responseId: normalizedResponseId,
+      transcript: "",
+      audioObserved: false,
+      playbackDrained: false,
+      responseDone: false
+    };
+    state.assistantResponseEvidence.set(normalizedResponseId, evidence);
+    while (state.assistantResponseEvidence.size > 12) {
+      const oldestResponseId = state.assistantResponseEvidence.keys().next().value;
+      if (!oldestResponseId) break;
+      state.assistantResponseEvidence.delete(oldestResponseId);
+    }
+  }
+  state.lastAssistantResponseId = normalizedResponseId;
+  return evidence;
+}
+
+export function getAssistantResponseEvidence(state: AssistantResponseEvidenceState, responseId: unknown) {
+  const normalizedResponseId = normalizeResponseId(responseId);
+  return normalizedResponseId && state.assistantResponseEvidence instanceof Map
+    ? state.assistantResponseEvidence.get(normalizedResponseId) || null
+    : null;
 }
 
 export function noteFinishSessionDialogueTurn(
@@ -51,6 +118,39 @@ export function assistantTurnContainsQuestion(transcript: unknown) {
 export function assistantTurnContainsClosing(transcript: unknown) {
   const text = normalizeText(transcript);
   return /\bthanks for calling(?:,\s*[^.!?]+)?\.\s*have a good one\.[.!]?$/i.test(text);
+}
+
+export function assistantResponseContainsSpokenClosing(evidence: AssistantClosingEvidence | null | undefined) {
+  return Boolean(evidence?.audioObserved && assistantTurnContainsClosing(evidence.transcript));
+}
+
+export function normalizeConfirmedFirstName(value: unknown) {
+  const raw = String(value || "");
+  if (/[\r\n\t]/.test(raw)) return "";
+  const normalized = normalizeText(raw).normalize("NFKC");
+  if (!normalized || normalized.length > 50) return "";
+  return /^[\p{L}\p{M}][\p{L}\p{M}'’.-]*$/u.test(normalized)
+    ? normalized
+    : "";
+}
+
+export function buildFinishSessionClosing(firstName: unknown) {
+  const normalizedFirstName = normalizeConfirmedFirstName(firstName);
+  return normalizedFirstName
+    ? `Thanks for calling, ${normalizedFirstName}. Have a good one.`
+    : "Thanks for calling. Have a good one.";
+}
+
+export function buildFinishSessionClosingRecovery(firstName: unknown): FinishSessionClosingRecovery {
+  const closing = buildFinishSessionClosing(firstName);
+  return {
+    closing,
+    response: {
+      instructions: `Say exactly this and nothing else: ${JSON.stringify(closing)}`,
+      tool_choice: "none",
+      tools: []
+    }
+  };
 }
 
 export function callerClearlyFinished(transcript: unknown) {
