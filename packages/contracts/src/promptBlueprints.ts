@@ -155,6 +155,7 @@ const CORE_FACTS_LOOKUP_RULE = "When What You Know By Heart fully covers the que
 const LAYERED_CORE_FACTS_LOOKUP_RULE = "When the approved business information in Business Details fully covers the question, answer from it with no lookup.";
 const ADJACENT_REQUESTS_CORE_FACT_REFERENCE = "that What You Know By Heart does not plainly cover:";
 const ADJACENT_REQUESTS_GENERIC_REFERENCE = "that the approved business information in Business Details does not plainly cover:";
+const OPTIONAL_TENANT_PROMPT_PLACEHOLDERS = ["company_description", "basic_no_tool_allowed_statement"] as const;
 const CORE_FACT_INSTRUCTION_PATTERN = /\b(ignore (all |any )?(previous|prior) instructions?|system prompt|developer message|assistant instructions?|call (a )?tool|knowledge_lookup|data_capture|finish_session)\b/i;
 
 const SECTION_SEEDS: PromptSectionSeed[] = [
@@ -523,6 +524,17 @@ function asStringArray(value: unknown, fallback: string[] = []) {
     .filter(Boolean);
 }
 
+function omitEmptyTenantPlaceholderLines(text: string, renderValues: Record<string, string>) {
+  const emptyTokens = OPTIONAL_TENANT_PROMPT_PLACEHOLDERS
+    .filter((placeholder) => !normalizeText(renderValues[placeholder]))
+    .map((placeholder) => `{${placeholder}}`);
+  if (!emptyTokens.length) return text;
+  return text
+    .split("\n")
+    .filter((line) => !emptyTokens.some((token) => line.includes(token)))
+    .join("\n");
+}
+
 function uniqueValues(values: string[]) {
   const seen = new Set<string>();
   const output: string[] = [];
@@ -832,7 +844,7 @@ export function normalizeTenantPromptProfile(input: unknown, defaults?: Partial<
     : `Thanks for calling. This is ${assistantName}. How can I help you today?`);
   const companyDescription = normalizeText(source.company_description || source.companyDescription) || normalizeText(fallback.company_description);
   const basicStatementDefault = normalizeText(fallback.basic_no_tool_allowed_statement)
-    || normalizeText(companyDescription || businessName);
+    || companyDescription;
   return {
     tenant_key: normalizeText(source.tenant_key || source.tenantKey) || normalizeText(fallback.tenant_key) || null,
     assistant_name: assistantName,
@@ -948,13 +960,13 @@ Required callback information: use the fields specified in Business Details.`;
     case "business_context":
       text = `Business Context
 
-Use the company description in Business Details.
+Use any company description provided in Business Details.
 
 You may answer WITHOUT a tool only for:
 
 greetings and basic conversational courtesies
 your identity as the business's automated assistant
-the general statement in Business Details`;
+tenant-specific facts explicitly permitted in Business Details`;
       break;
     case "core_facts":
       text = "";
@@ -1024,12 +1036,14 @@ function renderLayeredBusinessDetails(
     "# Business Details",
     `Assistant name: ${tenantProfile.assistant_name}`,
     `Business name: ${tenantProfile.business_name}`,
-    `Company description: ${renderValues.company_description}`,
+    ...(renderValues.company_description ? [`Company description: ${renderValues.company_description}`] : []),
     `Lead goal: ${tenantProfile.lead_goal}`,
     `Required callback information:\n${renderValues.required_contact_fields_block}`,
     `Exact opening line: ${tenantProfile.opening_line}`,
     `AI disclosure: ${tenantProfile.ai_disclosure_line}`,
-    `Persisted no-tool statement: ${tenantProfile.basic_no_tool_allowed_statement}`,
+    ...(tenantProfile.basic_no_tool_allowed_statement
+      ? [`Persisted no-tool statement: ${tenantProfile.basic_no_tool_allowed_statement}`]
+      : []),
     ...(blueprint.version < 16 ? [`Closing phrase: ${tenantProfile.closing_phrase}`] : [])
   ];
   if (coreFactsBlock) {
@@ -1057,6 +1071,7 @@ Keep the same plain spoken register as the stored facts. No marketing adjectives
     if (!coreFactsBlock && section.section_id === "adjacent_requests") {
       textSource = textSource.replace(ADJACENT_REQUESTS_CORE_FACT_REFERENCE, ADJACENT_REQUESTS_GENERIC_REFERENCE);
     }
+    textSource = omitEmptyTenantPlaceholderLines(textSource, renderValues);
     const rendered = interpolateTemplate(textSource, renderValues).trim();
     if (rendered) {
       renderedOverrides.push(`## ${SECTION_TITLE_BY_ID[section.section_id]}\n${rendered}`);
@@ -1156,6 +1171,7 @@ export function renderPromptContext(
       if (!coreFactsBlock && section.section_id === "adjacent_requests") {
         textSource = textSource.replace(ADJACENT_REQUESTS_CORE_FACT_REFERENCE, ADJACENT_REQUESTS_GENERIC_REFERENCE);
       }
+      textSource = omitEmptyTenantPlaceholderLines(textSource, renderValues);
       const placeholders = extractPlaceholders(textSource);
       const renderedText = interpolateTemplate(textSource, renderValues).trim();
       if (section.section_id === "sample_phrase_guidance" && !samplePhraseGroupsBlock) {

@@ -6,6 +6,8 @@ import {
   buildRuntimeToolDefinitions,
   getDefaultPromptBlueprintSeed,
   getPromptSectionSeeds,
+  normalizeTenantPromptProfile,
+  validateTenantPromptProfile,
   renderPromptContext
 } from "@everycall/contracts";
 import { cleanGeneratedCompanyDescription } from "../pages/api/_lib/promptBlueprints.js";
@@ -177,9 +179,28 @@ const coreFactBlueprint = {
   ...promptSeed,
   prompt_blueprint_id: "pb_canonical_receptionist_v18_test"
 };
+const initialTenantProfile = normalizeTenantPromptProfile({
+  business_name: "New Tenant Without Punctuation"
+});
+assert.equal(initialTenantProfile.company_description, "");
+assert.equal(initialTenantProfile.basic_no_tool_allowed_statement, "");
+assert.equal(validateTenantPromptProfile(initialTenantProfile).valid, true);
+const initialLegacyPrompt = renderPromptContext(coreFactBlueprint, initialTenantProfile, {
+  coreFactsBlock: "",
+  promptMode: "legacy"
+});
+assert.doesNotMatch(initialLegacyPrompt.startupPrompt, /the general statement that/);
+assert.doesNotMatch(initialLegacyPrompt.startupPrompt, /basic_no_tool_allowed_statement|\{company_description\}/);
+const initialLayeredPrompt = renderPromptContext(coreFactBlueprint, initialTenantProfile, {
+  coreFactsBlock: "",
+  promptMode: "layered"
+});
+assert.doesNotMatch(initialLayeredPrompt.promptLayers.businessDetails, /Company description:|Persisted no-tool statement:/);
+assert.match(initialLayeredPrompt.promptLayers.canonical, /tenant-specific facts explicitly permitted in Business Details/);
 const emptyCoreFactsPrompt = renderPromptContext(coreFactBlueprint, promptProfile, { coreFactsBlock: "" }).startupPrompt;
 assert.doesNotMatch(emptyCoreFactsPrompt, /What You Know By Heart/);
 assert.doesNotMatch(emptyCoreFactsPrompt, /approved facts in/);
+assert.match(emptyCoreFactsPrompt, /the general statement that Example Plumbing provides residential plumbing repairs\./);
 assert.match(emptyCoreFactsPrompt, /Never call finish_session in a turn where you asked a question\./);
 const layeredWithoutFacts = renderPromptContext(coreFactBlueprint, promptProfile, {
   coreFactsBlock: "",
@@ -197,10 +218,12 @@ const secondLayeredTenant = renderPromptContext(coreFactBlueprint, {
 });
 assert.equal(layeredWithoutFacts.promptMode, "layered");
 assert.equal(layeredWithoutFacts.promptLayers.canonical, secondLayeredTenant.promptLayers.canonical, "layer 1 must be byte-identical across tenants and pin states");
+assert.equal(layeredWithoutFacts.promptLayers.canonical, initialLayeredPrompt.promptLayers.canonical, "an empty initial profile must not change the shared layer-1 prefix");
 assert.ok(Buffer.byteLength(layeredWithoutFacts.promptLayers.canonical, "utf8") / 4 >= 1024, "the shared canonical prefix must clear the minimum cacheable size estimate");
 assert.doesNotMatch(layeredWithoutFacts.promptLayers.canonical, /Example Plumbing|Different Tenant|\{[a-z0-9_]+\}/i);
 assert.match(layeredWithoutFacts.promptLayers.businessDetails, /# Business Details/);
 assert.match(layeredWithoutFacts.promptLayers.businessDetails, /Business name: Example Plumbing/);
+assert.match(layeredWithoutFacts.promptLayers.businessDetails, /Persisted no-tool statement: Example Plumbing provides residential plumbing repairs\./);
 assert.equal(layeredWithoutFacts.promptLayers.volatile, "");
 assert.doesNotMatch(layeredWithoutFacts.startupPrompt, /What You Know By Heart/);
 assert.doesNotMatch(layeredWithoutFacts.startupPrompt, /approved to state from memory|marks a fact as approved/);

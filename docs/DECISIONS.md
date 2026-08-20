@@ -1,5 +1,8 @@
 # Decisions
 
+## 2026-08-20
+- New-tenant onboarding may persist an empty company description and empty `basic_no_tool_allowed_statement` until an approved website or setup-interview build is published. Never synthesize the no-tool statement from the bare business name. Prompt rendering omits empty company-description and no-tool bindings without changing the shared layered canonical prefix; build publication remains the single AI-backed writer of the completed, sentence-punctuated snapshot.
+
 ## 2026-08-19
 - Canonical Receptionist v18 changes the final spoken close to `Thanks for calling, FIRSTNAME. Have a good one.` using the confirmed first name, with a no-name fallback of `Thanks for calling. Have a good one.` The `finish_session` tool description explicitly forbids a function-call-only close: the same response must contain the exact closing audio and the silent tool call. This addresses the 19:01 WVG call, where low reasoning improved the conversation but the model emitted only `finish_session` after the caller declined further questions.
 - Treat the Realtime model's `finish_session` tool call as authoritative for the decision to end. The gateway never rejects it from transcript-derived dialogue state, but it now verifies response-ID-keyed closing audio before hanging up. If the same response has no spoken close, request exactly one audio-only close with tools disabled, drain that playback, and then hang up. This is delivery recovery, not a second conversational decision state machine.

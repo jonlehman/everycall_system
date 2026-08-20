@@ -19,6 +19,7 @@
 ## Common Issues
 - Assistant interrupts caller: check barge-in cancel logic and audio queue clearing.
 - Call disconnects without a spoken goodbye: inspect the finish-session recovery events above and confirm the recovery `response.create` used audio output with `tool_choice=none`; the gateway must not restore transcript-based rejection of `finish_session`.
+- New-tenant setup returns `basic_no_tool_allowed_statement_sentence_punctuation_required`: verify production includes the empty-initial-profile fix. Onboarding must not use the bare business name as that statement; the value stays empty until an approved website or setup-interview build publishes its AI-generated snapshot.
 - Wrong knowledge answers: verify compiled knowledge retrieval, overrides, and guardrails.
 - Realtime session update rejected: deliberately pin or migrate the affected tenant/runtime profile's `session_config.model` to `gpt-realtime-1.5`, set the gateway's `OPENAI_REALTIME_API_SHAPE=legacy`, restart the gateway, then inspect the Realtime trace payload and OpenAI error `param`.
 - No outbound audio after the GPT-Realtime-2.1 switch: verify output audio format remains `g711_ulaw` in admin session config and maps to `audio/pcmu` in the Realtime 2 session trace.
