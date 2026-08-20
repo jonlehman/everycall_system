@@ -63,8 +63,8 @@ const finishControl = await import(pathToFileURL(
 const immediateClose = {};
 finishControl.noteFinishSessionDialogueTurn(immediateClose, "assistant", "Do you have any other questions?");
 assert.deepEqual(finishControl.evaluateFinishSessionRequest(immediateClose), {
-  accepted: false,
-  reason: "assistant_question_requires_caller_answer"
+  accepted: true,
+  reason: "accepted"
 });
 finishControl.noteFinishSessionDialogueTurn(immediateClose, "caller", "No, that's all.");
 finishControl.noteFinishSessionDialogueTurn(immediateClose, "assistant", "Thanks for calling. Goodbye.");
@@ -77,8 +77,8 @@ const skippedCheckpoint = {};
 finishControl.noteFinishSessionDialogueTurn(skippedCheckpoint, "caller", "My number is confirmed.");
 finishControl.noteFinishSessionDialogueTurn(skippedCheckpoint, "assistant", "Thanks for calling. Goodbye.");
 assert.deepEqual(finishControl.evaluateFinishSessionRequest(skippedCheckpoint), {
-  accepted: false,
-  reason: "caller_clear_finish_after_preclose_question_required"
+  accepted: true,
+  reason: "accepted"
 });
 
 const callerAskedAnotherQuestion = {};
@@ -86,8 +86,8 @@ finishControl.noteFinishSessionDialogueTurn(callerAskedAnotherQuestion, "assista
 finishControl.noteFinishSessionDialogueTurn(callerAskedAnotherQuestion, "caller", "Yes, what time do you open?");
 finishControl.noteFinishSessionDialogueTurn(callerAskedAnotherQuestion, "assistant", "Thanks for calling. Goodbye.");
 assert.deepEqual(finishControl.evaluateFinishSessionRequest(callerAskedAnotherQuestion), {
-  accepted: false,
-  reason: "caller_clear_finish_after_preclose_question_required"
+  accepted: true,
+  reason: "accepted"
 });
 
 const combinedQuestionAndClose = {};
@@ -96,7 +96,7 @@ finishControl.noteFinishSessionDialogueTurn(
   "assistant",
   "Do you have any other questions? Thanks for calling. Goodbye."
 );
-assert.equal(finishControl.evaluateFinishSessionRequest(combinedQuestionAndClose).accepted, false);
+assert.equal(finishControl.evaluateFinishSessionRequest(combinedQuestionAndClose).accepted, true);
 
 console.log(JSON.stringify({
   ok: true,
@@ -105,6 +105,6 @@ console.log(JSON.stringify({
     "data_capture_checkpoint_before_closing",
     "finish_session_immediately_after_exact_goodbye_rule",
     "legacy_and_layered_prompt_consistency",
-    "finish_session_preclose_answer_guard"
+    "finish_session_tool_is_gateway_authoritative"
   ]
 }, null, 2));

@@ -18,6 +18,9 @@ const sessionConfig = {
   model: "gpt-realtime-2.1",
   voice: "marin",
   max_output_tokens: 4096,
+  reasoning: {
+    effort: "low"
+  },
   turn_detection: {
     type: "semantic_vad",
     eagerness: "high",
@@ -102,6 +105,7 @@ assert.equal(realtime2Session.session.audio.output.voice, "marin");
 assert.equal(realtime2Session.session.audio.input.transcription.model, "gpt-4o-mini-transcribe");
 assert.equal(realtime2Session.session.audio.input.turn_detection.type, "semantic_vad");
 assert.equal(realtime2Session.session.max_output_tokens, 4096);
+assert.deepEqual(realtime2Session.session.reasoning, { effort: "low" });
 
 const legacySession = realtime.buildRealtimeSessionUpdateEvent({
   apiShape: "legacy",
@@ -114,6 +118,7 @@ assert.equal(legacySession.session.output_modalities, undefined);
 assert.equal(legacySession.session.input_audio_format, "g711_ulaw");
 assert.equal(legacySession.session.output_audio_format, "g711_ulaw");
 assert.equal(legacySession.session.max_response_output_tokens, 4096);
+assert.equal(legacySession.session.reasoning, undefined);
 
 const realtime2Response = realtime.buildRealtimeResponseCreateEvent({ instructions: "Say hello." }, "realtime2");
 assert.equal(realtime2Response.type, "response.create");

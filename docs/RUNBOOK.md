@@ -8,8 +8,9 @@
 
 ## Logs
 - Render service logs for call-gateway
-- Look for: `openai_realtime_session_updated`, `assistant_response_canceled`, `openai_realtime_response_done`, `assistant_finish_session_rejected`
+- Look for: `openai_realtime_session_updated`, `assistant_response_canceled`, `openai_realtime_response_done`, `assistant_finish_session_accepted`
 - `call_gateway_started` reports the effective outbound jitter buffer. The current production trial is 13 PCMU frames / 260 ms, configured with `TELNYX_OUTBOUND_BUFFER_FRAMES=13`.
+- `openai_realtime_session_start` reports `reasoningEffort`. Wenatchee Valley Glass is the scoped `low` trial; other tenants retain the model default unless their runtime profile explicitly overrides it.
 - For the GPT-Realtime-2.1 rollout/canary, enable `REALTIME_TRACE=true` only on staging or a controlled canary and confirm `openai_realtime_session_start` logs `model=gpt-realtime-2.1` and `apiShape=realtime2`.
 - `openai_realtime_response_done` includes `cachedInputTokens`, `cacheHitRate`, `cumulativeCacheHitRate`, and `promptRenderMode`. A zero on one call is not proof caching is disabled; Realtime caching is best-effort.
 - The Realtime `OpenAI-Safety-Identifier` must be stable across calls without exposing a phone number. By default the gateway HMACs the normalized caller number with `OPENAI_SAFETY_IDENTIFIER_SECRET` (falling back to `INTERNAL_SERVICE_SECRET`); `OPENAI_SAFETY_IDENTIFIER` remains an explicit operator override.
@@ -54,7 +55,7 @@
 - Manual canary calls must cover greeting, direct question, knowledge lookup, data capture, transfer lookup/confirmation, alphanumeric readback, barge-in, silence/background noise, and tool failure.
 
 ## What You Know By Heart
-- Canonical Receptionist v17 retains the owner-approved condensed receptionist prompt and makes the closing sequence explicit at the decision point: after a clear no at the required other-questions checkpoint, say the exact goodbye and call `finish_session` in the same turn. The `data_capture` continuation must reach the next needed question and then that checkpoint, never jump directly to closing. The legacy rendering injects tenant variables directly; the layered rendering keeps the generic rules byte-stable and appends tenant bindings and the persisted by-heart block in Business Details. With no pins, omit the by-heart section and every by-heart reference.
+- Canonical Receptionist v17 retains the owner-approved condensed receptionist prompt and makes the closing sequence explicit at the decision point: after a clear no at the required other-questions checkpoint, say the exact goodbye and call `finish_session` in the same turn. The gateway accepts the tool as authoritative and drains queued audio before hanging up; close-order correctness is enforced by prompt acceptance testing, not transcript rejection. The `data_capture` continuation must reach the next needed question and then that checkpoint, never jump directly to closing. The legacy rendering injects tenant variables directly; the layered rendering keeps the generic rules byte-stable and appends tenant bindings and the persisted by-heart block in Business Details. With no pins, omit the by-heart section and every by-heart reference.
 - Apply migrations `0041_persist_no_tool_statement.sql`, `0042_core_fact_spoken_rewrites.sql`, and `0043_knowledge_build_execution_leases.sql` with `EVERYCALL_APPLY_RECEPTIONIST_V11_MIGRATIONS=1 corepack pnpm migrate:receptionist-v11`.
 - Apply additive v12 migrations 0044 and 0045 with `EVERYCALL_APPLY_RECEPTIONIST_V12_MIGRATIONS=1 corepack pnpm migrate:receptionist-v12` before any v12 knowledge build.
 - The by-heart pipeline scores changed facts, has AI curate the eligible facts as one non-duplicative set, rewrites selected facts for first-person speech, and stores the completed section plus selected fact IDs in `knowledge_core_fact_prompt_sections`. Call startup only reads that stored section.

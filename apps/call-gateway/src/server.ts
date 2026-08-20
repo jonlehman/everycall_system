@@ -1950,15 +1950,13 @@ async function finalizePendingFinishSession(session: StreamSession) {
   if (!pending) return;
   session.pendingFinishSession = null;
   const decision = evaluateFinishSessionRequest(session);
-  const output = decision.accepted
-    ? { status: "accepted", reason: pending.reason }
-    : { status: "rejected", reason: decision.reason, next_step: "wait_for_caller" };
+  const output = { status: "accepted", reason: pending.reason };
   await forwardToolResult(
     session.callSid,
     session.tenantKey,
     "finish_session",
     output,
-    { status: decision.accepted ? "accepted" : "rejected", errors: decision.accepted ? [] : [decision.reason] }
+    { status: decision.reason, errors: [] }
   );
   const toolResultEvent = createFunctionCallOutputEvent(pending.callId, output);
   sendOpenAiEvent(session.openAiWs, toolResultEvent);
@@ -1968,18 +1966,6 @@ async function finalizePendingFinishSession(session: StreamSession) {
     callId: pending.callId,
     toolResultEvent
   });
-  if (!decision.accepted) {
-    logInfo("assistant_finish_session_rejected", {
-      callSid: session.callSid,
-      callId: pending.callId,
-      requestedResponseId: pending.requestedResponseId || undefined,
-      reason: decision.reason,
-      lastAssistantTranscriptSequence: session.lastAssistantTranscriptSequence || 0,
-      lastCallerTranscriptSequence: session.lastCallerTranscriptSequence || 0
-    });
-    return;
-  }
-
   const queuedFrames = session.outputQueue?.length || 0;
   const drainMs = Math.min(Math.max(queuedFrames * 20 + 1200, 1200), 4000);
   if (session.hangupTimer) clearTimeout(session.hangupTimer);
@@ -2456,6 +2442,7 @@ function connectOpenAiRealtime(session: StreamSession) {
       model,
       apiShape,
       voice: payload.session_config.voice,
+      reasoningEffort: payload.session_config.reasoning?.effort || "default",
       promptRenderMode: payload.knowledge_runtime.prompt_render_mode || "legacy",
       canonicalPrefixTokensEstimate: Math.ceil(Buffer.byteLength(
         String(payload.knowledge_runtime.prompt_layers?.canonical || payload.system_prompt || ""),

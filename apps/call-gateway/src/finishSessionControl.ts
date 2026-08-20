@@ -9,8 +9,8 @@ export type FinishSessionDialogueState = {
 };
 
 export type FinishSessionDecision = {
-  accepted: boolean;
-  reason: "accepted" | "closing_not_observed" | "assistant_question_requires_caller_answer" | "caller_clear_finish_after_preclose_question_required";
+  accepted: true;
+  reason: "accepted";
 };
 
 function normalizeText(value: unknown) {
@@ -60,29 +60,8 @@ export function callerClearlyFinished(transcript: unknown) {
     || /^(?:that(?:'|’)s (?:all|everything|it)|nothing else|i(?:'|’)m (?:good|all set|done)|all set|goodbye|bye)[.!]?$/i.test(text);
 }
 
-export function evaluateFinishSessionRequest(state: FinishSessionDialogueState): FinishSessionDecision {
-  const assistantSequence = Math.max(0, Number(state.lastAssistantTranscriptSequence || 0));
-  const callerSequence = Math.max(0, Number(state.lastCallerTranscriptSequence || 0));
-  if (!assistantSequence || !normalizeText(state.lastAssistantTranscript)) {
-    return { accepted: false, reason: "closing_not_observed" };
-  }
-  if (assistantTurnContainsQuestion(state.lastAssistantTranscript)) {
-    return { accepted: false, reason: "assistant_question_requires_caller_answer" };
-  }
-  if (!assistantTurnContainsClosing(state.lastAssistantTranscript)) {
-    return { accepted: false, reason: "closing_not_observed" };
-  }
-  if (callerSequence > assistantSequence) {
-    return { accepted: true, reason: "accepted" };
-  }
-  const previousAssistantSequence = Math.max(0, Number(state.previousAssistantTranscriptSequence || 0));
-  const callerAnsweredPrecloseQuestion = previousAssistantSequence > 0
-    && previousAssistantSequence < callerSequence
-    && callerSequence < assistantSequence
-    && assistantTurnContainsQuestion(state.previousAssistantTranscript)
-    && callerClearlyFinished(state.lastCallerTranscript);
-  if (!callerAnsweredPrecloseQuestion) {
-    return { accepted: false, reason: "caller_clear_finish_after_preclose_question_required" };
-  }
+export function evaluateFinishSessionRequest(_state: FinishSessionDialogueState): FinishSessionDecision {
+  // The Realtime model owns the conversational close. Once it emits the tool,
+  // the gateway must not second-guess the call from incomplete transcript state.
   return { accepted: true, reason: "accepted" };
 }

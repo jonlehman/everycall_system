@@ -132,7 +132,7 @@ export const DEFAULT_RUNTIME_SESSION_CONFIG = {
 export const DEFAULT_RUNTIME_TOOL_POLICY = {
   require_knowledge_lookup_for_tenant_facts: true,
   max_clarifying_questions: 1,
-  allow_finish_session_only_after_spoken_close: true,
+  allow_finish_session_only_after_spoken_close: false,
   require_single_question_turns: true
 };
 
@@ -1020,6 +1020,9 @@ export async function saveCallOutcomeSchema(db, tenantKey, payload = {}, actor =
 function normalizeSessionConfig(value) {
   const source = asObject(value);
   const turnDetection = asObject(source.turn_detection || source.turnDetection);
+  const reasoning = asObject(source.reasoning);
+  const reasoningEffort = normalizeText(reasoning.effort || source.reasoning_effort || source.reasoningEffort).toLowerCase();
+  const supportedReasoningEfforts = new Set(["minimal", "low", "medium", "high", "xhigh"]);
   const turnDetectionType = normalizeText(turnDetection.type) || DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.type;
   return {
     model: normalizeText(source.model) || DEFAULT_RUNTIME_SESSION_CONFIG.model,
@@ -1027,6 +1030,9 @@ function normalizeSessionConfig(value) {
     max_output_tokens: Number.isFinite(Number(source.max_output_tokens ?? source.maxOutputTokens))
       ? Number(source.max_output_tokens ?? source.maxOutputTokens)
       : DEFAULT_RUNTIME_SESSION_CONFIG.max_output_tokens,
+    ...(supportedReasoningEfforts.has(reasoningEffort)
+      ? { reasoning: { effort: reasoningEffort } }
+      : {}),
     turn_detection: {
       type: turnDetectionType,
       eagerness: normalizeText(turnDetection.eagerness) || DEFAULT_RUNTIME_SESSION_CONFIG.turn_detection.eagerness,
@@ -1064,8 +1070,6 @@ function normalizeSessionConfig(value) {
 
 function normalizeToolPolicy(value) {
   const source = asObject(value);
-  const finishSessionOnlyAfterSpokenClose = source.allow_finish_session_only_after_spoken_close;
-  const legacyEndCallOnlyAfterSpokenClose = source.allow_end_call_only_after_spoken_close;
   return {
     require_knowledge_lookup_for_tenant_facts: source.require_knowledge_lookup_for_tenant_facts === undefined
       ? DEFAULT_RUNTIME_TOOL_POLICY.require_knowledge_lookup_for_tenant_facts
@@ -1073,9 +1077,9 @@ function normalizeToolPolicy(value) {
     max_clarifying_questions: Number.isFinite(Number(source.max_clarifying_questions ?? source.maxClarifyingQuestions))
       ? Number(source.max_clarifying_questions ?? source.maxClarifyingQuestions)
       : DEFAULT_RUNTIME_TOOL_POLICY.max_clarifying_questions,
-    allow_finish_session_only_after_spoken_close: finishSessionOnlyAfterSpokenClose === undefined && legacyEndCallOnlyAfterSpokenClose === undefined
-      ? DEFAULT_RUNTIME_TOOL_POLICY.allow_finish_session_only_after_spoken_close
-      : Boolean(finishSessionOnlyAfterSpokenClose ?? legacyEndCallOnlyAfterSpokenClose),
+    // Retained in the API contract for compatibility, but no longer operator-configurable:
+    // the Realtime model's finish_session tool call is authoritative at the gateway.
+    allow_finish_session_only_after_spoken_close: false,
     require_single_question_turns: source.require_single_question_turns === undefined
       ? DEFAULT_RUNTIME_TOOL_POLICY.require_single_question_turns
       : Boolean(source.require_single_question_turns)

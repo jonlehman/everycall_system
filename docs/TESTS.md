@@ -74,7 +74,7 @@
 - With explicit OpenAI test-cost approval, run `EVERYCALL_RUN_RECEPTIONIST_V17_REALTIME_ACCEPTANCE=1 corepack pnpm acceptance:receptionist-v17:realtime` in both legacy and layered prompt modes.
 - Name capture must begin the surname-spelling question with the caller's first name. It must not say `Thanks` before the name or put a comma, dash, or deliberate pause immediately after it. After spelling, the surname is never spoken and the first name is not used as a routine acknowledgment or in the closing.
 - Before ending, the assistant must ask exactly `Do you have any other questions?`, stop, and wait. A question in response is answered before the checkpoint is asked again.
-- After the caller says no or clearly says they are finished, the final turn must contain exactly `Thanks for calling. Goodbye.` plus `finish_session`. It must not wait for another caller goodbye, and the gateway must reject a final turn that skipped the checkpoint.
+- After the caller says no or clearly says they are finished, the final turn must contain exactly `Thanks for calling. Goodbye.` plus `finish_session`. It must not wait for another caller goodbye. The behavioral battery verifies the checkpoint; the gateway treats the Realtime model's `finish_session` invocation as authoritative and never rejects it from transcript-derived state.
 
 Use these after any change to prompts, knowledge lookup, or barge-in handling.
 
@@ -103,6 +103,7 @@ The second 8/19 WVG call contained one possible early VAD handoff (“Got it—a
 
 ## GPT-Realtime-2.1 Canary Calls
 - Verify `openai_realtime_session_start` reports `model=gpt-realtime-2.1` and `apiShape=realtime2`.
+- For the Wenatchee Valley Glass low-reasoning trial, verify `openai_realtime_session_start` reports `reasoningEffort=low` and the outbound `session.update` contains `reasoning.effort=low`.
 - Verify `call_gateway_started` reports `outboundBufferFrames=13` and `outboundBufferMs=260`, then listen for mid-sentence pauses or brief pitch artifacts during a normal caller canary.
 - Verify first assistant audio arrives and outbound audio stays clear over Telnyx.
 - Verify a knowledge lookup does not mention tool names, packets, scores, or system logic.

@@ -400,6 +400,9 @@ export const knowledgeRuntimeSessionConfigSchema = z.object({
   model: z.string().min(1),
   voice: z.string().min(1),
   max_output_tokens: z.number().int().positive().optional(),
+  reasoning: z.object({
+    effort: z.enum(["minimal", "low", "medium", "high", "xhigh"])
+  }).optional(),
   turn_detection: z.object({
     type: z.string().min(1),
     eagerness: z.string().min(1).optional(),
@@ -419,7 +422,7 @@ export const knowledgeRuntimeSessionConfigSchema = z.object({
 export const knowledgeRuntimeToolPolicySchema = z.object({
   require_knowledge_lookup_for_tenant_facts: z.boolean().default(true),
   max_clarifying_questions: z.number().int().nonnegative().default(1),
-  allow_finish_session_only_after_spoken_close: z.boolean().default(true),
+  allow_finish_session_only_after_spoken_close: z.boolean().default(false),
   require_single_question_turns: z.boolean().default(true)
 });
 

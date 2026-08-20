@@ -5,6 +5,9 @@ export type RealtimeSessionConfig = {
   voice?: string;
   max_output_tokens?: number;
   maxOutputTokens?: number;
+  reasoning?: {
+    effort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  };
   turn_detection?: Record<string, unknown> | null;
   turnDetection?: Record<string, unknown> | null;
   transcription_model?: string;
@@ -148,6 +151,7 @@ export function buildRealtimeSessionUpdateEvent(input: RealtimeSessionUpdateInpu
         instructions: input.instructions,
         tools: input.tools,
         output_modalities: ["audio"],
+        reasoning: sessionConfig.reasoning,
         audio: {
           input: {
             format: realtime2AudioFormat(inputFormat, "g711_ulaw"),
