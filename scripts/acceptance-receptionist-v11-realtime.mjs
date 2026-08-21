@@ -68,7 +68,7 @@ function containsClosing(value) {
 }
 
 function containsOtherQuestionsCheckpoint(value) {
-  return /\bdo you have any other questions\??$/i.test(normalizeText(value));
+  return /\bis there anything else i can help you with\??$/i.test(normalizeText(value));
 }
 
 function isExactImmediateClosing(value) {

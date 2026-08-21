@@ -159,7 +159,7 @@ assert.match(v18CanonicalText, /Emit a function-call-only response with no speec
 assert.match(v18CanonicalText, /Using data_capture: emit the call silently/);
 assert.match(v18CanonicalText, /When capture is complete, ask the required other-questions checkpoint and wait\./);
 assert.match(v18CanonicalText, /Never continue directly from data_capture to the closing\./);
-assert.match(v18CanonicalText, /Before ending any call, ask exactly: "Do you have any other questions\?"/);
+assert.match(v18CanonicalText, /Before ending any call, ask exactly: "Is there anything else I can help you with\?"/);
 assert.match(v18CanonicalText, /say exactly: "Thanks for calling, FIRSTNAME\. Have a good one\."/);
 assert.match(v18CanonicalText, /Never emit finish_session by itself\./);
 assert.doesNotMatch(v18CanonicalText, /# Priority Order|# Conversation Flow|# Factual Boundaries & Uncertainty/);

@@ -1,5 +1,8 @@
 # Decisions
 
+## 2026-08-21
+- The canonical receptionist's exact pre-close checkpoint is `Is there anything else I can help you with?` in both legacy and layered prompt rendering. It replaces `Do you have any other questions?`; the wait-for-answer and finish-session sequence are unchanged.
+
 ## 2026-08-20
 - Canonical Receptionist Part 9 uses an ownership split: catalog revisions and factual candidates are system-owned; tenant facts and manual selection snapshots are durable tenant-owned values. A rescan may flag a manual slot but cannot remove, substitute, or rewrite its approved values.
 - Attach each catalog revision to the effective active/composite knowledge build. Publish the active pointer, catalog, auto-slot changes, and materialized `kb_block` atomically; a block failure prevents activation.

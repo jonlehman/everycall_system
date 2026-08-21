@@ -9,7 +9,7 @@ Guarantee pre-close question is asked and enforce barge-in behavior.
 
 ## Desired Behavior
 - Once required info is collected, always ask:
-  "Do you have any other questions, or anything else I can help with?"
+  "Is there anything else I can help you with?"
 - Do not close until the caller responds.
 - If the caller asks a question, answer it, then re-ask pre-close.
 - If the caller interrupts, stop assistant speech immediately.

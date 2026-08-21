@@ -26,7 +26,7 @@ Prompts are composed from:
    - Retrieve the best matching tenant knowledge cards, facts, overrides, and guardrails.
    - If no strong match exists: “I don’t have that detail, but I can have someone call you with the specifics.”
 2. **Pre‑close enforcement**
-   - Ask: “Do you have any other questions…”
+   - Ask exactly: “Is there anything else I can help you with?”
    - Block close until answered.
 3. **Barge‑in**
    - Cancel assistant response and audio output when caller interrupts.

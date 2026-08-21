@@ -9,7 +9,7 @@ import {
   renderPromptContext
 } from "@everycall/contracts";
 
-const EXPECTED_TEMPLATE_SHA256 = "370c0532ce242591af1cdaa4d680f47141f3ae649a2de017fa8f32f38aebd71c";
+const EXPECTED_TEMPLATE_SHA256 = "0cc6207be4564b49471848167ed44dcb87297cb903b3b03728b83a7d424493ed";
 const seed = getDefaultPromptBlueprintSeed();
 assert.equal(seed.version, 18);
 assert.equal(seed.name, "Canonical Receptionist v18");
@@ -27,6 +27,8 @@ assert.doesNotMatch(toolsRules, /next needed question or the closing/);
 const closingRules = sections.get("closing") || "";
 assert.match(closingRules, /Thanks for calling, FIRSTNAME\. Have a good one\./);
 assert.match(closingRules, /Thanks for calling\. Have a good one\./);
+assert.match(closingRules, /Before ending any call, ask exactly: "Is there anything else I can help you with\?"/);
+assert.doesNotMatch(closingRules, /Do you have any other questions\?/);
 assert.match(closingRules, /Never emit finish_session by itself\./);
 assert.match(closingRules, /The same response must contain the spoken closing and the silent finish_session tool call\./);
 assert.match(closingRules, /Do not wait for the caller to say goodbye after the closing\./);
@@ -61,6 +63,8 @@ for (const promptMode of ["legacy", "layered"]) {
   assert.match(rendered.startupPrompt, /When capture is complete, ask the required other-questions checkpoint and wait\./);
   assert.match(rendered.startupPrompt, /Never continue directly from data_capture to the closing\./);
   assert.match(rendered.startupPrompt, /Thanks for calling, FIRSTNAME\. Have a good one\./);
+  assert.match(rendered.startupPrompt, /Is there anything else I can help you with\?/);
+  assert.doesNotMatch(rendered.startupPrompt, /Do you have any other questions\?/);
   assert.match(rendered.startupPrompt, /Never emit finish_session by itself\./);
   assert.doesNotMatch(rendered.startupPrompt, /A conflicting old tenant closing phrase/);
 }
@@ -112,7 +116,7 @@ assert.deepEqual(finishControl.buildFinishSessionClosingRecovery("Avery"), {
 const responseEvidenceState = {};
 const earlierQuestionEvidence = finishControl.ensureAssistantResponseEvidence(responseEvidenceState, "resp_question");
 earlierQuestionEvidence.audioObserved = true;
-earlierQuestionEvidence.transcript = "Do you have any other questions?";
+earlierQuestionEvidence.transcript = "Is there anything else I can help you with?";
 const finishOnlyEvidence = finishControl.ensureAssistantResponseEvidence(responseEvidenceState, "resp_finish_only");
 assert.equal(finishControl.getAssistantResponseEvidence(responseEvidenceState, "resp_question"), earlierQuestionEvidence);
 assert.equal(finishControl.getAssistantResponseEvidence(responseEvidenceState, "resp_finish_only"), finishOnlyEvidence);
