@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   GENERIC_PRICE_FREE_RESTATEMENT,
+  PRICING_SAFETY_PROCESSING_VERSION as RUNTIME_PRICING_SAFETY_PROCESSING_VERSION,
   applyTenantFactsToSharedPlannerRuntime,
   buildPacketProvenance,
   containsMonetaryOrRateExpression,
@@ -12,9 +13,13 @@ import {
   sanitizePricingSupport
 } from "@everycall/contracts";
 import {
+  PRICING_SAFETY_PROCESSING_VERSION as INGEST_PRICING_SAFETY_PROCESSING_VERSION,
   artifactFigureFloorReasons,
   ensurePricingSafetyArtifacts
 } from "../pages/api/_lib/knowledgePricingSafety.js";
+
+assert.equal(INGEST_PRICING_SAFETY_PROCESSING_VERSION, "pricing_safety_v19_rev_g_v2");
+assert.equal(RUNTIME_PRICING_SAFETY_PROCESSING_VERSION, INGEST_PRICING_SAFETY_PROCESSING_VERSION);
 
 const seed = getDefaultPromptBlueprintSeed();
 assert.equal(seed.version, 19);
@@ -225,11 +230,26 @@ const artifactDb = {
     throw new Error(`unexpected artifact query: ${sql.slice(0, 100)}`);
   }
 };
-const modelCaller = async ({ system }) => {
-  if (system.includes("primary classifier")) return { model: "classifier", parsed: { items: [{ target_id: "candidate:candidate_false_negative", verdict: "clear", pricing_kind: "none" }] } };
-  if (system.includes("independent source verifier")) return { model: "source-verifier", parsed: { items: [{ target_id: "candidate:candidate_false_negative", verdict: "price", pricing_kind: "conditional" }] } };
-  if (system.includes("Write one useful")) return { model: "restatement", parsed: { topic: "project pricing", drivers: ["scope of work"], spoken: "The scope of the work is one detail that affects the cost." } };
-  if (system.includes("Independently inspect")) return { model: "restatement-verifier", parsed: { verdict: "clear" } };
+const sourceDecisionRequests = [];
+const restatementRequests = [];
+const modelCaller = async (request) => {
+  const { system } = request;
+  if (system.includes("primary classifier")) {
+    sourceDecisionRequests.push(request);
+    return { model: "classifier", parsed: { items: [{ target_id: "candidate:candidate_false_negative", verdict: "clear", pricing_kind: "none" }] } };
+  }
+  if (system.includes("independent source verifier")) {
+    sourceDecisionRequests.push(request);
+    return { model: "source-verifier", parsed: { items: [{ target_id: "candidate:candidate_false_negative", verdict: "price", pricing_kind: "conditional" }] } };
+  }
+  if (system.includes("Write one useful")) {
+    restatementRequests.push(request);
+    return { model: "restatement", parsed: { topic: "project pricing", drivers: ["scope of work"], spoken: "The scope of the work is one detail that affects the cost." } };
+  }
+  if (system.includes("Independently inspect")) {
+    restatementRequests.push(request);
+    return { model: "restatement-verifier", parsed: { verdict: "clear" } };
+  }
   throw new Error("unexpected model call");
 };
 await ensurePricingSafetyArtifacts(artifactDb, {
@@ -247,6 +267,27 @@ assert.equal(inserts[0][5], "classifier");
 assert.equal(inserts[0][8], "source-verifier");
 assert.equal(inserts[0][11], "restatement");
 assert.equal(inserts[0][14], "restatement-verifier");
+assert.equal(sourceDecisionRequests.length, 2);
+for (const request of sourceDecisionRequests) {
+  assert.match(request.system, /Return exactly one JSON object, never a top-level array/);
+  assert.equal(request.jsonSchema.type, "object");
+  assert.deepEqual(request.jsonSchema.required, ["items"]);
+  assert.equal(request.jsonSchema.properties.items.minItems, 1);
+  assert.equal(request.jsonSchema.properties.items.maxItems, 1);
+  assert.deepEqual(request.jsonSchema.properties.items.items.properties.target_id.enum, ["candidate:candidate_false_negative"]);
+}
+assert.deepEqual(
+  sourceDecisionRequests.map((request) => request.jsonSchemaName),
+  ["pricing_safety_primary_classifier", "pricing_safety_source_verifier"]
+);
+assert.deepEqual(
+  restatementRequests.map((request) => request.jsonSchemaName),
+  ["pricing_safety_restatement", "pricing_safety_restatement_verifier"]
+);
+assert.deepEqual(restatementRequests[0].jsonSchema.required, ["topic", "drivers", "spoken"]);
+assert.deepEqual(restatementRequests[1].jsonSchema.required, ["verdict"]);
+assert.match(restatementRequests[0].system, /Return exactly one JSON object/);
+assert.match(restatementRequests[1].system, /Return exactly one JSON object/);
 
 console.log(JSON.stringify({
   ok: true,
@@ -258,6 +299,9 @@ console.log(JSON.stringify({
     "whole_packet_contract_valid_fallback",
     "tenant_authorized_and_unapproved_origins",
     "shared_gateway_tenant_fact_overlay_authorization",
-    "independent_source_verifier_catches_classifier_false_negative"
+    "independent_source_verifier_catches_classifier_false_negative",
+    "source_decisions_use_strict_object_schema",
+    "restatement_calls_use_strict_object_schemas",
+    "processing_versions_match_and_are_bumped"
   ]
 }, null, 2));

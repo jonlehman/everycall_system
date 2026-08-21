@@ -6,7 +6,7 @@ import {
   type RetrievedFactSupport
 } from "./knowledgePlannerRuntime.js";
 
-export const PRICING_SAFETY_PROCESSING_VERSION = "pricing_safety_v19_rev_g_v1";
+export const PRICING_SAFETY_PROCESSING_VERSION = "pricing_safety_v19_rev_g_v2";
 export const GENERIC_PRICE_FREE_RESTATEMENT = "Pricing depends on the details of the work, and the team can follow up about the next step.";
 
 export type PricingPacketOrigin =
