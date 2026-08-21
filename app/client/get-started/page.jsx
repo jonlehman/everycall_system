@@ -39,6 +39,10 @@ function actionButtonClass(disabled = false) {
   return 'inline-flex items-center justify-center rounded-lg border-2 border-slate-200 bg-white px-8 py-3 text-xs font-bold tracking-[0.18em] text-[#121c2a] shadow-sm transition-all hover:border-[#2563eb] hover:text-[#2563eb] active:scale-95';
 }
 
+function setupIdempotencyKey(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function InlineInfoButton({ message }) {
   return (
     <span className="group relative inline-flex">
@@ -210,12 +214,49 @@ export default function ClientGetStartedPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const signupConversionSentRef = useRef(false);
+  const byHeartAudioRef = useRef(null);
   const [setupStatus, setSetupStatus] = useState(null);
   const [loadingSetupStatus, setLoadingSetupStatus] = useState(true);
   const [refreshingWebsiteTraining, setRefreshingWebsiteTraining] = useState(false);
   const [savingForwardingStatus, setSavingForwardingStatus] = useState(false);
   const [savingReceptionistReviewStatus, setSavingReceptionistReviewStatus] = useState(false);
   const [showSupportSetupModal, setShowSupportSetupModal] = useState(false);
+  const [playingByHeartSet, setPlayingByHeartSet] = useState(false);
+
+  useEffect(() => () => byHeartAudioRef.current?.pause?.(), []);
+
+  const playByHeartSet = async () => {
+    if (playingByHeartSet) return;
+    setPlayingByHeartSet(true);
+    try {
+      byHeartAudioRef.current?.pause?.();
+      const response = await fetch('/api/v1/knowledge/core-facts/speak', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': setupIdempotencyKey('setup-by-heart-listen')
+        },
+        body: JSON.stringify({ all_selected: true, playback_context: 'onboarding' })
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) throw new Error(payload?.message || 'Could not play the selected facts.');
+      if (!payload.manifest?.length) throw new Error('No by-heart facts are selected yet.');
+      for (const item of payload.manifest) {
+        const audio = new Audio(item.url);
+        byHeartAudioRef.current = audio;
+        await new Promise((resolve, reject) => {
+          audio.onended = resolve;
+          audio.onerror = reject;
+          audio.play().catch(reject);
+        });
+      }
+    } catch (error) {
+      window.alert(error.message || 'Could not play the selected facts.');
+    } finally {
+      byHeartAudioRef.current = null;
+      setPlayingByHeartSet(false);
+    }
+  };
 
   const loadSetupStatus = async ({ silent = false } = {}) => {
     if (!silent) {
@@ -346,7 +387,10 @@ export default function ClientGetStartedPage() {
       tone: task?.tone || 'processing',
       statusValue: task?.label || (loadingSetupStatus ? 'Loading' : 'Not live yet'),
       description: task?.message || 'Open Knowledge to create or review the live training build.',
-      subdescription: Array.isArray(task?.warnings) && task.warnings.length ? task.warnings.join(' ') : ''
+      subdescription: [
+        ...(Array.isArray(task?.warnings) ? task.warnings : []),
+        task?.status === 'ready' ? 'Before live calls, you can hear the selected by-heart facts in Section 02. Listening is optional.' : ''
+      ].filter(Boolean).join(' ')
     };
   }, [loadingSetupStatus, setupStatus]);
 
@@ -586,8 +630,18 @@ export default function ClientGetStartedPage() {
               progress={{ label: 'Receptionist Training Progress', percent: websiteTraining.progressPercent }}
               action={(
                 <div className={`flex items-center gap-3 ${showWebsiteTrainingRefresh ? 'w-full justify-between' : ''}`.trim()}>
+                  {websiteTraining.done ? (
+                    <button
+                      type="button"
+                      className={actionButtonClass(playingByHeartSet)}
+                      onClick={playByHeartSet}
+                      disabled={playingByHeartSet}
+                    >
+                      {playingByHeartSet ? 'Playing...' : 'Listen'}
+                    </button>
+                  ) : null}
                   <Link
-                    href="/client/receptionist/knowledge"
+                    href="/client/receptionist/knowledge#knows-by-heart"
                     className={actionButtonClass(false)}
                   >
                     Edit

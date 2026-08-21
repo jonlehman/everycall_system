@@ -8,7 +8,7 @@ import {
   loadReusableCoreFactRatings,
   normalizeCallerFaqCategories,
   rateChangedCoreFacts,
-  rewritePinnedCoreFactsForSpeech
+  rewriteCoreFactCatalogCandidatesForSpeech
 } from "./knowledgeCoreFacts.js";
 
 const CORE_FACT_CREATION_RATING_VERSION = "known_by_heart_creation_rating_v1";
@@ -2841,6 +2841,198 @@ function serializeEmbedding(embedding) {
   return `[${embedding.map((value) => Number(value || 0)).join(",")}]`;
 }
 
+function cosineSimilarity(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length || !left.length) return 0;
+  let dot = 0;
+  let leftMagnitude = 0;
+  let rightMagnitude = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = Number(left[index] || 0);
+    const b = Number(right[index] || 0);
+    dot += a * b;
+    leftMagnitude += a * a;
+    rightMagnitude += b * b;
+  }
+  return leftMagnitude && rightMagnitude ? dot / Math.sqrt(leftMagnitude * rightMagnitude) : 0;
+}
+
+function coreFactConsolidationSignature(fact) {
+  const claim = normalizeText(fact.claim_text).toLowerCase();
+  const polarity = /\b(?:do not|don't|does not|doesn't|cannot|can't|never|no longer|not available|not offer)\b/.test(claim)
+    ? "deny"
+    : "affirm";
+  const quantities = uniqueValues(claim.match(/(?:\$\s*)?\d+(?:\.\d+)?(?:\s*(?:%|miles?|hours?|minutes?|days?|weeks?|months?|years?|sq\.?\s*ft|square\s+feet|a\.m\.|p\.m\.))?/gi) || [])
+    .map((value) => value.toLowerCase())
+    .sort();
+  const categories = normalizeCallerFaqCategories(
+    fact.core_fact_caller_question_categories_json || fact.core_fact_caller_question_categories
+  ).sort();
+  const boundaries = uniqueValues(fact.boundary_json?.statements || []).map((value) => value.toLowerCase()).sort();
+  const qualifiers = uniqueValues(fact.qualifier_json?.statements || []).map((value) => value.toLowerCase()).sort();
+  return JSON.stringify({
+    polarity,
+    quantities,
+    categories,
+    boundaries,
+    qualifiers,
+    role: normalizeText(fact.fact_role).toLowerCase()
+  });
+}
+
+const CORE_FACT_SERVICE_FINGERPRINT_PATTERNS = [
+  ["cabinet_painting", /\bcabinet(?:ry)?\s+(?:painting|refinishing)\b/i],
+  ["interior_painting", /\binterior\s+painting\b/i],
+  ["exterior_painting", /\bexterior(?:\s+maintenance)?\s+painting\b/i],
+  ["commercial_painting", /\bcommercial\s+painting\b/i],
+  ["residential_painting", /\bresidential\s+painting\b/i],
+  ["concrete_coating", /\b(?:concrete|garage\s+floor)\s+coatings?\b/i],
+  ["deck_staining", /\bdeck\s+(?:staining|finishing)\b/i],
+  ["carpentry", /\bcarpentry(?:\s+repairs?)?\b/i],
+  ["pressure_washing", /\bpressure\s+washing\b/i],
+  ["roof_cleaning", /\broof\s+cleaning\b/i],
+  ["gutter_cleaning", /\bgutter\s+cleaning\b/i],
+  ["window_washing", /\bwindow\s+washing\b/i],
+  ["wallpaper_removal", /\bwallpaper\s+removal\b/i],
+  ["color_consultation", /\bcolou?r\s+consultation\b/i],
+  ["holiday_lighting", /\bholiday\s+light(?:ing)?\s+(?:installation|service)\b/i],
+  ["window_installation", /\bwindow\s+(?:installation|replacement)\b/i],
+  ["door_installation", /\bdoor\s+(?:installation|replacement)\b/i],
+  ["glass_repair", /\bglass\s+repair\b/i],
+  ["shower_glass", /\b(?:shower\s+(?:door|glass)|frameless\s+shower)\b/i],
+  ["mirrors", /\b(?:custom\s+)?mirrors?\b/i]
+];
+
+function coreFactServiceFingerprint(fact) {
+  const categories = normalizeCallerFaqCategories(
+    fact.core_fact_caller_question_categories_json || fact.core_fact_caller_question_categories
+  );
+  const role = normalizeText(fact.fact_role).toLowerCase();
+  if (!categories.includes("main_services") && !/capability|service|offering/.test(role)) return "";
+  const claim = normalizeText(fact.claim_text);
+  const services = CORE_FACT_SERVICE_FINGERPRINT_PATTERNS
+    .filter(([, pattern]) => pattern.test(claim))
+    .map(([key]) => key)
+    .sort();
+  if (!services.length) return "";
+  const audiences = [
+    ["medical", /\b(?:medical|healthcare|hospital|clinic)\b/i],
+    ["education", /\b(?:school|educational|university|college)\b/i],
+    ["retail", /\bretail\b/i],
+    ["hoa_property_management", /\b(?:hoa|property managers?)\b/i],
+    ["industrial", /\bindustrial\b/i]
+  ].filter(([, pattern]) => pattern.test(claim)).map(([key]) => key).sort();
+  return JSON.stringify({ services, audiences });
+}
+
+function mergeConsolidatedFact(representative, duplicate) {
+  representative.source_ref_ids_json = uniqueValues([
+    ...(representative.source_ref_ids_json || []),
+    ...(duplicate.source_ref_ids_json || [])
+  ]);
+  representative.source_span_refs_json = [
+    ...(representative.source_span_refs_json || []),
+    ...(duplicate.source_span_refs_json || [])
+  ].filter((item, index, rows) => rows.findIndex((candidate) =>
+    JSON.stringify(candidate) === JSON.stringify(item)
+  ) === index);
+  representative.source_chunk_ids_json = uniqueValues([
+    ...(representative.source_chunk_ids_json || []),
+    ...(duplicate.source_chunk_ids_json || [])
+  ]);
+  representative.support_metadata_json = {
+    ...(representative.support_metadata_json || {}),
+    next_steps: uniqueValues([
+      ...(representative.support_metadata_json?.next_steps || []),
+      ...(duplicate.support_metadata_json?.next_steps || [])
+    ]),
+    source_channels: uniqueValues([
+      ...(representative.support_metadata_json?.source_channels || []),
+      ...(duplicate.support_metadata_json?.source_channels || [])
+    ]),
+    source_authorities: uniqueValues([
+      ...(representative.support_metadata_json?.source_authorities || []),
+      ...(duplicate.support_metadata_json?.source_authorities || [])
+    ]),
+    content_classes: uniqueValues([
+      ...(representative.support_metadata_json?.content_classes || []),
+      ...(duplicate.support_metadata_json?.content_classes || [])
+    ])
+  };
+  return representative;
+}
+
+export async function consolidateCoreFactCatalogCandidates(facts, {
+  embeddingProvider = embedOpenAiTexts,
+  embeddingModel = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small",
+  duplicateSimilarity = 0.96
+} = {}) {
+  const rows = asArray(facts);
+  if (rows.length < 2) return { facts: rows, duplicateToRepresentative: new Map(), inputCount: rows.length };
+  const embeddings = await embeddingProvider({
+    model: embeddingModel,
+    texts: rows.map((fact) => normalizeText(fact.claim_text))
+  });
+  const ordered = rows.map((fact, index) => ({
+    fact: { ...fact },
+    embedding: embeddings[index]?.embedding || [],
+    signature: coreFactConsolidationSignature(fact),
+    serviceFingerprint: coreFactServiceFingerprint(fact)
+  })).sort((left, right) => {
+    const score = Number(right.fact.core_fact_score || 0) - Number(left.fact.core_fact_score || 0);
+    if (score) return score;
+    const sources = (right.fact.source_ref_ids_json || []).length - (left.fact.source_ref_ids_json || []).length;
+    if (sources) return sources;
+    return normalizeText(left.fact.claim_text).localeCompare(normalizeText(right.fact.claim_text));
+  });
+  const representatives = [];
+  const duplicateToRepresentative = new Map();
+  for (const item of ordered) {
+    const duplicate = representatives.find((representative) =>
+      representative.signature === item.signature
+      && ((representative.serviceFingerprint
+          && representative.serviceFingerprint === item.serviceFingerprint)
+        || cosineSimilarity(representative.embedding, item.embedding) >= duplicateSimilarity)
+    );
+    if (!duplicate) {
+      representatives.push(item);
+      continue;
+    }
+    duplicateToRepresentative.set(item.fact.knowledge_fact_id, duplicate.fact.knowledge_fact_id);
+    mergeConsolidatedFact(duplicate.fact, item.fact);
+  }
+  return {
+    facts: representatives.map((item) => item.fact),
+    duplicateToRepresentative,
+    inputCount: rows.length,
+    embeddingModel
+  };
+}
+
+function remapCardFactSupport(cards, duplicateToRepresentative, catalogFacts) {
+  if (!duplicateToRepresentative.size) return cards;
+  const factById = new Map(asArray(catalogFacts).map((fact) => [fact.knowledge_fact_id, fact]));
+  return cards.map((card) => {
+    const factIds = uniqueValues(asArray(card.support_metadata_json?.fact_ids).map((factId) =>
+      duplicateToRepresentative.get(factId) || factId
+    ));
+    return {
+      ...card,
+      answer_facts_json: factIds.map((factId) => {
+        const fact = factById.get(factId);
+        return fact ? {
+          fact_id: factId,
+          claim: fact.claim_text,
+          fact_role: fact.fact_role
+        } : null;
+      }).filter(Boolean),
+      support_metadata_json: {
+        ...(card.support_metadata_json || {}),
+        fact_ids: factIds
+      }
+    };
+  });
+}
+
 async function embedArtifacts(cards, facts, buildInfo) {
   const cardTexts = cards.map((card) => card.search_text);
   const factTexts = facts.map((fact) => fact.search_text || fact.claim_text);
@@ -2973,8 +3165,20 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo, assertExec
       rating_version: coreFactRating.ratingVersion
     })
   });
-  const coreFactSpokenRewrite = await rewritePinnedCoreFactsForSpeech({
-    facts: coreFactRating.facts,
+  const candidateCatalog = await consolidateCoreFactCatalogCandidates(coreFactRating.facts);
+  const catalogCards = remapCardFactSupport(
+    consolidated.cards,
+    candidateCatalog.duplicateToRepresentative,
+    candidateCatalog.facts
+  );
+  logCompilerProgress("core_fact_catalog_consolidation_completed", {
+    inputCount: candidateCatalog.inputCount,
+    candidateCount: candidateCatalog.facts.length,
+    duplicateCount: candidateCatalog.inputCount - candidateCatalog.facts.length,
+    embeddingModel: candidateCatalog.embeddingModel || null
+  });
+  const coreFactSpokenRewrite = await rewriteCoreFactCatalogCandidatesForSpeech({
+    facts: candidateCatalog.facts,
     model: process.env.OPENAI_CORE_FACTS_SPOKEN_MODEL || "gpt-5.2"
   });
   for (const skipped of coreFactSpokenRewrite.unsafeSkippedFacts || []) {
@@ -3004,7 +3208,7 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo, assertExec
       spoken_version: coreFactSpokenRewrite.spokenVersion
     })
   });
-  const embedded = await embedArtifacts(consolidated.cards, coreFactSpokenRewrite.facts, buildInfo);
+  const embedded = await embedArtifacts(catalogCards, coreFactSpokenRewrite.facts, buildInfo);
   await assertLease();
   logCompilerProgress("artifact_embeddings_completed", {
     cardVectorCount: embedded.cardVectors.length,
@@ -3023,7 +3227,7 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo, assertExec
     sourceChunks,
     topics: topicRows.topics,
     subtopics: topicRows.subtopics,
-    cards: consolidated.cards,
+    cards: catalogCards,
     facts: coreFactSpokenRewrite.facts,
     coreFactSetSelection: {
       version: coreFactSpokenRewrite.setSelectionVersion,

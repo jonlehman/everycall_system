@@ -10,6 +10,7 @@ import {
 } from "../../_lib/knowledgeCallerFaqConfirmation.js";
 import { saveSetupInterviewSubmission } from "../../_lib/knowledgeReceptionistSetupInterview.js";
 import { enqueueKnowledgeBuild } from "../../_lib/knowledgeReceptionistBuilds.js";
+import { confirmKnowledgeHeartFacts } from "../../_lib/knowledgeHeartCatalog.js";
 
 function fail(res, status, error, message) {
   return res.status(status).json({ ok: false, error, message });
@@ -80,6 +81,18 @@ export default async function handler(req, res) {
     );
     const baseBuildId = String(activeResult.rows?.[0]?.active_build_id || "").trim();
     if (!baseBuildId) throw new Error("overlay_base_build_required");
+    const selectionStateResult = await pool.query(
+      `SELECT selection_version FROM kb_selection_state WHERE tenant_key = $1 LIMIT 1`,
+      [tenantKey]
+    );
+    await confirmKnowledgeHeartFacts(pool, {
+      tenantKey,
+      selectionVersion: Number(selectionStateResult.rows?.[0]?.selection_version || 0),
+      answers,
+      actor: session.user_id ? `${session.role || "tenant"}:${session.user_id}` : "tenant:caller-faq-confirmation",
+      requestId: String(req.headers?.["x-request-id"] || ""),
+      idempotencyKey: `caller-faq:${ids.sessionId}`
+    });
     const queued = await enqueueKnowledgeBuild(pool, tenantKey, {
       buildKind: "document_overlay",
       baseBuildId,

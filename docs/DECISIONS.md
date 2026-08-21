@@ -1,6 +1,11 @@
 # Decisions
 
 ## 2026-08-20
+- Canonical Receptionist Part 9 uses an ownership split: catalog revisions and factual candidates are system-owned; tenant facts and manual selection snapshots are durable tenant-owned values. A rescan may flag a manual slot but cannot remove, substitute, or rewrite its approved values.
+- Attach each catalog revision to the effective active/composite knowledge build. Publish the active pointer, catalog, auto-slot changes, and materialized `kb_block` atomically; a block failure prevents activation.
+- Treat website, upload, and tenant-entered prompt text as untrusted. Validate titles and spoken facts for structure, standalone factual content, and assistant-directed behavior; failed candidates cannot be selected or rendered.
+- Keep pricing manual-only, treat 20 as a ceiling rather than a fill target, and cap automatic diversity at three facts per category or five for services.
+- Protect manual values with the `P9K01` accidental-write guard. Tenant deletion and legal erasure use a distinct audited purge context. Durable tenant corrections take priority during lookup answer-packet assembly without deleting catalog rows from the index.
 - New-tenant onboarding may persist an empty company description and empty `basic_no_tool_allowed_statement` until an approved website or setup-interview build is published. Never synthesize the no-tool statement from the bare business name. Prompt rendering omits empty company-description and no-tool bindings without changing the shared layered canonical prefix; build publication remains the single AI-backed writer of the completed, sentence-punctuated snapshot.
 
 ## 2026-08-19

@@ -35,7 +35,9 @@ function createPreviewCallId() {
   return `preview_${Date.now()}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
 }
 
-function createRealtimePreviewInstructions(sampleText) {
+export const REALTIME_PREVIEW_INSTRUCTION_VERSION = "realtime_exact_speech_v1";
+
+export function createRealtimePreviewInstructions(sampleText) {
   return [
     "This is a voice preview for the business greeting.",
     "Answer the phone by speaking exactly the greeting text below and nothing else.",
@@ -69,7 +71,7 @@ function encodePcm16Wav(pcmBuffer, sampleRate = PREVIEW_SAMPLE_RATE_HZ) {
   return Buffer.concat([createWavHeader(pcmBuffer.length, sampleRate), pcmBuffer]);
 }
 
-function buildPreviewPromptPayload(runtimeProfile, voice) {
+export function buildPreviewPromptPayload(runtimeProfile, voice) {
   const sessionConfig = runtimeProfile?.session_config && typeof runtimeProfile.session_config === "object"
     ? runtimeProfile.session_config
     : {};
@@ -163,7 +165,7 @@ function buildPreviewResponseCreate(apiShape, sampleText) {
   };
 }
 
-async function requestRealtimePreview({ apiKey, promptPayload, sampleText }) {
+export async function requestRealtimePreview({ apiKey, promptPayload, sampleText }) {
   return new Promise((resolve, reject) => {
     const model = String(promptPayload?.session_config?.model || "gpt-realtime-2.1").trim() || "gpt-realtime-2.1";
     const apiShape = resolveRealtimeApiShape(process.env.OPENAI_REALTIME_API_SHAPE, model);
@@ -288,6 +290,19 @@ async function requestRealtimePreview({ apiKey, promptPayload, sampleText }) {
       }
     });
   });
+}
+
+export async function synthesizeRealtimeText({ pool, tenantKey, text, voice = "" } = {}) {
+  const sampleText = normalizeText(text).slice(0, MAX_SAMPLE_TEXT_LENGTH);
+  if (!sampleText) throw new Error("realtime_preview_text_required");
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("missing_openai_key");
+  const runtimeProfile = await loadKnowledgeRuntimeProfile(pool, tenantKey);
+  const configuredVoice = normalizeText(runtimeProfile?.session_config?.voice || "marin").toLowerCase() || "marin";
+  const resolvedVoice = normalizeText(voice).toLowerCase() || configuredVoice;
+  if (!REALTIME_VOICES.has(resolvedVoice)) throw new Error("invalid_voice");
+  const promptPayload = buildPreviewPromptPayload(runtimeProfile, resolvedVoice);
+  return requestRealtimePreview({ apiKey, promptPayload, sampleText });
 }
 
 export default async function handler(req, res) {

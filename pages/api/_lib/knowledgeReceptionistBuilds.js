@@ -13,6 +13,10 @@ import {
   materializeCoreFactPromptSection,
   recordCoreFactActivationChanges
 } from "./knowledgeCoreFacts.js";
+import {
+  buildKnowledgeHeartCatalogRevision,
+  publishKnowledgeHeartCatalog
+} from "./knowledgeHeartCatalog.js";
 import { loadTenantDomainAssignments, resolveTenantDomainAssignments, syncCanonicalKnowledgePacks } from "./knowledgeReceptionistPacks.js";
 import { ensureTenantPromptProfileCompanyDescriptionSnapshot } from "./promptBlueprints.js";
 import { syncCallerFaqConfirmationState } from "./knowledgeCallerFaqConfirmation.js";
@@ -3401,6 +3405,11 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
     );
   }
 
+  await buildKnowledgeHeartCatalogRevision(db, {
+    tenantKey: buildInfo.tenant_key,
+    buildId: buildInfo.build_id
+  });
+
   await db.query(
     `UPDATE knowledge_builds
      SET compiler_version = $2,
@@ -5094,6 +5103,9 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId, {
     const currentActiveBuildId = normalizeText(pointerRes.rows[0]?.active_build_id) || null;
     const prewarmedAssets = await loadBuildAssetsFromDb(client, tenantKey, buildId);
 
+    await buildKnowledgeHeartCatalogRevision(client, { tenantKey, buildId });
+    await publishKnowledgeHeartCatalog(client, { tenantKey, buildId });
+
     await client.query(
       `INSERT INTO tenant_active_knowledge_builds (tenant_key, active_build_id, previous_build_id, updated_at)
        VALUES ($1, $2, $3, NOW())
@@ -5205,6 +5217,9 @@ export async function rollbackKnowledgeBuild(db, tenantKey, buildId) {
       throw new Error("build_already_active");
     }
     const prewarmedAssets = await loadBuildAssetsFromDb(client, tenantKey, buildId);
+
+    await buildKnowledgeHeartCatalogRevision(client, { tenantKey, buildId });
+    await publishKnowledgeHeartCatalog(client, { tenantKey, buildId });
 
     await client.query(
       `UPDATE tenant_active_knowledge_builds

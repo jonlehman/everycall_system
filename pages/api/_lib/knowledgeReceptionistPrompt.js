@@ -11,6 +11,10 @@ import {
 import { getKnowledgeBuild, loadActiveKnowledgeBuildAssets } from "./knowledgeReceptionistBuilds.js";
 import { loadApprovedConfigurationArtifacts } from "./knowledgeReceptionistConfig.js";
 import { loadMaterializedCoreFactSection } from "./knowledgeCoreFacts.js";
+import {
+  applyTenantFactsToPlannerRuntime,
+  loadMaterializedKnowledgeHeartSection
+} from "./knowledgeHeartCatalog.js";
 import { buildPromptToolDefinitions, loadPromptRuntimeContext } from "./promptBlueprints.js";
 import { loadTenantBusinessHours } from "./tenantBusinessHours.js";
 
@@ -355,11 +359,13 @@ async function loadBuildAndConfiguration(db, tenantKey, runtimeEntryMode, input 
     throw new Error(buildId ? "build_not_found" : "no_active_build");
   }
 
-  const [{ businessCallIntent, overrides, guardrails, callOutcomeSchema, runtimeProfile }, setupInterviewIntent, materializedCoreFacts] = await Promise.all([
+  const [{ businessCallIntent, overrides, guardrails, callOutcomeSchema, runtimeProfile }, setupInterviewIntent, materializedPart9CoreFacts] = await Promise.all([
     loadApprovedConfigurationArtifacts(db, tenantKey),
     runtimeEntryMode === "setup_interview" ? loadSetupInterviewIntent(db, tenantKey) : Promise.resolve(null),
-    loadMaterializedCoreFactSection(db, tenantKey, activeBuildContext.activeBuildId)
+    loadMaterializedKnowledgeHeartSection(db, tenantKey, activeBuildContext.activeBuildId)
   ]);
+  const materializedCoreFacts = materializedPart9CoreFacts
+    || await loadMaterializedCoreFactSection(db, tenantKey, activeBuildContext.activeBuildId);
   const explicitCoreFactsOverride = input.coreFactsOverride || input.core_facts_override;
   const useExplicitCoreFacts = Array.isArray(explicitCoreFactsOverride);
   const coreFacts = useExplicitCoreFacts ? explicitCoreFactsOverride : materializedCoreFacts.facts;
@@ -489,7 +495,7 @@ export async function assembleKnowledgeRuntimeTurn(db, tenantKey, input = {}) {
     return businessHoursTurn;
   }
 
-  const runtimeResult = await executePlannerPgvectorRuntime(db, {
+  const baseRuntimeResult = await executePlannerPgvectorRuntime(db, {
     tenantKey,
     buildId: build.build_id,
     queryText: query,
@@ -500,6 +506,7 @@ export async function assembleKnowledgeRuntimeTurn(db, tenantKey, input = {}) {
     plannerModel: build.planner_model || undefined,
     embeddingModel: build.embedding_model || undefined
   });
+  const runtimeResult = await applyTenantFactsToPlannerRuntime(db, tenantKey, query, baseRuntimeResult);
 
   const compatibilityBundle = buildCompatibilityBundle(
     runtimeResult.answerPacket,

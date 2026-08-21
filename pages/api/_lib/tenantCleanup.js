@@ -66,7 +66,12 @@ export const QA_TENANT_PATTERNS = {
   tenantKey: ["clientui_e2e_%", "intake_e2e_%", "dbg_%", "clientui_qa_%", "intake_qa_%", "collision_qa_%"]
 };
 
-export async function cleanupTenantByKey(tenantKey, { releaseNumber = true } = {}) {
+export async function cleanupTenantByKey(tenantKey, {
+  releaseNumber = true,
+  purgeKind = "tenant_account_deletion",
+  requestedBy = "system:tenant-cleanup",
+  requestId = `tenant-cleanup:${Date.now()}`
+} = {}) {
   if (!tenantKey) return { tenantKey, deleted: false, reason: "missing_tenant_key" };
 
   const pool = getPool();
@@ -90,6 +95,17 @@ export async function cleanupTenantByKey(tenantKey, { releaseNumber = true } = {
     const telnyxVoiceNumber = tenantRow.rows[0]?.telnyx_voice_number || null;
 
     await client.query("BEGIN");
+    await client.query(`SELECT set_config('app.purge_context', 'true', true)`);
+    await client.query(`SELECT set_config('app.request_id', $1, true)`, [requestId]);
+    const hasPurgeAuditTable = await client.query(`SELECT to_regclass('public.kb_purge_audit') AS table_name`);
+    if (hasPurgeAuditTable.rows?.[0]?.table_name) {
+      await client.query(
+        `INSERT INTO kb_purge_audit (
+           tenant_key, purge_kind, requested_by, request_id, metadata_json, purged_at
+         ) VALUES ($1, $2, $3, $4, $5::jsonb, NOW())`,
+        [tenantKey, purgeKind, requestedBy, requestId, JSON.stringify({ release_number: releaseNumber })]
+      );
+    }
     await client.query(
       `DELETE FROM call_details
        WHERE call_sid IN (

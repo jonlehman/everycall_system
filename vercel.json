@@ -17,6 +17,10 @@
       "schedule": "15 8 * * *"
     },
     {
+      "path": "/api/cron/knowledge-heart-notifications",
+      "schedule": "30 8 * * *"
+    },
+    {
       "path": "/api/cron/sales-maintenance",
       "schedule": "*/1 * * * *"
     }

@@ -602,12 +602,20 @@ function isAcceptablePinnedSpokenTitle(fact, title) {
 function isAcceptablePinnedSpokenRewrite(fact, spoken) {
   const candidate = ensureSentence(spoken);
   return isConservativeSpokenRewrite(fact?.claim_text, candidate)
+    && /\b(?:we|our|us|we're|we've|we'll|we'd)\b/i.test(candidate)
+    && !/\b(?:you|your|yours|yourself|yourselves)\b/i.test(candidate)
+    && (candidate.match(/[.!?](?:\s|$)/g) || []).length === 1
+    && !/,\s+(?:and|but|while|whereas)\s+(?:we|our|the business|the company)\b/i.test(candidate)
     && !hasDuplicatedTitlePrefix(fact?.core_fact_title, candidate);
 }
 
 function pinnedSpokenRewriteRejectionReason(fact, spoken) {
   const candidate = ensureSentence(spoken);
   if (hasDuplicatedTitlePrefix(fact?.core_fact_title, candidate)) return "duplicates_title";
+  if (!/\b(?:we|our|us|we're|we've|we'll|we'd)\b/i.test(candidate)) return "not_first_person_business_voice";
+  if (/\b(?:you|your|yours|yourself|yourselves)\b/i.test(candidate)) return "second_person_address";
+  if ((candidate.match(/[.!?](?:\s|$)/g) || []).length !== 1) return "not_one_sentence";
+  if (/,\s+(?:and|but|while|whereas)\s+(?:we|our|the business|the company)\b/i.test(candidate)) return "multiple_standalone_claims";
   if (!isConservativeSpokenRewrite(fact?.claim_text, candidate)) return "fails_conservative_guard";
   return "unknown";
 }
@@ -630,6 +638,7 @@ async function repairPinnedSpokenRewrite({ fact, rejectedTitle, rejectedSpokenTe
       "Do not copy the title, do not begin with the title's first three words, and do not reuse the rejected sentence's opening phrase.",
       "The first word of spoken_fact MUST differ from every forbidden_first_words entry supplied by the user.",
       "The receptionist speaks for the business. spoken_fact MUST use first-person business voice with we, our, or us, and must never refer to the business as they, their, the company, or the business.",
+      "Do not address the caller with you, your, yours, or yourself. State only the business fact in first-person business voice.",
       "Set safe_in_first_person false and return empty spoken_title and spoken_fact when changing the subject to we would add or infer that the business manufactures, owns, provides, or performs something the canonical fact attributes only to a supplier, manufacturer, partner, product, or other third party.",
       "Preserve every number, negation, limitation, exception, modal, and or-versus-and meaning exactly.",
       "Do not omit or generalize named places, service areas, product names, or technologies that appear in the canonical fact.",
@@ -827,15 +836,35 @@ export async function rewritePinnedCoreFactsForSpeech({
   modelCaller = callOpenAiJsonModel,
   allowModelRewrite = true,
   allowModelSelection = allowModelRewrite,
+  curateSet = true,
   onUnsafeRewrite = null
 } = {}) {
   const sourceFacts = (Array.isArray(facts) ? facts : []).filter(Boolean);
-  const curatedSet = await curateCoreFactCandidateSetWithModel({
-    facts: sourceFacts,
-    model: process.env.OPENAI_CORE_FACTS_SET_MODEL,
-    modelCaller,
-    allowModelSelection
-  });
+  const catalogCandidates = sourceFacts
+    .filter((fact) => fact?.core_fact_is_safe_to_speak === true
+      && normalizeScore(fact?.core_fact_score) > 0)
+    .sort(compareCoreFacts)
+    .filter((fact, index, rows) => {
+      const fingerprint = normalizeText(fact.core_fact_fingerprint) || createCoreFactFingerprint(fact);
+      return rows.findIndex((candidate) =>
+        (normalizeText(candidate.core_fact_fingerprint) || createCoreFactFingerprint(candidate)) === fingerprint
+      ) === index;
+    });
+  const curatedSet = curateSet
+    ? await curateCoreFactCandidateSetWithModel({
+      facts: sourceFacts,
+      model: process.env.OPENAI_CORE_FACTS_SET_MODEL,
+      modelCaller,
+      allowModelSelection
+    })
+    : {
+      facts: catalogCandidates,
+      consideredCount: catalogCandidates.length,
+      selectedFactIds: catalogCandidates.map((fact) => normalizeText(fact.knowledge_fact_id)),
+      selectionVersion: "known_by_heart_candidate_catalog_v1",
+      selectionModel: null,
+      reason: "Prepared every eligible catalog candidate; recommendation is resolved separately from candidate creation."
+    };
   const candidates = curatedSet.facts;
   const selectedCandidateIds = new Set(curatedSet.selectedFactIds);
   const resolvedModel = resolveCoreFactSpokenModel(model);
@@ -879,6 +908,7 @@ export async function rewritePinnedCoreFactsForSpeech({
         `Return one sentence of ${CORE_FACT_SPOKEN_MAX_CHARS} characters or fewer in spoken_fact for each fact.`,
         "Use plain words a receptionist would naturally say on the phone; apply the neighbor test.",
         "The receptionist speaks for the business. Every spoken_fact MUST use first-person business voice with we, our, or us, and must never refer to the business as they, their, the company, or the business.",
+        "Do not address the caller with you, your, yours, or yourself. State only the business fact in first-person business voice.",
         "Set safe_in_first_person false and return empty spoken_title and spoken_fact when changing the subject to we would add or infer that the business manufactures, owns, provides, or performs something the canonical fact attributes only to a supplier, manufacturer, partner, product, or other third party.",
         "Do not use marketing language such as scalable, enterprise-grade, high-performance, robust, innovative, powerful, seamless, or tailored.",
         "Do not mention a technology or product name unless that individual canonical fact is specifically about that technology or product.",
@@ -1033,6 +1063,19 @@ export async function rewritePinnedCoreFactsForSpeech({
     spokenVersion: CORE_FACT_SPOKEN_VERSION,
     spokenModel: resolvedModel
   };
+}
+
+/**
+ * Part 9 candidate preparation. Unlike the legacy pin rewrite this deliberately
+ * does not choose the tenant's set: every eligible distinct candidate receives
+ * a stored spoken form, and recommendation happens later against the catalog.
+ */
+export async function rewriteCoreFactCatalogCandidatesForSpeech(options = {}) {
+  return rewritePinnedCoreFactsForSpeech({
+    ...options,
+    curateSet: false,
+    allowModelSelection: false
+  });
 }
 
 function compareCoreFacts(left, right) {
@@ -1573,7 +1616,9 @@ export async function backfillActiveBuildCoreFacts(db, {
   buildId,
   apply = false,
   model = resolveCoreFactModel(),
-  allowModelScoring = false
+  allowModelScoring = false,
+  catalogMode = false,
+  catalogConsolidator = null
 } = {}) {
   const normalizedTenantKey = normalizeText(tenantKey);
   const normalizedBuildId = normalizeText(buildId);
@@ -1598,8 +1643,13 @@ export async function backfillActiveBuildCoreFacts(db, {
     model,
     allowModelScoring
   });
-  const spokenRewrite = await rewritePinnedCoreFactsForSpeech({
-    facts: rating.facts,
+  const catalogConsolidation = catalogMode && typeof catalogConsolidator === "function"
+    ? await catalogConsolidator(rating.facts)
+    : { facts: rating.facts, duplicateToRepresentative: new Map(), inputCount: rating.facts.length };
+  const spokenRewrite = await (catalogMode
+    ? rewriteCoreFactCatalogCandidatesForSpeech
+    : rewritePinnedCoreFactsForSpeech)({
+    facts: catalogConsolidation.facts,
     model,
     allowModelRewrite: allowModelScoring
   });
@@ -1609,6 +1659,9 @@ export async function backfillActiveBuildCoreFacts(db, {
       tenantKey: normalizedTenantKey,
       buildId: normalizedBuildId,
       action: "planned",
+      catalogMode,
+      consolidatedCandidateCount: catalogConsolidation.facts.length,
+      consolidatedDuplicateCount: catalogConsolidation.inputCount - catalogConsolidation.facts.length,
       factCount: facts.length,
       reusedRatingCount: rating.reusedCount,
       changedRatingCount: rating.changedCount,
@@ -1650,6 +1703,21 @@ export async function backfillActiveBuildCoreFacts(db, {
          AND is_core_fact_pinned = TRUE`,
       [normalizedTenantKey, normalizedBuildId]
     );
+    if (catalogMode && catalogConsolidation.duplicateToRepresentative?.size) {
+      await client.query(
+        `UPDATE knowledge_build_facts
+         SET core_fact_title = '',
+             core_fact_spoken_text = '',
+             core_fact_spoken_version = NULL,
+             core_fact_spoken_model = NULL,
+             core_fact_spoken_at = NULL,
+             core_fact_selector_version = 'known_by_heart_duplicate_consolidated_v1'
+         WHERE tenant_key = $1
+           AND build_id = $2
+           AND knowledge_fact_id = ANY($3::text[])`,
+        [normalizedTenantKey, normalizedBuildId, [...catalogConsolidation.duplicateToRepresentative.keys()]]
+      );
+    }
     for (const fact of spokenRewrite.facts) {
       await client.query(
         `UPDATE knowledge_build_facts
@@ -1716,6 +1784,9 @@ export async function backfillActiveBuildCoreFacts(db, {
       tenantKey: normalizedTenantKey,
       buildId: normalizedBuildId,
       action: "applied",
+      catalogMode,
+      consolidatedCandidateCount: catalogConsolidation.facts.length,
+      consolidatedDuplicateCount: catalogConsolidation.inputCount - catalogConsolidation.facts.length,
       factCount: facts.length,
       reusedRatingCount: rating.reusedCount,
       changedRatingCount: rating.changedCount,

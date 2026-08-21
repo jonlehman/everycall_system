@@ -597,7 +597,7 @@ const spokenRewrite = await rewritePinnedCoreFactsForSpeech({
           fact_id: "fact_100",
           safe_in_first_person: true,
           spoken_title: "Custom business software",
-          spoken_fact: "We build custom software around how your business works."
+          spoken_fact: "We build custom software around each business's workflow."
         }]
       }
     };
@@ -702,9 +702,18 @@ assert.match(
 const compilerSource = await fs.readFile(new URL("../pages/api/_lib/knowledgeReceptionistCompiler.js", import.meta.url), "utf8");
 assert.match(compilerSource, /loadReusableCoreFactRatings/);
 assert.match(compilerSource, /rateChangedCoreFacts/);
-assert.match(compilerSource, /rewritePinnedCoreFactsForSpeech/);
+assert.match(compilerSource, /rewriteCoreFactCatalogCandidatesForSpeech/,
+  "Part 9 must prepare every selectable catalog candidate, not only the legacy pinned subset");
 assert.match(compilerSource, /OPENAI_CORE_FACTS_SPOKEN_MODEL \|\| "gpt-5\.2"/);
-assert.match(compilerSource, /embedArtifacts\(consolidated\.cards, coreFactSpokenRewrite\.facts/);
+const catalogConsolidationOffset = compilerSource.indexOf("consolidateCoreFactCatalogCandidates(coreFactRating.facts)");
+const catalogRewriteOffset = compilerSource.indexOf("rewriteCoreFactCatalogCandidatesForSpeech", catalogConsolidationOffset);
+const catalogEmbeddingOffset = compilerSource.indexOf("embedArtifacts(catalogCards, coreFactSpokenRewrite.facts", catalogRewriteOffset);
+assert.ok(
+  catalogConsolidationOffset >= 0
+    && catalogRewriteOffset > catalogConsolidationOffset
+    && catalogEmbeddingOffset > catalogRewriteOffset,
+  "candidate facts must be consolidated before spoken rewriting and canonical embedding"
+);
 assert.match(compilerSource, /fact\.search_text \|\| fact\.claim_text/, "embeddings must continue to use canonical fact text, never spoken prompt text");
 assert.match(compilerSource, /core_fact_creation_rating/);
 const coreFactSource = await fs.readFile(new URL("../pages/api/_lib/knowledgeCoreFacts.js", import.meta.url), "utf8");

@@ -10,6 +10,7 @@ import { receptionistNavItems } from '../../_components/navigation';
 import { emitClientSetupStatus, fetchClientSetupStatus, statusChipFromTask } from '../../_components/setupStatus';
 import StepSection from '../../_components/StepSection';
 import { isKnowledgeBuildActive, resolveKnowledgeBuildHeaderStatus } from './buildHeaderStatus.mjs';
+import KnowsByHeartSection from './KnowsByHeartSection';
 
 function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
@@ -302,16 +303,22 @@ const guideByContext = {
     tip: 'Use this after saving or approving document changes.'
   },
   testQuestion: {
-    step: '02',
+    step: '03',
     title: 'Test Customer Questions',
     body: 'Ask real caller-style questions to check how EveryCall is likely to answer.',
     tip: 'Test with the words real callers would use.'
   },
   likelyAnswer: {
-    step: '02',
+    step: '03',
     title: 'Likely Answer',
     body: 'This is an estimated answer from the current live build.',
     tip: 'If it is wrong, update the source and rebuild.'
+  },
+  knowsByHeart: {
+    step: '02',
+    title: 'What Your Receptionist Knows by Heart',
+    body: 'Choose up to 20 facts that should be available instantly without a lookup. Your choices stay frozen until you change them.',
+    tip: 'Everything else remains searchable during a call.'
   },
   salesReceptionistNumber: {
     step: '01',
@@ -340,6 +347,7 @@ export default function ReceptionistKnowledgePage() {
   const [buildBusyKind, setBuildBusyKind] = useState('');
   const [previewBusy, setPreviewBusy] = useState(false);
   const [callerFaqBusy, setCallerFaqBusy] = useState(false);
+  const [kbHighFlagCount, setKbHighFlagCount] = useState(0);
   const [activeGuideKey, setActiveGuideKey] = useState('website');
   const [websiteSectionExpanded, setWebsiteSectionExpanded] = useState(false);
   const [documentsSectionExpanded, setDocumentsSectionExpanded] = useState(false);
@@ -761,13 +769,22 @@ export default function ReceptionistKnowledgePage() {
     <SectionPage
       tabs={receptionistNavItems}
       title="Receptionist Training"
-      subtitle="Manage website and document sources, create a live build, and test customer questions."
+      subtitle="Manage training materials, choose what your receptionist knows by heart, and test customer questions."
       status={status}
       statusChip={statusChip}
       headerAside={<SalesReceptionistNumberHeaderAside onHelpClick={openSalesReceptionistNumberGuide} showBadge={false} />}
     >
       <div className="mt-[36px] grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
         <div className="grid min-w-0 gap-3">
+          {kbHighFlagCount > 0 ? (
+            <button
+              type="button"
+              className="w-full rounded-lg border border-rose-300 bg-rose-50 p-4 text-left text-sm font-semibold text-rose-900"
+              onClick={() => setActiveGuideKey('knowsByHeart')}
+            >
+              {kbHighFlagCount} important by-heart {kbHighFlagCount === 1 ? 'fact needs' : 'facts need'} review. Nothing was changed automatically.
+            </button>
+          ) : null}
           <div onClick={(event) => {
             if (isInteractiveGuideTarget(event.target)) return;
             setActiveGuideKey('website');
@@ -1077,18 +1094,36 @@ export default function ReceptionistKnowledgePage() {
 
           <div onClick={(event) => {
             if (isInteractiveGuideTarget(event.target)) return;
-            setActiveGuideKey('testQuestion');
+            setActiveGuideKey('knowsByHeart');
           }}>
             <StepSection
               className="mt-24"
               step="02"
+              title="What Your Receptionist Knows by Heart"
+              contentClassName={activeStep === '02' ? activeCardClassName : ''}
+            >
+              <KnowsByHeartSection
+                onStatus={setStatus}
+                onGuideFocus={() => setActiveGuideKey('knowsByHeart')}
+                onHighFlagsChange={setKbHighFlagCount}
+              />
+            </StepSection>
+          </div>
+
+          <div onClick={(event) => {
+            if (isInteractiveGuideTarget(event.target)) return;
+            setActiveGuideKey('testQuestion');
+          }}>
+            <StepSection
+              className="mt-24"
+              step="03"
               title={(
                 <span className="inline-flex items-center gap-2">
                   <span>Test Customer Questions</span>
                   <InlineInfoButton message={TEST_CUSTOMER_QUESTIONS_TOOLTIP} />
                 </span>
               )}
-              contentClassName={activeStep === '02' ? activeCardClassName : ''}
+              contentClassName={activeStep === '03' ? activeCardClassName : ''}
             >
               <label className="mt-2.5">Test Question</label>
               <input

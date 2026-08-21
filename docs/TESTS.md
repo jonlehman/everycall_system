@@ -27,6 +27,10 @@
 - Apply the tenant profile migration only with `EVERYCALL_APPLY_REALTIME2_PROFILE_MIGRATION=1`.
 
 ## What You Know By Heart
+- Run `corepack pnpm validate:knows-by-heart` after changing the Part 9 catalog, selection mutations, manual-slot trigger, materialization, lookup overlay, voice preview, or Section 02 UI.
+- The Part 9 validator executes migrations 0046–0047 in PGlite, exercises protected write shapes with SQLSTATE `P9K01`, verifies purge context and candidate immutability, checks deterministic serialization, and tests both sides of the contextual prompt-injection gate.
+- Also run `corepack pnpm validate:core-facts`, `corepack pnpm typecheck`, and `corepack pnpm build`. Browser verification covers Section 02 load/search/select/save, preserved edits after 409, edit/correct/revert, multiple flags, and selected-set playback.
+- Production release additionally requires the three-tenant lineage fixture gates in Rev H §9d.6 and a controlled live call proving a newly selected fact is answered immediately without lookup. Report these real-data and paid-voice checks separately from static completion.
 - Run `corepack pnpm validate:core-facts` after building `@everycall/contracts`. This verifies that factual-importance scoring is independent of source wording, the stability/safety/40-point gates are separate, and spoken rewrite failures do not erase importance scores.
 - A v3 backfill must snapshot existing pins and clear their pin flags before writing rerated rows; otherwise the pin-completeness constraint correctly rejects an old pin whose new spoken form is blank.
 - Verify an overlong generated company description ends at a complete sentence within 320 characters, never on a dangling conjunction or preposition, and website publication refreshes the company description and persisted no-tool statement from the same generated snapshot.

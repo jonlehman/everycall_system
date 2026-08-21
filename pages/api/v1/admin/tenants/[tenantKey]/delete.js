@@ -23,7 +23,12 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "missing_tenant_key" });
     }
 
-    const result = await cleanupTenantByKey(tenantKey, { releaseNumber: true });
+    const result = await cleanupTenantByKey(tenantKey, {
+      releaseNumber: true,
+      purgeKind: "tenant_account_deletion",
+      requestedBy: session.user_id ? `admin:${session.user_id}` : "admin:session",
+      requestId: String(req.headers?.["x-request-id"] || `admin-tenant-delete:${tenantKey}:${Date.now()}`)
+    });
     if (!result.deleted) {
       return res.status(404).json({ error: result.reason || "tenant_not_found" });
     }

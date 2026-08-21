@@ -42,7 +42,7 @@ async function sendWithMailtrap(payload) {
   };
 }
 
-async function sendWithResend({ from, to, subject, text, html }) {
+async function sendWithResend({ from, to, subject, text, html, idempotencyKey }) {
   const apiKey = normalizeText(process.env.RESEND_API_KEY);
   if (!apiKey) {
     throw new Error("mail_provider_unavailable");
@@ -51,7 +51,8 @@ async function sendWithResend({ from, to, subject, text, html }) {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {})
     },
     body: JSON.stringify({
       from: `${from.name} <${from.email}>`,
@@ -77,7 +78,8 @@ export async function sendTransactionalEmail({
   subject,
   text,
   html,
-  category = null
+  category = null,
+  idempotencyKey = null
 }) {
   const recipients = (Array.isArray(to) ? to : [to])
     .map((value) => normalizeText(value))
@@ -92,7 +94,7 @@ export async function sendTransactionalEmail({
   }
 
   if (provider === "resend") {
-    return sendWithResend({ from, to: recipients, subject, text, html, category });
+    return sendWithResend({ from, to: recipients, subject, text, html, category, idempotencyKey });
   }
 
   if (provider === "mailtrap") {
