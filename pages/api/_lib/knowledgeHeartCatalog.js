@@ -2,6 +2,12 @@ import crypto from "node:crypto";
 import { callOpenAiJsonModel } from "@everycall/contracts";
 import { z } from "zod";
 import { renderStoredCoreFactSection } from "./knowledgeCoreFacts.js";
+import {
+  PRICING_SAFETY_PROCESSING_VERSION,
+  assertPricingSafetyArtifactsComplete,
+  ensurePricingSafetyArtifacts,
+  textContainsExplicitMonetaryExpression
+} from "./knowledgePricingSafety.js";
 
 export const KNOWS_BY_HEART_PROCESSING_VERSION = "knows_by_heart_rev_h_v1";
 export const KNOWS_BY_HEART_SERIALIZATION_VERSION = "kb_canonical_serialization_v1";
@@ -19,6 +25,7 @@ export const KNOWS_BY_HEART_MATCH_MARGIN = Number.parseFloat(
 export const KNOWS_BY_HEART_MAX_SELECTED = 20;
 export const KNOWS_BY_HEART_MAX_CHARS = 200;
 export const KNOWS_BY_HEART_MANUAL_WRITE_SQLSTATE = "P9K01";
+export const KNOWS_BY_HEART_PRICE_AUTHORIZATION_SQLSTATE = "P9K03";
 const CORRECTION_PROPOSAL_TTL_MS = 10 * 60 * 1000;
 
 export const KNOWS_BY_HEART_CATEGORIES = Object.freeze([
@@ -381,6 +388,11 @@ function sourceRefsForFact(row, sourcesById) {
 }
 
 function candidateSnapshot(row) {
+  const pricingSafety = row.pricing_safety_value && typeof row.pricing_safety_value === "object"
+    ? row.pricing_safety_value
+    : null;
+  const pricingSafetyMissing = !pricingSafety;
+  const pricingSuppressed = pricingSafety?.suppression_required === true;
   return {
     candidate_id: row.id,
     tenant_fact_id: null,
@@ -399,7 +411,14 @@ function candidateSnapshot(row) {
     boundaries: asArray(row.boundaries_json),
     qualifiers: asArray(row.qualifiers_json),
     subject_text: normalizeOneLine(row.subject_text),
-    subject_embedding: asArray(row.subject_embedding)
+    subject_embedding: asArray(row.subject_embedding),
+    pricing_safety: pricingSafety,
+    pricing_safety_missing: pricingSafetyMissing,
+    pricing_suppressed: pricingSuppressed,
+    selectable: normalizeText(row.status) === "available" && !pricingSafetyMissing && !pricingSuppressed,
+    unselectable_reason: pricingSafetyMissing
+      ? "pricing_safety_missing"
+      : pricingSuppressed ? "website_price_suppressed" : null
   };
 }
 
@@ -410,12 +429,15 @@ function tenantFactSnapshot(row) {
     lineage_key: null,
     stable_identity: row.stable_identity,
     subject_identity: row.subject_identity,
+    tenant_fact_kind: normalizeText(row.kind),
     spoken_text: ensureSentence(row.spoken_text),
     title: normalizeOneLine(row.title).replace(/:+$/g, ""),
     canonical_text: ensureSentence(row.canonical_text),
     category: normalizeText(row.category),
     source_refs: [],
-    origin: normalizeText(row.kind) === "confirmed" ? "tenant_confirmed" : "tenant_authored",
+    origin: normalizeText(row.kind) === "confirmed"
+      ? "tenant_confirmed"
+      : normalizeText(row.kind) === "authored" ? "tenant_authored" : "tenant_authored",
     score: Number(row.effective_score || 1),
     status: "available",
     polarity: normalizeText(row.polarity),
@@ -423,13 +445,17 @@ function tenantFactSnapshot(row) {
     boundaries: asArray(row.boundaries_json),
     qualifiers: asArray(row.qualifiers_json),
     subject_text: normalizeOneLine(row.subject_text),
-    subject_embedding: hashedEmbedding(row.subject_text)
+    subject_embedding: hashedEmbedding(row.subject_text),
+    price_authorized_by_tenant: row.price_authorized_by_tenant === true,
+    selectable: true,
+    unselectable_reason: null
   };
 }
 
 async function loadCatalogCandidates(db, revisionId) {
   const result = await db.query(
     `SELECT candidate.*,
+            pricing.value_json AS pricing_safety_value,
             COALESCE((
               SELECT (artifact.value_json->>'score')::double precision
               FROM kb_candidate_artifacts artifact
@@ -447,9 +473,21 @@ async function loadCatalogCandidates(db, revisionId) {
               LIMIT 1
             ), '[]'::jsonb) AS subject_embedding
      FROM kb_candidates candidate
+     INNER JOIN kb_catalog_revisions revision ON revision.id = candidate.revision_id
+     LEFT JOIN LATERAL (
+       SELECT artifact.value_json
+       FROM kb_pricing_safety_artifacts artifact
+       WHERE artifact.tenant_key = candidate.tenant_key
+         AND artifact.build_id = revision.knowledge_build_id
+         AND artifact.target_type = 'candidate'
+         AND artifact.target_id = candidate.id
+         AND artifact.processing_version = $2
+       ORDER BY artifact.created_at DESC, artifact.id DESC
+       LIMIT 1
+     ) pricing ON TRUE
      WHERE candidate.revision_id = $1
      ORDER BY score DESC, candidate.content_hash ASC`,
-    [revisionId]
+    [revisionId, PRICING_SAFETY_PROCESSING_VERSION]
   );
   return result.rows || [];
 }
@@ -586,7 +624,13 @@ export async function buildKnowledgeHeartCatalogRevision(db, {
     `SELECT * FROM kb_catalog_revisions WHERE knowledge_build_id = $1 LIMIT 1`,
     [normalizedBuildId]
   );
-  if (existing.rowCount) return existing.rows[0];
+  if (existing.rowCount) {
+    await ensurePricingSafetyArtifacts(db, {
+      tenantKey: normalizedTenantKey,
+      buildId: normalizedBuildId
+    });
+    return existing.rows[0];
+  }
 
   const [buildResult, factsResult, sourcesResult, vectorsResult, previousRevision, historicalCandidates] = await Promise.all([
     db.query(
@@ -810,6 +854,11 @@ export async function buildKnowledgeHeartCatalogRevision(db, {
     );
   }
 
+  await ensurePricingSafetyArtifacts(db, {
+    tenantKey: normalizedTenantKey,
+    buildId: normalizedBuildId
+  });
+
   if (previousRevision) {
     const resolvedPreviousIds = new Set((await db.query(
       `SELECT from_candidate_id FROM kb_lineage WHERE to_revision_id = $1`,
@@ -876,7 +925,6 @@ function categoryLimit(category) {
 }
 
 function recommendationWeight(entry) {
-  if (entry.category === "pricing") return -Infinity;
   const categoryBonus = HIGH_CATEGORIES.has(entry.category) ? 0.2 : NORMAL_CATEGORIES.has(entry.category) ? 0.08 : 0;
   const tenantBonus = entry.tenant_fact_id ? 1 : 0;
   return Number(entry.score || 0) + categoryBonus + tenantBonus;
@@ -893,7 +941,7 @@ function recommendEntries(entries, suppressions, maxCount) {
     .map((row) => normalizeText(row.target_value));
   const sorted = entries
     .filter((entry) => entry.status === "available")
-    .filter((entry) => entry.category !== "pricing")
+    .filter((entry) => entry.selectable !== false)
     .filter((entry) => entry.tenant_fact_id || Number(entry.score || 0) >= KNOWS_BY_HEART_PIN_SCORE_MIN)
     .filter((entry) => entry.tenant_fact_id
       ? !suppressionSet.has(`tenant_subject_identity:${entry.subject_identity}`)
@@ -1248,6 +1296,11 @@ export async function publishKnowledgeHeartCatalog(db, {
   );
   const revision = revisionResult.rows?.[0];
   if (!revision) throw new Error("kb_catalog_revision_missing");
+  await assertPricingSafetyArtifactsComplete(db, {
+    tenantKey: normalizedTenantKey,
+    buildId,
+    processingVersion: PRICING_SAFETY_PROCESSING_VERSION
+  });
 
   await db.query(
     `INSERT INTO kb_selection_state (tenant_key, selection_version, updated_at)
@@ -1626,7 +1679,7 @@ export async function loadKnowledgeHeartEditor(db, tenantKey, {
   limit = 100
 } = {}) {
   const revision = await loadCurrentRevision(db, tenantKey);
-  const [entries, selectionRows, flagsResult, stateResult, blockResult] = await Promise.all([
+  const [entries, selectionRows, flagsResult, noticesResult, stateResult, blockResult] = await Promise.all([
     loadEditorEntries(db, tenantKey, revision?.id),
     loadSelectionRows(db, tenantKey),
     db.query(
@@ -1634,6 +1687,13 @@ export async function loadKnowledgeHeartEditor(db, tenantKey, {
        WHERE tenant_key = $1 AND resolved_at IS NULL
        ORDER BY CASE severity WHEN 'HIGH' THEN 1 WHEN 'NORMAL' THEN 2 ELSE 3 END,
                 raised_at DESC`,
+      [tenantKey]
+    ),
+    db.query(
+      `SELECT * FROM kb_tenant_notices
+       WHERE tenant_key = $1
+         AND (acknowledged_at IS NULL OR acknowledged_hash IS DISTINCT FROM current_content_hash)
+       ORDER BY raised_at DESC, id DESC`,
       [tenantKey]
     ),
     db.query(`SELECT selection_version FROM kb_selection_state WHERE tenant_key = $1 LIMIT 1`, [tenantKey]),
@@ -1673,6 +1733,7 @@ export async function loadKnowledgeHeartEditor(db, tenantKey, {
     candidates: page,
     selection: selectionRows.map(selectionRowSnapshot),
     flags: flagsResult.rows || [],
+    notices: noticesResult.rows || [],
     selectionSummary: {
       selectedCount: selectionRows.length,
       limit: KNOWS_BY_HEART_MAX_SELECTED,
@@ -1702,6 +1763,7 @@ async function entryByReference(client, tenantKey, revisionId, reference) {
   if (reference?.candidate_id && revisionId) {
     const result = await client.query(
       `SELECT candidate.*,
+              pricing.value_json AS pricing_safety_value,
               COALESCE((SELECT (artifact.value_json->>'score')::double precision
                         FROM kb_candidate_artifacts artifact
                         WHERE artifact.candidate_id = candidate.id AND artifact.artifact_kind = 'pin_score'
@@ -1711,10 +1773,22 @@ async function entryByReference(client, tenantKey, revisionId, reference) {
                         WHERE artifact.candidate_id = candidate.id AND artifact.artifact_kind = 'subject_embedding'
                         ORDER BY artifact.created_at DESC, artifact.id DESC LIMIT 1), '[]'::jsonb) AS subject_embedding
        FROM kb_candidates candidate
+       INNER JOIN kb_catalog_revisions revision ON revision.id = candidate.revision_id
+       LEFT JOIN LATERAL (
+         SELECT artifact.value_json
+         FROM kb_pricing_safety_artifacts artifact
+         WHERE artifact.tenant_key = candidate.tenant_key
+           AND artifact.build_id = revision.knowledge_build_id
+           AND artifact.target_type = 'candidate'
+           AND artifact.target_id = candidate.id
+           AND artifact.processing_version = $4
+         ORDER BY artifact.created_at DESC, artifact.id DESC
+         LIMIT 1
+       ) pricing ON TRUE
        WHERE candidate.tenant_key = $1 AND candidate.revision_id = $2
          AND candidate.id = $3 AND candidate.status = 'available'
        LIMIT 1`,
-      [tenantKey, revisionId, reference.candidate_id]
+      [tenantKey, revisionId, reference.candidate_id, PRICING_SAFETY_PROCESSING_VERSION]
     );
     return result.rows?.[0] ? candidateSnapshot(result.rows[0]) : null;
   }
@@ -1875,6 +1949,13 @@ export async function replaceKnowledgeHeartSelection(db, {
         }
         const entry = await entryByReference(client, tenantKey, revision?.id, desired);
         if (!entry || entry.status !== "available") throw new Error("kb_selection_candidate_unavailable");
+        if (entry.selectable === false) {
+          const error = new Error(entry.pricing_suppressed
+            ? "kb_selection_website_price_suppressed"
+            : "kb_selection_pricing_safety_missing");
+          error.statusCode = 422;
+          throw error;
+        }
         if (current) {
           const currentReference = current.candidate_id
             ? `candidate:${current.candidate_id}`
@@ -1903,7 +1984,8 @@ const correctionExtractionSchema = z.object({
   quantities: z.array(z.string().max(100)).max(12),
   boundaries: z.array(z.string().max(160)).max(12),
   qualifiers: z.array(z.string().max(160)).max(12),
-  subject_text: z.string().min(2).max(200)
+  subject_text: z.string().min(2).max(200),
+  monetary_statement: z.boolean()
 });
 
 function semanticTokens(value) {
@@ -2064,6 +2146,7 @@ async function correctionFactFromStatement(statement, currentRow, {
         "boundaries contains every named place, service-area limit, coverage exclusion, and geographic scope. Copy the complete surface phrase, such as King County rather than King.",
         "qualifiers contains only explicit conditions or scope limits, such as on request, for existing customers, or weather permitting. Do not restate the business action or result as a qualifier.",
         "Do not infer missing values. subject_text names the neutral underlying fact with polarity and numeric values removed.",
+        "monetary_statement is true when the statement states, implies, compares, or lets a listener reconstruct an amount charged by this business, including fixed, conditional, spelled-out, shorthand, or relative amounts.",
         "Return JSON only."
       ].join("\n"),
       user: JSON.stringify({
@@ -2077,14 +2160,15 @@ async function correctionFactFromStatement(statement, currentRow, {
       jsonSchema: {
         type: "object",
         additionalProperties: false,
-        required: ["category", "polarity", "quantities", "boundaries", "qualifiers", "subject_text"],
+        required: ["category", "polarity", "quantities", "boundaries", "qualifiers", "subject_text", "monetary_statement"],
         properties: {
           category: { type: "string", enum: KNOWS_BY_HEART_CATEGORIES },
           polarity: { type: "string", enum: ["affirm", "deny"] },
           quantities: { type: "array", maxItems: 12, items: { type: "string", maxLength: 100 } },
           boundaries: { type: "array", maxItems: 12, items: { type: "string", maxLength: 160 } },
           qualifiers: { type: "array", maxItems: 12, items: { type: "string", maxLength: 160 } },
-          subject_text: { type: "string", minLength: 2, maxLength: 200 }
+          subject_text: { type: "string", minLength: 2, maxLength: 200 },
+          monetary_statement: { type: "boolean" }
         }
       },
       temperature: 0,
@@ -2122,8 +2206,16 @@ async function correctionFactFromStatement(statement, currentRow, {
     boundaries: structured.boundaries,
     qualifiers: structured.qualifiers,
     subject_text: structured.subjectText,
+    monetary_statement: parsed.monetary_statement === true,
     content_hash: structured.contentHash
   };
+}
+
+function statementAuthorizesPrice(derived) {
+  return derived?.monetary_statement === true
+    || normalizeText(derived?.category) === "pricing"
+    || textContainsExplicitMonetaryExpression(derived?.canonical_text)
+    || asArray(derived?.quantities).some((value) => textContainsExplicitMonetaryExpression(value));
 }
 
 export async function proposeKnowledgeHeartCorrection(db, {
@@ -2293,22 +2385,25 @@ export async function commitKnowledgeHeartCorrection(db, {
       }
       const factId = compactId("kbtf", `${tenantKey}:${subjectIdentity}:${Date.now()}:${derived.content_hash}`);
       const stableIdentity = uuid();
+      const priceAuthorized = statementAuthorizesPrice(derived);
       await client.query(
         `INSERT INTO kb_tenant_facts (
            id, tenant_key, subject_identity, stable_identity, kind, spoken_text,
            canonical_text, title, category, polarity, quantities_json,
            boundaries_json, qualifiers_json, subject_text, superseded_lineage_key,
-           supersedes_tenant_fact_id, effective_score, created_at, created_by
+           supersedes_tenant_fact_id, effective_score, created_at, created_by,
+           price_authorized_by_tenant, price_authorized_at, price_authorized_by
          ) VALUES (
            $1, $2, $3::uuid, $4::uuid, 'corrected', $5, $6, $7, $8, $9,
-           $10::jsonb, $11::jsonb, $12::jsonb, $13, $14, $15, 1, NOW(), $16
+           $10::jsonb, $11::jsonb, $12::jsonb, $13, $14, $15, 1, NOW(), $16,
+           $17, CASE WHEN $17 THEN NOW() ELSE NULL END, CASE WHEN $17 THEN $16 ELSE NULL END
          )`,
         [
           factId, tenantKey, subjectIdentity, stableIdentity, derived.spoken_text,
           derived.canonical_text, derived.title, derived.category, derived.polarity,
           JSON.stringify(derived.quantities || []), JSON.stringify(derived.boundaries || []),
           JSON.stringify(derived.qualifiers || []), derived.subject_text,
-          targetRow.approved_lineage_key || null, conflictingFacts[0]?.id || null, actorId(actor)
+          targetRow.approved_lineage_key || null, conflictingFacts[0]?.id || null, actorId(actor), priceAuthorized
         ]
       );
       const entry = tenantFactSnapshot({
@@ -2325,7 +2420,8 @@ export async function commitKnowledgeHeartCorrection(db, {
         boundaries_json: derived.boundaries,
         qualifiers_json: derived.qualifiers,
         subject_text: derived.subject_text,
-        effective_score: 1
+        effective_score: 1,
+        price_authorized_by_tenant: priceAuthorized
       });
       await writeManualSlot(client, tenantKey, Number(slotIndex), entry, actor, {
         editedFromCandidateId: targetRow.edited_from_candidate_id || targetRow.candidate_id,
@@ -2340,6 +2436,7 @@ export async function commitKnowledgeHeartCorrection(db, {
         } else {
           await client.query(`DELETE FROM kb_selection WHERE tenant_key = $1 AND slot_index = $2`, [tenantKey, row.slot_index]);
         }
+        await resolveOpenSelectionFlags(client, tenantKey, Number(row.slot_index), resolutionMap.get(Number(row.slot_index)) === "replace" ? "update" : "remove");
       }
       await client.query(`UPDATE kb_correction_proposals SET consumed_at = NOW() WHERE proposal_token_hash = $1`, [proposalTokenHash]);
       if (normalizeText(derived.origin_flag_id)) {
@@ -2351,6 +2448,241 @@ export async function commitKnowledgeHeartCorrection(db, {
         );
       }
       return { changed: true, response: { tenantFactId: factId, affectedSlots: affectedSlots.map((row) => row.slot_index) } };
+    }
+  });
+}
+
+export async function proposeKnowledgeHeartCreation(db, {
+  tenantKey,
+  selectionVersion,
+  statement,
+  actor,
+  requestId,
+  idempotencyKey
+} = {}) {
+  const derivedFact = await correctionFactFromStatement(statement, null);
+  return withTenantMutation(db, {
+    tenantKey,
+    selectionVersion,
+    actor,
+    requestId,
+    routeKey: "creation.propose",
+    idempotencyKey,
+    requestBody: { statement: ensureSentence(statement) },
+    work: async ({ client, currentVersion }) => {
+      const tenantFacts = await client.query(
+        `SELECT * FROM kb_tenant_facts WHERE tenant_key = $1 AND archived_at IS NULL FOR UPDATE`,
+        [tenantKey]
+      );
+      const ranked = (tenantFacts.rows || [])
+        .filter((fact) => fact.category === derivedFact.category)
+        .map((fact) => ({ fact, score: cosine(hashedEmbedding(fact.subject_text), hashedEmbedding(derivedFact.subject_text)) }))
+        .sort((left, right) => right.score - left.score);
+      const best = ranked[0];
+      const runnerUp = ranked.find((item) => item.fact.subject_identity !== best?.fact?.subject_identity);
+      const matchedSubjectIdentity = best?.score >= KNOWS_BY_HEART_MATCH_MIN
+        && best.score - (runnerUp?.score || 0) >= KNOWS_BY_HEART_MATCH_MARGIN
+        ? best.fact.subject_identity
+        : null;
+      const conflicts = matchedSubjectIdentity
+        ? await client.query(
+          `SELECT selection.slot_index, selection.approved_spoken_text, selection.tenant_fact_id
+           FROM kb_selection selection
+           INNER JOIN kb_tenant_facts fact ON fact.id = selection.tenant_fact_id
+           WHERE selection.tenant_key = $1 AND fact.archived_at IS NULL
+             AND fact.subject_identity = $2::uuid
+           ORDER BY selection.slot_index`,
+          [tenantKey, matchedSubjectIdentity]
+        )
+        : { rows: [] };
+      const token = crypto.randomBytes(32).toString("base64url");
+      const expiresAt = new Date(Date.now() + CORRECTION_PROPOSAL_TTL_MS);
+      await client.query(
+        `INSERT INTO kb_correction_proposals (
+           proposal_token_hash, tenant_key, slot_index, selection_version,
+           derived_fact, statement_hash, created_by, created_at, expires_at, proposal_kind
+         ) VALUES ($1, $2, NULL, $3, $4::jsonb, $5, $6, NOW(), $7, 'create')`,
+        [sha256(token), tenantKey, currentVersion, JSON.stringify(derivedFact), sha256(statement), actorId(actor), expiresAt]
+      );
+      return {
+        changed: false,
+        response: {
+          proposalToken: token,
+          expiresAt: expiresAt.toISOString(),
+          derivedFact,
+          slotConflicts: conflicts.rows || []
+        }
+      };
+    }
+  });
+}
+
+export async function commitKnowledgeHeartCreation(db, {
+  tenantKey,
+  selectionVersion,
+  proposalToken,
+  slotIndex,
+  slotConflictResolutions,
+  actor,
+  requestId
+} = {}) {
+  const targetSlot = Number(slotIndex);
+  if (!Number.isInteger(targetSlot) || targetSlot < 0 || targetSlot >= KNOWS_BY_HEART_MAX_SELECTED) {
+    const error = new Error("kb_creation_slot_invalid");
+    error.statusCode = 422;
+    throw error;
+  }
+  const proposalTokenHash = sha256(proposalToken);
+  const resolutions = normalizeConflictResolutions(slotConflictResolutions);
+  return withTenantMutation(db, {
+    tenantKey,
+    selectionVersion,
+    actor,
+    requestId,
+    routeKey: "creation.commit",
+    requestBody: { proposalTokenHash, targetSlot, resolutions },
+    work: async ({ client, beforeRows }) => {
+      const proposalResult = await client.query(
+        `SELECT * FROM kb_correction_proposals
+         WHERE proposal_token_hash = $1 AND tenant_key = $2
+           AND proposal_kind = 'create' AND selection_version = $3
+           AND consumed_at IS NULL AND expires_at > NOW()
+         FOR UPDATE`,
+        [proposalTokenHash, tenantKey, selectionVersion]
+      );
+      const proposal = proposalResult.rows?.[0];
+      if (!proposal) {
+        const error = new Error("kb_creation_proposal_invalid_or_expired");
+        error.statusCode = 409;
+        throw error;
+      }
+      const derived = proposal.derived_fact;
+      const tenantFacts = await client.query(
+        `SELECT * FROM kb_tenant_facts WHERE tenant_key = $1 AND archived_at IS NULL FOR UPDATE`,
+        [tenantKey]
+      );
+      const ranked = (tenantFacts.rows || [])
+        .filter((fact) => fact.category === derived.category)
+        .map((fact) => ({ fact, score: cosine(hashedEmbedding(fact.subject_text), hashedEmbedding(derived.subject_text)) }))
+        .sort((left, right) => right.score - left.score);
+      const best = ranked[0];
+      const runnerUp = ranked.find((item) => item.fact.subject_identity !== best?.fact?.subject_identity);
+      const subjectIdentity = best?.score >= KNOWS_BY_HEART_MATCH_MIN
+        && best.score - (runnerUp?.score || 0) >= KNOWS_BY_HEART_MATCH_MARGIN
+        ? best.fact.subject_identity
+        : uuid();
+      const conflictingFacts = (tenantFacts.rows || []).filter((fact) => String(fact.subject_identity) === String(subjectIdentity));
+      const conflictIds = new Set(conflictingFacts.map((fact) => fact.id));
+      const affectedSlots = beforeRows.filter((row) => row.tenant_fact_id
+        && conflictIds.has(row.tenant_fact_id)
+        && Number(row.slot_index) !== targetSlot);
+      const resolutionMap = new Map(resolutions.map((resolution) => [resolution.slot_index, resolution.action]));
+      if (affectedSlots.some((row) => !resolutionMap.has(Number(row.slot_index)))) {
+        const error = new Error("kb_creation_slot_conflict_resolution_required");
+        error.statusCode = 409;
+        error.conflicts = affectedSlots.map((row) => ({ slotIndex: row.slot_index, spokenText: row.approved_spoken_text }));
+        throw error;
+      }
+      for (const fact of conflictingFacts) {
+        await client.query(`UPDATE kb_tenant_facts SET archived_at = NOW() WHERE id = $1`, [fact.id]);
+      }
+      const priceAuthorized = statementAuthorizesPrice(derived);
+      const factId = compactId("kbtf", `${tenantKey}:${subjectIdentity}:${Date.now()}:${derived.content_hash}`);
+      const stableIdentity = uuid();
+      await client.query(
+        `INSERT INTO kb_tenant_facts (
+           id, tenant_key, subject_identity, stable_identity, kind, spoken_text,
+           canonical_text, title, category, polarity, quantities_json,
+           boundaries_json, qualifiers_json, subject_text, supersedes_tenant_fact_id,
+           effective_score, created_at, created_by,
+           price_authorized_by_tenant, price_authorized_at, price_authorized_by
+         ) VALUES (
+           $1, $2, $3::uuid, $4::uuid, 'authored', $5, $6, $7, $8, $9,
+           $10::jsonb, $11::jsonb, $12::jsonb, $13, $14, 1, NOW(), $15,
+           $16, CASE WHEN $16 THEN NOW() ELSE NULL END, CASE WHEN $16 THEN $15 ELSE NULL END
+         )`,
+        [
+          factId, tenantKey, subjectIdentity, stableIdentity, derived.spoken_text,
+          derived.canonical_text, derived.title, derived.category, derived.polarity,
+          JSON.stringify(derived.quantities || []), JSON.stringify(derived.boundaries || []),
+          JSON.stringify(derived.qualifiers || []), derived.subject_text,
+          conflictingFacts[0]?.id || null, actorId(actor), priceAuthorized
+        ]
+      );
+      const entry = tenantFactSnapshot({
+        id: factId,
+        subject_identity: subjectIdentity,
+        stable_identity: stableIdentity,
+        kind: "authored",
+        spoken_text: derived.spoken_text,
+        canonical_text: derived.canonical_text,
+        title: derived.title,
+        category: derived.category,
+        polarity: derived.polarity,
+        quantities_json: derived.quantities,
+        boundaries_json: derived.boundaries,
+        qualifiers_json: derived.qualifiers,
+        subject_text: derived.subject_text,
+        effective_score: 1,
+        price_authorized_by_tenant: priceAuthorized
+      });
+      const targetExisting = beforeRows.find((row) => Number(row.slot_index) === targetSlot);
+      if (targetExisting && (!targetExisting.tenant_fact_id || !conflictIds.has(targetExisting.tenant_fact_id))) {
+        await suppressSelectionEntry(client, tenantKey, targetExisting);
+      }
+      await writeManualSlot(client, tenantKey, targetSlot, entry, actor);
+      await resolveOpenSelectionFlags(client, tenantKey, targetSlot, "update");
+      for (const row of affectedSlots) {
+        if (resolutionMap.get(Number(row.slot_index)) === "replace") {
+          await writeManualSlot(client, tenantKey, Number(row.slot_index), entry, actor, {
+            editedFromCandidateId: row.edited_from_candidate_id || row.candidate_id,
+            editedFromSnapshot: row.edited_from_snapshot || selectionRowSnapshot(row)
+          });
+        } else {
+          await client.query(`DELETE FROM kb_selection WHERE tenant_key = $1 AND slot_index = $2`, [tenantKey, row.slot_index]);
+        }
+        await resolveOpenSelectionFlags(client, tenantKey, Number(row.slot_index), resolutionMap.get(Number(row.slot_index)) === "replace" ? "update" : "remove");
+      }
+      await client.query(`UPDATE kb_correction_proposals SET consumed_at = NOW() WHERE proposal_token_hash = $1`, [proposalTokenHash]);
+      return {
+        changed: true,
+        response: {
+          tenantFactId: factId,
+          slotIndex: targetSlot,
+          affectedSlots: affectedSlots.map((row) => row.slot_index),
+          priceAuthorizedByTenant: priceAuthorized
+        }
+      };
+    }
+  });
+}
+
+export async function acknowledgeKnowledgeHeartNotice(db, {
+  tenantKey,
+  noticeId,
+  selectionVersion,
+  actor,
+  requestId,
+  idempotencyKey
+} = {}) {
+  return withTenantMutation(db, {
+    tenantKey,
+    selectionVersion,
+    actor,
+    requestId,
+    routeKey: `notice.acknowledge.${Number(noticeId)}`,
+    idempotencyKey,
+    requestBody: { noticeId: Number(noticeId) },
+    work: async ({ client }) => {
+      const result = await client.query(
+        `UPDATE kb_tenant_notices
+         SET acknowledged_at = NOW(), acknowledged_hash = current_content_hash
+         WHERE id = $1 AND tenant_key = $2
+         RETURNING id`,
+        [Number(noticeId), tenantKey]
+      );
+      if (!result.rowCount) throw new Error("kb_notice_not_found");
+      return { changed: false, response: { noticeId: Number(noticeId) } };
     }
   });
 }
@@ -2558,6 +2890,11 @@ export async function confirmKnowledgeHeartFacts(db, {
         qualifiers: derived.qualifiers
       })
     };
+    if (statementAuthorizesPrice(fact.structured)) {
+      const error = new Error("kb_confirmation_price_requires_explicit_authoring");
+      error.statusCode = 422;
+      throw error;
+    }
   }));
   return withTenantMutation(db, {
     tenantKey, selectionVersion, actor, requestId,

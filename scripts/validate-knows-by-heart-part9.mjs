@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import {
   KNOWS_BY_HEART_MANUAL_WRITE_SQLSTATE,
+  KNOWS_BY_HEART_PRICE_AUTHORIZATION_SQLSTATE,
   applyTenantFactsToPlannerRuntime,
   canonicalFactSerialization,
   checkKnowledgeHeartWordingEquivalence,
@@ -15,10 +16,13 @@ import {
 import { consolidateCoreFactCatalogCandidates } from "../pages/api/_lib/knowledgeReceptionistCompiler.js";
 
 const migration = await fs.readFile(new URL("../migrations/0046_knows_by_heart_catalog.sql", import.meta.url), "utf8");
+const flagLifetimeMigration = await fs.readFile(new URL("../migrations/0047_knows_by_heart_flag_lifetime.sql", import.meta.url), "utf8");
+const pricingMigration = await fs.readFile(new URL("../migrations/0048_pricing_suppression_v19.sql", import.meta.url), "utf8");
 const catalogSource = await fs.readFile(new URL("../pages/api/_lib/knowledgeHeartCatalog.js", import.meta.url), "utf8");
 const compilerSource = await fs.readFile(new URL("../pages/api/_lib/knowledgeReceptionistCompiler.js", import.meta.url), "utf8");
 const buildsSource = await fs.readFile(new URL("../pages/api/_lib/knowledgeReceptionistBuilds.js", import.meta.url), "utf8");
 const promptSource = await fs.readFile(new URL("../pages/api/_lib/knowledgeReceptionistPrompt.js", import.meta.url), "utf8");
+const plannerEngineSource = await fs.readFile(new URL("../packages/contracts/src/knowledgePlannerEngine.ts", import.meta.url), "utf8");
 const uiSource = await fs.readFile(new URL("../app/client/receptionist/knowledge/KnowsByHeartSection.jsx", import.meta.url), "utf8");
 
 assert.equal(validateKnowledgeHeartText("We never charge for estimates.").ok, true);
@@ -175,7 +179,8 @@ assert.match(catalogSource, /slot_ownership = 'auto'/);
 assert.match(catalogSource, /kb_reset_modified_manual_slot/);
 assert.match(catalogSource, /MUST NOT|sameReference|sameApprovedValues/);
 assert.match(promptSource, /loadMaterializedKnowledgeHeartSection/);
-assert.match(promptSource, /applyTenantFactsToPlannerRuntime/);
+assert.match(plannerEngineSource, /applyTenantFactsToSharedPlannerRuntime/,
+  "the shared planner runtime must apply tenant corrections for both preview and gateway paths");
 assert.match(uiSource, /On a live call she'll say it naturally, in her own words/);
 const publishIndex = buildsSource.indexOf("await publishKnowledgeHeartCatalog(client, { tenantKey, buildId })");
 const pointerIndex = buildsSource.indexOf("INSERT INTO tenant_active_knowledge_builds", publishIndex);
@@ -203,6 +208,8 @@ await db.exec(`
   VALUES ('tenant_test', 'build_test');
 `);
 await db.exec(migration);
+await db.exec(flagLifetimeMigration);
+await db.exec(pricingMigration);
 
 const insertSelection = async ({ slot = 0, ownership = "manual", lineage = "lineage-a" } = {}) => db.query(
   `INSERT INTO kb_selection (
@@ -219,6 +226,24 @@ await db.query(`SELECT set_config('app.tenant_edit_context', 'true', true)`);
 await insertSelection();
 await db.exec("COMMIT");
 assert.notEqual((await db.query(`SELECT current_setting('app.tenant_edit_context', true) AS value`)).rows[0].value, "true");
+
+await assert.rejects(
+  db.query(
+    `INSERT INTO kb_tenant_facts (
+       id, tenant_key, subject_identity, stable_identity, kind, spoken_text,
+       canonical_text, title, category, subject_text, created_by,
+       price_authorized_by_tenant, price_authorized_at, price_authorized_by
+     ) VALUES (
+       'unauthorized-price', 'tenant_test',
+       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+       'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+       'authored', 'We charge eighty-nine dollars.', 'We charge eighty-nine dollars.',
+       'Diagnostic fee', 'pricing', 'diagnostic fee', 'tester', TRUE, NOW(), 'tester'
+     )`
+  ),
+  (error) => error.code === KNOWS_BY_HEART_PRICE_AUTHORIZATION_SQLSTATE,
+  "tenant price authorization must require the tenant-edit transaction context"
+);
 
 async function assertGuarded(operation, label) {
   await assert.rejects(operation, (error) => {

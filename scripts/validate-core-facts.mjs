@@ -147,22 +147,23 @@ const restoredOpenAiV3ToolDefinitions = {
     description: OPENAI_V3_FINISH_SESSION_DESCRIPTION
   }
 };
-assert.equal(promptSeed.version, 18);
+assert.equal(promptSeed.version, 19);
 assert.equal(stableHash(restoredOpenAiV3ToolDefinitions), OPENAI_V3_TOOL_DEFINITIONS_HASH, "the pre-Grok OpenAI tool definitions must remain reconstructable byte-for-byte");
 assert.match(promptSeed.tool_definitions.data_capture.description, /Call this tool silently\. Never speak a lead-in, status update, or acknowledgment/);
 assert.equal(promptSeed.tool_definitions.data_capture.behavior_mode, "SILENT");
 assert.equal(stableHash(promptSeed.sample_phrase_groups), OPENAI_V3_SAMPLE_PHRASES_HASH, "the pre-Grok OpenAI sample phrases must remain unchanged");
-const v18CanonicalText = getPromptSectionSeeds().map((section) => section.default_text).filter(Boolean).join("\n\n");
-assert.match(v18CanonicalText, /^Role & Objective/);
-assert.match(v18CanonicalText, /You are the receptionist, not the technician, estimator, or expert\./);
-assert.match(v18CanonicalText, /Emit a function-call-only response with no speech or text of any kind\./);
-assert.match(v18CanonicalText, /Using data_capture: emit the call silently/);
-assert.match(v18CanonicalText, /When capture is complete, ask the required other-questions checkpoint and wait\./);
-assert.match(v18CanonicalText, /Never continue directly from data_capture to the closing\./);
-assert.match(v18CanonicalText, /Before ending any call, ask exactly: "Is there anything else I can help you with\?"/);
-assert.match(v18CanonicalText, /say exactly: "Thanks for calling, FIRSTNAME\. Have a good one\."/);
-assert.match(v18CanonicalText, /Never emit finish_session by itself\./);
-assert.doesNotMatch(v18CanonicalText, /# Priority Order|# Conversation Flow|# Factual Boundaries & Uncertainty/);
+const v19CanonicalText = getPromptSectionSeeds().map((section) => section.default_text).filter(Boolean).join("\n\n");
+assert.match(v19CanonicalText, /^Role & Objective/);
+assert.match(v19CanonicalText, /You are the receptionist, not the technician, estimator, or expert\./);
+assert.match(v19CanonicalText, /Emit a function-call-only response with no speech or text of any kind\./);
+assert.match(v19CanonicalText, /Using data_capture: emit the call silently/);
+assert.match(v19CanonicalText, /When capture is complete, ask the required other-questions checkpoint and wait\./);
+assert.match(v19CanonicalText, /Never continue directly from data_capture to the closing\./);
+assert.match(v19CanonicalText, /Before ending any call, ask exactly: "Is there anything else I can help you with\?"/);
+assert.match(v19CanonicalText, /say exactly: "Thanks for calling, FIRSTNAME\. Have a good one\."/);
+assert.match(v19CanonicalText, /Never emit finish_session by itself\./);
+assert.match(v19CanonicalText, /A price comes from one place: What You Know By Heart\./);
+assert.doesNotMatch(v19CanonicalText, /# Priority Order|# Conversation Flow|# Factual Boundaries & Uncertainty/);
 
 const promptProfile = {
   assistant_name: "Sarah",
@@ -177,7 +178,7 @@ const promptProfile = {
 };
 const coreFactBlueprint = {
   ...promptSeed,
-  prompt_blueprint_id: "pb_canonical_receptionist_v18_test"
+  prompt_blueprint_id: "pb_canonical_receptionist_v19_test"
 };
 const initialTenantProfile = normalizeTenantPromptProfile({
   business_name: "New Tenant Without Punctuation"

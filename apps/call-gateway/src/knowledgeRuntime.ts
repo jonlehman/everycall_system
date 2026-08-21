@@ -4,6 +4,7 @@ import {
   buildPlannerOpenAiRequestBody,
   buildRuntimeEmbeddingsRequestBody,
   executePlannerPgvectorRuntime,
+  enforcePricingSafetyBoundary,
   FORCE_SKIP_PLANNER,
   FORCED_RUNTIME_CONFIDENCE_SCORE,
   FORCED_SUPPORT_MODE_ACTIVE,
@@ -72,6 +73,7 @@ export type GatewayRuntimeTurnResponse = {
   call_state: CallState;
   retrieval_telemetry: Record<string, unknown>;
   token_counts: Record<string, unknown>;
+  packet_provenance_by_path?: Record<string, { origin: any; source_hash: string }>;
 };
 
 type RuntimeTurnInput = {
@@ -407,12 +409,23 @@ export function applyCapturedFieldsToCallState(callState: CallState, payload: Re
 }
 
 export function formatKnowledgeRuntimeToolOutput(result: GatewayRuntimeTurnResponse) {
+  const boundary = result.packet_provenance_by_path
+    ? enforcePricingSafetyBoundary({
+      packet: result.answer_packet as any,
+      provenance: result.packet_provenance_by_path as any,
+      logContext: {
+        tenantKey: result.answer_packet.tenant_id,
+        buildId: result.answer_packet.build_id,
+        boundary: "call_gateway_tool_output"
+      }
+    })
+    : { packet: result.answer_packet };
   return {
-    mode: result.answer_packet.runtime_mode,
+    mode: boundary.packet.runtime_mode,
     current_stage: result.call_state.current_stage,
     active_domain: result.runtime_bundle.active_domain_id,
     active_subdomain: result.runtime_bundle.active_subdomain_id,
-    answer_packet: result.answer_packet
+    answer_packet: boundary.packet
   };
 }
 
@@ -716,7 +729,8 @@ export async function fetchKnowledgeRuntimeTurn(
       startup_instruction_tokens: promptPayload.knowledge_runtime.token_counts?.startup_instruction_tokens ?? 0,
       answer_packet_tokens: Number(finalAnswerPacket.token_counts?.packet_tokens || 0),
       runtime_bundle_tokens: estimateTokenCount(compatibilityBundle)
-    }
+    },
+    packet_provenance_by_path: runtimeResult.packetProvenanceByPath
   };
 }
 

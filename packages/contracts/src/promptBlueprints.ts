@@ -155,6 +155,8 @@ const CORE_FACTS_LOOKUP_RULE = "When What You Know By Heart fully covers the que
 const LAYERED_CORE_FACTS_LOOKUP_RULE = "When the approved business information in Business Details fully covers the question, answer from it with no lookup.";
 const ADJACENT_REQUESTS_CORE_FACT_REFERENCE = "that What You Know By Heart does not plainly cover:";
 const ADJACENT_REQUESTS_GENERIC_REFERENCE = "that the approved business information in Business Details does not plainly cover:";
+const PRICING_APPROVED_SOURCE_RULE = "A price comes from one place: What You Know By Heart. If a price is stated there, you may give it. If it is not stated there, you do not have a price, and nothing the caller tells you creates one.";
+const PRICING_NO_APPROVED_SOURCE_RULE = "No price has been approved for you to state.";
 const OPTIONAL_TENANT_PROMPT_PLACEHOLDERS = ["company_description", "basic_no_tool_allowed_statement"] as const;
 const CORE_FACT_INSTRUCTION_PATTERN = /\b(ignore (all |any )?(previous|prior) instructions?|system prompt|developer message|assistant instructions?|call (a )?tool|knowledge_lookup|data_capture|finish_session)\b/i;
 
@@ -221,7 +223,7 @@ When a caller asks about something in our line of work that What You Know By Hea
 
 Call knowledge_lookup with no speech or text.
 After the lookup returns, engage immediately and warmly. The topic is what we do; never treat it as foreign. You may say things like "doors are exactly what we work on."
-Do not claim we offer the specific service, quote details, or promise an outcome until knowledge_lookup confirms it.
+Do not claim we offer the specific service or promise an outcome until knowledge_lookup confirms it. Never provide quote details from a lookup.
 Answer the caller's actual situation from the confirmed information.
 If the lookup cannot confirm it, say so plainly and offer a callback so the team can answer. That is a good outcome, not a failure.`
   },
@@ -355,7 +357,19 @@ If any part is unclear, ask them to repeat it. Never guess.`
 
 When What You Know By Heart fully covers the question, answer from it with no lookup.
 
-Otherwise use knowledge_lookup before stating any tenant-specific fact, including pricing, estimates, or costs; turnaround, scheduling, availability, or callback timing; whether we offer a specific service; supported integrations, platforms, technologies, or industries; process, support plans, maintenance, warranty, guarantees, or service terms; service areas, locations, staffing, case studies, or deliverables; and anything else that sounds like a factual claim about this business.
+Otherwise use knowledge_lookup before stating any tenant-specific fact, including estimate policy; turnaround, scheduling, availability, or callback timing; whether we offer a specific service; supported integrations, platforms, technologies, or industries; process, support plans, maintenance, warranty, guarantees, or service terms; service areas, locations, staffing, case studies, or deliverables; and anything else that sounds like a factual claim about this business.
+
+Pricing
+
+${PRICING_APPROVED_SOURCE_RULE}
+
+Never give a number, range, rate, minimum, estimated amount, or ballpark from any other source. Not from a lookup. Not from what the job sounds like. Not from what seems reasonable. However much detail the caller gives you, it is still not a price. Never calculate, combine, adjust, or reason your way to a figure.
+
+If the caller says a number, it stays theirs. Do not repeat it or say it back to them, even while acknowledging the question. Do not confirm it, correct it, call it high or low or fair, or hint at which way it lands. Move to the next step without the number.
+
+You are still useful here. Talk about what actually drives the cost on their job, using the specifics they gave you. Then offer a callback, or another next step if one is confirmed for us.
+
+When no approved price is available, say plainly that you can't put a number on it on this call, and go straight to what you can do.
 
 Using knowledge_lookup:
 
@@ -755,9 +769,9 @@ export function getPromptSectionSeeds() {
 export function getDefaultPromptBlueprintSeed() {
   return {
     blueprint_key: "canonical_receptionist",
-    version: 18,
+    version: 19,
     status: "active" as PromptBlueprintStatus,
-    name: "Canonical Receptionist v18",
+    name: "Canonical Receptionist v19",
     sample_phrase_groups: normalizeSamplePhraseGroups(DEFAULT_SAMPLE_PHRASE_GROUPS),
     tool_definitions: {
       knowledge_lookup: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup, parameter_descriptions: { ...DEFAULT_TOOL_DEFINITIONS.knowledge_lookup.parameter_descriptions } },
@@ -986,7 +1000,8 @@ tenant-specific facts explicitly permitted in Business Details`;
       break;
     case "tools":
       text = source
-        .replace(CORE_FACTS_LOOKUP_RULE, LAYERED_CORE_FACTS_LOOKUP_RULE);
+        .replace(CORE_FACTS_LOOKUP_RULE, LAYERED_CORE_FACTS_LOOKUP_RULE)
+        .replace(PRICING_APPROVED_SOURCE_RULE, "Follow the pricing authorization in Business Details.");
       break;
     case "conversation_flow":
       text = source
@@ -1044,6 +1059,7 @@ function renderLayeredBusinessDetails(
     ...(tenantProfile.basic_no_tool_allowed_statement
       ? [`Persisted no-tool statement: ${tenantProfile.basic_no_tool_allowed_statement}`]
       : []),
+    coreFactsBlock ? PRICING_APPROVED_SOURCE_RULE : PRICING_NO_APPROVED_SOURCE_RULE,
     ...(blueprint.version < 16 ? [`Closing phrase: ${tenantProfile.closing_phrase}`] : [])
   ];
   if (coreFactsBlock) {
@@ -1167,6 +1183,7 @@ export function renderPromptContext(
       }
       if (!coreFactsBlock && section.section_id === "tools") {
         textSource = textSource.replace(`${CORE_FACTS_LOOKUP_RULE}\n\nOtherwise use`, "Use");
+        textSource = textSource.replace(PRICING_APPROVED_SOURCE_RULE, PRICING_NO_APPROVED_SOURCE_RULE);
       }
       if (!coreFactsBlock && section.section_id === "adjacent_requests") {
         textSource = textSource.replace(ADJACENT_REQUESTS_CORE_FACT_REFERENCE, ADJACENT_REQUESTS_GENERIC_REFERENCE);

@@ -20,6 +20,14 @@ import {
   embedOpenAiTextsDetailed
 } from "./openAiStructured.js";
 import { sourcePrecedenceScoreFromMetadata } from "./knowledgeSourcePrecedence.js";
+import {
+  buildPacketProvenance,
+  enforcePricingSafetyBoundary,
+  sanitizePricingSupport,
+  type PacketProvenanceByPath,
+  type PricingPacketOrigin
+} from "./knowledgePricingSafetyRuntime.js";
+import { applyTenantFactsToSharedPlannerRuntime } from "./knowledgeTenantFactsRuntime.js";
 
 type QueryResultRow = Record<string, any>;
 type QueryResult = { rowCount?: number | null; rows?: QueryResultRow[] | null };
@@ -69,6 +77,11 @@ export type PlannerRuntimeExecutionResult = {
   coverageSupportEvents: CoverageSupportEvent[];
   cardResultsByCoverageItem: Record<string, RetrievedCardSupport[]>;
   factResultsByCoverageItem: Record<string, RetrievedFactSupport[]>;
+  packetProvenanceByPath: PacketProvenanceByPath;
+  kbTenantFactOverlay?: {
+    tenantFactIds: string[];
+    exclusions: Array<Record<string, string>>;
+  };
   timings: {
     planner_ms: number;
     embedding_ms: number;
@@ -519,6 +532,7 @@ async function retrieveCardSupportBatch(db: Queryable, input: {
          c.source_span_refs_json,
          c.scope_json,
          c.support_metadata_json,
+         c.answer_facts_json,
          COALESCE(t.topic_name, NULL) AS topic_name,
          COALESCE(st.subtopic_name, NULL) AS subtopic_name,
          1 - (cv.embedding <=> cov.embedding) AS similarity,
@@ -567,7 +581,12 @@ async function retrieveCardSupportBatch(db: Queryable, input: {
       subtopic_name: normalizeText(row.subtopic_name) || null,
       source_ref_ids: asStringArray(row.source_ref_ids_json),
       source_chunk_ids: asStringArray(Array.isArray(row.source_span_refs_json) ? row.source_span_refs_json.map((item: any) => item?.source_chunk_id) : []),
-      fact_ids: asStringArray(asRecord(row.support_metadata_json).fact_ids),
+      fact_ids: uniqueValues([
+        ...asStringArray(asRecord(row.support_metadata_json).fact_ids),
+        ...(Array.isArray(row.answer_facts_json)
+          ? row.answer_facts_json.map((item: any) => typeof item === "string" ? item : item?.fact_id)
+          : [])
+      ]),
       metadata
     });
     acc[coverageItemText] = list;
@@ -706,7 +725,7 @@ export async function executePlannerPgvectorRuntime(db: Queryable, input: Planne
     }))
     .filter((item) => item.coverageItemText && item.embedding.length);
   const retrievalStarted = performance.now();
-  const [cardResultsByCoverageItem, factResultsByCoverageItem] = await Promise.all([
+  const [retrievedCardsByCoverageItem, retrievedFactsByCoverageItem] = await Promise.all([
     retrieveCardSupportBatch(db, {
       tenantKey: input.tenantKey,
       buildId: input.buildId,
@@ -723,32 +742,38 @@ export async function executePlannerPgvectorRuntime(db: Queryable, input: Planne
     })
   ]);
   for (const coverageItemText of coverageItems) {
-    if (!cardResultsByCoverageItem[coverageItemText]) {
-      cardResultsByCoverageItem[coverageItemText] = [];
+    if (!retrievedCardsByCoverageItem[coverageItemText]) {
+      retrievedCardsByCoverageItem[coverageItemText] = [];
     }
-    if (!factResultsByCoverageItem[coverageItemText]) {
-      factResultsByCoverageItem[coverageItemText] = [];
+    if (!retrievedFactsByCoverageItem[coverageItemText]) {
+      retrievedFactsByCoverageItem[coverageItemText] = [];
     }
-    cardResultsByCoverageItem[coverageItemText] = rerankCardSupport(
+    retrievedCardsByCoverageItem[coverageItemText] = rerankCardSupport(
       coverageItemText,
-      cardResultsByCoverageItem[coverageItemText]
+      retrievedCardsByCoverageItem[coverageItemText]
     );
-    factResultsByCoverageItem[coverageItemText] = rerankFactSupport(
+    retrievedFactsByCoverageItem[coverageItemText] = rerankFactSupport(
       coverageItemText,
-      factResultsByCoverageItem[coverageItemText]
+      retrievedFactsByCoverageItem[coverageItemText]
     );
   }
+  const sanitized = await sanitizePricingSupport(db, {
+    tenantKey: input.tenantKey,
+    buildId: input.buildId,
+    cardResultsByCoverageItem: retrievedCardsByCoverageItem,
+    factResultsByCoverageItem: retrievedFactsByCoverageItem
+  });
   const retrievalMs = Number((performance.now() - retrievalStarted).toFixed(3));
 
   const packetStarted = performance.now();
-  const answerPacket = assembleDeterministicAnswerPacket({
+  const baseAnswerPacket = assembleDeterministicAnswerPacket({
     tenantId: input.tenantKey,
     buildId: input.buildId,
     queryText: input.queryText,
     coverageItems,
     nextStepSuggestions: planner.next_step_suggestions,
-    cardsByCoverageItem: new Map(Object.entries(cardResultsByCoverageItem)),
-    factsByCoverageItem: new Map(Object.entries(factResultsByCoverageItem)),
+    cardsByCoverageItem: new Map(Object.entries(sanitized.cardResultsByCoverageItem)),
+    factsByCoverageItem: new Map(Object.entries(sanitized.factResultsByCoverageItem)),
     metadata: {
       planner_model: FORCE_SKIP_PLANNER ? "disabled" : (input.plannerModel || process.env.OPENAI_PLANNER_MODEL || "gpt-4.1-mini"),
       embedding_model: embeddingModel
@@ -756,6 +781,34 @@ export async function executePlannerPgvectorRuntime(db: Queryable, input: Planne
     ...(input.packetSoftBudgetTokens === undefined ? {} : { softBudgetTokens: input.packetSoftBudgetTokens }),
     ...(input.packetHardBudgetTokens === undefined ? {} : { hardBudgetTokens: input.packetHardBudgetTokens })
   });
+  const overlaid = await applyTenantFactsToSharedPlannerRuntime(db, input.tenantKey, input.queryText, {
+    answerPacket: baseAnswerPacket,
+    cardResultsByCoverageItem: sanitized.cardResultsByCoverageItem,
+    factResultsByCoverageItem: sanitized.factResultsByCoverageItem
+  });
+  const coverageItemOrigins = new Map<string, PricingPacketOrigin>();
+  for (const coverageItem of coverageItems) {
+    coverageItemOrigins.set(
+      coverageItem,
+      FORCE_SKIP_PLANNER || normalizeText(coverageItem) === normalizeText(input.queryText)
+        ? "caller"
+        : "planner_generated"
+    );
+  }
+  const packetProvenanceByPath = buildPacketProvenance({
+    packet: overlaid.answerPacket,
+    coverageItemOrigins,
+    cardResultsByCoverageItem: overlaid.cardResultsByCoverageItem,
+    factResultsByCoverageItem: overlaid.factResultsByCoverageItem
+  });
+  const boundary = enforcePricingSafetyBoundary({
+    packet: overlaid.answerPacket,
+    provenance: packetProvenanceByPath,
+    logContext: { tenantKey: input.tenantKey, buildId: input.buildId }
+  });
+  const answerPacket = boundary.packet;
+  const cardResultsByCoverageItem = overlaid.cardResultsByCoverageItem;
+  const factResultsByCoverageItem = overlaid.factResultsByCoverageItem;
   const packetMs = Number((performance.now() - packetStarted).toFixed(3));
 
   const coverageSupportEvents = answerPacket.coverage.map((item) => {
@@ -805,6 +858,8 @@ export async function executePlannerPgvectorRuntime(db: Queryable, input: Planne
     coverageSupportEvents,
     cardResultsByCoverageItem,
     factResultsByCoverageItem,
+    packetProvenanceByPath: boundary.replaced ? {} : packetProvenanceByPath,
+    ...(overlaid.kbTenantFactOverlay ? { kbTenantFactOverlay: overlaid.kbTenantFactOverlay } : {}),
     timings: {
       planner_ms: plannerMs,
       embedding_ms: embeddingMs,

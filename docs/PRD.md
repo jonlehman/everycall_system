@@ -54,7 +54,7 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 - Thin gateway: no conversational logic in code.
 - EveryCall system prompt owns flow, tone, rules, and escalation behavior.
 - Tenant greeting + tenant knowledge payload are injected at session start and are the only tenant-specific logic.
-- Receptionist Training Section 02 exposes the system candidate catalog and lets an owner/admin select up to 20 by-heart facts, edit phrasing, correct facts, hear voice previews, and review website-change flags without rebuilding the website.
+- Receptionist Training Section 02 exposes the system candidate catalog and lets an owner/admin select up to 20 by-heart facts, author or correct facts, edit phrasing, hear voice previews, and review website-change or pricing notices without rebuilding the website. Website/upload prices remain lookup-searchable, but their figures are never selectable or exposed to the receptionist; only a monetary fact the tenant typed and confirmed may authorize a spoken price.
 - If a question is not covered by approved knowledge or general knowledge, the assistant must say it does not know and offer a callback.
 
 ## Realtime Session Settings (Stored in Admin, Not Hardcoded)

@@ -4,7 +4,8 @@ import pg from "pg";
 const { Pool } = pg;
 const MIGRATION_NAMES = [
   "0046_knows_by_heart_catalog.sql",
-  "0047_knows_by_heart_flag_lifetime.sql"
+  "0047_knows_by_heart_flag_lifetime.sql",
+  "0048_pricing_suppression_v19.sql"
 ];
 const APPLY_ENV = "EVERYCALL_APPLY_KNOWS_BY_HEART_MIGRATION";
 

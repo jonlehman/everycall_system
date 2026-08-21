@@ -11,10 +11,7 @@ import {
 import { getKnowledgeBuild, loadActiveKnowledgeBuildAssets } from "./knowledgeReceptionistBuilds.js";
 import { loadApprovedConfigurationArtifacts } from "./knowledgeReceptionistConfig.js";
 import { loadMaterializedCoreFactSection } from "./knowledgeCoreFacts.js";
-import {
-  applyTenantFactsToPlannerRuntime,
-  loadMaterializedKnowledgeHeartSection
-} from "./knowledgeHeartCatalog.js";
+import { loadMaterializedKnowledgeHeartSection } from "./knowledgeHeartCatalog.js";
 import { buildPromptToolDefinitions, loadPromptRuntimeContext } from "./promptBlueprints.js";
 import { loadTenantBusinessHours } from "./tenantBusinessHours.js";
 
@@ -495,7 +492,7 @@ export async function assembleKnowledgeRuntimeTurn(db, tenantKey, input = {}) {
     return businessHoursTurn;
   }
 
-  const baseRuntimeResult = await executePlannerPgvectorRuntime(db, {
+  const runtimeResult = await executePlannerPgvectorRuntime(db, {
     tenantKey,
     buildId: build.build_id,
     queryText: query,
@@ -506,7 +503,6 @@ export async function assembleKnowledgeRuntimeTurn(db, tenantKey, input = {}) {
     plannerModel: build.planner_model || undefined,
     embeddingModel: build.embedding_model || undefined
   });
-  const runtimeResult = await applyTenantFactsToPlannerRuntime(db, tenantKey, query, baseRuntimeResult);
 
   const compatibilityBundle = buildCompatibilityBundle(
     runtimeResult.answerPacket,
