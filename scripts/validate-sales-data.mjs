@@ -66,6 +66,13 @@ async function validateCsvAndNormalization() {
   assert.equal(records.length, 2);
   assert.equal(records[0].business_name, "Acme, Appliance");
 
+  const tabSeparatedRecords = parseSalesProspectCsv([
+    "business_name\tphone\tpermission\ttimezone",
+    "Spreadsheet Export\t425-230-2012\tyes\tAmerica/Los_Angeles"
+  ].join("\n"));
+  assert.equal(tabSeparatedRecords.length, 1);
+  assert.equal(tabSeparatedRecords[0].business_name, "Spreadsheet Export");
+
   const normalized = normalizeSalesImportRecords(records);
   assert.equal(normalized.errors.length, 0);
   assert.equal(normalized.valid[0].phoneE164, "+12065550100");
@@ -74,6 +81,11 @@ async function validateCsvAndNormalization() {
   assert.equal(normalized.valid[1].permissionGranted, false);
   assert.equal(normalized.valid[1].emailPermission, false);
   assert.equal(normalizeSalesPhone("+44 20 7946 0958"), "+442079460958");
+  assert.equal(normalizeSalesPhone("1-206-555-0105"), "+12065550105");
+  assert.throws(
+    () => normalizeSalesPhone("425-2302-0121"),
+    /10-digit U\.S\. number or an E\.164 number/
+  );
   assert.equal(
     normalizeSalesSignupBusinessCategory("appliance repair"),
     "service_business"
@@ -185,6 +197,24 @@ function validateSalesConsoleCsvMapping() {
   );
   assert.equal(allowedValidation.errors.length, 0);
   assert.equal(allowedValidation.validRecords[0].timezone, "");
+
+  const tabSeparated = parseSalesConsoleCsv([
+    "business_name\tcontact_name\tphone\twebsite\temail\tlead_delivery_email\tbusiness_category\ttimezone\tpermission\temail_permission\tsuppressed",
+    "Atlantic Plumbing Demo\tAlex Morgan\t425-230-2012\thttps://atlantic-plumbing.example\talex@atlantic-plumbing.example\tleads@atlantic-plumbing.example\tplumbing\tAmerica/New_York\tyes\tyes\tno"
+  ].join("\n"));
+  const tabMappings = guessMappings(tabSeparated.headers);
+  const tabValidation = validateMappedRows(tabSeparated.rows, tabMappings);
+  assert.equal(tabValidation.errors.length, 0);
+  assert.equal(tabValidation.validRecords.length, 1);
+
+  const malformedPhone = parseSalesConsoleCsv([
+    "business_name\tphone\tpermission\ttimezone",
+    "Malformed Phone\t425-2302-0121\tyes\tAmerica/New_York"
+  ].join("\n"));
+  const malformedMappings = guessMappings(malformedPhone.headers);
+  const malformedValidation = validateMappedRows(malformedPhone.rows, malformedMappings);
+  assert.equal(malformedValidation.validRecords.length, 0);
+  assert.match(malformedValidation.errors[0].message, /10-digit U\.S\. number or an E\.164 number/);
 }
 
 async function validateSalesConsoleSampleCsv() {

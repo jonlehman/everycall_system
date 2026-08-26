@@ -80,8 +80,41 @@ function parseYesNo(value, { blank = null } = {}) {
   return null;
 }
 
+function detectDelimiter(input) {
+  let commas = 0;
+  let tabs = 0;
+  let inQuotes = false;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const character = input[index];
+    if (character === '"') {
+      if (inQuotes && input[index + 1] === '"') {
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (!inQuotes && (character === '\n' || character === '\r')) {
+      break;
+    } else if (!inQuotes && character === ',') {
+      commas += 1;
+    } else if (!inQuotes && character === '\t') {
+      tabs += 1;
+    }
+  }
+
+  return tabs > commas ? '\t' : ',';
+}
+
+function validPhone(value) {
+  const raw = normalizedCell(value);
+  const digits = raw.replace(/\D/g, '');
+  if (raw.startsWith('+')) return digits.length >= 8 && digits.length <= 15;
+  return digits.length === 10 || (digits.length === 11 && digits.startsWith('1'));
+}
+
 export function parseCsv(text) {
   const input = String(text ?? '');
+  const delimiter = detectDelimiter(input);
   const rows = [];
   let row = [];
   let field = '';
@@ -103,7 +136,7 @@ export function parseCsv(text) {
 
     if (character === '"') {
       inQuotes = true;
-    } else if (character === ',') {
+    } else if (character === delimiter) {
       row.push(field);
       field = '';
     } else if (character === '\n') {
@@ -214,7 +247,9 @@ export function validateMappedRows(rows, mappings, {
 
     if (!businessName) rowErrors.push('business name is blank');
     if (!phone) rowErrors.push('phone is blank');
-    if (phone && phone.replace(/\D/g, '').length < 10) rowErrors.push('phone has fewer than 10 digits');
+    if (phone && !validPhone(phone)) {
+      rowErrors.push('phone must be a 10-digit U.S. number or an E.164 number beginning with +');
+    }
     if (permission === null) rowErrors.push('permission must be yes or no');
     if (!timezone && timezonePolicy === 'block') {
       rowErrors.push('timezone is required by the calling policy');

@@ -268,13 +268,13 @@ function CsvImportPanel({ onImported, missingTimezonePolicy = 'block' }) {
 
         <div className="mt-4 grid gap-4 border-t border-slate-100 pt-4">
           <Field
-            label="CSV file"
-            hint={`Required: business name, phone, explicit yes/no permission${missingTimezonePolicy === 'block' ? ', and an IANA timezone' : ''}.`}
+            label="CSV or TSV file"
+            hint={`Comma-separated CSV and tab-separated spreadsheet exports are accepted. Required: business name, phone, explicit yes/no permission${missingTimezonePolicy === 'block' ? ', and an IANA timezone' : ''}.`}
           >
             <div className="grid gap-2">
               <input
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,.tsv,text/csv,text/tab-separated-values"
                 onChange={readFile}
                 className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-200"
               />

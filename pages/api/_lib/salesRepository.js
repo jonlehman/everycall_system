@@ -103,8 +103,16 @@ export function normalizeSalesPhone(value, { defaultCountryCode = "1" } = {}) {
   }
   const hasPlus = raw.startsWith("+");
   let digits = raw.replace(/\D/g, "");
-  if (!hasPlus && digits.length === 10 && defaultCountryCode) {
-    digits = `${String(defaultCountryCode).replace(/\D/g, "")}${digits}`;
+  const countryDigits = String(defaultCountryCode).replace(/\D/g, "");
+  if (!hasPlus) {
+    if (digits.length === 10 && countryDigits) {
+      digits = `${countryDigits}${digits}`;
+    } else if (!countryDigits || digits.length !== 10 + countryDigits.length || !digits.startsWith(countryDigits)) {
+      throw salesError(
+        "invalid_phone",
+        `Invalid phone number: ${raw}. Use a 10-digit U.S. number or an E.164 number beginning with +.`
+      );
+    }
   }
   if (digits.length < 8 || digits.length > 15) {
     throw salesError("invalid_phone", `Invalid phone number: ${raw}`);
@@ -146,6 +154,27 @@ export function parseSalesProspectCsv(csvText) {
     throw salesError("csv_required", "CSV content is required.");
   }
 
+  let commas = 0;
+  let tabs = 0;
+  let inHeaderQuotes = false;
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+    if (char === '"') {
+      if (inHeaderQuotes && input[index + 1] === '"') {
+        index += 1;
+      } else {
+        inHeaderQuotes = !inHeaderQuotes;
+      }
+    } else if (!inHeaderQuotes && (char === "\n" || char === "\r")) {
+      break;
+    } else if (!inHeaderQuotes && char === ",") {
+      commas += 1;
+    } else if (!inHeaderQuotes && char === "\t") {
+      tabs += 1;
+    }
+  }
+  const delimiter = tabs > commas ? "\t" : ",";
+
   const rows = [];
   let row = [];
   let field = "";
@@ -167,7 +196,7 @@ export function parseSalesProspectCsv(csvText) {
 
     if (char === '"') {
       quoted = true;
-    } else if (char === ",") {
+    } else if (char === delimiter) {
       row.push(field);
       field = "";
     } else if (char === "\n") {
