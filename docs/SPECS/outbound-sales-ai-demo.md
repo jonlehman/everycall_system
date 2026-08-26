@@ -2,12 +2,12 @@
 
 ## Purpose
 
-Provide an admin-only, human-led browser dialer that can bring a prepared EveryCall receptionist into an active sales call without muting the operator or changing production inbound and public-demo behavior.
+Provide an admin-only, human-led browser dialer that can bring a prepared EveryCall receptionist into an active sales call without changing production inbound and public-demo behavior.
 
 ## Invariants
 
 - A human explicitly starts every outbound call.
-- The operator remains connected and unmuted for the whole call.
+- The operator remains connected for the whole call. Their browser microphone mutes automatically while the receptionist is active, unmutes when the receptionist ends, and can be manually overridden.
 - The AI is an incoming receptionist demonstration, never an outbound sales bot.
 - `Start Receptionist` may run only after the prospect is connected and the AI standby is fully ready.
 - Sales records, demo bundles, credentials, webhooks, and provider calls remain isolated from production tenant calls and public-demo records.
@@ -32,8 +32,8 @@ The warm queue contains the current prospect plus the next 10 eligible records. 
 4. Only after the matching operator `call.answered` webhook arrives does the gateway create a conference anchored to the operator, then concurrently dial the prospect and a private OpenAI SIP standby.
 5. The OpenAI webhook is signature-verified and nonce-correlated to the call. The gateway accepts the Realtime call with the prepared prompt and opens its server monitor while automatic responses remain disabled.
 6. `AI Ready` requires the accepted OpenAI session and the Telnyx AI leg to be connected. The AI remains outside the human conference.
-7. `Start Receptionist` joins that existing leg, confirms the participant, enables responses, and says exactly: `Thanks for calling [business name]. How can I help you?`
-8. `End Receptionist` removes and hangs up only the AI leg. `End Call` tears down all remaining provider resources.
+7. `Start Receptionist` first mutes the operator's browser microphone, then joins that existing leg, confirms the participant, enables responses, and says exactly: `Thanks for calling [business name]. How can I help you?`
+8. `End Receptionist` removes and hangs up only the AI leg, then unmutes the operator. The operator can manually mute or unmute at any point. `End Call` tears down all remaining provider resources.
 
 The gateway fails closed when the operator leg is not parked or belongs to the wrong sales connection. Provider errors are persisted and surfaced without removing the human operator from an already active conversation.
 

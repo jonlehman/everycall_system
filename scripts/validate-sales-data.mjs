@@ -881,6 +881,9 @@ async function validateStaticIsolationAndRoutes() {
     path.join(root, "app/admin/sales/page.jsx"),
     "utf8"
   );
+  assert.match(salesConsole, /if \(action === 'start_demo'\) setBrowserCallMuted\(true\)/);
+  assert.match(salesConsole, /if \(action === 'end_demo'\) setBrowserCallMuted\(false\)/);
+  assert.match(salesConsole, /operatorMuted \? 'Unmute' : 'Mute'/);
   assert.match(salesConsole, /\/samples\/sales-prospects-demo\.csv/);
   assert.match(salesConsole, /Skip unusable demo/);
   assert.match(salesConsole, /Reload calling queue/);

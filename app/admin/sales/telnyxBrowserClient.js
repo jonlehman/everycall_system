@@ -16,6 +16,16 @@ function callStateFromNotification(notification) {
 
 const TERMINAL_CALL_STATES = new Set(['destroy', 'hangup', 'purge', 'ended']);
 
+export function setTelnyxCallMuted(call, muted) {
+  if (!call) throw new Error('There is no active browser call to mute.');
+  const method = muted ? 'muteAudio' : 'unmuteAudio';
+  if (typeof call[method] !== 'function') {
+    throw new Error(`The Telnyx browser call cannot ${muted ? 'mute' : 'unmute'} the microphone.`);
+  }
+  call[method]();
+  return Boolean(muted);
+}
+
 export async function connectTelnyxBrowserClient({
   token,
   remoteElement,
@@ -156,6 +166,9 @@ export async function connectTelnyxBrowserClient({
       const call = activeCall;
       await call.hangup().catch(() => {});
       if (activeCall?.id === call.id) activeCall = null;
+    },
+    setMuted(muted) {
+      return setTelnyxCallMuted(activeCall, Boolean(muted));
     },
     async disconnect() {
       if (disposed) return;

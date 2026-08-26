@@ -4,6 +4,7 @@ import {
   createSalesWebrtcToken,
   resolveSalesOperatorTelephonyCredential
 } from "../pages/api/_lib/salesWebrtc.js";
+import { setTelnyxCallMuted } from "../app/admin/sales/telnyxBrowserClient.js";
 
 assert.equal(
   resolveSalesOperatorTelephonyCredential({
@@ -58,5 +59,22 @@ assert.equal(options.audio, true);
 assert.equal(options.video, false);
 assert.equal(options.customHeaders[0].value, "call-1");
 assert.equal(options.customHeaders[1].value, "operator");
+
+const muteEvents = [];
+const fakeCall = {
+  muteAudio() {
+    muteEvents.push("muted");
+  },
+  unmuteAudio() {
+    muteEvents.push("unmuted");
+  }
+};
+assert.equal(setTelnyxCallMuted(fakeCall, true), true);
+assert.equal(setTelnyxCallMuted(fakeCall, false), false);
+assert.deepEqual(muteEvents, ["muted", "unmuted"]);
+assert.throws(
+  () => setTelnyxCallMuted(null, true),
+  /no active browser call/i
+);
 
 console.log("sales WebRTC validation passed");

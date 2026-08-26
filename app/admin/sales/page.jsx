@@ -69,6 +69,7 @@ function StatusPill({ status, tone }) {
 }
 
 function ActionButton({
+  ariaPressed,
   children,
   disabled = false,
   onClick,
@@ -88,6 +89,7 @@ function ActionButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
+      aria-pressed={ariaPressed}
       title={title}
       className={`inline-flex min-h-10 items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#004ac6] disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${tones[tone]} ${className}`}
     >
@@ -617,12 +619,14 @@ function CallPanel({
   call,
   busyAction,
   microphoneState,
+  operatorMuted,
   softphoneState,
   softphoneError,
   browserCallState,
   remoteAudioRef,
   onCall,
   onAction,
+  onToggleMute,
   onReconnect
 }) {
   const callBlocked = callDisableReason({
@@ -639,7 +643,7 @@ function CallPanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="m-0 text-base font-semibold text-slate-950">Browser call</h2>
-          <p className="mt-1 text-sm text-slate-500">You stay live and unmuted while the receptionist demonstrates the call.</p>
+          <p className="mt-1 text-sm text-slate-500">You stay connected while the receptionist demonstrates the call.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <StatusPill status={call?.state || 'Not started'} tone={call?.prospectConnected ? 'blue' : undefined} />
@@ -684,6 +688,15 @@ function CallPanel({
           {busyAction === 'call' ? 'Calling…' : 'Call'}
         </ActionButton>
         <ActionButton
+          onClick={onToggleMute}
+          disabled={Boolean(busyAction) || !call?.id || call?.terminal}
+          title={!call?.id || call?.terminal ? 'There is no active call to mute.' : ''}
+          tone={operatorMuted ? 'amber' : 'secondary'}
+          ariaPressed={operatorMuted}
+        >
+          {operatorMuted ? 'Unmute' : 'Mute'}
+        </ActionButton>
+        <ActionButton
           onClick={() => onAction('start_demo')}
           disabled={Boolean(demoBlocked)}
           title={demoBlocked}
@@ -717,7 +730,7 @@ function CallPanel({
       ) : null}
 
       <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-        <span className="font-semibold">Live operator audio stays on.</span> There is intentionally no mute-on-demo control.
+        <span className="font-semibold">Your microphone mutes automatically.</span> Starting the receptionist mutes you; ending her unmutes you. You can override it with the Mute button.
       </div>
     </Card>
   );
@@ -906,6 +919,7 @@ export default function AdminSalesConsolePage() {
   const [operationError, setOperationError] = useState('');
   const [callRefreshError, setCallRefreshError] = useState('');
   const [microphoneState, setMicrophoneState] = useState('Not requested');
+  const [operatorMuted, setOperatorMuted] = useState(false);
   const [softphoneState, setSoftphoneState] = useState('Loading token');
   const [softphoneError, setSoftphoneError] = useState('');
   const [browserCallState, setBrowserCallState] = useState('Not started');
@@ -935,6 +949,17 @@ export default function AdminSalesConsolePage() {
     microphoneStreamRef.current?.getTracks?.().forEach((track) => track.stop());
     microphoneStreamRef.current = null;
     setMicrophoneState('Released');
+    setOperatorMuted(false);
+  }, []);
+
+  const setBrowserCallMuted = useCallback((muted) => {
+    const nextMuted = softphoneRef.current?.setMuted(Boolean(muted));
+    if (typeof nextMuted !== 'boolean') {
+      throw new Error('There is no active browser call to mute.');
+    }
+    setOperatorMuted(nextMuted);
+    setMicrophoneState(nextMuted ? 'Muted' : 'Live');
+    return nextMuted;
   }, []);
 
   const loadQueue = useCallback(async ({ quiet = false } = {}) => {
@@ -1219,6 +1244,8 @@ export default function AdminSalesConsolePage() {
         callOptions,
         microphoneStreamRef.current
       );
+      setOperatorMuted(false);
+      setMicrophoneState('Live');
     } catch (error) {
       setOperationError(error?.message || 'The call could not be started.');
       setBrowserCallState('Failed');
@@ -1243,7 +1270,9 @@ export default function AdminSalesConsolePage() {
     if (!call?.id) return;
     setBusyAction(action);
     setOperationError('');
+    const wasOperatorMuted = operatorMuted;
     try {
+      if (action === 'start_demo') setBrowserCallMuted(true);
       const payload = await fetchSalesJson(`/api/v1/admin/sales/calls/${encodeURIComponent(call.id)}/actions`, {
         method: 'POST',
         body: JSON.stringify({ action })
@@ -1252,6 +1281,7 @@ export default function AdminSalesConsolePage() {
       if (!nextCall.id) throw new Error('The server did not return the updated call state.');
       setCall(nextCall);
       if (nextCall.signup) setInvitation(normalizeInvitation(nextCall.signup));
+      if (action === 'end_demo') setBrowserCallMuted(false);
       if (nextCall.terminal || action === 'end_call') {
         await softphoneRef.current?.hangup();
         browserCallRef.current = null;
@@ -1259,9 +1289,25 @@ export default function AdminSalesConsolePage() {
         await loadQueue({ quiet: true });
       }
     } catch (error) {
+      if (action === 'start_demo' && !wasOperatorMuted) {
+        try {
+          setBrowserCallMuted(false);
+        } catch {
+          // Keep the original receptionist-start failure as the actionable error.
+        }
+      }
       setOperationError(error?.message || `${displayStatus(action)} failed.`);
     } finally {
       setBusyAction('');
+    }
+  };
+
+  const toggleOperatorMute = () => {
+    setSoftphoneError('');
+    try {
+      setBrowserCallMuted(!operatorMuted);
+    } catch (error) {
+      setSoftphoneError(error?.message || 'The browser microphone could not be muted.');
     }
   };
 
@@ -1441,12 +1487,14 @@ export default function AdminSalesConsolePage() {
                   call={call}
                   busyAction={busyAction}
                   microphoneState={microphoneState}
+                  operatorMuted={operatorMuted}
                   softphoneState={softphoneState}
                   softphoneError={softphoneError}
                   browserCallState={browserCallState}
                   remoteAudioRef={remoteAudioRef}
                   onCall={() => { void startCall(); }}
                   onAction={(action) => { void performCallAction(action); }}
+                  onToggleMute={toggleOperatorMute}
                   onReconnect={() => { void initializeSoftphone(); }}
                 />
               </div>
