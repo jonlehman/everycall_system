@@ -32,7 +32,7 @@ The warm queue contains the current prospect plus the next 10 eligible records. 
 4. Only after the matching operator `call.answered` webhook arrives does the gateway create a conference anchored to the operator, then concurrently dial the prospect and a private OpenAI SIP standby.
 5. The OpenAI webhook is signature-verified and nonce-correlated to the call. The gateway accepts the Realtime call with the prepared prompt and opens its server monitor while automatic responses remain disabled.
 6. `AI Ready` requires the accepted OpenAI session and the Telnyx AI leg to be connected. The AI remains outside the human conference.
-7. `Start Receptionist` first mutes the operator's browser microphone, then joins that existing leg, confirms the participant, enables responses, and says exactly: `Thanks for calling [business name]. How can I help you?`
+7. `Start Receptionist` first mutes the operator's browser microphone, waits one second for the WebRTC audio path to settle, then joins that existing leg, confirms the participant, enables responses, and says exactly: `Thanks for calling [business name]. How can I help you?`
 8. `End Receptionist` removes and hangs up only the AI leg, then unmutes the operator. The operator can manually mute or unmute at any point. `End Call` tears down all remaining provider resources.
 
 The gateway fails closed when the operator leg is not parked or belongs to the wrong sales connection. Provider errors are persisted and surfaced without removing the human operator from an already active conversation.

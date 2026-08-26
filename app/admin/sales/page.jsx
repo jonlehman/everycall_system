@@ -20,6 +20,8 @@ import {
 import { connectTelnyxBrowserClient } from './telnyxBrowserClient';
 import ProspectsManager from './ProspectsManager';
 
+const RECEPTIONIST_MUTE_SETTLE_MS = 1000;
+
 const OUTCOMES = [
   ['no_answer', 'No answer'],
   ['voicemail', 'Voicemail'],
@@ -730,7 +732,7 @@ function CallPanel({
       ) : null}
 
       <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-        <span className="font-semibold">Your microphone mutes automatically.</span> Starting the receptionist mutes you; ending her unmutes you. You can override it with the Mute button.
+        <span className="font-semibold">Your microphone mutes automatically.</span> Starting the receptionist mutes you immediately, waits one second, then joins her. Ending her unmutes you. You can override it with the Mute button.
       </div>
     </Card>
   );
@@ -1272,7 +1274,10 @@ export default function AdminSalesConsolePage() {
     setOperationError('');
     const wasOperatorMuted = operatorMuted;
     try {
-      if (action === 'start_demo') setBrowserCallMuted(true);
+      if (action === 'start_demo') {
+        setBrowserCallMuted(true);
+        await new Promise((resolve) => window.setTimeout(resolve, RECEPTIONIST_MUTE_SETTLE_MS));
+      }
       const payload = await fetchSalesJson(`/api/v1/admin/sales/calls/${encodeURIComponent(call.id)}/actions`, {
         method: 'POST',
         body: JSON.stringify({ action })

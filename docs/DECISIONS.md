@@ -104,7 +104,7 @@
 - The gateway enforces the closing invariant independently of the model: `finish_session` is rejected when the latest assistant turn asks a question or when no later caller turn follows the closing.
 
 ## 2026-08-26
-- Supersede the July 28 operator-audio behavior while preserving the human-led call: `Start Receptionist` automatically mutes the operator's browser microphone before joining the AI, `End Receptionist` unmutes it after removing the AI, and a manual mute control remains available throughout the active call.
+- Supersede the July 28 operator-audio behavior while preserving the human-led call: `Start Receptionist` automatically mutes the operator's browser microphone, waits one second for the WebRTC audio path to settle, and only then joins the AI; `End Receptionist` unmutes it after removing the AI, and a manual mute control remains available throughout the active call.
 - Render Realtime prompts as a byte-stable canonical layer, one contiguous Business Details layer, and an empty volatile layer. `OPENAI_REALTIME_LAYERED_PROMPT_ENABLED=false` is the rollback; layered rendering is the default after the v11 comparative battery produced an 82.01% cross-tenant cache hit on the second layered call.
 - Realtime prompt caching remains automatic and best-effort. Record cached input tokens and per-response/cumulative hit rates, but do not send the Responses-only `prompt_cache_key` field in a Realtime session.
 - Prompt assembly is read-only with respect to AI generation: both the company-description/no-tool snapshot and the AI-curated What You Know By Heart block are generated and stored during knowledge publication, then loaded verbatim at call startup.

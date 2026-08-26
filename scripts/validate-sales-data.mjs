@@ -881,7 +881,13 @@ async function validateStaticIsolationAndRoutes() {
     path.join(root, "app/admin/sales/page.jsx"),
     "utf8"
   );
-  assert.match(salesConsole, /if \(action === 'start_demo'\) setBrowserCallMuted\(true\)/);
+  assert.match(salesConsole, /const RECEPTIONIST_MUTE_SETTLE_MS = 1000/);
+  const automaticMuteIndex = salesConsole.indexOf("setBrowserCallMuted(true)");
+  const muteSettleIndex = salesConsole.indexOf("window.setTimeout(resolve, RECEPTIONIST_MUTE_SETTLE_MS)");
+  const startActionRequestIndex = salesConsole.indexOf("fetchSalesJson(`/api/v1/admin/sales/calls/${encodeURIComponent(call.id)}/actions`");
+  assert.ok(automaticMuteIndex >= 0);
+  assert.ok(muteSettleIndex > automaticMuteIndex);
+  assert.ok(startActionRequestIndex > muteSettleIndex);
   assert.match(salesConsole, /if \(action === 'end_demo'\) setBrowserCallMuted\(false\)/);
   assert.match(salesConsole, /operatorMuted \? 'Unmute' : 'Mute'/);
   assert.match(salesConsole, /\/samples\/sales-prospects-demo\.csv/);
