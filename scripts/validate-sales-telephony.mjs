@@ -496,6 +496,7 @@ async function validateTelnyxAdapter() {
 
 class FakeWebSocket {
   static instances = [];
+  static responseStatus = "completed";
 
   constructor(url, options) {
     this.url = url;
@@ -523,6 +524,17 @@ class FakeWebSocket {
     assert.equal(this.readyState, 1);
     this.sent.push(String(value));
     const event = JSON.parse(String(value));
+    if (event.type === "session.update") {
+      this.emit("message", JSON.stringify({
+        type: "session.updated",
+        session: { type: "realtime" }
+      }));
+    }
+    if (event.type === "input_audio_buffer.clear") {
+      this.emit("message", JSON.stringify({
+        type: "input_audio_buffer.cleared"
+      }));
+    }
     if (event.type === "response.create") {
       queueMicrotask(() => {
         this.emit("message", JSON.stringify({
@@ -531,7 +543,7 @@ class FakeWebSocket {
         }));
         this.emit("message", JSON.stringify({
           type: "response.done",
-          response: { id: "resp-greeting-1", status: "completed" }
+          response: { id: "resp-greeting-1", status: FakeWebSocket.responseStatus }
         }));
         this.emit("message", JSON.stringify({
           type: "output_audio_buffer.stopped",
@@ -624,6 +636,11 @@ async function validateOpenAIAdapter() {
   assert.equal(startEvents[1].type, "input_audio_buffer.clear");
   assert.equal(startEvents[2].type, "response.create");
   assert.equal(startEvents[2].response.output_modalities[0], "audio");
+  assert.equal(
+    Object.hasOwn(startEvents[2].response, "max_output_tokens"),
+    false,
+    "The exact greeting must inherit the safe session limit rather than a tiny audio-token cap."
+  );
   assert.equal(startEvents[3].type, "input_audio_buffer.clear");
   assert.equal(startEvents[4].type, "session.update");
   assert.equal(startEvents[4].session.audio.input.turn_detection.create_response, true);
@@ -633,6 +650,23 @@ async function validateOpenAIAdapter() {
     /"Thanks for calling Acme Appliance Repair\. How can I help you\?"/
   );
   assert.equal(started.playback_stopped.response_id, "resp-greeting-1");
+  assert.equal(started.response_done.response.status, "completed");
+
+  FakeWebSocket.responseStatus = "incomplete";
+  const incompleteController = await client.connectMonitor({
+    callId: "rtc_sales_incomplete",
+    correlationId: "trace-incomplete"
+  });
+  await assert.rejects(
+    incompleteController.startDemo({ businessName: "Acme Appliance Repair" }),
+    (error) => {
+      assert.equal(error.code, "greeting_response_incomplete");
+      return true;
+    },
+    "A drained but incomplete greeting must never be treated as a successful announcement."
+  );
+  incompleteController.close();
+  FakeWebSocket.responseStatus = "completed";
 
   const paused = controller.pause();
   assert.equal(paused.cancel_event, null);

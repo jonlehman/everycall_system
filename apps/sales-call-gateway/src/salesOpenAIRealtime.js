@@ -220,7 +220,6 @@ export function buildSalesRealtimeGreetingEvent({
     response: {
       output_modalities: ["audio"],
       instructions: `Say exactly this sentence, with no additions: ${JSON.stringify(greeting)}`,
-      max_output_tokens: 80,
       metadata: {
         response_purpose: "sales_demo_greeting",
         correlation_id: String(correlationId || "")
@@ -525,7 +524,11 @@ export function createSalesOpenAIRealtimeClient({
       let closed = false;
       const events = [];
       const responseCreatedWaiters = [];
+      const responseDoneWaiters = [];
       const outputAudioStoppedWaiters = [];
+      const sessionUpdatedWaiters = [];
+      const inputAudioClearedWaiters = [];
+      const doneResponses = new Map();
       const stoppedResponseIds = new Set();
 
       function rejectResponseCreatedWaiters(error) {
@@ -538,6 +541,10 @@ export function createSalesOpenAIRealtimeClient({
         while (outputAudioStoppedWaiters.length) {
           outputAudioStoppedWaiters.shift().reject(error);
         }
+      }
+
+      function rejectEventWaiters(waiters, error) {
+        while (waiters.length) waiters.shift().reject(error);
       }
 
       attachSocketListener(socket, "message", (message) => {
@@ -554,11 +561,24 @@ export function createSalesOpenAIRealtimeClient({
           const waiter = responseCreatedWaiters.shift();
           if (waiter) waiter.resolve(event);
         }
-        if (
-          event?.type === "response.done"
-          && (!event?.response?.id || String(event.response.id) === activeResponseId)
-        ) {
-          activeResponseId = null;
+        if (event?.type === "response.done" && event?.response?.id) {
+          const responseId = String(event.response.id);
+          doneResponses.set(responseId, event);
+          if (responseId === activeResponseId) activeResponseId = null;
+          for (let index = responseDoneWaiters.length - 1; index >= 0; index -= 1) {
+            const waiter = responseDoneWaiters[index];
+            if (waiter.responseId !== responseId) continue;
+            responseDoneWaiters.splice(index, 1);
+            waiter.resolve(event);
+          }
+        }
+        if (event?.type === "session.updated") {
+          const waiter = sessionUpdatedWaiters.shift();
+          if (waiter) waiter.resolve(event);
+        }
+        if (event?.type === "input_audio_buffer.cleared") {
+          const waiter = inputAudioClearedWaiters.shift();
+          if (waiter) waiter.resolve(event);
         }
         if (event?.type === "output_audio_buffer.stopped" && event?.response_id) {
           const responseId = String(event.response_id);
@@ -581,7 +601,10 @@ export function createSalesOpenAIRealtimeClient({
             }
           );
           rejectResponseCreatedWaiters(realtimeError);
+          rejectEventWaiters(responseDoneWaiters, realtimeError);
           rejectOutputAudioStoppedWaiters(realtimeError);
+          rejectEventWaiters(sessionUpdatedWaiters, realtimeError);
+          rejectEventWaiters(inputAudioClearedWaiters, realtimeError);
         }
         if (typeof onEvent === "function") onEvent(event);
       });
@@ -606,6 +629,18 @@ export function createSalesOpenAIRealtimeClient({
             retryable: false
           }
         ));
+        const closedError = new SalesProviderError(
+          "OpenAI Realtime WebSocket closed before greeting setup completed",
+          {
+            provider: "openai",
+            operation: "await_greeting_setup",
+            code: "websocket_closed",
+            retryable: false
+          }
+        );
+        rejectEventWaiters(responseDoneWaiters, closedError);
+        rejectEventWaiters(sessionUpdatedWaiters, closedError);
+        rejectEventWaiters(inputAudioClearedWaiters, closedError);
         if (typeof onClose === "function") onClose(...args);
       });
 
@@ -728,6 +763,69 @@ export function createSalesOpenAIRealtimeClient({
         });
       }
 
+      function waitForResponseDone(responseId, timeoutMs) {
+        const selectedResponseId = requireSalesValue(responseId, "greeting_response_id");
+        if (doneResponses.has(selectedResponseId)) {
+          return Promise.resolve(doneResponses.get(selectedResponseId));
+        }
+        return new Promise((resolve, reject) => {
+          const waiter = {
+            responseId: selectedResponseId,
+            resolve: (event) => {
+              clearTimeout(timer);
+              resolve(event);
+            },
+            reject: (error) => {
+              clearTimeout(timer);
+              reject(error);
+            }
+          };
+          const timer = setTimeout(() => {
+            const index = responseDoneWaiters.indexOf(waiter);
+            if (index >= 0) responseDoneWaiters.splice(index, 1);
+            reject(new SalesProviderError(
+              "OpenAI greeting response completion timed out",
+              {
+                provider: "openai",
+                operation: "await_response_done",
+                code: "response_done_timeout",
+                retryable: false
+              }
+            ));
+          }, Math.max(100, Number(timeoutMs) || 15000));
+          responseDoneWaiters.push(waiter);
+        });
+      }
+
+      function waitForNextServerEvent(waiters, timeoutMs, operation, code) {
+        return new Promise((resolve, reject) => {
+          const waiter = {
+            resolve: (event) => {
+              clearTimeout(timer);
+              resolve(event);
+            },
+            reject: (error) => {
+              clearTimeout(timer);
+              reject(error);
+            }
+          };
+          const timer = setTimeout(() => {
+            const index = waiters.indexOf(waiter);
+            if (index >= 0) waiters.splice(index, 1);
+            reject(new SalesProviderError(
+              "OpenAI greeting setup acknowledgement timed out",
+              {
+                provider: "openai",
+                operation,
+                code,
+                retryable: false
+              }
+            ));
+          }, Math.max(100, Number(timeoutMs) || 5000));
+          waiters.push(waiter);
+        });
+      }
+
       return {
         callId: selectedCallId,
         correlationId: String(correlationId || selectedCallId),
@@ -776,14 +874,44 @@ export function createSalesOpenAIRealtimeClient({
               target: selectedCallId
             })
           });
+          const protectionUpdated = waitForNextServerEvent(
+            sessionUpdatedWaiters,
+            responseCreatedTimeoutMs,
+            "await_opening_protection",
+            "opening_protection_timeout"
+          );
+          sendEvent(openingProtection);
+          await protectionUpdated;
+          const inputClearedBeforeGreeting = waitForNextServerEvent(
+            inputAudioClearedWaiters,
+            responseCreatedTimeoutMs,
+            "await_input_audio_clear",
+            "input_audio_clear_timeout"
+          );
+          sendEvent(clearInputBeforeGreeting);
+          await inputClearedBeforeGreeting;
           const responseCreated = waitForResponseCreated(
             responseCreatedTimeoutMs
           );
-          sendEvent(openingProtection);
-          sendEvent(clearInputBeforeGreeting);
           sendEvent(greeting);
           const acknowledgement = await responseCreated;
           const responseId = String(acknowledgement?.response?.id || "");
+          const responseDone = await waitForResponseDone(
+            responseId,
+            playbackStoppedTimeoutMs
+          );
+          const responseStatus = String(responseDone?.response?.status || "").toLowerCase();
+          if (responseStatus !== "completed") {
+            throw new SalesProviderError(
+              `OpenAI greeting response ended ${responseStatus || "without a status"}`,
+              {
+                provider: "openai",
+                operation: "await_response_done",
+                code: "greeting_response_incomplete",
+                retryable: false
+              }
+            );
+          }
           const playbackStopped = await waitForOutputAudioStopped(
             responseId,
             playbackStoppedTimeoutMs
@@ -795,8 +923,22 @@ export function createSalesOpenAIRealtimeClient({
               target: selectedCallId
             })
           });
+          const inputClearedAfterGreeting = waitForNextServerEvent(
+            inputAudioClearedWaiters,
+            responseCreatedTimeoutMs,
+            "await_input_audio_clear",
+            "input_audio_clear_timeout"
+          );
           sendEvent(clearInputAfterGreeting);
+          await inputClearedAfterGreeting;
+          const responseModeUpdated = waitForNextServerEvent(
+            sessionUpdatedWaiters,
+            responseCreatedTimeoutMs,
+            "await_response_mode",
+            "response_mode_timeout"
+          );
           sendEvent(responseMode);
+          await responseModeUpdated;
           return {
             opening_protection_event: openingProtection,
             clear_input_before_greeting_event: clearInputBeforeGreeting,
@@ -805,6 +947,7 @@ export function createSalesOpenAIRealtimeClient({
             greeting_event: greeting,
             greeting: buildSalesDemoGreeting(businessName),
             acknowledgement,
+            response_done: responseDone,
             playback_stopped: playbackStopped
           };
         },

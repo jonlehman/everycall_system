@@ -77,11 +77,15 @@ import {
 } from "./finishSessionControl.js";
 import { buildStableOpenAiSafetyIdentifier } from "./openAiSafetyIdentifier.js";
 import {
+  buildOpeningStatementResponse,
   completeOpeningStatementAfterPlayback,
   initializeOpeningStatementProtection,
+  markOpeningStatementResponseDone,
+  markOpeningStatementRetryRequested,
   noteOpeningCallerAudioIgnored,
   markOpeningStatementRequested,
   markOpeningStatementResponseCreated,
+  shouldRetryOpeningStatementAfterPlayback,
   shouldIgnoreCallerDuringOpening
 } from "./openingStatementControl.js";
 
@@ -288,6 +292,8 @@ type StreamSession = {
   openingStatementProtected?: boolean;
   openingStatementRequested?: boolean;
   openingStatementResponseId?: string | null;
+  openingStatementResponseStatus?: string | null;
+  openingStatementRetryCount?: number;
   openingStatementIgnoredAudioFrames?: number;
   outputQueue?: Buffer[];
   outputBuffer?: Buffer;
@@ -833,6 +839,32 @@ function noteAssistantResponsePlaybackDrained(session: StreamSession, responseId
       responseId: String(responseId || "") || undefined,
       ignoredAudioFrames: session.openingStatementIgnoredAudioFrames || 0
     });
+  } else if (shouldRetryOpeningStatementAfterPlayback(session, responseId)) {
+    const priorStatus = session.openingStatementResponseStatus || "unknown";
+    markOpeningStatementRetryRequested(session);
+    logError("opening_statement_incomplete_retry_requested", {
+      callSid: session.callSid,
+      responseId: String(responseId || "") || undefined,
+      status: priorStatus
+    });
+    requestAssistantResponse(
+      session,
+      "greeting_retry",
+      buildOpeningStatementResponse(session.promptPayload?.tenant_greeting || ""),
+      "greeting_retry"
+    );
+  } else if (
+    session.openingStatementProtected
+    && session.openingStatementResponseId === String(responseId || "")
+    && session.openingStatementResponseStatus
+    && session.openingStatementResponseStatus !== "completed"
+  ) {
+    logError("opening_statement_incomplete_terminal", {
+      callSid: session.callSid,
+      responseId: String(responseId || "") || undefined,
+      status: session.openingStatementResponseStatus
+    });
+    void endCallSession(session, "opening_statement_incomplete", true);
   }
   scheduleFinishSessionHangupAfterPlayback(session);
 }
@@ -2719,10 +2751,7 @@ function connectOpenAiRealtime(session: StreamSession) {
         requestAssistantResponse(
           session,
           "greeting",
-          {
-            instructions: `Say exactly this opening statement, with no additions: ${JSON.stringify(payload.tenant_greeting)}`,
-            max_output_tokens: 120
-          },
+          buildOpeningStatementResponse(payload.tenant_greeting),
           "greeting"
         );
       }
@@ -2782,6 +2811,11 @@ function connectOpenAiRealtime(session: StreamSession) {
 
     if (type === "response.done") {
       const completedResponseId = normalizeResponseId(payloadMsg?.response?.id || payloadMsg?.response_id) || null;
+      markOpeningStatementResponseDone(
+        session,
+        completedResponseId,
+        payloadMsg?.response?.status || payloadMsg?.status
+      );
       const responseEvidence = ensureAssistantResponseEvidence(session, completedResponseId);
       if (responseEvidence) responseEvidence.responseDone = true;
       markAssistantResponseFinished(session);

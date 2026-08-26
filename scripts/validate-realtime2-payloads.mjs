@@ -143,6 +143,16 @@ assert.deepEqual(legacyResponse.response.modalities, ["audio", "text"]);
 assert.equal(legacyResponse.response.output_modalities, undefined);
 
 const openingSession = {};
+const openingResponse = openingStatement.buildOpeningStatementResponse(
+  "Thanks for calling Creative Dynamic Co. How can I help you?"
+);
+assert.equal(openingResponse.tool_choice, "none");
+assert.deepEqual(openingResponse.tools, []);
+assert.equal(
+  Object.hasOwn(openingResponse, "max_output_tokens"),
+  false,
+  "The opening must inherit the safe session limit rather than a small per-response audio-token cap."
+);
 openingStatement.initializeOpeningStatementProtection(openingSession);
 assert.equal(openingStatement.shouldIgnoreCallerDuringOpening(openingSession), true);
 openingStatement.noteOpeningCallerAudioIgnored(openingSession);
@@ -152,13 +162,44 @@ assert.equal(
   true
 );
 assert.equal(
+  openingStatement.markOpeningStatementResponseDone(
+    openingSession,
+    "response-opening",
+    "incomplete"
+  ),
+  false
+);
+assert.equal(
+  openingStatement.completeOpeningStatementAfterPlayback(openingSession, "response-opening"),
+  false,
+  "An incomplete response draining must not release opening protection"
+);
+assert.equal(
+  openingStatement.shouldRetryOpeningStatementAfterPlayback(openingSession, "response-opening"),
+  true
+);
+openingStatement.markOpeningStatementRetryRequested(openingSession);
+assert.equal(openingSession.openingStatementRetryCount, 1);
+assert.equal(
+  openingStatement.markOpeningStatementResponseCreated(openingSession, "response-opening-retry"),
+  true
+);
+assert.equal(
+  openingStatement.markOpeningStatementResponseDone(
+    openingSession,
+    "response-opening-retry",
+    "completed"
+  ),
+  true
+);
+assert.equal(
   openingStatement.completeOpeningStatementAfterPlayback(openingSession, "response-other"),
   false,
   "another response finishing must not end opening protection"
 );
 assert.equal(openingStatement.shouldIgnoreCallerDuringOpening(openingSession), true);
 assert.equal(
-  openingStatement.completeOpeningStatementAfterPlayback(openingSession, "response-opening"),
+  openingStatement.completeOpeningStatementAfterPlayback(openingSession, "response-opening-retry"),
   true
 );
 assert.equal(openingStatement.shouldIgnoreCallerDuringOpening(openingSession), false);

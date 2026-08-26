@@ -527,7 +527,9 @@ export function createSalesCallOrchestrator({
           sales_call_id: selectedSalesCallId,
           correlation_id: selectedCorrelationId,
           conference_id: selectedConferenceId,
-          openai_call_id: openaiCallId || controller.callId
+          openai_call_id: openaiCallId || controller.callId,
+          greeting_response_id: greeting?.acknowledgement?.response?.id || null,
+          greeting_response_status: greeting?.response_done?.response?.status || null
         });
         return {
           patch: {

@@ -1203,9 +1203,17 @@ export function createSalesCallGateway(options: GatewayOptions) {
                 greeting_dispatch_started_at: nowIso(now)
               }
             }),
-            onGreetingAcknowledged: () => repository.patchCall(salesCallId, {
+            onGreetingAcknowledged: (greeting: any) => repository.patchCall(salesCallId, {
               metadata_json: {
-                greeting_acknowledged_at: nowIso(now)
+                greeting_acknowledged_at: nowIso(now),
+                greeting_response_id: text(greeting?.acknowledgement?.response?.id) || null,
+                greeting_response_status: text(greeting?.response_done?.response?.status) || null,
+                greeting_status_details_type:
+                  text(greeting?.response_done?.response?.status_details?.type) || null,
+                greeting_status_details_reason:
+                  text(greeting?.response_done?.response?.status_details?.reason) || null,
+                greeting_output_tokens:
+                  Number(greeting?.response_done?.response?.usage?.output_tokens) || null
               }
             })
           });
@@ -1824,9 +1832,17 @@ export function createSalesCallGateway(options: GatewayOptions) {
             greeting_dispatch_started_at: nowIso(now)
           }
         }),
-        onGreetingAcknowledged: () => repository.patchCall(call.salesCallId, {
+        onGreetingAcknowledged: (greeting: any) => repository.patchCall(call.salesCallId, {
           metadata_json: {
-            greeting_acknowledged_at: nowIso(now)
+            greeting_acknowledged_at: nowIso(now),
+            greeting_response_id: text(greeting?.acknowledgement?.response?.id) || null,
+            greeting_response_status: text(greeting?.response_done?.response?.status) || null,
+            greeting_status_details_type:
+              text(greeting?.response_done?.response?.status_details?.type) || null,
+            greeting_status_details_reason:
+              text(greeting?.response_done?.response?.status_details?.reason) || null,
+            greeting_output_tokens:
+              Number(greeting?.response_done?.response?.usage?.output_tokens) || null
           }
         })
       });
