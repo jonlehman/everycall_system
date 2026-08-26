@@ -1,0 +1,5 @@
+business_name,contact_name,phone,website,email,lead_delivery_email,business_category,timezone,permission,email_permission,suppressed
+Atlantic Plumbing Demo,Alex Morgan,+1 212-555-0101,https://atlantic-plumbing.example,alex@atlantic-plumbing.example,leads@atlantic-plumbing.example,plumbing,America/New_York,yes,yes,no
+Midwest HVAC Demo,Jordan Lee,+1 312-555-0102,https://midwest-hvac.example,jordan@midwest-hvac.example,leads@midwest-hvac.example,hvac,America/Chicago,yes,yes,no
+Mountain Electric Demo,Taylor Rivera,+1 303-555-0103,https://mountain-electric.example,taylor@mountain-electric.example,leads@mountain-electric.example,electrical,America/Denver,yes,yes,no
+Pacific Roofing Demo,Casey Brooks,+1 206-555-0104,https://pacific-roofing.example,casey@pacific-roofing.example,leads@pacific-roofing.example,roofing,America/Los_Angeles,yes,yes,no

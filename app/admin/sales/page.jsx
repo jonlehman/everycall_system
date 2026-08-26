@@ -271,12 +271,21 @@ function CsvImportPanel({ onImported, missingTimezonePolicy = 'block' }) {
             label="CSV file"
             hint={`Required: business name, phone, explicit yes/no permission${missingTimezonePolicy === 'block' ? ', and an IANA timezone' : ''}.`}
           >
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={readFile}
-              className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-200"
-            />
+            <div className="grid gap-2">
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={readFile}
+                className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-200"
+              />
+              <a
+                href="/samples/sales-prospects-demo.csv"
+                download="everycall-sales-prospects-demo.csv"
+                className="w-fit text-sm font-semibold text-[#004ac6] underline decoration-[#004ac6]/40 underline-offset-2 hover:decoration-[#004ac6] focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#004ac6]"
+              >
+                Download example CSV (4 fictional prospects, one per mainland U.S. time zone)
+              </a>
+            </div>
           </Field>
 
           <ErrorNotice title="CSV could not be read" message={parseError} />

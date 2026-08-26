@@ -187,6 +187,34 @@ function validateSalesConsoleCsvMapping() {
   assert.equal(allowedValidation.validRecords[0].timezone, "");
 }
 
+async function validateSalesConsoleSampleCsv() {
+  const samplePath = path.join(root, "public", "samples", "sales-prospects-demo.csv");
+  const sample = await fs.readFile(samplePath, "utf8");
+  const parsed = parseSalesConsoleCsv(sample);
+  const mappings = guessMappings(parsed.headers);
+  const validation = validateMappedRows(parsed.rows, mappings, {
+    missingTimezonePolicy: "block"
+  });
+
+  assert.equal(validation.errors.length, 0);
+  assert.equal(validation.validRecords.length, 4);
+  assert.deepEqual(
+    validation.validRecords.map((record) => record.timezone),
+    [
+      "America/New_York",
+      "America/Chicago",
+      "America/Denver",
+      "America/Los_Angeles"
+    ]
+  );
+  assert.ok(validation.validRecords.every((record) => record.permission === true));
+  assert.ok(validation.validRecords.every((record) => record.suppressed === false));
+
+  const normalized = normalizeSalesImportRecords(validation.validRecords);
+  assert.equal(normalized.errors.length, 0);
+  assert.equal(normalized.valid.length, 4);
+}
+
 async function validateImportQueryContract() {
   const queries = [];
   const pool = {
@@ -788,6 +816,7 @@ async function validateStaticIsolationAndRoutes() {
     path.join(root, "app/admin/sales/page.jsx"),
     "utf8"
   );
+  assert.match(salesConsole, /\/samples\/sales-prospects-demo\.csv/);
   assert.match(salesConsole, /Skip unusable demo/);
   assert.match(salesConsole, /Prior activity/);
   assert.doesNotMatch(
@@ -800,6 +829,7 @@ await validateCsvAndNormalization();
 validateSalesDemoInstructions();
 validateSignupTokenAttributionIsolation();
 validateSalesConsoleCsvMapping();
+await validateSalesConsoleSampleCsv();
 await validateImportQueryContract();
 await validateQueuePresentation();
 await validateCallingWindowPolicy();
