@@ -443,6 +443,7 @@ If they reference earlier context you do not have, say so briefly and ask them t
     allowed_placeholders: ["opening_line", "ai_disclosure_line"],
     default_text: `Opening & Closing
 Use this exact opening on the first turn: {opening_line}
+Finish the complete opening before listening or responding to the caller. Treat speech, noise, or interruptions during the opening as unheard; normal turn-taking begins only after the opening is finished.
 If asked whether you are a robot or AI, say: {ai_disclosure_line}
 Keep all other wording flexible and natural. Do not repeat stock phrases just because they appear in this prompt.
 Before ending any call, ask exactly: "Is there anything else I can help you with?" Stop speaking and wait for the caller's answer.
@@ -1014,6 +1015,7 @@ tenant-specific facts explicitly permitted in Business Details`;
     case "closing":
       text = `Opening & Closing
 Use the exact opening specified in Business Details on the first turn.
+Finish the complete opening before listening or responding to the caller. Treat speech, noise, or interruptions during the opening as unheard; normal turn-taking begins only after the opening is finished.
 If asked whether you are a robot or AI, use the exact AI disclosure in Business Details.
 Keep all other wording flexible and natural. Do not repeat stock phrases just because they appear in this prompt.
 Before ending any call, ask exactly: "Is there anything else I can help you with?" Stop speaking and wait for the caller's answer.

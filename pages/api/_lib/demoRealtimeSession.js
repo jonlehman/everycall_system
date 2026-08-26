@@ -126,6 +126,7 @@ export function buildDemoRealtimeInstructions(bundle = {}) {
   const lines = [
     rendered.startupPrompt,
     "# Demo Rules",
+    "- Finish the complete opening before listening or responding to the caller. Treat speech, noise, or interruptions during the opening as unheard; normal turn-taking begins only after the opening is finished.",
     "- This is only a brief public website demo.",
     "- Speak in English by default.",
     "- Only switch to another language if the caller clearly starts speaking that language first.",
@@ -171,6 +172,7 @@ There are no live tools in this demonstration.
   return [
     rendered.startupPrompt,
     "# Live Demonstration Rules",
+    "- Finish the complete opening before listening or responding to the caller. Treat speech, noise, or interruptions during the opening as unheard; normal turn-taking begins only after the opening is finished.",
     "- Keep each response to one or two short sentences.",
     "- Answer direct questions before continuing and ask only one question at a time.",
     "- Do not collect payment-card data or other sensitive information.",

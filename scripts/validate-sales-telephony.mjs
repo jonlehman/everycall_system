@@ -529,6 +529,14 @@ class FakeWebSocket {
           type: "response.created",
           response: { id: "resp-greeting-1" }
         }));
+        this.emit("message", JSON.stringify({
+          type: "response.done",
+          response: { id: "resp-greeting-1", status: "completed" }
+        }));
+        this.emit("message", JSON.stringify({
+          type: "output_audio_buffer.stopped",
+          response_id: "resp-greeting-1"
+        }));
       });
     }
   }
@@ -610,23 +618,27 @@ async function validateOpenAIAdapter() {
   });
   assert.equal(started.greeting, "Thanks for calling Acme Appliance Repair. How can I help you?");
   const startEvents = socket.sent.map((value) => JSON.parse(value));
-  assert.equal(startEvents.length, 2);
-  assert.equal(startEvents[0].type, "response.create");
-  assert.equal(startEvents[0].response.output_modalities[0], "audio");
-  assert.equal(startEvents[1].type, "session.update");
-  assert.equal(startEvents[1].session.audio.input.turn_detection.create_response, true);
+  assert.equal(startEvents.length, 5);
+  assert.equal(startEvents[0].type, "session.update");
+  assert.equal(startEvents[0].session.audio.input.turn_detection, null);
+  assert.equal(startEvents[1].type, "input_audio_buffer.clear");
+  assert.equal(startEvents[2].type, "response.create");
+  assert.equal(startEvents[2].response.output_modalities[0], "audio");
+  assert.equal(startEvents[3].type, "input_audio_buffer.clear");
+  assert.equal(startEvents[4].type, "session.update");
+  assert.equal(startEvents[4].session.audio.input.turn_detection.create_response, true);
+  assert.equal(startEvents[4].session.audio.input.turn_detection.interrupt_response, true);
   assert.match(
-    startEvents[0].response.instructions,
+    startEvents[2].response.instructions,
     /"Thanks for calling Acme Appliance Repair\. How can I help you\?"/
   );
+  assert.equal(started.playback_stopped.response_id, "resp-greeting-1");
 
   const paused = controller.pause();
-  assert.equal(paused.cancel_event.response_id, "resp-greeting-1");
-  const pauseEvents = socket.sent.slice(2).map((value) => JSON.parse(value));
+  assert.equal(paused.cancel_event, null);
+  const pauseEvents = socket.sent.slice(5).map((value) => JSON.parse(value));
   assert.equal(pauseEvents[0].session.audio.input.turn_detection.create_response, false);
-  assert.equal(pauseEvents[1].type, "response.cancel");
-  assert.equal(pauseEvents[1].response_id, "resp-greeting-1");
-  assert.equal(pauseEvents[2].type, "output_audio_buffer.clear");
+  assert.equal(pauseEvents[1].type, "output_audio_buffer.clear");
 
   await client.hangupCall({
     callId: "rtc_sales_1",

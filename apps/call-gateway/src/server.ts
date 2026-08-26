@@ -76,6 +76,14 @@ import {
   noteFinishSessionDialogueTurn
 } from "./finishSessionControl.js";
 import { buildStableOpenAiSafetyIdentifier } from "./openAiSafetyIdentifier.js";
+import {
+  completeOpeningStatementAfterPlayback,
+  initializeOpeningStatementProtection,
+  noteOpeningCallerAudioIgnored,
+  markOpeningStatementRequested,
+  markOpeningStatementResponseCreated,
+  shouldIgnoreCallerDuringOpening
+} from "./openingStatementControl.js";
 
 const env = readCallGatewayEnv(process.env);
 const app = express();
@@ -124,6 +132,7 @@ const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "openai_realtime_session_start",
   "openai_realtime_session_updated",
   "openai_realtime_response_done",
+  "opening_statement_playback_completed",
   "assistant_response_canceled",
   "assistant_finish_session_accepted",
   "assistant_finish_session_close_missing",
@@ -276,6 +285,10 @@ type StreamSession = {
   promptPayload?: GatewayPromptPayload;
   knowledgeCallState?: CallState | null;
   greetingSent?: boolean;
+  openingStatementProtected?: boolean;
+  openingStatementRequested?: boolean;
+  openingStatementResponseId?: string | null;
+  openingStatementIgnoredAudioFrames?: number;
   outputQueue?: Buffer[];
   outputBuffer?: Buffer;
   outputTimer?: NodeJS.Timeout | null;
@@ -337,7 +350,7 @@ function createStreamSession(
   callerNumber?: string,
   realtimeLogPath?: string
 ): StreamSession {
-  return {
+  const session: StreamSession = {
     callControlId,
     callSid,
     tenantKey,
@@ -389,6 +402,8 @@ function createStreamSession(
     pendingFinishHangup: null,
     ...(realtimeLogPath ? { realtimeLogPath } : {})
   };
+  initializeOpeningStatementProtection(session);
+  return session;
 }
 
 function logPrewarmOutcome(callSid: string, tenantKey: string, source: string, result: { status: "ready" | "failed"; fetchMs: number; cacheHit: boolean; message?: string; buildId?: string }) {
@@ -812,6 +827,13 @@ function scheduleFinishSessionHangupAfterPlayback(session: StreamSession) {
 function noteAssistantResponsePlaybackDrained(session: StreamSession, responseId: unknown) {
   const evidence = ensureAssistantResponseEvidence(session, responseId);
   if (evidence) evidence.playbackDrained = true;
+  if (completeOpeningStatementAfterPlayback(session, responseId)) {
+    logInfo("opening_statement_playback_completed", {
+      callSid: session.callSid,
+      responseId: String(responseId || "") || undefined,
+      ignoredAudioFrames: session.openingStatementIgnoredAudioFrames || 0
+    });
+  }
   scheduleFinishSessionHangupAfterPlayback(session);
 }
 
@@ -1090,6 +1112,13 @@ function startOutputPump(session: StreamSession) {
 }
 
 async function interruptAssistantForCallerSpeech(session: StreamSession | undefined, reason: string) {
+  if (shouldIgnoreCallerDuringOpening(session)) {
+    logInfo("opening_statement_interruption_ignored", {
+      callSid: session?.callSid,
+      reason
+    });
+    return false;
+  }
   if (!session || !hasPendingAssistantAudio(session)) return false;
   const plan = buildAssistantInterruptionPlan(session, reason);
   if (!plan.shouldInterrupt) return false;
@@ -2682,6 +2711,7 @@ function connectOpenAiRealtime(session: StreamSession) {
       }
       if (!session.greetingSent) {
         session.greetingSent = true;
+        markOpeningStatementRequested(session);
         logInfo("openai_realtime_greeting_requested", {
           callSid: session.callSid,
           callControlId: session.callControlId
@@ -2689,7 +2719,10 @@ function connectOpenAiRealtime(session: StreamSession) {
         requestAssistantResponse(
           session,
           "greeting",
-          {},
+          {
+            instructions: `Say exactly this opening statement, with no additions: ${JSON.stringify(payload.tenant_greeting)}`,
+            max_output_tokens: 120
+          },
           "greeting"
         );
       }
@@ -2710,6 +2743,7 @@ function connectOpenAiRealtime(session: StreamSession) {
 
     if (type === "response.created") {
       const responseId = normalizeResponseId(payloadMsg?.response?.id || payloadMsg?.response_id) || null;
+      markOpeningStatementResponseCreated(session, responseId);
       ensureAssistantResponseEvidence(session, responseId);
       if (session.pendingClosingRecovery && !session.pendingClosingRecovery.responseId && responseId) {
         session.pendingClosingRecovery.responseId = responseId;
@@ -3399,6 +3433,10 @@ wss.on("connection", (ws, req) => {
       const session = streamSessions.get(callControlId);
       if (!session?.openAiWs) return;
       if (session.transferState?.status === "pending" || session.aiDetached) return;
+      if (shouldIgnoreCallerDuringOpening(session)) {
+        noteOpeningCallerAudioIgnored(session);
+        return;
+      }
       const pcm = decodeInboundAudioPayload(encoded);
       sendOpenAiEvent(session.openAiWs, {
         type: "input_audio_buffer.append",

@@ -33,6 +33,7 @@ function assertNestedRealtimeSession(payload, expectedModel) {
   assert.equal(payload.session.audio.input.turn_detection.type, "semantic_vad");
   assert.equal(Object.hasOwn(payload.session, "modalities"), false);
   assert.equal(Object.hasOwn(payload.session, "output_audio_format"), false);
+  assert.match(payload.session.instructions, /Finish the complete opening before listening or responding/);
 }
 
 try {

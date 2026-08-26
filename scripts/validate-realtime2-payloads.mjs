@@ -10,6 +10,9 @@ const realtime = await import(modulePath);
 const safetyIdentifier = await import(pathToFileURL(
   path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/openAiSafetyIdentifier.js")
 ).href);
+const openingStatement = await import(pathToFileURL(
+  path.join(process.cwd(), "apps/call-gateway/dist/apps/call-gateway/src/openingStatementControl.js")
+).href);
 const migration = await import(pathToFileURL(
   path.join(process.cwd(), "scripts/migrate-realtime2-runtime-profiles.mjs")
 ).href);
@@ -138,6 +141,28 @@ assert.deepEqual(closingRecoveryResponse.response.tools, []);
 const legacyResponse = realtime.buildRealtimeResponseCreateEvent({ instructions: "Say hello." }, "legacy");
 assert.deepEqual(legacyResponse.response.modalities, ["audio", "text"]);
 assert.equal(legacyResponse.response.output_modalities, undefined);
+
+const openingSession = {};
+openingStatement.initializeOpeningStatementProtection(openingSession);
+assert.equal(openingStatement.shouldIgnoreCallerDuringOpening(openingSession), true);
+openingStatement.noteOpeningCallerAudioIgnored(openingSession);
+openingStatement.markOpeningStatementRequested(openingSession);
+assert.equal(
+  openingStatement.markOpeningStatementResponseCreated(openingSession, "response-opening"),
+  true
+);
+assert.equal(
+  openingStatement.completeOpeningStatementAfterPlayback(openingSession, "response-other"),
+  false,
+  "another response finishing must not end opening protection"
+);
+assert.equal(openingStatement.shouldIgnoreCallerDuringOpening(openingSession), true);
+assert.equal(
+  openingStatement.completeOpeningStatementAfterPlayback(openingSession, "response-opening"),
+  true
+);
+assert.equal(openingStatement.shouldIgnoreCallerDuringOpening(openingSession), false);
+assert.equal(openingSession.openingStatementIgnoredAudioFrames, 1);
 
 assert.equal(migration.TARGET_MODEL, "gpt-realtime-2.1");
 assert.deepEqual(
