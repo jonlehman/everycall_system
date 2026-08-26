@@ -20,6 +20,7 @@ import {
 } from "./salesTelnyxClient.js";
 import {
   deriveSalesCommandId,
+  encodeSalesClientState,
   summarizeSalesProviderError
 } from "./salesCallProviderUtils.js";
 import {
@@ -582,14 +583,33 @@ export function createSalesCallGateway(options: GatewayOptions) {
     });
   }
 
-  async function beginCallFromOperator(
+  async function answerOperatorLeg(
     salesCallId: string,
     event: any
   ): Promise<SalesCallContext> {
     const existing = await loadRequiredCall(salesCallId);
     const providerPatch = providerFieldsFromEvent(event);
+    const incomingOperatorId = text(providerPatch.operator_call_control_id);
+    if (
+      incomingOperatorId
+      && existing.operatorCallControlId
+      && incomingOperatorId !== existing.operatorCallControlId
+    ) {
+      await telnyx.hangupCall({
+        callControlId: incomingOperatorId,
+        commandId: deriveSalesCommandId({
+          correlationId: text(event?.event_id) || salesCallId,
+          operation: "hangup_duplicate_operator",
+          target: incomingOperatorId
+        })
+      });
+      log("warn", "sales_duplicate_operator_leg_rejected", {
+        sales_call_id: salesCallId,
+        call_control_id: incomingOperatorId
+      });
+      return existing;
+    }
     if (existing.conferenceId || !["created", "connecting_browser"].includes(existing.state)) {
-      const incomingOperatorId = text(providerPatch.operator_call_control_id);
       if (
         incomingOperatorId
         && (
@@ -646,8 +666,8 @@ export function createSalesCallGateway(options: GatewayOptions) {
       allowedStates: ["created", "connecting_browser"],
       patch: {
         ...providerPatch,
-        state: "preparing_call",
-        ai_state: "dialing_standby",
+        state: "connecting_browser",
+        ai_state: "not_started",
         metadata_json: {
           sip_correlation_nonce:
             text(existing.metadata.sip_correlation_nonce)
@@ -659,7 +679,124 @@ export function createSalesCallGateway(options: GatewayOptions) {
     });
     if (!claimed.claimed) return loadRequiredCall(salesCallId);
     const call = claimed.call || existing;
-    return runCallPreparation(call, providerPatch);
+    const operatorCallControlId = text(
+      call.operatorCallControlId || providerPatch.operator_call_control_id
+    );
+    const correlationId = text(call.metadata.correlation_id) || salesCallId;
+    const operatorState = encodeSalesClientState({
+      salesCallId,
+      correlationId,
+      role: "operator",
+      nonce: undefined
+    });
+    try {
+      await telnyx.answerCall({
+        callControlId: operatorCallControlId,
+        clientState: operatorState,
+        commandId: deriveSalesCommandId({
+          correlationId,
+          operation: "answer_operator",
+          target: operatorCallControlId
+        })
+      });
+      return repository.patchCall(salesCallId, {
+        metadata_json: { operator_answer_requested_at: nowIso(now) }
+      });
+    } catch (error) {
+      const providerError = summarizeSalesProviderError(error);
+      try {
+        await telnyx.hangupCall({
+          callControlId: operatorCallControlId,
+          commandId: deriveSalesCommandId({
+            correlationId,
+            operation: "hangup_operator_answer_failed",
+            target: operatorCallControlId
+          })
+        });
+      } catch {
+        // The answer error remains primary; a provider retry may find the leg gone.
+      }
+      await repository.patchCall(salesCallId, {
+        ...providerError,
+        state: "failed",
+        ai_state: "failed",
+        ended_at: nowIso(now)
+      });
+      throw error;
+    }
+  }
+
+  async function beginCallFromAnsweredOperator(
+    salesCallId: string,
+    event: any
+  ): Promise<SalesCallContext> {
+    const existing = await loadRequiredCall(salesCallId);
+    const providerPatch = providerFieldsFromEvent(event);
+    const incomingOperatorId = text(providerPatch.operator_call_control_id);
+    if (
+      existing.operatorCallControlId
+      && incomingOperatorId
+      && incomingOperatorId !== existing.operatorCallControlId
+    ) {
+      await telnyx.hangupCall({
+        callControlId: incomingOperatorId,
+        commandId: deriveSalesCommandId({
+          correlationId: text(event?.event_id) || salesCallId,
+          operation: "hangup_mismatched_answered_operator",
+          target: incomingOperatorId
+        })
+      });
+      log("warn", "sales_answered_operator_leg_rejected", {
+        sales_call_id: salesCallId,
+        call_control_id: incomingOperatorId,
+        reason: "does_not_match_parked_leg"
+      });
+      return existing;
+    }
+    if (!existing.operatorCallControlId || !incomingOperatorId) {
+      return rejectOperatorLeg(
+        existing,
+        {},
+        "operator_answer_without_parked_leg",
+        "The answered operator leg does not match the validated parked browser leg."
+      );
+    }
+    if (existing.conferenceId || !["created", "connecting_browser"].includes(existing.state)) {
+      return existing;
+    }
+    if (
+      telnyxOperatorConnectionId
+      && text(event?.payload?.connection_id) !== text(telnyxOperatorConnectionId)
+    ) {
+      return rejectOperatorLeg(
+        existing,
+        providerPatch,
+        "operator_leg_wrong_connection",
+        "The operator leg did not arrive on the dedicated sales Telnyx connection."
+      );
+    }
+    if (!callIsEligible(existing, now, salesCallingWindowEnv)) {
+      return rejectOperatorLeg(
+        existing,
+        providerPatch,
+        "sales:eligibility:changed",
+        "The prospect or prepared demo became ineligible before the provider call began."
+      );
+    }
+
+    const claimed = await repository.claimTransition(salesCallId, {
+      allowedStates: ["created", "connecting_browser"],
+      patch: {
+        ...providerPatch,
+        state: "preparing_call",
+        ai_state: "dialing_standby",
+        provider_error_code: null,
+        provider_error_message: null,
+        metadata_json: { operator_answered_at: nowIso(now) }
+      }
+    });
+    if (!claimed.claimed) return loadRequiredCall(salesCallId);
+    return runCallPreparation(claimed.call || existing, providerPatch);
   }
 
   async function endWholeCall(
@@ -757,7 +894,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
         && normalizedRole === "operator"
         && !wholeCallTeardown
       ) {
-        return beginCallFromOperator(salesCallId, event);
+        return answerOperatorLeg(salesCallId, event);
       }
 
       const participantCallControlId = text(event?.payload?.call_control_id);
@@ -845,6 +982,10 @@ export function createSalesCallGateway(options: GatewayOptions) {
         return call;
       }
       if (wholeCallTeardown) return call;
+
+      if (type === "call.answered" && role === "operator") {
+        return beginCallFromAnsweredOperator(salesCallId, event);
+      }
 
       if (type === "call.answered" && role === "prospect") {
         return repository.patchCall(salesCallId, {

@@ -134,6 +134,7 @@ The second 8/19 WVG call contained one possible early VAD handoff (“Got it—a
 - Browser verification must use a disposable database and confirm `/admin/sales` renders the current prospect, next prepared prospects, website facts, call readiness, conversion controls, and a visible provider-configuration error when credentials are intentionally absent.
 - Before pilot traffic, make one controlled live provider call and verify:
   - the operator leg is parked on the dedicated sales connection
+  - the gateway answers the parked operator leg and does not create the conference before the matching operator `call.answered` webhook
   - the prospect and AI standby dial concurrently
   - `AI Ready` requires both the accepted OpenAI session and the Telnyx AI leg
   - `Start Receptionist` joins the existing AI leg and begins with the configured business greeting

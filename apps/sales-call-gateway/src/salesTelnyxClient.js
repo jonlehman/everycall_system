@@ -380,6 +380,25 @@ export function createSalesTelnyxClient({
   }
 
   return {
+    async answerCall({
+      callControlId,
+      clientState,
+      commandId
+    }) {
+      requireSalesValue(commandId, "command_id");
+      const result = await request(
+        `/calls/${encodeURIComponent(requireSalesValue(callControlId, "call_control_id"))}/actions/answer`,
+        {
+          operation: "answer_call",
+          body: {
+            client_state: clientState || undefined,
+            command_id: commandId
+          }
+        }
+      );
+      return { data: result?.data || {}, command_id: commandId };
+    },
+
     async createConference({
       anchorCallControlId,
       name,

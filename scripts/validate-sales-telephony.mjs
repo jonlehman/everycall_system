@@ -89,12 +89,28 @@ async function validateTelnyxAdapter() {
     operation: "conference",
     target: "sales-call-1"
   });
+  const answerCommandId = deriveSalesCommandId({
+    correlationId: "trace-1",
+    operation: "answer_operator",
+    target: "operator-control"
+  });
   const joinCommandId = deriveSalesCommandId({
     correlationId: "trace-1",
     operation: "join",
     target: "ai-control"
   });
   const queue = createQueuedFetch([
+    {
+      assert: ({ url, body }) => {
+        assert.match(url, /\/calls\/operator-control\/actions\/answer$/);
+        assert.equal(body.command_id, answerCommandId);
+        assert.deepEqual(decodeSalesClientState(body.client_state), {
+          sales_call_id: "sales-call-1",
+          correlation_id: "trace-1",
+          role: "operator"
+        });
+      }
+    },
     {
       status: 503,
       body: { errors: [{ code: "temporarily_unavailable", detail: "retry" }] },
@@ -173,6 +189,16 @@ async function validateTelnyxAdapter() {
     baseUrl: "https://telnyx.test/v2",
     fetchImpl: queue.fetchImpl,
     sleep: async (delayMs) => sleepDelays.push(delayMs)
+  });
+
+  await client.answerCall({
+    callControlId: "operator-control",
+    clientState: encodeSalesClientState({
+      salesCallId: "sales-call-1",
+      correlationId: "trace-1",
+      role: "operator"
+    }),
+    commandId: answerCommandId
   });
 
   const conference = await client.createConference({

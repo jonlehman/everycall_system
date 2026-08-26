@@ -28,8 +28,8 @@ The warm queue contains the current prospect plus the next 10 eligible records. 
 
 1. The console creates a `sales_call_sessions` row and asks the Telnyx browser SDK to call the displayed prospect number.
 2. A dedicated Telnyx Credential Connection and WebRTC credential park that operator leg rather than dialing the prospect itself.
-3. The sales gateway verifies the signature, sales connection, parked state, current prospect eligibility, and ready demo.
-4. The gateway creates a conference anchored to the operator, then concurrently dials the prospect and a private OpenAI SIP standby.
+3. The sales gateway verifies the signature, sales connection, parked state, current prospect eligibility, and ready demo, then answers the parked operator leg with an idempotent Telnyx command.
+4. Only after the matching operator `call.answered` webhook arrives does the gateway create a conference anchored to the operator, then concurrently dial the prospect and a private OpenAI SIP standby.
 5. The OpenAI webhook is signature-verified and nonce-correlated to the call. The gateway accepts the Realtime call with the prepared prompt and opens its server monitor while automatic responses remain disabled.
 6. `AI Ready` requires the accepted OpenAI session and the Telnyx AI leg to be connected. The AI remains outside the human conference.
 7. `Start Receptionist` joins that existing leg, confirms the participant, enables responses, and says exactly: `Thanks for calling [business name]. How can I help you?`

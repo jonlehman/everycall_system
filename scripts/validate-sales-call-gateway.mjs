@@ -326,6 +326,12 @@ function consumeProviderFailure(key) {
   return true;
 }
 const telnyx = {
+  async answerCall({ callControlId, clientState }) {
+    const state = decodeSalesClientState(clientState);
+    assert.equal(state?.role, "operator");
+    providerEvents.push(`telnyx:answer_operator:${callControlId}`);
+    return { data: { result: "ok" } };
+  },
   async createConference({ anchorCallControlId, name }) {
     providerEvents.push(`telnyx:create_conference:${anchorCallControlId}`);
     return { conference_id: `conf-${name}`, conference_name: name };
@@ -738,6 +744,28 @@ try {
     };
   }
 
+  function operatorAnsweredEvent(callId, eventId) {
+    return {
+      data: {
+        id: eventId,
+        event_type: "call.answered",
+        occurred_at: "2026-07-28T12:00:01.000Z",
+        payload: {
+          call_control_id: `operator-control-${callId}`,
+          connection_id: "sales-operator-credential-connection",
+          call_leg_id: `operator-leg-${callId}`,
+          call_session_id: `operator-session-${callId}`,
+          state: "answered",
+          client_state: encodeSalesClientState({
+            salesCallId: callId,
+            correlationId: callId,
+            role: "operator"
+          })
+        }
+      }
+    };
+  }
+
   assert.equal(
     (await action("sales-call-pre-operator-end", "end_call")).status,
     200
@@ -853,13 +881,34 @@ try {
   assert.equal(uncorrelatedOperatorResponse.status, 202);
   assert.ok(providerEvents.includes("telnyx:hangup:operator-uncorrelated"));
 
+  const conferenceCountBeforeOperator = providerEvents.filter((event) =>
+    event.startsWith("telnyx:create_conference:")
+  ).length;
   const firstOperatorEvent = operatorEvent("sales-call-1", "telnyx-operator-1");
   assert.equal((await postTelnyx(firstOperatorEvent)).status, 200);
-  assert.equal(repository.calls.get("sales-call-1").state, "dialing_prospect");
+  assert.equal(repository.calls.get("sales-call-1").state, "connecting_browser");
   assert.equal(
     repository.calls.get("sales-call-1").operatorCallControlId,
     "operator-control-sales-call-1"
   );
+  assert.equal(
+    repository.calls.get("sales-call-1").aiTelnyxCallControlId,
+    null
+  );
+  assert.ok(providerEvents.includes(
+    "telnyx:answer_operator:operator-control-sales-call-1"
+  ));
+  assert.equal(
+    providerEvents.filter((event) => event.startsWith("telnyx:create_conference:")).length,
+    conferenceCountBeforeOperator,
+    "The conference must not be created before the parked operator leg is answered."
+  );
+
+  assert.equal((await postTelnyx(operatorAnsweredEvent(
+    "sales-call-1",
+    "telnyx-operator-answered-1"
+  ))).status, 200);
+  assert.equal(repository.calls.get("sales-call-1").state, "dialing_prospect");
   assert.equal(
     repository.calls.get("sales-call-1").aiTelnyxCallControlId,
     "ai-control-sales-call-1"
@@ -1141,6 +1190,10 @@ try {
   assert.equal((await postTelnyx(operatorEvent(
     "sales-call-2",
     "telnyx-operator-2"
+  ))).status, 200);
+  assert.equal((await postTelnyx(operatorAnsweredEvent(
+    "sales-call-2",
+    "telnyx-operator-answered-2"
   ))).status, 200);
   const prospectTwoState = encodeSalesClientState({
     salesCallId: "sales-call-2",
