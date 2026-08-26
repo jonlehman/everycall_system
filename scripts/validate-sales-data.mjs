@@ -880,6 +880,12 @@ async function validateStaticIsolationAndRoutes() {
   );
   assert.match(salesConsole, /\/samples\/sales-prospects-demo\.csv/);
   assert.match(salesConsole, /Skip unusable demo/);
+  assert.match(salesConsole, /Reload calling queue/);
+  assert.match(salesConsole, /Build demo from website/);
+  assert.match(salesConsole, /Build demos for current \+ next 10/);
+  assert.doesNotMatch(salesConsole, />Refresh</);
+  assert.doesNotMatch(salesConsole, /Prepare demo/);
+  assert.doesNotMatch(salesConsole, /Replenish warm queue/);
   assert.match(salesConsole, /Prior activity/);
   assert.match(salesConsole, /ProspectsManager/);
   assert.doesNotMatch(

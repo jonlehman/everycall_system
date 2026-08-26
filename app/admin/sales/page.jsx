@@ -409,9 +409,10 @@ function QueuePanel({
           type="button"
           onClick={onRefresh}
           disabled={loading}
+          title="Reload callable prospects and their latest demo and call status."
           className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:text-slate-400"
         >
-          {loading ? 'Loading…' : 'Refresh'}
+          {loading ? 'Reloading queue…' : 'Reload calling queue'}
         </button>
       </div>
 
@@ -438,8 +439,9 @@ function QueuePanel({
                 tone="secondary"
                 disabled={prepareBusyId === queue.current.id}
                 onClick={() => onPrepare(queue.current)}
+                title="Scan this prospect's website and build the receptionist demo used during the call."
               >
-                {prepareBusyId === queue.current.id ? 'Preparing…' : 'Prepare demo'}
+                {prepareBusyId === queue.current.id ? 'Building website demo…' : 'Build demo from website'}
               </ActionButton>
             ) : null}
             {(queue.current.demoStatus === 'failed' || queue.current.demoFailure || !queue.current.website) ? (
@@ -484,9 +486,10 @@ function QueuePanel({
                       type="button"
                       onClick={() => onPrepare(prospect)}
                       disabled={prepareBusyId === prospect.id}
+                      title="Scan this prospect's website and build their receptionist demo."
                       className="text-xs font-semibold text-[#004ac6] hover:underline disabled:text-slate-400"
                     >
-                      {prepareBusyId === prospect.id ? 'Working…' : prospect.demoFailure ? 'Retry' : 'Prepare'}
+                      {prepareBusyId === prospect.id ? 'Building…' : prospect.demoFailure ? 'Retry demo build' : 'Build website demo'}
                     </button>
                   ) : null}
                   {(prospect.demoStatus === 'failed' || prospect.demoFailure || !prospect.website) ? (
@@ -511,8 +514,14 @@ function QueuePanel({
         ) : null}
       </div>
 
-      <ActionButton className="mt-4 w-full" tone="secondary" onClick={onWarm} disabled={warmBusy || loading}>
-        {warmBusy ? 'Warming demos…' : 'Replenish warm queue'}
+      <ActionButton
+        className="mt-4 w-full"
+        tone="secondary"
+        onClick={onWarm}
+        disabled={warmBusy || loading}
+        title="Queue website-based receptionist demo builds for the current prospect and the next 10 prospects."
+      >
+        {warmBusy ? 'Starting demo builds…' : 'Build demos for current + next 10'}
       </ActionButton>
     </Card>
   );
