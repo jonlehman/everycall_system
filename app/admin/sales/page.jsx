@@ -689,15 +689,7 @@ function CallPanel({
           title={demoBlocked}
           tone="amber"
         >
-          {busyAction === 'start_demo' ? 'Starting…' : 'Start Demo'}
-        </ActionButton>
-        <ActionButton
-          onClick={() => onAction('pause_ai')}
-          disabled={Boolean(busyAction) || !call?.aiLive || call?.aiPaused || call?.terminal}
-          title={!call?.aiLive ? 'The AI must be live before it can be paused.' : ''}
-          tone="secondary"
-        >
-          {busyAction === 'pause_ai' ? 'Pausing…' : 'Pause AI'}
+          {busyAction === 'start_demo' ? 'Starting receptionist…' : 'Start Receptionist'}
         </ActionButton>
         <ActionButton
           onClick={() => onAction('end_demo')}
@@ -705,7 +697,7 @@ function CallPanel({
           title={!call?.aiLive ? 'The AI has not joined this call.' : ''}
           tone="secondary"
         >
-          {busyAction === 'end_demo' ? 'Ending demo…' : 'End Demo'}
+          {busyAction === 'end_demo' ? 'Ending receptionist…' : 'End Receptionist'}
         </ActionButton>
         <ActionButton
           onClick={() => onAction('end_call')}
@@ -721,7 +713,7 @@ function CallPanel({
         <p className="mt-3 text-xs text-slate-500">Call unavailable: {callBlocked}</p>
       ) : null}
       {demoBlocked && call?.id && !call?.aiLive ? (
-        <p className="mt-1 text-xs text-slate-500">Start Demo unavailable: {demoBlocked}</p>
+        <p className="mt-1 text-xs text-slate-500">Start Receptionist unavailable: {demoBlocked}</p>
       ) : null}
 
       <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">

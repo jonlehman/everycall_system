@@ -9,7 +9,7 @@ Provide an admin-only, human-led browser dialer that can bring a prepared EveryC
 - A human explicitly starts every outbound call.
 - The operator remains connected and unmuted for the whole call.
 - The AI is an incoming receptionist demonstration, never an outbound sales bot.
-- `Start Demo` may run only after the prospect is connected and the AI standby is fully ready.
+- `Start Receptionist` may run only after the prospect is connected and the AI standby is fully ready.
 - Sales records, demo bundles, credentials, webhooks, and provider calls remain isolated from production tenant calls and public-demo records.
 - Website-derived text is reference data, not trusted instructions. The demo has no tools and cannot book, dispatch, notify staff, submit a lead, or take payment data.
 - Every provider webhook and command is correlated and idempotent. Supported webhook signatures are mandatory.
@@ -32,8 +32,8 @@ The warm queue contains the current prospect plus the next 10 eligible records. 
 4. The gateway creates a conference anchored to the operator, then concurrently dials the prospect and a private OpenAI SIP standby.
 5. The OpenAI webhook is signature-verified and nonce-correlated to the call. The gateway accepts the Realtime call with the prepared prompt and opens its server monitor while automatic responses remain disabled.
 6. `AI Ready` requires the accepted OpenAI session and the Telnyx AI leg to be connected. The AI remains outside the human conference.
-7. `Start Demo` joins that existing leg, confirms the participant, enables responses, and says exactly: `Thanks for calling [business name]. How can I help you?`
-8. `Pause AI` cancels the current response and clears provider output audio. `End Demo` removes and hangs up only the AI leg. `End Call` tears down all remaining provider resources.
+7. `Start Receptionist` joins that existing leg, confirms the participant, enables responses, and says exactly: `Thanks for calling [business name]. How can I help you?`
+8. `End Receptionist` removes and hangs up only the AI leg. `End Call` tears down all remaining provider resources.
 
 The gateway fails closed when the operator leg is not parked or belongs to the wrong sales connection. Provider errors are persisted and surfaced without removing the human operator from an already active conversation.
 

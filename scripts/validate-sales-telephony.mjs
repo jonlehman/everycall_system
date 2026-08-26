@@ -799,7 +799,7 @@ async function validateOrchestrator() {
   assert.equal(
     events.length,
     beforeUnpreparedStart,
-    "Start Demo must not join a conference until the AI standby is already ready."
+    "Start Receptionist must not join a conference until the AI standby is already ready."
   );
 
   const begun = await orchestrator.beginCall({

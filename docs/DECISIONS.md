@@ -94,7 +94,7 @@
 ## 2026-07-28
 - Build the live telemarketing demo as an additive outbound-sales subsystem. It has separate sales tables, provider credentials, Telnyx connection and webhook service, and must not route through the production inbound gateway or public-demo session records.
 - Use a browser-only, human-initiated Telnyx WebRTC call. The dedicated sales credential must park the operator leg; only then may the isolated sales gateway create the conference and concurrently dial the prospect and the OpenAI SIP standby leg.
-- Keep the human operator connected and unmuted throughout. `Start Demo` joins an already accepted and configured AI standby; it does not build or reconnect the receptionist.
+- Keep the human operator connected and unmuted throughout. `Start Receptionist` joins an already accepted and configured AI standby; it does not build or reconnect the receptionist.
 - Keep prepared sales demo bundles for 30 days and maintain the current prospect plus 10 upcoming prospects as the warm queue.
 - Treat phone eligibility and Smartlead email suppression as separate channel states. Record outcomes durably and route eligible email follow-up asynchronously.
 - Assisted signup sends a short-lived, single-use prefilled link to the prospect. The prospect creates their own password and submits through the existing onboarding transaction; sales-demo artifacts are never promoted into tenant data.

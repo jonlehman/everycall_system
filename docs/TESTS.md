@@ -136,7 +136,7 @@ The second 8/19 WVG call contained one possible early VAD handoff (“Got it—a
   - the operator leg is parked on the dedicated sales connection
   - the prospect and AI standby dial concurrently
   - `AI Ready` requires both the accepted OpenAI session and the Telnyx AI leg
-  - `Start Demo` joins the existing AI leg and begins with the configured business greeting
-  - operator audio stays live, `Pause AI` cancels speech and clears buffered audio, and `End Demo` removes only the AI
+  - `Start Receptionist` joins the existing AI leg and begins with the configured business greeting
+  - operator audio stays live, and `End Receptionist` removes only the AI
   - duplicate Telnyx/OpenAI webhooks do not repeat commands
   - ending either human leg tears down the conference and unused AI standby
