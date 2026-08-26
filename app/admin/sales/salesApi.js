@@ -308,8 +308,14 @@ export function normalizeInvitation(payload = {}) {
 
 export function normalizeImportResult(payload = {}) {
   const source = firstValue(payload, ['import'], payload) || {};
+  const importedDetails = Array.isArray(source.imported) ? source.imported : [];
+  const legacyImportedCount = typeof source.imported === 'number'
+    ? source.imported
+    : importedDetails.length;
   return {
-    imported: Number(firstValue(source, ['imported', 'importedCount', 'imported_count'], 0)) || 0,
+    imported: Number(firstValue(source, ['importedCount', 'imported_count'], legacyImportedCount)) || 0,
+    inserted: Number(firstValue(source, ['insertedCount', 'inserted_count'], 0)) || 0,
+    updated: Number(firstValue(source, ['updatedCount', 'updated_count'], 0)) || 0,
     skipped: Number(firstValue(source, [
       'skipped',
       'skippedCount',
@@ -318,6 +324,7 @@ export function normalizeImportResult(payload = {}) {
       'rejected_count'
     ], 0)) || 0,
     errors: Array.isArray(source.errors) ? source.errors : [],
+    importedDetails,
     prospects: Array.isArray(source.prospects) ? source.prospects.map(normalizeProspect) : []
   };
 }

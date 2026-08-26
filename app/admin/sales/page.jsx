@@ -359,9 +359,23 @@ function CsvImportPanel({ onImported, missingTimezonePolicy = 'block' }) {
             result.error ? (
               <ErrorNotice title="Import failed" message={result.error} />
             ) : (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900" role="status">
-                Imported {result.imported}; skipped {result.skipped}.
-                {result.errors.length ? ` The server reported ${result.errors.length} row errors.` : ''}
+              <div
+                className={`rounded-xl border p-3 text-sm ${result.errors.length || result.skipped
+                  ? 'border-amber-200 bg-amber-50 text-amber-900'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}
+                role="status"
+              >
+                Processed {result.imported}: {result.inserted} new, {result.updated} updated; {result.skipped} rejected.
+                {result.errors.length ? (
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    {result.errors.slice(0, 20).map((error, index) => (
+                      <li key={`${error?.rowNumber || 'server'}-${index}`}>
+                        {error?.rowNumber ? `Row ${error.rowNumber}: ` : ''}
+                        {error?.message || error?.code || 'The row was rejected.'}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             )
           ) : null}

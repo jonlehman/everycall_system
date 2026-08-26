@@ -8,6 +8,7 @@ import {
   parseCsv as parseSalesConsoleCsv,
   validateMappedRows
 } from "../app/admin/sales/csvImport.js";
+import { normalizeImportResult } from "../app/admin/sales/salesApi.js";
 import {
   completeSalesSignupInvitation,
   createSalesCallSession,
@@ -215,6 +216,37 @@ function validateSalesConsoleCsvMapping() {
   const malformedValidation = validateMappedRows(malformedPhone.rows, malformedMappings);
   assert.equal(malformedValidation.validRecords.length, 0);
   assert.match(malformedValidation.errors[0].message, /10-digit U\.S\. number or an E\.164 number/);
+}
+
+function validateSalesConsoleImportResult() {
+  const result = normalizeImportResult({
+    ok: true,
+    import: {
+      receivedCount: 1,
+      importedCount: 1,
+      insertedCount: 1,
+      updatedCount: 0,
+      rejectedCount: 0,
+      imported: [{ rowNumber: 2, prospectId: "sales_prospect_test", inserted: true }],
+      errors: []
+    }
+  });
+  assert.equal(result.imported, 1);
+  assert.equal(result.inserted, 1);
+  assert.equal(result.updated, 0);
+  assert.equal(result.skipped, 0);
+  assert.equal(result.importedDetails.length, 1);
+
+  const legacy = normalizeImportResult({
+    import: {
+      imported: [{ rowNumber: 2 }],
+      rejectedCount: 1,
+      errors: [{ rowNumber: 3, message: "Invalid row." }]
+    }
+  });
+  assert.equal(legacy.imported, 1);
+  assert.equal(legacy.skipped, 1);
+  assert.equal(legacy.errors[0].message, "Invalid row.");
 }
 
 async function validateSalesConsoleSampleCsv() {
@@ -859,6 +891,7 @@ await validateCsvAndNormalization();
 validateSalesDemoInstructions();
 validateSignupTokenAttributionIsolation();
 validateSalesConsoleCsvMapping();
+validateSalesConsoleImportResult();
 await validateSalesConsoleSampleCsv();
 await validateImportQueryContract();
 await validateQueuePresentation();
