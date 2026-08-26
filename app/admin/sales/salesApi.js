@@ -136,6 +136,7 @@ export function normalizeProspect(source = {}) {
     'call_blocked_reason'
   ]));
   const callingWindow = firstValue(source, ['callingWindow', 'calling_window'], {}) || {};
+  const latestFollowupSource = firstValue(source, ['latestFollowup', 'latest_followup'], null);
 
   return {
     raw: source,
@@ -150,7 +151,9 @@ export function normalizeProspect(source = {}) {
     localTime: normalizeText(firstValue(source, ['localTime', 'local_time', 'formattedLocalTime', 'formatted_local_time'])),
     timezone: normalizeText(firstValue(source, ['timezone', 'timeZone', 'time_zone'])),
     permission,
+    emailPermission: normalizeBoolean(firstValue(source, ['emailPermission', 'email_permission'])) === true,
     suppressed: suppressed === true,
+    doNotCall: normalizeBoolean(firstValue(source, ['doNotCall', 'do_not_call'])) === true,
     suppressionReason,
     callBlockedReason,
     callBlockedCode: normalizeStatus(firstValue(source, ['callBlockedCode', 'call_blocked_code'])),
@@ -177,8 +180,14 @@ export function normalizeProspect(source = {}) {
     ], firstValue(demo, ['talkingPoints', 'talking_points', 'facts', 'previewSummary', 'preview_summary'], []))),
     outcome: normalizeStatus(firstValue(source, ['outcome', 'callOutcome', 'call_outcome', 'lastOutcome', 'last_outcome'])),
     lastOutcomeAt: firstValue(source, ['lastOutcomeAt', 'last_outcome_at']),
+    status: normalizeStatus(firstValue(source, ['status'])) || 'queued',
+    latestFollowup: latestFollowupSource && typeof latestFollowupSource === 'object'
+      ? normalizeFollowup(latestFollowupSource)
+      : null,
     note: normalizeText(firstValue(source, ['note', 'notes'])),
     position: Number(firstValue(source, ['position', 'queuePosition', 'queue_position'], 0)) || 0,
+    rowVersion: Number(firstValue(source, ['rowVersion', 'row_version'], 1)) || 1,
+    createdAt: firstValue(source, ['createdAt', 'created_at']),
     updatedAt: firstValue(source, ['updatedAt', 'updated_at']),
     demoExpiresAt: firstValue(source, ['demoExpiresAt', 'demo_expires_at'], firstValue(demo, ['expiresAt', 'expires_at']))
   };
@@ -267,9 +276,33 @@ export function normalizeCall(payload = {}) {
       remoteAudioUrl: normalizeText(firstValue(operator, ['remoteAudioUrl', 'remote_audio_url']))
     },
     webrtc,
+    outcome: normalizeStatus(firstValue(source, ['outcome', 'callOutcome', 'call_outcome'])),
+    outcomeNotes: normalizeText(firstValue(source, ['outcomeNotes', 'outcome_notes'])),
+    outcomeRecordedAt: firstValue(source, ['outcomeRecordedAt', 'outcome_recorded_at']),
+    startedAt: firstValue(source, ['startedAt', 'started_at']),
+    connectedAt: firstValue(source, ['connectedAt', 'connected_at']),
+    endedAt: firstValue(source, ['endedAt', 'ended_at']),
     createdAt: firstValue(source, ['createdAt', 'created_at']),
     updatedAt: firstValue(source, ['updatedAt', 'updated_at']),
     signup: firstValue(source, ['signup', 'invitation', 'signupInvitation', 'signup_invitation'], null)
+  };
+}
+
+export function normalizeFollowup(source = {}) {
+  return {
+    raw: source,
+    id: normalizeText(firstValue(source, ['id', 'jobId', 'job_id', 'salesFollowupJobId', 'sales_followup_job_id'])),
+    salesCallId: normalizeText(firstValue(source, ['salesCallId', 'sales_call_id'])),
+    outcome: normalizeStatus(firstValue(source, ['outcome'])),
+    status: normalizeStatus(firstValue(source, ['status'])) || 'queued',
+    attempts: Number(firstValue(source, ['attempts'], 0)) || 0,
+    maxAttempts: Number(firstValue(source, ['maxAttempts', 'max_attempts'], 0)) || 0,
+    availableAt: firstValue(source, ['availableAt', 'available_at']),
+    completedAt: firstValue(source, ['completedAt', 'completed_at']),
+    lastErrorCode: normalizeText(firstValue(source, ['lastErrorCode', 'last_error_code'])),
+    lastErrorMessage: normalizeText(firstValue(source, ['lastErrorMessage', 'last_error_message'])),
+    createdAt: firstValue(source, ['createdAt', 'created_at']),
+    updatedAt: firstValue(source, ['updatedAt', 'updated_at'])
   };
 }
 

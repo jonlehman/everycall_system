@@ -127,6 +127,40 @@ for (const item of imported.imported.slice(0, 2)) {
   );
 }
 
+const activityProspectId = imported.imported[0]?.prospectId;
+if (activityProspectId) {
+  await pool.query(
+    `INSERT INTO sales_call_sessions (
+       sales_call_id, prospect_id, admin_user_id, state, outcome,
+       outcome_notes, outcome_recorded_at, started_at, connected_at,
+       ended_at
+     ) VALUES (
+       'sales-browser-call-1', $1, $2, 'closed', 'callback_requested',
+       'Owner asked for a call tomorrow afternoon.', NOW(),
+       NOW() - INTERVAL '5 minutes', NOW() - INTERVAL '4 minutes', NOW()
+     )`,
+    [activityProspectId, adminUserId]
+  );
+  await pool.query(
+    `INSERT INTO sales_followup_jobs (
+       sales_followup_job_id, prospect_id, sales_call_id, outcome,
+       status, attempts, max_attempts, completed_at
+     ) VALUES (
+       'sales-browser-followup-1', $1, 'sales-browser-call-1',
+       'callback_requested', 'completed', 1, 5, NOW()
+     )`,
+    [activityProspectId]
+  );
+  await pool.query(
+    `UPDATE sales_prospects
+     SET last_outcome = 'callback_requested',
+         last_outcome_at = NOW(),
+         status = 'callback_requested'
+     WHERE prospect_id = $1`,
+    [activityProspectId]
+  );
+}
+
 const server = new PGLiteSocketServer({
   db,
   host: "127.0.0.1",

@@ -18,6 +18,7 @@ import {
   validateMappedRows
 } from './csvImport';
 import { connectTelnyxBrowserClient } from './telnyxBrowserClient';
+import ProspectsManager from './ProspectsManager';
 
 const OUTCOMES = [
   ['no_answer', 'No answer'],
@@ -880,6 +881,7 @@ function ConversionPanel({
 }
 
 export default function AdminSalesConsolePage() {
+  const [activeTab, setActiveTab] = useState('calling');
   const [queue, setQueue] = useState({
     current: null,
     prospects: [],
@@ -1366,73 +1368,104 @@ export default function AdminSalesConsolePage() {
         <div>
           <h1 className="m-0 text-2xl font-semibold tracking-tight text-slate-950">Sales Console</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Human-led browser calls with a prepared EveryCall receptionist ready to join.
+            {activeTab === 'calling'
+              ? 'Human-led browser calls with a prepared EveryCall receptionist ready to join.'
+              : 'A focused prospect list with contact details, outcomes, and follow-up status.'}
           </p>
         </div>
         <div className="text-right text-xs text-slate-500" aria-live="polite">
-          {queue.current ? `${queue.prospects.length} prospects loaded` : 'Queue waiting'}
+          {activeTab === 'calling'
+            ? (queue.current ? `${queue.prospects.length} prospects loaded` : 'Queue waiting')
+            : 'Prospect management'}
         </div>
       </header>
 
-      <CsvImportPanel
-        onImported={handleImported}
-        missingTimezonePolicy={queue.missingTimezonePolicy}
-      />
-      <ErrorNotice title="Sales console action failed" message={operationError} />
-      <ErrorNotice title="Call status refresh failed" message={callRefreshError} />
+      <nav className="flex w-fit gap-1 rounded-full border border-slate-200 bg-slate-100 p-1" aria-label="Sales console sections">
+        <button
+          type="button"
+          onClick={() => setActiveTab('calling')}
+          aria-current={activeTab === 'calling' ? 'page' : undefined}
+          className={`min-h-9 rounded-full px-4 text-sm font-semibold transition ${activeTab === 'calling' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600 hover:text-slate-950'}`}
+        >
+          Calling console
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('prospects')}
+          aria-current={activeTab === 'prospects' ? 'page' : undefined}
+          className={`min-h-9 rounded-full px-4 text-sm font-semibold transition ${activeTab === 'prospects' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600 hover:text-slate-950'}`}
+        >
+          Prospects
+        </button>
+      </nav>
 
-      <div className="grid items-start gap-4 xl:grid-cols-[310px_minmax(0,1fr)]">
-        <QueuePanel
-          queue={queue}
-          loading={queueLoading}
-          error={queueError}
-          warmBusy={warmBusy}
-          onRefresh={() => { void loadQueue(); }}
-          onWarm={() => {
-            void warmQueue({ currentProspectId: queue.currentProspectId });
-          }}
-          onPrepare={(prospect) => { void prepareProspect(prospect); }}
-          onSkip={(prospect) => { void skipProspect(prospect); }}
-          prepareBusyId={prepareBusyId}
-          skipBusyId={skipBusyId}
-        />
-
-        <div className="grid min-w-0 items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_330px]">
-          <div className="grid min-w-0 gap-4">
-            <ProspectPanel prospect={queue.current} />
-            <CallPanel
-              prospect={queue.current}
-              call={call}
-              busyAction={busyAction}
-              microphoneState={microphoneState}
-              softphoneState={softphoneState}
-              softphoneError={softphoneError}
-              browserCallState={browserCallState}
-              remoteAudioRef={remoteAudioRef}
-              onCall={() => { void startCall(); }}
-              onAction={(action) => { void performCallAction(action); }}
-              onReconnect={() => { void initializeSoftphone(); }}
-            />
-          </div>
-
-          <ConversionPanel
-            prospect={queue.current}
-            call={call}
-            invitation={invitation}
-            busyAction={busyAction}
-            setupOpen={setupOpen}
-            setSetupOpen={setSetupOpen}
-            contactFields={contactFields}
-            setContactFields={setContactFields}
-            outcome={outcome}
-            setOutcome={setOutcome}
-            note={note}
-            setNote={setNote}
-            onSendInvitation={() => { void sendInvitation(); }}
-            onSaveOutcome={() => { void saveOutcome(); }}
+      {activeTab === 'prospects' ? (
+        <>
+          <CsvImportPanel
+            onImported={handleImported}
+            missingTimezonePolicy={queue.missingTimezonePolicy}
           />
-        </div>
-      </div>
+          <ProspectsManager onProspectsChanged={handleImported} />
+        </>
+      ) : (
+        <>
+          <ErrorNotice title="Sales console action failed" message={operationError} />
+          <ErrorNotice title="Call status refresh failed" message={callRefreshError} />
+
+          <div className="grid items-start gap-4 xl:grid-cols-[310px_minmax(0,1fr)]">
+            <QueuePanel
+              queue={queue}
+              loading={queueLoading}
+              error={queueError}
+              warmBusy={warmBusy}
+              onRefresh={() => { void loadQueue(); }}
+              onWarm={() => {
+                void warmQueue({ currentProspectId: queue.currentProspectId });
+              }}
+              onPrepare={(prospect) => { void prepareProspect(prospect); }}
+              onSkip={(prospect) => { void skipProspect(prospect); }}
+              prepareBusyId={prepareBusyId}
+              skipBusyId={skipBusyId}
+            />
+
+            <div className="grid min-w-0 items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_330px]">
+              <div className="grid min-w-0 gap-4">
+                <ProspectPanel prospect={queue.current} />
+                <CallPanel
+                  prospect={queue.current}
+                  call={call}
+                  busyAction={busyAction}
+                  microphoneState={microphoneState}
+                  softphoneState={softphoneState}
+                  softphoneError={softphoneError}
+                  browserCallState={browserCallState}
+                  remoteAudioRef={remoteAudioRef}
+                  onCall={() => { void startCall(); }}
+                  onAction={(action) => { void performCallAction(action); }}
+                  onReconnect={() => { void initializeSoftphone(); }}
+                />
+              </div>
+
+              <ConversionPanel
+                prospect={queue.current}
+                call={call}
+                invitation={invitation}
+                busyAction={busyAction}
+                setupOpen={setupOpen}
+                setSetupOpen={setSetupOpen}
+                contactFields={contactFields}
+                setContactFields={setContactFields}
+                outcome={outcome}
+                setOutcome={setOutcome}
+                note={note}
+                setNote={setNote}
+                onSendInvitation={() => { void sendInvitation(); }}
+                onSaveOutcome={() => { void saveOutcome(); }}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

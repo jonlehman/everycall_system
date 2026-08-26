@@ -881,10 +881,27 @@ async function validateStaticIsolationAndRoutes() {
   assert.match(salesConsole, /\/samples\/sales-prospects-demo\.csv/);
   assert.match(salesConsole, /Skip unusable demo/);
   assert.match(salesConsole, /Prior activity/);
+  assert.match(salesConsole, /ProspectsManager/);
   assert.doesNotMatch(
     salesConsole,
     /\|\|\s*invitation\.convertedTenantKey\)\s*return 4/
   );
+  const prospectManager = await fs.readFile(
+    path.join(root, "app/admin/sales/ProspectsManager.jsx"),
+    "utf8"
+  );
+  assert.match(prospectManager, /Export CSV/);
+  assert.match(prospectManager, /Add prospect/);
+  assert.match(prospectManager, /Call outcomes/);
+  assert.match(prospectManager, /Follow-ups/);
+  assert.match(prospectManager, /method: 'DELETE'/);
+  const prospectExport = await fs.readFile(
+    path.join(root, "pages/api/v1/admin/sales/prospects/export.js"),
+    "utf8"
+  );
+  assert.match(prospectExport, /Content-Disposition/);
+  assert.match(prospectExport, /private, no-store/);
+  assert.match(prospectExport, /\^\[\\t\\r\\n \]\*\[=\+\\-@\]/);
 }
 
 await validateCsvAndNormalization();

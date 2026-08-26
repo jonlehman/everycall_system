@@ -601,6 +601,7 @@ function serializeProspect(row) {
     status: normalizeSalesText(row.status, 60) || "queued",
     lastOutcome: normalizeSalesText(row.last_outcome, 80) || null,
     lastOutcomeAt: row.last_outcome_at || null,
+    latestFollowup: serializeSalesFollowup(row, "latest_followup_"),
     skippedReason: normalizeSalesText(salesSkip.reason, 500) || null,
     skippedAt: salesSkip.skippedAt || null,
     demo: {
@@ -639,9 +640,49 @@ const PROSPECT_WITH_DEMO_SELECT = `
          d.failure_code AS demo_failure_code,
          d.failure_message AS demo_failure_message,
          d.expires_at AS demo_expires_at,
-         d.updated_at AS demo_updated_at
+         d.updated_at AS demo_updated_at,
+         latest_followup.sales_followup_job_id AS latest_followup_sales_followup_job_id,
+         latest_followup.outcome AS latest_followup_outcome,
+         latest_followup.status AS latest_followup_status,
+         latest_followup.attempts AS latest_followup_attempts,
+         latest_followup.max_attempts AS latest_followup_max_attempts,
+         latest_followup.available_at AS latest_followup_available_at,
+         latest_followup.completed_at AS latest_followup_completed_at,
+         latest_followup.last_error_code AS latest_followup_last_error_code,
+         latest_followup.updated_at AS latest_followup_updated_at
   FROM sales_prospects p
-  LEFT JOIN sales_demo_profiles d ON d.prospect_id = p.prospect_id`;
+  LEFT JOIN sales_demo_profiles d ON d.prospect_id = p.prospect_id
+  LEFT JOIN (
+    SELECT DISTINCT ON (f.prospect_id)
+           f.prospect_id, f.sales_followup_job_id, f.outcome, f.status,
+           f.attempts, f.max_attempts, f.available_at, f.completed_at,
+           f.last_error_code, f.updated_at
+    FROM sales_followup_jobs f
+    ORDER BY f.prospect_id, f.created_at DESC
+  ) latest_followup ON latest_followup.prospect_id = p.prospect_id`;
+
+function serializeSalesFollowup(row, prefix = "") {
+  if (!row) return null;
+  const read = (field) => row[`${prefix}${field}`];
+  const jobId = normalizeSalesText(read("sales_followup_job_id"), 200);
+  if (!jobId) return null;
+  return {
+    jobId,
+    prospectId: normalizeSalesText(read("prospect_id"), 200) || null,
+    salesCallId: normalizeSalesText(read("sales_call_id"), 200) || null,
+    outcome: normalizeSalesText(read("outcome"), 80) || null,
+    status: normalizeSalesText(read("status"), 80) || "queued",
+    attempts: Number(read("attempts") || 0),
+    maxAttempts: Number(read("max_attempts") || 0),
+    availableAt: read("available_at") || null,
+    lockedAt: read("locked_at") || null,
+    completedAt: read("completed_at") || null,
+    lastErrorCode: normalizeSalesText(read("last_error_code"), 160) || null,
+    lastErrorMessage: normalizeSalesText(read("last_error_message"), 1000) || null,
+    createdAt: read("created_at") || null,
+    updatedAt: read("updated_at") || null
+  };
+}
 
 const SIGNUP_INVITATION_PROGRESS_SELECT = `
   SELECT i.invitation_id, i.prospect_id, i.sales_call_id, i.status,
@@ -806,11 +847,16 @@ export async function listSalesProspects(pool, {
   afterQueuePosition = 0,
   status = "",
   eligibleOnly = false,
+  includeDeleted = false,
   search = ""
 } = {}) {
   const safeLimit = Math.min(250, Math.max(1, Number(limit) || 100));
   const values = [Number(afterQueuePosition) || 0];
   const where = ["p.queue_position > $1"];
+
+  if (!includeDeleted) {
+    where.push("p.status <> 'deleted'");
+  }
 
   if (normalizeSalesText(status, 60)) {
     values.push(normalizeSalesText(status, 60));
@@ -880,7 +926,7 @@ export async function getSalesProspect(pool, prospectId) {
 export async function getSalesProspectDetail(pool, prospectId) {
   const prospect = await getSalesProspect(pool, prospectId);
   if (!prospect) return null;
-  const [notes, calls, invitations, profile] = await Promise.all([
+  const [notes, calls, invitations, profile, followups] = await Promise.all([
     pool.query(
       `SELECT sales_prospect_note_id, sales_call_id, body, created_by_admin_user_id, created_at
        FROM sales_prospect_notes
@@ -910,6 +956,14 @@ export async function getSalesProspectDetail(pool, prospectId) {
        WHERE prospect_id = $1
        LIMIT 1`,
       [prospect.prospectId]
+    ),
+    pool.query(
+      `SELECT *
+       FROM sales_followup_jobs
+       WHERE prospect_id = $1
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      [prospect.prospectId]
     )
   ]);
 
@@ -926,8 +980,160 @@ export async function getSalesProspectDetail(pool, prospectId) {
       createdAt: row.created_at || null
     })),
     calls: calls.rows.map(serializeSalesCallSession),
-    signupInvitations: invitations.rows.map(serializeSignupInvitation)
+    signupInvitations: invitations.rows.map(serializeSignupInvitation),
+    followups: followups.rows.map((row) => serializeSalesFollowup(row))
   };
+}
+
+export async function createSalesProspect(pool, record, {
+  adminUserId,
+  defaultCountryCode = "1",
+  env = process.env
+} = {}) {
+  const normalized = normalizeSalesImportRecord(record, {
+    defaultCountryCode,
+    env
+  });
+  const prospectId = createId("sales_prospect");
+  try {
+    await pool.query(
+      `INSERT INTO sales_prospects (
+         prospect_id, source_key, external_ref, business_name, owner_first_name,
+         contact_name, contact_email, email_permission, email_suppressed_at,
+         email_suppression_reason, lead_delivery_email, phone_e164, website_url,
+         business_category, competitor_name, timezone, permission_granted,
+         permission_recorded_at, suppressed, suppression_reason, suppressed_at,
+         do_not_call, do_not_call_at, status, imported_by_admin_user_id
+       )
+       VALUES (
+         $1, $2, $3, $4, $5,
+         $6, $7, $8, CASE WHEN $16 THEN NOW() ELSE NULL END,
+         CASE WHEN $16 THEN COALESCE($17, 'suppressed') ELSE NULL END,
+         $9, $10, $11,
+         $12, $13, $14, $15,
+         NOW(), $16, $17, CASE WHEN $16 THEN NOW() ELSE NULL END,
+         $18, CASE WHEN $18 THEN NOW() ELSE NULL END,
+         CASE WHEN $18 THEN 'do_not_call' WHEN $16 THEN 'suppressed' ELSE 'queued' END,
+         $19
+       )`,
+      [
+        prospectId,
+        normalized.sourceKey,
+        normalized.externalRef,
+        normalized.businessName,
+        normalized.ownerFirstName,
+        normalized.contactName,
+        normalized.contactEmail,
+        normalized.emailPermission,
+        normalized.leadDeliveryEmail,
+        normalized.phoneE164,
+        normalized.websiteUrl,
+        normalized.businessCategory,
+        normalized.competitorName,
+        normalized.timezone,
+        normalized.permissionGranted,
+        normalized.suppressed || normalized.doNotCall,
+        normalized.suppressionReason || (normalized.doNotCall ? "do_not_call" : null),
+        normalized.doNotCall,
+        Number(adminUserId) || null
+      ]
+    );
+  } catch (error) {
+    if (error?.code === "23505") {
+      throw salesError(
+        "prospect_already_exists",
+        "A prospect with this phone and website already exists.",
+        409
+      );
+    }
+    throw error;
+  }
+  return getSalesProspect(pool, prospectId);
+}
+
+export async function removeSalesProspect(pool, prospectId, {
+  expectedRowVersion = null
+} = {}) {
+  const id = normalizeSalesText(prospectId, 200);
+  if (!id) throw salesError("prospect_id_required", "Prospect ID is required.");
+  return withTransaction(pool, async (db) => {
+    const locked = await db.query(
+      `SELECT prospect_id, row_version
+       FROM sales_prospects
+       WHERE prospect_id = $1
+       FOR UPDATE`,
+      [id]
+    );
+    if (!locked.rowCount) {
+      throw salesError("prospect_not_found", "Prospect not found.", 404);
+    }
+    const currentVersion = Number(locked.rows[0].row_version || 1);
+    if (
+      expectedRowVersion !== null
+      && expectedRowVersion !== undefined
+      && Number(expectedRowVersion) !== currentVersion
+    ) {
+      throw salesError(
+        "prospect_version_conflict",
+        "This prospect changed after you opened it. Refresh and try again.",
+        409
+      );
+    }
+    const activeCall = await db.query(
+      `SELECT sales_call_id
+       FROM sales_call_sessions
+       WHERE prospect_id = $1
+         AND ended_at IS NULL
+         AND state NOT IN ('closed', 'completed', 'ended', 'failed', 'canceled', 'cancelled')
+       LIMIT 1`,
+      [id]
+    );
+    if (activeCall.rowCount) {
+      throw salesError(
+        "prospect_has_active_call",
+        "End the active call before deleting this prospect.",
+        409
+      );
+    }
+    await db.query(
+      `UPDATE sales_demo_jobs
+       SET status = 'canceled',
+           completed_at = COALESCE(completed_at, NOW()),
+           locked_at = NULL,
+           locked_by = NULL,
+           updated_at = NOW()
+       WHERE prospect_id = $1
+         AND status IN ('queued', 'leased')`,
+      [id]
+    );
+    await db.query(
+      `UPDATE sales_followup_jobs
+       SET status = 'canceled',
+           completed_at = COALESCE(completed_at, NOW()),
+           locked_at = NULL,
+           locked_by = NULL,
+           updated_at = NOW()
+       WHERE prospect_id = $1
+         AND status IN ('queued', 'leased')`,
+      [id]
+    );
+    await db.query(
+      `UPDATE sales_prospects
+       SET status = 'deleted',
+           suppressed = TRUE,
+           suppression_reason = COALESCE(suppression_reason, 'deleted_by_admin'),
+           suppressed_at = COALESCE(suppressed_at, NOW()),
+           do_not_call = TRUE,
+           do_not_call_at = COALESCE(do_not_call_at, NOW()),
+           email_suppressed_at = COALESCE(email_suppressed_at, NOW()),
+           email_suppression_reason = COALESCE(email_suppression_reason, 'deleted_by_admin'),
+           row_version = row_version + 1,
+           updated_at = NOW()
+       WHERE prospect_id = $1`,
+      [id]
+    );
+    return getSalesProspect(db, id);
+  });
 }
 
 export async function updateSalesProspect(pool, prospectId, changes = {}) {
@@ -1026,12 +1232,28 @@ export async function updateSalesProspect(pool, prospectId, changes = {}) {
   assignments.push("row_version = row_version + 1");
   assignments.push("updated_at = NOW()");
   values.push(id);
-  await pool.query(
+  const prospectIdParameter = values.length;
+  const expectedRowVersion = changes.expectedRowVersion === undefined
+    ? null
+    : Number(changes.expectedRowVersion);
+  if (expectedRowVersion !== null && !Number.isInteger(expectedRowVersion)) {
+    throw salesError("invalid_row_version", "Prospect row version must be an integer.");
+  }
+  if (expectedRowVersion !== null) values.push(expectedRowVersion);
+  const updated = await pool.query(
     `UPDATE sales_prospects
      SET ${assignments.join(", ")}
-     WHERE prospect_id = $${values.length}`,
+     WHERE prospect_id = $${prospectIdParameter}
+       ${expectedRowVersion === null ? "" : `AND row_version = $${values.length}`}`,
     values
   );
+  if (expectedRowVersion !== null && !updated.rowCount) {
+    throw salesError(
+      "prospect_version_conflict",
+      "This prospect changed after you opened it. Refresh and try again.",
+      409
+    );
+  }
   if (changes.websiteUrl !== undefined) {
     await invalidateSalesDemoIfWebsiteChanged(pool, id);
   }

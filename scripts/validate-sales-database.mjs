@@ -5,6 +5,7 @@ import {
   addSalesProspectNote,
   claimSalesSignupInvitationDelivery,
   completeSalesSignupInvitation,
+  createSalesProspect,
   createSalesCallSession,
   createSalesSignupInvitation,
   getSalesProspectDetail,
@@ -17,7 +18,9 @@ import {
   openSalesSignupPrefill,
   recordSalesCallOutcome,
   releaseSalesSignupInvitationDelivery,
+  removeSalesProspect,
   skipSalesProspect,
+  updateSalesProspect,
   validateSalesSignupInvitationForOnboarding
 } from "../pages/api/_lib/salesRepository.js";
 import { processSalesFollowupJobs } from "../pages/api/_lib/salesFollowupJobs.js";
@@ -276,6 +279,9 @@ async function main() {
       [call.salesCallId]
     );
     assert.equal(followupCount.rows[0].count, 1);
+    const detailWithFollowup = await getSalesProspectDetail(pool, firstId);
+    assert.equal(detailWithFollowup.followups.length, 1);
+    assert.equal(detailWithFollowup.followups[0].outcome, "no_answer");
 
     const smartleadRequests = [];
     const followups = await processSalesFollowupJobs(pool, {
@@ -548,6 +554,50 @@ async function main() {
     assert.equal(expiredProfile.rows[0].scrape_page_count, 0);
     assert.deepEqual(expiredProfile.rows[0].scrape_pages_json, []);
     assert.equal(expiredProfile.rows[0].extraction_version, null);
+
+    const managedProspect = await createSalesProspect(pool, {
+      external_ref: "prospect-management-validation",
+      business_name: "Managed Prospect",
+      contact_name: "Pat Manager",
+      phone: "206-555-0198",
+      website: "https://managed.example",
+      timezone: "America/Los_Angeles",
+      permission: "yes",
+      email_permission: "no"
+    }, { adminUserId });
+    assert.equal(managedProspect.businessName, "Managed Prospect");
+    const editedProspect = await updateSalesProspect(pool, managedProspect.prospectId, {
+      businessName: "Managed Prospect Updated",
+      expectedRowVersion: managedProspect.rowVersion
+    });
+    assert.equal(editedProspect.businessName, "Managed Prospect Updated");
+    await assert.rejects(
+      updateSalesProspect(pool, managedProspect.prospectId, {
+        businessName: "Stale Update",
+        expectedRowVersion: managedProspect.rowVersion
+      }),
+      (error) => error?.code === "prospect_version_conflict"
+    );
+    await pool.query(
+      `INSERT INTO sales_followup_jobs (
+         sales_followup_job_id, prospect_id, outcome, status
+       ) VALUES ('management-followup', $1, 'callback_requested', 'queued')`,
+      [managedProspect.prospectId]
+    );
+    const removedProspect = await removeSalesProspect(pool, managedProspect.prospectId, {
+      expectedRowVersion: editedProspect.rowVersion
+    });
+    assert.equal(removedProspect.status, "deleted");
+    assert.equal(removedProspect.suppressed, true);
+    assert.equal(removedProspect.doNotCall, true);
+    const canceledFollowup = await pool.query(
+      `SELECT status FROM sales_followup_jobs WHERE sales_followup_job_id = 'management-followup'`
+    );
+    assert.equal(canceledFollowup.rows[0].status, "canceled");
+    const activeManagementList = await listSalesProspects(pool, { limit: 250 });
+    assert.equal(activeManagementList.prospects.some((item) => item.prospectId === managedProspect.prospectId), false);
+    const listIncludingRemoved = await listSalesProspects(pool, { limit: 250, includeDeleted: true });
+    assert.equal(listIncludingRemoved.prospects.some((item) => item.prospectId === managedProspect.prospectId), true);
 
     const tables = await pool.query(
       `SELECT tablename
