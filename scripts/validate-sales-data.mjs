@@ -858,7 +858,10 @@ async function validateStaticIsolationAndRoutes() {
   const cronRoute = await fs.readFile(cronRoutePath, "utf8");
   assert.match(cronRoute, /CRON_SECRET/);
   assert.match(cronRoute, /SALES_OUTBOUND_ENABLED/);
-  assert.match(cronRoute, /sales_outbound_disabled/);
+  assert.match(cronRoute, /processSalesDemoJobs/);
+  assert.match(cronRoute, /outboundEnabled\s*\?\s*processSalesFollowupJobs/);
+  assert.match(cronRoute, /reason: "sales_outbound_disabled"/);
+  assert.doesNotMatch(cronRoute, /if \(!salesOutboundEnabled\(\)\)/);
   await import(path.resolve(cronRoutePath));
 
   const intakePage = await fs.readFile(path.join(root, "app/intake/page.jsx"), "utf8");
@@ -881,8 +884,9 @@ async function validateStaticIsolationAndRoutes() {
   assert.match(salesConsole, /\/samples\/sales-prospects-demo\.csv/);
   assert.match(salesConsole, /Skip unusable demo/);
   assert.match(salesConsole, /Reload calling queue/);
-  assert.match(salesConsole, /Build demo from website/);
-  assert.match(salesConsole, /Build demos for current \+ next 10/);
+  assert.match(salesConsole, /Queue website demo build/);
+  assert.match(salesConsole, /Queue demo builds for current \+ next 10/);
+  assert.match(salesConsole, /Demo needs rebuilding/);
   assert.doesNotMatch(salesConsole, />Refresh</);
   assert.doesNotMatch(salesConsole, /Prepare demo/);
   assert.doesNotMatch(salesConsole, /Replenish warm queue/);

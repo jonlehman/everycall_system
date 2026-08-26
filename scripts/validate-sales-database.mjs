@@ -8,6 +8,7 @@ import {
   createSalesProspect,
   createSalesCallSession,
   createSalesSignupInvitation,
+  enqueueSalesDemoJob,
   getSalesProspectDetail,
   getSalesSignupInvitation,
   getSalesProspect,
@@ -566,6 +567,25 @@ async function main() {
       email_permission: "no"
     }, { adminUserId });
     assert.equal(managedProspect.businessName, "Managed Prospect");
+    const firstDemoEnqueue = await enqueueSalesDemoJob(pool, {
+      prospectId: managedProspect.prospectId,
+      adminUserId
+    });
+    assert.equal(firstDemoEnqueue.enqueued, true);
+    await pool.query(
+      `UPDATE sales_demo_profiles SET status = 'stale' WHERE prospect_id = $1`,
+      [managedProspect.prospectId]
+    );
+    const reusedDemoEnqueue = await enqueueSalesDemoJob(pool, {
+      prospectId: managedProspect.prospectId,
+      adminUserId
+    });
+    assert.equal(reusedDemoEnqueue.reused, true);
+    const requeuedProfile = await pool.query(
+      `SELECT status FROM sales_demo_profiles WHERE prospect_id = $1`,
+      [managedProspect.prospectId]
+    );
+    assert.equal(requeuedProfile.rows[0].status, 'queued');
     const editedProspect = await updateSalesProspect(pool, managedProspect.prospectId, {
       businessName: "Managed Prospect Updated",
       expectedRowVersion: managedProspect.rowVersion

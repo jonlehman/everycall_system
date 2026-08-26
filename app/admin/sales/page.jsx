@@ -140,6 +140,10 @@ function demoStatusTone(status) {
   return 'warn';
 }
 
+function demoStatusLabel(status) {
+  return status === 'stale' ? 'Demo needs rebuilding' : status;
+}
+
 function permissionLabel(prospect) {
   if (prospect?.permission === true) return 'Permission: Yes';
   if (prospect?.permission === false) return 'Permission: No';
@@ -431,7 +435,7 @@ function QueuePanel({
                 <div className="truncate text-sm font-semibold text-slate-950">{queue.current.businessName || 'Unnamed business'}</div>
                 <div className="mt-1 truncate text-xs text-slate-600">{queue.current.contactName || queue.current.phone || 'No contact name'}</div>
               </div>
-              <StatusPill status={queue.current.demoStatus} tone={demoStatusTone(queue.current.demoStatus)} />
+              <StatusPill status={demoStatusLabel(queue.current.demoStatus)} tone={demoStatusTone(queue.current.demoStatus)} />
             </div>
             {!isDemoReady(queue.current) && queue.current.preparationEligible ? (
               <ActionButton
@@ -441,7 +445,7 @@ function QueuePanel({
                 onClick={() => onPrepare(queue.current)}
                 title="Scan this prospect's website and build the receptionist demo used during the call."
               >
-                {prepareBusyId === queue.current.id ? 'Building website demo…' : 'Build demo from website'}
+                {prepareBusyId === queue.current.id ? 'Queueing demo build…' : 'Queue website demo build'}
               </ActionButton>
             ) : null}
             {(queue.current.demoStatus === 'failed' || queue.current.demoFailure || !queue.current.website) ? (
@@ -473,7 +477,7 @@ function QueuePanel({
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold text-slate-900">{prospect.businessName || 'Unnamed business'}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <StatusPill status={prospect.demoStatus} tone={demoStatusTone(prospect.demoStatus)} />
+                    <StatusPill status={demoStatusLabel(prospect.demoStatus)} tone={demoStatusTone(prospect.demoStatus)} />
                     {!prospect.eligible ? <StatusPill status="Blocked" tone="bad" /> : null}
                   </div>
                   {prospect.demoFailure ? (
@@ -489,7 +493,7 @@ function QueuePanel({
                       title="Scan this prospect's website and build their receptionist demo."
                       className="text-xs font-semibold text-[#004ac6] hover:underline disabled:text-slate-400"
                     >
-                      {prepareBusyId === prospect.id ? 'Building…' : prospect.demoFailure ? 'Retry demo build' : 'Build website demo'}
+                      {prepareBusyId === prospect.id ? 'Queueing…' : prospect.demoFailure ? 'Retry demo build' : 'Queue website demo build'}
                     </button>
                   ) : null}
                   {(prospect.demoStatus === 'failed' || prospect.demoFailure || !prospect.website) ? (
@@ -521,7 +525,7 @@ function QueuePanel({
         disabled={warmBusy || loading}
         title="Queue website-based receptionist demo builds for the current prospect and the next 10 prospects."
       >
-        {warmBusy ? 'Starting demo builds…' : 'Build demos for current + next 10'}
+        {warmBusy ? 'Queueing demo builds…' : 'Queue demo builds for current + next 10'}
       </ActionButton>
     </Card>
   );
@@ -547,7 +551,7 @@ function ProspectPanel({ prospect }) {
           <p className="mt-1 text-sm text-slate-500">{prospect.contactName || 'No contact name supplied'}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <StatusPill status={prospect.demoStatus} tone={demoStatusTone(prospect.demoStatus)} />
+          <StatusPill status={demoStatusLabel(prospect.demoStatus)} tone={demoStatusTone(prospect.demoStatus)} />
           <StatusPill
             status={permissionLabel(prospect)}
             tone={prospect.permission === true ? 'good' : 'bad'}
@@ -969,7 +973,7 @@ export default function AdminSalesConsolePage() {
       });
       await loadQueue({ quiet: true });
     } catch (error) {
-      if (!quiet) setQueueError(error?.message || 'Could not replenish the warm queue.');
+      if (!quiet) setQueueError(error?.message || 'Could not queue the upcoming demo builds.');
     } finally {
       if (!quiet) setWarmBusy(false);
     }
@@ -1131,7 +1135,7 @@ export default function AdminSalesConsolePage() {
       });
       await loadQueue({ quiet: true });
     } catch (error) {
-      setOperationError(error?.message || 'Could not prepare this demo.');
+      setOperationError(error?.message || 'Could not queue this demo build.');
     } finally {
       setPrepareBusyId('');
     }

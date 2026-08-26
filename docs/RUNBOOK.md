@@ -27,7 +27,7 @@
 ## Outbound Sales Calling
 - Apply `migrations/0032_outbound_sales_demo.sql` before enabling the Sales Console.
 - Configure the Vercel values documented under `# outbound sales console` in `.env.example`.
-- Leave `SALES_OUTBOUND_ENABLED=false` until the migration, credentials, webhook routes, and controlled provider canary have passed. Set it to `true` to start the scheduled demo and follow-up worker.
+- Leave `SALES_OUTBOUND_ENABLED=false` until the migration, credentials, webhook routes, and controlled provider canary have passed. Human-requested website demo builds continue to run while it is false; set it to `true` only to start automated sales follow-up processing.
 - Configure the isolated Render values under `# isolated outbound sales call gateway`. Never substitute generic production `TELNYX_*` or `OPENAI_*` credentials.
 - In Telnyx, use a dedicated sales Call Control Application for backend dials plus a distinct Credential Connection and WebRTC credential for the browser operator. Enable **Park Outbound Calls** on the Credential Connection and route both sales resources' webhooks to `/webhooks/telnyx` on the sales gateway.
 - Route the dedicated OpenAI project's Realtime webhook to `/webhooks/openai` on the sales gateway.

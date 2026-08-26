@@ -25,14 +25,6 @@ export default async function handler(req, res) {
   if (!isAuthorized(req)) {
     return res.status(401).json({ ok: false, error: "unauthorized" });
   }
-  if (!salesOutboundEnabled()) {
-    return res.status(200).json({
-      ok: true,
-      skipped: true,
-      reason: "sales_outbound_disabled"
-    });
-  }
-
   try {
     const pool = getPool();
     if (!pool) {
@@ -40,12 +32,33 @@ export default async function handler(req, res) {
     }
     await ensureTables(pool);
     const workerId = `sales-cron:${process.env.VERCEL_REGION || "local"}:${process.pid}`;
+    const outboundEnabled = salesOutboundEnabled();
     const [demoJobs, followupJobs] = await Promise.all([
       processSalesDemoJobs(pool, { workerId, limit: 2 }),
-      processSalesFollowupJobs(pool, { workerId, limit: 5 })
+      outboundEnabled
+        ? processSalesFollowupJobs(pool, { workerId, limit: 5 })
+        : Promise.resolve({
+          skipped: true,
+          reason: "sales_outbound_disabled",
+          claimedCount: 0,
+          results: []
+        })
     ]);
-    return res.status(200).json({ ok: true, demoJobs, followupJobs });
+    console.info(JSON.stringify({
+      event: "sales_maintenance_result",
+      outboundEnabled,
+      demoClaimedCount: Number(demoJobs?.claimedCount || 0),
+      demoResultCount: Array.isArray(demoJobs?.results) ? demoJobs.results.length : 0,
+      followupClaimedCount: Number(followupJobs?.claimedCount || 0),
+      followupsSkipped: followupJobs?.skipped === true
+    }));
+    return res.status(200).json({ ok: true, outboundEnabled, demoJobs, followupJobs });
   } catch (error) {
+    console.error(JSON.stringify({
+      event: "sales_maintenance_failed",
+      errorCode: String(error?.code || "sales_maintenance_failed").slice(0, 120),
+      errorMessage: String(error?.message || "unknown").slice(0, 500)
+    }));
     return res.status(500).json({
       ok: false,
       error: "sales_maintenance_failed",

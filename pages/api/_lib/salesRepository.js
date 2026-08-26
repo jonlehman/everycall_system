@@ -1420,6 +1420,26 @@ export async function markExpiredSalesDemoProfiles(pool) {
   return { expiredCount: Number(result.rowCount || 0) };
 }
 
+async function markSalesDemoProfileQueued(pool, prospect) {
+  await pool.query(
+    `INSERT INTO sales_demo_profiles (
+       demo_profile_id, prospect_id, status, source_website_url
+     )
+     VALUES ($1, $2, 'queued', $3)
+     ON CONFLICT (prospect_id)
+     DO UPDATE SET
+       status = CASE
+         WHEN sales_demo_profiles.status = 'ready'
+          AND sales_demo_profiles.expires_at > NOW()
+           THEN sales_demo_profiles.status
+         ELSE 'queued'
+       END,
+       source_website_url = EXCLUDED.source_website_url,
+       updated_at = NOW()`,
+    [createId("sales_demo"), prospect.prospectId, prospect.websiteUrl]
+  );
+}
+
 export async function enqueueSalesDemoJob(pool, {
   prospectId,
   adminUserId = null,
@@ -1494,6 +1514,7 @@ export async function enqueueSalesDemoJob(pool, {
        LIMIT 1`,
       [prospect.prospectId]
     );
+    await markSalesDemoProfileQueued(pool, prospect);
     return {
       enqueued: false,
       reused: true,
@@ -1502,23 +1523,7 @@ export async function enqueueSalesDemoJob(pool, {
     };
   }
 
-  await pool.query(
-    `INSERT INTO sales_demo_profiles (
-       demo_profile_id, prospect_id, status, source_website_url
-     )
-     VALUES ($1, $2, 'queued', $3)
-     ON CONFLICT (prospect_id)
-     DO UPDATE SET
-       status = CASE
-         WHEN sales_demo_profiles.status = 'ready'
-          AND sales_demo_profiles.expires_at > NOW()
-           THEN sales_demo_profiles.status
-         ELSE 'queued'
-       END,
-       source_website_url = EXCLUDED.source_website_url,
-       updated_at = NOW()`,
-    [createId("sales_demo"), prospect.prospectId, prospect.websiteUrl]
-  );
+  await markSalesDemoProfileQueued(pool, prospect);
 
   return {
     enqueued: true,
