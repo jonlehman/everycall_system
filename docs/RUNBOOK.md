@@ -1,6 +1,7 @@
 # Runbook
 
 ## Deployments
+- Inbound GPT-Live cutover: see `docs/SPECS/live-gateway-runtime.md`. Deployment target is `CALL_GATEWAY_VOICE_RUNTIME=live` with an explicitly approved `OPENAI_LIVE_BACKEND_MODEL`; code defaults to `realtime` when unset. Keep the existing `OPENAI_API_KEY`. Live usage is recorded separately from the legacy Realtime cost estimator. Roll back with `CALL_GATEWAY_VOICE_RUNTIME=realtime` and restart.
 - Admin/client app: Vercel
 - Call gateway: Render
 - Outbound sales call gateway: separate Render service `everycall-sales-call-gateway`, exactly one instance

@@ -76,6 +76,7 @@ import {
   noteFinishSessionDialogueTurn
 } from "./finishSessionControl.js";
 import { buildStableOpenAiSafetyIdentifier } from "./openAiSafetyIdentifier.js";
+import { buildLiveStart, LIVE_URL, LiveRuntime, resolveVoiceRuntime } from "./liveRuntime.js";
 import {
   buildOpeningStatementResponse,
   completeOpeningStatementAfterPlayback,
@@ -104,6 +105,11 @@ const callSummaryFinalizeToken = getInternalServiceToken(process.env, INTERNAL_A
 const gatewayDebugLogToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PURPOSES.gatewayDebugLog);
 const callGatewayBaseUrl = process.env.CALL_GATEWAY_BASE_URL || "";
 const openAiKey = process.env.OPENAI_API_KEY || "";
+// Trusted gateway deployment configuration; never read from caller input.
+const voiceRuntime = resolveVoiceRuntime(process.env.CALL_GATEWAY_VOICE_RUNTIME);
+const liveBackendModel = String(process.env.OPENAI_LIVE_BACKEND_MODEL || "").trim();
+if (voiceRuntime === "live" && !liveBackendModel) throw new Error("OPENAI_LIVE_BACKEND_MODEL is required for Live client delegation");
+const liveSockets = new WeakMap<WebSocket, StreamSession>();
 const signatureRequired = (process.env.TELNYX_SIGNATURE_REQUIRED || "true").toLowerCase() !== "false";
 const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
@@ -130,6 +136,15 @@ const ajv = new Ajv({ allErrors: true, strict: false });
 const streamIdToCall = new Map<string, string>();
 const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "call_gateway_started",
+  "openai_live_session_started",
+  "openai_live_session_closed",
+  "openai_live_backend_usage",
+  "openai_live_task_started",
+  "openai_live_task_failed",
+  "openai_live_error",
+  "openai_live_close_playback_quiet",
+  "openai_live_close_unverified",
+  "openai_live_final_usage_unconfirmed",
   "gateway_call_session_end",
   "knowledge_build_assets_startup_preload_started",
   "knowledge_build_assets_startup_preload_completed",
@@ -263,6 +278,7 @@ type PendingTransferCandidate = {
   confirmed: boolean;
   createdAt: string;
   confirmedAt?: string | null;
+  liveLookupRevision?: number;
 };
 
 type TransferLegClientState = {
@@ -283,6 +299,11 @@ type StreamSession = {
   telnyxStreamId?: string;
   telnyxWs?: WebSocket;
   openAiWs?: WebSocket;
+  live?: LiveRuntime;
+  liveToolOutputs?: Map<string, unknown>;
+  liveTimer?: NodeJS.Timeout;
+  liveLastAudioAt?: number;
+  livePersistenceTail?: Promise<void>;
   openAiReady?: boolean;
   openAiSessionUpdated?: boolean;
   reconnectAttempted?: boolean;
@@ -525,6 +546,16 @@ function estimateUsageCostMicrosUsd(usage: {
 
 async function persistCallUsage(session: StreamSession) {
   if (!pool) return;
+  if (session.live) {
+    // Live duration and delegated token usage are recorded separately in call_events.
+    // Never apply Realtime token prices to duration-billed Live sessions.
+    try {
+      await pool.query("UPDATE calls SET ai_model = $2 WHERE call_sid = $1 AND tenant_key = $3", [session.callSid, "gpt-live-1", session.tenantKey]);
+    } catch {
+      logError("openai_live_usage_persist_failed", { callSid: session.callSid });
+    }
+    return;
+  }
   const usage = session.usageTotals || emptyUsageTotals();
   try {
     await pool.query(
@@ -778,6 +809,18 @@ function toWebSocketUrl(baseUrl: string) {
 }
 
 function sendOpenAiEvent(ws: WebSocket | undefined, payload: Record<string, unknown>) {
+  const liveSession = ws ? liveSockets.get(ws) : undefined;
+  if (liveSession?.live) {
+    if (payload.type === "input_audio_buffer.append") liveSession.live.input(String(payload.audio || ""));
+    if (payload.type === "conversation.item.create") {
+      const item = payload.item as Record<string, unknown>;
+      if (item?.type === "function_call_output") {
+        liveSession.liveToolOutputs?.set(String(item.call_id), JSON.parse(String(item.output)));
+      }
+    }
+    // Never send Realtime commands (response.create/cancel/truncate) to Live.
+    return;
+  }
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify(payload));
 }
@@ -969,6 +1012,11 @@ function requestAssistantResponse(
   response: Record<string, unknown> = {},
   dedupeKey?: string | null
 ) {
+  if (session.live) {
+    // Backend tool loop owns continuations, including failed-transfer guidance.
+    // Realtime callbacks may finish after their Live task has become stale.
+    return;
+  }
   const result = enqueueAssistantResponseRequest(session, { reason, response, dedupeKey });
   if (result.action === "duplicate_queued") {
     logInfo("openai_realtime_response_request_deduped", {
@@ -1084,6 +1132,7 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
     const payload = session.outputQueue.shift();
     if (!payload) break;
     noteAssistantAudioFrameSent(session);
+    session.live?.notePlayback(payload);
     sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, payload.toString("base64"));
     session.outputNextFrameAtMs = (session.outputNextFrameAtMs || nowMs) + outboundAudioFrameMs;
     sent += 1;
@@ -1129,7 +1178,7 @@ function startOutputPump(session: StreamSession) {
         session.outputTimer = null;
       }
       session.outputNextFrameAtMs = null;
-      if (session.outputBuffer && session.outputBuffer.length > 0 && !session.currentResponseId) {
+      if (!session.live && session.outputBuffer && session.outputBuffer.length > 0 && !session.currentResponseId) {
         session.outputBuffer = Buffer.alloc(0);
       }
       if (!(session.outputBuffer && session.outputBuffer.length > 0) && !session.currentResponseId) {
@@ -1544,6 +1593,7 @@ function notePendingTransferLookup(session: StreamSession, lookupResult: {
       targetName: lookupResult.target.name,
       targetExtension: lookupResult.target.extension || null,
       confirmed: false,
+      ...(session.live ? { liveLookupRevision: session.live.transcriptRevision } : {}),
       createdAt: new Date().toISOString(),
       confirmedAt: null
     };
@@ -1593,6 +1643,10 @@ async function detachAiForTransferredCall(session: StreamSession, source: string
     session.outputTimer = null;
   }
   session.outputNextFrameAtMs = null;
+
+  if (session.liveTimer) clearInterval(session.liveTimer);
+  if (session.live) await session.live.close();
+  await session.livePersistenceTail;
 
   if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
     session.openAiWs.close();
@@ -1809,6 +1863,9 @@ async function endCallSession(session: StreamSession | undefined, reason: string
   if (!session || session.isShuttingDown) return;
   session.isShuttingDown = true;
   session.callActive = false;
+  if (session.liveTimer) clearInterval(session.liveTimer);
+  if (session.live) await session.live.close();
+  await session.livePersistenceTail;
   await persistCallUsage(session);
   if (session.knowledgeCallState) {
     await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
@@ -1836,6 +1893,8 @@ async function endCallSession(session: StreamSession | undefined, reason: string
 
   if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
     session.openAiWs.close();
+  } else if (session.live && session.openAiWs?.readyState === WebSocket.CONNECTING) {
+    session.openAiWs.terminate();
   }
 
   await finalizeCallSummary(session);
@@ -2045,6 +2104,7 @@ async function forwardToolResult(
 }
 
 function noteToolResponseRequested(session: StreamSession, tool: string, callId: string) {
+  if (session.live) return;
   session.pendingToolSpeechWait = {
     tool,
     callId,
@@ -2217,7 +2277,8 @@ async function finalizePendingFinishSession(session: StreamSession, completedRes
   );
 }
 
-async function executeToolCall(session: StreamSession, name: string, callId: string, argsText: string) {
+async function executeToolCall(session: StreamSession, name: string, callId: string, argsText: string, mayCommit?: () => boolean) {
+  if (session.live && !mayCommit?.()) throw new Error("stale_live_tool");
   let args: Record<string, unknown> = {};
   try {
     args = argsText ? JSON.parse(argsText) : {};
@@ -2238,6 +2299,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       buildId: session.promptPayload.knowledge_runtime.active_build_id,
       callState: session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state
     });
+    if (session.live && !mayCommit?.()) throw new Error("stale_live_lookup");
     const nextState = mergeRuntimeTurnState(
       session.knowledgeCallState || session.promptPayload.knowledge_runtime.initial_call_state,
       runtimeResult
@@ -2504,6 +2566,7 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
     }
 
     const commandId = `everycall_transfer_${crypto.randomUUID()}`;
+    if (session.live && !mayCommit?.()) throw new Error("stale_live_transfer");
     session.transferState = {
       status: "pending",
       targetId: requestedTargetId,
@@ -2614,7 +2677,8 @@ async function handleToolCallEvent(
   name: string,
   callId: string,
   argsText: string,
-  sourceType: string
+  sourceType: string,
+  mayCommit?: () => boolean
 ) {
   const attempt = beginToolExecution(session, name, callId);
   if (!attempt.shouldExecute) {
@@ -2629,7 +2693,7 @@ async function handleToolCallEvent(
   }
 
   try {
-    await executeToolCall(session, name, callId, argsText);
+    await executeToolCall(session, name, callId, argsText, mayCommit);
     completeToolExecution(session, attempt.key);
   } catch (err) {
     failToolExecution(session, attempt.key);
@@ -2637,7 +2701,137 @@ async function handleToolCallEvent(
   }
 }
 
+function persistLiveEvent(session: StreamSession, role: string, text: string, eventType: string) {
+  if (!pool) return;
+  session.livePersistenceTail = (session.livePersistenceTail || Promise.resolve()).then(async () => {
+    await pool.query(
+      `INSERT INTO call_events (call_sid, tenant_key, role, text, event_type) VALUES ($1, $2, $3, $4, $5)`,
+      [session.callSid, session.tenantKey, role, text, eventType]
+    );
+  }).catch(() => logError("openai_live_event_persist_failed", { callSid: session.callSid, eventType }));
+}
+
+function connectOpenAiLive(session: StreamSession) {
+  if (session.live && !session.live.closed) return;
+  const payload = session.promptPayload;
+  if (!openAiKey || !payload) {
+    void endCallSession(session, "openai_live_configuration_missing", true);
+    return;
+  }
+  const ws = new WebSocket(LIVE_URL, {
+    headers: { Authorization: `Bearer ${openAiKey}`, "OpenAI-Safety-Identifier": buildOpenAiSafetyIdentifier(session) }
+  });
+  session.openAiWs = ws;
+  session.openAiReady = false;
+  session.openingStatementProtected = false;
+  session.liveToolOutputs = new Map();
+  session.realtimeModel = "gpt-live-1";
+  const instructions = buildSessionInstructions(payload);
+  const live: LiveRuntime = new LiveRuntime({
+    tenantKey: session.tenantKey, callSid: session.callSid, apiKey: openAiKey,
+    safetyIdentifier: buildOpenAiSafetyIdentifier(session),
+    backendModel: liveBackendModel,
+    instructions, tools: payload.tool_definitions,
+    send: event => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event)); },
+    isActive: () => Boolean(session.callActive && !session.isShuttingDown && !session.aiDetached && session.openAiWs === ws),
+    state: () => session.knowledgeCallState,
+    validateTool: (name, args) => {
+      const definition = payload.tool_definitions.find(tool => tool.name === name);
+      return Boolean(definition && validateAgainstSchema(definition.parameters as Record<string, unknown> || {}, args as Record<string, unknown>).status === "accepted");
+    },
+    executeTool: async (name, callId, argsText, mayCommit) => {
+      if (!mayCommit()) throw new Error("stale_live_tool");
+      if (name === "finish_session") {
+        const closing = buildFinishSessionClosingRecovery(getConfirmedFirstName(session)).closing;
+        const accepted = live.requestFinish(closing);
+        const output = { status: accepted ? "accepted" : "stale", closing_playback_pending: accepted };
+        await forwardToolResult(session.callSid, session.tenantKey, name, output, { status: output.status, errors: [] });
+        return output;
+      }
+      if (name === "transfer_call") {
+        const candidate = session.pendingTransferCandidate;
+        const lookupRevision = candidate?.liveLookupRevision;
+        // Re-evaluate current consent; a previously observed yes cannot outlive a
+        // later caller correction or a replacement task.
+        if (candidate) candidate.confirmed = false;
+        if (lookupRevision !== undefined) noteCallerTransferConfirmation(session, live.callerConfirmationAfter(lookupRevision));
+      }
+      await handleToolCallEvent(session, name, callId, argsText, "live_client_delegation", mayCommit);
+      const output = session.liveToolOutputs?.get(callId);
+      session.liveToolOutputs?.delete(callId);
+      if (output === undefined) {
+        if (session.aiDetached && session.transferState?.status === "pending") return { status: "accepted" };
+        throw new Error("live_tool_result_missing");
+      }
+      return output;
+    },
+    transcript: entry => {
+      persistLiveEvent(session, entry.role === "user" ? "caller" : "assistant", entry.text, "message");
+    },
+    audio: bytes => {
+      if (session.isShuttingDown || session.aiDetached) return;
+      session.liveLastAudioAt = Date.now();
+      enqueueOutputPcm(session, bytes);
+    },
+    ready: () => {
+      session.openAiReady = true;
+      session.openAiSessionUpdated = true;
+      logInfo("openai_live_session_started", { callSid: session.callSid, model: "gpt-live-1", delegation: "client", audioFormat: "audio/pcmu" });
+      if (!session.greetingSent) {
+        session.greetingSent = true;
+        live.append("instructions", `Immediately say this business greeting exactly once: ${payload.tenant_greeting}`);
+      }
+      if (session.pendingReconnectAssistantResponse) {
+        const response = session.pendingReconnectAssistantResponse.response;
+        session.pendingReconnectAssistantResponse = null;
+        if (response.instructions) live.append("instructions", String(response.instructions));
+      }
+    },
+    finish: reason => { void endCallSession(session, reason, true); },
+    audit: (event, details) => {
+      logInfo(event, { callSid: session.callSid, tenantKey: session.tenantKey, ...details });
+      persistLiveEvent(session, "system", JSON.stringify(details), event);
+    }
+  });
+  session.live = live;
+  liveSockets.set(ws, session);
+  // Live's output stream has no response/audio-done event. Preserve partial PCMU
+  // frames, and use an explicitly bounded local playback quiet policy for closing.
+  session.liveTimer = setInterval(() => {
+    if (session.isShuttingDown || session.aiDetached) return;
+    if (session.outputBuffer?.length && Date.now() - (session.liveLastAudioAt || 0) > 100) {
+      const tail = Buffer.alloc(160 - session.outputBuffer.length, 255);
+      enqueueOutputPcm(session, tail);
+    }
+    live.checkFinish(!(session.outputQueue?.length || session.outputBuffer?.length));
+  }, 50);
+  const startupTimeout = setTimeout(() => {
+    if (!live.started) void endCallSession(session, "openai_live_startup_timeout", true);
+  }, 10000);
+  ws.on("open", () => {
+    if (session.isShuttingDown || session.aiDetached) { ws.close(); return; }
+    ws.send(JSON.stringify(buildLiveStart(
+      instructions + "\nLive runtime: You manage speech; the delegated backend executes the tools named above. Delegate knowledge lookups, every structured data capture, transfer, and finish_session to that backend. Do not claim a tool action happened before a verified backend result. Keep tool work silent. After the required pre-close checkpoint is answered, delegate finish_session; wait for the server closing instruction before saying the goodbye.",
+      payload.session_config.voice || "marin"
+    )));
+  });
+  ws.on("message", data => {
+    let event: Record<string, unknown>;
+    try { event = JSON.parse(data.toString()); } catch { return; }
+    if (event.type === "session.started") clearTimeout(startupTimeout);
+    void live.handle(event).catch(() => { void endCallSession(session, "openai_live_handler_failed", true); });
+  });
+  ws.on("close", () => {
+    clearTimeout(startupTimeout);
+    if (session.liveTimer) clearInterval(session.liveTimer);
+    // No blind reconnection: the caller must not repeat already-committed actions.
+    if (!session.isShuttingDown && !session.aiDetached) void endCallSession(session, "openai_live_disconnected", true);
+  });
+  ws.on("error", () => { void endCallSession(session, "openai_live_connection_error", true); });
+}
+
 function connectOpenAiRealtime(session: StreamSession) {
+  if (voiceRuntime === "live") { connectOpenAiLive(session); return; }
   if (!openAiKey) {
     logError("openai_realtime_missing_key", { callSid: session.callSid });
     void notifyGatewayError(session.callSid, session.tenantKey, "openai_realtime_missing_key", "OPENAI_API_KEY is missing");
@@ -3499,6 +3693,7 @@ server.listen(port, () => {
   logBidirectionalPayloadModeNormalization();
   logInfo("call_gateway_started", {
     port,
+    voiceRuntime,
     bidirectionalPayloadMode: resolveBidirectionalPayloadMode(),
     rtpPayloadType,
     outboundBufferFrames: outboundJitterBufferFrames,
