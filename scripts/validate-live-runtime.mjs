@@ -7,6 +7,7 @@ import { LiveRuntime, buildLiveStart, resolveVoiceRuntime, liveAppend, pcmuHasSp
 import { PreparedResponsesSession, RESPONSES_WS_URL, resolveLiveReasoningEffort } from "../apps/call-gateway/dist/apps/call-gateway/src/liveBackendSession.js";
 import { LIVE_SPEECH_INSTRUCTIONS, LIVE_BACKEND_ADAPTER, LIVE_HANDOFF_FORMAT, parseBackendHandoff, HandoffValidationError } from "../apps/call-gateway/dist/apps/call-gateway/src/liveContract.js";
 import { LiveLatency } from "../apps/call-gateway/dist/apps/call-gateway/src/liveLatency.js";
+import { LiveConversationController, bindLookupIntent } from "../apps/call-gateway/dist/apps/call-gateway/src/liveConversation.js";
 
 // All models, sockets and operations are fake. This suite never reads credentials.
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -16,26 +17,39 @@ const caller = delta => ({ type: "session.input_transcript.delta", event_id: `u-
 const assistant = delta => ({ ...caller(delta), type: "session.output_transcript.delta" });
 const delegate = id => ({ type: "session.delegation.created", event_id: `d-${id}`, offset_ms: seq * 100, delegation: { id, target: "client" } });
 const question = (text, kind = "intake", target_id = null) => ({ text, kind, target_id });
-const contract = (spoken_response = "", next_question = null, extra = {}) => ({ verified_facts: [], action_status: "none", spoken_response, next_question, completed_operation_ids: [], ...extra });
+const plan = (question_purpose = "none", beat = "answer", readiness = "exploring", caller_goal = "Help with the caller's request") => ({ caller_goal, readiness, beat, question_purpose, contact_field: null, clarifies_question_id: null });
+const fixturePlan = q => q?.kind === "intake" ? plan("discovery", "understand")
+  : q?.kind === "callback_consent" ? plan(q.kind, "offer_callback", "receptive")
+  : q ? plan(q.kind, q.kind === "other_questions" ? "checkpoint" : "confirm") : plan();
+const contract = (spoken_response = "", next_question = null, extra = {}) => ({ conversation_plan: fixturePlan(next_question), verified_facts: [], action_status: "none", spoken_response, next_question, completed_operation_ids: [], ...extra });
 const answer = value => ({ id: `r-${++seq}`, status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(value) }] }], usage: { input_tokens: 10, output_tokens: 5 } });
-const tool = (name = "data_capture", args = { first_name: "Ada" }, id = `f-${++seq}`) => ({ id: `r-${++seq}`, status: "completed", output: [{ type: "function_call", call_id: id, name, arguments: JSON.stringify(args) }] });
+const tool = (name = "data_capture", args = { first_name: "Ada" }, id = `f-${++seq}`) => ({ id: `r-${++seq}`, status: "completed", output: [{ type: "function_call", call_id: id, name, arguments: JSON.stringify(name === "knowledge_lookup" ? { lookup_intent: { purpose: "caller_question", missing_fact: args.query || "The requested business fact", caller_turn_id: 0, caller_quote: "__CURRENT_CALLER__" }, ...args } : args) }] });
 const all = [];
 function harness({ replies = [answer(contract("We repair windows."))], executeTool, ...overrides } = {}) {
   const sent = [], calls = [], logs = [], transcripts = [], finishes = [], requests = [];
-  let closed = false, prepared = false, index = 0;
+  let closed = false, prepared = false, index = 0, latestCaller;
   const backend = {
     prepare: async () => { prepared = true; }, close: () => { closed = true; },
     respond: async (input, signal) => {
       assert.equal(prepared, true); assert.equal(closed, false);
       requests.push(structuredClone(input));
+      const userInput = input.find(x => x.role === "user");
+      if (userInput) { try { latestCaller = JSON.parse(userInput.content).finalized_turns?.filter(x => x.role === "user" && x.kind === "meaningful").at(-1) || latestCaller; } catch {} }
       const reply = replies[index++]; assert.ok(reply, "fixture must supply every backend response");
-      return typeof reply === "function" ? reply(input, signal) : reply;
+      const response = typeof reply === "function" ? await reply(input, signal) : structuredClone(reply);
+      for (const item of response.output || []) if (item.type === "function_call" && item.name === "knowledge_lookup") {
+        const args = JSON.parse(item.arguments);
+        if (args.lookup_intent?.caller_quote === "__CURRENT_CALLER__") {
+          args.lookup_intent.caller_turn_id = latestCaller.id; args.lookup_intent.caller_quote = latestCaller.text; item.arguments = JSON.stringify(args);
+        }
+      }
+      return response;
     }
   };
   const runtime = new LiveRuntime({
     tenantKey: "tenant-a", callSid: "call-a", apiKey: "never-used", safetyIdentifier: "hashed-subject",
     backendModel: "gpt-5.6-terra", instructions: "CANONICAL BUSINESS RULES", settleMs: 0, backend,
-    tools: ["knowledge_lookup", "data_capture", "lookup_transfer_target", "transfer_call", "finish_session"].map(name => ({ type: "function", name, parameters: { type: "object" } })),
+    tools: ["knowledge_lookup", "data_capture", "lookup_transfer_target", "transfer_call", "finish_session"].map(name => ({ type: "function", name, parameters: { type: "object", ...(name === "data_capture" ? { properties: { first_name: { type: "string" }, last_name: { type: "string" }, callback_number: { type: "string" } } } : {}) } })),
     send: event => sent.push(event), isActive: () => true,
     executeTool: async (...args) => { calls.push(args); return executeTool ? executeTool(...args) : { status: "accepted" }; },
     validateTool: () => true, state: () => ({ captured_fields: {} }), transcript: entry => transcripts.push(entry),
@@ -57,6 +71,7 @@ assert.deepEqual(liveStart.session.audio.format, { type: "audio/pcmu", rate: 800
 assert.deepEqual(liveStart.session.delegation, { type: "client" }); assert.equal("tools" in liveStart.session, false);
 assert.equal("turn_detection" in liveStart.session, false); assert.ok(!LIVE_SPEECH_INSTRUCTIONS.includes("CANONICAL BUSINESS RULES"));
 assert.match(LIVE_SPEECH_INSTRUCTIONS, /Delegate every substantive caller turn/);
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /After you finish a supplied reflection or listening beat, delegate the caller's acknowledgement/);
 assert.match(LIVE_BACKEND_ADAPTER, /No appointment-booking or calendar tool exists/);
 const chunks = liveAppend("instructions", "界🙂".repeat(400), "delegation");
 assert.ok(chunks.every(x => Buffer.byteLength(x.content) <= 480)); assert.equal(chunks.map(x => x.content).join(""), "界🙂".repeat(400));
@@ -123,7 +138,7 @@ assert.ok(delayedDelegation.logs.some(x => x.milestone === "delegation_missing")
 await delayedDelegation.runtime.handle(delegate("eventual-delegation"));
 await delayedDelegation.runtime.handle(delegate("eventual-delegation"));
 assert.equal(delayedDelegation.requests.length, 1);
-assert.equal(delayedDelegation.sent.filter(x => x.type === "session.instructions.append").length, 1);
+assert.equal(delayedDelegation.sent.filter(x => x.type === "session.instructions.append" && /Delegate that existing request/.test(x.content)).length, 1);
 
 // Byte provenance survives delayed queue playback and later commentary. Provider
 // audio has no delegation ID, so these remain explicitly temporal candidates.
@@ -170,6 +185,179 @@ assert.equal(unrepairable.logs.filter(x => x.milestone === "handoff_validated" &
 const repairTool = harness({ replies: [answer(contract("What is your name?")), tool()] });
 await start(repairTool, "Painting please"); await repairTool.runtime.handle(delegate("repair-tool"));
 assert.equal(repairTool.calls.length, 0); assert.ok(repairTool.logs.some(x => x.error === "live_backend_repair_tool_rejected"));
+
+// Conversation control: replay the observed house/exterior/whole-thing chain.
+// The third optional discovery question must not reach Live. Recovery uses the
+// same backend state and does not force a callback on an unreceptive caller.
+const discover = (reflection, text, goal) => contract(reflection, question(text), {
+  conversation_plan: plan("discovery", "understand", "exploring", goal)
+});
+const painting = harness({ replies: [
+  answer(discover("You're looking to repaint your house.", "Is that inside or outside?", "House painting")),
+  answer(discover("An exterior repaint.", "Is it the whole exterior or one area?", "Exterior house painting")),
+  answer(discover("The whole exterior.", "Is the paint peeling or does the wood need repairs?", "Whole exterior repaint")),
+  answer(contract("A full exterior repaint, then. That gives me a clear picture of the project.", null, { conversation_plan: plan("none", "listen", "exploring", "Whole exterior repaint") })),
+  answer(contract("", question("Would you like the team to call you about the exterior repaint?", "callback_consent"), { conversation_plan: plan("callback_consent", "offer_callback", "receptive", "Whole exterior repaint") }))
+] });
+await start(painting, "I have a house that needs to get painted."); await painting.runtime.handle(delegate("paint-start"));
+await painting.runtime.handle(assistant(speech(painting).at(-1)));
+await painting.runtime.handle(caller("Exterior.")); await painting.runtime.handle(delegate("paint-exterior"));
+await painting.runtime.handle(assistant(speech(painting).at(-1)));
+await painting.runtime.handle(caller("The whole thing.")); await painting.runtime.handle(delegate("paint-whole"));
+assert.equal(painting.calls.length, 0);
+assert.equal(speech(painting).length, 3);
+assert.ok(!speech(painting).some(x => /peeling|wood need|repairs\?/i.test(x)));
+assert.equal(speech(painting).at(-1).includes("?"), false);
+assert.equal(state(painting.requests[2]).conversation_state.discovery_questions_remaining, 0);
+assert.equal(state(painting.requests[2]).conversation_state.last_plan.caller_goal, "Exterior house painting");
+assert.ok(painting.logs.some(x => x.constraint === "conversation_discovery_limit"));
+assert.ok(!JSON.stringify(painting.sent).includes("caller_goal"), "private controller record never reaches Live");
+await painting.runtime.handle(assistant(speech(painting).at(-1)));
+await painting.runtime.handle(caller("Yes, I would like someone to call me about it.")); await painting.runtime.handle(delegate("paint-callback"));
+assert.match(speech(painting).at(-1), /call you/); assert.ok(!/appointment|scheduled/i.test(speech(painting).join(" ")));
+assert.equal(painting.calls.length, 0, "a callback offer is not a completed action");
+
+// A question may interrupt discovery. Lookup is a backend decision with a
+// specific missing fact; its result and purpose do not reset the current beat.
+let queried = 0;
+const questionDuringDiscovery = harness({ replies: [
+  answer(discover("An exterior repaint.", "Is it the whole house?", "Exterior repaint")),
+  tool("knowledge_lookup", { query: "Do you paint metal siding?" }),
+  answer(contract("We paint metal siding.", null, { conversation_plan: plan("none", "answer", "exploring", "Exterior repaint; metal siding") })),
+  answer(contract("Yes, metal siding is included.", null, { conversation_plan: plan("none", "answer", "exploring", "Exterior repaint; metal siding") }))
+], executeTool: async (_name, _id, args) => { queried++; assert.deepEqual(JSON.parse(args), { query: "First, do you paint metal siding?" }); return { status: "accepted", answer: "We paint metal siding." }; } });
+await start(questionDuringDiscovery, "I'd like the exterior painted."); await questionDuringDiscovery.runtime.handle(delegate("discovery-before-question"));
+await questionDuringDiscovery.runtime.handle(assistant(speech(questionDuringDiscovery).at(-1)));
+await questionDuringDiscovery.runtime.handle(caller("First, do you paint metal siding?")); await questionDuringDiscovery.runtime.handle(delegate("siding-question"));
+assert.equal(state(questionDuringDiscovery.requests[1]).conversation_state.discovery_questions_issued, 1);
+assert.equal(speech(questionDuringDiscovery).at(-1), "We paint metal siding.");
+await questionDuringDiscovery.runtime.handle(assistant(speech(questionDuringDiscovery).at(-1)));
+await questionDuringDiscovery.runtime.handle(caller("Did you say you paint metal siding?")); await questionDuringDiscovery.runtime.handle(delegate("siding-repeat"));
+assert.equal(queried, 1, "controller can answer a repeated question from its established fact without another lookup");
+assert.equal(state(questionDuringDiscovery.requests[3]).conversation_state.discovery_questions_issued, 1);
+assert.ok(questionDuringDiscovery.logs.some(x => x.event === "openai_live_lookup_decision" && x.purpose === "caller_question"));
+
+const earlyLookup = harness({ replies: [
+  tool("knowledge_lookup", { query: "The whole thing", lookup_intent: null }),
+  input => { assert.equal(JSON.parse(input[0].output).reason, "conversation_lookup_intent_required"); return answer(contract("The full exterior — understood.", null, { conversation_plan: plan("none", "listen", "exploring", "Full exterior repaint") })); }
+] });
+await start(earlyLookup, "The whole thing."); await earlyLookup.runtime.handle(delegate("early-lookup"));
+assert.equal(earlyLookup.calls.length, 0); assert.equal(earlyLookup.finishes.length, 0);
+assert.deepEqual(speech(earlyLookup), ["The full exterior — understood."]);
+const hesitant = harness({ replies: [
+  answer(contract("You're still weighing up the exterior project.", question("Would you like a callback?", "callback_consent"), { conversation_plan: plan("callback_consent", "offer_callback", "hesitant", "Exterior repaint") })),
+  answer(contract("You're still weighing up the exterior project. Take your time.", null, { conversation_plan: plan("none", "listen", "hesitant", "Exterior repaint") }))
+] });
+await start(hesitant, "I'm not ready for that yet."); await hesitant.runtime.handle(delegate("hesitant"));
+assert.equal(hesitant.calls.length, 0); assert.equal(speech(hesitant).some(x => x.includes("?")), false);
+assert.ok(hesitant.logs.some(x => x.constraint === "conversation_callback_readiness"));
+const declinedConversation = harness({ replies: [
+  answer(contract("", question("Would you like a callback?", "callback_consent"))),
+  answer(contract("Of course. You can keep talking through the project here.", null, { conversation_plan: plan("none", "listen", "declined", "Exterior repaint") })),
+  answer(contract("Just the garage exterior — understood.", null, { conversation_plan: plan("none", "understand", "declined", "Garage exterior repaint") }))
+] });
+await start(declinedConversation, "How can I talk with the team?"); await declinedConversation.runtime.handle(delegate("offer-before-decline"));
+await declinedConversation.runtime.handle(assistant(speech(declinedConversation).at(-1)));
+await declinedConversation.runtime.handle(caller("No, I don't want a callback.")); await declinedConversation.runtime.handle(delegate("decline-callback"));
+await declinedConversation.runtime.handle(assistant(speech(declinedConversation).at(-1)));
+await declinedConversation.runtime.handle(caller("Actually, it is only the garage.")); await declinedConversation.runtime.handle(delegate("correct-project"));
+assert.equal(state(declinedConversation.requests[2]).conversation_state.last_plan.readiness, "declined");
+assert.equal(declinedConversation.calls.length, 0); assert.equal(declinedConversation.finishes.length, 0);
+assert.match(speech(declinedConversation).at(-1), /garage/);
+
+// A completed reflection makes an acknowledgement a new conversational beat,
+// while the existing in-flight lookup backchannel fixture below stays silent.
+for (const acknowledgement of ["Okay.", "Go on."]) {
+  const h = harness({ replies: [
+    answer(contract("So the whole exterior needs repainting.", null, { conversation_plan: plan("none", "listen", "exploring", "Whole exterior repaint") })),
+    answer(contract("", question("Would you like the team to call you about the project?", "callback_consent")))
+  ] });
+  await start(h, "The whole exterior needs painting."); await h.runtime.handle(delegate(`reflection-${acknowledgement}`));
+  await h.runtime.handle(assistant(speech(h).at(-1)));
+  await h.runtime.handle(caller(acknowledgement)); await h.runtime.handle(delegate(`reflection-answer-${acknowledgement}`));
+  assert.equal(h.requests.length, 2); assert.equal(h.runtime.taskRevision, 2);
+  assert.equal(state(h.requests[1]).conversation_state.callback_consent_confirmed, false, "reflection acknowledgement is readiness, never permission");
+  assert.equal(h.calls.length, 0);
+}
+
+// The budget applies to the actual question class even when the backend gives
+// it a misleading purpose. Contact exemptions require real application state.
+const controller = new LiveConversationController();
+controller.accept(plan("discovery", "understand")); controller.accept(plan("discovery", "understand"));
+const evidence = { caller: { id: 7, text: "The whole thing." }, capturedFields: {}, contactFields: ["first_name", "callback_number"] };
+const conditionQuestion = "Is the paint peeling or does the wood need repairs?";
+assert.equal(controller.validate(plan("clarification", "understand"), question(conditionQuestion, "clarification"), evidence), "conversation_discovery_limit");
+const contactPlan = { ...plan("required_contact", "capture", "receptive"), contact_field: "first_name" };
+assert.equal(controller.validate(contactPlan, question(conditionQuestion), evidence), "conversation_contact_without_consent");
+for (const consent of ["Yes, that would be great.", "Yes, please have them call me.", "Sure, my name is Ada."]) {
+  const c = new LiveConversationController();
+  c.observeAnswer({ id: "callback-q", kind: "callback_consent", text: "Would you like a callback?", spokenSequence: 10, answerTurnId: 11 }, { id: 11, text: consent });
+  assert.equal(c.snapshot().callback_consent_confirmed, true);
+  assert.equal(c.validate(contactPlan, question(conditionQuestion), evidence), "conversation_contact_question_binding");
+  assert.equal(c.validate(contactPlan, question("What is your first name?"), evidence), undefined);
+  assert.equal(c.validate(contactPlan, question("What is your first name?"), { ...evidence, capturedFields: { first_name: "Ada" } }), "conversation_contact_field_binding");
+  c.observeCaller({ id: 12, text: "Don't call me." });
+  assert.equal(c.snapshot().callback_consent_confirmed, false);
+  assert.equal(c.validate(contactPlan, question("What is your first name?"), evidence), "conversation_contact_without_consent");
+}
+const pendingClarification = { id: "scope-q", kind: "clarification", text: "Is that the house or the garage?", spokenSequence: 5, answerTurnId: 7 };
+const repeatPlan = { ...plan("clarification", "understand"), clarifies_question_id: pendingClarification.id };
+assert.equal(controller.validate(repeatPlan, question(conditionQuestion, "clarification"), { ...evidence, pendingQuestion: pendingClarification }), "conversation_clarification_binding");
+assert.equal(controller.validate(repeatPlan, question(pendingClarification.text, "clarification"), { ...evidence, pendingQuestion: pendingClarification }), undefined);
+controller.accept(repeatPlan, pendingClarification);
+assert.equal(controller.validate(repeatPlan, question(pendingClarification.text, "clarification"), { ...evidence, pendingQuestion: pendingClarification }), "conversation_clarification_binding");
+
+const intent = (purpose, caller_quote, caller_turn_id = 7) => ({ purpose, caller_quote, caller_turn_id, missing_fact: "How much paint is peeling?" });
+assert.equal(bindLookupIntent(intent("service_fit", "How much paint is peeling?"), evidence.caller).error, "lookup_caller_quote_binding");
+assert.equal(bindLookupIntent(intent("service_fit", "The whole thing."), evidence.caller).error, "lookup_not_service_request");
+assert.equal(bindLookupIntent(intent("caller_question", "The whole thing."), evidence.caller).error, "lookup_not_caller_question");
+assert.equal(bindLookupIntent(intent("caller_question", "Do you repair peeling paint?"), { id: 7, text: "Do you repair peeling paint?" }).query, "Do you repair peeling paint?");
+assert.match(bindLookupIntent(intent("service_fit", "I need my house painted."), { id: 7, text: "I need my house painted." }).query, /^Does the business offer the service/);
+assert.equal(bindLookupIntent(intent("caller_question", "What is your warranty?", 6), { id: 7, text: "What is your warranty?" }).error, "lookup_caller_turn_binding");
+
+// After project discovery, a genuine business question may still need a
+// clarification. Its short answer must preserve the unresolved original query.
+const clarifiedLookup = harness({ replies: [
+  answer(discover("A house repaint.", "Inside or outside?", "House repaint")),
+  answer(discover("Exterior painting.", "The whole house or one area?", "Exterior repaint")),
+  input => {
+    const latest = state(input).finalized_turns.filter(x => x.role === "user").at(-1);
+    return answer(contract("", question("What type of siding?", "clarification"), { conversation_plan: { ...plan("clarification", "answer", "exploring", "Siding painting capability"), clarifies_question_id: `caller:${latest.id}` } }));
+  },
+  tool("knowledge_lookup", { query: "Do you paint metal siding?" }),
+  answer(contract("We paint metal siding."))
+], executeTool: async (_name, _id, args) => {
+  assert.match(JSON.parse(args).query, /Do you paint siding\?/);
+  assert.match(JSON.parse(args).query, /Caller clarified: Metal\./);
+  return { status: "accepted", answer: "We paint metal siding." };
+} });
+await start(clarifiedLookup, "I need my house painted."); await clarifiedLookup.runtime.handle(delegate("clarify-project-one"));
+await clarifiedLookup.runtime.handle(assistant(speech(clarifiedLookup).at(-1)));
+await clarifiedLookup.runtime.handle(caller("Exterior.")); await clarifiedLookup.runtime.handle(delegate("clarify-project-two"));
+await clarifiedLookup.runtime.handle(assistant(speech(clarifiedLookup).at(-1)));
+await clarifiedLookup.runtime.handle(caller("Do you paint siding?")); await clarifiedLookup.runtime.handle(delegate("clarify-business"));
+assert.equal(speech(clarifiedLookup).at(-1), "What type of siding?");
+await clarifiedLookup.runtime.handle(assistant(speech(clarifiedLookup).at(-1)));
+await clarifiedLookup.runtime.handle(caller("Metal.")); await clarifiedLookup.runtime.handle(delegate("clarify-business-answer"));
+assert.equal(clarifiedLookup.calls.length, 1);
+assert.equal(state(clarifiedLookup.requests[3]).conversation_state.discovery_questions_issued, 2);
+assert.equal(speech(clarifiedLookup).at(-1), "We paint metal siding.");
+
+const contactFlow = harness({ replies: [
+  answer(contract("", question("Would you like a callback?", "callback_consent"))),
+  answer(contract("", question("What is your first name?"), { conversation_plan: contactPlan })),
+  answer(contract("", question("What is your callback number?"), { conversation_plan: { ...contactPlan, contact_field: "callback_number" } })),
+  answer(contract("Of course, no callback.", null, { conversation_plan: plan("none", "listen", "declined") }))
+] });
+await start(contactFlow, "I want to talk with someone."); await contactFlow.runtime.handle(delegate("contact-offer"));
+await contactFlow.runtime.handle(assistant(speech(contactFlow).at(-1)));
+await contactFlow.runtime.handle(caller("Yes, that would be great.")); await contactFlow.runtime.handle(delegate("contact-consent"));
+assert.equal(speech(contactFlow).at(-1), "What is your first name?");
+await contactFlow.runtime.handle(assistant(speech(contactFlow).at(-1)));
+await contactFlow.runtime.handle(caller("Don't call me.")); await contactFlow.runtime.handle(delegate("contact-revoke"));
+assert.equal(speech(contactFlow).at(-1), "Of course, no callback.");
+assert.ok(contactFlow.logs.some(x => x.constraint === "conversation_contact_without_consent"));
+assert.equal(contactFlow.calls.length, 0);
 
 // Actual transport with fake WebSockets: prepared affinity, incremental input,
 // store:false cache-loss recovery and exact encrypted reasoning/tool-output replay.

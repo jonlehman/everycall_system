@@ -3,6 +3,7 @@ import { PreparedResponsesSession, resolveLiveReasoningEffort, type LiveBackend 
 import { LIVE_BACKEND_ADAPTER, LIVE_HANDOFF_FORMAT, parseBackendHandoff, HandoffValidationError, type HandoffQuestion } from "./liveContract.js";
 import { LiveTranscript, normalizeSpokenText, classifyCallerTurn, type Transcript } from "./liveTranscript.js";
 import { LiveLatency, type RequestTrace } from "./liveLatency.js";
+import { LiveConversationController, LOOKUP_INTENT_SCHEMA, validLookupIntent, bindLookupIntent, type ConversationEvidence, type UnresolvedBusinessQuestion } from "./liveConversation.js";
 
 export type VoiceRuntime = "realtime" | "live";
 export function resolveVoiceRuntime(configured: unknown): VoiceRuntime {
@@ -80,6 +81,9 @@ export class LiveRuntime {
   private generation = 0;
   private task?: Task;
   private context = new LiveTranscript();
+  private conversation = new LiveConversationController();
+  private reflection: { text: string; afterSequence: number; heardText: string; heardSequence?: number; heardEndMs?: number } | undefined;
+  private unresolvedBusinessQuestion: UnresolvedBusinessQuestion | undefined;
   private question: PendingQuestion | undefined;
   private transcriptTimer?: ReturnType<typeof setTimeout>;
   private lastCallerAt = 0;
@@ -110,7 +114,12 @@ export class LiveRuntime {
       apiKey: deps.apiKey, model: deps.backendModel, safetyIdentifier: deps.safetyIdentifier,
       reasoningEffort: resolveLiveReasoningEffort(deps.reasoningEffort),
       instructions: deps.instructions + LIVE_BACKEND_ADAPTER,
-      tools: deps.tools.map(tool => ({ type: "function", name: tool.name, description: tool.description, parameters: tool.parameters, strict: false })),
+      tools: deps.tools.map(tool => ({ type: "function", name: tool.name,
+        description: tool.description,
+        parameters: tool.name === "knowledge_lookup" ? {
+          ...tool.parameters, properties: { ...(tool.parameters as any)?.properties, lookup_intent: LOOKUP_INTENT_SCHEMA },
+          required: [...((tool.parameters as any)?.required || []), "lookup_intent"]
+        } : tool.parameters, strict: false })),
       text: LIVE_HANDOFF_FORMAT, audit: deps.audit
     });
   }
@@ -177,7 +186,7 @@ export class LiveRuntime {
     const trace = this.latency.caller;
     if (!trace || trace.answered || this.delegationNudgedRequestId === trace.requestId || this.delegationSettling
       || (this.task && !this.task.finished) || this.closed || this.closing
-      || !(this.context.pendingWork(Boolean(this.question?.spokenSequence && !this.question.answerTurnId)) || (this.context.latestCaller()?.id ?? 0) > this.lastBackendTurnId)) return;
+      || !(this.context.pendingWork(this.callerTurnNeedsController()) || (this.context.latestCaller()?.id ?? 0) > this.lastBackendTurnId)) return;
     const waitMs = this.deps.delegationWaitMs ?? 2000;
     this.delegationTimer = setTimeout(() => {
       if (this.closed || this.closing || !this.deps.isActive()) return;
@@ -220,9 +229,14 @@ export class LiveRuntime {
 
   private finalizeTranscript() {
     clearTimeout(this.transcriptTimer);
-    const turn = this.context.finalize(Boolean(this.question?.spokenSequence && !this.question.answerTurnId));
+    const turn = this.context.finalize(this.callerTurnNeedsController());
     if (!turn) return;
     const question = this.question;
+    if (turn.role === "assistant" && this.reflection && turn.sequence > this.reflection.afterSequence
+      && normalizeSpokenText(this.reflection.heardText || turn.text).endsWith(normalizeSpokenText(this.reflection.text))) {
+      this.reflection.heardSequence = turn.sequence;
+      this.reflection.heardEndMs = turn.end_ms;
+    }
     if (turn.role === "assistant" && question && turn.sequence > question.afterSequence) {
       // The exact supplied question must have reached the transcript. Unrelated
       // yes/no answers and a question invented by Live cannot authorize an action.
@@ -233,13 +247,28 @@ export class LiveRuntime {
       else if (turn.text.includes("?")) this.question = undefined;
     }
     if (turn.role === "user" && turn.kind === "meaningful") {
+      this.conversation.observeCaller(turn);
       if (question?.spokenSequence && turn.sequence > question.spokenSequence && turn.start_ms >= (question.spokenEndMs ?? Infinity) && !question.answerTurnId) {
         question.answerTurnId = turn.id;
         question.answer = turn.text;
+        this.conversation.observeAnswer(question, turn);
       }
+      this.reflection = undefined;
       this.deps.audit("openai_live_turn_finalized", { requestId: this.latency.caller?.requestId, turnId: turn.id, revision: this.context.revision, startMs: turn.start_ms, endMs: turn.end_ms });
       if (this.latency.caller) this.latency.mark(this.latency.caller, "caller_turn_finalized", { turnId: turn.id, revision: this.context.revision, boundary: "application_transcript_quiet_or_speaker_change" });
     }
+  }
+
+  private callerTurnNeedsController(startMs = this.context.provisional?.start_ms) {
+    return Boolean(this.question?.spokenSequence && !this.question.answerTurnId)
+      || Boolean(this.reflection?.heardSequence && this.task?.finished && startMs !== undefined && startMs >= (this.reflection.heardEndMs ?? Infinity));
+  }
+
+  private conversationEvidence(): ConversationEvidence {
+    const state = this.deps.state() as any;
+    return { caller: this.context.latestCaller(), pendingQuestion: this.question,
+      capturedFields: state?.captured_fields || {},
+      contactFields: Object.keys(this.deps.tools.find(tool => tool.name === "data_capture")?.parameters?.properties || {}) };
   }
 
   private async settleTranscript() {
@@ -318,14 +347,15 @@ export class LiveRuntime {
       if (typeof event.delta !== "string" || !event.delta) return;
       const role = event.type === "session.input_transcript.delta" ? "user" : "assistant";
       if (this.context.provisional && this.context.provisional.role !== role) this.finalizeTranscript();
-      const entry = this.context.append(role, event.delta, Number(event.start_ms), Number(event.end_ms), Boolean(this.question?.spokenSequence));
+      const entry = this.context.append(role, event.delta, Number(event.start_ms), Number(event.end_ms), this.callerTurnNeedsController(Number(event.start_ms)));
       if (role === "assistant" && this.question && entry.sequence > this.question.afterSequence && !this.question.answerTurnId) {
         this.question.heardText = ((this.question.heardText || "") + entry.text).slice(-2400);
       }
+      if (role === "assistant" && this.reflection && entry.sequence > this.reflection.afterSequence) this.reflection.heardText = (this.reflection.heardText + entry.text).slice(-2400);
       if (role === "user") {
         this.callerTookFloor();
         this.lastCallerAt = Date.now();
-        this.latency.transcript(Number(event.start_ms), Number(event.end_ms), classifyCallerTurn(event.delta, Boolean(this.question?.spokenSequence && !this.question.answerTurnId)) === "meaningful");
+        this.latency.transcript(Number(event.start_ms), Number(event.end_ms), classifyCallerTurn(event.delta, this.callerTurnNeedsController(Number(event.start_ms))) === "meaningful");
         this.watchDelegation();
         // Do not abort an action already submitted. Revision guards prevent its stale
         // response, the next tool, or a deferred close from reaching the live call.
@@ -376,7 +406,7 @@ export class LiveRuntime {
     return this.task === task && task.generation === this.generation && !this.closing && !this.closed && this.deps.isActive();
   }
 
-  private fresh(task: Task) { return this.current(task) && !task.controller.signal.aborted && task.revision === this.context.revision && !this.context.pendingWork(Boolean(this.question?.spokenSequence && !this.question.answerTurnId)); }
+  private fresh(task: Task) { return this.current(task) && !task.controller.signal.aborted && task.revision === this.context.revision && !this.context.pendingWork(this.callerTurnNeedsController()); }
 
   private async run(task: Task) {
     if (!this.current(task)) return;
@@ -386,6 +416,8 @@ export class LiveRuntime {
     let repairingHandoff = false;
     let input: any[] = [...this.toolOutputs, { role: "user", content: JSON.stringify({
       application_state: this.deps.state(), operation_records: [...this.operations.values()].map(({ result: _result, ...record }) => record),
+      conversation_state: this.conversation.snapshot(this.conversationEvidence()),
+      unresolved_business_question: this.unresolvedBusinessQuestion || null,
       pending_question: this.question || null, meaningful_revision: this.context.revision,
       finalized_turns: this.context.turns.filter(turn => turn.id > this.lastBackendTurnId), provisional_transcript: this.context.provisional || null
     }) }];
@@ -416,21 +448,44 @@ export class LiveRuntime {
           const text = body.output.flatMap((item: any) => item.type === "message" ? item.content || [] : []).filter((part: any) => part.type === "output_text").map((part: any) => part.text).join("");
           const completed = new Set([...this.operations.values()].filter(x => x.status === "completed").map(x => x.id));
           let handoff;
-          try { handoff = parseBackendHandoff(text, completed); }
+          try {
+            handoff = parseBackendHandoff(text, completed);
+            const planError = this.conversation.validate(handoff.conversation_plan, handoff.next_question, this.conversationEvidence());
+            if (planError) throw new HandoffValidationError(planError);
+          }
           catch (error) {
             if (!(error instanceof HandoffValidationError) || repairingHandoff) throw error;
             this.latency.mark(task.trace, "handoff_validated", { delegationId: task.id, outcome: "rejected", constraint: error.constraint, repairAttempt: 1 });
             repairingHandoff = true;
-            input = [{ role: "user", content: `Your previous handoff was rejected by application validation: ${error.constraint}. Return one corrected handoff for the SAME caller request and existing application state. Make no tool calls, do not repeat actions, and do not ask the caller to repeat their request. Preserve all provenance and completed operation IDs. Put the single next question only in next_question, never in spoken_response. Follow the exact checkpoint and speech limits in your instructions.` }];
+            input = [{ role: "user", content: `Your previous handoff was rejected by application validation: ${error.constraint}. Return one corrected handoff for the SAME caller request and existing application state. Make no tool calls, do not repeat actions, and do not ask the caller to repeat their request. Preserve all provenance and completed operation IDs. Put any single next question only in next_question, never in spoken_response. Follow the exact checkpoint and speech limits in your instructions. If discovery is exhausted, do not rename project discovery as clarification: specifically recognize what the caller told you, then use the approved callback path only if receptive, or listen with next_question=null. conversation_state=${JSON.stringify(this.conversation.snapshot(this.conversationEvidence()))}` }];
             queuedOutputCount = 0;
             continue;
           }
           this.latency.mark(task.trace, "handoff_validated", { delegationId: task.id, outcome: "accepted", constraint: "valid", hasNextQuestion: Boolean(handoff.next_question) });
+          this.conversation.accept(handoff.conversation_plan, handoff.next_question);
+          this.deps.audit("openai_live_conversation_decision", {
+            requestId: task.trace.requestId, delegationId: task.id, revision: task.revision,
+            beat: handoff.conversation_plan.beat, readiness: handoff.conversation_plan.readiness,
+            questionPurpose: handoff.conversation_plan.question_purpose,
+            discoveryQuestionsIssued: this.conversation.snapshot().discovery_questions_issued
+          });
           // Facts only. Never send Responses reasoning items, raw results or the
           // structured contract to Live's quiet context or caller-facing channel.
           for (const fact of handoff.verified_facts) this.append("thinking", fact.text, task.id);
+          const previousQuestion = this.question;
           this.question = handoff.next_question ? { ...handoff.next_question, id: crypto.randomUUID(), afterSequence: this.context.sequence } : undefined;
+          const latestCaller = this.context.latestCaller();
+          if (this.question && latestCaller && handoff.conversation_plan.clarifies_question_id === `caller:${latestCaller.id}`) {
+            this.unresolvedBusinessQuestion = { caller: { id: latestCaller.id, text: latestCaller.text }, questionId: this.question.id, questionText: this.question.text };
+          } else if (this.question && this.unresolvedBusinessQuestion && this.unresolvedBusinessQuestion.questionId === previousQuestion?.id && handoff.conversation_plan.clarifies_question_id === previousQuestion?.id) {
+            this.unresolvedBusinessQuestion.questionId = this.question.id;
+          } else this.unresolvedBusinessQuestion = undefined;
           const speech = [handoff.spoken_response, handoff.next_question?.text].filter(Boolean).join(" ");
+          this.reflection = !handoff.next_question && speech && ["understand", "listen"].includes(handoff.conversation_plan.beat)
+            ? { text: speech, afterSequence: this.context.sequence, heardText: "" } : undefined;
+          this.append("instructions", handoff.next_question
+            ? "The conversation controller supplied one complete beat and one question. Deliver the commentary naturally, then listen for the caller's complete answer. Do not add another question or start a lookup yourself."
+            : "Deliver the supplied commentary naturally once, then listen. Do not add a question, offer or factual claim. After a completed reflection/listening beat, delegate acknowledgements such as okay or go on so the controller chooses the next step; they are not consent. Ignore ordinary backchannels during unfinished speech or backend work.", task.id);
           if (speech) this.speech(speech, task.trace, task.id, true);
           return;
         }
@@ -441,7 +496,26 @@ export class LiveRuntime {
           if (!this.fresh(task) || this.finishState) return;
           const tool = this.deps.tools.find(t => t.name === call.name && t.type === "function");
           let args: unknown;
+          let executionArguments = call.arguments;
           try { args = JSON.parse(call.arguments); } catch { throw new Error("live_backend_invalid_arguments"); }
+          if (call.name === "knowledge_lookup" && args && typeof args === "object" && !Array.isArray(args)) {
+            const { lookup_intent, ...lookupArgs } = args as Record<string, unknown>;
+            if (!validLookupIntent(lookup_intent)) {
+              outputs[index]!.output = JSON.stringify({ status: "not_executed", reason: "conversation_lookup_intent_required", instruction: "The conversation controller must identify a specific missing approved business fact and purpose caller_question or service_fit. Ordinary project detail or conversational progression needs no lookup. Return the appropriate handoff, or a purpose-bound lookup if genuinely needed." });
+              this.deps.audit("openai_live_lookup_decision", { requestId: task.trace.requestId, delegationId: task.id, outcome: "rejected", reason: "missing_lookup_intent" });
+              continue;
+            }
+            const binding = bindLookupIntent(lookup_intent, this.context.latestCaller(), this.question, this.unresolvedBusinessQuestion);
+            if (binding.error) {
+              outputs[index]!.output = JSON.stringify({ status: "not_executed", reason: binding.error, instruction: "Bind lookup to the exact current caller turn and quote. A short answer to discovery is not a new business question. Return a conversational handoff if no caller business question or service capability gap needs resolution." });
+              this.deps.audit("openai_live_lookup_decision", { requestId: task.trace.requestId, delegationId: task.id, outcome: "rejected", reason: binding.error });
+              continue;
+            }
+            this.deps.audit("openai_live_lookup_decision", { requestId: task.trace.requestId, delegationId: task.id, outcome: "authorized", purpose: lookup_intent.purpose });
+            // Controller metadata never reaches the tenant tool schema or lookup API.
+            args = { ...lookupArgs, query: binding.query };
+            executionArguments = JSON.stringify(args);
+          }
           if (!tool || !call.call_id || !args || typeof args !== "object" || Array.isArray(args) || !this.deps.validateTool(call.name, args)) throw new Error("live_backend_unauthorized_tool");
           const stable = (value: any): any => Array.isArray(value) ? value.map(stable) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value;
           // A regenerated function-call ID is not permission to repeat an action.
@@ -459,13 +533,13 @@ export class LiveRuntime {
           if (!readOnly) operation ||= [...this.operations.values()].find(previous => previous.name === call.name && previous.status === "unknown" && JSON.stringify(stable(JSON.parse(previous.arguments))) === JSON.stringify(stable(args)));
           if (!operation) {
             if (this.operations.size >= 128) throw new Error("live_operation_limit");
-            operation = { id: key, name: call.name, arguments: call.arguments, status: "pending" };
+            operation = { id: key, name: call.name, arguments: executionArguments, status: "pending" };
             this.operations.set(key, operation);
             this.deps.audit("openai_live_operation", { operationId: key, name: call.name, status: "pending", delegationId: task.id });
             const operationAt = Date.now();
             this.latency.mark(task.trace, "operation_started", { delegationId: task.id, operationId: key, name: call.name });
             try {
-              operation.result = await this.deps.executeTool(call.name, key, call.arguments, () => this.fresh(task));
+              operation.result = await this.deps.executeTool(call.name, key, executionArguments, () => this.fresh(task));
               const resultStatus = (operation.result as any)?.status;
               operation.status = resultStatus === "unknown" || resultStatus === "pending" ? (readOnly ? "failed" : "unknown")
                 : ["failed", "rejected", "invalid", "stale", "error"].includes(resultStatus) ? "failed"

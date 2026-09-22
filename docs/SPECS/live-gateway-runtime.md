@@ -35,6 +35,77 @@ receptionist procedure, silent lookup/capture, callback consent, pricing boundar
 and exact close, adapting only the delivery of spoken content. Initial tenant
 greeting is sent once after Live readiness. No calendar/scheduling tool exists.
 
+### Conversation controller
+
+The Terra backend is the conversation controller. The canonical Conversation and
+Callback Capture sections remain its source of procedure: recognize the actual
+problem, answer direct questions, use one or two discovery questions, assess
+readiness, and earn the transition to callback consent. A delegation is a request
+for that conversational decision, not a knowledge lookup request.
+
+Each speech handoff includes a private `conversation_plan`: the caller's goal,
+readiness, conversational beat, purpose of any question, contact field and any
+pending-question clarification reference. It is produced in
+the same backend generation as the speech, so this adds no planning round trip.
+The runtime retains the accepted plan and counts issued optional discovery
+questions in `conversation_state`. After two, another discovery handoff is
+rejected before speech and gets the existing one bounded repair. The limit never
+authorizes callback consent, capture, transfer or closing. A model can choose a
+specific reflection with `next_question=null` and listen while the caller is
+still exploring; hesitant or declined readiness cannot authorize a callback
+offer. Required contact fields and clarification of genuinely unclear input are
+separate question purposes. Renaming discovery as clarification does not exempt
+it from the budget. A genuine current caller business question can authorize one
+clarification bound to `caller:TURN_ID`, even after project discovery is exhausted.
+The application preserves that unresolved question across the clarifier reply:
+"Do you paint siding?" → "What type?" → "Metal" can still reach lookup. A repeated
+clarification can repeat the exact currently heard, answered question once with
+its application question ID.
+Required-contact exemption needs a heard and bound callback yes, an actual
+missing capture field, and a matching approved field question. Natural affirmative
+forms such as "Yes, that would be great" are accepted; a later "don't call me"
+revokes that consent. Labels alone do not authorize these exemptions.
+
+An "okay" or "go on" after a complete no-question reflection is meaningful input
+to the controller. The completed reflection must match output transcript and
+precede the acknowledgement in media time; unfinished backend work and overlapping
+speech retain the ordinary backchannel suppression. This creates an opportunity
+to offer a callback, never callback or transfer consent. Transcript matching is
+an application timing heuristic, not verified human hearing.
+
+For the observed painting call, house painting + exterior + whole house is enough
+project discovery. The controller must recognize that project and move toward
+the approved callback path when the caller is receptive, rather than asking a
+third condition/materials/repair question. A question about the business can
+interrupt that flow; after answering, preserve the existing goal and consent.
+
+Only the backend sees tools. Its `knowledge_lookup` schema additionally requires
+`lookup_intent` with `purpose=caller_question|service_fit`, a specific
+`missing_fact`, current `caller_turn_id`, and a verbatim `caller_quote`.
+The runtime binds that span to the current caller turn or a retained original
+business question whose exact clarifier was heard and just answered. A short discovery answer
+cannot authorize a new question lookup. It constructs lookup input from the
+actual quoted caller question (with its bound clarification when present) or a service-capability question around the
+quoted service request, so an asserted missing fact cannot become a diagnostic
+lookup about paint condition at the caller's house. Genuine caller questions
+such as "Do you repair peeling paint?" remain valid. Missing/invalid intent returns an unexecuted tool result for the
+backend to reconsider; no lookup runs. The runtime strips controller metadata
+before the original tenant schema validation and lookup API. Known by-heart or
+previously retrieved information needs no lookup, nor does ordinary recognition
+of caller-provided project details. The controller can reuse known facts without
+another tool call; the gateway does not cache by query alone because lookup also
+depends on current application context. Existing source and
+pricing validation is unchanged. The backend still decides semantic necessity;
+the application binds retrieval content to caller evidence and the approved
+capability purpose.
+
+Live receives the final speech and a quiet delivery instruction to leave room
+after that beat. The plan, caller goal, and tool results never enter Live's speech
+or quiet facts. `openai_live_conversation_decision` logs enum-only beat,
+readiness, question purpose and discovery count; `openai_live_lookup_decision`
+logs accepted purpose or rejected intent, without caller text. These events are
+correlated with the existing request/delegation latency trace.
+
 The backend opens one `wss://api.openai.com/v1/responses` connection per call while
 Live starts. A `response.create` with `generate:false` prepares the stable
 instructions, schemas, output contract, model and reasoning effort before the
@@ -83,7 +154,7 @@ to another question, an unheard/paraphrased confirmation, overlap, target change
 or later correction cannot authorize a transfer. This deliberately fails closed
 on uncertain transcript matching; provider acceptance must verify this behavior.
 
-The strict backend handoff contains `verified_facts` with source references,
+The strict backend handoff contains `conversation_plan`, `verified_facts` with source references,
 `action_status`, `spoken_response`, `next_question`, and
 `completed_operation_ids`. Operation references are checked against the local
 ledger. Quiet facts go to `session.thinking.append`; a complete caller-facing
@@ -152,6 +223,10 @@ corrections, backchannels during lookup, duplicate/uncertain actions, schema
 allowlisting, target-bound yes/no, failures, interruption, closing and noise/loss.
 The content fixtures test contract handling, not unexecuted model behavior. Audio
 pump checks remain a separate gate for the existing PCMU pacing/jitter fixes.
+Conversation fixtures replay the latest painting chain, block/recover its third
+discovery question, allow reflection without a question, preserve state through
+a direct question/lookup, reject a purposeless lookup, answer from a known result,
+and preserve hesitation/refusal/correction alongside existing action safeguards.
 Existing repository typecheck/build and independent critical review remain gates.
 The historical v18 validator pins prompt version 18 and fails on the current
 version 19 baseline; the current v19 validator is the relevant prompt gate.
