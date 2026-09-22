@@ -320,6 +320,7 @@ type StreamSession = {
   outputBuffer?: Buffer;
   outputTimer?: NodeJS.Timeout | null;
   outputNextFrameAtMs?: number | null;
+  outputBufferingStartedAtMs?: number | null;
   hangupTimer?: NodeJS.Timeout | null;
   outputPrimed?: boolean;
   currentResponseId?: string | null;
@@ -1076,6 +1077,9 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
   if (!session.outputQueue) {
     session.outputQueue = [];
   }
+  if (session.live && session.outputQueue.length === 0 && buffer.length >= frameSize) {
+    session.outputBufferingStartedAtMs = performance.now();
+  }
   const trace = ensureAudioPumpTrace(session);
   trace.chunksQueued += 1;
   closeAudioUnderrun(trace, performance.now());
@@ -1093,6 +1097,13 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
 function hasBufferedFramesReady(session: StreamSession) {
   const queuedFrames = session.outputQueue?.length || 0;
   if (queuedFrames === 0) return false;
+  if (session.live) {
+    // Live has no Realtime response ID or audio-done event. Prime by audio
+    // duration, but bound the wait so a short utterance can still finish.
+    return queuedFrames >= outboundJitterBufferFrames
+      || (session.outputBufferingStartedAtMs != null
+        && performance.now() - session.outputBufferingStartedAtMs >= outboundJitterBufferFrames * outboundAudioFrameMs);
+  }
   return queuedFrames >= outboundJitterBufferFrames || !session.currentResponseId;
 }
 
@@ -1105,9 +1116,10 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
     }
     return 0;
   }
-  if (!session.outputNextFrameAtMs) {
+  if (session.outputNextFrameAtMs == null) {
     session.outputNextFrameAtMs = nowMs;
   }
+  if (nowMs < session.outputNextFrameAtMs) return 0;
 
   closeAudioUnderrun(trace, nowMs);
   const lateMs = Math.max(0, nowMs - session.outputNextFrameAtMs);
@@ -1119,7 +1131,7 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
 
   const frameBudget = Math.min(
     session.outputQueue.length,
-    Math.max(1, Math.floor((nowMs - session.outputNextFrameAtMs) / outboundAudioFrameMs) + 1),
+    Math.floor((nowMs - session.outputNextFrameAtMs) / outboundAudioFrameMs) + 1,
     8
   );
   if (frameBudget > 1) {
@@ -1134,7 +1146,7 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
     noteAssistantAudioFrameSent(session);
     session.live?.notePlayback(payload);
     sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, payload.toString("base64"));
-    session.outputNextFrameAtMs = (session.outputNextFrameAtMs || nowMs) + outboundAudioFrameMs;
+    session.outputNextFrameAtMs += outboundAudioFrameMs;
     sent += 1;
   }
   trace.framesSent += sent;
@@ -1147,13 +1159,15 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
 
 function startOutputPump(session: StreamSession) {
   if (session.outputTimer) return;
-  if (!hasBufferedFramesReady(session)) {
-    session.outputPrimed = false;
-    return;
+  session.outputPrimed = hasBufferedFramesReady(session);
+  if (!session.outputPrimed && !session.live) return;
+  if (session.outputPrimed) {
+    const nowMs = performance.now();
+    session.outputNextFrameAtMs = session.live
+      ? Math.max(nowMs, session.outputNextFrameAtMs ?? nowMs)
+      : nowMs;
+    pumpAvailableOutputFrames(session, nowMs);
   }
-  session.outputPrimed = true;
-  session.outputNextFrameAtMs = performance.now();
-  pumpAvailableOutputFrames(session, session.outputNextFrameAtMs);
   session.outputTimer = setInterval(() => {
     const nowMs = performance.now();
     if (!session.outputPrimed) {
@@ -1161,7 +1175,9 @@ function startOutputPump(session: StreamSession) {
         return;
       }
       session.outputPrimed = true;
-      session.outputNextFrameAtMs = nowMs;
+      session.outputNextFrameAtMs = session.live
+        ? Math.max(nowMs, session.outputNextFrameAtMs ?? nowMs)
+        : nowMs;
     }
     pumpAvailableOutputFrames(session, nowMs);
     if (!session.outputQueue || session.outputQueue.length === 0) {
@@ -1177,7 +1193,10 @@ function startOutputPump(session: StreamSession) {
         clearInterval(session.outputTimer);
         session.outputTimer = null;
       }
-      session.outputNextFrameAtMs = null;
+      // Live may deliver another chunk before the last frame's 20ms is up.
+      // Retain that deadline across restarts so a small buffer cannot send early.
+      if (!session.live) session.outputNextFrameAtMs = null;
+      session.outputBufferingStartedAtMs = null;
       if (!session.live && session.outputBuffer && session.outputBuffer.length > 0 && !session.currentResponseId) {
         session.outputBuffer = Buffer.alloc(0);
       }
