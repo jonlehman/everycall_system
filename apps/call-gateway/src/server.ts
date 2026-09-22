@@ -115,6 +115,7 @@ const telnyxApiKey = process.env.TELNYX_API_KEY || "";
 const rtpPayloadType = Number(process.env.TELNYX_RTP_PAYLOAD_TYPE || "0");
 const bidirectionalPayloadMode = (process.env.TELNYX_BIDIRECTIONAL_PAYLOAD_MODE || "raw").toLowerCase();
 const outboundAudioFrameMs = 20;
+const liveOutputIdleGraceMs = 40;
 // PCMU is emitted in whole 20 ms frames. Thirteen frames is the nearest
 // representable, safer-side approximation of the 250 ms production trial.
 const defaultOutboundJitterBufferFrames = 13;
@@ -145,6 +146,7 @@ const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "openai_live_close_playback_quiet",
   "openai_live_close_unverified",
   "openai_live_final_usage_unconfirmed",
+  "live_audio_delivery_gap",
   "gateway_call_session_end",
   "knowledge_build_assets_startup_preload_started",
   "knowledge_build_assets_startup_preload_completed",
@@ -303,6 +305,9 @@ type StreamSession = {
   liveToolOutputs?: Map<string, unknown>;
   liveTimer?: NodeJS.Timeout;
   liveLastAudioAt?: number;
+  liveLastAudioReceivedAtMs?: number;
+  liveLastAudioArrivalGapMs?: number;
+  liveLastAudioChunkMs?: number;
   livePersistenceTail?: Promise<void>;
   openAiReady?: boolean;
   openAiSessionUpdated?: boolean;
@@ -321,6 +326,8 @@ type StreamSession = {
   outputTimer?: NodeJS.Timeout | null;
   outputNextFrameAtMs?: number | null;
   outputBufferingStartedAtMs?: number | null;
+  outputStarvedAtMs?: number | null;
+  liveOutputRebuffering?: boolean;
   hangupTimer?: NodeJS.Timeout | null;
   outputPrimed?: boolean;
   currentResponseId?: string | null;
@@ -1107,6 +1114,24 @@ function hasBufferedFramesReady(session: StreamSession) {
   return queuedFrames >= outboundJitterBufferFrames || !session.currentResponseId;
 }
 
+function logLiveAudioDeliveryGap(session: StreamSession, stage: "idle" | "resumed" | "scheduler_late", nowMs: number, timerLateMs = 0) {
+  logInfo("live_audio_delivery_gap", {
+    callSid: session.callSid,
+    stage,
+    outputGapMs: session.outputStarvedAtMs == null ? 0 : Math.max(0, nowMs - session.outputStarvedAtMs),
+    rebufferWaitMs: stage === "resumed" && session.liveOutputRebuffering && session.outputBufferingStartedAtMs != null
+      ? Math.max(0, nowMs - session.outputBufferingStartedAtMs) : 0,
+    sourceArrivalGapMs: session.liveLastAudioArrivalGapMs,
+    sourceChunkAgeMs: session.liveLastAudioReceivedAtMs == null ? undefined : Math.max(0, nowMs - session.liveLastAudioReceivedAtMs),
+    sourceChunkAudioMs: session.liveLastAudioChunkMs,
+    queuedAudioMs: (session.outputQueue?.length || 0) * outboundAudioFrameMs,
+    timerLateMs,
+    telnyxBufferedBytes: session.telnyxWs?.bufferedAmount,
+    telnyxSocketState: session.telnyxWs?.readyState,
+    hasTelnyxStream: Boolean(session.telnyxStreamId)
+  });
+}
+
 function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.now()) {
   const trace = ensureAudioPumpTrace(session);
   if (!session.outputQueue || session.outputQueue.length === 0) {
@@ -1127,6 +1152,17 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
     trace.timerLateCount += 1;
     trace.totalTimerLateMs += lateMs;
     trace.maxTimerLateMs = Math.max(trace.maxTimerLateMs, lateMs);
+  }
+  if (session.live) {
+    if (session.outputStarvedAtMs != null) {
+      if (nowMs - session.outputStarvedAtMs >= outboundAudioFrameMs) {
+        logLiveAudioDeliveryGap(session, "resumed", nowMs, lateMs);
+      }
+      session.outputStarvedAtMs = null;
+      session.liveOutputRebuffering = false;
+    } else if (lateMs >= liveOutputIdleGraceMs) {
+      logLiveAudioDeliveryGap(session, "scheduler_late", nowMs, lateMs);
+    }
   }
 
   const frameBudget = Math.min(
@@ -1181,6 +1217,17 @@ function startOutputPump(session: StreamSession) {
     }
     pumpAvailableOutputFrames(session, nowMs);
     if (!session.outputQueue || session.outputQueue.length === 0) {
+      if (session.live && session.outputNextFrameAtMs != null) {
+        // An empty application queue does not mean the last sent frame has
+        // finished playing. Keep the stream primed through its deadline and
+        // a short arrival grace; do not insert another full startup buffer.
+        if (nowMs >= session.outputNextFrameAtMs && session.outputStarvedAtMs == null) {
+          session.outputStarvedAtMs = session.outputNextFrameAtMs;
+        }
+        if (nowMs <= session.outputNextFrameAtMs + liveOutputIdleGraceMs) return;
+        session.liveOutputRebuffering = true;
+        logLiveAudioDeliveryGap(session, "idle", nowMs);
+      }
       // Realtime audio can arrive in bursts. Keep the Telnyx pump alive while the
       // current assistant response is still active so the next chunk can re-prime
       // a small jitter buffer instead of forcing a full pump restart.
@@ -2789,6 +2836,12 @@ function connectOpenAiLive(session: StreamSession) {
     },
     audio: bytes => {
       if (session.isShuttingDown || session.aiDetached) return;
+      const nowMs = performance.now();
+      if (session.liveLastAudioReceivedAtMs != null) {
+        session.liveLastAudioArrivalGapMs = nowMs - session.liveLastAudioReceivedAtMs;
+      }
+      session.liveLastAudioReceivedAtMs = nowMs;
+      session.liveLastAudioChunkMs = bytes.length / 8;
       session.liveLastAudioAt = Date.now();
       enqueueOutputPcm(session, bytes);
     },
