@@ -50,7 +50,7 @@ export function pcmuHasSpeech(bytes: Buffer) {
 }
 
 type Tool = Record<string, any>;
-type Task = { id: string; generation: number; revision: number; controller: AbortController; finished: boolean; startedAt: number; queuedAt: number; trace: RequestTrace };
+type Task = { id: string | null; source: "client_delegation" | "application_quiet_fallback"; generation: number; revision: number; controller: AbortController; finished: boolean; startedAt: number; queuedAt: number; trace: RequestTrace };
 type Operation = { id: string; name: string; arguments: string; status: "pending" | "completed" | "failed" | "unknown"; result?: unknown };
 type PendingQuestion = HandoffQuestion & { id: string; afterSequence: number; heardText?: string; spokenSequence?: number; spokenEndMs?: number; answerTurnId?: number; answer?: string };
 type Dependencies = {
@@ -90,7 +90,6 @@ export class LiveRuntime {
   private latency: LiveLatency;
   private greeting?: { trace: RequestTrace; pendingIds: Set<string>; triggered: boolean; outputObserved: boolean; callerTookFloor: boolean; timer?: ReturnType<typeof setTimeout> };
   private delegationTimer?: ReturnType<typeof setTimeout>;
-  private delegationNudgedRequestId?: string;
   private delegationSettling = false;
   private lastInputAt = 0;
   private lastInputHadSpeech = false;
@@ -184,7 +183,7 @@ export class LiveRuntime {
   private watchDelegation() {
     clearTimeout(this.delegationTimer);
     const trace = this.latency.caller;
-    if (!trace || trace.answered || this.delegationNudgedRequestId === trace.requestId || this.delegationSettling
+    if (!trace || trace.answered || this.delegationSettling
       || (this.task && !this.task.finished) || this.closed || this.closing
       || !(this.context.pendingWork(this.callerTurnNeedsController()) || (this.context.latestCaller()?.id ?? 0) > this.lastBackendTurnId)) return;
     const waitMs = this.deps.delegationWaitMs ?? 2000;
@@ -199,11 +198,33 @@ export class LiveRuntime {
         return;
       }
       if (this.delegationSettling || (this.task && !this.task.finished) || this.latency.caller !== trace || trace.answered) return;
-      this.delegationNudgedRequestId = trace.requestId;
-      this.latency.mark(trace, "delegation_missing", { quietMs: now - this.latency.lastSpeechAt, nudges: 1 });
-      this.append("instructions", "The caller's existing substantive request is waiting for backend assistance. Delegate that existing request to the client now, using the transcript already provided. Do not speak, ask the caller to repeat, invent an answer, or restart the greeting. If the caller is still speaking, keep listening and delegate when they finish.");
-      this.latency.mark(trace, "delegation_requested", { source: "application_quiet_watchdog", providerDelegationIdCreated: false });
+      // The application owns liveness. An instruction asking Live to delegate
+      // cannot guarantee that it does so. Use the same serialized backend queue
+      // and the documented null ID for work initiated outside a delegation.
+      this.finalizeTranscript();
+      if (!this.context.latestCaller() || this.context.latestCaller()!.id <= this.lastBackendTurnId) return;
+      this.latency.mark(trace, "delegation_missing", { quietMs: now - this.latency.lastSpeechAt, recovery: "application_quiet_fallback" });
+      this.latency.mark(trace, "controller_fallback_started", { source: "application_quiet_fallback", delegationId: null, providerDelegationIdCreated: false });
+      this.queueTask(null, trace, "application_quiet_fallback");
     }, waitMs);
+  }
+
+  private queueTask(delegationId: string | null, trace: RequestTrace, source: Task["source"]) {
+    if (this.closed || this.closing || !this.deps.isActive()) return;
+    if (this.task?.revision === this.context.revision) {
+      // A late provider event adopts work already running for this caller turn.
+      // It never generates a second answer or resubmits a committed operation.
+      if (delegationId && !this.task.id) this.task.id = delegationId;
+      this.latency.mark(trace, "delegation_coalesced", { delegationId, generation: this.task.generation, taskSource: this.task.source, taskFinished: this.task.finished });
+      return;
+    }
+    if (this.generation >= 128) { this.deps.finish("openai_live_task_limit"); return; }
+    this.task?.controller.abort();
+    const task: Task = { id: delegationId, source, generation: ++this.generation, revision: this.context.revision, controller: new AbortController(), finished: false, startedAt: trace.startedAt, queuedAt: Date.now(), trace };
+    this.latency.mark(trace, "backend_queued", { delegationId, source, generation: task.generation });
+    this.task = task;
+    this.tail = this.tail.then(() => this.run(task)).catch(() => {});
+    return true;
   }
 
   private speech(text: string, trace: RequestTrace, delegationId: string | null, useful: boolean) {
@@ -273,8 +294,15 @@ export class LiveRuntime {
 
   private async settleTranscript() {
     const delay = this.deps.settleMs ?? 800;
-    while (this.context.provisional?.role === "user" && delay > 0 && Date.now() - this.lastCallerAt < delay) {
-      await new Promise(resolve => setTimeout(resolve, delay - (Date.now() - this.lastCallerAt)));
+    const speechGrace = Math.max(20, delay);
+    // Caller audio can resume before its transcript arrives. Do not finalize,
+    // commit a tool, or release a prepared answer over that observed speech.
+    // One silent frame is only a gap inside an utterance: require sustained
+    // quiet since the last speech frame as well as quiet transcript arrivals.
+    while ((this.lastInputHadSpeech && Date.now() - this.lastInputAt < 500)
+      || (this.latency.lastSpeechAt !== undefined && Date.now() - this.latency.lastSpeechAt < speechGrace)
+      || (this.context.provisional?.role === "user" && delay > 0 && Date.now() - this.lastCallerAt < delay)) {
+      await new Promise(resolve => setTimeout(resolve, 20));
       if (this.closed || this.closing) return;
     }
     this.finalizeTranscript();
@@ -388,15 +416,9 @@ export class LiveRuntime {
       await this.settleTranscript();
       this.delegationSettling = false;
       if (!this.context.latestCaller() || this.closing || this.closed) return;
-      // A repeated delegation caused by a backchannel continues the existing work.
-      if (this.task?.revision === this.context.revision) return;
-      this.task?.controller.abort();
-      const task = { id: delegationId, generation: ++this.generation, revision: this.context.revision, controller: new AbortController(), finished: false, startedAt: trace.startedAt, queuedAt: Date.now(), trace };
-      this.latency.mark(trace, "backend_queued", { delegationId, sinceDelegationMs: task.queuedAt - receivedAt });
-      this.task = task;
       // Serialize backend actions across generations; a newer task cannot race an
       // in-flight capture/transfer. The next task receives committed application state.
-      this.tail = this.tail.then(() => this.run(task)).catch(() => {});
+      if (!this.queueTask(delegationId, trace, "client_delegation")) return;
       await this.tail;
     }
     // Append acknowledgments only describe context delivery; never playback completion.
@@ -421,7 +443,7 @@ export class LiveRuntime {
       pending_question: this.question || null, meaningful_revision: this.context.revision,
       finalized_turns: this.context.turns.filter(turn => turn.id > this.lastBackendTurnId), provisional_transcript: this.context.provisional || null
     }) }];
-    this.deps.audit("openai_live_task_started", { requestId: task.trace.requestId, delegationId: task.id, generation: task.generation, revision: task.revision });
+    this.deps.audit("openai_live_task_started", { requestId: task.trace.requestId, delegationId: task.id, source: task.source, generation: task.generation, revision: task.revision });
     try {
       // Warmup may have failed transiently at call startup. respond() owns its one
       // bounded transport retry, always before any application tool execution.

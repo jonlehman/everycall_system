@@ -83,6 +83,7 @@ export function parseBackendHandoff(text: string, completedIds: Set<string>): Ba
   }
   if (typeof value.spoken_response !== "string") invalid("spoken_response_type");
   const speech = [value.spoken_response, question?.text].filter(Boolean).join(" ");
+  if (!speech.trim()) invalid("empty_caller_response");
   // One atomic append: never split an unfinished sentence into separate speech triggers.
   if (Buffer.byteLength(speech) > 480) invalid("speech_byte_limit");
   if ((speech.match(/\?/g)?.length || 0) > 1) invalid("multiple_questions");

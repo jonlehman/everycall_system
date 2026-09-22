@@ -51,7 +51,7 @@ The runtime retains the accepted plan and counts issued optional discovery
 questions in `conversation_state`. After two, another discovery handoff is
 rejected before speech and gets the existing one bounded repair. The limit never
 authorizes callback consent, capture, transfer or closing. A model can choose a
-specific reflection with `next_question=null` and listen while the caller is
+specific nonempty spoken reflection with `next_question=null` and listen while the caller is
 still exploring; hesitant or declined readiness cannot authorize a callback
 offer. Required contact fields and clarification of genuinely unclear input are
 separate question purposes. Renaming discovery as clarification does not exempt
@@ -124,8 +124,15 @@ generation is not automatically retried. Application actions do not run again as
 part of connection recovery.
 
 Client delegation events carry identifiers, not user requests. The adapter keeps
-speaker/timestamp provisional transcripts and finalizes application turns on a
-speaker change or 350 ms transcript quiet boundary. This is a local heuristic,
+speaker/timestamp provisional transcripts and finalizes caller turns on a
+speaker change, a delegation after 800 ms transcript quiet, or the application
+fallback after 2 seconds of observed inbound quiet and 800 ms transcript quiet.
+The fallback runs the same serialized backend queue for a completed meaningful
+statement or question, using `delegation_id:null` when no provider delegation
+exists. A late real delegation adopts the same revision without replaying a
+completed response or creating a second action. Ongoing caller speech, absent
+inbound media, an active task and ordinary backchannels suppress fallback.
+These are local heuristics,
 not an invented provider final-transcript event. Deltas and spelled characters
 are preserved verbatim. Task revision changes only for meaningful finalized caller
 turns; narrow standalone backchannels without an unanswered question and labeled
@@ -173,7 +180,9 @@ submitted are not rolled back by that timeout. Transcript context retains up to
 128 finalized entries/48,000 characters, alongside authoritative application state.
 The Responses recovery history fails closed at 512,000 UTF-8 bytes instead of
 discarding action context. Caller-facing handoffs must fit 480 UTF-8 bytes and
-one question; invalid/oversized handoffs are rejected, never split mid-sentence.
+one question; empty, invalid or oversized handoffs are rejected and get one
+bounded schema repair, never split mid-sentence. Listening requires a spoken
+reflection before yielding; an empty listen beat cannot strand a clear request.
 Other context appends are also limited to 480 bytes, below the 500-token limit.
 
 ## Closing and usage

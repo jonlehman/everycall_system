@@ -81,6 +81,7 @@ assert.throws(() => parseBackendHandoff(JSON.stringify(contract("Saved", null, {
 assert.throws(() => parseBackendHandoff(JSON.stringify(contract("data_capture succeeded")), new Set()));
 assert.throws(() => parseBackendHandoff(JSON.stringify(contract("", question("Connect you?", "transfer_confirmation"))), new Set()));
 assert.throws(() => parseBackendHandoff(JSON.stringify(contract("What is your name?")), new Set()), error => error instanceof HandoffValidationError && error.constraint === "unbound_question" && !error.message.includes("name"));
+assert.throws(() => parseBackendHandoff(JSON.stringify(contract(" \n ", null, { conversation_plan: plan("none", "listen") })), new Set()), error => error.constraint === "empty_caller_response");
 
 // A silent caller gets one proactive greeting. Only the matching instruction
 // acknowledgement triggers commentary; repeated events cannot replay it.
@@ -119,26 +120,125 @@ assert.equal(talkFirst.finishes.length, 0, "caller speech longer than greeting t
 assert.equal(speech(talkFirst).length, 0, "late acknowledgement cannot greet over the caller");
 assert.ok(talkFirst.logs.some(x => x.milestone === "greeting_yielded_to_caller"));
 
-const delayedDelegation = harness({ delegationWaitMs: 15 }); await start(delayedDelegation);
+const delayedDelegation = harness({ delegationWaitMs: 15, replies: [
+  answer(contract("", null, { conversation_plan: plan("none", "listen") })),
+  answer(contract("You'd like your house painted.", question("Is that the inside or outside?")))
+] }); await start(delayedDelegation);
 delayedDelegation.runtime.input(Buffer.alloc(160, 0).toString("base64"));
-await delayedDelegation.runtime.handle(caller("I need my house painted."));
+await delayedDelegation.runtime.handle(caller("My house needs to be painted."));
 for (let n = 0; n < 6; n++) {
   delayedDelegation.runtime.input(Buffer.alloc(160, 0).toString("base64"));
   await new Promise(resolve => setTimeout(resolve, 5));
 }
 assert.equal(delayedDelegation.sent.filter(x => x.type === "session.instructions.append").length, 0, "ongoing caller speech suppresses the delegation watchdog");
+assert.equal(delayedDelegation.requests.length, 0);
 for (let n = 0; n < 10; n++) {
   delayedDelegation.runtime.input(Buffer.alloc(160, 255).toString("base64"));
   await new Promise(resolve => setTimeout(resolve, 5));
 }
-const nudges = delayedDelegation.sent.filter(x => x.type === "session.instructions.append");
-assert.equal(nudges.length, 1); assert.match(nudges[0].content, /Delegate that existing request/);
-assert.equal(nudges[0].delegation_id, null); assert.equal(delayedDelegation.requests.length, 0, "watchdog never fabricates a delegation or executes backend work");
+assert.equal(delayedDelegation.requests.length, 2, "statement reaches controller plus one bounded repair without any provider delegation");
+assert.equal(state(delayedDelegation.requests[0]).finalized_turns.at(-1).text, "My house needs to be painted.");
+assert.match(delayedDelegation.requests[1][0].content, /empty_caller_response/);
+assert.deepEqual(speech(delayedDelegation), ["You'd like your house painted. Is that the inside or outside?"]);
+assert.ok(delayedDelegation.sent.filter(x => x.type.endsWith(".append") && "delegation_id" in x).every(x => x.delegation_id === null));
 assert.ok(delayedDelegation.logs.some(x => x.milestone === "delegation_missing"));
+assert.ok(delayedDelegation.logs.some(x => x.milestone === "controller_fallback_started" && x.providerDelegationIdCreated === false));
+assert.deepEqual(delayedDelegation.logs.filter(x => x.milestone === "handoff_validated").map(x => x.outcome), ["rejected", "accepted"]);
 await delayedDelegation.runtime.handle(delegate("eventual-delegation"));
 await delayedDelegation.runtime.handle(delegate("eventual-delegation"));
-assert.equal(delayedDelegation.requests.length, 1);
-assert.equal(delayedDelegation.sent.filter(x => x.type === "session.instructions.append" && /Delegate that existing request/.test(x.content)).length, 1);
+assert.equal(delayedDelegation.requests.length, 2, "late delegation cannot replay an answered turn or its repair");
+assert.equal(speech(delayedDelegation).length, 1);
+
+const quietForFallback = async (h, frames = 10) => {
+  for (let n = 0; n < frames; n++) {
+    h.runtime.input(Buffer.alloc(160, 255).toString("base64"));
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  await idle();
+};
+const fallbackQuestion = harness({ delegationWaitMs: 15, replies: [answer(contract("We paint interior and exterior surfaces."))] });
+await start(fallbackQuestion); fallbackQuestion.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+await fallbackQuestion.runtime.handle(caller("Do you paint interiors?")); await quietForFallback(fallbackQuestion);
+assert.equal(fallbackQuestion.requests.length, 1); assert.equal(speech(fallbackQuestion).length, 1);
+assert.equal(fallbackQuestion.sent.find(x => x.type === "session.commentary.append").delegation_id, null);
+
+let releaseStatement;
+const fallbackCorrection = harness({ delegationWaitMs: 15, replies: [
+  () => new Promise(resolve => { releaseStatement = resolve; }),
+  answer(contract("The fence needs painting.", question("Is there anything else I should know about the fence?")))
+] });
+await start(fallbackCorrection); fallbackCorrection.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+await fallbackCorrection.runtime.handle(caller("My house needs to be painted.")); await quietForFallback(fallbackCorrection);
+fallbackCorrection.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+releaseStatement(answer(contract("Your house needs painting.")));
+for (let n = 0; n < 6; n++) {
+  fallbackCorrection.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+  await new Promise(resolve => setTimeout(resolve, 5));
+}
+assert.equal(speech(fallbackCorrection).length, 0, "audio resumes before its transcript: defer the old answer");
+await fallbackCorrection.runtime.handle(caller("Actually, I mean the fence.")); await quietForFallback(fallbackCorrection);
+assert.equal(fallbackCorrection.requests.length, 2);
+assert.deepEqual(speech(fallbackCorrection), ["The fence needs painting. Is there anything else I should know about the fence?"]);
+assert.match(JSON.stringify(state(fallbackCorrection.requests[1]).finalized_turns), /Actually, I mean the fence/);
+
+// Scale production's 800ms settle window to 80ms. A single silent frame during
+// resumed caller speech cannot release a stale answer OR dispatch a stale tool
+// while the correction transcript is still in flight.
+for (const pendingResult of [answer(contract("Your house needs painting.")), tool("data_capture", { first_name: "Ada" })]) {
+  let releaseBeforeCorrection;
+  const intraUtterance = harness({ delegationWaitMs: 15, settleMs: 80, replies: [
+    () => new Promise(resolve => { releaseBeforeCorrection = resolve; }), answer(contract("I've noted your correction."))
+  ] });
+  await start(intraUtterance); intraUtterance.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+  await intraUtterance.runtime.handle(caller("My house needs painting. My name is Ada.")); await quietForFallback(intraUtterance, 24);
+  assert.equal(intraUtterance.requests.length, 1);
+  intraUtterance.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+  intraUtterance.runtime.input(Buffer.alloc(160, 255).toString("base64"));
+  releaseBeforeCorrection(pendingResult);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(speech(intraUtterance).length, 0, "one silent frame cannot release prepared speech before the transcript grace");
+  assert.equal(intraUtterance.calls.length, 0, "one silent frame cannot dispatch a prepared operation before the transcript grace");
+  await intraUtterance.runtime.handle(caller("Actually, the fence, and my name is Ava."));
+  await quietForFallback(intraUtterance, 24);
+  assert.equal(intraUtterance.calls.length, 0, "superseded operation never executes");
+  assert.equal(intraUtterance.requests.length, 2);
+  assert.deepEqual(speech(intraUtterance), ["I've noted your correction."]);
+  assert.match(JSON.stringify(state(intraUtterance.requests[1]).finalized_turns), /my name is Ava/);
+}
+
+// Provider delegation can arrive during a fallback operation. Adopt its real ID
+// while keeping one backend chain and one operation, including duplicate events.
+let finishFallbackLookup;
+const fallbackLookup = harness({ delegationWaitMs: 15,
+  replies: [tool("knowledge_lookup", { query: "Do you paint metal siding?" }), answer(contract("We paint metal siding."))],
+  executeTool: () => new Promise(resolve => { finishFallbackLookup = resolve; })
+});
+await start(fallbackLookup); fallbackLookup.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+await fallbackLookup.runtime.handle(caller("Do you paint metal siding?")); await quietForFallback(fallbackLookup);
+assert.equal(fallbackLookup.calls.length, 1);
+const lateFallbackDelegation = fallbackLookup.runtime.handle(delegate("late-fallback-lookup")); await idle();
+await fallbackLookup.runtime.handle(caller("okay")); await quietForFallback(fallbackLookup);
+assert.equal(fallbackLookup.calls.length, 1); assert.equal(fallbackLookup.requests.length, 1);
+finishFallbackLookup({ answer: "We paint metal siding." }); await lateFallbackDelegation; await idle();
+await fallbackLookup.runtime.handle(delegate("late-fallback-lookup-again"));
+assert.equal(fallbackLookup.calls.length, 1); assert.equal(fallbackLookup.requests.length, 2);
+assert.deepEqual(speech(fallbackLookup), ["We paint metal siding."]);
+assert.equal(fallbackLookup.sent.find(x => x.type === "session.commentary.append").delegation_id, "late-fallback-lookup");
+
+const stoppedInput = harness({ delegationWaitMs: 15 }); await start(stoppedInput);
+await stoppedInput.runtime.handle(caller("My house needs to be painted."));
+await new Promise(resolve => setTimeout(resolve, 35));
+assert.equal(stoppedInput.requests.length, 0, "no media evidence of quiet means no application fallback");
+const onlyBackchannel = harness({ delegationWaitMs: 15 }); await start(onlyBackchannel);
+onlyBackchannel.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+await onlyBackchannel.runtime.handle(caller("okay")); await quietForFallback(onlyBackchannel);
+assert.equal(onlyBackchannel.requests.length, 0, "ordinary acknowledgement is not new work");
+
+const emptyTwice = harness({ replies: [answer(contract()), answer(contract(" "))] });
+await start(emptyTwice, "My house needs to be painted."); await emptyTwice.runtime.handle(delegate("empty-twice"));
+assert.equal(emptyTwice.requests.length, 2); assert.equal(emptyTwice.calls.length, 0);
+assert.deepEqual(speech(emptyTwice), ["I'm sorry, I couldn't confirm that."]);
+assert.equal(emptyTwice.finishes.length, 0);
 
 // Byte provenance survives delayed queue playback and later commentary. Provider
 // audio has no delegation ID, so these remain explicitly temporal candidates.

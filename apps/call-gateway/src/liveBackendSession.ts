@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 
 export const RESPONSES_WS_URL = "wss://api.openai.com/v1/responses";
 export type BackendResponse = { id: string; status: string; output: any[]; usage?: unknown };
-export type BackendTrace = { requestId: string; delegationId: string; generation: number; step: number };
+export type BackendTrace = { requestId: string; delegationId: string | null; generation: number; step: number };
 export interface LiveBackend {
   prepare(): Promise<void>;
   respond(input: any[], signal: AbortSignal, trace?: BackendTrace): Promise<BackendResponse>;
