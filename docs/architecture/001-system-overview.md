@@ -14,6 +14,14 @@ Build a white-labeled, multi-tenant voice platform for service businesses using:
 - The by-heart catalog separates immutable build-scoped factual candidates and append-only processing artifacts from durable tenant facts and tenant-owned selection snapshots. `kb_block` is the only by-heart artifact read during call startup.
 
 ## High-Level Call Flow
+For `CALL_GATEWAY_VOICE_RUNTIME=live`, GPT-Live supplies the speech interface and
+delegates every substantive turn to a prepared `gpt-5.6-terra` Responses WebSocket
+with explicit medium reasoning. Only the backend receives the full receptionist
+procedure and tools. EveryCall binds confirmations and actions to tenant/call
+state and sends validated speech handoffs to Live. See
+`docs/SPECS/live-gateway-runtime.md`; the legacy Realtime flow below remains the
+rollback path.
+
 1. Telnyx sends inbound webhook to `call-gateway`.
 2. `call-gateway` verifies signature and resolves tenant.
 3. `call-gateway` creates/updates call session and emits `call.inbound.received`.

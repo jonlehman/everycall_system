@@ -77,6 +77,8 @@ import {
 } from "./finishSessionControl.js";
 import { buildStableOpenAiSafetyIdentifier } from "./openAiSafetyIdentifier.js";
 import { buildLiveStart, LIVE_URL, LiveRuntime, resolveVoiceRuntime } from "./liveRuntime.js";
+import { LIVE_SPEECH_INSTRUCTIONS } from "./liveContract.js";
+import { resolveLiveReasoningEffort } from "./liveBackendSession.js";
 import {
   buildOpeningStatementResponse,
   completeOpeningStatementAfterPlayback,
@@ -108,6 +110,7 @@ const openAiKey = process.env.OPENAI_API_KEY || "";
 // Trusted gateway deployment configuration; never read from caller input.
 const voiceRuntime = resolveVoiceRuntime(process.env.CALL_GATEWAY_VOICE_RUNTIME);
 const liveBackendModel = String(process.env.OPENAI_LIVE_BACKEND_MODEL || "").trim();
+const liveBackendReasoningEffort = voiceRuntime === "live" ? resolveLiveReasoningEffort(process.env.OPENAI_LIVE_BACKEND_REASONING_EFFORT) : "medium";
 if (voiceRuntime === "live" && !liveBackendModel) throw new Error("OPENAI_LIVE_BACKEND_MODEL is required for Live client delegation");
 const liveSockets = new WeakMap<WebSocket, StreamSession>();
 const signatureRequired = (process.env.TELNYX_SIGNATURE_REQUIRED || "true").toLowerCase() !== "false";
@@ -140,6 +143,12 @@ const PRODUCTION_INFO_LOG_ALLOWLIST = new Set([
   "openai_live_session_started",
   "openai_live_session_closed",
   "openai_live_backend_usage",
+  "openai_live_backend_prepared",
+  "openai_live_backend_prepare_failed",
+  "openai_live_backend_reconnecting",
+  "openai_live_operation",
+  "openai_live_latency",
+  "openai_live_turn_finalized",
   "openai_live_task_started",
   "openai_live_task_failed",
   "openai_live_error",
@@ -2677,10 +2686,12 @@ async function executeToolCall(session: StreamSession, name: string, callId: str
       });
       return;
     } catch (err) {
-      session.transferState = null;
+      // In Live, a timeout or persistence failure may follow an accepted Telnyx
+      // command. Preserve its ID/state for reconciliation and prohibit a retry.
+      if (!session.live) session.transferState = null;
       const output = {
-        status: "failed",
-        reason: "transfer_command_failed"
+        status: session.live ? "unknown" : "failed",
+        reason: session.live ? "transfer_outcome_unconfirmed" : "transfer_command_failed"
       };
       logError("call_transfer_command_failed", {
         callSid: session.callSid,
@@ -2796,7 +2807,7 @@ function connectOpenAiLive(session: StreamSession) {
   const live: LiveRuntime = new LiveRuntime({
     tenantKey: session.tenantKey, callSid: session.callSid, apiKey: openAiKey,
     safetyIdentifier: buildOpenAiSafetyIdentifier(session),
-    backendModel: liveBackendModel,
+    backendModel: liveBackendModel, reasoningEffort: liveBackendReasoningEffort,
     instructions, tools: payload.tool_definitions,
     send: event => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event)); },
     isActive: () => Boolean(session.callActive && !session.isShuttingDown && !session.aiDetached && session.openAiWs === ws),
@@ -2820,7 +2831,7 @@ function connectOpenAiLive(session: StreamSession) {
         // Re-evaluate current consent; a previously observed yes cannot outlive a
         // later caller correction or a replacement task.
         if (candidate) candidate.confirmed = false;
-        if (lookupRevision !== undefined) noteCallerTransferConfirmation(session, live.callerConfirmationAfter(lookupRevision));
+        if (lookupRevision !== undefined && candidate) noteCallerTransferConfirmation(session, live.callerConfirmationAfter(lookupRevision, candidate.targetId));
       }
       await handleToolCallEvent(session, name, callId, argsText, "live_client_delegation", mayCommit);
       const output = session.liveToolOutputs?.get(callId);
@@ -2848,7 +2859,7 @@ function connectOpenAiLive(session: StreamSession) {
     ready: () => {
       session.openAiReady = true;
       session.openAiSessionUpdated = true;
-      logInfo("openai_live_session_started", { callSid: session.callSid, model: "gpt-live-1", delegation: "client", audioFormat: "audio/pcmu" });
+      logInfo("openai_live_session_started", { callSid: session.callSid, model: "gpt-live-1", delegation: "client", audioFormat: "audio/pcmu", backendModel: liveBackendModel, backendReasoningEffort: liveBackendReasoningEffort, backendTransport: "websocket" });
       if (!session.greetingSent) {
         session.greetingSent = true;
         live.append("instructions", `Immediately say this business greeting exactly once: ${payload.tenant_greeting}`);
@@ -2866,6 +2877,8 @@ function connectOpenAiLive(session: StreamSession) {
     }
   });
   session.live = live;
+  // Prepare the independent reasoning connection while Live negotiates speech.
+  void live.prepare().catch(() => {});
   liveSockets.set(ws, session);
   // Live's output stream has no response/audio-done event. Preserve partial PCMU
   // frames, and use an explicitly bounded local playback quiet policy for closing.
@@ -2883,7 +2896,7 @@ function connectOpenAiLive(session: StreamSession) {
   ws.on("open", () => {
     if (session.isShuttingDown || session.aiDetached) { ws.close(); return; }
     ws.send(JSON.stringify(buildLiveStart(
-      instructions + "\nLive runtime: You manage speech; the delegated backend executes the tools named above. Delegate knowledge lookups, every structured data capture, transfer, and finish_session to that backend. Do not claim a tool action happened before a verified backend result. Keep tool work silent. After the required pre-close checkpoint is answered, delegate finish_session; wait for the server closing instruction before saying the goodbye.",
+      LIVE_SPEECH_INSTRUCTIONS,
       payload.session_config.voice || "marin"
     )));
   });

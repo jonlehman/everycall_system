@@ -8,6 +8,9 @@ values fail startup. Public demo and outbound sales runtimes are unaffected.
 Live requires the existing server `OPENAI_API_KEY` and an explicitly approved
 `OPENAI_LIVE_BACKEND_MODEL` with Responses function-call support and account access.
 Missing backend model fails startup; the voice model is always `gpt-live-1`.
+The approved deployment backend is `gpt-5.6-terra`, with explicit
+`OPENAI_LIVE_BACKEND_REASONING_EFFORT=medium`. The code defaults to `medium` and
+validates an operator override (`none`, `low`, `medium`, `high`, `xhigh`, `max`).
 The privacy-preserving safety identifier uses the existing gateway HMAC identity
 for both Live authentication and backend requests. No project key or private tool
 definition is sent to Telnyx or a browser. Live storage and Responses storage are
@@ -23,38 +26,91 @@ Realtime response/cancel/truncate commands. Continuous caller audio must remain
 enabled while greeting: Live's timeline advances with input audio. Live manages
 full-duplex speech and interruption; backend actions have a separate lifecycle.
 
-The existing EveryCall prompt supplies tenant instructions, business facts, and
-flow. A runtime instruction describes the delegated execution boundary. The
-backend receives the same business rules, exact transcript fragments, current
-captured state, and recent completed actions. Initial tenant greeting is sent
-once after session readiness. Approved private function schemas are supplied
-only to the backend. Their arguments must pass schema validation before invoking
-the existing knowledge, capture, confirmed-transfer, and finish handlers.
+GPT-Live receives only the short `LIVE_SPEECH_INSTRUCTIONS`, which delegates every
+substantive turn and prohibits independent intake progression, facts, prices,
+callback offers, transfer decisions, scheduling claims, next questions, or closing.
+The full canonical EveryCall prompt, tenant bindings/by-heart facts, and private
+tool schemas go only to the backend. Its voice adapter preserves the approved
+receptionist procedure, silent lookup/capture, callback consent, pricing boundary,
+and exact close, adapting only the delivery of spoken content. Initial tenant
+greeting is sent once after Live readiness. No calendar/scheduling tool exists.
+
+The backend opens one `wss://api.openai.com/v1/responses` connection per call while
+Live starts. A `response.create` with `generate:false` prepares the stable
+instructions, schemas, output contract, model and reasoning effort before the
+first delegated generation. Subsequent requests send `previous_response_id` and
+new inputs on the same connection. Instructions are supplied on every request
+because they do not inherit through that ID. `store:false` and encrypted reasoning
+items permit a full-context restart without persisted provider response storage.
+No unsupported Live `response.create` or WebSocket `session.update` is used for
+the separate Responses connection.
+
+On backend disconnect/cache loss, retry model generation once after preparing a
+new connection and restoring the exact retained inputs, outputs, encrypted
+reasoning, and completed function results. Only completed model responses can
+request application operations. Streamed partial calls never execute. Aborted
+generation is not automatically retried. Application actions do not run again as
+part of connection recovery.
 
 Client delegation events carry identifiers, not user requests. The adapter keeps
-speaker/timestamp transcript history and reconstructs the backend context.
-Per-call generations and caller revisions suppress stale actions and results.
-New tasks serialize behind submitted actions; speaking or a new task does not
-undo a previously committed capture or transfer. An incomplete/stale task asks
-Live to delegate again with current context. Tools retain the existing server
-tenant/call binding and transfer-confirmation checks. Duplicate delegation IDs
-and tool execution keys cannot repeat a submitted operation in one live session.
-Unexpected transport loss ends the call instead of replaying actions in a new
-session. This is process-local deduplication, not a new durable exactly-once
-transaction system.
+speaker/timestamp provisional transcripts and finalizes application turns on a
+speaker change or 350 ms transcript quiet boundary. This is a local heuristic,
+not an invented provider final-transcript event. Deltas and spelled characters
+are preserved verbatim. Task revision changes only for meaningful finalized caller
+turns; narrow standalone backchannels without an unanswered question and labeled
+noise do not restart work. Provisional substantive speech immediately blocks new
+commits while it settles. Long-request and correction behavior still needs a live
+canary because transcript pauses are not proof of caller completion.
+
+New tasks serialize behind submitted actions. A correction suppresses stale
+results and continues the same known delegation with the latest state. Each
+operation has a tenant/call/arguments/meaningful-turn identity plus a pending,
+completed, failed or unknown status, audited without raw private results. A new
+model function-call ID cannot repeat the same operation. An uncertain side effect
+is not retried even after a later caller turn repeats the arguments. Existing
+read-only lookup cancellations/failures may be retried in bounded backend rounds;
+they never become a permanent unknown side effect. A Live transfer provider or
+persistence failure retains its pending command ID and reports an unknown outcome
+until reconciliation, rather than reopening transfer permission. Existing
+tenant binding, schema validation and transfer handlers remain authoritative.
+This is process-local action tracking, not durable exactly-once execution. Loss of
+the Live speech connection ends the call; there is no blind speech-session replay.
+
+Backend next questions have a server-assigned ID, question kind and, for transfer,
+the exact target ID. Consent attaches only after that question appears in the
+output transcript and a later caller turn starts after its end timestamp. A yes
+to another question, an unheard/paraphrased confirmation, overlap, target change,
+or later correction cannot authorize a transfer. This deliberately fails closed
+on uncertain transcript matching; provider acceptance must verify this behavior.
+
+The strict backend handoff contains `verified_facts` with source references,
+`action_status`, `spoken_response`, `next_question`, and
+`completed_operation_ids`. Operation references are checked against the local
+ledger. Quiet facts go to `session.thinking.append`; a complete caller-facing
+sentence and its single next question go in one `session.commentary.append`.
+No private reasoning, raw tool result or serialized contract is forwarded. The
+backend remains responsible for semantic grounding in approved context; schema
+and identifier validation alone cannot prove a generated factual claim.
+If backend generation or contract validation fails, the runtime supplies only a
+neutral inability-to-confirm statement. It never invents a next question or
+reopens a callback offer. Invalid capture results are failed operations, never
+successful capture evidence.
 
 Delegation is bounded to 128 tasks per call, six backend rounds per task,
-1,200 output tokens per request, and a 30-second reasoning timeout. Tools already
+4,096 output tokens per request (including reasoning), and a 30-second task timeout. Tools already
 submitted are not rolled back by that timeout. Transcript context retains up to
-128 entries/48,000 characters, alongside authoritative application state. Backend
-results are bounded before being appended as commentary; appends are limited to
-480 UTF-8 bytes, conservatively below the 500-token provider limit.
+128 finalized entries/48,000 characters, alongside authoritative application state.
+The Responses recovery history fails closed at 512,000 UTF-8 bytes instead of
+discarding action context. Caller-facing handoffs must fit 480 UTF-8 bytes and
+one question; invalid/oversized handoffs are rejected, never split mid-sentence.
+Other context appends are also limited to 480 bytes, below the 500-token limit.
 
 ## Closing and usage
 
 Live has no output-audio-done event. Append acknowledgments only confirm context
 delivery. `finish_session` requests the existing exact confirmed-first-name close.
-The local close policy requires matching newly generated closing transcript,
+The backend must have supplied the required checkpoint and received its bound
+caller answer before requesting the close. The local close policy requires matching newly generated closing transcript,
 audible PCMU playback, an empty playback queue, and 1.5 seconds without further
 audible playback or closing transcript. Caller speech cancels a pending close.
 A 15-second delivery timeout logs `openai_live_close_unverified` and ends the call.
@@ -69,6 +125,13 @@ token-rate estimation; existing call cost dashboards are not Live cost accountin
 Duration/backend cost aggregation is a separate follow-up and must not infer a
 zero charge from the old token columns.
 
+`openai_live_latency` reports separate `live_ack` (first audible output arrival),
+`backend_useful_fact` (validated result made available) and `action_complete`
+milestones relative to the latest caller transcript receipt for that task. These
+are gateway timings, not verified human hearing or model latency percentiles.
+Preparation/reconnect and operation-state audit events expose backend readiness
+and outcomes independently of the unchanged Telnyx jitter-buffer metrics.
+
 ## Offline verification and release gates
 
 Run from the repository root:
@@ -76,14 +139,19 @@ Run from the repository root:
 ```sh
 corepack pnpm --filter @everycall/call-gateway... build
 node scripts/validate-live-runtime.mjs
+node scripts/validate-audio-pump.mjs
 corepack pnpm validate:realtime2-payloads
 corepack pnpm validate:receptionist-v19
 ```
 
-The Live validator uses injected fake backend responses and never spends API
-credits. It covers protocol selection, readiness, raw PCMU, append limits, schema
-allowlisting, tenant-bound execution IDs, duplicate tasks, corrections during
-reasoning, action serialization, finalization, and the closing playback policy.
+The Live validator uses fake WebSockets and scripted backend responses and never
+spends API credits. It covers warmup/continuation/cache-loss recovery, explicit
+medium reasoning, storage-disabled payloads, split prompts, structured handoffs,
+known/unknown facts and scheduling/callback fixtures, long and spelled input,
+corrections, backchannels during lookup, duplicate/uncertain actions, schema
+allowlisting, target-bound yes/no, failures, interruption, closing and noise/loss.
+The content fixtures test contract handling, not unexecuted model behavior. Audio
+pump checks remain a separate gate for the existing PCMU pacing/jitter fixes.
 Existing repository typecheck/build and independent critical review remain gates.
 The historical v18 validator pins prompt version 18 and fails on the current
 version 19 baseline; the current v19 validator is the relevant prompt gate.
@@ -105,3 +173,5 @@ Protocol references:
 - https://developers.openai.com/api/docs/guides/voice-websockets?api=live
 - https://developers.openai.com/api/docs/guides/live-delegation
 - https://developers.openai.com/api/docs/guides/live-conversations
+- https://developers.openai.com/api/docs/guides/websocket-mode
+- https://developers.openai.com/api/docs/models/gpt-5.6-terra

@@ -1,5 +1,10 @@
 # Manual Call Test Scripts
 
+## GPT-Live Backend Ownership
+- Build the gateway, then run `node scripts/validate-live-runtime.mjs` and `node scripts/validate-audio-pump.mjs`. The Live suite is offline: fake sockets verify warmup, continuation, cache-loss recovery, abort and storage-disabled medium reasoning; scripted backend fixtures verify facts, no scheduling/callback behavior, long/spelled input, corrections, lookup backchannels, precise transfer consent, unknown outcomes, failures, interrupted closing and noise/disconnect handling.
+- Keep `corepack pnpm validate:realtime2-payloads`, `corepack pnpm validate:receptionist-v19`, repository typecheck/build and independent critical review as release gates. Scripted correct model answers do not certify prompt compliance.
+- An explicitly authorized real Telnyx canary must repeat that varied matrix, including callback refusal, unsupported scheduling, price anchors, correction after capture, yes to an unrelated question, silence/noise and an interrupted close. Compare `openai_live_latency` milestones (`live_ack`, `backend_useful_fact`, `action_complete`) with audible behavior. Verify `openai_live_backend_prepared` reports `gpt-5.6-terra`, `medium`, `websocket`, and `store:false` before delegated work.
+
 ## Script Safety
 - `scripts/validate-knowledge-receptionist-cutover.mjs` and `scripts/validate-voice-runtime-hardening.mjs` now fail closed unless both of these are set:
   - `EVERYCALL_ALLOW_SCHEMA_RESET=DROP_PUBLIC_SCHEMA`

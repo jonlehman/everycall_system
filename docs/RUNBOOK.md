@@ -1,6 +1,7 @@
 # Runbook
 
 ## Deployments
+- Quality-first GPT-Live backend: `OPENAI_LIVE_BACKEND_MODEL=gpt-5.6-terra`, `OPENAI_LIVE_BACKEND_REASONING_EFFORT=medium`. The backend uses a prepared Responses WebSocket; both provider endpoints must be reachable. Verify model access, independent review, offline gates and authorized audible canary before release. Backend disconnect/cache loss permits one context-only retry; an unknown application action must be reconciled, not manually replayed. No database migration is needed.
 - Inbound GPT-Live cutover: see `docs/SPECS/live-gateway-runtime.md`. Deployment target is `CALL_GATEWAY_VOICE_RUNTIME=live` with an explicitly approved `OPENAI_LIVE_BACKEND_MODEL`; code defaults to `realtime` when unset. Keep the existing `OPENAI_API_KEY`. Live usage is recorded separately from the legacy Realtime cost estimator. Roll back with `CALL_GATEWAY_VOICE_RUNTIME=realtime` and restart.
 - Admin/client app: Vercel
 - Call gateway: Render
@@ -8,6 +9,7 @@
 - Live web demo: code defaults to `gpt-realtime-2.1`; `OPENAI_DEMO_REALTIME_MODEL` is an optional demo-specific Vercel override.
 
 ## Logs
+- GPT-Live backend: `openai_live_backend_prepared`, `openai_live_backend_reconnecting`, `openai_live_task_failed`, `openai_live_operation` and `openai_live_latency`. Distinguish `live_ack`, `backend_useful_fact` and `action_complete`; none proves caller hearing. Investigate `unknown` operations before retrying an action. `live_backend_context_limit` fails closed instead of truncating operation context.
 - Render service logs for call-gateway
 - Look for: `openai_realtime_session_updated`, `assistant_response_canceled`, `openai_realtime_response_done`, `assistant_finish_session_accepted`
 - A normal close logs `assistant_finish_session_accepted` with `closingAudioObserved=true`, then `assistant_finish_session_playback_drained`. A recovered tool-only close logs `assistant_finish_session_close_missing`, `assistant_finish_session_close_recovery_requested`, `assistant_finish_session_close_recovery_completed`, and then playback drained. `assistant_finish_session_close_recovery_failed` or `_timeout` requires investigation.

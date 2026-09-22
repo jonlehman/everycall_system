@@ -21,6 +21,8 @@ services:
         value: live
       - key: OPENAI_LIVE_BACKEND_MODEL
         value: gpt-5.6-terra
+      - key: OPENAI_LIVE_BACKEND_REASONING_EFFORT
+        value: medium
       - key: OPENAI_REALTIME_API_SHAPE
         value: auto
       - key: OPENAI_REALTIME_VOICE

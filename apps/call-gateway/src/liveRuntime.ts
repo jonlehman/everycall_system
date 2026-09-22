@@ -1,4 +1,7 @@
 import crypto from "node:crypto";
+import { PreparedResponsesSession, resolveLiveReasoningEffort, type LiveBackend } from "./liveBackendSession.js";
+import { LIVE_BACKEND_ADAPTER, LIVE_HANDOFF_FORMAT, parseBackendHandoff, type HandoffQuestion } from "./liveContract.js";
+import { LiveTranscript, normalizeSpokenText, type Transcript } from "./liveTranscript.js";
 
 export type VoiceRuntime = "realtime" | "live";
 export function resolveVoiceRuntime(configured: unknown): VoiceRuntime {
@@ -44,12 +47,13 @@ export function pcmuHasSpeech(bytes: Buffer) {
   return bytes.length > 0 && Math.sqrt(energy / bytes.length) > 180;
 }
 
-type Transcript = { role: "user" | "assistant"; text: string; start_ms: number; end_ms: number; sequence: number };
 type Tool = Record<string, any>;
-type Task = { id: string; generation: number; revision: number; controller: AbortController };
+type Task = { id: string; generation: number; revision: number; controller: AbortController; finished: boolean; startedAt: number };
+type Operation = { id: string; name: string; arguments: string; status: "pending" | "completed" | "failed" | "unknown"; result?: unknown };
+type PendingQuestion = HandoffQuestion & { id: string; afterSequence: number; heardText?: string; spokenSequence?: number; spokenEndMs?: number; answerTurnId?: number; answer?: string };
 type Dependencies = {
   tenantKey: string; callSid: string; apiKey: string; safetyIdentifier: string;
-  backendModel: string; instructions: string; tools: Tool[];
+  backendModel: string; reasoningEffort?: string; instructions: string; tools: Tool[];
   send: (event: Record<string, unknown>) => void;
   isActive: () => boolean;
   executeTool: (name: string, callId: string, args: string, mayCommit: () => boolean) => Promise<unknown>;
@@ -60,7 +64,8 @@ type Dependencies = {
   ready: () => void;
   finish: (reason: string) => void;
   audit: (event: string, details: Record<string, unknown>) => void;
-  fetch?: typeof fetch;
+  backend?: LiveBackend;
+  settleMs?: number;
 };
 
 /** Client delegation owns backend state; speech events never commit or cancel tools. */
@@ -69,14 +74,19 @@ export class LiveRuntime {
   closed = false;
   private closing = false;
   private generation = 0;
-  private revision = 0;
-  private transcriptSequence = 0;
   private task?: Task;
-  private history: Transcript[] = [];
+  private context = new LiveTranscript();
+  private question: PendingQuestion | undefined;
+  private transcriptTimer?: ReturnType<typeof setTimeout>;
+  private lastCallerAt = 0;
+  private ackPending = false;
   private eventIds = new Set<string>();
   private delegationIds = new Set<string>();
-  private executions = new Map<string, Promise<unknown>>();
-  private completedActions: Array<{ name: string; arguments: string; result: unknown }> = [];
+  private operations = new Map<string, Operation>();
+  private backend: LiveBackend;
+  private prepared?: Promise<void>;
+  private toolOutputs: any[] = [];
+  private lastBackendTurnId = 0;
   private tail: Promise<void> = Promise.resolve();
   private finalized?: () => void;
   private closePromise?: Promise<void>;
@@ -84,7 +94,24 @@ export class LiveRuntime {
   private finishState: { text: string; transcript: string; requestedAt: number; heardAudio: boolean; transcriptAt: number } | undefined;
   private lastAudiblePlaybackAt = 0;
 
-  constructor(private readonly deps: Dependencies) {}
+  constructor(private readonly deps: Dependencies) {
+    this.backend = deps.backend || new PreparedResponsesSession({
+      apiKey: deps.apiKey, model: deps.backendModel, safetyIdentifier: deps.safetyIdentifier,
+      reasoningEffort: resolveLiveReasoningEffort(deps.reasoningEffort),
+      instructions: deps.instructions + LIVE_BACKEND_ADAPTER,
+      tools: deps.tools.map(tool => ({ type: "function", name: tool.name, description: tool.description, parameters: tool.parameters, strict: false })),
+      text: LIVE_HANDOFF_FORMAT, audit: deps.audit
+    });
+  }
+
+  prepare() {
+    // Attach a handler immediately: startup preparation can fail before delegation.
+    if (!this.prepared) {
+      this.prepared = this.backend.prepare();
+      void this.prepared.catch(() => this.deps.audit("openai_live_backend_prepare_failed", {}));
+    }
+    return this.prepared;
+  }
 
   append(type: "instructions" | "thinking" | "commentary", text: string, delegationId: string | null = null) {
     if (!this.started || this.closing || this.closed) return;
@@ -95,17 +122,53 @@ export class LiveRuntime {
     if (this.started && !this.closing && !this.closed) this.deps.send({ type: "session.input_audio.append", audio });
   }
 
-  latestCallerText() { return this.history.filter(x => x.role === "user").at(-1)?.text || ""; }
-  get transcriptRevision() { return this.transcriptSequence; }
-  callerConfirmationAfter(lookupRevision: number) {
-    const caller = this.history.at(-1);
-    const question = this.history.at(-2);
-    // Require a fresh question after the lookup, then a new caller turn. Never
-    // reinterpret the original transfer request (or its later fragments) as consent.
-    return caller?.role === "user" && caller.sequence > lookupRevision
-      && question?.role === "assistant" && question.sequence > lookupRevision
-      && /\b(?:transfer|connect|put you through)\b[^?]*\?\s*$/i.test(question.text)
-      ? caller.text : "";
+  latestCallerText() { return this.context.provisional?.role === "user" ? this.context.provisional.text : this.context.latestCaller()?.text || ""; }
+  get transcriptRevision() { return this.context.sequence; }
+  get taskRevision() { return this.context.revision; }
+  callerConfirmationAfter(lookupRevision: number, targetId: string) {
+    const question = this.question;
+    return question?.kind === "transfer_confirmation" && question.target_id === targetId
+      && question.afterSequence >= lookupRevision && question.spokenSequence !== undefined
+      && question.spokenSequence > lookupRevision && question.answerTurnId === this.context.latestCaller()?.id
+      && !this.context.pendingWork(true) ? question.answer || "" : "";
+  }
+
+  private finalizeTranscript() {
+    clearTimeout(this.transcriptTimer);
+    const turn = this.context.finalize(Boolean(this.question?.spokenSequence && !this.question.answerTurnId));
+    if (!turn) return;
+    const question = this.question;
+    if (turn.role === "assistant" && question && turn.sequence > question.afterSequence) {
+      // The exact supplied question must have reached the transcript. Unrelated
+      // yes/no answers and a question invented by Live cannot authorize an action.
+      if (normalizeSpokenText(question.heardText || turn.text).endsWith(normalizeSpokenText(question.text))) {
+        question.spokenSequence = turn.sequence;
+        question.spokenEndMs = turn.end_ms;
+      }
+      else if (turn.text.includes("?")) this.question = undefined;
+    }
+    if (turn.role === "user" && turn.kind === "meaningful") {
+      if (question?.spokenSequence && turn.sequence > question.spokenSequence && turn.start_ms >= (question.spokenEndMs ?? Infinity) && !question.answerTurnId) {
+        question.answerTurnId = turn.id;
+        question.answer = turn.text;
+      }
+      this.deps.audit("openai_live_turn_finalized", { turnId: turn.id, revision: this.context.revision, startMs: turn.start_ms, endMs: turn.end_ms });
+    }
+  }
+
+  private async settleTranscript() {
+    const delay = this.deps.settleMs ?? 350;
+    while (this.context.provisional?.role === "user" && delay > 0 && Date.now() - this.lastCallerAt < delay) {
+      await new Promise(resolve => setTimeout(resolve, delay - (Date.now() - this.lastCallerAt)));
+      if (this.closed || this.closing) return;
+    }
+    this.finalizeTranscript();
+  }
+
+  private noteLiveAck() {
+    if (!this.ackPending) return;
+    this.ackPending = false;
+    this.deps.audit("openai_live_latency", { milestone: "live_ack", elapsedMs: Date.now() - this.lastCallerAt, playbackConfirmed: false });
   }
 
   async handle(event: Record<string, any>) {
@@ -121,6 +184,8 @@ export class LiveRuntime {
       this.closed = true;
       this.started = false;
       this.task?.controller.abort();
+      clearTimeout(this.transcriptTimer);
+      this.backend.close();
       this.deps.audit("openai_live_session_closed", { usage: event.usage, finalUsageConfirmed: true });
       this.finalized?.();
       if (!requestedClose) this.deps.finish("openai_live_provider_closed");
@@ -129,6 +194,7 @@ export class LiveRuntime {
     if (event.type === "session.started") {
       if (this.started) return;
       this.started = true;
+      void this.prepare();
       this.deps.ready();
       return;
     }
@@ -144,24 +210,24 @@ export class LiveRuntime {
     }
     if (this.closing || !this.started) return;
     if (event.type === "session.output_audio.delta" && typeof event.delta === "string") {
+      if (pcmuHasSpeech(Buffer.from(event.delta, "base64"))) this.noteLiveAck();
       this.deps.audio(Buffer.from(event.delta, "base64"));
       return;
     }
     if (event.type === "session.input_transcript.delta" || event.type === "session.output_transcript.delta") {
       if (typeof event.delta !== "string" || !event.delta) return;
       const role = event.type === "session.input_transcript.delta" ? "user" : "assistant";
-      const entry: Transcript = { role, text: event.delta, start_ms: Number(event.start_ms), end_ms: Number(event.end_ms), sequence: ++this.transcriptSequence };
-      const last = this.history.at(-1);
-      if (last?.role === role) { last.text += entry.text; last.end_ms = entry.end_ms; }
-      else this.history.push({ ...entry });
-      // Bound retained context while keeping the authoritative captured state separately.
-      while (this.history.length > 128 || (this.history.length > 1 && this.history.reduce((n, x) => n + x.text.length, 0) > 48000)) this.history.shift();
-      if (this.history.at(-1)!.text.length > 48000) this.history.at(-1)!.text = this.history.at(-1)!.text.slice(-48000);
+      if (this.context.provisional && this.context.provisional.role !== role) this.finalizeTranscript();
+      const entry = this.context.append(role, event.delta, Number(event.start_ms), Number(event.end_ms), Boolean(this.question?.spokenSequence));
+      if (role === "assistant" && this.question && entry.sequence > this.question.afterSequence && !this.question.answerTurnId) {
+        this.question.heardText = ((this.question.heardText || "") + entry.text).slice(-2400);
+      }
       if (role === "user") {
-        this.revision++;
+        this.lastCallerAt = Date.now();
+        this.ackPending = true;
         // Do not abort an action already submitted. Revision guards prevent its stale
         // response, the next tool, or a deferred close from reaching the live call.
-        if (this.finishState) {
+        if (this.finishState && this.context.pendingWork(false)) {
           this.finishState = undefined;
           this.append("instructions", "The caller has spoken again. Continue helping them and delegate any remaining work before ending the call.");
         }
@@ -169,6 +235,8 @@ export class LiveRuntime {
         this.finishState.transcript += entry.text;
         this.finishState.transcriptAt = Date.now();
       }
+      clearTimeout(this.transcriptTimer);
+      this.transcriptTimer = setTimeout(() => this.finalizeTranscript(), this.deps.settleMs ?? 350);
       this.deps.transcript(entry);
       return;
     }
@@ -177,8 +245,12 @@ export class LiveRuntime {
       if (!delegationId || this.delegationIds.has(delegationId) || !this.deps.isActive()) return;
       if (this.delegationIds.size >= 128) { this.deps.finish("openai_live_task_limit"); return; }
       this.delegationIds.add(delegationId);
+      await this.settleTranscript();
+      if (!this.context.latestCaller() || this.closing || this.closed) return;
+      // A repeated delegation caused by a backchannel continues the existing work.
+      if (this.task?.revision === this.context.revision) return;
       this.task?.controller.abort();
-      const task = { id: delegationId, generation: ++this.generation, revision: this.revision, controller: new AbortController() };
+      const task = { id: delegationId, generation: ++this.generation, revision: this.context.revision, controller: new AbortController(), finished: false, startedAt: this.lastCallerAt };
       this.task = task;
       // Serialize backend actions across generations; a newer task cannot race an
       // in-flight capture/transfer. The next task receives committed application state.
@@ -192,76 +264,129 @@ export class LiveRuntime {
     return this.task === task && task.generation === this.generation && !this.closing && !this.closed && this.deps.isActive();
   }
 
-  private fresh(task: Task) { return this.current(task) && task.revision === this.revision; }
+  private fresh(task: Task) { return this.current(task) && !task.controller.signal.aborted && task.revision === this.context.revision && !this.context.pendingWork(Boolean(this.question?.spokenSequence && !this.question.answerTurnId)); }
 
   private async run(task: Task) {
     if (!this.current(task)) return;
-    task.revision = this.revision;
     const timeout = setTimeout(() => task.controller.abort(), 30000);
-    let redelegationHintSent = false;
-    const input: any[] = [{ role: "developer", content: "Verified application state and previously completed actions (do not repeat): " + JSON.stringify({ state: this.deps.state(), actions: this.completedActions }) }, ...this.history.map(x => ({ role: x.role, content: x.text }))];
+    let queuedOutputCount = this.toolOutputs.length;
+    let input: any[] = [...this.toolOutputs, { role: "user", content: JSON.stringify({
+      application_state: this.deps.state(), operation_records: [...this.operations.values()].map(({ result: _result, ...record }) => record),
+      pending_question: this.question || null, meaningful_revision: this.context.revision,
+      finalized_turns: this.context.turns.filter(turn => turn.id > this.lastBackendTurnId), provisional_transcript: this.context.provisional || null
+    }) }];
     this.deps.audit("openai_live_task_started", { delegationId: task.id, generation: task.generation, revision: task.revision });
     try {
+      // Warmup may have failed transiently at call startup. respond() owns its one
+      // bounded transport retry, always before any application tool execution.
+      await this.prepare().catch(() => {});
       for (let step = 0; step < 6 && this.fresh(task); step++) {
-        const response = await (this.deps.fetch || fetch)("https://api.openai.com/v1/responses", {
-          method: "POST", signal: task.controller.signal,
-          headers: { Authorization: `Bearer ${this.deps.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: this.deps.backendModel, store: false,
-            safety_identifier: this.deps.safetyIdentifier,
-            instructions: this.deps.instructions + "\nYou are the backend for a live voice receptionist. Transcripts can be unfinished or corrected. Apply the business rules and required confirmations above using current context. Execute only supplied tools. Never repeat completed actions. Return a concise factual result or the next question for the voice model, at most 80 words. Do not claim an action succeeded before its tool confirms success. After successful data_capture continue to the next needed question, not a closing. Use finish_session only at the specified completed-call checkpoint.",
-            input, tools: this.deps.tools.map(tool => ({ type: "function", name: tool.name, description: tool.description, parameters: tool.parameters, strict: false })),
-            parallel_tool_calls: false, max_output_tokens: 1200
-          })
-        });
-        if (!response.ok) throw new Error(`live_backend_http_${response.status}`);
-        const body = await response.json() as any;
+        this.lastBackendTurnId = this.context.turns.at(-1)?.id || this.lastBackendTurnId;
+        // Remove outputs only when actually submitted. A newer provisional turn
+        // or the round limit must not strand an unresolved function in the chain.
+        this.toolOutputs.splice(0, queuedOutputCount);
+        const body = await this.backend.respond(input, task.controller.signal);
         this.deps.audit("openai_live_backend_usage", { delegationId: task.id, generation: task.generation, model: this.deps.backendModel, usage: body.usage });
-        if (!this.fresh(task)) break;
         if (body.status !== "completed" || !Array.isArray(body.output)) throw new Error("live_backend_incomplete");
-        input.push(...body.output);
         const calls = body.output.filter((item: any) => item.type === "function_call");
+        // Even skipped calls need an output before continuing a Responses chain.
+        const outputs = calls.map((call: any) => ({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify({ status: "not_executed", reason: "superseded_or_invalid" }) }));
+        this.toolOutputs.push(...outputs);
+        await this.settleTranscript();
+        if (!this.fresh(task)) break;
         if (!calls.length) {
           const text = body.output.flatMap((item: any) => item.type === "message" ? item.content || [] : []).filter((part: any) => part.type === "output_text").map((part: any) => part.text).join("");
-          if (text) this.append("commentary", text.slice(0, 1600), task.id);
+          const completed = new Set([...this.operations.values()].filter(x => x.status === "completed").map(x => x.id));
+          const handoff = parseBackendHandoff(text, completed);
+          // Facts only. Never send Responses reasoning items, raw results or the
+          // structured contract to Live's quiet context or caller-facing channel.
+          for (const fact of handoff.verified_facts) this.append("thinking", fact.text, task.id);
+          this.question = handoff.next_question ? { ...handoff.next_question, id: crypto.randomUUID(), afterSequence: this.context.sequence } : undefined;
+          const speech = [handoff.spoken_response, handoff.next_question?.text].filter(Boolean).join(" ");
+          if (speech) this.append("commentary", speech, task.id);
+          if (handoff.verified_facts.length || handoff.spoken_response) this.deps.audit("openai_live_latency", {
+            delegationId: task.id, milestone: "backend_useful_fact", elapsedMs: Date.now() - task.startedAt, playbackConfirmed: false
+          });
           return;
         }
-        for (const call of calls) {
+        // The backend is configured serially; reject a protocol-violating batch
+        // before any side effect so capture cannot be followed by an unreviewed close.
+        if (calls.length !== 1) throw new Error("live_backend_parallel_tools_rejected");
+        for (const [index, call] of calls.entries()) {
           if (!this.fresh(task) || this.finishState) return;
           const tool = this.deps.tools.find(t => t.name === call.name && t.type === "function");
           let args: unknown;
           try { args = JSON.parse(call.arguments); } catch { throw new Error("live_backend_invalid_arguments"); }
           if (!tool || !call.call_id || !args || typeof args !== "object" || Array.isArray(args) || !this.deps.validateTool(call.name, args)) throw new Error("live_backend_unauthorized_tool");
-          // Binding is derived exclusively from the authenticated server call context.
-          const key = crypto.createHash("sha256").update(JSON.stringify([this.deps.tenantKey, this.deps.callSid, task.id, call.call_id])).digest("hex");
-          let execution = this.executions.get(key);
-          if (!execution) {
-            execution = this.deps.executeTool(call.name, key, call.arguments, () => this.fresh(task));
-            this.executions.set(key, execution);
+          const stable = (value: any): any => Array.isArray(value) ? value.map(stable) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value;
+          // A regenerated function-call ID is not permission to repeat an action.
+          const readOnly = call.name === "knowledge_lookup" || call.name === "lookup_transfer_target";
+          let key = crypto.createHash("sha256").update(JSON.stringify([this.deps.tenantKey, this.deps.callSid, call.name, stable(args), this.context.latestCaller()?.id])).digest("hex");
+          let operation = this.operations.get(key);
+          if (readOnly && operation?.status === "failed") {
+            // A read-only cancellation/failure is safe to retry. Keep the failed
+            // attempt in the ledger, with a distinct ID for the new bounded round.
+            key = crypto.createHash("sha256").update(`${key}:retry:${this.operations.size}`).digest("hex");
+            operation = undefined;
           }
-          const result = await execution;
-          this.completedActions.push({ name: call.name, arguments: call.arguments, result });
-          if (this.completedActions.length > 32) this.completedActions.shift();
+          // Uncertain side effects are never resubmitted merely because the caller
+          // spoke again or the backend regenerated a different function-call ID.
+          if (!readOnly) operation ||= [...this.operations.values()].find(previous => previous.name === call.name && previous.status === "unknown" && JSON.stringify(stable(JSON.parse(previous.arguments))) === JSON.stringify(stable(args)));
+          if (!operation) {
+            if (this.operations.size >= 128) throw new Error("live_operation_limit");
+            operation = { id: key, name: call.name, arguments: call.arguments, status: "pending" };
+            this.operations.set(key, operation);
+            this.deps.audit("openai_live_operation", { operationId: key, name: call.name, status: "pending", delegationId: task.id });
+            try {
+              operation.result = await this.deps.executeTool(call.name, key, call.arguments, () => this.fresh(task));
+              const resultStatus = (operation.result as any)?.status;
+              operation.status = resultStatus === "unknown" || resultStatus === "pending" ? (readOnly ? "failed" : "unknown")
+                : ["failed", "rejected", "invalid", "stale", "error"].includes(resultStatus) ? "failed"
+                  : readOnly || resultStatus === "accepted" || resultStatus === "completed" ? "completed" : "unknown";
+            } catch {
+              // The request might have committed before a persistence/network error.
+              operation.status = readOnly ? "failed" : "unknown";
+              operation.result = readOnly ? { status: "failed", reason: "lookup_incomplete_safe_to_retry" }
+                : { status: "unknown", reason: "operation_outcome_unconfirmed_do_not_repeat" };
+            }
+            this.deps.audit("openai_live_operation", { operationId: key, name: call.name, status: operation.status, delegationId: task.id });
+            if (operation.status === "completed") this.deps.audit("openai_live_latency", { operationId: key, delegationId: task.id, milestone: "action_complete", elapsedMs: Date.now() - task.startedAt });
+          }
+          outputs[index]!.output = JSON.stringify({ operation_id: operation.id, action_status: operation.status, result: operation.result });
+          await this.settleTranscript();
           if (!this.fresh(task) || this.finishState) return;
-          input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(result) });
         }
+        queuedOutputCount = this.toolOutputs.length;
+        input = [...this.toolOutputs];
       }
-      if (this.current(task)) {
-        this.append("thinking", "The previous backend request is incomplete or the caller supplied newer information. Delegate again using the latest conversation before relying on a result.", task.id);
-        redelegationHintSent = true;
-      }
+      if (this.fresh(task)) throw new Error("live_backend_step_limit");
     } catch (error) {
-      this.deps.audit("openai_live_task_failed", { delegationId: task.id, generation: task.generation, error: error instanceof Error ? error.message : "unknown" });
-      if (this.fresh(task)) this.append("commentary", "The requested backend work could not be confirmed. Do not claim it succeeded. Ask whether the caller would like a callback.", task.id);
+      const code = error instanceof Error && /^(live_|previous_response_not_found)/.test(error.message) ? error.message : "live_backend_failed";
+      this.deps.audit("openai_live_task_failed", { delegationId: task.id, generation: task.generation, error: code });
+      if (this.current(task) && task.revision === this.context.revision && !this.context.pendingWork(false)) {
+        // Transport/contract failure has no authority to advance intake, reopen
+        // a refused callback, or fabricate a pending confirmation question.
+        this.append("commentary", "I'm sorry, I couldn't confirm that.", task.id);
+      }
     } finally {
       clearTimeout(timeout);
-      if (this.current(task) && task.revision !== this.revision && !redelegationHintSent) {
-        this.append("thinking", "The caller supplied newer information while the backend was working. Delegate again using the latest conversation and verified action state before relying on a result.", task.id);
+      task.finished = true;
+      await this.settleTranscript();
+      if (this.current(task) && task.revision !== this.context.revision) {
+        this.append("thinking", "The caller's request changed. Earlier uncommitted work was superseded; completed actions remain recorded.", task.id);
+        // A correction need not wait for Live to invent a second delegation. Reuse
+        // the known client delegation ID, serialize after committed work, and bind
+        // the new task to the newly finalized meaningful turn.
+        const next = { ...task, generation: ++this.generation, revision: this.context.revision, controller: new AbortController(), finished: false, startedAt: this.lastCallerAt };
+        this.task = next;
+        this.tail = this.tail.then(() => this.run(next)).catch(() => {});
       }
     }
   }
 
   requestFinish(text: string) {
     if (!this.task || !this.fresh(this.task) || this.finishState) return false;
+    if (this.question?.kind !== "other_questions" || !this.question.spokenSequence || this.question.answerTurnId !== this.context.latestCaller()?.id) return false;
     this.finishState = { text, transcript: "", requestedAt: Date.now(), heardAudio: false, transcriptAt: 0 };
     this.append("instructions", `Say exactly this closing once, then remain silent: ${text}`);
     return true;
@@ -294,6 +419,8 @@ export class LiveRuntime {
     if (this.closed) return Promise.resolve();
     this.closing = true;
     this.task?.controller.abort();
+    clearTimeout(this.transcriptTimer);
+    this.backend.close();
     this.closePromise = new Promise(resolve => {
       this.finalized = () => { clearTimeout(this.closeTimer); resolve(); };
       this.closeTimer = setTimeout(() => {

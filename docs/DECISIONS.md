@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-09-22
+- Use GPT-Live only for speech, interruption and delivery of verified backend content. The full canonical receptionist procedure, tenant facts, tools, pricing rules, intake progression, next question and closing decision belong to the delegated `gpt-5.6-terra` backend. Live receives a separate short speech/delegation prompt.
+- Prepare one persistent Responses WebSocket per call with `generate:false`, explicit `reasoning.effort=medium` (operator-configurable) and `store:false`; continue with the supported connection-local `previous_response_id`. Bounded backend reconnection restores context and operation records without replaying application actions. Speech-session loss still ends the call.
+- Retain timestamped provisional transcripts, finalize local meaningful turns, and keep backchannels from revising requested work. Bind confirmations to the backend's exact question and action target after the question is observed in the output transcript. Return a structured, bounded handoff; only quiet facts reach thinking and coherent caller-facing content reaches commentary. Raw tool outputs and private reasoning remain in the backend.
+- Keep the existing Telnyx PCMU timing/jitter work separate. Offline mocked acceptance, independent critical review, existing repository gates, and an authorized audible provider canary are distinct release requirements.
+
 ## 2026-08-21
 - The canonical receptionist's exact pre-close checkpoint is `Is there anything else I can help you with?` in both legacy and layered prompt rendering. It replaces `Do you have any other questions?`; the wait-for-answer and finish-session sequence are unchanged.
 - Canonical Receptionist v19 treats website/upload pricing as unsafe independently of the ranking category. Two independent offline source verdicts must clear each candidate and card; missing or stale verdicts fail closed. Suppressed supports stay searchable but are replaced before packet assembly with a separately generated and verified figure-free restatement, and the gateway replaces the whole packet if its provenance-aware monetary boundary still finds a non-authorized price.

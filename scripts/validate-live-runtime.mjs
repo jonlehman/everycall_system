@@ -1,193 +1,283 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import ts from "typescript";
 import { LiveRuntime, buildLiveStart, resolveVoiceRuntime, liveAppend, pcmuHasSpeech } from "../apps/call-gateway/dist/apps/call-gateway/src/liveRuntime.js";
+import { PreparedResponsesSession, RESPONSES_WS_URL, resolveLiveReasoningEffort } from "../apps/call-gateway/dist/apps/call-gateway/src/liveBackendSession.js";
+import { LIVE_SPEECH_INSTRUCTIONS, LIVE_BACKEND_ADAPTER, LIVE_HANDOFF_FORMAT, parseBackendHandoff } from "../apps/call-gateway/dist/apps/call-gateway/src/liveContract.js";
 
-// Offline contract tests only. Every backend request is intercepted below.
-assert.equal(resolveVoiceRuntime(undefined), "realtime");
-assert.equal(resolveVoiceRuntime("live"), "live");
-assert.throws(() => resolveVoiceRuntime("gpt-live-1"), /invalid_voice_runtime/);
-const start = buildLiveStart("trusted rules", "marin");
-assert.equal(start.type, "session.start");
-assert.equal(start.session.model, "gpt-live-1");
-assert.deepEqual(start.session.audio.format, { type: "audio/pcmu", rate: 8000 });
-assert.deepEqual(start.session.delegation, { type: "client" });
-assert.equal(start.session.store, false);
-assert.equal("tools" in start.session, false);
-assert.equal("turn_detection" in start.session, false);
-const chunks = liveAppend("commentary", "界🙂".repeat(400), "delegation");
-assert.ok(chunks.every(x => Buffer.byteLength(x.content) <= 480 && x.delegation_id === "delegation"));
-assert.equal(chunks.map(x => x.content).join(""), "界🙂".repeat(400));
-assert.equal(pcmuHasSpeech(Buffer.alloc(160, 255)), false);
-assert.equal(pcmuHasSpeech(Buffer.alloc(160, 0)), true);
-
-const answer = text => ({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text }] }], usage: { input_tokens: 10, output_tokens: 5 } });
-const tool = (id = "tool1", name = "data_capture") => ({ status: "completed", output: [{ type: "function_call", call_id: id, name, arguments: '{"first_name":"Ada"}' }] });
-function harness(overrides = {}) {
+// All models, sockets and operations are fake. This suite never reads credentials.
+const tick = () => new Promise(resolve => setImmediate(resolve));
+const idle = async () => { for (let n = 0; n < 8; n++) await tick(); };
+let seq = 0;
+const caller = delta => ({ type: "session.input_transcript.delta", event_id: `u-${++seq}`, delta, start_ms: seq * 100, end_ms: seq * 100 + 50 });
+const assistant = delta => ({ ...caller(delta), type: "session.output_transcript.delta" });
+const delegate = id => ({ type: "session.delegation.created", event_id: `d-${id}`, offset_ms: seq * 100, delegation: { id, target: "client" } });
+const question = (text, kind = "intake", target_id = null) => ({ text, kind, target_id });
+const contract = (spoken_response = "", next_question = null, extra = {}) => ({ verified_facts: [], action_status: "none", spoken_response, next_question, completed_operation_ids: [], ...extra });
+const answer = value => ({ id: `r-${++seq}`, status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(value) }] }], usage: { input_tokens: 10, output_tokens: 5 } });
+const tool = (name = "data_capture", args = { first_name: "Ada" }, id = `f-${++seq}`) => ({ id: `r-${++seq}`, status: "completed", output: [{ type: "function_call", call_id: id, name, arguments: JSON.stringify(args) }] });
+const all = [];
+function harness({ replies = [answer(contract("We repair windows."))], executeTool, ...overrides } = {}) {
   const sent = [], calls = [], logs = [], transcripts = [], finishes = [], requests = [];
-  let fetchIndex = 0;
-  const replies = overrides.replies || [answer("Verified answer")];
+  let closed = false, prepared = false, index = 0;
+  const backend = {
+    prepare: async () => { prepared = true; }, close: () => { closed = true; },
+    respond: async (input, signal) => {
+      assert.equal(prepared, true); assert.equal(closed, false);
+      requests.push(structuredClone(input));
+      const reply = replies[index++]; assert.ok(reply, "fixture must supply every backend response");
+      return typeof reply === "function" ? reply(input, signal) : reply;
+    }
+  };
   const runtime = new LiveRuntime({
-    tenantKey: overrides.tenantKey || "tenant-a", callSid: "call-a", apiKey: "server-secret", safetyIdentifier: "hashed-subject",
-    backendModel: "configured-backend", instructions: "Trusted business rules", tools: [{ type: "function", name: "data_capture", parameters: { type: "object" } }],
+    tenantKey: "tenant-a", callSid: "call-a", apiKey: "never-used", safetyIdentifier: "hashed-subject",
+    backendModel: "gpt-5.6-terra", instructions: "CANONICAL BUSINESS RULES", settleMs: 0, backend,
+    tools: ["knowledge_lookup", "data_capture", "lookup_transfer_target", "transfer_call", "finish_session"].map(name => ({ type: "function", name, parameters: { type: "object" } })),
     send: event => sent.push(event), isActive: () => true,
-    executeTool: async (...args) => { calls.push(args); return { status: "accepted" }; },
-    validateTool: () => true, state: () => ({ captured_fields: {} }),
-    transcript: entry => transcripts.push(entry), audio: bytes => { assert.equal(bytes.length, 160); }, ready: () => {},
-    finish: reason => finishes.push(reason), audit: (event, details) => logs.push({ event, ...details }),
-    fetch: async (url, options) => {
-      assert.equal(url, "https://api.openai.com/v1/responses");
-      requests.push(JSON.parse(options.body));
-      return { ok: true, json: async () => replies[fetchIndex++] || answer("Done") };
-    }, ...overrides
+    executeTool: async (...args) => { calls.push(args); return executeTool ? executeTool(...args) : { status: "accepted" }; },
+    validateTool: () => true, state: () => ({ captured_fields: {} }), transcript: entry => transcripts.push(entry),
+    audio: bytes => assert.equal(bytes.length, 160), ready: () => {}, finish: reason => finishes.push(reason),
+    audit: (event, details) => logs.push({ event, ...details }), ...overrides
   });
-  return { runtime, sent, calls, logs, transcripts, finishes, requests };
+  const h = { runtime, sent, calls, logs, transcripts, finishes, requests, closed: () => closed }; all.push(h); return h;
 }
-const started = { type: "session.started", session: { id: "live-session" } };
-const delegate = id => ({ type: "session.delegation.created", event_id: `event-${id}`, offset_ms: 100, delegation: { id, type: "delegation", target: "client" } });
-const caller = (delta, id = "caller1") => ({ type: "session.input_transcript.delta", event_id: id, delta, start_ms: 1, end_ms: 100 });
+async function start(h, utterance) { await h.runtime.handle({ type: "session.started" }); if (utterance) await h.runtime.handle(caller(utterance)); }
+const speech = h => h.sent.filter(x => x.type === "session.commentary.append").map(x => x.content);
+const state = request => JSON.parse(request.find(x => x.role === "user").content);
 
-const h = harness({ replies: [tool(), answer("What is your callback number?")] });
-h.runtime.input("before-ready");
-assert.equal(h.sent.length, 0);
-await h.runtime.handle(started);
-h.runtime.input(Buffer.alloc(160, 255).toString("base64"));
-assert.equal(h.sent[0].type, "session.input_audio.append");
-await h.runtime.handle(caller("My name is"));
-await h.runtime.handle(caller(" Ada", "caller2"));
-await h.runtime.handle(delegate("d1"));
-await h.runtime.handle(delegate("d1"));
-assert.equal(h.calls.length, 1, "duplicate delegation cannot repeat capture");
-assert.equal(h.requests.length, 2);
-assert.equal(h.requests[0].input.at(-1).content, "My name is Ada", "preserve transcript fragments exactly");
-assert.equal(h.requests[0].store, false);
-assert.equal(h.requests[0].safety_identifier, "hashed-subject");
-assert.equal(h.requests[0].parallel_tool_calls, false);
-assert.equal(h.sent.at(-1).delegation_id, "d1");
-assert.ok(!JSON.stringify(h.sent).includes("server-secret"));
-assert.ok(!h.sent.some(x => x.type === "response.create"));
-await h.runtime.handle({ type: "session.output_audio.delta", delta: Buffer.alloc(160, 255).toString("base64") });
-assert.equal(h.runtime.requestFinish("Thanks for calling. Have a good one."), true);
-await h.runtime.handle({ type: "session.instructions.appended", client_event_id: h.sent.at(-1).event_id });
-h.runtime.checkFinish(true);
-assert.equal(h.finishes.length, 0, "append acknowledgement is not audio completion");
-await h.runtime.handle({ type: "session.output_transcript.delta", delta: "Thanks for calling. Have a good one.", start_ms: 300, end_ms: 500 });
-h.runtime.notePlayback(Buffer.alloc(160, 0));
-h.runtime.checkFinish(false, Date.now() + 2000);
-assert.equal(h.finishes.length, 0, "queued playback blocks close");
-h.runtime.checkFinish(true, Date.now() + 2000);
-assert.deepEqual(h.finishes, ["assistant_finish_session"]);
+assert.equal(resolveVoiceRuntime(undefined), "realtime"); assert.equal(resolveVoiceRuntime("live"), "live");
+assert.throws(() => resolveVoiceRuntime("other")); assert.equal(resolveLiveReasoningEffort(undefined), "medium");
+assert.equal(resolveLiveReasoningEffort("high"), "high"); assert.throws(() => resolveLiveReasoningEffort("invalid"));
+const liveStart = buildLiveStart(LIVE_SPEECH_INSTRUCTIONS, "marin");
+assert.equal(liveStart.session.model, "gpt-live-1"); assert.equal(liveStart.session.store, false);
+assert.deepEqual(liveStart.session.audio.format, { type: "audio/pcmu", rate: 8000 });
+assert.deepEqual(liveStart.session.delegation, { type: "client" }); assert.equal("tools" in liveStart.session, false);
+assert.equal("turn_detection" in liveStart.session, false); assert.ok(!LIVE_SPEECH_INSTRUCTIONS.includes("CANONICAL BUSINESS RULES"));
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /Delegate every substantive caller turn/);
+assert.match(LIVE_BACKEND_ADAPTER, /No appointment-booking or calendar tool exists/);
+const chunks = liveAppend("instructions", "界🙂".repeat(400), "delegation");
+assert.ok(chunks.every(x => Buffer.byteLength(x.content) <= 480)); assert.equal(chunks.map(x => x.content).join(""), "界🙂".repeat(400));
+assert.equal(pcmuHasSpeech(Buffer.alloc(160, 255)), false); assert.equal(pcmuHasSpeech(Buffer.alloc(160, 0)), true);
+assert.throws(() => parseBackendHandoff(JSON.stringify(contract("x".repeat(481))), new Set()));
+assert.throws(() => parseBackendHandoff(JSON.stringify(contract("Saved", null, { action_status: "completed", completed_operation_ids: ["invented"] })), new Set()));
+assert.throws(() => parseBackendHandoff(JSON.stringify(contract("data_capture succeeded")), new Set()));
+assert.throws(() => parseBackendHandoff(JSON.stringify(contract("", question("Connect you?", "transfer_confirmation"))), new Set()));
 
-// A correction arriving while reasoning is in flight suppresses old tool execution.
-let release;
-const stale = harness({ fetch: async () => new Promise(resolve => { release = () => resolve({ ok: true, json: async () => tool() }); }) });
-await stale.runtime.handle(started);
-await stale.runtime.handle(caller("Ada"));
-const pending = stale.runtime.handle(delegate("stale"));
-await new Promise(resolve => setImmediate(resolve));
-await stale.runtime.handle(caller("Actually Grace", "correction"));
-release();
-await pending;
-assert.equal(stale.calls.length, 0);
-assert.ok(!stale.sent.some(x => x.type === "session.commentary.append"));
+// Actual transport with fake WebSockets: prepared affinity, incremental input,
+// store:false cache-loss recovery and exact encrypted reasoning/tool-output replay.
+class FakeSocket extends EventEmitter {
+  readyState = 0; requests = [];
+  constructor(onRequest) { super(); this.onRequest = onRequest; queueMicrotask(() => { this.readyState = 1; this.emit("open"); }); }
+  send(raw) { const request = JSON.parse(raw); this.requests.push(request); queueMicrotask(() => this.onRequest(this, request)); }
+  complete(response) { this.emit("message", JSON.stringify({ type: "response.completed", response })); }
+  terminate() { this.readyState = 3; this.emit("close"); } close() { this.terminate(); }
+}
+const sockets = [], backendLogs = []; let generated = 0, failContinuation = true;
+const session = new PreparedResponsesSession({
+  apiKey: "fake-key", model: "gpt-5.6-terra", reasoningEffort: "medium", safetyIdentifier: "hashed-subject",
+  instructions: "CANONICAL BUSINESS RULES" + LIVE_BACKEND_ADAPTER, tools: [{ type: "function", name: "knowledge_lookup", parameters: {} }], text: LIVE_HANDOFF_FORMAT,
+  audit: (event, details) => backendLogs.push({ event, ...details }),
+  socketFactory: (url, options) => {
+    assert.equal(url, RESPONSES_WS_URL); assert.equal(options.headers.Authorization, "Bearer fake-key");
+    const socket = new FakeSocket((ws, request) => {
+      if (request.generate === false) { ws.complete({ id: `warm-${sockets.length}`, status: "completed", output: [] }); return; }
+      if (generated === 1 && failContinuation) { failContinuation = false; ws.emit("message", JSON.stringify({ type: "error", error: { code: "previous_response_not_found" } })); return; }
+      generated++;
+      ws.complete(generated === 1 ? { id: "response-1", status: "completed", output: [{ type: "reasoning", encrypted_content: "opaque" }, tool("knowledge_lookup", { query: "hours" }, "lookup-1").output[0]] } : { ...answer(contract("We close at five.")), id: "response-2" });
+    }); sockets.push(socket); return socket;
+  }
+});
+await session.prepare(); assert.equal(sockets.length, 1); assert.equal(sockets[0].requests[0].generate, false);
+const warmup = sockets[0].requests[0];
+assert.equal(warmup.store, false); assert.equal(warmup.reasoning.effort, "medium");
+assert.ok(warmup.instructions.startsWith("CANONICAL BUSINESS RULES")); assert.equal("stream" in warmup, false); assert.equal("background" in warmup, false);
+const signal = new AbortController().signal;
+await session.respond([{ role: "user", content: "What are your hours?" }], signal);
+assert.equal(sockets[0].requests[1].previous_response_id, "warm-1");
+const resultInput = [{ type: "function_call_output", call_id: "lookup-1", output: '{"status":"accepted"}' }];
+await session.respond(resultInput, signal); assert.equal(sockets.length, 2);
+assert.deepEqual(sockets[0].requests[2].input, resultInput); assert.equal(sockets[1].requests[0].generate, false);
+const recovered = sockets[1].requests[1]; assert.equal(recovered.previous_response_id, "warm-2");
+assert.ok(recovered.input.some(x => x.encrypted_content === "opaque"));
+assert.ok(recovered.input.some(x => x.call_id === "lookup-1" && x.type === "function_call_output"));
+assert.equal(generated, 2); assert.ok(backendLogs.some(x => x.actionsReplayed === false));
+session.close(); await assert.rejects(() => session.respond([], signal), /closed|aborted/);
 
-// A replacement delegation runs after an already-submitted action settles.
-let finishAction;
-let running = 0, peak = 0;
-const concurrent = harness({ replies: [tool("one"), tool("two"), answer("Done")], executeTool: async () => {
-  running++; peak = Math.max(peak, running);
-  await new Promise(resolve => { finishAction = resolve; });
-  running--; return { status: "accepted" };
+const abortSockets = []; let streamedOnly = 0;
+const abortSession = new PreparedResponsesSession({
+  apiKey: "fake", model: "gpt-5.6-terra", reasoningEffort: "medium", safetyIdentifier: "hash", instructions: "rules", tools: [], text: LIVE_HANDOFF_FORMAT, audit() {},
+  socketFactory: () => {
+    const socket = new FakeSocket((ws, request) => {
+      if (request.generate === false) ws.complete({ id: "prepared", status: "completed", output: [] });
+      else { streamedOnly++; ws.emit("message", JSON.stringify({ type: "response.output_item.done", item: tool().output[0] })); }
+    }); abortSockets.push(socket); return socket;
+  }
+});
+await abortSession.prepare(); const abortController = new AbortController();
+const abortPending = abortSession.respond([{ role: "user", content: "Save Ada" }], abortController.signal);
+await tick(); abortController.abort(); await assert.rejects(() => abortPending, /aborted/);
+assert.equal(streamedOnly, 1, "aborted generation is not automatically retried");
+assert.equal(abortSockets[0].readyState, 3); abortSession.close();
+
+// Scripted content proves handoff boundaries; it is not paid model-behavior certification.
+for (const [utterance, result] of [
+  ["Do you replace glass?", contract("We replace window glass.", null, { verified_facts: [{ text: "We replace window glass.", source: "approved_context", source_operation_id: null }] })],
+  ["Can you schedule tomorrow?", contract("I can't book an appointment.", question("Would you like someone to call you back?", "callback_consent"))],
+  ["Does this brand work?", contract("I don't have that confirmed.", question("Would you like someone to call you back?", "callback_consent"))]
+]) {
+  const h = harness({ replies: [answer(result)] }); await start(h, utterance); await h.runtime.handle(delegate(`matrix-${++seq}`));
+  assert.deepEqual(speech(h), [[result.spoken_response, result.next_question?.text].filter(Boolean).join(" ")]);
+  assert.ok(!JSON.stringify(h.sent).includes("verified_facts"));
+}
+const capture = harness({ replies: [tool("data_capture", { first_name: "Ada", last_name: "Qzynn", code: "A7K-92Q" }), answer(contract("", question("What is your callback number?")))] });
+capture.runtime.input("before-start"); assert.equal(capture.sent.length, 0); await start(capture);
+for (const fragment of ["My first name is Ada. My surname is ", "Q", " z", " y", " n", " n", ". The code is A7K-92Q."]) await capture.runtime.handle(caller(fragment));
+assert.equal(capture.runtime.taskRevision, 0); await capture.runtime.handle(delegate("capture")); await capture.runtime.handle(delegate("capture"));
+assert.equal(capture.runtime.taskRevision, 1); assert.match(state(capture.requests[0]).finalized_turns[0].text, /Q z y n n/);
+assert.equal(JSON.parse(capture.calls[0][2]).code, "A7K-92Q"); assert.deepEqual(speech(capture), ["What is your callback number?"]);
+assert.ok(capture.logs.some(x => x.milestone === "action_complete"));
+await capture.runtime.handle({ type: "session.output_audio.delta", delta: Buffer.alloc(160, 0).toString("base64") });
+assert.ok(capture.logs.some(x => x.milestone === "live_ack" && x.playbackConfirmed === false));
+const long = harness({ replies: [answer(contract("", question("Which window needs repair first?", "clarification")))] });
+await start(long); const fragments = Array.from({ length: 60 }, (_, n) => `Window ${n + 1} is cracked, and `);
+for (const part of fragments) await long.runtime.handle(caller(part));
+await long.runtime.handle(delegate("long-request")); assert.equal(long.runtime.taskRevision, 1);
+assert.equal(state(long.requests[0]).finalized_turns[0].text, fragments.join(""));
+
+let releaseLookup;
+const backchannel = harness({ replies: [tool("knowledge_lookup", { query: "hours" }), input => {
+  const output = JSON.parse(input[0].output);
+  return answer(contract("We close at five.", null, { verified_facts: [{ text: "We close at five.", source: "tool", source_operation_id: output.operation_id }], action_status: "completed", completed_operation_ids: [output.operation_id] }));
+}], executeTool: async () => new Promise(resolve => { releaseLookup = () => resolve({ status: "accepted", raw_private_packet: "DO NOT EXPOSE" }); }) });
+await start(backchannel, "What time do you close?"); const lookupPending = backchannel.runtime.handle(delegate("lookup")); await tick();
+await backchannel.runtime.handle(caller("mm-hmm")); await backchannel.runtime.handle(delegate("backchannel")); releaseLookup(); await lookupPending;
+assert.equal(backchannel.runtime.taskRevision, 1); assert.equal(backchannel.calls.length, 1); assert.deepEqual(speech(backchannel), ["We close at five."]);
+assert.ok(!JSON.stringify(backchannel.sent).includes("DO NOT EXPOSE")); assert.ok(backchannel.logs.some(x => x.milestone === "backend_useful_fact"));
+
+let releaseReasoning;
+const corrected = harness({ replies: [() => new Promise(resolve => { releaseReasoning = () => resolve(tool()); }), answer(contract("", question("Is Grace your first name?", "clarification")))] });
+await start(corrected, "My name is Ada"); const old = corrected.runtime.handle(delegate("old")); await tick();
+await corrected.runtime.handle(caller("Actually, Grace")); releaseReasoning(); await old; await idle();
+assert.equal(corrected.calls.length, 0); assert.equal(corrected.runtime.taskRevision, 2);
+assert.match(state(corrected.requests[1]).finalized_turns.at(-1).text, /Grace/);
+assert.equal(JSON.parse(corrected.requests[1][0].output).status, "not_executed"); assert.deepEqual(speech(corrected), ["Is Grace your first name?"]);
+
+const duplicate = harness({ replies: [tool(), tool(), answer(contract("", question("What is your callback number?")))] });
+await start(duplicate, "Ada"); await duplicate.runtime.handle(delegate("duplicate")); assert.equal(duplicate.calls.length, 1);
+let unknownCalls = 0;
+const unknown = harness({ replies: [tool(), answer(contract("I couldn't confirm that.")), tool(), answer(contract("That action is still unconfirmed."))], executeTool: async () => { unknownCalls++; throw new Error("network_after_commit"); } });
+await start(unknown, "My name is Ada"); await unknown.runtime.handle(delegate("unknown"));
+await unknown.runtime.handle(caller("Try saving Ada again")); await unknown.runtime.handle(delegate("unknown-again"));
+assert.equal(unknownCalls, 1); assert.ok(unknown.logs.some(x => x.event === "openai_live_operation" && x.status === "unknown"));
+const returnedUnknown = harness({ replies: [tool("transfer_call", { target_id: "alice" }), tool("transfer_call", { target_id: "alice" }), answer(contract("The transfer is unconfirmed."))], executeTool: async () => ({ status: "unknown", reason: "transfer_outcome_unconfirmed" }) });
+await start(returnedUnknown, "Connect me"); await returnedUnknown.runtime.handle(delegate("returned-unknown"));
+assert.equal(returnedUnknown.calls.length, 1); assert.ok(returnedUnknown.logs.some(x => x.status === "unknown"));
+assert.ok(!returnedUnknown.logs.some(x => x.status === "completed"));
+let readAttempts = 0;
+const retryRead = harness({ replies: [tool("knowledge_lookup", { query: "hours" }), tool("knowledge_lookup", { query: "hours" }), answer(contract("We close at five."))], executeTool: async () => {
+  if (++readAttempts === 1) throw new Error("stale_live_lookup"); return { status: "accepted" };
 } });
-await concurrent.runtime.handle(started);
-const first = concurrent.runtime.handle(delegate("first"));
-await new Promise(resolve => setImmediate(resolve));
-const second = concurrent.runtime.handle(delegate("second"));
-finishAction();
-await new Promise(resolve => setImmediate(resolve));
-finishAction();
-await Promise.all([first, second]);
-assert.equal(peak, 1);
-assert.ok(!concurrent.sent.some(x => x.type === "session.commentary.append" && x.delegation_id === "first"));
+await start(retryRead, "Hours please"); await retryRead.runtime.handle(delegate("read-retry")); assert.equal(readAttempts, 2);
+assert.notEqual(retryRead.calls[0][1], retryRead.calls[1][1]); assert.ok(!retryRead.logs.some(x => x.status === "unknown"));
 
-// A delayed preflight belonging to the old task must not borrow the new task's
-// authority (e.g. a transfer-target lookup returning after a caller correction).
-let releasePreflight;
-const permits = [];
-const permitRace = harness({ replies: [tool("old"), answer("New request")], executeTool: async (_name, _id, _args, mayCommit) => {
-  permits.push(mayCommit());
-  await new Promise(resolve => { releasePreflight = resolve; });
-  permits.push(mayCommit());
-  if (!mayCommit()) throw new Error("stale_live_transfer");
-  return { status: "accepted" };
+// Run the real transfer handler in isolation. Provider timeouts and persistence
+// failures after provider acceptance must retain the command and report unknown.
+const source = readFileSync("apps/call-gateway/src/server.ts", "utf8");
+const ast = ts.createSourceFile("server.ts", source, ts.ScriptTarget.Latest, true);
+const executeNode = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "executeToolCall");
+assert.ok(executeNode);
+const executeJs = ts.transpileModule(executeNode.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+for (const failure of ["provider", "persistence"]) {
+  const outputs = []; let commands = 0;
+  const gateway = { live: {}, tenantKey: "tenant-a", callSid: "call-a", callControlId: "control-a", pendingTransferCandidate: { targetId: "alice", confirmed: true }, transferState: null };
+  const sandbox = vm.createContext({
+    crypto: { randomUUID: () => "stable-command" },
+    loadTransferTargetById: async () => ({ name: "Alice", transfer_extension: "3", forward_to_number: "fake-destination" }),
+    telnyxCallAction: async () => { commands++; if (failure === "provider") throw new Error("timeout_after_submission"); },
+    persistTransferCallState: async () => { if (failure === "persistence") throw new Error("database_unavailable_after_acceptance"); },
+    detachAiForTransferredCall: async () => {}, encodeTransferLegClientState: () => "fake-state",
+    forwardToolResult: async (_call, _tenant, _name, output) => outputs.push(output),
+    createFunctionCallOutputEvent: (_id, output) => output, createAudioTextResponseEvent: () => ({}),
+    sendOpenAiEvent() {}, logError() {}, logRealtimeToolPayloads() {}, noteToolResponseRequested() {}, requestAssistantResponse() {}, normalizeToolExecutionKey: () => "key"
+  });
+  vm.runInContext(executeJs + "\nthis.execute = executeToolCall;", sandbox);
+  await sandbox.execute(gateway, "transfer_call", "first", '{"target_id":"alice"}', () => true);
+  assert.equal(outputs.at(-1).status, "unknown"); assert.equal(gateway.transferState.commandId, "everycall_transfer_stable-command");
+  await sandbox.execute(gateway, "transfer_call", "second", '{"target_id":"alice"}', () => true);
+  assert.equal(commands, 1); assert.equal(outputs.at(-1).reason, "transfer_already_in_progress");
+}
+
+let releaseAction; const permitChecks = [];
+const race = harness({ replies: [tool(), answer(contract("", question("What name should I use?", "clarification")))], executeTool: async (_name, _id, _args, mayCommit) => {
+  permitChecks.push(mayCommit()); await new Promise(resolve => { releaseAction = resolve; }); permitChecks.push(mayCommit());
+  if (!mayCommit()) throw new Error("stale_preflight"); return { status: "accepted" };
 } });
-await permitRace.runtime.handle(started);
-const oldTask = permitRace.runtime.handle(delegate("old-task"));
-await new Promise(resolve => setImmediate(resolve));
-await permitRace.runtime.handle(caller("Do not transfer", "cancel-transfer"));
-const newTask = permitRace.runtime.handle(delegate("new-task"));
-releasePreflight();
-await Promise.all([oldTask, newTask]);
-assert.deepEqual(permits, [true, false]);
+await start(race, "Ada"); const racing = race.runtime.handle(delegate("race")); await tick();
+await race.runtime.handle(caller("No, don't save that")); releaseAction(); await racing; await idle(); assert.deepEqual(permitChecks, [true, false]);
 
-let finishStaleAction;
-const staleAction = harness({ replies: [tool()], executeTool: async () => {
-  await new Promise(resolve => { finishStaleAction = resolve; });
-  return { status: "accepted" };
-} });
-await staleAction.runtime.handle(started);
-const staleActionTask = staleAction.runtime.handle(delegate("stale-action"));
-await new Promise(resolve => setImmediate(resolve));
-await staleAction.runtime.handle(caller("Correction", "during-action"));
-finishStaleAction();
-await staleActionTask;
-assert.equal(staleAction.sent.filter(x => x.type === "session.thinking.append").length, 1, "stale action asks for renewed delegation once");
-assert.equal(staleAction.sent.filter(x => x.type === "session.commentary.append").length, 0);
+// Exact target and actual spoken question are required. The gateway's existing
+// consent classifier receives the bound answer, including explicit refusal.
+for (const response of ["Yes please", "No, don't transfer"]) {
+  const h = harness({ replies: [answer(contract("", question("Would you like me to transfer you to Alice?", "transfer_confirmation", "alice"))), tool("transfer_call", { target_id: "alice" }), answer(contract("I couldn't confirm the transfer."))], executeTool: async () => {
+    assert.equal(h.runtime.callerConfirmationAfter(1, "alice"), response);
+    assert.equal(h.runtime.callerConfirmationAfter(1, "bob"), "");
+    return { status: "failed", reason: response.startsWith("No") ? "confirmation_required" : "provider_failure" };
+  } });
+  await start(h, "Please transfer"); await h.runtime.handle(delegate(`q-${++seq}`));
+  assert.equal(h.runtime.callerConfirmationAfter(1, "alice"), "");
+  await h.runtime.handle(assistant("Would you like me to transfer you to Alice?")); await h.runtime.handle(caller(response)); await h.runtime.handle(delegate(`a-${++seq}`));
+  const bound = state(h.requests[1]).pending_question; assert.equal(bound.target_id, "alice"); assert.equal(bound.answer, response); assert.ok(bound.spokenSequence);
+  assert.ok(h.logs.some(x => x.event === "openai_live_operation" && x.status === "failed"));
+}
+const unrelated = harness({ replies: [answer(contract("", question("Would you like me to transfer you to Alice?", "transfer_confirmation", "alice"))), answer(contract("Please clarify."))] });
+await start(unrelated, "Transfer me"); await unrelated.runtime.handle(delegate("unrelated-q"));
+await unrelated.runtime.handle(assistant("Is your name Ada?")); await unrelated.runtime.handle(caller("Yes")); await unrelated.runtime.handle(delegate("unrelated-a"));
+assert.equal(unrelated.runtime.callerConfirmationAfter(1, "alice"), ""); assert.equal(state(unrelated.requests[1]).pending_question, null);
 
-const denied = harness({ replies: [tool("x", "delete_tenant")] });
-await denied.runtime.handle(started);
-await denied.runtime.handle(delegate("denied"));
-assert.equal(denied.calls.length, 0);
-assert.ok(denied.logs.some(x => x.event === "openai_live_task_failed"));
+const denied = harness({ replies: [tool("delete_tenant")] }); await start(denied, "Delete it"); await denied.runtime.handle(delegate("denied"));
+assert.equal(denied.calls.length, 0); assert.ok(denied.logs.some(x => x.event === "openai_live_task_failed"));
+assert.deepEqual(speech(denied), ["I'm sorry, I couldn't confirm that."]);
+const schemaDenied = harness({ replies: [tool()], validateTool: () => false });
+await start(schemaDenied, "Save malformed input"); await schemaDenied.runtime.handle(delegate("bad-schema")); assert.equal(schemaDenied.calls.length, 0);
+const invalidCapture = harness({ replies: [tool(), input => {
+  assert.equal(JSON.parse(input[0].output).action_status, "failed"); return answer(contract("I couldn't save that detail."));
+}], executeTool: async () => ({ status: "invalid", errors: ["phone_number_invalid"] }) });
+await start(invalidCapture, "Ada"); await invalidCapture.runtime.handle(delegate("invalid-capture"));
+assert.ok(invalidCapture.logs.some(x => x.name === "data_capture" && x.status === "failed"));
+assert.ok(!invalidCapture.logs.some(x => x.status === "completed"));
+const refusalFailure = harness({ replies: [answer(contract("", question("Would you like someone to call you back?", "callback_consent"))), () => { throw new Error("live_backend_unavailable"); }, answer(contract("I understand."))] });
+await start(refusalFailure, "Can you book tomorrow?"); await refusalFailure.runtime.handle(delegate("refusal-offer"));
+await refusalFailure.runtime.handle(assistant("Would you like someone to call you back?")); await refusalFailure.runtime.handle(caller("No callback, please"));
+await refusalFailure.runtime.handle(delegate("refusal-failure"));
+assert.equal(speech(refusalFailure).at(-1), "I'm sorry, I couldn't confirm that.");
+await refusalFailure.runtime.handle(caller("Did you hear me?")); await refusalFailure.runtime.handle(delegate("after-refusal"));
+assert.equal(state(refusalFailure.requests[2]).pending_question.answer, "No callback, please", "failure preserves the refusal without inventing a new question");
+const otherTenant = harness({ tenantKey: "tenant-b", replies: [tool(), answer(contract("Saved."))] });
+await start(otherTenant, "Ada"); await otherTenant.runtime.handle(delegate("other")); assert.notEqual(duplicate.calls[0][1], otherTenant.calls[0][1]);
 
-const other = harness({ tenantKey: "tenant-b", replies: [tool(), answer("Done")] });
-await other.runtime.handle(started);
-await other.runtime.handle(delegate("d1"));
-assert.notEqual(h.calls[0][1], other.calls[0][1], "idempotency key binds tenant and call");
+let closeRuntime; const closeText = "Thanks for calling. Have a good one.";
+const closing = harness({ replies: [answer(contract("", question("Is there anything else I can help you with?", "other_questions"))), tool("finish_session", { reason: "caller_finished" })], executeTool: async () => ({ status: closeRuntime.requestFinish(closeText) ? "accepted" : "failed" }) });
+closeRuntime = closing.runtime; await start(closing, "That's all"); assert.equal(closeRuntime.requestFinish(closeText), false);
+await closeRuntime.handle(delegate("preclose")); await closeRuntime.handle(assistant("Is there anything else I can help you with?"));
+await closeRuntime.handle(caller("No, that's all")); await closeRuntime.handle(delegate("finish")); assert.match(closing.sent.at(-1).content, /Say exactly this closing once/);
+await closeRuntime.handle({ type: "session.instructions.appended", client_event_id: closing.sent.at(-1).event_id }); closeRuntime.checkFinish(true); assert.equal(closing.finishes.length, 0);
+await closeRuntime.handle(assistant(closeText)); closeRuntime.notePlayback(Buffer.alloc(160, 0)); closeRuntime.checkFinish(false, Date.now() + 2000); assert.equal(closing.finishes.length, 0);
+closeRuntime.checkFinish(true, Date.now() + 2000); assert.deepEqual(closing.finishes, ["assistant_finish_session"]);
 
-const closePromise = h.runtime.close();
-assert.equal(h.sent.at(-1).type, "session.close");
-await h.runtime.handle({ type: "session.closed", usage: { seconds: 12 }, reason: "close_requested" });
-await closePromise;
-assert.equal(h.runtime.closed, true);
-assert.ok(h.logs.some(x => x.event === "openai_live_session_closed" && x.usage.seconds === 12));
-await h.runtime.handle(delegate("after-close"));
-assert.equal(h.calls.length, 1);
+let interruptedRuntime;
+const interrupted = harness({ replies: [answer(contract("", question("Is there anything else I can help you with?", "other_questions"))), tool("finish_session", { reason: "finished" })], executeTool: async () => ({ status: interruptedRuntime.requestFinish(closeText) ? "accepted" : "failed" }) });
+interruptedRuntime = interrupted.runtime; await start(interrupted, "All done"); await interruptedRuntime.handle(delegate("interrupt-checkpoint"));
+await interruptedRuntime.handle(assistant("Is there anything else I can help you with?")); await interruptedRuntime.handle(caller("No")); await interruptedRuntime.handle(delegate("interrupt-close"));
+await interruptedRuntime.handle(assistant("Thanks for calling.")); interruptedRuntime.notePlayback(Buffer.alloc(160, 0));
+await interruptedRuntime.handle(caller("Actually, one more question")); interruptedRuntime.checkFinish(true, Date.now() + 20000);
+assert.equal(interrupted.finishes.length, 0, "caller interruption cancels deferred closing");
+assert.match(interrupted.sent.at(-1).content, /caller has spoken again/);
 
-const unexpected = harness();
-await unexpected.runtime.handle(started);
-await unexpected.runtime.handle({ type: "session.closed", usage: { seconds: 1 }, reason: "expired" });
-assert.deepEqual(unexpected.finishes, ["openai_live_provider_closed"]);
-
-const correctedClose = harness();
-await correctedClose.runtime.handle(started);
-await correctedClose.runtime.handle(delegate("closing"));
-correctedClose.runtime.requestFinish("Thanks for calling. Have a good one.");
-await correctedClose.runtime.handle(caller("One more question", "reopen"));
-correctedClose.runtime.checkFinish(true, Date.now() + 20000);
-assert.equal(correctedClose.finishes.length, 0, "caller correction cancels deferred close");
-
-const confirmation = harness();
-await confirmation.runtime.handle(started);
-await confirmation.runtime.handle(caller("Please transfer me to Alice", "original-request"));
-const lookupRevision = confirmation.runtime.transcriptRevision;
-assert.equal(confirmation.runtime.callerConfirmationAfter(lookupRevision), "");
-await confirmation.runtime.handle(caller(" please", "same-request-fragment"));
-assert.equal(confirmation.runtime.callerConfirmationAfter(lookupRevision), "");
-await confirmation.runtime.handle({ type: "session.output_transcript.delta", delta: "Would you like me to transfer you to Alice?", start_ms: 200, end_ms: 400 });
-assert.equal(confirmation.runtime.callerConfirmationAfter(lookupRevision), "");
-await confirmation.runtime.handle(caller("Yes please", "fresh-confirmation"));
-assert.equal(confirmation.runtime.callerConfirmationAfter(lookupRevision), "Yes please");
-await confirmation.runtime.handle({ type: "session.output_transcript.delta", delta: "Is your name Ada?", start_ms: 500, end_ms: 600 });
-await confirmation.runtime.handle(caller("Yes", "unrelated-yes"));
-assert.equal(confirmation.runtime.callerConfirmationAfter(lookupRevision), "", "unrelated question is not transfer consent");
-
-console.log("Live runtime offline contracts passed: selection, PCMU, delegation, tenant binding, duplicate protection, stale suppression, serialized actions, closing, finalization.");
+const noisy = harness(); await start(noisy, "[noise]"); await noisy.runtime.handle(delegate("noise")); assert.equal(noisy.requests.length, 0); assert.equal(noisy.runtime.taskRevision, 0);
+await noisy.runtime.handle({ type: "session.output_audio.delta", delta: Buffer.alloc(160, 255).toString("base64") }); assert.equal(noisy.logs.some(x => x.milestone === "live_ack"), false);
+await noisy.runtime.handle({ type: "session.closed", usage: { seconds: 1 } }); assert.equal(noisy.closed(), true); assert.deepEqual(noisy.finishes, ["openai_live_provider_closed"]);
+await noisy.runtime.handle(caller("after disconnect")); assert.equal(noisy.runtime.taskRevision, 0);
+for (const h of all) { if (h.runtime.closed) continue; const done = h.runtime.close(); await h.runtime.handle({ type: "session.closed", usage: { seconds: 3 } }); await done; assert.equal(h.closed(), true); }
+console.log("Live offline acceptance passed: prepared WebSocket/medium/store:false/recovery; split prompts; atomic handoffs; fact and scheduling fixtures; spelling; corrections/backchannels; no replay; target-bound consent; failures; closing/playback; noise/disconnect; latency milestones.");
