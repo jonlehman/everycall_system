@@ -3,7 +3,7 @@ export const LIVE_SPEECH_INSTRUCTIONS = `You are the speech interface for EveryC
 Speak naturally, briefly, and clearly. Listen through long requests and spelled letters or numbers. Handle interruptions promptly; never replay interrupted speech automatically.
 Delegate every substantive caller turn, including direct questions, short answers, corrections, requests to continue, and goodbyes. The backend owns intake progression, knowledge, prices, callback offers, transfer decisions, scheduling statements, the next question, and closing. Never decide these yourself or infer them from caller speech.
 Say only the caller-facing content supplied in commentary. Preserve its meaning, qualifiers, exact numbers and names, and its single next question. Do not add facts, offers, promises or questions. Never claim an appointment is scheduled or an action succeeded without a verified backend result. Do not speak raw tool data or internal reasoning.
-Thinking updates are quiet factual context, never spoken progress. Stay silent during lookup and capture: no checking, saving, holding phrases or status narration. You may briefly ask the caller to repeat inaudible speech, but delegate the clarified answer.
+Thinking updates are quiet factual context, never spoken progress. Stay silent during lookup and capture: no checking, saving, holding phrases or status narration. You may briefly ask the caller to repeat inaudible speech, but delegate the clarified answer. A backend failure does not mean caller speech was unclear: speak only the supplied failure message, then listen without adding a repeat request or new question.
 Say a greeting or closing only when explicitly instructed by EveryCall. After a supplied question, stop and wait for the answer. After a supplied closing, remain silent.`;
 
 export const LIVE_BACKEND_ADAPTER = `
@@ -50,30 +50,37 @@ export const LIVE_HANDOFF_FORMAT = {
   } }
 };
 
+/** Fixed enum-like labels only: never expose model text through validation errors. */
+export class HandoffValidationError extends Error {
+  constructor(readonly constraint: string) { super("live_backend_invalid_handoff"); }
+}
+
 export function parseBackendHandoff(text: string, completedIds: Set<string>): BackendHandoff {
   let value: any;
-  try { value = JSON.parse(text); } catch { throw new Error("live_backend_invalid_handoff"); }
-  const invalid = () => { throw new Error("live_backend_invalid_handoff"); };
-  if (!value || typeof value !== "object" || Object.keys(value).sort().join() !== "action_status,completed_operation_ids,next_question,spoken_response,verified_facts") invalid();
-  if (!Array.isArray(value.completed_operation_ids) || !value.completed_operation_ids.every((id: unknown) => typeof id === "string" && completedIds.has(id))) invalid();
-  if (!["none", "completed", "failed", "unknown", "pending"].includes(value.action_status) || (value.action_status === "completed" && !value.completed_operation_ids.length)) invalid();
-  if (!Array.isArray(value.verified_facts) || value.verified_facts.length > 8) invalid();
+  try { value = JSON.parse(text); } catch { throw new HandoffValidationError("invalid_json"); }
+  const invalid = (constraint: string): never => { throw new HandoffValidationError(constraint); };
+  if (!value || typeof value !== "object" || Object.keys(value).sort().join() !== "action_status,completed_operation_ids,next_question,spoken_response,verified_facts") invalid("object_shape");
+  if (!Array.isArray(value.completed_operation_ids) || !value.completed_operation_ids.every((id: unknown) => typeof id === "string" && completedIds.has(id))) invalid("completed_operation_reference");
+  if (!["none", "completed", "failed", "unknown", "pending"].includes(value.action_status) || (value.action_status === "completed" && !value.completed_operation_ids.length)) invalid("action_status");
+  if (!Array.isArray(value.verified_facts) || value.verified_facts.length > 8) invalid("facts_shape");
   for (const fact of value.verified_facts) {
-    if (!fact || typeof fact.text !== "string" || Buffer.byteLength(fact.text) > 480 || !["approved_context", "tool"].includes(fact.source)) invalid();
-    if (fact.source === "tool" ? !completedIds.has(fact.source_operation_id) : fact.source_operation_id !== null) invalid();
+    if (!fact || typeof fact.text !== "string" || Buffer.byteLength(fact.text) > 480 || !["approved_context", "tool"].includes(fact.source)) invalid("fact_shape");
+    if (fact.source === "tool" ? !completedIds.has(fact.source_operation_id) : fact.source_operation_id !== null) invalid("fact_provenance");
   }
   const question = value.next_question;
   if (question !== null) {
     if (!question || typeof question.text !== "string" || !question.text.trim().endsWith("?")
       || !["intake", "clarification", "callback_consent", "phone_confirmation", "transfer_confirmation", "other_questions"].includes(question.kind)
       || (question.target_id !== null && typeof question.target_id !== "string")
-      || (question.kind === "transfer_confirmation" && !question.target_id)) invalid();
-    if (question.kind === "other_questions" && question.text !== "Is there anything else I can help you with?") invalid();
+      || (question.kind === "transfer_confirmation" && !question.target_id)) invalid("question_shape");
+    if (question.kind === "other_questions" && question.text !== "Is there anything else I can help you with?") invalid("exact_checkpoint");
   }
-  if (typeof value.spoken_response !== "string") invalid();
+  if (typeof value.spoken_response !== "string") invalid("spoken_response_type");
   const speech = [value.spoken_response, question?.text].filter(Boolean).join(" ");
   // One atomic append: never split an unfinished sentence into separate speech triggers.
-  if (Buffer.byteLength(speech) > 480 || (speech.match(/\?/g)?.length || 0) > 1 || /\b(?:knowledge_lookup|data_capture|finish_session|transfer_call|source_operation_id)\b|\{\s*"/i.test(speech)) invalid();
-  if (value.spoken_response.includes("?")) invalid(); // Questions require an explicit binding.
+  if (Buffer.byteLength(speech) > 480) invalid("speech_byte_limit");
+  if ((speech.match(/\?/g)?.length || 0) > 1) invalid("multiple_questions");
+  if (/\b(?:knowledge_lookup|data_capture|finish_session|transfer_call|source_operation_id)\b|\{\s*"/i.test(speech)) invalid("internal_content_in_speech");
+  if (value.spoken_response.includes("?")) invalid("unbound_question"); // Questions require an explicit binding.
   return value;
 }

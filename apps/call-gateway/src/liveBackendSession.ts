@@ -1,10 +1,12 @@
 import WebSocket from "ws";
+import crypto from "node:crypto";
 
 export const RESPONSES_WS_URL = "wss://api.openai.com/v1/responses";
 export type BackendResponse = { id: string; status: string; output: any[]; usage?: unknown };
+export type BackendTrace = { requestId: string; delegationId: string; generation: number; step: number };
 export interface LiveBackend {
   prepare(): Promise<void>;
-  respond(input: any[], signal: AbortSignal): Promise<BackendResponse>;
+  respond(input: any[], signal: AbortSignal, trace?: BackendTrace): Promise<BackendResponse>;
   close(): void;
 }
 export type BackendSocket = Pick<WebSocket, "on" | "send" | "close" | "terminate" | "readyState">;
@@ -30,7 +32,7 @@ export class PreparedResponsesSession implements LiveBackend {
   private previousId: string | undefined;
   private history: any[] = [];
   private closed = false;
-  private pending: { resolve: (value: BackendResponse) => void; reject: (error: Error) => void; output: any[] } | undefined;
+  private pending: { resolve: (value: BackendResponse) => void; reject: (error: Error) => void; output: any[]; firstEvent: () => void } | undefined;
   private busy = false;
 
   constructor(private readonly options: Options) {}
@@ -69,6 +71,7 @@ export class PreparedResponsesSession implements LiveBackend {
         if (this.socket !== socket || !this.pending) return;
         let event: any;
         try { event = JSON.parse(String(data)); } catch { this.pending.reject(new Error("live_backend_invalid_event")); return; }
+        this.pending.firstEvent();
         if (event.type === "response.output_item.done" && event.item) this.pending.output.push(event.item);
         if (event.type === "response.completed") {
           const response = event.response;
@@ -84,20 +87,30 @@ export class PreparedResponsesSession implements LiveBackend {
     return this.connecting;
   }
 
-  private exchange(input: any[], generate: boolean, signal?: AbortSignal): Promise<BackendResponse> {
+  private exchange(input: any[], generate: boolean, signal?: AbortSignal, trace?: BackendTrace, attempt = 0): Promise<BackendResponse> {
     if (signal?.aborted) return Promise.reject(new Error("live_backend_aborted"));
     if (this.pending || this.socket?.readyState !== WebSocket.OPEN) return Promise.reject(new Error("live_backend_not_ready"));
     return new Promise<BackendResponse>((resolve, reject) => {
+      const exchangeId = crypto.randomUUID();
+      const sentAt = Date.now();
+      let first = true;
+      const milestone = (name: string) => this.options.audit("openai_live_latency", {
+        ...trace, exchangeId, attempt, milestone: name, atUnixMs: Date.now(),
+        backendSentAtUnixMs: sentAt, sinceBackendSendMs: Date.now() - sentAt,
+        generation: trace?.generation, phase: generate ? "generation" : "warmup", playbackConfirmed: false
+      });
       const cleanup = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); this.pending = undefined; };
       const abort = () => { cleanup(); this.reset(); reject(new Error("live_backend_aborted")); };
       const timer = setTimeout(() => { cleanup(); this.reset(); reject(new Error("live_backend_response_timeout")); }, this.options.timeoutMs || 30000);
       this.pending = {
         output: [],
-        resolve: response => { cleanup(); resolve(response); },
+        firstEvent: () => { if (first) { first = false; milestone("backend_first_event"); } },
+        resolve: response => { milestone("backend_response_completed"); cleanup(); resolve(response); },
         reject: error => { cleanup(); reject(error); }
       };
       signal?.addEventListener("abort", abort, { once: true });
       try {
+        milestone("backend_request_sent");
         this.socket!.send(JSON.stringify({
           type: "response.create", model: this.options.model, store: false,
           ...(generate ? {} : { generate: false }),
@@ -126,7 +139,7 @@ export class PreparedResponsesSession implements LiveBackend {
     return this.preparing;
   }
 
-  async respond(input: any[], signal: AbortSignal) {
+  async respond(input: any[], signal: AbortSignal, trace?: BackendTrace) {
     if (this.busy) throw new Error("live_backend_concurrent_request");
     this.busy = true;
     try {
@@ -139,7 +152,7 @@ export class PreparedResponsesSession implements LiveBackend {
           const continuing = Boolean(this.previousId && this.socket?.readyState === WebSocket.OPEN);
           await this.prepare();
           if (signal.aborted || this.closed) throw new Error("live_backend_aborted");
-          const response = await this.exchange(continuing ? input : fullInput, true, signal);
+          const response = await this.exchange(continuing ? input : fullInput, true, signal, trace, attempt);
           this.previousId = response.id;
           this.history = [...fullInput, ...response.output];
           return response;

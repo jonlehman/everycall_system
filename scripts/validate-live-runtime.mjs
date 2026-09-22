@@ -5,7 +5,8 @@ import vm from "node:vm";
 import ts from "typescript";
 import { LiveRuntime, buildLiveStart, resolveVoiceRuntime, liveAppend, pcmuHasSpeech } from "../apps/call-gateway/dist/apps/call-gateway/src/liveRuntime.js";
 import { PreparedResponsesSession, RESPONSES_WS_URL, resolveLiveReasoningEffort } from "../apps/call-gateway/dist/apps/call-gateway/src/liveBackendSession.js";
-import { LIVE_SPEECH_INSTRUCTIONS, LIVE_BACKEND_ADAPTER, LIVE_HANDOFF_FORMAT, parseBackendHandoff } from "../apps/call-gateway/dist/apps/call-gateway/src/liveContract.js";
+import { LIVE_SPEECH_INSTRUCTIONS, LIVE_BACKEND_ADAPTER, LIVE_HANDOFF_FORMAT, parseBackendHandoff, HandoffValidationError } from "../apps/call-gateway/dist/apps/call-gateway/src/liveContract.js";
+import { LiveLatency } from "../apps/call-gateway/dist/apps/call-gateway/src/liveLatency.js";
 
 // All models, sockets and operations are fake. This suite never reads credentials.
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -64,6 +65,111 @@ assert.throws(() => parseBackendHandoff(JSON.stringify(contract("x".repeat(481))
 assert.throws(() => parseBackendHandoff(JSON.stringify(contract("Saved", null, { action_status: "completed", completed_operation_ids: ["invented"] })), new Set()));
 assert.throws(() => parseBackendHandoff(JSON.stringify(contract("data_capture succeeded")), new Set()));
 assert.throws(() => parseBackendHandoff(JSON.stringify(contract("", question("Connect you?", "transfer_confirmation"))), new Set()));
+assert.throws(() => parseBackendHandoff(JSON.stringify(contract("What is your name?")), new Set()), error => error instanceof HandoffValidationError && error.constraint === "unbound_question" && !error.message.includes("name"));
+
+// A silent caller gets one proactive greeting. Only the matching instruction
+// acknowledgement triggers commentary; repeated events cannot replay it.
+const greeting = harness({ greeting: "Thanks for calling. This is Sarah. How can I help?" });
+await start(greeting); assert.equal(greeting.requests.length, 0);
+const greetingInstruction = greeting.sent.find(x => x.type === "session.instructions.append");
+assert.match(greetingInstruction.content, /without waiting for caller speech/);
+assert.equal(speech(greeting).length, 0);
+greeting.runtime.input(Buffer.alloc(160, 255).toString("base64"));
+assert.ok(greeting.sent.some(x => x.type === "session.input_audio.append"), "pre-greeting input silence keeps flowing");
+await greeting.runtime.handle({ type: "session.instructions.appended", client_event_id: "unrelated" });
+assert.equal(speech(greeting).length, 0);
+await greeting.runtime.handle({ type: "session.instructions.appended", client_event_id: greetingInstruction.event_id });
+await greeting.runtime.handle({ type: "session.instructions.appended", client_event_id: greetingInstruction.event_id });
+await greeting.runtime.handle({ type: "session.started" });
+assert.deepEqual(speech(greeting), ["Thanks for calling. This is Sarah. How can I help?"]);
+await greeting.runtime.handle({ type: "session.output_audio.delta", delta: Buffer.alloc(160, 0).toString("base64") });
+assert.equal(greeting.finishes.length, 0);
+const earlyGreeting = harness({ greeting: "Hello, this is Sarah." }); await start(earlyGreeting);
+await earlyGreeting.runtime.handle({ type: "session.output_audio.delta", delta: Buffer.alloc(160, 0).toString("base64") });
+await earlyGreeting.runtime.handle({ type: "session.instructions.appended", client_event_id: earlyGreeting.sent[0].event_id });
+assert.equal(speech(earlyGreeting).length, 0, "already-started greeting is never retriggered");
+const stalledGreeting = harness({ greeting: "Hello.", greetingTimeoutMs: 10 }); await start(stalledGreeting);
+await new Promise(resolve => setTimeout(resolve, 20));
+assert.deepEqual(stalledGreeting.finishes, ["openai_live_greeting_timeout"]);
+assert.ok(stalledGreeting.logs.some(x => x.milestone === "greeting_failed" && x.reason === "instruction_acceptance_timeout"));
+const talkFirst = harness({ greeting: "Hello, this is Sarah.", greetingTimeoutMs: 10 }); await start(talkFirst);
+const talkFirstInstruction = talkFirst.sent[0];
+for (let n = 0; n < 6; n++) {
+  talkFirst.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+  if (!n) await talkFirst.runtime.handle(caller("I have a long request before the introduction."));
+  await new Promise(resolve => setTimeout(resolve, 5));
+}
+await talkFirst.runtime.handle({ type: "session.instructions.appended", client_event_id: talkFirstInstruction.event_id });
+assert.equal(talkFirst.finishes.length, 0, "caller speech longer than greeting timeout must never hang up");
+assert.equal(speech(talkFirst).length, 0, "late acknowledgement cannot greet over the caller");
+assert.ok(talkFirst.logs.some(x => x.milestone === "greeting_yielded_to_caller"));
+
+const delayedDelegation = harness({ delegationWaitMs: 15 }); await start(delayedDelegation);
+delayedDelegation.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+await delayedDelegation.runtime.handle(caller("I need my house painted."));
+for (let n = 0; n < 6; n++) {
+  delayedDelegation.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+  await new Promise(resolve => setTimeout(resolve, 5));
+}
+assert.equal(delayedDelegation.sent.filter(x => x.type === "session.instructions.append").length, 0, "ongoing caller speech suppresses the delegation watchdog");
+for (let n = 0; n < 10; n++) {
+  delayedDelegation.runtime.input(Buffer.alloc(160, 255).toString("base64"));
+  await new Promise(resolve => setTimeout(resolve, 5));
+}
+const nudges = delayedDelegation.sent.filter(x => x.type === "session.instructions.append");
+assert.equal(nudges.length, 1); assert.match(nudges[0].content, /Delegate that existing request/);
+assert.equal(nudges[0].delegation_id, null); assert.equal(delayedDelegation.requests.length, 0, "watchdog never fabricates a delegation or executes backend work");
+assert.ok(delayedDelegation.logs.some(x => x.milestone === "delegation_missing"));
+await delayedDelegation.runtime.handle(delegate("eventual-delegation"));
+await delayedDelegation.runtime.handle(delegate("eventual-delegation"));
+assert.equal(delayedDelegation.requests.length, 1);
+assert.equal(delayedDelegation.sent.filter(x => x.type === "session.instructions.append").length, 1);
+
+// Byte provenance survives delayed queue playback and later commentary. Provider
+// audio has no delegation ID, so these remain explicitly temporal candidates.
+const latencyLogs = [], latency = new LiveLatency((event, details) => latencyLogs.push({ event, ...details }));
+const realNow = Date.now; let observedNow = 1000;
+try {
+  Date.now = () => observedNow;
+  latency.input(true, 1000); const initial = latency.transcript(0, 20, true);
+  latency.input(false, 1200); observedNow = 9600;
+  latency.input(true, 9600); latency.transcript(8600, 8620, true); latency.input(false, 9800);
+  assert.equal(latency.caller.requestId, initial.requestId);
+  assert.equal(latency.caller.startedAt, 1000); assert.equal(latency.caller.firstSpeechEndObservedAt, 1000);
+  latency.output = { trace: initial, delegationId: "old-delegation", commentaryEventId: "old-commentary" };
+  latency.received(Buffer.alloc(100, 0), true);
+  const next = latency.create("caller"); latency.output = { trace: next, delegationId: "next-delegation", commentaryEventId: "next-commentary" };
+  latency.received(Buffer.alloc(60, 0), true);
+  const mixedFrame = Buffer.alloc(160, 0); latency.queued(mixedFrame);
+  latency.sent(mixedFrame, true, 10000); latency.sent(mixedFrame, true, 10020);
+  const delivered = latencyLogs.filter(x => x.milestone === "telnyx_audio_sent");
+  assert.equal(delivered.length, 2); assert.deepEqual(delivered.map(x => x.commentaryEventId), ["old-commentary", "next-commentary"]);
+  assert.equal(delivered[0].sinceFirstEstimatedSpeechEndMs, 9000);
+  assert.ok(delivered.every(x => x.telnyxWriteConfirmed && !x.playbackConfirmed && !x.humanHearingConfirmed && x.correlation === "temporal_candidate"));
+} finally { Date.now = realNow; }
+
+const fragmented = harness({ settleMs: 10 }); await start(fragmented, "I need my house ");
+await new Promise(resolve => setTimeout(resolve, 20));
+await fragmented.runtime.handle(caller("painted."));
+assert.equal(fragmented.runtime.taskRevision, 0, "transcript quiet alone never invents a caller turn");
+await fragmented.runtime.handle(delegate("fragmented"));
+assert.equal(fragmented.runtime.taskRevision, 1); assert.equal(state(fragmented.requests[0]).finalized_turns[0].text, "I need my house painted.");
+
+const repaired = harness({ replies: [answer(contract("What is your name?")), answer(contract("", question("What is your name?")))] });
+await start(repaired, "I need painting"); await repaired.runtime.handle(delegate("repair"));
+assert.equal(repaired.requests.length, 2); assert.equal(repaired.calls.length, 0);
+assert.deepEqual(speech(repaired), ["What is your name?"]);
+assert.match(repaired.requests[1][0].content, /unbound_question/);
+assert.equal(new Set(repaired.logs.filter(x => x.requestId).map(x => x.requestId)).size, 1);
+assert.deepEqual(repaired.logs.filter(x => x.milestone === "handoff_validated").map(x => x.outcome), ["rejected", "accepted"]);
+const unrepairable = harness({ replies: [answer(contract("What is your name?")), answer(contract("What is your name?"))] });
+await start(unrepairable, "Painting please"); await unrepairable.runtime.handle(delegate("unrepairable"));
+assert.equal(unrepairable.requests.length, 2); assert.equal(unrepairable.calls.length, 0);
+assert.deepEqual(speech(unrepairable), ["I'm sorry, I couldn't confirm that."]);
+assert.equal(unrepairable.logs.filter(x => x.milestone === "handoff_validated" && x.outcome === "rejected").length, 2);
+const repairTool = harness({ replies: [answer(contract("What is your name?")), tool()] });
+await start(repairTool, "Painting please"); await repairTool.runtime.handle(delegate("repair-tool"));
+assert.equal(repairTool.calls.length, 0); assert.ok(repairTool.logs.some(x => x.error === "live_backend_repair_tool_rejected"));
 
 // Actual transport with fake WebSockets: prepared affinity, incremental input,
 // store:false cache-loss recovery and exact encrypted reasoning/tool-output replay.
@@ -94,7 +200,8 @@ const warmup = sockets[0].requests[0];
 assert.equal(warmup.store, false); assert.equal(warmup.reasoning.effort, "medium");
 assert.ok(warmup.instructions.startsWith("CANONICAL BUSINESS RULES")); assert.equal("stream" in warmup, false); assert.equal("background" in warmup, false);
 const signal = new AbortController().signal;
-await session.respond([{ role: "user", content: "What are your hours?" }], signal);
+await session.respond([{ role: "user", content: "What are your hours?" }], signal, { requestId: "request-1", delegationId: "delegation-1", generation: 1, step: 0 });
+assert.deepEqual(backendLogs.filter(x => x.requestId === "request-1").map(x => x.milestone), ["backend_request_sent", "backend_first_event", "backend_response_completed"]);
 assert.equal(sockets[0].requests[1].previous_response_id, "warm-1");
 const resultInput = [{ type: "function_call_output", call_id: "lookup-1", output: '{"status":"accepted"}' }];
 await session.respond(resultInput, signal); assert.equal(sockets.length, 2);
@@ -137,9 +244,9 @@ for (const fragment of ["My first name is Ada. My surname is ", "Q", " z", " y",
 assert.equal(capture.runtime.taskRevision, 0); await capture.runtime.handle(delegate("capture")); await capture.runtime.handle(delegate("capture"));
 assert.equal(capture.runtime.taskRevision, 1); assert.match(state(capture.requests[0]).finalized_turns[0].text, /Q z y n n/);
 assert.equal(JSON.parse(capture.calls[0][2]).code, "A7K-92Q"); assert.deepEqual(speech(capture), ["What is your callback number?"]);
-assert.ok(capture.logs.some(x => x.milestone === "action_complete"));
+assert.ok(capture.logs.some(x => x.milestone === "operation_completed"));
 await capture.runtime.handle({ type: "session.output_audio.delta", delta: Buffer.alloc(160, 0).toString("base64") });
-assert.ok(capture.logs.some(x => x.milestone === "live_ack" && x.playbackConfirmed === false));
+assert.ok(capture.logs.some(x => x.milestone === "live_audio_received" && x.playbackConfirmed === false));
 const long = harness({ replies: [answer(contract("", question("Which window needs repair first?", "clarification")))] });
 await start(long); const fragments = Array.from({ length: 60 }, (_, n) => `Window ${n + 1} is cracked, and `);
 for (const part of fragments) await long.runtime.handle(caller(part));
@@ -154,7 +261,7 @@ const backchannel = harness({ replies: [tool("knowledge_lookup", { query: "hours
 await start(backchannel, "What time do you close?"); const lookupPending = backchannel.runtime.handle(delegate("lookup")); await tick();
 await backchannel.runtime.handle(caller("mm-hmm")); await backchannel.runtime.handle(delegate("backchannel")); releaseLookup(); await lookupPending;
 assert.equal(backchannel.runtime.taskRevision, 1); assert.equal(backchannel.calls.length, 1); assert.deepEqual(speech(backchannel), ["We close at five."]);
-assert.ok(!JSON.stringify(backchannel.sent).includes("DO NOT EXPOSE")); assert.ok(backchannel.logs.some(x => x.milestone === "backend_useful_fact"));
+assert.ok(!JSON.stringify(backchannel.sent).includes("DO NOT EXPOSE")); assert.ok(backchannel.logs.some(x => x.milestone === "commentary_sent" && x.useful));
 
 let releaseReasoning;
 const corrected = harness({ replies: [() => new Promise(resolve => { releaseReasoning = () => resolve(tool()); }), answer(contract("", question("Is Grace your first name?", "clarification")))] });
@@ -186,6 +293,20 @@ assert.notEqual(retryRead.calls[0][1], retryRead.calls[1][1]); assert.ok(!retryR
 // failures after provider acceptance must retain the command and report unknown.
 const source = readFileSync("apps/call-gateway/src/server.ts", "utf8");
 const ast = ts.createSourceFile("server.ts", source, ts.ScriptTarget.Latest, true);
+const sendMediaNode = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "sendTelnyxMedia");
+assert.ok(sendMediaNode);
+const sendMediaSandbox = vm.createContext({ WebSocket: { OPEN: 1 } });
+vm.runInContext(ts.transpileModule(sendMediaNode.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, sendMediaSandbox);
+let writeCallback, writeCount = 0, confirmedWrites = 0;
+const telnyxSocket = { readyState: 1, send(_payload, callback) { writeCount++; writeCallback = callback; } };
+sendMediaSandbox.sendTelnyxMedia(telnyxSocket, "stream", "AA==", () => confirmedWrites++);
+assert.equal(confirmedWrites, 0, "queue submission is not a confirmed Telnyx write");
+writeCallback(new Error("write_failed")); assert.equal(confirmedWrites, 0);
+sendMediaSandbox.sendTelnyxMedia(telnyxSocket, "stream", "AA==", () => confirmedWrites++);
+writeCallback(); assert.equal(confirmedWrites, 1);
+sendMediaSandbox.sendTelnyxMedia({ ...telnyxSocket, readyState: 3 }, "stream", "AA==", () => confirmedWrites++);
+sendMediaSandbox.sendTelnyxMedia(telnyxSocket, undefined, "AA==", () => confirmedWrites++);
+assert.equal(writeCount, 2); assert.equal(confirmedWrites, 1);
 const executeNode = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "executeToolCall");
 assert.ok(executeNode);
 const executeJs = ts.transpileModule(executeNode.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -276,7 +397,7 @@ assert.equal(interrupted.finishes.length, 0, "caller interruption cancels deferr
 assert.match(interrupted.sent.at(-1).content, /caller has spoken again/);
 
 const noisy = harness(); await start(noisy, "[noise]"); await noisy.runtime.handle(delegate("noise")); assert.equal(noisy.requests.length, 0); assert.equal(noisy.runtime.taskRevision, 0);
-await noisy.runtime.handle({ type: "session.output_audio.delta", delta: Buffer.alloc(160, 255).toString("base64") }); assert.equal(noisy.logs.some(x => x.milestone === "live_ack"), false);
+await noisy.runtime.handle({ type: "session.output_audio.delta", delta: Buffer.alloc(160, 255).toString("base64") }); assert.equal(noisy.logs.some(x => x.milestone === "live_audio_received"), false);
 await noisy.runtime.handle({ type: "session.closed", usage: { seconds: 1 } }); assert.equal(noisy.closed(), true); assert.deepEqual(noisy.finishes, ["openai_live_provider_closed"]);
 await noisy.runtime.handle(caller("after disconnect")); assert.equal(noisy.runtime.taskRevision, 0);
 for (const h of all) { if (h.runtime.closed) continue; const done = h.runtime.close(); await h.runtime.handle({ type: "session.closed", usage: { seconds: 3 } }); await done; assert.equal(h.closed(), true); }

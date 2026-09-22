@@ -28,7 +28,7 @@ function harness({ live = true, bufferFrames = 13, responseId = null } = {}) {
   const timers = new Map(), sent = [], logs = [];
   const session = {
     outputQueue: [], outputBuffer: Buffer.alloc(0), currentResponseId: responseId,
-    ...(live ? { live: { notePlayback() {} } } : {})
+    ...(live ? { live: { notePlayback() {}, noteQueuedFrame() {} } } : {})
   };
   const context = vm.createContext({
     Buffer, performance: { now: () => now }, outboundAudioFrameMs: 20,
@@ -41,7 +41,7 @@ function harness({ live = true, bufferFrames = 13, responseId = null } = {}) {
       return id;
     },
     clearInterval: id => timers.delete(id),
-    sendTelnyxMedia: (_ws, _streamId, base64) => sent.push({ at: now, bytes: Buffer.from(base64, "base64") }),
+    sendTelnyxMedia: (_ws, _streamId, base64, onSent) => { sent.push({ at: now, bytes: Buffer.from(base64, "base64") }); onSent?.(); },
     logAudioPumpTraceSummary() {}, noteAssistantResponsePlaybackDrained() {}
   });
   vm.runInContext(js, context);

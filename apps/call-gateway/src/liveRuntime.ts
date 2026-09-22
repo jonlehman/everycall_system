@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import { PreparedResponsesSession, resolveLiveReasoningEffort, type LiveBackend } from "./liveBackendSession.js";
-import { LIVE_BACKEND_ADAPTER, LIVE_HANDOFF_FORMAT, parseBackendHandoff, type HandoffQuestion } from "./liveContract.js";
-import { LiveTranscript, normalizeSpokenText, type Transcript } from "./liveTranscript.js";
+import { LIVE_BACKEND_ADAPTER, LIVE_HANDOFF_FORMAT, parseBackendHandoff, HandoffValidationError, type HandoffQuestion } from "./liveContract.js";
+import { LiveTranscript, normalizeSpokenText, classifyCallerTurn, type Transcript } from "./liveTranscript.js";
+import { LiveLatency, type RequestTrace } from "./liveLatency.js";
 
 export type VoiceRuntime = "realtime" | "live";
 export function resolveVoiceRuntime(configured: unknown): VoiceRuntime {
@@ -48,7 +49,7 @@ export function pcmuHasSpeech(bytes: Buffer) {
 }
 
 type Tool = Record<string, any>;
-type Task = { id: string; generation: number; revision: number; controller: AbortController; finished: boolean; startedAt: number };
+type Task = { id: string; generation: number; revision: number; controller: AbortController; finished: boolean; startedAt: number; queuedAt: number; trace: RequestTrace };
 type Operation = { id: string; name: string; arguments: string; status: "pending" | "completed" | "failed" | "unknown"; result?: unknown };
 type PendingQuestion = HandoffQuestion & { id: string; afterSequence: number; heardText?: string; spokenSequence?: number; spokenEndMs?: number; answerTurnId?: number; answer?: string };
 type Dependencies = {
@@ -66,6 +67,9 @@ type Dependencies = {
   audit: (event: string, details: Record<string, unknown>) => void;
   backend?: LiveBackend;
   settleMs?: number;
+  greeting?: string;
+  greetingTimeoutMs?: number;
+  delegationWaitMs?: number;
 };
 
 /** Client delegation owns backend state; speech events never commit or cancel tools. */
@@ -79,7 +83,13 @@ export class LiveRuntime {
   private question: PendingQuestion | undefined;
   private transcriptTimer?: ReturnType<typeof setTimeout>;
   private lastCallerAt = 0;
-  private ackPending = false;
+  private latency: LiveLatency;
+  private greeting?: { trace: RequestTrace; pendingIds: Set<string>; triggered: boolean; outputObserved: boolean; callerTookFloor: boolean; timer?: ReturnType<typeof setTimeout> };
+  private delegationTimer?: ReturnType<typeof setTimeout>;
+  private delegationNudgedRequestId?: string;
+  private delegationSettling = false;
+  private lastInputAt = 0;
+  private lastInputHadSpeech = false;
   private eventIds = new Set<string>();
   private delegationIds = new Set<string>();
   private operations = new Map<string, Operation>();
@@ -95,6 +105,7 @@ export class LiveRuntime {
   private lastAudiblePlaybackAt = 0;
 
   constructor(private readonly deps: Dependencies) {
+    this.latency = new LiveLatency(deps.audit);
     this.backend = deps.backend || new PreparedResponsesSession({
       apiKey: deps.apiKey, model: deps.backendModel, safetyIdentifier: deps.safetyIdentifier,
       reasoningEffort: resolveLiveReasoningEffort(deps.reasoningEffort),
@@ -119,7 +130,81 @@ export class LiveRuntime {
   }
 
   input(audio: string) {
-    if (this.started && !this.closing && !this.closed) this.deps.send({ type: "session.input_audio.append", audio });
+    if (this.started && !this.closing && !this.closed) {
+      this.lastInputAt = Date.now();
+      this.lastInputHadSpeech = pcmuHasSpeech(Buffer.from(audio, "base64"));
+      this.latency.input(this.lastInputHadSpeech, this.lastInputAt);
+      if (this.lastInputHadSpeech) this.callerTookFloor();
+      this.deps.send({ type: "session.input_audio.append", audio });
+    }
+  }
+
+  private beginGreeting() {
+    if (!this.deps.greeting || this.greeting) return;
+    const trace = this.latency.create("greeting");
+    const events = liveAppend("instructions", `Speak English. Begin speaking first, without waiting for caller speech. Say this business greeting once, then listen: ${this.deps.greeting}\nIf the caller starts speaking, listen without interrupting or restarting the greeting. If you have already begun it, continue without restarting.`, null);
+    this.greeting = { trace, pendingIds: new Set(events.map(event => event.event_id)), triggered: false, outputObserved: false, callerTookFloor: false };
+    this.latency.output = { trace };
+    for (const event of events) {
+      this.deps.send(event);
+      this.latency.mark(trace, "greeting_instruction_sent", { clientEventId: event.event_id });
+    }
+    this.armGreetingTimeout("instruction_acceptance_timeout");
+  }
+
+  private callerTookFloor() {
+    const greeting = this.greeting;
+    if (!greeting || greeting.outputObserved || greeting.callerTookFloor) return;
+    greeting.callerTookFloor = true;
+    clearTimeout(greeting.timer);
+    this.latency.mark(greeting.trace, "greeting_yielded_to_caller", { retriggered: false });
+  }
+
+  private armGreetingTimeout(reason: string) {
+    const greeting = this.greeting;
+    if (!greeting) return;
+    clearTimeout(greeting.timer);
+    greeting.timer = setTimeout(() => {
+      if (greeting.outputObserved || greeting.callerTookFloor || this.closed || this.closing) return;
+      // A missing acknowledgment/output is ambiguous: never replay a greeting.
+      this.latency.mark(greeting.trace, "greeting_failed", { reason });
+      this.deps.finish("openai_live_greeting_timeout");
+    }, this.deps.greetingTimeoutMs ?? 8000);
+  }
+
+  private watchDelegation() {
+    clearTimeout(this.delegationTimer);
+    const trace = this.latency.caller;
+    if (!trace || trace.answered || this.delegationNudgedRequestId === trace.requestId || this.delegationSettling
+      || (this.task && !this.task.finished) || this.closed || this.closing
+      || !(this.context.pendingWork(Boolean(this.question?.spokenSequence && !this.question.answerTurnId)) || (this.context.latestCaller()?.id ?? 0) > this.lastBackendTurnId)) return;
+    const waitMs = this.deps.delegationWaitMs ?? 2000;
+    this.delegationTimer = setTimeout(() => {
+      if (this.closed || this.closing || !this.deps.isActive()) return;
+      const now = Date.now();
+      // Only ongoing inbound silence can establish a safe local quiet window.
+      // A stopped media stream or an active caller must never trigger a nudge.
+      if (this.lastInputHadSpeech || now - this.lastInputAt > 500 || this.latency.lastSpeechAt === undefined
+        || now - this.latency.lastSpeechAt < waitMs || now - this.lastCallerAt < (this.deps.settleMs ?? 800)) {
+        this.watchDelegation();
+        return;
+      }
+      if (this.delegationSettling || (this.task && !this.task.finished) || this.latency.caller !== trace || trace.answered) return;
+      this.delegationNudgedRequestId = trace.requestId;
+      this.latency.mark(trace, "delegation_missing", { quietMs: now - this.latency.lastSpeechAt, nudges: 1 });
+      this.append("instructions", "The caller's existing substantive request is waiting for backend assistance. Delegate that existing request to the client now, using the transcript already provided. Do not speak, ask the caller to repeat, invent an answer, or restart the greeting. If the caller is still speaking, keep listening and delegate when they finish.");
+      this.latency.mark(trace, "delegation_requested", { source: "application_quiet_watchdog", providerDelegationIdCreated: false });
+    }, waitMs);
+  }
+
+  private speech(text: string, trace: RequestTrace, delegationId: string | null, useful: boolean) {
+    if (!this.started || this.closed || this.closing) return;
+    for (const event of liveAppend("commentary", text, delegationId)) {
+      this.latency.output = { trace, ...(delegationId ? { delegationId } : {}), commentaryEventId: event.event_id };
+      this.deps.send(event);
+      this.latency.mark(trace, "commentary_sent", { delegationId, commentaryEventId: event.event_id, useful });
+    }
+    if (useful && trace.kind === "caller") trace.answered = true;
   }
 
   latestCallerText() { return this.context.provisional?.role === "user" ? this.context.provisional.text : this.context.latestCaller()?.text || ""; }
@@ -152,23 +237,18 @@ export class LiveRuntime {
         question.answerTurnId = turn.id;
         question.answer = turn.text;
       }
-      this.deps.audit("openai_live_turn_finalized", { turnId: turn.id, revision: this.context.revision, startMs: turn.start_ms, endMs: turn.end_ms });
+      this.deps.audit("openai_live_turn_finalized", { requestId: this.latency.caller?.requestId, turnId: turn.id, revision: this.context.revision, startMs: turn.start_ms, endMs: turn.end_ms });
+      if (this.latency.caller) this.latency.mark(this.latency.caller, "caller_turn_finalized", { turnId: turn.id, revision: this.context.revision, boundary: "application_transcript_quiet_or_speaker_change" });
     }
   }
 
   private async settleTranscript() {
-    const delay = this.deps.settleMs ?? 350;
+    const delay = this.deps.settleMs ?? 800;
     while (this.context.provisional?.role === "user" && delay > 0 && Date.now() - this.lastCallerAt < delay) {
       await new Promise(resolve => setTimeout(resolve, delay - (Date.now() - this.lastCallerAt)));
       if (this.closed || this.closing) return;
     }
     this.finalizeTranscript();
-  }
-
-  private noteLiveAck() {
-    if (!this.ackPending) return;
-    this.ackPending = false;
-    this.deps.audit("openai_live_latency", { milestone: "live_ack", elapsedMs: Date.now() - this.lastCallerAt, playbackConfirmed: false });
   }
 
   async handle(event: Record<string, any>) {
@@ -185,6 +265,8 @@ export class LiveRuntime {
       this.started = false;
       this.task?.controller.abort();
       clearTimeout(this.transcriptTimer);
+      clearTimeout(this.greeting?.timer);
+      clearTimeout(this.delegationTimer);
       this.backend.close();
       this.deps.audit("openai_live_session_closed", { usage: event.usage, finalUsageConfirmed: true });
       this.finalized?.();
@@ -196,6 +278,18 @@ export class LiveRuntime {
       this.started = true;
       void this.prepare();
       this.deps.ready();
+      this.beginGreeting();
+      return;
+    }
+    if (event.type === "session.instructions.appended" && this.greeting) {
+      const greeting = this.greeting;
+      if (!greeting.pendingIds.delete(String(event.client_event_id || ""))) return;
+      this.latency.mark(greeting.trace, "greeting_instruction_accepted", { clientEventId: event.client_event_id });
+      if (!greeting.pendingIds.size && !greeting.triggered && !greeting.outputObserved && !greeting.callerTookFloor && !this.closing) {
+        greeting.triggered = true;
+        this.speech(this.deps.greeting!, greeting.trace, null, false);
+        this.armGreetingTimeout("first_output_timeout");
+      }
       return;
     }
     if (event.type === "error") {
@@ -210,8 +304,14 @@ export class LiveRuntime {
     }
     if (this.closing || !this.started) return;
     if (event.type === "session.output_audio.delta" && typeof event.delta === "string") {
-      if (pcmuHasSpeech(Buffer.from(event.delta, "base64"))) this.noteLiveAck();
-      this.deps.audio(Buffer.from(event.delta, "base64"));
+      const bytes = Buffer.from(event.delta, "base64");
+      const audible = pcmuHasSpeech(bytes);
+      if (audible && this.greeting && !this.greeting.outputObserved) {
+        this.greeting.outputObserved = true;
+        clearTimeout(this.greeting.timer);
+      }
+      this.latency.received(bytes, audible);
+      this.deps.audio(bytes);
       return;
     }
     if (event.type === "session.input_transcript.delta" || event.type === "session.output_transcript.delta") {
@@ -223,8 +323,10 @@ export class LiveRuntime {
         this.question.heardText = ((this.question.heardText || "") + entry.text).slice(-2400);
       }
       if (role === "user") {
+        this.callerTookFloor();
         this.lastCallerAt = Date.now();
-        this.ackPending = true;
+        this.latency.transcript(Number(event.start_ms), Number(event.end_ms), classifyCallerTurn(event.delta, Boolean(this.question?.spokenSequence && !this.question.answerTurnId)) === "meaningful");
+        this.watchDelegation();
         // Do not abort an action already submitted. Revision guards prevent its stale
         // response, the next tool, or a deferred close from reaching the live call.
         if (this.finishState && this.context.pendingWork(false)) {
@@ -236,7 +338,10 @@ export class LiveRuntime {
         this.finishState.transcriptAt = Date.now();
       }
       clearTimeout(this.transcriptTimer);
-      this.transcriptTimer = setTimeout(() => this.finalizeTranscript(), this.deps.settleMs ?? 350);
+      // Provider deltas are fragments, never completed caller turns. Accumulate
+      // caller text until delegation or a speaker change supplies a boundary.
+      // Assistant quiet still finalizes the exact spoken consent question.
+      if (role === "assistant") this.transcriptTimer = setTimeout(() => this.finalizeTranscript(), this.deps.settleMs ?? 800);
       this.deps.transcript(entry);
       return;
     }
@@ -245,12 +350,19 @@ export class LiveRuntime {
       if (!delegationId || this.delegationIds.has(delegationId) || !this.deps.isActive()) return;
       if (this.delegationIds.size >= 128) { this.deps.finish("openai_live_task_limit"); return; }
       this.delegationIds.add(delegationId);
+      clearTimeout(this.delegationTimer);
+      this.delegationSettling = true;
+      const receivedAt = Date.now();
+      const trace = this.latency.caller ||= this.latency.create("caller");
+      this.latency.mark(trace, "delegation_received", { delegationId, delegationMediaMs: Number.isFinite(event.offset_ms) ? event.offset_ms : undefined }, receivedAt);
       await this.settleTranscript();
+      this.delegationSettling = false;
       if (!this.context.latestCaller() || this.closing || this.closed) return;
       // A repeated delegation caused by a backchannel continues the existing work.
       if (this.task?.revision === this.context.revision) return;
       this.task?.controller.abort();
-      const task = { id: delegationId, generation: ++this.generation, revision: this.context.revision, controller: new AbortController(), finished: false, startedAt: this.lastCallerAt };
+      const task = { id: delegationId, generation: ++this.generation, revision: this.context.revision, controller: new AbortController(), finished: false, startedAt: trace.startedAt, queuedAt: Date.now(), trace };
+      this.latency.mark(trace, "backend_queued", { delegationId, sinceDelegationMs: task.queuedAt - receivedAt });
       this.task = task;
       // Serialize backend actions across generations; a newer task cannot race an
       // in-flight capture/transfer. The next task receives committed application state.
@@ -268,14 +380,16 @@ export class LiveRuntime {
 
   private async run(task: Task) {
     if (!this.current(task)) return;
+    this.latency.mark(task.trace, "backend_started", { delegationId: task.id, generation: task.generation, queueMs: Date.now() - task.queuedAt });
     const timeout = setTimeout(() => task.controller.abort(), 30000);
     let queuedOutputCount = this.toolOutputs.length;
+    let repairingHandoff = false;
     let input: any[] = [...this.toolOutputs, { role: "user", content: JSON.stringify({
       application_state: this.deps.state(), operation_records: [...this.operations.values()].map(({ result: _result, ...record }) => record),
       pending_question: this.question || null, meaningful_revision: this.context.revision,
       finalized_turns: this.context.turns.filter(turn => turn.id > this.lastBackendTurnId), provisional_transcript: this.context.provisional || null
     }) }];
-    this.deps.audit("openai_live_task_started", { delegationId: task.id, generation: task.generation, revision: task.revision });
+    this.deps.audit("openai_live_task_started", { requestId: task.trace.requestId, delegationId: task.id, generation: task.generation, revision: task.revision });
     try {
       // Warmup may have failed transiently at call startup. respond() owns its one
       // bounded transport retry, always before any application tool execution.
@@ -285,7 +399,10 @@ export class LiveRuntime {
         // Remove outputs only when actually submitted. A newer provisional turn
         // or the round limit must not strand an unresolved function in the chain.
         this.toolOutputs.splice(0, queuedOutputCount);
-        const body = await this.backend.respond(input, task.controller.signal);
+        const backendAt = Date.now();
+        this.latency.mark(task.trace, "backend_generation_requested", { delegationId: task.id, generation: task.generation, step });
+        const body = await this.backend.respond(input, task.controller.signal, { requestId: task.trace.requestId, delegationId: task.id, generation: task.generation, step });
+        this.latency.mark(task.trace, "backend_completed", { delegationId: task.id, generation: task.generation, step, generationMs: Date.now() - backendAt });
         this.deps.audit("openai_live_backend_usage", { delegationId: task.id, generation: task.generation, model: this.deps.backendModel, usage: body.usage });
         if (body.status !== "completed" || !Array.isArray(body.output)) throw new Error("live_backend_incomplete");
         const calls = body.output.filter((item: any) => item.type === "function_call");
@@ -294,19 +411,27 @@ export class LiveRuntime {
         this.toolOutputs.push(...outputs);
         await this.settleTranscript();
         if (!this.fresh(task)) break;
+        if (repairingHandoff && calls.length) throw new Error("live_backend_repair_tool_rejected");
         if (!calls.length) {
           const text = body.output.flatMap((item: any) => item.type === "message" ? item.content || [] : []).filter((part: any) => part.type === "output_text").map((part: any) => part.text).join("");
           const completed = new Set([...this.operations.values()].filter(x => x.status === "completed").map(x => x.id));
-          const handoff = parseBackendHandoff(text, completed);
+          let handoff;
+          try { handoff = parseBackendHandoff(text, completed); }
+          catch (error) {
+            if (!(error instanceof HandoffValidationError) || repairingHandoff) throw error;
+            this.latency.mark(task.trace, "handoff_validated", { delegationId: task.id, outcome: "rejected", constraint: error.constraint, repairAttempt: 1 });
+            repairingHandoff = true;
+            input = [{ role: "user", content: `Your previous handoff was rejected by application validation: ${error.constraint}. Return one corrected handoff for the SAME caller request and existing application state. Make no tool calls, do not repeat actions, and do not ask the caller to repeat their request. Preserve all provenance and completed operation IDs. Put the single next question only in next_question, never in spoken_response. Follow the exact checkpoint and speech limits in your instructions.` }];
+            queuedOutputCount = 0;
+            continue;
+          }
+          this.latency.mark(task.trace, "handoff_validated", { delegationId: task.id, outcome: "accepted", constraint: "valid", hasNextQuestion: Boolean(handoff.next_question) });
           // Facts only. Never send Responses reasoning items, raw results or the
           // structured contract to Live's quiet context or caller-facing channel.
           for (const fact of handoff.verified_facts) this.append("thinking", fact.text, task.id);
           this.question = handoff.next_question ? { ...handoff.next_question, id: crypto.randomUUID(), afterSequence: this.context.sequence } : undefined;
           const speech = [handoff.spoken_response, handoff.next_question?.text].filter(Boolean).join(" ");
-          if (speech) this.append("commentary", speech, task.id);
-          if (handoff.verified_facts.length || handoff.spoken_response) this.deps.audit("openai_live_latency", {
-            delegationId: task.id, milestone: "backend_useful_fact", elapsedMs: Date.now() - task.startedAt, playbackConfirmed: false
-          });
+          if (speech) this.speech(speech, task.trace, task.id, true);
           return;
         }
         // The backend is configured serially; reject a protocol-violating batch
@@ -337,6 +462,8 @@ export class LiveRuntime {
             operation = { id: key, name: call.name, arguments: call.arguments, status: "pending" };
             this.operations.set(key, operation);
             this.deps.audit("openai_live_operation", { operationId: key, name: call.name, status: "pending", delegationId: task.id });
+            const operationAt = Date.now();
+            this.latency.mark(task.trace, "operation_started", { delegationId: task.id, operationId: key, name: call.name });
             try {
               operation.result = await this.deps.executeTool(call.name, key, call.arguments, () => this.fresh(task));
               const resultStatus = (operation.result as any)?.status;
@@ -350,7 +477,7 @@ export class LiveRuntime {
                 : { status: "unknown", reason: "operation_outcome_unconfirmed_do_not_repeat" };
             }
             this.deps.audit("openai_live_operation", { operationId: key, name: call.name, status: operation.status, delegationId: task.id });
-            if (operation.status === "completed") this.deps.audit("openai_live_latency", { operationId: key, delegationId: task.id, milestone: "action_complete", elapsedMs: Date.now() - task.startedAt });
+            this.latency.mark(task.trace, "operation_completed", { operationId: key, delegationId: task.id, status: operation.status, operationMs: Date.now() - operationAt });
           }
           outputs[index]!.output = JSON.stringify({ operation_id: operation.id, action_status: operation.status, result: operation.result });
           await this.settleTranscript();
@@ -361,12 +488,13 @@ export class LiveRuntime {
       }
       if (this.fresh(task)) throw new Error("live_backend_step_limit");
     } catch (error) {
+      if (error instanceof HandoffValidationError) this.latency.mark(task.trace, "handoff_validated", { delegationId: task.id, outcome: "rejected", constraint: error.constraint });
       const code = error instanceof Error && /^(live_|previous_response_not_found)/.test(error.message) ? error.message : "live_backend_failed";
-      this.deps.audit("openai_live_task_failed", { delegationId: task.id, generation: task.generation, error: code });
+      this.deps.audit("openai_live_task_failed", { requestId: task.trace.requestId, delegationId: task.id, generation: task.generation, error: code, ...(error instanceof HandoffValidationError ? { constraint: error.constraint } : {}) });
       if (this.current(task) && task.revision === this.context.revision && !this.context.pendingWork(false)) {
         // Transport/contract failure has no authority to advance intake, reopen
         // a refused callback, or fabricate a pending confirmation question.
-        this.append("commentary", "I'm sorry, I couldn't confirm that.", task.id);
+        this.speech("I'm sorry, I couldn't confirm that.", task.trace, task.id, false);
       }
     } finally {
       clearTimeout(timeout);
@@ -377,7 +505,8 @@ export class LiveRuntime {
         // A correction need not wait for Live to invent a second delegation. Reuse
         // the known client delegation ID, serialize after committed work, and bind
         // the new task to the newly finalized meaningful turn.
-        const next = { ...task, generation: ++this.generation, revision: this.context.revision, controller: new AbortController(), finished: false, startedAt: this.lastCallerAt };
+        const next = { ...task, generation: ++this.generation, revision: this.context.revision, controller: new AbortController(), finished: false, queuedAt: Date.now(), trace: this.latency.caller || task.trace };
+        this.latency.mark(next.trace, "backend_queued", { delegationId: next.id, generation: next.generation, reason: "caller_revision" });
         this.task = next;
         this.tail = this.tail.then(() => this.run(next)).catch(() => {});
       }
@@ -393,10 +522,13 @@ export class LiveRuntime {
   }
 
   notePlayback(bytes: Buffer, now = Date.now()) {
+    this.latency.sent(bytes, pcmuHasSpeech(bytes), now);
     if (!pcmuHasSpeech(bytes)) return;
     this.lastAudiblePlaybackAt = now;
     if (this.finishState) this.finishState.heardAudio = true;
   }
+
+  noteQueuedFrame(frame: Buffer) { this.latency.queued(frame); }
 
   checkFinish(queueDrained: boolean, now = Date.now()) {
     const state = this.finishState;
@@ -420,6 +552,8 @@ export class LiveRuntime {
     this.closing = true;
     this.task?.controller.abort();
     clearTimeout(this.transcriptTimer);
+    clearTimeout(this.greeting?.timer);
+    clearTimeout(this.delegationTimer);
     this.backend.close();
     this.closePromise = new Promise(resolve => {
       this.finalized = () => { clearTimeout(this.closeTimer); resolve(); };

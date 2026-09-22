@@ -1072,14 +1072,15 @@ function flushQueuedAssistantResponses(session: StreamSession) {
   sendOpenAiEvent(session.openAiWs, createAudioTextResponseEvent(next.response, session.realtimeApiShape));
 }
 
-function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined, payloadBase64: string) {
+function sendTelnyxMedia(ws: WebSocket | undefined, streamId: string | undefined, payloadBase64: string, onSent?: () => void) {
   if (!ws || ws.readyState !== WebSocket.OPEN || !streamId) return;
   ws.send(
     JSON.stringify({
       event: "media",
       stream_id: streamId,
       media: { payload: payloadBase64 }
-    })
+    }),
+    error => { if (!error) onSent?.(); }
   );
 }
 
@@ -1103,6 +1104,7 @@ function enqueueOutputPcm(session: StreamSession, pcmChunk: Buffer) {
   let offset = 0;
   while (buffer.length - offset >= frameSize) {
     const frame = buffer.subarray(offset, offset + frameSize);
+    session.live?.noteQueuedFrame(frame);
     session.outputQueue.push(frame);
     offset += frameSize;
   }
@@ -1189,8 +1191,8 @@ function pumpAvailableOutputFrames(session: StreamSession, nowMs = performance.n
     const payload = session.outputQueue.shift();
     if (!payload) break;
     noteAssistantAudioFrameSent(session);
-    session.live?.notePlayback(payload);
-    sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, payload.toString("base64"));
+    const live = session.live;
+    sendTelnyxMedia(session.telnyxWs, session.telnyxStreamId, payload.toString("base64"), () => live?.notePlayback(payload));
     session.outputNextFrameAtMs += outboundAudioFrameMs;
     sent += 1;
   }
@@ -2809,6 +2811,7 @@ function connectOpenAiLive(session: StreamSession) {
     safetyIdentifier: buildOpenAiSafetyIdentifier(session),
     backendModel: liveBackendModel, reasoningEffort: liveBackendReasoningEffort,
     instructions, tools: payload.tool_definitions,
+    ...(!session.greetingSent ? { greeting: payload.tenant_greeting } : {}),
     send: event => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event)); },
     isActive: () => Boolean(session.callActive && !session.isShuttingDown && !session.aiDetached && session.openAiWs === ws),
     state: () => session.knowledgeCallState,
@@ -2862,7 +2865,6 @@ function connectOpenAiLive(session: StreamSession) {
       logInfo("openai_live_session_started", { callSid: session.callSid, model: "gpt-live-1", delegation: "client", audioFormat: "audio/pcmu", backendModel: liveBackendModel, backendReasoningEffort: liveBackendReasoningEffort, backendTransport: "websocket" });
       if (!session.greetingSent) {
         session.greetingSent = true;
-        live.append("instructions", `Immediately say this business greeting exactly once: ${payload.tenant_greeting}`);
       }
       if (session.pendingReconnectAssistantResponse) {
         const response = session.pendingReconnectAssistantResponse.response;
