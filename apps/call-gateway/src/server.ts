@@ -76,7 +76,8 @@ import {
   noteFinishSessionDialogueTurn
 } from "./finishSessionControl.js";
 import { buildStableOpenAiSafetyIdentifier } from "./openAiSafetyIdentifier.js";
-import { buildLiveStart, LIVE_URL, LiveRuntime, resolveVoiceRuntime } from "./liveRuntime.js";
+import { LIVE_URL, resolveVoiceRuntime } from "./liveRuntime.js";
+import { buildManagedLiveStart, ManagedLiveRuntime } from "./managedLiveRuntime.js";
 import { LIVE_SPEECH_INSTRUCTIONS } from "./liveContract.js";
 import { resolveLiveReasoningEffort } from "./liveBackendSession.js";
 import {
@@ -111,7 +112,7 @@ const openAiKey = process.env.OPENAI_API_KEY || "";
 const voiceRuntime = resolveVoiceRuntime(process.env.CALL_GATEWAY_VOICE_RUNTIME);
 const liveBackendModel = String(process.env.OPENAI_LIVE_BACKEND_MODEL || "").trim();
 const liveBackendReasoningEffort = voiceRuntime === "live" ? resolveLiveReasoningEffort(process.env.OPENAI_LIVE_BACKEND_REASONING_EFFORT) : "medium";
-if (voiceRuntime === "live" && !liveBackendModel) throw new Error("OPENAI_LIVE_BACKEND_MODEL is required for Live client delegation");
+if (voiceRuntime === "live" && !liveBackendModel) throw new Error("OPENAI_LIVE_BACKEND_MODEL is required for Live Responses delegation");
 const liveSockets = new WeakMap<WebSocket, StreamSession>();
 const signatureRequired = (process.env.TELNYX_SIGNATURE_REQUIRED || "true").toLowerCase() !== "false";
 const telnyxApiKey = process.env.TELNYX_API_KEY || "";
@@ -310,7 +311,7 @@ type StreamSession = {
   telnyxStreamId?: string;
   telnyxWs?: WebSocket;
   openAiWs?: WebSocket;
-  live?: LiveRuntime;
+  live?: ManagedLiveRuntime;
   liveToolOutputs?: Map<string, unknown>;
   liveTimer?: NodeJS.Timeout;
   liveLastAudioAt?: number;
@@ -835,7 +836,8 @@ function sendOpenAiEvent(ws: WebSocket | undefined, payload: Record<string, unkn
         liveSession.liveToolOutputs?.set(String(item.call_id), JSON.parse(String(item.output)));
       }
     }
-    // Never send Realtime commands (response.create/cancel/truncate) to Live.
+    // Realtime adapter commands are not Live commands. Managed Responses
+    // continuations are sent directly by ManagedLiveRuntime through deps.send.
     return;
   }
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -1679,10 +1681,13 @@ function notePendingTransferLookup(session: StreamSession, lookupResult: {
   session.pendingTransferCandidate = null;
 }
 
-function noteCallerTransferConfirmation(session: StreamSession, transcript: string) {
+function noteCallerTransferConfirmation(session: StreamSession, transcript: string, protectedQuestionConfirmed = false) {
   const pendingCandidate = session.pendingTransferCandidate;
   if (!pendingCandidate || pendingCandidate.confirmed) return;
-  const classification = classifyTransferConfirmation(transcript);
+  // Managed Live only supplies a nonempty transcript here after its exact
+  // transfer question was spoken and the current caller answer passed its
+  // confirmation guard. Do not reinterpret that answer with the legacy parser.
+  const classification = protectedQuestionConfirmed && transcript ? "confirmed" : classifyTransferConfirmation(transcript);
   if (classification === "confirmed") {
     pendingCandidate.confirmed = true;
     pendingCandidate.confirmedAt = new Date().toISOString();
@@ -2806,7 +2811,7 @@ function connectOpenAiLive(session: StreamSession) {
   session.liveToolOutputs = new Map();
   session.realtimeModel = "gpt-live-1";
   const instructions = buildSessionInstructions(payload);
-  const live: LiveRuntime = new LiveRuntime({
+  const live: ManagedLiveRuntime = new ManagedLiveRuntime({
     tenantKey: session.tenantKey, callSid: session.callSid, apiKey: openAiKey,
     safetyIdentifier: buildOpenAiSafetyIdentifier(session),
     backendModel: liveBackendModel, reasoningEffort: liveBackendReasoningEffort,
@@ -2834,9 +2839,9 @@ function connectOpenAiLive(session: StreamSession) {
         // Re-evaluate current consent; a previously observed yes cannot outlive a
         // later caller correction or a replacement task.
         if (candidate) candidate.confirmed = false;
-        if (lookupRevision !== undefined && candidate) noteCallerTransferConfirmation(session, live.callerConfirmationAfter(lookupRevision, candidate.targetId));
+        if (lookupRevision !== undefined && candidate) noteCallerTransferConfirmation(session, live.callerConfirmationAfter(lookupRevision, candidate.targetId), true);
       }
-      await handleToolCallEvent(session, name, callId, argsText, "live_client_delegation", mayCommit);
+      await handleToolCallEvent(session, name, callId, argsText, "live_responses_delegation", mayCommit);
       const output = session.liveToolOutputs?.get(callId);
       session.liveToolOutputs?.delete(callId);
       if (output === undefined) {
@@ -2862,7 +2867,7 @@ function connectOpenAiLive(session: StreamSession) {
     ready: () => {
       session.openAiReady = true;
       session.openAiSessionUpdated = true;
-      logInfo("openai_live_session_started", { callSid: session.callSid, model: "gpt-live-1", delegation: "client", audioFormat: "audio/pcmu", backendModel: liveBackendModel, backendReasoningEffort: liveBackendReasoningEffort, backendTransport: "websocket" });
+      logInfo("openai_live_session_started", { callSid: session.callSid, model: "gpt-live-1", delegation: "responses", audioFormat: "audio/pcmu", backendModel: liveBackendModel, backendReasoningEffort: liveBackendReasoningEffort, backendTransport: "managed" });
       if (!session.greetingSent) {
         session.greetingSent = true;
       }
@@ -2879,8 +2884,6 @@ function connectOpenAiLive(session: StreamSession) {
     }
   });
   session.live = live;
-  // Prepare the independent reasoning connection while Live negotiates speech.
-  void live.prepare().catch(() => {});
   liveSockets.set(ws, session);
   // Live's output stream has no response/audio-done event. Preserve partial PCMU
   // frames, and use an explicitly bounded local playback quiet policy for closing.
@@ -2897,9 +2900,11 @@ function connectOpenAiLive(session: StreamSession) {
   }, 10000);
   ws.on("open", () => {
     if (session.isShuttingDown || session.aiDetached) { ws.close(); return; }
-    ws.send(JSON.stringify(buildLiveStart(
+    ws.send(JSON.stringify(buildManagedLiveStart(
       LIVE_SPEECH_INSTRUCTIONS,
-      payload.session_config.voice || "marin"
+      payload.session_config.voice || "marin",
+      { backendModel: liveBackendModel, reasoningEffort: liveBackendReasoningEffort,
+        instructions, tools: payload.tool_definitions }
     )));
   });
   ws.on("message", data => {

@@ -17,9 +17,9 @@ Build a white-labeled, multi-tenant voice platform for service businesses using:
 For `CALL_GATEWAY_VOICE_RUNTIME=live`, GPT-Live is the voice receptionist. It
 receives the receptionist mission and conversational guidance, responds naturally
 throughout the caller's task, and keeps the unfinished caller goal in view.
-A prepared OpenAI Responses backend WebSocket supplies asynchronous advice and
-verified facts; ordinary conversational progress does not wait for that advice.
-Only the backend receives the full receptionist procedure and private tools.
+Managed Responses delegation supplies asynchronous backend work with Live-provided
+conversation context; ordinary conversational progress does not wait for that work.
+Only the backend receives the full receptionist procedure and private tool definitions.
 EveryCall binds confirmations and actions to tenant/call state; protected
 checkpoints retain exact wording. See
 `docs/SPECS/live-gateway-runtime.md`; the legacy Realtime flow below remains the

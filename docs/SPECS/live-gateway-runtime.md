@@ -1,5 +1,40 @@
 # Inbound GPT-Live runtime
 
+## Current delegation architecture (managed Responses)
+
+The shared inbound `CALL_GATEWAY_VOICE_RUNTIME=live` path uses GPT-Live with
+`delegation.type=responses` for every tenant. `delegation.responses` configures
+the explicitly selected backend model, canonical receptionist instructions,
+private function definitions, automatic tool choice, and sequential tool calls.
+OpenAI supplies the delegated model with relevant Live conversation context.
+The gateway does not run a parallel Responses WebSocket, synthesize an
+application quiet-fallback consultation, or discard backend answers when Sarah
+emits another transcript fragment. Sarah retains ordinary conversational
+control; backend help is for business facts and protected operations.
+
+Backend function requests arrive as `response.event` envelopes. The gateway
+waits for each completed `response.output_item.done` function item, associates
+it with its delegation and response, and executes it only after checking current
+tenant, call, consent, target, schema, and operation state. It returns a result
+for each requested function with `response.item.create`, then sends one
+`response.create` to continue that backend response. A model-generated function
+request alone never authorizes a business action. Live's output transcript and
+audio—not backend completion—are the evidence of spoken delivery.
+
+The managed backend's prose returns to Live without the old client-delegation
+JSON handoff validator. Therefore the gateway must enforce protected effects
+at the tool boundary, track exact protected questions and subsequent caller
+answers, and preserve knowledge/pricing provenance independently of model
+wording. The Live prompt tells Sarah to use verified backend facts and never
+invent operational claims. If a protected action fails or is stale, its tool
+result must say so; an operation with an unknown outcome is never blindly
+replayed. Telnyx raw-PCMU playback and its separate jitter-buffer investigation
+are unchanged by this migration.
+
+The remaining client-delegation discussion below documents the superseded
+implementation and its earlier test cases. It is retained temporarily as
+rollback context, not the active protocol contract.
+
 The inbound gateway selects a transport from trusted server configuration. Set
 `CALL_GATEWAY_VOICE_RUNTIME=live` for the GPT-Live deployment target. Unset or
 `realtime` preserves the prior tenant-profile Realtime model/schema path. Unknown

@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD)
 
 ## Summary
-EveryCall is a multi-tenant voice receptionist platform for service businesses. It answers inbound calls, collects key details, and routes the next step through follow-up workflows or tenant-configured blind transfers. The inbound GPT-Live path pairs a natural voice receptionist with a prepared OpenAI Responses reasoning backend. Live handles listening, delivery, and ordinary conversational judgment; it consults the backend for policy boundaries, verified business information, and direction at meaningful decision points. The gateway enforces action, consent, and tenant boundaries and handles call control, persistence, and logging. The legacy OpenAI Realtime path remains available for rollback.
+EveryCall is a multi-tenant voice receptionist platform for service businesses. It answers inbound calls, collects key details, and routes the next step through follow-up workflows or tenant-configured blind transfers. The inbound GPT-Live path pairs a natural voice receptionist with managed Responses delegation. Live handles listening, delivery, and ordinary conversational judgment; OpenAI supplies relevant conversation context to the delegated backend for verified business information and protected tool requests. The gateway still executes and authorizes every private business tool, enforces consent and tenant boundaries, and handles call control, persistence, and logging. The legacy OpenAI Realtime path remains available for rollback.
 
 ## Users
 - Callers: want fast, empathetic intake and clear next steps.
@@ -10,7 +10,7 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 
 ## Primary Workflows
 1. Inbound call is answered.
-2. Gateway sends `session.update` with EveryCall system prompt + tenant greeting + tenant knowledge payload + session settings.
+2. On the GPT-Live path, the gateway starts the session with Sarah's conversation prompt and managed Responses delegation configured with the canonical backend instructions, tenant knowledge, and private tools; the tenant greeting is appended after Live is ready.
 3. Assistant gathers required details as defined by the EveryCall system.
 4. Caller questions are answered via tenant knowledge lookup or tools; if unknown, assistant says it doesn’t know and offers a callback.
 5. When the caller explicitly asks for a configured person or extension and confirms the match, the gateway can blind-transfer the call.
@@ -51,7 +51,7 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 - Structured data capture delivered via tool call payloads
 
 ## Architecture Principles
-- Live voice and the reasoning backend collaborate: Live owns natural dialogue and ordinary next-turn decisions while an asynchronous backend advises on direction and owns approved knowledge lookup. Conversation can continue while advice is pending; verified business facts and protected actions still require their authority.
+- Live voice and the reasoning backend collaborate: Live owns natural dialogue and ordinary next-turn decisions while managed Responses delegation supplies relevant context to the backend for approved knowledge lookup and protected actions. Conversation can continue while backend work is pending; the gateway remains the authority for tool effects.
 - The gateway owns narrow safety and workflow state, including consent binding, action execution, lookup provenance, and exact closing requirements; it is not a replacement for conversational judgment.
 - Tenant greeting + tenant knowledge payload are injected at session start and are the only tenant-specific logic.
 - Receptionist Training Section 02 exposes the system candidate catalog and lets an owner/admin select up to 20 by-heart facts, author or correct facts, edit phrasing, hear voice previews, and review website-change or pricing notices without rebuilding the website. Website/upload prices remain lookup-searchable, but their figures are never selectable or exposed to the receptionist; only a monetary fact the tenant typed and confirmed may authorize a spoken price.

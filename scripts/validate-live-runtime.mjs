@@ -108,7 +108,7 @@ assert.match(LIVE_SPEECH_INSTRUCTIONS, /Answer the caller's immediate question b
 assert.match(LIVE_SPEECH_INSTRUCTIONS, /Use what they have already told you, and if they hesitate or change direction/);
 assert.match(LIVE_SPEECH_INSTRUCTIONS, /Make ordinary conversational decisions yourself; ask Luna for needed company facts, not for permission to continue/);
 assert.match(LIVE_SPEECH_INSTRUCTIONS, /Do not repeat or evaluate caller or competitor prices; quote company prices only from verified tenant-authorized facts/);
-assert.match(LIVE_SPEECH_INSTRUCTIONS, /Follow the application's authorized steps for callback consent, contact collection, transfer and closing; ask supplied protected questions exactly and wait for their answers/);
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /For callback consent, contact, phone readback, transfer or closing, ask Luna to prepare the protected question first; ask its exact wording and wait for the answer/);
 assert.match(LIVE_SPEECH_INSTRUCTIONS, /Guide the conversation naturally from start to finish. Ask one question at a time/);
 assert.match(LIVE_SPEECH_INSTRUCTIONS, /When they want a follow-up, guide them through the required steps to leave a name and phone number/);
 assert.ok(LIVE_SPEECH_INSTRUCTIONS.length < 1900);
