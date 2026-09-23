@@ -22,13 +22,13 @@ export const CONVERSATION_PLAN_SCHEMA = {
 
 export const LIVE_CONVERSATION_POLICY = `
 CONVERSATION ADVISER — apply the canonical Conversation and Callback Capture sections on every turn:
-Interpret what the caller is trying to accomplish in the whole conversation and recommend the lightest helpful conversational beat. Live chooses ordinary wording, empathy and pacing within your policy boundaries. Do this in the SAME response as your consultation or tool decision; do not call a second planning model or narrate a plan.
+Interpret what the caller is trying to accomplish in the whole conversation and recommend the lightest helpful conversational beat. Live owns ordinary conversation and discovery within policy boundaries and need not wait for your recommendation. Read its latest speech as well as the caller's. Do this in the SAME response as your consultation or tool decision; do not call a second planning model or narrate a plan.
 Use conversation_state and the exact pending question, not just the latest short answer. Preserve the caller's goal across 'exterior', 'the whole thing', corrections and side questions. A delegation asks you to decide what the conversation needs; it is NOT an instruction to perform a knowledge lookup or ask another intake question.
 Recommend acknowledge for recognizing the caller's actual work or concern, answer for answering from verified facts, or explain_limit for an applicable hard boundary. Do not script recognition, empathy or hesitation responses and do not turn every answer into a new question. next_question=null is valid: a brief specific reflection followed by listening is often the right beat. Live creates that reflection from the caller's own words.
-A completed service statement such as "My house needs to be painted" is a request for help even without a question mark. Recognize the actual need and choose a helpful continuation under the canonical rules. Acknowledge triggers a natural spoken reflection before yielding; it never means silent completion. Do not require the caller to say hello again or rephrase a clear statement as a question. Silence belongs to unfinished caller speech or tool work, not a completed consultation.
+A completed service statement such as "My house needs to be painted" opens a goal even without a question mark. Preserve it through quiet advice completion, acknowledgements and a later hello. Acknowledge is optional context for Live, never an instruction to speak or stop, and never closes that goal. Do not require the caller to repeat or rephrase a clear statement. Ordinary conversation continues independently of advice latency.
 Use at most two project-discovery questions for the call. One is often enough. After house painting + exterior + whole house are known, do not ask about peeling, worn paint, repairs, size, materials or condition merely to fill out a project questionnaire. Recognize the whole exterior project and move toward the approved callback path when receptive; if still explaining or hesitant, reflect briefly and listen. Do not force a callback from the question budget.
 question_purpose=discovery means any optional question about the project, condition, scope or preferences, including an optional 'note' question. clarification is only for an unclear caller statement, correction, or a fact essential to answering their actual question; it is never a renamed discovery question. required_contact is only for a missing required callback field after explicit callback consent. Never classify contact questions as discovery.
-Both discovery and unbound clarification consume the two-question budget. A genuine current caller business question may need one clarification to answer it (for example which state for a service-area question); set clarifies_question_id to caller:TURN_ID using that actual caller turn ID. This does not consume project discovery. The runtime retains that unresolved business question across the clarifier answer. Alternatively, a clarification may repeat the exact currently pending, heard question once, with clarifies_question_id set to that question's application ID. Otherwise set clarifies_question_id=null. For required_contact, set contact_field to an actual missing field in conversation_state.allowed_contact_questions and use one of its supplied questions; otherwise contact_field=null. These questions require application-confirmed callback consent. After first name, the canonical first-name-plus-surname-spelling form is also allowed. A self-declared readiness or field is never permission.
+Both discovery and unbound clarification consume the two-question budget when actually observed in Live's speech, including autonomous questions; a suggestion alone consumes none. A genuine current caller business question may need one clarification to answer it (for example which state for a service-area question); set clarifies_question_id to caller:TURN_ID using that actual caller turn ID. This does not consume project discovery. The runtime retains that unresolved business question across the clarifier answer. Alternatively, a clarification may repeat the exact currently pending, heard question once, with clarifies_question_id set to that question's application ID. Otherwise set clarifies_question_id=null. For required_contact, set contact_field to an actual missing field in conversation_state.allowed_contact_questions and use one of its supplied questions; otherwise contact_field=null. These questions require application-confirmed callback consent. After first name, the canonical first-name-plus-surname-spelling form is also allowed. A self-declared readiness or field is never permission.
 Answer direct questions before resuming the prior beat. An answer does not reset discovery or consent. Do not repeat known facts as filler. Do not ask for details already given or confirmed. Respect correction and interruption; superseded speech or a half-heard question does not establish a completed beat.
 Readiness is a reasoned assessment from the caller's words and the canonical rules, never inferred merely from a short answer to discovery. A callback offer requires receptive; a declined or hesitant caller is not to be pushed. Refusal does not close the call. A later explicit caller request can reopen the callback path, but an acknowledgement or an unrelated yes cannot.
 Only YOU decide when knowledge_lookup is needed. The tool requires lookup_intent with purpose=caller_question or service_fit and a specific missing_fact. Use caller_question for an unanswered business question that approved context/previous successful lookup does not cover; service_fit only when the actual requested service is not plainly covered and a capability decision is necessary. A caller describing their project or answering discovery is not by itself a reason to look up information. Never look up merely to acknowledge their words, generate the next question, or decide conversational timing. Reuse established facts; lookup answers return to the existing beat and never restart intake. Retain all pricing and factual-source rules above.
@@ -70,8 +70,11 @@ export type ConversationEvidence = { caller?: CallerEvidence | undefined; pendin
 
 export function isCallerBusinessQuestion(text: string) {
   const quote = normalized(text);
-  return (/\b(?:you|your|business|company)\b/.test(quote)
-    && (/[?]/.test(text) || /\b(?:do|does|can|could|would|will|are|is|what|when|where|how|why|which)\b/.test(quote)))
+  // A conservative authority boundary: factual questions need the adviser even
+  // when the caller omits "you/your" ("Where is the office?"). A false positive
+  // delays a local offer; a false negative could invite an unsupported answer.
+  return /[?]/.test(text)
+    || /^(?:what|when|where|how|why|which|do|does|did|can|could|would|will|are|is)\b/.test(quote)
     || /\b(?:hours|warranty|prices?|pricing|cost|service area|availability|estimate policy)\b/.test(quote);
 }
 
@@ -122,6 +125,9 @@ const CONTACT_QUESTIONS: Record<string, string[]> = {
 const clearlyYes = (text: string) => /^(?:yes|yeah|yep|sure|okay|ok|please do|that sounds good|sounds good|go ahead)\b/.test(normalized(text))
   && !/\b(?:no|not|don't|do not|maybe|wait|later)\b/.test(normalized(text));
 const clearlyNo = (text: string) => /^(?:no|no thanks|no thank you|not now|not interested)\b/.test(normalized(text));
+const callbackRefusal = (text: string) => /\b(?:no|not|never|don't|do not|stop|cancel|decline|refuse)\b.{0,60}\b(?:call|callback|contact|follow up)\b/.test(normalized(text));
+const callbackHesitation = (text: string) => /\b(?:not ready|not comfortable|unsure|uncertain|maybe later)\b.{0,60}\b(?:call|callback|contact|phone|number|details)\b/.test(normalized(text))
+  || /\b(?:only|just)\b.{0,24}\b(?:want|need)\b.{0,24}\b(?:information|answer|details)\b/.test(normalized(text));
 
 /** Tracks accepted decisions, without trying to derive business intent from transcript regexes. */
 export class LiveConversationController {
@@ -132,6 +138,14 @@ export class LiveConversationController {
   private repeatedQuestions = new Set<string>();
   private clarifiedCallerQuestions = new Set<string>();
 
+  canOfferCallback(caller?: CallerEvidence) {
+    const text = normalized(caller?.text || "");
+    return !this.callbackConsent && !callbackRefusal(text) && !callbackHesitation(text)
+      && (!(this.callbackDeclined || ["hesitant", "declined"].includes(this.plan?.readiness || "")) ||
+      (/\b(?:call me|call us|want.*callback|like.*(?:callback|call)|please.*call)\b/.test(text)
+        && !clearlyNo(text) && !/\b(?:don't|do not)\b/.test(text)));
+  }
+
   observeAnswer(question: QuestionEvidence, answer: CallerEvidence) {
     if (question.kind === "callback_consent" && question.spokenSequence && question.answerTurnId === answer.id) {
       this.callbackConsent = clearlyYes(answer.text);
@@ -141,7 +155,8 @@ export class LiveConversationController {
   }
 
   observeCaller(answer: CallerEvidence) {
-    if (/\b(?:don't|do not|stop|cancel)\b.*\b(?:call|calling|callback|contact)\b/.test(normalized(answer.text))) { this.callbackConsent = false; this.callbackDeclined = true; }
+    if (callbackRefusal(answer.text)) { this.callbackConsent = false; this.callbackDeclined = true; }
+    else if (callbackHesitation(answer.text)) { this.callbackConsent = false; this.callbackDeclined = true; }
   }
 
   snapshot(evidence?: ConversationEvidence) {
@@ -205,9 +220,15 @@ export class LiveConversationController {
   }
 
   accept(plan: ConversationPlan, question?: { kind: string; text: string } | null) {
-    if (["discovery", "clarification"].includes(plan.question_purpose) && !plan.clarifies_question_id) this.discoveryQuestions++;
     if (plan.clarifies_question_id?.startsWith("caller:")) this.clarifiedCallerQuestions.add(plan.clarifies_question_id);
     else if (plan.clarifies_question_id && question) this.repeatedQuestions.add(normalized(question.text));
     this.plan = { ...plan };
+  }
+
+  // Count observed ordinary questions, including questions Live chose itself.
+  // Merely suggesting a question is not proof it was asked. Protected questions
+  // retain their explicit application binding and never become discovery.
+  observeAssistantQuestion(protectedQuestion: boolean) {
+    if (!protectedQuestion) this.discoveryQuestions++;
   }
 }

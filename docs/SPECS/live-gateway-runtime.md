@@ -29,38 +29,44 @@ full-duplex speech and interruption; backend actions have a separate lifecycle.
 GPT-Live receives the receptionist mission and short permanent conversational
 rules. It recognizes caller emotion and project details, chooses natural wording
 and pacing, and may reflect or listen instead of asking an optional question.
-An anchored gateway allowlist lets it handle isolated courtesy or content-free
-clarification beats locally; this path creates no consent, question or business
-fact authority. All service requests, new intake progression, pending-question
-answers, corrections, business claims and actions still consult the prepared backend for business
-facts, policy boundaries and advice on a next move. The full canonical EveryCall
+It owns ordinary dialogue and may advance the caller's goal without waiting for
+an adviser response. A gateway quiet-window watchdog starts asynchronous advice
+on a meaningful completed turn even when Live has already spoken; a provider
+delegation for that revision coalesces with the same work. Local conversation
+creates no consent, action or business-fact authority. Requested tenant facts
+and protected actions still require validated backend authority. The full canonical EveryCall
 prompt, tenant bindings/by-heart facts, and private tool schemas go only to the
 backend. The application still authorizes actions and protected consent questions;
 Live cannot invent business facts, pricing, scheduling, callback/transfer offers
 or close. Initial tenant greeting is sent once after Live readiness. No
 calendar/scheduling tool exists.
 
-### Collaborative conversation control
+### Live-led conversation with asynchronous advice
 
-The Terra backend is a private adviser and the only owner of private knowledge
+The Luna backend is a private adviser and the only owner of private knowledge
 tools. The canonical Conversation and Callback Capture sections remain its source
 of procedure. It returns verified facts, a recommended move, and applicable hard
-boundaries, not a sentence for Live to recite. Live gives that advice serious
-weight and decides how to speak within the allowed move; the application verifies
-permissions and actions. A delegation requests consultation, not necessarily a
-knowledge lookup.
+boundaries, not a sentence for Live to recite. Ordinary recommendations are
+quiet context, not an instruction to interrupt the caller or speak immediately.
+Live decides how to converse while the application verifies facts, permissions
+and actions. A delegation requests consultation, not necessarily a knowledge
+lookup. A failed optional consultation cannot itself force an audible failure
+message; a requested fact still needs an honest, authorized answer or a clear
+inability to confirm it.
 
 Each consultation includes a private `conversation_plan`: the caller's goal,
 readiness, conversational beat, purpose of any question, contact field and any
 pending-question clarification reference. It is produced in
 the same backend generation as the advice, so this adds no planning round trip.
-The runtime retains the accepted plan and counts issued optional discovery
-questions in `conversation_state`. After two, another discovery handoff is
-rejected before Live receives it and gets the existing one bounded repair. The limit never
+The runtime retains the accepted plan and counts observed optional discovery
+questions in `conversation_state`, rather than recommendations Live might not
+have spoken. After two, another proposed discovery question is rejected before
+Live receives it and gets one bounded repair. The limit never
 authorizes callback consent, capture, transfer or closing. With
-`recommended_move=acknowledge` and `next_question=null`, Live produces its own
-short recognition and listens; hesitant or declined readiness cannot authorize a callback
-offer. Required contact fields and clarification of genuinely unclear input are
+`recommended_move=acknowledge` and `next_question=null`, Live remains responsible
+for the caller's unfinished goal; advice completion does not mean goal completion.
+Hesitant or declined readiness cannot authorize a callback offer. Required
+contact fields and clarification of genuinely unclear input are
 separate question purposes. Renaming discovery as clarification does not exempt
 it from the budget. A genuine current caller business question can authorize one
 clarification bound to `caller:TURN_ID`, even after project discovery is exhausted.
@@ -68,6 +74,13 @@ The application preserves that unresolved question across the clarifier reply:
 "Do you paint siding?" → "What type?" → "Metal" can still reach lookup. A repeated
 clarification can repeat the exact currently heard, answered question once with
 its application question ID.
+For an open goal with a receptive caller, the application may supply one exact
+callback opt-in question as quiet preauthorization without waiting for Luna.
+It withholds that option during a direct business question, a refusal, uncertain
+operation, unresolved clarification or unanswered protected question. Live
+chooses whether and when to offer it; only the exact observed opt-in question
+can bind the caller's later answer. Neither the offer nor an unrelated "yes"
+performs capture or promises an appointment or callback time.
 Required-contact exemption needs a heard and bound callback yes, an actual
 missing capture field, and a matching approved field question. Natural affirmative
 forms such as "Yes, that would be great" are accepted; a later "don't call me"
@@ -106,9 +119,12 @@ pricing validation is unchanged. The backend still decides semantic necessity;
 the application binds retrieval content to caller evidence and the approved
 capability purpose.
 
-Live receives application-authored speaking guidance and quiet, provenance-checked
-facts, not Terra's scripted speech. The plan, caller goal, and raw tool results
-never enter Live's speech or quiet facts. `openai_live_conversation_decision` logs enum-only beat,
+Live receives quiet, provenance-checked facts and optional advice, not Luna's
+scripted speech. An open caller goal remains application state until actually
+addressed, including through a repeated "Hello?" or a completed advice response.
+Advice is discarded when its caller revision or assistant-conversation epoch is
+stale. The plan and raw tool results never enter Live's speech or quiet facts.
+`openai_live_conversation_decision` logs enum-only beat,
 readiness, question purpose and discovery count; `openai_live_lookup_decision`
 logs accepted purpose or rejected intent, without caller text. These events are
 correlated with the existing request/delegation latency trace.
@@ -179,16 +195,18 @@ Recommended moves are `acknowledge`, `answer`, `ask`, or `explain_limit`.
 Finite boundary codes forbid pricing, scheduling, callback offers, technical
 advice, or unverified action claims when applicable. Operation references are
 checked against the local ledger. Quiet facts and the proposed question as
-quoted data go to `session.thinking.append`; application-authored boundaries
-and a short "Respond now" instruction go to `session.instructions.append`.
+quoted data go to `session.thinking.append`; `session.instructions.append` is
+reserved for required boundaries, verified-answer delivery, protected exact
+questions, greeting/closing and recovery of an open goal after an attention
+check. Optional advice never contains a forced "Respond now" instruction.
 Model-authored question text is never interpolated into system instructions;
 obvious assistant-directed question content is rejected. No private
 reasoning, raw tool result or serialized contract is forwarded. The
 backend remains responsible for semantic grounding in approved context; schema
 and identifier validation alone cannot prove a generated factual claim.
-If backend generation or contract validation fails, the runtime supplies only a
-neutral inability-to-confirm statement. It never invents a next question or
-reopens a callback offer. Invalid capture results are failed operations, never
+If optional backend advice generation or contract validation fails, Live keeps
+conversing; a requested fact receives a neutral inability-to-confirm statement
+rather than an invented answer. Invalid capture results are failed operations, never
 successful capture evidence.
 
 Delegation is bounded to 128 tasks per call, six backend rounds per task,
@@ -198,8 +216,8 @@ submitted are not rolled back by that timeout. Transcript context retains up to
 The Responses recovery history fails closed at 512,000 UTF-8 bytes instead of
 discarding action context. Facts and a single proposed question are byte-bounded
 and validated; invalid consultations receive one bounded schema repair.
-Acknowledge/listen guidance must trigger Live to produce a spoken recognition
-rather than a silent accepted handoff; offline tests verify the guidance event,
+Acknowledge/listen advice must not terminate an unfinished caller goal or force
+another spoken acknowledgement; offline tests verify the quiet delivery event,
 while a real call must verify audible model behavior. Context appends remain
 below the Live token limit.
 

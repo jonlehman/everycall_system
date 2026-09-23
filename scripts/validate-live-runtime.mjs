@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
-import { LiveRuntime, buildLiveStart, resolveVoiceRuntime, liveAppend, pcmuHasSpeech } from "../apps/call-gateway/dist/apps/call-gateway/src/liveRuntime.js";
+import { LiveRuntime, LIVE_CALLBACK_QUESTION, buildLiveStart, resolveVoiceRuntime, liveAppend, pcmuHasSpeech } from "../apps/call-gateway/dist/apps/call-gateway/src/liveRuntime.js";
 import { PreparedResponsesSession, RESPONSES_WS_URL, resolveLiveReasoningEffort } from "../apps/call-gateway/dist/apps/call-gateway/src/liveBackendSession.js";
 import { LIVE_SPEECH_INSTRUCTIONS, LIVE_BACKEND_ADAPTER, LIVE_HANDOFF_FORMAT, parseBackendHandoff, buildLiveGuidance, HandoffValidationError } from "../apps/call-gateway/dist/apps/call-gateway/src/liveContract.js";
 import { LiveLatency } from "../apps/call-gateway/dist/apps/call-gateway/src/liveLatency.js";
@@ -65,15 +65,20 @@ function harness({ replies = [answer(factAnswer("We repair windows."))], execute
   const h = { runtime, sent, calls, logs, transcripts, finishes, requests, closed: () => closed }; all.push(h); return h;
 }
 async function start(h, utterance) { await h.runtime.handle({ type: "session.started" }); if (utterance) await h.runtime.handle(caller(utterance)); }
-// Fake Live rendering used only to feed transcript fixtures. Actual wire
+// Fake candidate rendering used only to feed transcript fixtures. Quiet optional
+// suggestions are displayed here as possible replies, NOT triggered speech. Actual wire
 // assertions below separately verify guidance, facts and exact-question flags.
 // No assertion here certifies what a real speech model will say.
 const speech = h => {
   let facts = [], proposedQuestion = "";
   return h.sent.flatMap(event => {
-    if (event.type === "session.instructions.append" && event.content.startsWith("Current consultation")) { facts = []; proposedQuestion = ""; }
+    if (event.type === "session.thinking.append" && event.content.startsWith("Current adviser context")) { facts = []; proposedQuestion = ""; return []; }
     if (event.type === "session.thinking.append") {
-      try { const data = JSON.parse(event.content); if (typeof data.question_text === "string") proposedQuestion = data.question_text; else facts.push(event.content); }
+      try { const data = JSON.parse(event.content);
+        if (typeof data.question_text === "string") proposedQuestion = data.question_text;
+        else if (data.recommended_move) return [data.optional_question || "I understand."];
+        else if (data.authorized_optional_callback_question) return [];
+        else facts.push(event.content); }
       catch { facts.push(event.content); }
     }
     if (event.type === "session.commentary.append") return [event.content];
@@ -97,9 +102,9 @@ assert.deepEqual(liveStart.session.delegation, { type: "client" }); assert.equal
 assert.equal("turn_detection" in liveStart.session, false); assert.ok(!LIVE_SPEECH_INSTRUCTIONS.includes("CANONICAL BUSINESS RULES"));
 assert.match(LIVE_SPEECH_INSTRUCTIONS, /Delegate to the backend when:/);
 assert.match(LIVE_SPEECH_INSTRUCTIONS, /Do not delegate to the backend when:/);
-assert.match(LIVE_SPEECH_INSTRUCTIONS, /before the first or any new project-discovery question/);
-assert.match(LIVE_SPEECH_INSTRUCTIONS, /a repeat request requires current validated guidance/);
-assert.match(LIVE_SPEECH_INSTRUCTIONS, /After a completed reflection\/listening beat, delegate acknowledgements/);
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /Continue with a useful ordinary question or reflection without waiting for Luna/);
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /a repeat request requires current validated guidance/i);
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /An acknowledgement or completed adviser response does not resolve the caller's goal/);
 assert.match(LIVE_BACKEND_ADAPTER, /No appointment-booking or calendar tool exists/);
 const chunks = liveAppend("instructions", "界🙂".repeat(400), "delegation");
 assert.ok(chunks.every(x => Buffer.byteLength(x.content) <= 480)); assert.equal(chunks.map(x => x.content).join(""), "界🙂".repeat(400));
@@ -271,8 +276,8 @@ for (const failure of ["transport", "invalid_handoff"]) {
     answer(contract("Recognize the unresolved painting request."))
   ] });
   await start(failedThenHello, "My house needs painting."); await failedThenHello.runtime.handle(delegate(`failed-work-${failure}`));
-  assert.equal(speech(failedThenHello).at(-1), "I'm sorry, I couldn't confirm that.");
-  await failedThenHello.runtime.handle(assistant("I'm sorry, I couldn't confirm that."));
+  assert.equal(speech(failedThenHello).length, 0, "optional advice failure must not invent a business failure");
+  await failedThenHello.runtime.handle(assistant("I understand your house needs painting."));
   failedThenHello.runtime.input(Buffer.alloc(160, 0).toString("base64"));
   await failedThenHello.runtime.handle(caller("Hello?")); await quietForFallback(failedThenHello);
   assert.equal(failedThenHello.requests.length, failure === "transport" ? 2 : 3, "failed substantive work must return to Terra after hello");
@@ -280,7 +285,8 @@ for (const failure of ["transport", "invalid_handoff"]) {
   assert.equal(state(failedThenHello.requests.at(-1)).finalized_turns.filter(x => x.role === "user").at(-1).text, "Hello?");
   await failedThenHello.runtime.handle(assistant("I understand that your house needs painting."));
   await failedThenHello.runtime.handle(caller("Hello!")); await failedThenHello.runtime.handle(delegate(`resolved-work-${failure}`));
-  assert.ok(failedThenHello.logs.some(x => x.milestone === "local_conversation_routed"), "a valid consultation can clear the unresolved-work barrier");
+  assert.ok(!failedThenHello.logs.some(x => x.milestone === "local_conversation_routed"), "accepted advice does not clear the open goal");
+  assert.ok(failedThenHello.sent.some(x => x.type === "session.instructions.append" && x.content.includes("Resume the existing open goal")));
 }
 
 const localThenProject = harness({ replies: [answer(contract("Understood.", question("Is that the inside or outside?")))] });
@@ -432,7 +438,7 @@ assert.equal(onlyBackchannel.requests.length, 0, "ordinary acknowledgement is no
 const emptyTwice = harness({ replies: [answer(contract()), answer(contract(" "))] });
 await start(emptyTwice, "My house needs to be painted."); await emptyTwice.runtime.handle(delegate("empty-twice"));
 assert.equal(emptyTwice.requests.length, 2); assert.equal(emptyTwice.calls.length, 0);
-assert.deepEqual(speech(emptyTwice), ["I'm sorry, I couldn't confirm that."]);
+assert.deepEqual(speech(emptyTwice), [], "rejected optional advice cannot announce a factual failure");
 assert.equal(emptyTwice.finishes.length, 0);
 
 // Byte provenance survives delayed queue playback and later commentary. Provider
@@ -475,7 +481,7 @@ assert.deepEqual(repaired.logs.filter(x => x.milestone === "handoff_validated").
 const unrepairable = harness({ replies: [answer(factAnswer("What is your name?")), answer(factAnswer("What is your name?"))] });
 await start(unrepairable, "Painting please"); await unrepairable.runtime.handle(delegate("unrepairable"));
 assert.equal(unrepairable.requests.length, 2); assert.equal(unrepairable.calls.length, 0);
-assert.deepEqual(speech(unrepairable), ["I'm sorry, I couldn't confirm that."]);
+assert.deepEqual(speech(unrepairable), [], "invalid optional advice stays silent");
 assert.equal(unrepairable.logs.filter(x => x.milestone === "handoff_validated" && x.outcome === "rejected").length, 2);
 const repairTool = harness({ replies: [answer(factAnswer("What is your name?")), tool()] });
 await start(repairTool, "Painting please"); await repairTool.runtime.handle(delegate("repair-tool"));
@@ -579,7 +585,7 @@ for (const acknowledgement of ["Okay.", "Go on."]) {
 // The budget applies to the actual question class even when the backend gives
 // it a misleading purpose. Contact exemptions require real application state.
 const controller = new LiveConversationController();
-controller.accept(plan("discovery", "understand")); controller.accept(plan("discovery", "understand"));
+controller.observeAssistantQuestion(false); controller.observeAssistantQuestion(false);
 const evidence = { caller: { id: 7, text: "The whole thing." }, capturedFields: {}, contactFields: ["first_name", "callback_number"] };
 const conditionQuestion = "Is the paint peeling or does the wood need repairs?";
 assert.equal(controller.validate(plan("clarification", "understand"), question(conditionQuestion, "clarification"), evidence), "conversation_discovery_limit");
@@ -596,6 +602,13 @@ for (const consent of ["Yes, that would be great.", "Yes, please have them call 
   assert.equal(c.snapshot().callback_consent_confirmed, false);
   assert.equal(c.validate(contactPlan, question("What is your first name?"), evidence), "conversation_contact_without_consent");
 }
+const hesitantAfterYes = new LiveConversationController();
+hesitantAfterYes.observeAnswer({ id: "callback-q", kind: "callback_consent", text: LIVE_CALLBACK_QUESTION, spokenSequence: 10, answerTurnId: 11 }, { id: 11, text: "Yes, please." });
+assert.equal(hesitantAfterYes.snapshot().callback_consent_confirmed, true);
+hesitantAfterYes.observeCaller({ id: 12, text: "I'm not ready to give my number." });
+assert.equal(hesitantAfterYes.snapshot(evidence).callback_consent_confirmed, false, "contact hesitation revokes prior consent");
+assert.deepEqual(hesitantAfterYes.snapshot(evidence).allowed_contact_questions, {});
+assert.equal(hesitantAfterYes.validate(contactPlan, question("What is your first name?"), evidence), "conversation_contact_without_consent");
 const pendingClarification = { id: "scope-q", kind: "clarification", text: "Is that the house or the garage?", spokenSequence: 5, answerTurnId: 7 };
 const repeatPlan = { ...plan("clarification", "understand"), clarifies_question_id: pendingClarification.id };
 assert.equal(controller.validate(repeatPlan, question(conditionQuestion, "clarification"), { ...evidence, pendingQuestion: pendingClarification }), "conversation_clarification_binding");
@@ -623,7 +636,7 @@ await start(collaborative, "My house needs to be painted."); await collaborative
 assert.equal(collaborative.calls.length, 0, "recognition needs no business lookup");
 assert.ok(!JSON.stringify(collaborative.sent).includes("THIS SCRIPT"));
 assert.equal(collaborative.sent.filter(x => x.type === "session.commentary.append").length, 0, "ordinary reply is not dictated through commentary");
-assert.match(collaborative.sent.find(x => x.content?.startsWith("Respond now:")).content, /may rephrase.*or reflect and listen/);
+assert.equal(collaborative.sent.filter(x => x.content?.startsWith("Respond now:")).length, 0, "ordinary advice is thinking only and cannot take the floor");
 await collaborative.runtime.handle(assistant("Is it the outside you're thinking of painting?"));
 await collaborative.runtime.handle(caller("Yes, all of the exterior.")); await collaborative.runtime.handle(delegate("collaborate-paraphrase"));
 assert.equal(state(collaborative.requests[1]).pending_question.text, "Is it the outside you're thinking of painting?");
@@ -669,7 +682,7 @@ const unsupported = harness({ replies: [
 ] });
 await start(unsupported, "Can you book someone for tomorrow?"); await unsupported.runtime.handle(delegate("unsupported-answer"));
 assert.ok(unsupported.logs.some(x => x.constraint === "answer_without_facts"));
-assert.equal(unsupported.sent.filter(x => x.type === "session.thinking.append").length, 0, "unsupported business claims never become verified context");
+assert.ok(unsupported.sent.filter(x => x.type === "session.thinking.append").every(x => x.content.startsWith("Current adviser context") || x.content.includes("authorized_optional_callback_question")), "unsupported business claims never become verified context");
 assert.ok(unsupported.sent.some(x => x.content?.includes("scheduling cannot be confirmed")));
 assert.ok(unsupported.sent.some(x => x.content?.startsWith("Respond now: briefly explain")));
 assert.equal(unsupported.calls.length, 0);
@@ -731,6 +744,131 @@ await contactFlow.runtime.handle(caller("Don't call me.")); await contactFlow.ru
 assert.equal(speech(contactFlow).at(-1), "I understand.");
 assert.ok(contactFlow.logs.some(x => x.constraint === "conversation_contact_without_consent"));
 assert.equal(contactFlow.calls.length, 0);
+
+// Live-led regression: exact failed-advice / peeling exterior / hello sequence.
+// Inspect wire events directly: optional recommendations must never request speech.
+const speakingCommands = h => h.sent.filter(x => ["session.instructions.append", "session.commentary.append"].includes(x.type));
+let releasePaintingAdvice;
+const observedPainting = harness({ replies: [
+  answer(contract("Recognize painting", question("Inside or outside?"), { recommended_move: "acknowledge" })),
+  answer(contract("Recognize painting", question("Inside or outside?"), { recommended_move: "acknowledge" })),
+  () => new Promise(resolve => { releasePaintingAdvice = resolve; }),
+  answer(contract("Continue the exterior goal"))
+] });
+await start(observedPainting, "I have a house that needs to get painted.");
+await observedPainting.runtime.handle(delegate("observed-painting-start"));
+assert.equal(speakingCommands(observedPainting).length, 0, "rejected optional advice does not dictate an apology or question");
+assert.equal(observedPainting.logs.filter(x => x.milestone === "handoff_validated" && x.constraint === "recommended_question_binding").length, 2);
+await observedPainting.runtime.handle(assistant("Is it the inside or outside of the house?"));
+await observedPainting.runtime.handle(caller("It is a two-story exterior, and the old paint is peeling."));
+const paintingPending = observedPainting.runtime.handle(delegate("observed-painting-exterior")); await idle();
+await observedPainting.runtime.handle(assistant("Okay, great, let's see what we can do."));
+releasePaintingAdvice(answer(contract("Recognize peeling exterior", null, { conversation_plan: plan("none", "listen", "exploring", "Exterior painting") })));
+await paintingPending;
+assert.ok(observedPainting.logs.some(x => x.milestone === "advice_discarded" && x.reason === "assistant_epoch"));
+assert.equal(speakingCommands(observedPainting).length, 0, "late acknowledge cannot stop or restart Live");
+seq += 310; // The caller's next hello is 31 seconds later on the media timeline.
+await observedPainting.runtime.handle(caller("Hello?"));
+await observedPainting.runtime.handle(delegate("observed-painting-hello"));
+assert.equal(state(observedPainting.requests.at(-1)).open_goal, true);
+assert.ok(speakingCommands(observedPainting).some(x => x.content.includes("Resume the existing open goal")));
+assert.ok(!speakingCommands(observedPainting).some(x => x.content.includes("couldn't confirm") || x.content.startsWith("Respond now:")));
+assert.equal(observedPainting.calls.length, 0);
+
+// No adviser response is required to discover scope, offer the app's exact
+// opt-in, hear refusal/correction, or resume an open goal. Only a later backend
+// action may act on a positively confirmed protected question.
+for (const reply of ["Yes, please.", "No, don't call me."]) {
+  const autonomous = harness({ replies: [answer(contract("Observe the current goal"))] });
+  await start(autonomous, "I need my house painted.");
+  await autonomous.runtime.handle(assistant("Is it the inside or outside?"));
+  await autonomous.runtime.handle(caller("The whole exterior; it is two stories and peeling."));
+  await autonomous.runtime.handle(assistant(LIVE_CALLBACK_QUESTION));
+  await autonomous.runtime.handle(caller(reply));
+  assert.equal(autonomous.requests.length, 0, "Live reaches useful opt-in without Luna on the speech path");
+  assert.equal(autonomous.calls.length, 0, "offering and consenting never imply completed callback");
+  await autonomous.runtime.handle(delegate(`autonomous-consent-${reply}`));
+  assert.equal(state(autonomous.requests[0]).pending_question.kind, "callback_consent");
+  assert.equal(state(autonomous.requests[0]).conversation_state.callback_consent_confirmed, reply.startsWith("Yes"));
+  assert.equal(state(autonomous.requests[0]).conversation_state.discovery_questions_issued, 1);
+  if (reply.startsWith("No")) {
+    const before = autonomous.sent.length;
+    await autonomous.runtime.handle(assistant("Of course, we can leave that aside."));
+    await autonomous.runtime.handle(caller("Actually, it is the garage, not the house."));
+    await autonomous.runtime.handle(assistant("Got it, the garage exterior."));
+    assert.ok(!autonomous.sent.slice(before).some(x => x.content?.includes("authorized_optional_callback_question")), "refusal survives a project correction without adviser help");
+  }
+}
+const questionFirst = harness(); await start(questionFirst, "What are your business hours?");
+await questionFirst.runtime.handle(assistant("I heard your question."));
+assert.ok(!questionFirst.sent.some(x => x.content?.includes("authorized_optional_callback_question")), "callback preauthorization cannot replace a direct factual answer");
+for (const utterance of ["Where is the office?", "When does the shop open?", "What services are available?", "Is exterior painting offered?"]) {
+  const factual = harness({ replies: [() => { throw new Error("live_backend_unavailable"); }] });
+  await start(factual, utterance);
+  assert.ok(!factual.sent.some(x => x.content?.includes("authorized_optional_callback_question")), "factual question cannot authorize callback opt-in");
+  await factual.runtime.handle(delegate(`factual-${utterance}`));
+  assert.ok(speakingCommands(factual).some(x => x.content.includes("couldn't confirm")), "failed factual answer needs honest spoken limit");
+}
+for (const utterance of [
+  "My house needs painting, but no callback please.",
+  "I only want information; I am not interested in a callback.",
+  "My house needs painting. I am not ready to give contact details."
+]) {
+  const refusal = harness(); await start(refusal, utterance);
+  assert.ok(!refusal.sent.some(x => x.content?.includes("authorized_optional_callback_question")), "refusal or hesitation cannot authorize callback opt-in");
+  await refusal.runtime.handle(caller("The whole exterior."));
+  assert.ok(!refusal.sent.some(x => x.content?.includes("authorized_optional_callback_question")), "short correction cannot erase earlier refusal or hesitation");
+}
+
+// Transcript-driven consultation runs after Live's own response, coalesces the
+// latest caller+assistant epoch and becomes idle once that epoch is considered.
+const asyncObserver = harness({ delegationWaitMs: 15, replies: [answer(contract("Optional exterior context"))] });
+await start(asyncObserver); asyncObserver.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+await asyncObserver.runtime.handle(caller("My exterior needs painting."));
+await asyncObserver.runtime.handle(assistant("Are you thinking of the whole exterior?"));
+await quietForFallback(asyncObserver, 20);
+assert.equal(asyncObserver.requests.length, 1);
+assert.ok(state(asyncObserver.requests[0]).finalized_turns.some(x => x.role === "assistant"));
+assert.ok(state(asyncObserver.requests[0]).conversation_epoch.assistant > 0);
+assert.equal(speakingCommands(asyncObserver).length, 0);
+await quietForFallback(asyncObserver, 20);
+assert.equal(asyncObserver.requests.length, 1, "unchanged open goal cannot create a consultation loop");
+await asyncObserver.runtime.handle(delegate("async-observer-late-provider"));
+assert.equal(asyncObserver.requests.length, 1, "late delegation coalesces the already-considered epoch");
+
+const answeredObserver = harness({ delegationWaitMs: 15, replies: [answer(factAnswer("We open at nine.")), answer(factAnswer("We open at nine."))] });
+await start(answeredObserver); answeredObserver.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+await answeredObserver.runtime.handle(caller("What are your hours?")); await quietForFallback(answeredObserver);
+assert.equal(speakingCommands(answeredObserver).filter(x => x.content.startsWith("Respond now:")).length, 1);
+await answeredObserver.runtime.handle(assistant("We open at nine.")); await quietForFallback(answeredObserver, 20);
+assert.equal(answeredObserver.requests.length, 2, "assistant's reply is observed once");
+assert.equal(state(answeredObserver.requests[1]).directed_reply_already_sent, true);
+assert.equal(speakingCommands(answeredObserver).filter(x => x.content.startsWith("Respond now:")).length, 1, "observer advice cannot retrigger an already delivered answer");
+await quietForFallback(answeredObserver, 20);
+assert.equal(answeredObserver.requests.length, 2, "verified answer observation becomes idle");
+
+const failedObserver = harness({ delegationWaitMs: 15, replies: [() => { throw new Error("live_backend_unavailable"); }, answer(contract("Observe retry"))] });
+await start(failedObserver); failedObserver.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+await failedObserver.runtime.handle(caller("What are your hours?")); await quietForFallback(failedObserver);
+assert.equal(failedObserver.requests.length, 1);
+assert.equal(speakingCommands(failedObserver).filter(x => x.content.includes("couldn't confirm")).length, 1);
+await failedObserver.runtime.handle(assistant("I'm sorry, I couldn't confirm that.")); await quietForFallback(failedObserver, 20);
+assert.equal(failedObserver.requests.length, 1, "failure apology cannot trigger its own new consultation");
+await failedObserver.runtime.handle(caller("Can you try the hours again?")); await quietForFallback(failedObserver, 20);
+assert.equal(failedObserver.requests.length, 2, "a new caller request after failure must still reach the backend without provider delegation");
+
+for (const lateResult of [answer(discover("Old advice", "Is it indoors?", "Old scope")), tool("data_capture", { first_name: "Ada" })]) {
+  let releaseLate;
+  const lateEpoch = harness({ replies: [() => new Promise(resolve => { releaseLate = resolve; }), answer(contract("Current context"))] });
+  await start(lateEpoch, "My house needs painting."); const pending = lateEpoch.runtime.handle(delegate(`late-epoch-${++seq}`)); await idle();
+  await lateEpoch.runtime.handle(assistant("Is it the whole exterior you need painted?"));
+  releaseLate(lateResult); await pending;
+  assert.equal(lateEpoch.calls.length, 0, "a tool proposal for an older assistant epoch cannot execute");
+  assert.ok(!lateEpoch.sent.some(x => x.content?.includes("Is it indoors?")));
+  await lateEpoch.runtime.handle(delegate(`new-epoch-${++seq}`));
+  assert.equal(lateEpoch.requests.length, 2);
+  assert.ok(state(lateEpoch.requests[1]).conversation_epoch.assistant > state(lateEpoch.requests[0]).conversation_epoch.assistant);
+}
 
 // Actual transport with fake WebSockets: prepared affinity, incremental input,
 // store:false cache-loss recovery and exact encrypted reasoning/tool-output replay.
@@ -900,6 +1038,20 @@ const race = harness({ replies: [tool(), answer(contract("", question("What name
 await start(race, "Ada"); const racing = race.runtime.handle(delegate("race")); await tick();
 await race.runtime.handle(caller("No, don't save that")); releaseAction(); await racing; await idle(); assert.deepEqual(permitChecks, [true, false]);
 
+// A newer assistant move also invalidates an in-flight tool proposal at the
+// actual commit check, not only before executeTool starts.
+let releaseAssistantAction; const assistantPermitChecks = [];
+const assistantRace = harness({ replies: [tool(), answer(contract("", question("What name should I use?", "clarification")))], executeTool: async (_name, _id, _args, mayCommit) => {
+  assistantPermitChecks.push(mayCommit());
+  await new Promise(resolve => { releaseAssistantAction = resolve; });
+  assistantPermitChecks.push(mayCommit());
+  if (!mayCommit()) throw new Error("stale_assistant_preflight");
+  return { status: "accepted" };
+} });
+await start(assistantRace, "Ada"); const assistantRacing = assistantRace.runtime.handle(delegate("assistant-race")); await tick();
+await assistantRace.runtime.handle(assistant("Actually, let me clarify the name first."));
+releaseAssistantAction(); await assistantRacing; await idle(); assert.deepEqual(assistantPermitChecks, [true, false]);
+
 // Exact target and actual spoken question are required. The gateway's existing
 // consent classifier receives the bound answer, including explicit refusal.
 for (const response of ["Yes please", "No, don't transfer"]) {
@@ -917,7 +1069,8 @@ for (const response of ["Yes please", "No, don't transfer"]) {
 const unrelated = harness({ replies: [answer(contract("", question("Would you like me to transfer you to Alice?", "transfer_confirmation", "alice"))), answer(contract("Please clarify."))] });
 await start(unrelated, "Transfer me"); await unrelated.runtime.handle(delegate("unrelated-q"));
 await unrelated.runtime.handle(assistant("Is your name Ada?")); await unrelated.runtime.handle(caller("Yes")); await unrelated.runtime.handle(delegate("unrelated-a"));
-assert.equal(unrelated.runtime.callerConfirmationAfter(1, "alice"), ""); assert.equal(state(unrelated.requests[1]).pending_question, null);
+assert.equal(unrelated.runtime.callerConfirmationAfter(1, "alice"), "");
+assert.equal(state(unrelated.requests[1]).pending_question.exact, false, "unrelated observed question carries no protected consent authority");
 
 const denied = harness({ replies: [tool("delete_tenant")] }); await start(denied, "Delete it"); await denied.runtime.handle(delegate("denied"));
 assert.equal(denied.calls.length, 0); assert.ok(denied.logs.some(x => x.event === "openai_live_task_failed"));
@@ -963,4 +1116,4 @@ await noisy.runtime.handle({ type: "session.output_audio.delta", delta: Buffer.a
 await noisy.runtime.handle({ type: "session.closed", usage: { seconds: 1 } }); assert.equal(noisy.closed(), true); assert.deepEqual(noisy.finishes, ["openai_live_provider_closed"]);
 await noisy.runtime.handle(caller("after disconnect")); assert.equal(noisy.runtime.taskRevision, 0);
 for (const h of all) { if (h.runtime.closed) continue; const done = h.runtime.close(); await h.runtime.handle({ type: "session.closed", usage: { seconds: 3 } }); await done; assert.equal(h.closed(), true); }
-console.log("Live offline acceptance passed: prepared WebSocket/none/store:false/recovery; selective local beats; delegated fact repetition; split prompts; atomic handoffs; fact and scheduling fixtures; spelling; corrections/backchannels; no replay; target-bound consent; failures; closing/playback; noise/disconnect; latency milestones.");
+console.log("Live offline acceptance passed: asynchronous transcript adviser; caller/assistant epoch freshness; painting/hello continuity; quiet invalid advice; autonomous callback opt-in with refusal gates; observer quiescence; prepared WebSocket/none/store:false/recovery; fact provenance; spelling/corrections; no action replay; protected consent; closing/playback; latency milestones.");

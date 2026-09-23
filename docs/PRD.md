@@ -51,7 +51,7 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 - Structured data capture delivered via tool call payloads
 
 ## Architecture Principles
-- Live voice and the reasoning backend collaborate: Live chooses natural wording and pacing within application-enforced rules, while the backend advises on conversational direction and owns approved knowledge lookup.
+- Live voice and the reasoning backend collaborate: Live owns natural dialogue and ordinary next-turn decisions while an asynchronous backend advises on direction and owns approved knowledge lookup. Conversation can continue while advice is pending; verified business facts and protected actions still require their authority.
 - The gateway owns narrow safety and workflow state, including consent binding, action execution, lookup provenance, and exact closing requirements; it is not a replacement for conversational judgment.
 - Tenant greeting + tenant knowledge payload are injected at session start and are the only tenant-specific logic.
 - Receptionist Training Section 02 exposes the system candidate catalog and lets an owner/admin select up to 20 by-heart facts, author or correct facts, edit phrasing, hear voice previews, and review website-change or pricing notices without rebuilding the website. Website/upload prices remain lookup-searchable, but their figures are never selectable or exposed to the receptionist; only a monetary fact the tenant typed and confirmed may authorize a spoken price.
