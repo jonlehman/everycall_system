@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD)
 
 ## Summary
-EveryCall is a multi-tenant voice receptionist platform for service businesses. It answers inbound calls, collects key details, and routes the next step through follow-up workflows or tenant-configured blind transfers. The product is centered on a thin, realtime gateway that executes an EveryCall system prompt plus tenant-specific greeting and compiled knowledge content. Conversational logic lives in the EveryCall system; the gateway handles call control, tool execution, data persistence, and logging. The current production path uses Telnyx + OpenAI Realtime in `call-gateway`, with a Next.js admin/client portal.
+EveryCall is a multi-tenant voice receptionist platform for service businesses. It answers inbound calls, collects key details, and routes the next step through follow-up workflows or tenant-configured blind transfers. The inbound GPT-Live path pairs a natural voice receptionist with a prepared OpenAI Responses reasoning backend. Live handles listening, delivery, and ordinary conversational judgment; it consults the backend for policy boundaries, verified business information, and direction at meaningful decision points. The gateway enforces action, consent, and tenant boundaries and handles call control, persistence, and logging. The legacy OpenAI Realtime path remains available for rollback.
 
 ## Users
 - Callers: want fast, empathetic intake and clear next steps.
@@ -51,8 +51,8 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 - Structured data capture delivered via tool call payloads
 
 ## Architecture Principles
-- Thin gateway: no conversational logic in code.
-- EveryCall system prompt owns flow, tone, rules, and escalation behavior.
+- Live voice and the reasoning backend collaborate: Live chooses natural wording and pacing within application-enforced rules, while the backend advises on conversational direction and owns approved knowledge lookup.
+- The gateway owns narrow safety and workflow state, including consent binding, action execution, lookup provenance, and exact closing requirements; it is not a replacement for conversational judgment.
 - Tenant greeting + tenant knowledge payload are injected at session start and are the only tenant-specific logic.
 - Receptionist Training Section 02 exposes the system candidate catalog and lets an owner/admin select up to 20 by-heart facts, author or correct facts, edit phrasing, hear voice previews, and review website-change or pricing notices without rebuilding the website. Website/upload prices remain lookup-searchable, but their figures are never selectable or exposed to the receptionist; only a monetary fact the tenant typed and confirmed may authorize a spoken price.
 - If a question is not covered by approved knowledge or general knowledge, the assistant must say it does not know and offer a callback.
