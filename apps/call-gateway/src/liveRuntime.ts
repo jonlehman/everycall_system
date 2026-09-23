@@ -363,7 +363,7 @@ export class LiveRuntime {
         && ![...this.operations.values()].some(operation => ["pending", "unknown"].includes(operation.status))) {
         this.callbackOffer = { revision: this.context.revision, afterSequence: this.context.sequence };
         this.append("thinking", JSON.stringify({ authorized_optional_callback_question: LIVE_CALLBACK_QUESTION,
-          scope: "You may offer this exact opt-in when useful and the caller is receptive; do not promise scheduling or that a callback is arranged. Wait for the answer. No action has occurred." }));
+          scope: "You may offer this exact opt-in when useful and the caller is receptive; do not promise scheduling. Wait for the answer. No action has occurred." }));
       }
       this.reflection = undefined;
       this.deps.audit("openai_live_turn_finalized", { requestId: this.latency.caller?.requestId, turnId: turn.id, revision: this.context.revision, startMs: turn.start_ms, endMs: turn.end_ms });

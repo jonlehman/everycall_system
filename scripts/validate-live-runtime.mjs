@@ -103,9 +103,17 @@ assert.equal("turn_detection" in liveStart.session, false); assert.ok(!LIVE_SPEE
 assert.match(LIVE_SPEECH_INSTRUCTIONS, /Delegate to the backend when:/);
 assert.match(LIVE_SPEECH_INSTRUCTIONS, /Do not delegate to the backend when:/);
 assert.match(LIVE_SPEECH_INSTRUCTIONS, /Continue with a useful ordinary question or reflection without waiting for Luna/);
-assert.match(LIVE_SPEECH_INSTRUCTIONS, /a repeat request requires current validated guidance/i);
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /Use general industry knowledge/);
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /Do not consult Luna routinely for pacing or permission to speak/);
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /specific fact-based company, product or service question/);
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /Use the receptionist name and business identity supplied in the greeting/);
+assert.doesNotMatch(LIVE_SPEECH_INSTRUCTIONS, /You are Sarah|All Covered Painting|For a painting project|which coatings|callback has been arranged|completed callback|a repeat request requires current validated guidance/i);
 assert.match(LIVE_SPEECH_INSTRUCTIONS, /An acknowledgement or completed adviser response does not resolve the caller's goal/);
 assert.match(LIVE_BACKEND_ADAPTER, /No appointment-booking or calendar tool exists/);
+assert.match(LIVE_BACKEND_ADAPTER, /Do not manage its conversation, decide every next question, or supply a script/);
+assert.match(LIVE_BACKEND_ADAPTER, /ordinary conversational observation with no such need, return a minimal acknowledge handoff/);
+assert.match(LIVE_BACKEND_ADAPTER, /Use knowledge_lookup only for a specific missing company, product or service fact/);
+assert.doesNotMatch(LIVE_BACKEND_ADAPTER, /callback has been arranged|completed callback|recommend the lightest helpful conversational beat|Only YOU decide when knowledge_lookup/i);
 const chunks = liveAppend("instructions", "界🙂".repeat(400), "delegation");
 assert.ok(chunks.every(x => Buffer.byteLength(x.content) <= 480)); assert.equal(chunks.map(x => x.content).join(""), "界🙂".repeat(400));
 assert.equal(pcmuHasSpeech(Buffer.alloc(160, 255)), false); assert.equal(pcmuHasSpeech(Buffer.alloc(160, 0)), true);
@@ -786,6 +794,9 @@ for (const reply of ["Yes, please.", "No, don't call me."]) {
   await autonomous.runtime.handle(assistant(LIVE_CALLBACK_QUESTION));
   await autonomous.runtime.handle(caller(reply));
   assert.equal(autonomous.requests.length, 0, "Live reaches useful opt-in without Luna on the speech path");
+  const callbackContext = autonomous.sent.filter(x => x.type === "session.thinking.append" && x.content.includes("authorized_optional_callback_question"));
+  assert.ok(callbackContext.length > 0, "exact opt-in authorization remains available");
+  assert.ok(callbackContext.every(x => !/callback is arranged|callback has been arranged/i.test(x.content)), "runtime quiet context does not reintroduce the rejected callback-claim instruction");
   assert.equal(autonomous.calls.length, 0, "offering and consenting never imply completed callback");
   await autonomous.runtime.handle(delegate(`autonomous-consent-${reply}`));
   assert.equal(state(autonomous.requests[0]).pending_question.kind, "callback_consent");
