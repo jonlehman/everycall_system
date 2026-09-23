@@ -6,7 +6,10 @@ export { normalize as normalizeSpokenText };
 export function classifyCallerTurn(text: string, answeringQuestion: boolean): MeaningfulTurn["kind"] {
   if (!text.trim() || /^\s*\[(?:noise|silence|inaudible|background noise)\]\s*$/i.test(text)) return "noise";
   // Yes/no are never discarded: they can express consent, refusal or a correction.
-  if (!answeringQuestion && ["mhm", "mmhmm", "uhhuh", "okay", "ok", "right", "thanks", "thankyou", "goon"].includes(normalize(text))) return "backchannel";
+  // Preserve non-English words and symbols: stripping every non-ASCII
+  // character can turn a substantive request/refusal into a bare "thanks".
+  const backchannel = text.toLowerCase().replace(/[.!?,;:\-\s]/g, "");
+  if (!answeringQuestion && ["mhm", "mmhmm", "uhhuh", "okay", "ok", "right", "thanks", "thankyou", "goon"].includes(backchannel)) return "backchannel";
   return "meaningful";
 }
 

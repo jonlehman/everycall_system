@@ -16,7 +16,7 @@ Build a white-labeled, multi-tenant voice platform for service businesses using:
 ## High-Level Call Flow
 For `CALL_GATEWAY_VOICE_RUNTIME=live`, GPT-Live is the voice receptionist. It
 receives the receptionist mission and conversational guidance, responds naturally
-to ordinary human moments, and consults a prepared `gpt-5.6-terra` Responses
+to ordinary human moments, and consults a prepared OpenAI Responses backend
 WebSocket for policy boundaries, verified facts and advice on the next move.
 Only the backend receives the full receptionist procedure and private tools.
 EveryCall binds confirmations and actions to tenant/call state; protected

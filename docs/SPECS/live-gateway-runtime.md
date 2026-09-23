@@ -8,8 +8,8 @@ values fail startup. Public demo and outbound sales runtimes are unaffected.
 Live requires the existing server `OPENAI_API_KEY` and an explicitly approved
 `OPENAI_LIVE_BACKEND_MODEL` with Responses function-call support and account access.
 Missing backend model fails startup; the voice model is always `gpt-live-1`.
-The approved deployment backend is `gpt-5.6-terra`, with explicit
-`OPENAI_LIVE_BACKEND_REASONING_EFFORT=medium`. The code defaults to `medium` and
+The backend model is selected explicitly in deployment configuration. The current
+latency trial uses `gpt-6-luna` with `OPENAI_LIVE_BACKEND_REASONING_EFFORT=none`; the code defaults to `none` and
 validates an operator override (`none`, `low`, `medium`, `high`, `xhigh`, `max`).
 The privacy-preserving safety identifier uses the existing gateway HMAC identity
 for both Live authentication and backend requests. No project key or private tool
@@ -29,7 +29,10 @@ full-duplex speech and interruption; backend actions have a separate lifecycle.
 GPT-Live receives the receptionist mission and short permanent conversational
 rules. It recognizes caller emotion and project details, chooses natural wording
 and pacing, and may reflect or listen instead of asking an optional question.
-It consults the prepared backend on substantive completed turns for business
+An anchored gateway allowlist lets it handle isolated courtesy or content-free
+clarification beats locally; this path creates no consent, question or business
+fact authority. All service requests, new intake progression, pending-question
+answers, corrections, business claims and actions still consult the prepared backend for business
 facts, policy boundaries and advice on a next move. The full canonical EveryCall
 prompt, tenant bindings/by-heart facts, and private tool schemas go only to the
 backend. The application still authorizes actions and protected consent questions;
@@ -241,7 +244,7 @@ corepack pnpm validate:receptionist-v19
 
 The Live validator uses fake WebSockets and scripted backend responses and never
 spends API credits. It covers warmup/continuation/cache-loss recovery, explicit
-medium reasoning, storage-disabled payloads, split prompts, structured handoffs,
+`none` reasoning, storage-disabled payloads, split prompts, structured handoffs,
 known/unknown facts and scheduling/callback fixtures, long and spelled input,
 corrections, backchannels during lookup, duplicate/uncertain actions, schema
 allowlisting, target-bound yes/no, failures, interruption, closing and noise/loss.
@@ -273,4 +276,4 @@ Protocol references:
 - https://developers.openai.com/api/docs/guides/live-delegation
 - https://developers.openai.com/api/docs/guides/live-conversations
 - https://developers.openai.com/api/docs/guides/websocket-mode
-- https://developers.openai.com/api/docs/models/gpt-5.6-terra
+- https://developers.openai.com/api/docs/models/gpt-6-luna

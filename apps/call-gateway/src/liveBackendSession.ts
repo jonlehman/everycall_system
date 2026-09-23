@@ -19,7 +19,7 @@ type Options = {
 };
 
 export function resolveLiveReasoningEffort(value: unknown) {
-  const effort = String(value || "medium").trim().toLowerCase();
+  const effort = String(value || "none").trim().toLowerCase();
   if (!["none", "low", "medium", "high", "xhigh", "max"].includes(effort)) throw new Error("invalid_live_backend_reasoning_effort");
   return effort;
 }

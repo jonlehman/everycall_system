@@ -3,7 +3,7 @@ import { PreparedResponsesSession, resolveLiveReasoningEffort, type LiveBackend 
 import { LIVE_BACKEND_ADAPTER, LIVE_HANDOFF_FORMAT, parseBackendHandoff, buildLiveGuidance, HandoffValidationError, type HandoffQuestion } from "./liveContract.js";
 import { LiveTranscript, normalizeSpokenText, classifyCallerTurn, type Transcript } from "./liveTranscript.js";
 import { LiveLatency, type RequestTrace } from "./liveLatency.js";
-import { LiveConversationController, LOOKUP_INTENT_SCHEMA, validLookupIntent, bindLookupIntent, type ConversationEvidence, type UnresolvedBusinessQuestion } from "./liveConversation.js";
+import { LiveConversationController, classifyLocalLiveBeat, LOOKUP_INTENT_SCHEMA, validLookupIntent, bindLookupIntent, type ConversationEvidence, type UnresolvedBusinessQuestion } from "./liveConversation.js";
 
 export type VoiceRuntime = "realtime" | "live";
 export function resolveVoiceRuntime(configured: unknown): VoiceRuntime {
@@ -100,6 +100,10 @@ export class LiveRuntime {
   private prepared?: Promise<void>;
   private toolOutputs: any[] = [];
   private lastBackendTurnId = 0;
+  private lastLocalTurnId = 0;
+  private unresolvedBackendWork = false;
+  private callerAudioEpoch = 0;
+  private audibleOutputCallerEpoch = -1;
   private tail: Promise<void> = Promise.resolve();
   private finalized?: () => void;
   private closePromise?: Promise<void>;
@@ -203,10 +207,45 @@ export class LiveRuntime {
       // and the documented null ID for work initiated outside a delegation.
       this.finalizeTranscript();
       if (!this.context.latestCaller() || this.context.latestCaller()!.id <= this.lastBackendTurnId) return;
+      if (this.handleLocalBeat(trace, null)) return;
       this.latency.mark(trace, "delegation_missing", { quietMs: now - this.latency.lastSpeechAt, recovery: "application_quiet_fallback" });
       this.latency.mark(trace, "controller_fallback_started", { source: "application_quiet_fallback", delegationId: null, providerDelegationIdCreated: false });
       this.queueTask(null, trace, "application_quiet_fallback");
     }, waitMs);
+  }
+
+  private handleLocalBeat(trace: RequestTrace, delegationId: string | null) {
+    const latest = this.context.latestCaller();
+    if (!latest) return false;
+    // Late provider delegation must not replay a locally handled beat. Do not
+    // advance lastBackendTurnId: the next real consultation still needs history.
+    if (latest.id <= this.lastLocalTurnId && this.lastLocalTurnId > this.lastBackendTurnId) return true;
+    if (this.unresolvedBackendWork || this.question || this.unresolvedBusinessQuestion || this.finishState || this.toolOutputs.length
+      || (this.task && !this.task.finished)
+      || [...this.operations.values()].some(operation => ["pending", "unknown"].includes(operation.status))) return false;
+    const turns = this.context.turns.filter(turn => turn.role === "user" && turn.kind === "meaningful"
+      && turn.id > Math.max(this.lastBackendTurnId, this.lastLocalTurnId));
+    if (!turns.length) return false;
+    const beats = turns.map(turn => classifyLocalLiveBeat(turn.text));
+    // A later hello/thanks must never hide an earlier missed service request.
+    if (beats.some(beat => !beat)) return false;
+    const beat = beats.includes("clarify") ? "clarify" : "acknowledge";
+    const replyAudioObserved = this.callerAudioEpoch > 0 && this.audibleOutputCallerEpoch === this.callerAudioEpoch;
+    const replyObserved = replyAudioObserved || this.context.turns.some(turn => turn.role === "assistant" && turn.sequence > latest.sequence && turn.text.trim())
+      || (this.context.provisional?.role === "assistant" && this.context.provisional.sequence > latest.sequence && this.context.provisional.text.trim());
+    this.lastLocalTurnId = latest.id;
+    this.reflection = undefined;
+    this.latency.mark(trace, "local_conversation_routed", { delegationId, beat, turnId: latest.id, replyObserved: Boolean(replyObserved), replyAudioObserved,
+      audioCorrelation: "temporal_candidate", backendRequired: false });
+    if (!replyObserved) {
+      const direction = beat === "clarify"
+        ? "Respond now: briefly ask what the caller means or would like help with, in your own words. Do not start project discovery or ask for contact details, callback, transfer or closing consent."
+        : "Respond now: briefly acknowledge the caller's greeting or thanks in your own words, then listen. Add no question or offer.";
+      this.speech(`${direction} Make no business claim, repeat no earlier business fact, and claim no action or task progress.`, trace, delegationId, true, "instructions");
+    } else trace.answered = true;
+    // Local speech never creates a PendingQuestion or binds consent. The next
+    // substantive answer must return to the backend even if Live asked a question.
+    return true;
   }
 
   private queueTask(delegationId: string | null, trace: RequestTrace, source: Task["source"]) {
@@ -365,6 +404,11 @@ export class LiveRuntime {
     if (event.type === "session.output_audio.delta" && typeof event.delta === "string") {
       const bytes = Buffer.from(event.delta, "base64");
       const audible = pcmuHasSpeech(bytes);
+      // Audio can precede its transcript. This is only evidence that speech has
+      // started since this caller turn, not proof of its content or playback.
+      // It prevents replay of an eligible local beat; it never satisfies work
+      // requiring the backend, confirms an action, or grants consent.
+      if (audible && this.callerAudioEpoch > 0) this.audibleOutputCallerEpoch = this.callerAudioEpoch;
       if (audible && this.greeting && !this.greeting.outputObserved) {
         this.greeting.outputObserved = true;
         clearTimeout(this.greeting.timer);
@@ -377,6 +421,7 @@ export class LiveRuntime {
       if (typeof event.delta !== "string" || !event.delta) return;
       const role = event.type === "session.input_transcript.delta" ? "user" : "assistant";
       if (this.context.provisional && this.context.provisional.role !== role) this.finalizeTranscript();
+      if (role === "user" && !this.context.provisional) this.callerAudioEpoch++;
       const entry = this.context.append(role, event.delta, Number(event.start_ms), Number(event.end_ms), this.callerTurnNeedsController(Number(event.start_ms)));
       if (role === "assistant" && this.question && entry.sequence > this.question.afterSequence && !this.question.answerTurnId) {
         this.question.heardText = ((this.question.heardText || "") + entry.text).slice(-2400);
@@ -418,6 +463,7 @@ export class LiveRuntime {
       await this.settleTranscript();
       this.delegationSettling = false;
       if (!this.context.latestCaller() || this.closing || this.closed) return;
+      if (this.handleLocalBeat(trace, delegationId)) return;
       // Serialize backend actions across generations; a newer task cannot race an
       // in-flight capture/transfer. The next task receives committed application state.
       if (!this.queueTask(delegationId, trace, "client_delegation")) return;
@@ -434,6 +480,9 @@ export class LiveRuntime {
 
   private async run(task: Task) {
     if (!this.current(task)) return;
+    // Submitting a turn is not resolving it. A failure apology must not make
+    // a later hello eligible to abandon the still-unanswered substantive work.
+    this.unresolvedBackendWork = true;
     this.latency.mark(task.trace, "backend_started", { delegationId: task.id, generation: task.generation, queueMs: Date.now() - task.queuedAt });
     const timeout = setTimeout(() => task.controller.abort(), 30000);
     let queuedOutputCount = this.toolOutputs.length;
@@ -512,6 +561,7 @@ export class LiveRuntime {
           this.reflection = !guidance.exactQuestion
             ? { afterSequence: this.context.sequence, heardText: "" } : undefined;
           this.speech(guidance.instruction, task.trace, task.id, true, "instructions");
+          this.unresolvedBackendWork = false;
           return;
         }
         // The backend is configured serially; reject a protocol-violating batch

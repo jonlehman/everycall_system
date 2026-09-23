@@ -49,6 +49,20 @@ export function validLookupIntent(value: any): value is LookupIntent {
 }
 
 const normalized = (text: string) => text.toLowerCase().replace(/[’']/g, "'").replace(/[^a-z0-9']/g, " ").replace(/\s+/g, " ").trim();
+
+/** A narrow bypass for content-free human beats, not a business-intent parser.
+ * Unknown wording, appended requests and all fact repetition require the backend.
+ * Runtime callers must also rule out outstanding questions, work and actions.
+ */
+export function classifyLocalLiveBeat(text: string): "acknowledge" | "clarify" | undefined {
+  // Strip only ordinary speech punctuation. Dropping arbitrary Unicode could
+  // hide a substantive non-English suffix behind an otherwise allowed hello.
+  const value = text.toLowerCase().replace(/[’']/g, "'").replace(/[.!?,;:]/g, " ").replace(/\s+/g, " ").trim();
+  if (/^(?:hello|hi|hey|good morning|good afternoon|good evening|thanks|thank you|thanks very much|thank you very much|thank you for your help)$/.test(value)) return "acknowledge";
+  if (/^(?:can you help me|could you help me|i need help|i have a question|i'm not sure how to explain|i am not sure how to explain)$/.test(value)) return "clarify";
+  return undefined;
+}
+
 type CallerEvidence = { id: number; text: string };
 type QuestionEvidence = { id: string; kind: string; text: string; spokenSequence?: number; answerTurnId?: number };
 export type UnresolvedBusinessQuestion = { caller: CallerEvidence; questionId: string; questionText: string };

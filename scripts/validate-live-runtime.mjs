@@ -7,7 +7,8 @@ import { LiveRuntime, buildLiveStart, resolveVoiceRuntime, liveAppend, pcmuHasSp
 import { PreparedResponsesSession, RESPONSES_WS_URL, resolveLiveReasoningEffort } from "../apps/call-gateway/dist/apps/call-gateway/src/liveBackendSession.js";
 import { LIVE_SPEECH_INSTRUCTIONS, LIVE_BACKEND_ADAPTER, LIVE_HANDOFF_FORMAT, parseBackendHandoff, buildLiveGuidance, HandoffValidationError } from "../apps/call-gateway/dist/apps/call-gateway/src/liveContract.js";
 import { LiveLatency } from "../apps/call-gateway/dist/apps/call-gateway/src/liveLatency.js";
-import { LiveConversationController, bindLookupIntent } from "../apps/call-gateway/dist/apps/call-gateway/src/liveConversation.js";
+import { classifyCallerTurn } from "../apps/call-gateway/dist/apps/call-gateway/src/liveTranscript.js";
+import { LiveConversationController, classifyLocalLiveBeat, bindLookupIntent } from "../apps/call-gateway/dist/apps/call-gateway/src/liveConversation.js";
 
 // All models, sockets and operations are fake. This suite never reads credentials.
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -53,7 +54,7 @@ function harness({ replies = [answer(factAnswer("We repair windows."))], execute
   };
   const runtime = new LiveRuntime({
     tenantKey: "tenant-a", callSid: "call-a", apiKey: "never-used", safetyIdentifier: "hashed-subject",
-    backendModel: "gpt-5.6-terra", instructions: "CANONICAL BUSINESS RULES", settleMs: 0, backend,
+    backendModel: "gpt-6-luna", instructions: "CANONICAL BUSINESS RULES", settleMs: 0, backend,
     tools: ["knowledge_lookup", "data_capture", "lookup_transfer_target", "transfer_call", "finish_session"].map(name => ({ type: "function", name, parameters: { type: "object", ...(name === "data_capture" ? { properties: { first_name: { type: "string" }, last_name: { type: "string" }, callback_number: { type: "string" } } } : {}) } })),
     send: event => sent.push(event), isActive: () => true,
     executeTool: async (...args) => { calls.push(args); return executeTool ? executeTool(...args) : { status: "accepted" }; },
@@ -86,14 +87,18 @@ const speech = h => {
 const state = request => JSON.parse(request.find(x => x.role === "user").content);
 
 assert.equal(resolveVoiceRuntime(undefined), "realtime"); assert.equal(resolveVoiceRuntime("live"), "live");
-assert.throws(() => resolveVoiceRuntime("other")); assert.equal(resolveLiveReasoningEffort(undefined), "medium");
+assert.throws(() => resolveVoiceRuntime("other")); assert.equal(resolveLiveReasoningEffort(undefined), "none");
+assert.equal(resolveLiveReasoningEffort("medium"), "medium");
 assert.equal(resolveLiveReasoningEffort("high"), "high"); assert.throws(() => resolveLiveReasoningEffort("invalid"));
 const liveStart = buildLiveStart(LIVE_SPEECH_INSTRUCTIONS, "marin");
 assert.equal(liveStart.session.model, "gpt-live-1"); assert.equal(liveStart.session.store, false);
 assert.deepEqual(liveStart.session.audio.format, { type: "audio/pcmu", rate: 8000 });
 assert.deepEqual(liveStart.session.delegation, { type: "client" }); assert.equal("tools" in liveStart.session, false);
 assert.equal("turn_detection" in liveStart.session, false); assert.ok(!LIVE_SPEECH_INSTRUCTIONS.includes("CANONICAL BUSINESS RULES"));
-assert.match(LIVE_SPEECH_INSTRUCTIONS, /Consult Terra for every substantive completed caller turn/);
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /Delegate to the backend when:/);
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /Do not delegate to the backend when:/);
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /before the first or any new project-discovery question/);
+assert.match(LIVE_SPEECH_INSTRUCTIONS, /a repeat request requires current validated guidance/);
 assert.match(LIVE_SPEECH_INSTRUCTIONS, /After a completed reflection\/listening beat, delegate acknowledgements/);
 assert.match(LIVE_BACKEND_ADAPTER, /No appointment-booking or calendar tool exists/);
 const chunks = liveAppend("instructions", "界🙂".repeat(400), "delegation");
@@ -185,6 +190,167 @@ const quietForFallback = async (h, frames = 10) => {
   }
   await idle();
 };
+
+// Local routing is limited to whole content-free utterances. Appended requests,
+// corrections, facts, consent and requests to move on remain backend work.
+for (const [text, beat] of [["Hello!", "acknowledge"], ["Thank you very much.", "acknowledge"], ["Can you help me?", "clarify"], ["I have a question.", "clarify"]]) {
+  assert.equal(classifyLocalLiveBeat(text), beat);
+}
+for (const text of ["My house needs painting.", "Hello, my house needs painting.", "Hello, 帮我安排预约", "Hello 🏠🎨", "Thanks, but don't call me.", "No thanks.", "Yes.", "Okay.", "Go on.", "Actually, the fence.", "Can you help me book tomorrow?", "Repeat that please.", "What are your hours again?", "Hi, transfer me to Alice.", "Bye."]) {
+  assert.equal(classifyLocalLiveBeat(text), undefined, text);
+}
+for (const text of ["Thanks, 帮我安排预约", "Thank you, 不要给我打电话", "Thanks 🏠🎨"]) {
+  assert.equal(classifyCallerTurn(text, false), "meaningful", "Unicode substantive suffix survives backchannel classification");
+}
+assert.equal(classifyCallerTurn("Mm-hmm.", false), "backchannel");
+assert.equal(classifyCallerTurn("Thank you!", false), "backchannel");
+for (const localText of ["Hello!", "Can you help me?", "I have a question."]) {
+  const local = harness({ delegationWaitMs: 15, replies: [] });
+  await start(local); local.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+  await local.runtime.handle(caller(localText)); await quietForFallback(local);
+  assert.equal(local.requests.length, 0, "quiet fallback must not invoke Terra for an allowed local beat");
+  assert.equal(local.calls.length, 0);
+  assert.ok(local.logs.some(x => x.milestone === "local_conversation_routed" && x.backendRequired === false));
+  assert.match(local.sent.find(x => x.content?.startsWith("Respond now:")).content, /Make no business claim, repeat no earlier business fact/);
+  const before = local.sent.filter(x => x.content?.startsWith("Respond now:")).length;
+  await local.runtime.handle(delegate(`local-late-${localText}`));
+  assert.equal(local.requests.length, 0);
+  assert.equal(local.sent.filter(x => x.content?.startsWith("Respond now:")).length, before, "late provider event cannot repeat a local reply");
+}
+const providerLocal = harness({ replies: [] }); await start(providerLocal, "I have a question.");
+await providerLocal.runtime.handle(delegate("provider-local"));
+assert.equal(providerLocal.requests.length, 0, "provider and watchdog use the same local routing");
+assert.equal(providerLocal.sent.find(x => x.content?.startsWith("Respond now:")).delegation_id, "provider-local");
+const naturallyLocal = harness({ delegationWaitMs: 15, replies: [] });
+await start(naturallyLocal); naturallyLocal.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+await naturallyLocal.runtime.handle(caller("Can you help me?"));
+await naturallyLocal.runtime.handle(assistant("What would you like help with?")); await quietForFallback(naturallyLocal);
+assert.equal(naturallyLocal.requests.length, 0);
+assert.equal(naturallyLocal.sent.filter(x => x.content?.startsWith("Respond now:")).length, 0, "already-observed local speech must not be prompted again");
+
+// Audio often arrives before the assistant transcript. Do not restart speech
+// already in progress; silence and audio preceding the caller are not a reply.
+for (const mode of ["provider", "fallback"]) {
+  const audioFirst = harness({ delegationWaitMs: 15, replies: [] });
+  await start(audioFirst); audioFirst.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+  await audioFirst.runtime.handle(caller("Can you help me?"));
+  await audioFirst.runtime.handle({ type: "session.output_audio.delta", delta: Buffer.alloc(160, 0).toString("base64") });
+  if (mode === "provider") {
+    audioFirst.runtime.input(Buffer.alloc(160, 255).toString("base64"));
+    await audioFirst.runtime.handle(delegate("audio-before-transcript"));
+  } else await quietForFallback(audioFirst);
+  assert.equal(audioFirst.requests.length, 0);
+  assert.equal(audioFirst.sent.filter(x => x.content?.startsWith("Respond now:")).length, 0, "audible local speech must not be prompted a second time");
+  assert.ok(audioFirst.logs.some(x => x.milestone === "local_conversation_routed" && x.replyAudioObserved && x.playbackConfirmed === false));
+  await audioFirst.runtime.handle(assistant("What would you like help with?"));
+  await audioFirst.runtime.handle(caller("Hello?"));
+  await audioFirst.runtime.handle(delegate(`new-local-after-audio-${mode}`));
+  assert.equal(audioFirst.sent.filter(x => x.content?.startsWith("Respond now:")).length, 1, "previous-turn audio cannot suppress a new local reply");
+}
+const silenceBeforeLocal = harness({ replies: [] }); await start(silenceBeforeLocal, "Can you help me?");
+await silenceBeforeLocal.runtime.handle({ type: "session.output_audio.delta", delta: Buffer.alloc(160, 255).toString("base64") });
+await silenceBeforeLocal.runtime.handle(delegate("silent-audio-local"));
+assert.equal(silenceBeforeLocal.sent.filter(x => x.content?.startsWith("Respond now:")).length, 1);
+
+for (const text of ["Thanks, 帮我安排预约", "Thank you, 不要给我打电话"]) {
+  for (const fragmented of [false, true]) {
+    const mixed = harness({ delegationWaitMs: 15, replies: [answer(contract("Understood."))] });
+    await start(mixed, "Hello"); await mixed.runtime.handle(delegate(`mixed-greeting-${text}-${fragmented}`));
+    await mixed.runtime.handle(assistant("Hello.")); mixed.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+    for (const fragment of fragmented ? [text.split(", ")[0], `, ${text.split(", ")[1]}`] : [text]) await mixed.runtime.handle(caller(fragment));
+    await quietForFallback(mixed);
+    assert.equal(mixed.requests.length, 1, "mixed-language requests and refusals cannot disappear as backchannels after a greeting");
+    assert.equal(state(mixed.requests[0]).finalized_turns.filter(x => x.role === "user").at(-1).text, text);
+    assert.equal(mixed.runtime.taskRevision, 2);
+  }
+}
+
+for (const failure of ["transport", "invalid_handoff"]) {
+  const failedThenHello = harness({ delegationWaitMs: 15, replies: [
+    ...(failure === "transport" ? [() => { throw new Error("live_backend_unavailable"); }] : [answer(contract()), answer(contract())]),
+    answer(contract("Recognize the unresolved painting request."))
+  ] });
+  await start(failedThenHello, "My house needs painting."); await failedThenHello.runtime.handle(delegate(`failed-work-${failure}`));
+  assert.equal(speech(failedThenHello).at(-1), "I'm sorry, I couldn't confirm that.");
+  await failedThenHello.runtime.handle(assistant("I'm sorry, I couldn't confirm that."));
+  failedThenHello.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+  await failedThenHello.runtime.handle(caller("Hello?")); await quietForFallback(failedThenHello);
+  assert.equal(failedThenHello.requests.length, failure === "transport" ? 2 : 3, "failed substantive work must return to Terra after hello");
+  assert.equal(failedThenHello.logs.filter(x => x.milestone === "local_conversation_routed").length, 0);
+  assert.equal(state(failedThenHello.requests.at(-1)).finalized_turns.filter(x => x.role === "user").at(-1).text, "Hello?");
+  await failedThenHello.runtime.handle(assistant("I understand that your house needs painting."));
+  await failedThenHello.runtime.handle(caller("Hello!")); await failedThenHello.runtime.handle(delegate(`resolved-work-${failure}`));
+  assert.ok(failedThenHello.logs.some(x => x.milestone === "local_conversation_routed"), "a valid consultation can clear the unresolved-work barrier");
+}
+
+const localThenProject = harness({ replies: [answer(contract("Understood.", question("Is that the inside or outside?")))] });
+await start(localThenProject, "Can you help me?"); await localThenProject.runtime.handle(delegate("local-before-project"));
+await localThenProject.runtime.handle(assistant("What would you like help with?"));
+await localThenProject.runtime.handle(caller("My house needs painting.")); await localThenProject.runtime.handle(delegate("project-after-local"));
+assert.equal(localThenProject.requests.length, 1);
+assert.equal(state(localThenProject.requests[0]).pending_question, null, "local clarification creates no backend question authority");
+assert.match(JSON.stringify(state(localThenProject.requests[0]).finalized_turns), /Can you help me/);
+assert.equal(state(localThenProject.requests[0]).conversation_state.discovery_questions_issued, 0);
+
+const localConsent = harness({ replies: [answer(contract("", question("What is your first name?"), {
+  conversation_plan: { ...plan("required_contact", "capture", "receptive"), contact_field: "first_name" }
+})), answer(contract("Understood."))] });
+await start(localConsent, "Can you help me?"); await localConsent.runtime.handle(delegate("local-no-consent"));
+// Even an unauthorized local question spoken by Live is not consent evidence.
+await localConsent.runtime.handle(assistant("Would you like someone to call you back?"));
+await localConsent.runtime.handle(caller("Yes.")); await localConsent.runtime.handle(delegate("yes-to-local-question"));
+assert.equal(state(localConsent.requests[0]).pending_question, null);
+assert.equal(state(localConsent.requests[0]).conversation_state.callback_consent_confirmed, false);
+assert.ok(localConsent.logs.some(x => x.constraint === "conversation_contact_without_consent"));
+assert.equal(localConsent.calls.length, 0);
+
+const localCannotHideWork = harness({ delegationWaitMs: 15, replies: [answer(contract("Understood."))] });
+await start(localCannotHideWork); localCannotHideWork.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+await localCannotHideWork.runtime.handle(caller("My house needs painting."));
+await localCannotHideWork.runtime.handle(assistant("I hear you."));
+await localCannotHideWork.runtime.handle(caller("Hello?")); await quietForFallback(localCannotHideWork);
+assert.equal(localCannotHideWork.requests.length, 1, "a local-looking later turn must not conceal earlier missed delegation");
+assert.match(JSON.stringify(state(localCannotHideWork.requests[0]).finalized_turns), /My house needs painting/);
+
+const pendingLocal = harness({ replies: [answer(contract("", question("Would you like a callback?", "callback_consent"))), answer(contract("Understood."))] });
+await start(pendingLocal, "What is the next step?"); await pendingLocal.runtime.handle(delegate("pending-before-local"));
+await pendingLocal.runtime.handle(assistant("Would you like a callback?"));
+await pendingLocal.runtime.handle(caller("Thank you.")); await pendingLocal.runtime.handle(delegate("thanks-with-pending"));
+assert.equal(pendingLocal.requests.length, 2, "a pending question forbids the local bypass");
+assert.equal(state(pendingLocal.requests[1]).conversation_state.callback_consent_confirmed, false);
+
+for (const text of ["Actually, the fence needs painting.", "Don't call me.", "No thanks.", "Go on."]) {
+  const afterLocal = harness({ replies: [answer(contract("Understood."))] });
+  await start(afterLocal, "Can you help me?"); await afterLocal.runtime.handle(delegate(`local-before-${text}`));
+  await afterLocal.runtime.handle(assistant("What would you like help with?"));
+  await afterLocal.runtime.handle(caller(text)); await afterLocal.runtime.handle(delegate(`required-after-${text}`));
+  // "Go on" without an authorized completed reflection remains a backchannel;
+  // it never becomes consent or a new local authorization.
+  if (text === "Go on.") { assert.equal(afterLocal.requests.length, 0); continue; }
+  assert.equal(afterLocal.requests.length, 1);
+  assert.equal(state(afterLocal.requests[0]).conversation_state.callback_consent_confirmed, false);
+  if (text === "Don't call me.") assert.equal(state(afterLocal.requests[0]).conversation_state.callback_declined, true);
+}
+
+// No cached-fact bypass: repetition, correction and changed tenant/application
+// state all reach the backend again. Invented tool provenance still fails closed.
+let repeatState = { captured_fields: {}, knowledge_version: "old" };
+const repeatFact = harness({ state: () => repeatState, replies: [
+  answer(factAnswer("We close at five.")), answer(factAnswer("We close at four.")),
+  answer(contract("", null, { verified_facts: [{ text: "We close at six.", source: "tool", source_operation_id: "invented" }] })),
+  answer(factAnswer("We close at four."))
+] });
+await start(repeatFact, "What time do you close?"); await repeatFact.runtime.handle(delegate("fact-original"));
+await repeatFact.runtime.handle(assistant("We close at five."));
+repeatState = { captured_fields: {}, knowledge_version: "new" };
+await repeatFact.runtime.handle(caller("Actually, I meant Saturday. What are your hours again?")); await repeatFact.runtime.handle(delegate("fact-correction"));
+assert.equal(state(repeatFact.requests[1]).application_state.knowledge_version, "new");
+await repeatFact.runtime.handle(assistant("We close at four."));
+await repeatFact.runtime.handle(caller("Repeat that please.")); await repeatFact.runtime.handle(delegate("fact-repeat"));
+assert.equal(repeatFact.requests.length, 4);
+assert.ok(repeatFact.logs.some(x => x.constraint === "fact_provenance"));
+assert.deepEqual(speech(repeatFact), ["We close at five.", "We close at four.", "We close at four."]);
+
 const fallbackQuestion = harness({ delegationWaitMs: 15, replies: [answer(factAnswer("We paint interior and exterior surfaces."))] });
 await start(fallbackQuestion); fallbackQuestion.runtime.input(Buffer.alloc(160, 0).toString("base64"));
 await fallbackQuestion.runtime.handle(caller("Do you paint interiors?")); await quietForFallback(fallbackQuestion);
@@ -577,7 +743,7 @@ class FakeSocket extends EventEmitter {
 }
 const sockets = [], backendLogs = []; let generated = 0, failContinuation = true;
 const session = new PreparedResponsesSession({
-  apiKey: "fake-key", model: "gpt-5.6-terra", reasoningEffort: "medium", safetyIdentifier: "hashed-subject",
+  apiKey: "fake-key", model: "gpt-6-luna", reasoningEffort: resolveLiveReasoningEffort(undefined), safetyIdentifier: "hashed-subject",
   instructions: "CANONICAL BUSINESS RULES" + LIVE_BACKEND_ADAPTER, tools: [{ type: "function", name: "knowledge_lookup", parameters: {} }], text: LIVE_HANDOFF_FORMAT,
   audit: (event, details) => backendLogs.push({ event, ...details }),
   socketFactory: (url, options) => {
@@ -592,7 +758,8 @@ const session = new PreparedResponsesSession({
 });
 await session.prepare(); assert.equal(sockets.length, 1); assert.equal(sockets[0].requests[0].generate, false);
 const warmup = sockets[0].requests[0];
-assert.equal(warmup.store, false); assert.equal(warmup.reasoning.effort, "medium");
+assert.equal(warmup.store, false); assert.equal(warmup.reasoning.effort, "none");
+assert.equal(warmup.model, "gpt-6-luna");
 assert.ok(warmup.instructions.startsWith("CANONICAL BUSINESS RULES")); assert.equal("stream" in warmup, false); assert.equal("background" in warmup, false);
 const signal = new AbortController().signal;
 await session.respond([{ role: "user", content: "What are your hours?" }], signal, { requestId: "request-1", delegationId: "delegation-1", generation: 1, step: 0 });
@@ -609,7 +776,7 @@ session.close(); await assert.rejects(() => session.respond([], signal), /closed
 
 const abortSockets = []; let streamedOnly = 0;
 const abortSession = new PreparedResponsesSession({
-  apiKey: "fake", model: "gpt-5.6-terra", reasoningEffort: "medium", safetyIdentifier: "hash", instructions: "rules", tools: [], text: LIVE_HANDOFF_FORMAT, audit() {},
+  apiKey: "fake", model: "gpt-6-luna", reasoningEffort: "medium", safetyIdentifier: "hash", instructions: "rules", tools: [], text: LIVE_HANDOFF_FORMAT, audit() {},
   socketFactory: () => {
     const socket = new FakeSocket((ws, request) => {
       if (request.generate === false) ws.complete({ id: "prepared", status: "completed", output: [] });
@@ -796,4 +963,4 @@ await noisy.runtime.handle({ type: "session.output_audio.delta", delta: Buffer.a
 await noisy.runtime.handle({ type: "session.closed", usage: { seconds: 1 } }); assert.equal(noisy.closed(), true); assert.deepEqual(noisy.finishes, ["openai_live_provider_closed"]);
 await noisy.runtime.handle(caller("after disconnect")); assert.equal(noisy.runtime.taskRevision, 0);
 for (const h of all) { if (h.runtime.closed) continue; const done = h.runtime.close(); await h.runtime.handle({ type: "session.closed", usage: { seconds: 3 } }); await done; assert.equal(h.closed(), true); }
-console.log("Live offline acceptance passed: prepared WebSocket/medium/store:false/recovery; split prompts; atomic handoffs; fact and scheduling fixtures; spelling; corrections/backchannels; no replay; target-bound consent; failures; closing/playback; noise/disconnect; latency milestones.");
+console.log("Live offline acceptance passed: prepared WebSocket/none/store:false/recovery; selective local beats; delegated fact repetition; split prompts; atomic handoffs; fact and scheduling fixtures; spelling; corrections/backchannels; no replay; target-bound consent; failures; closing/playback; noise/disconnect; latency milestones.");
