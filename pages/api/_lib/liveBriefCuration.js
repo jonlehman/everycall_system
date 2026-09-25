@@ -150,7 +150,7 @@ export async function generateLiveBriefSlots({ candidates, trade = "", modelCall
 }
 
 /** Old evidence without an actual crawl timestamp is deliberately excluded. */
-export async function curateLiveBriefBuild(db, { tenantKey, buildId, modelCaller = callOpenAiJsonModel } = {}) {
+export async function curateLiveBriefBuild(db, { tenantKey, buildId, modelCaller = callOpenAiJsonModel, executionLeaseToken = "" } = {}) {
   const build = await db.query("SELECT build_id FROM knowledge_builds WHERE tenant_key = $1 AND build_id = $2", [tenantKey, buildId]);
   if (!build.rows[0]) fail("build_not_found");
   const prior = await db.query("SELECT slots_json FROM live_brief_builds WHERE tenant_key = $1 AND build_id = $2", [tenantKey, buildId]);
@@ -179,18 +179,28 @@ export async function curateLiveBriefBuild(db, { tenantKey, buildId, modelCaller
   // pass explicitly and fail rather than silently hiding evidence from curation.
   if (Buffer.byteLength(JSON.stringify(candidates), "utf8") > 180000) fail("evidence_budget_exceeded");
   const slots = await generateLiveBriefSlots({ candidates, trade: tenant.rows[0]?.industry || "", modelCaller });
-  await db.query(`INSERT INTO live_brief_builds (tenant_key, build_id, processing_version, input_hash, slots_json)
-    VALUES ($1, $2, $3, $4, $5::jsonb) ON CONFLICT (tenant_key, build_id) DO NOTHING`,
-  [tenantKey, buildId, LIVE_BRIEF_VERSION, fingerprint(candidates), JSON.stringify(slots)]);
+  await db.query(`WITH owned_build AS (
+      SELECT build_id FROM knowledge_builds WHERE tenant_key = $1 AND build_id = $2
+        AND ($6 = '' OR (execution_lease_token = $6 AND execution_lease_expires_at > clock_timestamp()))
+      FOR UPDATE
+    ) INSERT INTO live_brief_builds (tenant_key, build_id, processing_version, input_hash, slots_json)
+    SELECT $1, $2, $3, $4, $5::jsonb FROM owned_build
+    ON CONFLICT (tenant_key, build_id) DO NOTHING`,
+  [tenantKey, buildId, LIVE_BRIEF_VERSION, fingerprint(candidates), JSON.stringify(slots), executionLeaseToken]);
+  if (executionLeaseToken) {
+    const owned = await db.query(`SELECT build_id FROM knowledge_builds WHERE tenant_key = $1 AND build_id = $2
+      AND execution_lease_token = $3 AND execution_lease_expires_at > clock_timestamp()`, [tenantKey, buildId, executionLeaseToken]);
+    if (!owned.rows.length) throw new Error("knowledge_build_execution_lease_lost");
+  }
   return { slots, reused: false };
 }
 
-/** Called inside the existing build-publication transaction, before its pointer swap. */
-export async function publishLiveBriefBuild(db, { tenantKey, buildId, modelCaller = callOpenAiJsonModel } = {}) {
-  await db.query("SELECT tenant_key FROM tenants WHERE tenant_key = $1 FOR UPDATE", [tenantKey]);
+/** Model verification runs before opening the publication transaction. */
+export async function prepareLiveBriefPublication(db, { tenantKey, buildId, modelCaller = callOpenAiJsonModel } = {}) {
   const prepared = await db.query("SELECT slots_json FROM live_brief_builds WHERE tenant_key = $1 AND build_id = $2", [tenantKey, buildId]);
   if (!prepared.rows[0]) fail("build_not_curated");
-  const current = await db.query("SELECT * FROM live_brief_blocks WHERE tenant_key = $1 FOR UPDATE", [tenantKey]);
+  const current = await db.query("SELECT * FROM live_brief_blocks WHERE tenant_key = $1", [tenantKey]);
+  const active = await db.query("SELECT active_build_id FROM tenant_active_knowledge_builds WHERE tenant_key = $1", [tenantKey]);
   const row = current.rows[0];
   const slots = structuredClone(prepared.rows[0].slots_json);
   const proposals = {};
@@ -200,11 +210,28 @@ export async function publishLiveBriefBuild(db, { tenantKey, buildId, modelCalle
     slots[key] = row.slots_json[key];
   }
   const blockText = renderLiveBriefSlots(slots);
-  if (row?.build_id === buildId && JSON.stringify(row.slots_json) === JSON.stringify(slots)
-    && JSON.stringify(row.proposed_slots_json) === JSON.stringify(proposals)) return row;
+  const unchanged = row?.build_id === buildId && JSON.stringify(row.slots_json) === JSON.stringify(slots)
+    && JSON.stringify(row.proposed_slots_json) === JSON.stringify(proposals);
   // Only a merge with tenant-owned edits needs an additional semantic check;
   // untouched generated slots already passed independent verification offline.
-  if (Object.values(slots).some((slot) => slot.tenant_edited)) await verifyEditedSlots(slots, modelCaller);
+  if (!unchanged && Object.values(slots).some((slot) => slot.tenant_edited)) await verifyEditedSlots(slots, modelCaller);
+  return { tenantKey, buildId, slots, proposals, blockText, unchanged,
+    expectedRevision: row ? Number(row.revision) : null, expectedBuildId: row?.build_id || null,
+    expectedActiveBuildId: active.rows[0]?.active_build_id || null };
+}
+
+/** SQL only; caller owns the transaction and atomically swaps the active pointer. */
+export async function publishLiveBriefBuild(db, { tenantKey, buildId, prepared } = {}) {
+  if (!prepared || prepared.tenantKey !== tenantKey || prepared.buildId !== buildId) fail("publication_preparation_required");
+  await db.query("SELECT tenant_key FROM tenants WHERE tenant_key = $1 FOR UPDATE", [tenantKey]);
+  const current = await db.query("SELECT * FROM live_brief_blocks WHERE tenant_key = $1 FOR UPDATE", [tenantKey]);
+  const active = await db.query("SELECT active_build_id FROM tenant_active_knowledge_builds WHERE tenant_key = $1 FOR UPDATE", [tenantKey]);
+  const row = current.rows[0];
+  if ((row ? Number(row.revision) : null) !== prepared.expectedRevision
+    || (row?.build_id || null) !== prepared.expectedBuildId
+    || (active.rows[0]?.active_build_id || null) !== prepared.expectedActiveBuildId) fail("revision_conflict");
+  if (prepared.unchanged) return row;
+  const { slots, proposals, blockText } = prepared;
   const result = await db.query(`INSERT INTO live_brief_blocks (tenant_key, build_id, slots_json, proposed_slots_json, block_text)
     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5)
     ON CONFLICT (tenant_key) DO UPDATE SET build_id = EXCLUDED.build_id, slots_json = EXCLUDED.slots_json,
@@ -230,6 +257,17 @@ async function mutateSlot(db, { tenantKey, slot, actor, expectedRevision, modelC
   if (!LIVE_BRIEF_SLOTS.includes(slot)) fail("slot_unknown");
   if (!normalize(actor)) fail("actor_required");
   if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) fail("revision_required");
+  const snapshot = await db.query(`SELECT b.* FROM live_brief_blocks b JOIN tenant_active_knowledge_builds a
+    ON a.tenant_key = b.tenant_key AND a.active_build_id = b.build_id WHERE b.tenant_key = $1`, [tenantKey]);
+  const row = snapshot.rows[0];
+  if (!row) fail("active_block_required");
+  if (Number(row.revision) !== expectedRevision) fail("revision_conflict");
+  const before = row.slots_json[slot];
+  const next = change(row, before);
+  row.slots_json[slot] = next.value;
+  const blockText = renderLiveBriefSlots(row.slots_json);
+  await verifyEditedSlots(row.slots_json, modelCaller);
+  delete row.proposed_slots_json[slot];
   const borrowed = typeof db.connect === "function" && typeof db.release !== "function";
   const client = borrowed ? await db.connect() : db;
   await client.query("BEGIN");
@@ -237,15 +275,8 @@ async function mutateSlot(db, { tenantKey, slot, actor, expectedRevision, modelC
     await client.query("SELECT tenant_key FROM tenants WHERE tenant_key = $1 FOR UPDATE", [tenantKey]);
     const current = await client.query(`SELECT b.* FROM live_brief_blocks b JOIN tenant_active_knowledge_builds a
       ON a.tenant_key = b.tenant_key AND a.active_build_id = b.build_id WHERE b.tenant_key = $1 FOR UPDATE OF b`, [tenantKey]);
-    const row = current.rows[0];
-    if (!row) fail("active_block_required");
-    if (Number(row.revision) !== expectedRevision) fail("revision_conflict");
-    const before = row.slots_json[slot];
-    const next = change(row, before);
-    row.slots_json[slot] = next.value;
-    const blockText = renderLiveBriefSlots(row.slots_json);
-    await verifyEditedSlots(row.slots_json, modelCaller);
-    delete row.proposed_slots_json[slot];
+    if (!current.rows[0]) fail("active_block_required");
+    if (Number(current.rows[0].revision) !== expectedRevision || current.rows[0].build_id !== row.build_id) fail("revision_conflict");
     await client.query(`UPDATE live_brief_blocks SET slots_json = $2::jsonb, proposed_slots_json = $3::jsonb,
       block_text = $4, revision = revision + 1, updated_at = NOW() WHERE tenant_key = $1`,
     [tenantKey, JSON.stringify(row.slots_json), JSON.stringify(row.proposed_slots_json), blockText]);

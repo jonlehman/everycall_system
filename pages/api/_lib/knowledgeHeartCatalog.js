@@ -614,7 +614,8 @@ function bestPreviousIdentity(candidate, previousCandidates) {
 export async function buildKnowledgeHeartCatalogRevision(db, {
   tenantKey,
   buildId,
-  processingVersion = KNOWS_BY_HEART_PROCESSING_VERSION
+  processingVersion = KNOWS_BY_HEART_PROCESSING_VERSION,
+  skipPricingSafety = false
 } = {}) {
   const normalizedTenantKey = normalizeText(tenantKey);
   const normalizedBuildId = normalizeText(buildId);
@@ -625,7 +626,7 @@ export async function buildKnowledgeHeartCatalogRevision(db, {
     [normalizedBuildId]
   );
   if (existing.rowCount) {
-    await ensurePricingSafetyArtifacts(db, {
+    if (!skipPricingSafety) await ensurePricingSafetyArtifacts(db, {
       tenantKey: normalizedTenantKey,
       buildId: normalizedBuildId
     });
@@ -854,7 +855,7 @@ export async function buildKnowledgeHeartCatalogRevision(db, {
     );
   }
 
-  await ensurePricingSafetyArtifacts(db, {
+  if (!skipPricingSafety) await ensurePricingSafetyArtifacts(db, {
     tenantKey: normalizedTenantKey,
     buildId: normalizedBuildId
   });

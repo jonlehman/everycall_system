@@ -18,13 +18,14 @@ import {
   publishKnowledgeHeartCatalog
 } from "./knowledgeHeartCatalog.js";
 import { loadTenantDomainAssignments, resolveTenantDomainAssignments, syncCanonicalKnowledgePacks } from "./knowledgeReceptionistPacks.js";
-import { ensureTenantPromptProfileCompanyDescriptionSnapshot } from "./promptBlueprints.js";
+import { prepareTenantPromptProfileCompanyDescriptionSnapshot, persistTenantPromptProfileCompanyDescriptionSnapshot } from "./promptBlueprints.js";
 import { syncCallerFaqConfirmationState } from "./knowledgeCallerFaqConfirmation.js";
 import { loadTenantBootstrapProfile } from "./tenantBootstrapProfiles.js";
-import { curateLiveBriefBuild, publishLiveBriefBuild } from "./liveBriefCuration.js";
+import { curateLiveBriefBuild, prepareLiveBriefPublication, publishLiveBriefBuild } from "./liveBriefCuration.js";
 import { maybeActivateTenantLivePrompt } from "./tenantLivePromptSettings.js";
 import {
   markKnowledgeBuildFailedIfLeaseOwned,
+  assertKnowledgeBuildExecutionLease,
   withKnowledgeBuildExecutionLease
 } from "./knowledgeBuildLease.js";
 
@@ -3409,11 +3410,11 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
     );
   }
 
+  // Candidate/lineage creation is SQL-only here and remains atomic with facts.
+  // Pricing-safety model passes run after this transaction commits.
   await buildKnowledgeHeartCatalogRevision(db, {
-    tenantKey: buildInfo.tenant_key,
-    buildId: buildInfo.build_id
+    tenantKey: buildInfo.tenant_key, buildId: buildInfo.build_id, skipPricingSafety: true
   });
-  await curateLiveBriefBuild(db, { tenantKey: buildInfo.tenant_key, buildId: buildInfo.build_id });
 
   await db.query(
     `UPDATE knowledge_builds
@@ -3421,6 +3422,9 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
          topic_inventory_summary_json = $3::jsonb,
          embedding_model = $4,
          planner_model = $5,
+         artifact_counts_json = $6::jsonb,
+         warnings_json = $7::jsonb,
+         validation_summary_json = jsonb_build_object('draft_checkpoint', jsonb_build_object('compiler_warnings', $7::jsonb)),
          updated_at = NOW()
      WHERE build_id = $1`,
     [
@@ -3428,7 +3432,13 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
       compiled.compilerVersion,
       JSON.stringify(compiled.topicInventorySummary || {}),
       compiled.embeddingModel,
-      compiled.plannerModel
+      compiled.plannerModel,
+      JSON.stringify(sourceCounts),
+      JSON.stringify(uniqueValues([
+        ...(compiled.warnings || []),
+        ...(sanitizedFactTopicRefs ? [`fact_topic_refs_cleared:${sanitizedFactTopicRefs}`] : []),
+        ...(sanitizedCardTopicRefs ? [`card_topic_refs_cleared:${sanitizedCardTopicRefs}`] : [])
+      ]))
     ]
   );
 
@@ -3779,7 +3789,8 @@ async function updateBuildAfterValidation(db, buildId, counts, validationSummary
       ? ["source_artifact_stage_no_model_completed_sources"]
       : [])
   ]);
-  const persistedValidationSummary = { ...(validationSummary || {}), blockers };
+  const persistedValidationSummary = { ...(validationSummary || {}), blockers,
+    draft_checkpoint: { compiler_warnings: extraWarnings } };
   const warnings = uniqueValues([...(validationSummary?.warnings || []), ...extraWarnings]);
   const nextStatus = blockers.length ? "qa_blocked" : "ready_to_publish";
 
@@ -3792,9 +3803,10 @@ async function updateBuildAfterValidation(db, buildId, counts, validationSummary
          validation_summary_json = $6::jsonb,
          updated_at = NOW()
      WHERE build_id = $1
+       AND status = 'running'
        AND (
-         $7 = ''
-         OR (execution_lease_token = $7 AND execution_lease_expires_at > NOW())
+         ($7 = '' AND execution_lease_token IS NULL)
+         OR (execution_lease_token = $7 AND execution_lease_expires_at > clock_timestamp())
        )`,
     [
       buildId,
@@ -3813,7 +3825,7 @@ async function updateBuildAfterValidation(db, buildId, counts, validationSummary
       normalizeText(executionLeaseToken)
     ]
   );
-  if (normalizeText(executionLeaseToken) && updated.rowCount !== 1) {
+  if (updated.rowCount !== 1) {
     throw new Error("knowledge_build_execution_lease_lost");
   }
 
@@ -4873,7 +4885,6 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
            build_kind = $2,
            base_build_id = $3,
            source_fingerprint_json = $4::jsonb,
-           warnings_json = '[]'::jsonb,
            updated_at = NOW()
        WHERE build_id = $1
          AND status IN ('queued', 'running', 'failed')
@@ -4993,14 +5004,23 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
     });
     if (assertExecutionLease) await assertExecutionLease();
 
+    const { counts, compilerWarnings } = await persistCompiledBuildDraft(db, rawBuildInfo, rawSources.counts, compiled, executionLeaseToken);
+    // Curation, pricing-safety processing and runtime validation can call models.
+    // Draft artifacts stay inactive until the fenced validation commit succeeds.
+    const checkLease = async () => {
+      if (executionLeaseToken) await assertKnowledgeBuildExecutionLease(db, { tenantKey, buildId, token: executionLeaseToken });
+      if (assertExecutionLease) await assertExecutionLease();
+    };
+    await checkLease();
+    await buildKnowledgeHeartCatalogRevision(db, { tenantKey, buildId });
+    await checkLease();
+    await curateLiveBriefBuild(db, { tenantKey, buildId, executionLeaseToken });
+    await checkLease();
+    const validationSummary = await validateBuildBudgetsAndLatency(db, tenantKey, buildId);
+    await checkLease();
     const nextStatus = await withTransaction(db, async (client) => {
-      const { counts, compilerWarnings } = await insertCompiledArtifacts(
-        client,
-        rawBuildInfo,
-        rawSources.counts,
-        compiled
-      );
-
+      const status = await updateBuildAfterValidation(client, buildId, counts, validationSummary,
+        uniqueValues([...extraWarnings, ...compilerWarnings]), { executionLeaseToken });
       await client.query(
         `UPDATE source_intake_sessions
          SET status = 'completed',
@@ -5011,15 +5031,7 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
         [intakeSessionId, JSON.stringify(uniqueValues([...extraWarnings, ...compilerWarnings]))]
       );
 
-      const validationSummary = await validateBuildBudgetsAndLatency(client, tenantKey, buildId);
-      return updateBuildAfterValidation(
-        client,
-        buildId,
-        counts,
-        validationSummary,
-        uniqueValues([...extraWarnings, ...compilerWarnings]),
-        { executionLeaseToken }
-      );
+      return status;
     });
 
     const buildRes = await db.query(
@@ -5068,6 +5080,53 @@ export async function createWebsiteKnowledgeBuild(db, tenantKey, input = {}) {
   return createKnowledgeBuild(db, tenantKey, input);
 }
 
+async function assertBuildCommitLease(db, tenantKey, buildId, token) {
+  const owned = await db.query(`SELECT build_id FROM knowledge_builds WHERE tenant_key = $1 AND build_id = $2
+    AND (($3 = '' AND execution_lease_token IS NULL)
+      OR (execution_lease_token = $3 AND execution_lease_expires_at > clock_timestamp()))`, [tenantKey, buildId, token]);
+  if (!owned.rows.length) throw new Error("knowledge_build_execution_lease_lost");
+}
+
+async function persistCompiledBuildDraft(db, buildInfo, rawCounts, compiled, executionLeaseToken) {
+  const { tenant_key: tenantKey, build_id: buildId } = buildInfo;
+  return withTransaction(db, async (client) => {
+    // Only SQL runs while this lock temporarily excludes heartbeat/takeover.
+    const owned = await client.query(`SELECT build_id FROM knowledge_builds
+      WHERE tenant_key = $1 AND build_id = $2 AND status = 'running'
+        AND (($3 = '' AND execution_lease_token IS NULL)
+          OR (execution_lease_token = $3 AND execution_lease_expires_at > clock_timestamp()))
+      FOR UPDATE`, [tenantKey, buildId, executionLeaseToken]);
+    if (!owned.rows.length) throw new Error("knowledge_build_execution_lease_lost");
+    // Candidates reference facts with cascading deletes. A committed draft must
+    // resume unchanged; replacing its facts would erase the immutable catalog.
+    const checkpoint = await client.query(`SELECT artifact_counts_json,
+        validation_summary_json->'draft_checkpoint'->'compiler_warnings' AS compiler_warnings
+      FROM knowledge_builds b WHERE b.tenant_key = $1 AND b.build_id = $2 AND EXISTS (
+        SELECT 1 FROM kb_catalog_revisions r WHERE r.tenant_key = b.tenant_key AND r.knowledge_build_id = b.build_id
+      )`, [tenantKey, buildId]);
+    if (checkpoint.rows[0]) {
+      const counts = checkpoint.rows[0].artifact_counts_json;
+      if (!counts || !Number.isFinite(counts.facts) || !Number.isFinite(counts.cards)
+        || !Array.isArray(checkpoint.rows[0].compiler_warnings)) {
+        throw new Error("knowledge_build_draft_checkpoint_invalid");
+      }
+      return { counts, compilerWarnings: checkpoint.rows[0].compiler_warnings };
+    }
+    await client.query("DELETE FROM live_brief_builds WHERE tenant_key = $1 AND build_id = $2", [tenantKey, buildId]);
+    const inserted = await insertCompiledArtifacts(client, buildInfo, rawCounts, compiled);
+    await assertBuildCommitLease(client, tenantKey, buildId, executionLeaseToken);
+    return inserted;
+  });
+}
+
+async function preparePublicationCatalog(db, tenantKey, buildId) {
+  await withTransaction(db, (client) => buildKnowledgeHeartCatalogRevision(client, {
+    tenantKey, buildId, skipPricingSafety: true
+  }));
+  // Existing-revision path prepares any missing pricing artifacts without locks.
+  await buildKnowledgeHeartCatalogRevision(db, { tenantKey, buildId });
+}
+
 export async function publishKnowledgeBuild(db, tenantKey, buildId, {
   executionLeaseToken = "",
   allowUnleasedForValidation = false
@@ -5076,16 +5135,24 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId, {
     throw new Error("knowledge_build_execution_lease_required");
   }
   await assertSliceTablesReady(db);
-  await curateLiveBriefBuild(db, { tenantKey, buildId });
+  if (executionLeaseToken) await assertKnowledgeBuildExecutionLease(db, { tenantKey, buildId, token: executionLeaseToken });
+  await preparePublicationCatalog(db, tenantKey, buildId);
+  await curateLiveBriefBuild(db, { tenantKey, buildId, executionLeaseToken });
+  const preparedBrief = await prepareLiveBriefPublication(db, { tenantKey, buildId });
+  const preparedProfile = await prepareTenantPromptProfileCompanyDescriptionSnapshot(db, tenantKey, {
+    buildId, actor: "system:publish_build", refreshNoToolStatement: true
+  });
   const result = await withTransaction(db, async (client) => {
+    await client.query("SET LOCAL lock_timeout = '5s'");
+    await client.query("SELECT tenant_key FROM tenants WHERE tenant_key = $1 FOR UPDATE", [tenantKey]);
     const buildRes = await client.query(
       `SELECT build_id, status
        FROM knowledge_builds
        WHERE tenant_key = $1
          AND build_id = $2
          AND (
-           $3 = ''
-           OR (execution_lease_token = $3 AND execution_lease_expires_at > NOW())
+           ($3 = '' AND execution_lease_token IS NULL)
+           OR (execution_lease_token = $3 AND execution_lease_expires_at > clock_timestamp())
          )
        FOR UPDATE`,
       [tenantKey, buildId, normalizeText(executionLeaseToken)]
@@ -5109,9 +5176,8 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId, {
     const currentActiveBuildId = normalizeText(pointerRes.rows[0]?.active_build_id) || null;
     const prewarmedAssets = await loadBuildAssetsFromDb(client, tenantKey, buildId);
 
-    await buildKnowledgeHeartCatalogRevision(client, { tenantKey, buildId });
     await publishKnowledgeHeartCatalog(client, { tenantKey, buildId });
-    await publishLiveBriefBuild(client, { tenantKey, buildId });
+    await publishLiveBriefBuild(client, { tenantKey, buildId, prepared: preparedBrief });
 
     await client.query(
       `INSERT INTO tenant_active_knowledge_builds (tenant_key, active_build_id, previous_build_id, updated_at)
@@ -5135,11 +5201,7 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId, {
       [buildId, currentActiveBuildId]
     );
 
-    await ensureTenantPromptProfileCompanyDescriptionSnapshot(client, tenantKey, {
-      buildId,
-      actor: "system:publish_build",
-      refreshNoToolStatement: true
-    });
+    await persistTenantPromptProfileCompanyDescriptionSnapshot(client, preparedProfile);
 
     await recordCoreFactActivationChanges(client, {
       tenantKey,
@@ -5159,6 +5221,7 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId, {
       invalidateBuildAssetCache(tenantKey, currentActiveBuildId);
     }
 
+    await assertBuildCommitLease(client, tenantKey, buildId, executionLeaseToken);
     return { ok: true, active_build_id: buildId, previous_build_id: currentActiveBuildId, prewarmedAssets };
   });
   setBuildAssetCache(tenantKey, buildId, result.prewarmedAssets);
@@ -5198,8 +5261,12 @@ export async function publishKnowledgeBuildWithExecutionLease(db, tenantKey, bui
 
 export async function rollbackKnowledgeBuild(db, tenantKey, buildId) {
   await assertSliceTablesReady(db);
+  await preparePublicationCatalog(db, tenantKey, buildId);
   await curateLiveBriefBuild(db, { tenantKey, buildId });
+  const preparedBrief = await prepareLiveBriefPublication(db, { tenantKey, buildId });
   const result = await withTransaction(db, async (client) => {
+    await client.query("SET LOCAL lock_timeout = '5s'");
+    await client.query("SELECT tenant_key FROM tenants WHERE tenant_key = $1 FOR UPDATE", [tenantKey]);
     const targetRes = await client.query(
       `SELECT build_id, status
        FROM knowledge_builds
@@ -5228,9 +5295,8 @@ export async function rollbackKnowledgeBuild(db, tenantKey, buildId) {
     }
     const prewarmedAssets = await loadBuildAssetsFromDb(client, tenantKey, buildId);
 
-    await buildKnowledgeHeartCatalogRevision(client, { tenantKey, buildId });
     await publishKnowledgeHeartCatalog(client, { tenantKey, buildId });
-    await publishLiveBriefBuild(client, { tenantKey, buildId });
+    await publishLiveBriefBuild(client, { tenantKey, buildId, prepared: preparedBrief });
 
     await client.query(
       `UPDATE tenant_active_knowledge_builds

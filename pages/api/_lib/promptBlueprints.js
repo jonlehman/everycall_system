@@ -369,6 +369,22 @@ export async function loadBuildDerivedCompanyDescriptionForBuild(db, tenantKey, 
 }
 
 export async function ensureTenantPromptProfileCompanyDescriptionSnapshot(db, tenantKey, options = {}) {
+  const prepared = await prepareTenantPromptProfileCompanyDescriptionSnapshot(db, tenantKey, options);
+  if (!prepared?.expected) return prepared;
+  const borrowed = typeof db.connect === "function" && typeof db.release !== "function";
+  const client = borrowed ? await db.connect() : db;
+  try {
+    await client.query("BEGIN");
+    const result = await persistTenantPromptProfileCompanyDescriptionSnapshot(client, prepared);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally { if (borrowed) client.release(); }
+}
+
+export async function prepareTenantPromptProfileCompanyDescriptionSnapshot(db, tenantKey, options = {}) {
   const normalizedTenantKey = normalizeText(tenantKey);
   if (!normalizedTenantKey) return { changed: false, company_description: "" };
 
@@ -423,6 +439,24 @@ export async function ensureTenantPromptProfileCompanyDescriptionSnapshot(db, te
     return { changed: false, company_description: "", basic_no_tool_allowed_statement: "" };
   }
 
+  return { tenantKey: normalizedTenantKey, options, companyDescriptionSnapshot, noToolStatementSnapshot,
+    refreshNoToolStatement, expected: { promptCompanyDescription, promptNoToolStatement, bootstrapCompanyDescription } };
+}
+
+/** SQL-only half of snapshot refresh; publication owns the surrounding transaction. */
+export async function persistTenantPromptProfileCompanyDescriptionSnapshot(db, prepared) {
+  if (!prepared?.expected) return prepared;
+  const { tenantKey: normalizedTenantKey, options, companyDescriptionSnapshot, noToolStatementSnapshot,
+    refreshNoToolStatement, expected } = prepared;
+  await db.query("SELECT tenant_key FROM tenants WHERE tenant_key = $1 FOR UPDATE", [normalizedTenantKey]);
+  const prompt = await db.query(`SELECT company_description, basic_no_tool_allowed_statement
+    FROM tenant_prompt_profiles WHERE tenant_key = $1 FOR UPDATE`, [normalizedTenantKey]);
+  const bootstrap = await db.query(`SELECT company_description FROM tenant_bootstrap_profiles WHERE tenant_key = $1 FOR UPDATE`, [normalizedTenantKey]);
+  if (normalizeText(prompt.rows[0]?.company_description) !== expected.promptCompanyDescription
+    || normalizeText(prompt.rows[0]?.basic_no_tool_allowed_statement) !== expected.promptNoToolStatement
+    || normalizeText(bootstrap.rows[0]?.company_description) !== expected.bootstrapCompanyDescription) {
+    throw new Error("company_description_snapshot_conflict");
+  }
   await db.query(
     `INSERT INTO tenant_prompt_profiles (
        tenant_key,

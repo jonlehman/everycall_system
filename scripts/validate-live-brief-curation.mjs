@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { buildWebsiteSourceItems } from "../pages/api/_lib/knowledgeReceptionistBuilds.js";
+import { heartbeatKnowledgeBuildExecutionLease } from "../pages/api/_lib/knowledgeBuildLease.js";
 import {
   LIVE_BRIEF_SLOTS, emptyLiveBriefSlots, renderLiveBriefSlots, generateLiveBriefSlots,
-  curateLiveBriefBuild, publishLiveBriefBuild, loadLiveBriefBlock,
+  curateLiveBriefBuild, prepareLiveBriefPublication, publishLiveBriefBuild, loadLiveBriefBlock,
   saveLiveBriefSlot, acceptLiveBriefProposal
 } from "../pages/api/_lib/liveBriefCuration.js";
 
@@ -64,16 +65,27 @@ await assert.rejects(generateLiveBriefSlots({ candidates, modelCaller: async () 
 } }) }), /slot_overflow/);
 
 const db = new PGlite();
+async function publishBrief(options) {
+  const prepared = await prepareLiveBriefPublication(db, options);
+  await db.query("BEGIN");
+  try {
+    const result = await publishLiveBriefBuild(db, { ...options, prepared });
+    await db.query("COMMIT");
+    return result;
+  } catch (error) { await db.query("ROLLBACK"); throw error; }
+}
 await db.exec(`
   CREATE TABLE tenants (tenant_key TEXT PRIMARY KEY, industry TEXT);
-  CREATE TABLE knowledge_builds (build_id TEXT PRIMARY KEY, tenant_key TEXT NOT NULL REFERENCES tenants(tenant_key));
+  CREATE TABLE knowledge_builds (build_id TEXT PRIMARY KEY, tenant_key TEXT NOT NULL REFERENCES tenants(tenant_key),
+    execution_lease_token TEXT, execution_lease_expires_at TIMESTAMPTZ,
+    execution_lease_heartbeat_at TIMESTAMPTZ, updated_at TIMESTAMPTZ, status TEXT DEFAULT 'running');
   CREATE TABLE tenant_active_knowledge_builds (tenant_key TEXT PRIMARY KEY REFERENCES tenants(tenant_key), active_build_id TEXT);
   CREATE TABLE source_refs (source_ref_id TEXT PRIMARY KEY, tenant_key TEXT, build_id TEXT, source_locator TEXT, source_channel TEXT, metadata_json JSONB);
   CREATE TABLE knowledge_build_facts (knowledge_fact_id TEXT PRIMARY KEY, tenant_key TEXT, build_id TEXT, claim_text TEXT, fact_role TEXT, source_ref_ids_json JSONB,
     evidence_text TEXT, qualifier_json JSONB DEFAULT '{}'::jsonb, boundary_json JSONB DEFAULT '{}'::jsonb);
   CREATE TABLE kb_block (tenant_key TEXT PRIMARY KEY, block_text TEXT);
   INSERT INTO tenants VALUES ('tenant-a', 'painting'), ('tenant-b', 'plumbing');
-  INSERT INTO knowledge_builds VALUES ('build-a','tenant-a'), ('build-a2','tenant-a'), ('build-old','tenant-a'), ('build-b','tenant-b');
+  INSERT INTO knowledge_builds (build_id,tenant_key) VALUES ('build-a','tenant-a'), ('build-a2','tenant-a'), ('build-old','tenant-a'), ('build-b','tenant-b');
   INSERT INTO tenant_active_knowledge_builds VALUES ('tenant-a','build-a'), ('tenant-b','build-b');
   INSERT INTO kb_block VALUES ('tenant-a','Legacy tenant-owned block');
 `);
@@ -91,7 +103,7 @@ const afterFirst = calls;
 await curateLiveBriefBuild(db, { tenantKey: "tenant-a", buildId: "build-a", modelCaller: model });
 assert.equal(calls, afterFirst, "immutable build curation is reused without AI");
 assert.equal(await loadLiveBriefBlock(db, "tenant-a"), null, "prepared build is not yet a published block");
-await publishLiveBriefBuild(db, { tenantKey: "tenant-a", buildId: "build-a" });
+await publishBrief({ tenantKey: "tenant-a", buildId: "build-a" });
 let block = await loadLiveBriefBlock(db, "tenant-a", "build-a");
 assert.equal(block.blockText, draft.services.text);
 assert.equal(await loadLiveBriefBlock(db, "tenant-b"), null);
@@ -105,7 +117,7 @@ assert.equal(block.slots.services.prior_source_refs[0].crawled_at, source.crawle
 const editedValue = structuredClone(block.slots.services);
 await db.query(`INSERT INTO live_brief_builds (tenant_key,build_id,processing_version,input_hash,slots_json)
  VALUES ('tenant-a','build-a2','live_brief_v20.1','test',$1::jsonb)`, [JSON.stringify(curated)]);
-await publishLiveBriefBuild(db, { tenantKey: "tenant-a", buildId: "build-a2", modelCaller: approve });
+await publishBrief({ tenantKey: "tenant-a", buildId: "build-a2", modelCaller: approve });
 assert.equal(await loadLiveBriefBlock(db, "tenant-a"), null, "block cannot be used until matching active pointer is swapped");
 await db.query("UPDATE tenant_active_knowledge_builds SET active_build_id = 'build-a2' WHERE tenant_key = 'tenant-a'");
 block = await loadLiveBriefBlock(db, "tenant-a");
@@ -128,7 +140,7 @@ assert.equal((await loadLiveBriefBlock(db, "tenant-a")).revision, preservedRevis
 await assert.rejects(saveLiveBriefSlot(db, { tenantKey: "tenant-a", slot: "trade_faq", text: "Our work is painting homes in King County.", actor: "tenant:owner", expectedRevision: block.revision,
  modelCaller: async () => ({ parsed: { ...okay, unique: false } }) }), /verification_failed/);
 block = await saveLiveBriefSlot(db, { tenantKey: "tenant-a", slot: "services", text: "", actor: "tenant:owner", expectedRevision: block.revision, modelCaller: approve });
-await publishLiveBriefBuild(db, { tenantKey: "tenant-a", buildId: "build-a2", modelCaller: approve });
+await publishBrief({ tenantKey: "tenant-a", buildId: "build-a2", modelCaller: approve });
 block = await loadLiveBriefBlock(db, "tenant-a");
 assert.equal(block.slots.services.text, "", "tenant removal is an owned edit and never resurrected by recuration");
 assert.equal(block.proposals.services.text, draft.services.text);
@@ -137,5 +149,59 @@ const old = await curateLiveBriefBuild(db, { tenantKey: "tenant-a", buildId: "bu
 assert.equal(renderLiveBriefSlots(old.slots), "", "capture dates are never fabricated as crawl dates");
 assert.equal((await db.query("SELECT block_text FROM kb_block WHERE tenant_key='tenant-a'")).rows[0].block_text, "Legacy tenant-owned block");
 assert.equal((await db.query("SELECT count(*)::int AS count FROM live_brief_slot_audit")).rows[0].count, 4);
+
+// A delayed model must leave no transaction/row locks open. Exercise a concurrent
+// tenant edit while publication verifies its merge, then reject that stale merge.
+let transactionOpen = false;
+const originalQuery = db.query.bind(db);
+db.query = async (sql, params) => {
+  if (sql === "BEGIN") transactionOpen = true;
+  try { return await originalQuery(sql, params); }
+  finally { if (sql === "COMMIT" || sql === "ROLLBACK") transactionOpen = false; }
+};
+const concurrentRevision = block.revision;
+await db.query("UPDATE knowledge_builds SET execution_lease_token = 'lease-a', execution_lease_expires_at = NOW() + INTERVAL '60 seconds' WHERE build_id = 'build-a'");
+let heartbeatDuringModel = false;
+const stalePublication = await prepareLiveBriefPublication(db, {
+  tenantKey: "tenant-a", buildId: "build-a",
+  modelCaller: async () => {
+    assert.equal(transactionOpen, false, "publication model holds no DB transaction");
+    await Promise.all([
+      new Promise((resolve) => setTimeout(resolve, 30)),
+      heartbeatKnowledgeBuildExecutionLease(db, { tenantKey: "tenant-a", buildId: "build-a", token: "lease-a" })
+        .then((result) => { heartbeatDuringModel = result.owned; })
+    ]);
+    await saveLiveBriefSlot(db, { tenantKey: "tenant-a", slot: "hours", text: "We open weekdays.",
+      actor: "tenant:owner", expectedRevision: concurrentRevision, modelCaller: approve });
+    return { parsed: okay };
+  }
+});
+assert.equal(heartbeatDuringModel, true, "heartbeat proceeds during delayed model verification");
+await db.query("BEGIN");
+await assert.rejects(publishLiveBriefBuild(db, { tenantKey: "tenant-a", buildId: "build-a", prepared: stalePublication }), /revision_conflict/);
+await db.query("ROLLBACK");
+block = await loadLiveBriefBlock(db, "tenant-a");
+assert.equal(block.slots.hours.text, "We open weekdays.", "concurrent tenant edit survives rejected publication");
+await assert.rejects(saveLiveBriefSlot(db, { tenantKey: "tenant-a", slot: "hours", text: "We open weekends.", actor: "tenant:owner", expectedRevision: block.revision,
+  modelCaller: async () => {
+    assert.equal(transactionOpen, false, "tenant edit verification holds no transaction");
+    await originalQuery("UPDATE live_brief_blocks SET revision = revision + 1 WHERE tenant_key = 'tenant-a'");
+    return { parsed: okay };
+  }
+}), /revision_conflict/);
+assert.equal((await loadLiveBriefBlock(db, "tenant-a")).slots.hours.text, "We open weekdays.");
+
+await db.query("DELETE FROM live_brief_builds WHERE build_id = 'build-a'");
+await db.query("UPDATE knowledge_builds SET execution_lease_token = 'lease-a', execution_lease_expires_at = NOW() + INTERVAL '60 seconds' WHERE build_id = 'build-a'");
+await assert.rejects(curateLiveBriefBuild(db, { tenantKey: "tenant-a", buildId: "build-a", executionLeaseToken: "lease-a",
+  modelCaller: async (args) => {
+    assert.equal(transactionOpen, false, "curation holds no transaction across a model call");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    // Simulate expiry/takeover during the model wait, before draft persistence.
+    await db.query("UPDATE knowledge_builds SET execution_lease_token = 'lease-b' WHERE build_id = 'build-a'");
+    return { parsed: args.jsonSchemaName === "live_brief_slots_v201" ? draft : okay };
+  }
+}), /execution_lease_lost/);
+assert.equal((await db.query("SELECT * FROM live_brief_builds WHERE build_id = 'build-a'")).rows.length, 0, "lost lease cannot persist curation");
 await db.close();
 console.log("PASS live brief curation: caps, grounding, prices, provenance, ownership, proposals, tenant/build isolation and DB atomicity");
