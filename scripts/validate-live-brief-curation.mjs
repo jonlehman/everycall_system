@@ -7,7 +7,7 @@ import { heartbeatKnowledgeBuildExecutionLease } from "../pages/api/_lib/knowled
 import {
   LIVE_BRIEF_SLOTS, emptyLiveBriefSlots, renderLiveBriefSlots, generateLiveBriefSlots,
   curateLiveBriefBuild, prepareLiveBriefPublication, publishLiveBriefBuild, loadLiveBriefBlock,
-  saveLiveBriefSlot, acceptLiveBriefProposal
+  saveLiveBriefSlot, saveLiveBriefSlots, acceptLiveBriefProposal
 } from "../pages/api/_lib/liveBriefCuration.js";
 
 const source = { source_ref_id: "source-a", url: "https://example.com/about", crawled_at: "2026-09-24T10:00:00.000Z" };
@@ -45,7 +45,19 @@ const candidates = [{ id: "fact-a", text: "We paint homes in King County.", cate
 const draft = generated();
 draft.services = { text: "We paint homes in King County.", fact_ids: ["fact-a"] };
 let calls = 0;
-const model = async (args) => { calls++; return { parsed: args.jsonSchemaName === "live_brief_slots_v201" ? draft : okay }; };
+const model = async (args) => {
+  calls++;
+  if (args.jsonSchemaName === "live_brief_slots_v201") {
+    assert.match(args.system, /first-person plural business speech/);
+    assert.match(args.system, /customer-facing estimate process or policy/);
+    assert.match(args.system, /Preserve supported licensing and insurance facts/);
+    assert.match(args.system, /Exclude technical diagnosis, repair instructions/);
+  } else {
+    assert.match(args.system, /without legal\/form consent boilerplate, technical diagnosis or advice/);
+    assert.match(args.system, /estimate steps or policies/);
+  }
+  return { parsed: args.jsonSchemaName === "live_brief_slots_v201" ? draft : okay };
+};
 const curated = await generateLiveBriefSlots({ candidates, trade: "painting", modelCaller: model });
 assert.equal(calls, 2, "valid first output needs only generation and independent verification, no repair calls");
 assert.deepEqual(curated.services.source_refs, [source]);
@@ -485,5 +497,50 @@ await assert.rejects(curateLiveBriefBuild(db, { tenantKey: "tenant-a", buildId: 
   }
 }), /execution_lease_lost/);
 assert.equal((await db.query("SELECT * FROM live_brief_builds WHERE build_id = 'build-a'")).rows.length, 0, "lost lease cannot persist curation");
+
+// A generated brief may be structurally valid yet unsuitable as a whole. A
+// replacement must validate only its final state and publish atomically.
+await db.query("INSERT INTO tenants VALUES ('tenant-c', 'painting')");
+await db.query("INSERT INTO knowledge_builds (build_id, tenant_key) VALUES ('build-c', 'tenant-c')");
+await db.query("INSERT INTO tenant_active_knowledge_builds VALUES ('tenant-c', 'build-c')");
+const badSlots = emptyLiveBriefSlots();
+badSlots.services = manual("I provide painting services.");
+badSlots.estimate_policy = manual("Submitting an online request authorizes contact.");
+await db.query(`INSERT INTO live_brief_builds (tenant_key, build_id, processing_version, input_hash, slots_json)
+  VALUES ('tenant-c', 'build-c', 'live_brief_v20.1', 'test', $1::jsonb)`, [JSON.stringify(badSlots)]);
+await db.query(`INSERT INTO live_brief_blocks (tenant_key, build_id, slots_json, block_text)
+  VALUES ('tenant-c', 'build-c', $1::jsonb, $2)`, [JSON.stringify(badSlots), renderLiveBriefSlots(badSlots)]);
+const replacementEdits = [
+  { slot: "services", text: "We paint homes." },
+  { slot: "estimate_policy", text: "We visit the project and provide a written estimate." }
+];
+let bulkVerifications = 0;
+const finalOnlyVerifier = async (args) => {
+  bulkVerifications++;
+  assert.match(args.system, /Business hours, dates, addresses, phone numbers, and counts are not prices/,
+    "edit verifier distinguishes operating hours from monetary quotes");
+  const proposed = JSON.parse(args.user);
+  assert.equal(proposed.services, replacementEdits[0].text);
+  assert.equal(proposed.estimate_policy, replacementEdits[1].text);
+  return { parsed: okay };
+};
+let bulk = await saveLiveBriefSlots(db, { tenantKey: "tenant-c", edits: replacementEdits,
+  actor: "tenant:owner", expectedRevision: 1, modelCaller: finalOnlyVerifier });
+assert.equal(bulkVerifications, 1, "complete replacement gets one semantic verification");
+assert.equal(bulk.revision, 2, "bulk replacement increments revision once");
+assert.equal(bulk.blockText, replacementEdits.map(({ text }) => text).join("\n"));
+assert.equal((await db.query("SELECT count(*)::int AS count FROM live_brief_slot_audit WHERE tenant_key='tenant-c'")).rows[0].count, 2);
+assert.equal((await loadLiveBriefBlock(db, "tenant-c")).blockText, bulk.blockText);
+await assert.rejects(saveLiveBriefSlots(db, { tenantKey: "tenant-c", edits: replacementEdits,
+  actor: "tenant:owner", expectedRevision: 1, modelCaller: approve }), /revision_conflict/);
+await assert.rejects(saveLiveBriefSlots(db, { tenantKey: "tenant-c", edits: [replacementEdits[0], replacementEdits[0]],
+  actor: "tenant:owner", expectedRevision: 2, modelCaller: approve }), /duplicate_slot/);
+await assert.rejects(saveLiveBriefSlots(db, { tenantKey: "tenant-c", edits: [{ slot: "invented", text: "We paint." }],
+  actor: "tenant:owner", expectedRevision: 2, modelCaller: approve }), /slot_unknown/);
+await assert.rejects(saveLiveBriefSlots(db, { tenantKey: "tenant-c", edits: [{ slot: "hours", text: "We charge $100." }],
+  actor: "tenant:owner", expectedRevision: 2, modelCaller: approve }), /unauthorized_price/);
+await assert.rejects(saveLiveBriefSlots(db, { tenantKey: "tenant-c", edits: [{ slot: "hours", text: "We open weekdays." }],
+  actor: "tenant:owner", expectedRevision: 2, modelCaller: async () => ({ parsed: { ...okay, spoken_register: false } }) }), /verification_failed/);
+assert.equal((await loadLiveBriefBlock(db, "tenant-c")).revision, 2, "rejected bulk edit never writes a partial replacement");
 await db.close();
 console.log("PASS live brief curation: caps, grounding, prices, provenance, ownership, proposals, tenant/build isolation and DB atomicity");
