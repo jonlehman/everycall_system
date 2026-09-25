@@ -78,7 +78,7 @@ import {
 import { buildStableOpenAiSafetyIdentifier } from "./openAiSafetyIdentifier.js";
 import { LIVE_URL, resolveVoiceRuntime } from "./liveRuntime.js";
 import { buildManagedLiveStart, ManagedLiveRuntime } from "./managedLiveRuntime.js";
-import { LIVE_SPEECH_INSTRUCTIONS } from "./liveContract.js";
+import { LIVE_SPEECH_INSTRUCTIONS, renderLiveSpeechInstructions } from "./liveContract.js";
 import { resolveLiveReasoningEffort } from "./liveBackendSession.js";
 import {
   buildOpeningStatementResponse,
@@ -763,6 +763,33 @@ function logRealtimeTrace(session: StreamSession, payload: Record<string, unknow
 
 function buildSessionInstructions(payload: GatewayPromptPayload) {
   return buildGatewaySessionInstructions(payload);
+}
+
+function buildManagedBackendInstructions(payload: GatewayPromptPayload) {
+  if (payload.knowledge_runtime.live_brief?.prompt_version === "v20.1") {
+    const businessDetails = String(payload.knowledge_runtime.prompt_layers?.business_details || "").trim();
+    if (!businessDetails) throw new Error("live_business_details_missing");
+    return `Business Details (approved tenant context):\n${businessDetails}`;
+  }
+  return buildSessionInstructions(payload);
+}
+
+function buildLiveSpeechInstructions(payload: GatewayPromptPayload) {
+  const brief = payload.knowledge_runtime.live_brief;
+  if (!brief) return LIVE_SPEECH_INSTRUCTIONS;
+  const fields = brief.required_contact_fields.map(value => value.trim()).filter(Boolean);
+  const requiredContactFields = fields.length === 0 ? "their name and best phone number" : fields.length === 1 ? fields[0]! : fields.length === 2
+    ? `${fields[0]} and ${fields[1]}` : fields.slice(0, -1).join(", ") + `, and ${fields.at(-1)}`;
+  return renderLiveSpeechInstructions({
+    ...brief,
+    required_contact_fields: requiredContactFields
+  });
+}
+
+function liveV201Enabled(tenantKey: string) {
+  if (process.env.EVERYCALL_LIVE_V201_ENABLED === "1") return true;
+  return String(process.env.EVERYCALL_LIVE_V201_CANARY_TENANTS || "")
+    .split(",").map(value => value.trim()).includes(tenantKey);
 }
 
 function validatePromptPayload(input: unknown): GatewayPromptPayload {
@@ -2802,6 +2829,10 @@ function connectOpenAiLive(session: StreamSession) {
     void endCallSession(session, "openai_live_configuration_missing", true);
     return;
   }
+  if (payload.knowledge_runtime.live_brief && !liveV201Enabled(session.tenantKey)) {
+    void endCallSession(session, "live_v201_not_enabled", true);
+    return;
+  }
   const ws = new WebSocket(LIVE_URL, {
     headers: { Authorization: `Bearer ${openAiKey}`, "OpenAI-Safety-Identifier": buildOpenAiSafetyIdentifier(session) }
   });
@@ -2810,12 +2841,17 @@ function connectOpenAiLive(session: StreamSession) {
   session.openingStatementProtected = false;
   session.liveToolOutputs = new Map();
   session.realtimeModel = "gpt-live-1";
-  const instructions = buildSessionInstructions(payload);
+  const instructions = buildManagedBackendInstructions(payload);
   const live: ManagedLiveRuntime = new ManagedLiveRuntime({
     tenantKey: session.tenantKey, callSid: session.callSid, apiKey: openAiKey,
     safetyIdentifier: buildOpenAiSafetyIdentifier(session),
     backendModel: liveBackendModel, reasoningEffort: liveBackendReasoningEffort,
     instructions, tools: payload.tool_definitions,
+    ...(payload.knowledge_runtime.live_brief ? {
+      promptVersion: payload.knowledge_runtime.live_brief.prompt_version,
+      buildVersion: `${payload.knowledge_runtime.live_brief.build_version}@${process.env.RENDER_GIT_COMMIT || "local"}`,
+      callbackRole: payload.knowledge_runtime.live_brief.callback_role
+    } : {}),
     ...(!session.greetingSent ? { greeting: payload.tenant_greeting } : {}),
     send: event => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event)); },
     isActive: () => Boolean(session.callActive && !session.isShuttingDown && !session.aiDetached && session.openAiWs === ws),
@@ -2901,10 +2937,11 @@ function connectOpenAiLive(session: StreamSession) {
   ws.on("open", () => {
     if (session.isShuttingDown || session.aiDetached) { ws.close(); return; }
     ws.send(JSON.stringify(buildManagedLiveStart(
-      LIVE_SPEECH_INSTRUCTIONS,
+      buildLiveSpeechInstructions(payload),
       payload.session_config.voice || "marin",
       { backendModel: liveBackendModel, reasoningEffort: liveBackendReasoningEffort,
-        instructions, tools: payload.tool_definitions }
+        instructions, tools: payload.tool_definitions,
+        ...(payload.knowledge_runtime.live_brief ? { promptVersion: payload.knowledge_runtime.live_brief.prompt_version } : {}) }
     )));
   });
   ws.on("message", data => {
@@ -3424,13 +3461,14 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
     logInfo("telnyx_call_control_initiated", { callSid, callControlId, to, from });
 
     const tenantRow = await pool.query(
-      `SELECT tenant_key, status
+      `SELECT tenant_key, status, live_prompt_mode
        FROM tenants
        WHERE telnyx_voice_number = $1
        LIMIT 1`,
       [to]
     );
-    if (!tenantRow.rowCount || tenantRow.rows[0].status !== "active") {
+    if (!tenantRow.rowCount || tenantRow.rows[0].status !== "active"
+      || tenantRow.rows[0].live_prompt_mode === "pending_v20") {
       try {
         if (callControlId) {
           await telnyxCallAction(callControlId, "hangup", {});

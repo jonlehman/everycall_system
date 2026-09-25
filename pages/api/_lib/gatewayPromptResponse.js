@@ -23,7 +23,8 @@ const DEFAULT_FIELD_SCHEMA = {
 export function buildGatewayPromptResponse(gatewayPrompt, buildFieldSchemaFromOutcomeSchema, {
   tenantKey,
   callSid,
-  includeTransferTools = false
+  includeTransferTools = false,
+  liveBrief = null
 }) {
   const runtimeProfile = gatewayPrompt.approvedConfiguration.runtime_profile || {
     session_config: {},
@@ -65,6 +66,7 @@ export function buildGatewayPromptResponse(gatewayPrompt, buildFieldSchemaFromOu
         status: gatewayPrompt.promptBlueprint?.status
       },
       tenant_prompt_profile: gatewayPrompt.tenantPromptProfile || {},
+      ...(liveBrief ? { live_brief: liveBrief } : {}),
       rendered_prompt_sections: gatewayPrompt.renderedPromptSections || [],
       prompt_render_mode: promptRenderMode,
       prompt_layers: {

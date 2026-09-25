@@ -318,12 +318,13 @@ export default async function handler(req, res) {
            app_access_status,
            deactivated_at,
            billing_status_updated_at,
-           billing_lock_reason
+           billing_lock_reason,
+           live_prompt_mode
          )
          VALUES (
            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
            $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-           $21, $22, $23, $24, $25, $26, $27, $28
+           $21, $22, $23, $24, $25, $26, $27, $28, 'pending_v20'
          )
          ON CONFLICT (tenant_key)
          DO UPDATE SET
@@ -358,6 +359,14 @@ export default async function handler(req, res) {
          RETURNING ${TENANT_SELECT_FIELDS.join(", ")}`,
         params
       );
+
+      if (!existing) {
+        await pool.query(
+          `INSERT INTO tenant_live_prompt_settings (tenant_key, mode)
+           VALUES ($1, 'pending_v20') ON CONFLICT (tenant_key) DO NOTHING`,
+          [tenantKey]
+        );
+      }
 
       const admin = await getAdminActor(session);
       await writeAuditLog(pool, {

@@ -2,9 +2,17 @@ import { ensureTables, getPool } from "../../_lib/db.js";
 import { INTERNAL_AUTH_PURPOSES, isValidInternalServiceToken } from "@everycall/contracts/internalAuth";
 import { assembleKnowledgeGatewayPrompt, buildFieldSchemaFromOutcomeSchema } from "../../_lib/knowledgeReceptionistPrompt.js";
 import { buildGatewayPromptResponse } from "../../_lib/gatewayPromptResponse.js";
+import { isConfirmedLivePromptSettings, loadTenantLivePromptSettings } from "../../_lib/tenantLivePromptSettings.js";
+import { loadLiveBriefBlock } from "../../_lib/liveBriefCuration.js";
 
 function fail(res, status, error, extra = {}) {
   return res.status(status).json({ error, ...extra });
+}
+
+function liveV201Enabled(tenantKey) {
+  if (process.env.EVERYCALL_LIVE_V201_ENABLED === '1') return true;
+  return String(process.env.EVERYCALL_LIVE_V201_CANARY_TENANTS || '')
+    .split(',').map(value => value.trim()).includes(tenantKey);
 }
 
 export default async function handler(req, res) {
@@ -32,11 +40,27 @@ export default async function handler(req, res) {
       return fail(res, 400, "missing_tenant_or_call");
     }
 
+    const tenantResult = await pool.query('SELECT name, live_prompt_mode FROM tenants WHERE tenant_key = $1 LIMIT 1', [tenantKey]);
+    const tenant = tenantResult.rows?.[0];
+    if (!tenant) return fail(res, 404, 'tenant_not_found');
+    if (tenant.live_prompt_mode === 'pending_v20') return fail(res, 409, 'live_prompt_confirmation_required');
+    const v20Target = tenant.live_prompt_mode === 'v20_1' && liveV201Enabled(tenantKey);
+    const liveSettings = v20Target
+      ? await loadTenantLivePromptSettings(pool, tenantKey) : null;
+    if (v20Target && !isConfirmedLivePromptSettings(liveSettings)) {
+      return fail(res, 409, 'live_prompt_confirmation_required');
+    }
+
     const gatewayPrompt = await assembleKnowledgeGatewayPrompt(pool, tenantKey, {
       callSid,
       runtimeEntryMode: String(body.runtimeEntryMode || "").trim() || "customer_call",
-      promptRenderMode: String(body.promptRenderMode || body.prompt_render_mode || "").trim() || null
+      promptRenderMode: liveSettings ? 'layered' : (String(body.promptRenderMode || body.prompt_render_mode || "").trim() || null)
     });
+    const liveBriefBlock = liveSettings
+      ? await loadLiveBriefBlock(pool, tenantKey, gatewayPrompt.build.build_id) : null;
+    if (liveSettings && !liveBriefBlock?.slots) {
+      return fail(res, 409, 'live_brief_not_ready');
+    }
 
     const transferDirectoryResult = await pool.query(
       `SELECT COUNT(*)::int AS count
@@ -54,7 +78,18 @@ export default async function handler(req, res) {
       buildGatewayPromptResponse(gatewayPrompt, buildFieldSchemaFromOutcomeSchema, {
         tenantKey,
         callSid,
-        includeTransferTools
+        includeTransferTools,
+        liveBrief: liveSettings ? {
+          prompt_version: 'v20.1',
+          build_version: gatewayPrompt.build.build_id,
+          assistant_name: gatewayPrompt.tenantPromptProfile?.assistant_name || 'Sarah',
+          business_name: tenant.name,
+          required_contact_fields: gatewayPrompt.tenantPromptProfile?.required_contact_fields || ['name', 'best phone number'],
+          callback_role: liveSettings.callback_role,
+          callback_role_does: liveSettings.callback_role_does,
+          by_heart_block: liveBriefBlock.blockText,
+          ai_disclosure_line: gatewayPrompt.tenantPromptProfile?.ai_disclosure_line || ''
+        } : null
       })
     );
   } catch (err) {

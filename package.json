@@ -18,6 +18,7 @@
     "migrate:receptionist-v11": "node scripts/apply-receptionist-v11-migrations.mjs",
     "migrate:receptionist-v12": "node scripts/apply-receptionist-v12-migrations.mjs",
     "migrate:knows-by-heart": "node scripts/apply-knows-by-heart-migration.mjs",
+    "migrate:live-v20-1": "node scripts/apply-live-v20-1-migrations.mjs",
     "backfill:knows-by-heart": "node scripts/backfill-knows-by-heart.mjs",
     "backfill:pricing-safety-v19": "node scripts/backfill-pricing-safety-v19.mjs",
     "repair:knows-by-heart-metadata": "node scripts/repair-knows-by-heart-confirmed-metadata.mjs",
@@ -57,7 +58,8 @@
     "smoke": "node scripts/smoke.mjs",
     "smoke:production": "node scripts/smoke-production.mjs",
     "test:client-ui:v2:e2e": "node scripts/test-client-ui-v2-e2e.mjs",
-    "validate:client-setup-status": "node scripts/validate-client-setup-status.mjs"
+    "validate:client-setup-status": "node scripts/validate-client-setup-status.mjs",
+    "validate:live-v20-1": "node scripts/validate-managed-live-runtime.mjs && node scripts/validate-live-brief-curation.mjs && node scripts/validate-live-prompt-settings.mjs && node scripts/validate-client-setup-status.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

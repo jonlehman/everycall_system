@@ -150,6 +150,9 @@ The second 8/19 WVG call contained one possible early VAD handoff (“Got it—a
 - Pause briefly with ordinary background noise present; verify there is no spurious caller turn, duplicate response, or premature close.
 - Interrupt the assistant mid-sentence; verify audio stops promptly and the assistant handles the new utterance without replaying stale audio.
 
+## Managed Live v20.1
+- Run `node scripts/validate-managed-live-runtime.mjs`, `node scripts/validate-live-brief-curation.mjs`, `node scripts/validate-live-prompt-settings.mjs`, and `node scripts/validate-client-setup-status.mjs`. Then build the contracts, gateway, and web app. These are offline gates, not an audible acceptance call; follow `docs/SPECS/live-v20-1-rollout.md` before enabling tenant traffic.
+
 ## Outbound Sales System
 - Run `corepack pnpm validate:sales-system`.
 - Run `corepack pnpm typecheck` and `corepack pnpm build`.

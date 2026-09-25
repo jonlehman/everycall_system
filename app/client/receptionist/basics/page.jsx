@@ -105,6 +105,8 @@ export default function ReceptionistBasicsPage() {
   const [status, setStatus] = useState({ message: 'Loading sales receptionist basics...', tone: 'warn' });
   const [setupStatusChip, setSetupStatusChip] = useState({ tone: 'warn', label: 'Ready to review' });
   const [sampleStatus, setSampleStatus] = useState('');
+  const [callbackRole, setCallbackRole] = useState({ callback_role: '', callback_role_does: '', revision: 0, confirmed: false, mode: 'legacy' });
+  const [callbackRoleStatus, setCallbackRoleStatus] = useState('');
   const [activeGuideKey, setActiveGuideKey] = useState('assistantName');
   const [form, setForm] = useState({
     assistantName: '',
@@ -127,17 +129,19 @@ export default function ReceptionistBasicsPage() {
     setLoading(true);
     setStatus({ message: 'Loading sales receptionist basics...', tone: 'warn' });
     try {
-      const [profileData, routingData, runtimeData, settingsData, setupStatusData] = await Promise.all([
+      const [profileData, routingData, runtimeData, settingsData, setupStatusData, livePromptData] = await Promise.all([
         fetchJson('/api/v1/knowledge/prompt-profile'),
         fetchJson('/api/v1/routing'),
         fetchJson('/api/v1/knowledge/runtime-profile'),
         fetchJson('/api/v1/settings'),
-        fetchClientSetupStatus().catch(() => null)
+        fetchClientSetupStatus().catch(() => null),
+        fetchJson('/api/v1/knowledge/live-prompt-settings')
       ]);
       const profile = profileData?.profile || null;
       const routing = routingData?.routing || null;
       const runtimeProfile = runtimeData?.profile || null;
       const timezone = settingsData?.settings?.timezone || 'America/Los_Angeles';
+      if (livePromptData?.ok) setCallbackRole(livePromptData);
       setForm({
         assistantName: profile?.assistant_name || '',
         businessName: profile?.business_name || '',
@@ -233,6 +237,28 @@ export default function ReceptionistBasicsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const saveCallbackRole = async (confirm) => {
+    setCallbackRoleStatus(confirm ? 'Confirming callback role...' : 'Saving callback role...');
+    const next = await fetchJson('/api/v1/knowledge/live-prompt-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_role: callbackRole.callback_role,
+        callback_role_does: callbackRole.callback_role_does,
+        expected_revision: callbackRole.revision,
+        confirm
+      })
+    }).catch(() => null);
+    if (!next?.ok) {
+      setCallbackRoleStatus(next?.error === 'stale_live_prompt_settings' ? 'These settings changed elsewhere. Reload before confirming.' : 'Could not save callback role.');
+      return;
+    }
+    setCallbackRole(next);
+    setCallbackRoleStatus(confirm ? 'Callback role confirmed. v20.1 also needs a curated brief and an approved rollout.' : 'Saved. Confirm these values before v20.1 can go live.');
+    const nextSetupStatus = await fetchClientSetupStatus().catch(() => null);
+    if (nextSetupStatus) emitClientSetupStatus(nextSetupStatus);
   };
 
   const playSample = async () => {
@@ -475,6 +501,29 @@ export default function ReceptionistBasicsPage() {
               <audio ref={sampleAudioRef} preload="none" />
 
               {saveControls}
+            </StepSection>
+          </div>
+
+          <div className="mt-12">
+            <StepSection step="04" title="Callback Role" description="Confirm who follows up with callers and what they will do. These suggestions are not used on live calls until you confirm them.">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                  <label htmlFor="callback-role">Who calls back</label>
+                  <input id="callback-role" value={callbackRole.callback_role} maxLength={160}
+                    onChange={(event) => setCallbackRole((current) => ({ ...current, callback_role: event.target.value, confirmed: false }))} />
+                </div>
+                <div>
+                  <label htmlFor="callback-role-does">What they will do</label>
+                  <input id="callback-role-does" value={callbackRole.callback_role_does} maxLength={160}
+                    onChange={(event) => setCallbackRole((current) => ({ ...current, callback_role_does: event.target.value, confirmed: false }))} />
+                </div>
+              </div>
+              <p className="mt-3 text-sm text-slate-600">{callbackRole.confirmed ? 'Role confirmed; v20.1 activation also requires a curated brief and rollout approval.' : 'Confirmation required before v20.1 calls can start.'}</p>
+              <div className="mt-3 flex gap-2">
+                <Button type="button" onClick={() => saveCallbackRole(true)} disabled={loading || !callbackRole.callback_role.trim() || !callbackRole.callback_role_does.trim()}>Confirm both values</Button>
+                <Button type="button" variant="outline" onClick={() => saveCallbackRole(false)} disabled={loading || !callbackRole.callback_role.trim() || !callbackRole.callback_role_does.trim()}>Save without confirming</Button>
+              </div>
+              {callbackRoleStatus ? <p className="mt-2 text-sm text-slate-600">{callbackRoleStatus}</p> : null}
             </StepSection>
           </div>
 

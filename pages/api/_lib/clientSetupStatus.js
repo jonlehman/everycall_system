@@ -1,6 +1,7 @@
 import { computeTrialDaysRemaining, getTenantBillingState } from "./billing.js";
 import { listKnowledgeReceptionistBuilds } from "./knowledgeReceptionistBuilds.js";
 import { listUploadedDocuments } from "./knowledgeReceptionistConfig.js";
+import { isConfirmedLivePromptSettings, loadTenantLivePromptSettings } from "./tenantLivePromptSettings.js";
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -459,12 +460,13 @@ function buildBillingTask({ billingState = {}, permissions }) {
   });
 }
 
-function buildLiveReadiness({ tasks, billingState = {} }) {
+function buildLiveReadiness({ tasks, billingState = {}, tenant = {}, livePromptSettings = null }) {
   const blockers = [];
   const warnings = [];
   if (tasks.phoneNumber.status !== "ready") blockers.push("phone_number");
   if (tasks.knowledge.status !== "ready") blockers.push("knowledge");
   if (normalizeStatus(billingState?.service_access_status) === "disabled") blockers.push("service_access_disabled");
+  if (tenant?.live_prompt_mode === "pending_v20" || (tenant?.live_prompt_mode === "v20_1" && !isConfirmedLivePromptSettings(livePromptSettings))) blockers.push("callback_role_confirmation");
   if (tasks.basics.status !== "ready") warnings.push("basics_not_reviewed");
   if (tasks.leadDestinations.status !== "ready") warnings.push("lead_destinations_not_ready");
 
@@ -512,6 +514,7 @@ export function buildClientSetupStatus({
   buildsData = {},
   users = [],
   billingState = {},
+  livePromptSettings = null,
   promptProfile = {},
   runtimeProfile = {},
   uploadedDocuments = [],
@@ -527,7 +530,7 @@ export function buildClientSetupStatus({
     forwarding: buildForwardingTask({ tenant, permissions }),
     billing: buildBillingTask({ billingState, permissions })
   };
-  const liveReadiness = buildLiveReadiness({ tasks, billingState });
+  const liveReadiness = buildLiveReadiness({ tasks, billingState, tenant, livePromptSettings });
   const setupProgress = buildSetupProgress(tasks);
   const warnings = Object.entries(tasks)
     .flatMap(([key, task]) => task.warnings.map((warning) => ({ task: key, message: warning })));
@@ -547,7 +550,7 @@ async function loadTenantRow(db, tenantKey) {
     `SELECT tenant_key, name, status, primary_number, telnyx_voice_number, telnyx_voice_number_id,
             telnyx_voice_status, forwarding_setup_status, forwarding_acknowledged_at,
             forwarding_configured_at, receptionist_basics_reviewed_at,
-            service_access_status, app_access_status, billing_status
+            service_access_status, app_access_status, billing_status, live_prompt_mode
      FROM tenants
      WHERE tenant_key = $1
      LIMIT 1`,
@@ -612,7 +615,8 @@ export async function loadClientSetupStatus(db, tenantKey, { session = null } = 
     runtimeProfile,
     buildsData,
     uploadedDocuments,
-    activeUser
+    activeUser,
+    livePromptSettings
   ] = await Promise.all([
     loadTenantRow(db, tenantKey),
     loadTenantUsers(db, tenantKey),
@@ -626,7 +630,8 @@ export async function loadClientSetupStatus(db, tenantKey, { session = null } = 
       error: normalizeText(error?.message) || "knowledge_builds_unavailable"
     })),
     listUploadedDocuments(db, tenantKey).catch(() => []),
-    loadActiveUserForSession(db, session)
+    loadActiveUserForSession(db, session),
+    loadTenantLivePromptSettings(db, tenantKey).catch(() => null)
   ]);
 
   if (!tenant) {
@@ -642,6 +647,7 @@ export async function loadClientSetupStatus(db, tenantKey, { session = null } = 
     runtimeProfile: runtimeProfile || {},
     uploadedDocuments,
     session,
-    activeUser
+    activeUser,
+    livePromptSettings
   });
 }

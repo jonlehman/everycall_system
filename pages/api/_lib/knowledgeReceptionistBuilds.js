@@ -21,6 +21,8 @@ import { loadTenantDomainAssignments, resolveTenantDomainAssignments, syncCanoni
 import { ensureTenantPromptProfileCompanyDescriptionSnapshot } from "./promptBlueprints.js";
 import { syncCallerFaqConfirmationState } from "./knowledgeCallerFaqConfirmation.js";
 import { loadTenantBootstrapProfile } from "./tenantBootstrapProfiles.js";
+import { curateLiveBriefBuild, publishLiveBriefBuild } from "./liveBriefCuration.js";
+import { maybeActivateTenantLivePrompt } from "./tenantLivePromptSettings.js";
 import {
   markKnowledgeBuildFailedIfLeaseOwned,
   withKnowledgeBuildExecutionLease
@@ -818,6 +820,7 @@ export async function fetchWebsitePage(url, options = {}) {
       status: response.status,
       url: finalUrl,
       html,
+      crawledAt: new Date().toISOString(),
       title: structured.title,
       headings: structured.headings,
       lines: structured.lines,
@@ -1175,6 +1178,7 @@ async function crawlWebsiteSources(rootUrl) {
   return {
     pages: pages.map((page) => ({
       sourceUrl: page.url,
+      crawledAt: page.crawledAt,
       title: page.title || new URL(page.url).hostname,
       headings: page.headings,
       lines: page.lines,
@@ -2235,7 +2239,7 @@ export function buildWebsiteSourceItems(websiteSources) {
       lines: page.lines,
       text: page.text,
       pageType,
-      metadata: { headings: page.headings || [] }
+      metadata: { headings: page.headings || [], ...(page.crawledAt ? { crawled_at: page.crawledAt } : {}) }
     });
   });
   const fileItems = files.map((file) => {
@@ -3409,6 +3413,7 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
     tenantKey: buildInfo.tenant_key,
     buildId: buildInfo.build_id
   });
+  await curateLiveBriefBuild(db, { tenantKey: buildInfo.tenant_key, buildId: buildInfo.build_id });
 
   await db.query(
     `UPDATE knowledge_builds
@@ -5071,6 +5076,7 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId, {
     throw new Error("knowledge_build_execution_lease_required");
   }
   await assertSliceTablesReady(db);
+  await curateLiveBriefBuild(db, { tenantKey, buildId });
   const result = await withTransaction(db, async (client) => {
     const buildRes = await client.query(
       `SELECT build_id, status
@@ -5105,6 +5111,7 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId, {
 
     await buildKnowledgeHeartCatalogRevision(client, { tenantKey, buildId });
     await publishKnowledgeHeartCatalog(client, { tenantKey, buildId });
+    await publishLiveBriefBuild(client, { tenantKey, buildId });
 
     await client.query(
       `INSERT INTO tenant_active_knowledge_builds (tenant_key, active_build_id, previous_build_id, updated_at)
@@ -5115,6 +5122,8 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId, {
                      updated_at = NOW()`,
       [tenantKey, buildId, currentActiveBuildId]
     );
+
+    await maybeActivateTenantLivePrompt(client, tenantKey);
 
     await client.query(
       `UPDATE knowledge_builds
@@ -5189,6 +5198,7 @@ export async function publishKnowledgeBuildWithExecutionLease(db, tenantKey, bui
 
 export async function rollbackKnowledgeBuild(db, tenantKey, buildId) {
   await assertSliceTablesReady(db);
+  await curateLiveBriefBuild(db, { tenantKey, buildId });
   const result = await withTransaction(db, async (client) => {
     const targetRes = await client.query(
       `SELECT build_id, status
@@ -5220,6 +5230,7 @@ export async function rollbackKnowledgeBuild(db, tenantKey, buildId) {
 
     await buildKnowledgeHeartCatalogRevision(client, { tenantKey, buildId });
     await publishKnowledgeHeartCatalog(client, { tenantKey, buildId });
+    await publishLiveBriefBuild(client, { tenantKey, buildId });
 
     await client.query(
       `UPDATE tenant_active_knowledge_builds
@@ -5229,6 +5240,8 @@ export async function rollbackKnowledgeBuild(db, tenantKey, buildId) {
        WHERE tenant_key = $1`,
       [tenantKey, buildId, currentActiveBuildId]
     );
+
+    await maybeActivateTenantLivePrompt(client, tenantKey);
 
     await client.query(
       `UPDATE knowledge_builds

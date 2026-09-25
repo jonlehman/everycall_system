@@ -38,6 +38,12 @@ export type GatewayPromptPayload = {
     business_call_intent_summary: string;
     prompt_blueprint?: Record<string, unknown>;
     tenant_prompt_profile?: Record<string, unknown>;
+    live_brief?: {
+      prompt_version: "v20.1"; build_version: string; assistant_name: string;
+      business_name: string; required_contact_fields: string[];
+      callback_role: string; callback_role_does: string;
+      by_heart_block: string; ai_disclosure_line: string;
+    };
     rendered_prompt_sections?: Array<Record<string, unknown>>;
     prompt_render_mode?: "legacy" | "layered" | string;
     prompt_layers?: {

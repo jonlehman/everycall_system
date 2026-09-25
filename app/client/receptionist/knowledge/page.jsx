@@ -11,6 +11,7 @@ import { emitClientSetupStatus, fetchClientSetupStatus, statusChipFromTask } fro
 import StepSection from '../../_components/StepSection';
 import { isKnowledgeBuildActive, resolveKnowledgeBuildHeaderStatus } from './buildHeaderStatus.mjs';
 import KnowsByHeartSection from './KnowsByHeartSection';
+import LiveBriefSection from './LiveBriefSection';
 
 function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
@@ -1107,6 +1108,15 @@ export default function ReceptionistKnowledgePage() {
                 onGuideFocus={() => setActiveGuideKey('knowsByHeart')}
                 onHighFlagsChange={setKbHighFlagCount}
               />
+            </StepSection>
+          </div>
+
+          <div onClick={(event) => {
+            if (isInteractiveGuideTarget(event.target)) return;
+            setActiveGuideKey('testQuestion');
+          }}>
+            <StepSection className="mt-24" step="02A" title="Live v20.1 By-Heart Brief">
+              <LiveBriefSection />
             </StepSection>
           </div>
 

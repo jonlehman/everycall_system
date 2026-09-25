@@ -19,6 +19,11 @@ services:
       # receptionist reasoning and private tool selection.
       - key: CALL_GATEWAY_VOICE_RUNTIME
         value: live
+      # v20.1 is disabled by default; use a single approved test tenant first.
+      - key: EVERYCALL_LIVE_V201_ENABLED
+        value: "0"
+      - key: EVERYCALL_LIVE_V201_CANARY_TENANTS
+        sync: false
       - key: OPENAI_LIVE_BACKEND_MODEL
         value: gpt-6-luna
       - key: OPENAI_LIVE_BACKEND_REASONING_EFFORT

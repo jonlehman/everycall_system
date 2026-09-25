@@ -403,8 +403,8 @@ export default async function handler(req, res) {
         tenantKey = attempt === 0 ? baseTenantKey : `${baseTenantKey}_${attempt + 1}`;
         try {
           await client.query(
-            `INSERT INTO tenants (tenant_key, name, status, data_region, plan, primary_number, industry)
-             VALUES ($1, $2, 'active', 'US', 'Growth', $3, $4)`,
+            `INSERT INTO tenants (tenant_key, name, status, data_region, plan, primary_number, industry, live_prompt_mode)
+             VALUES ($1, $2, 'active', 'US', 'Growth', $3, $4, 'pending_v20')`,
             [tenantKey, payload.businessName, null, payload.businessCategory]
           );
           break;
@@ -414,6 +414,11 @@ export default async function handler(req, res) {
           }
         }
       }
+
+      await client.query(
+        `INSERT INTO tenant_live_prompt_settings (tenant_key, mode)
+         VALUES ($1, 'pending_v20')`, [tenantKey]
+      );
 
       const existingLoginUser = await findExistingUserByEmail(client, payload.loginEmail);
       if (existingLoginUser) {

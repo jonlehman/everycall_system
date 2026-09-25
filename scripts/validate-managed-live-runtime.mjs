@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ManagedLiveRuntime, buildManagedLiveStart, MANAGED_BACKEND_INSTRUCTIONS } from "../apps/call-gateway/dist/apps/call-gateway/src/managedLiveRuntime.js";
+import { ManagedLiveRuntime, buildManagedLiveStart, MANAGED_BACKEND_INSTRUCTIONS, MANAGED_BACKEND_INSTRUCTIONS_V201 } from "../apps/call-gateway/dist/apps/call-gateway/src/managedLiveRuntime.js";
 import { LIVE_CALLBACK_QUESTION } from "../apps/call-gateway/dist/apps/call-gateway/src/liveRuntime.js";
 
 let sequence = 0;
@@ -17,7 +17,7 @@ function harness(overrides = {}) {
     validateTool: (_name, args) => !args.invalid, transcript: entry => transcripts.push(entry), audio: () => {}, ready: () => {},
     audit: (event, details) => audits.push({ event, ...details }), finish: reason => finishes.push(reason), ...Object.fromEntries(Object.entries(overrides).filter(([key]) => key !== "executeTool"))
   });
-  const h = { runtime, sent, executed, audits, finishes, transcripts, tools, clock: 0 };
+  const h = { runtime, sent, executed, audits, finishes, transcripts, tools, clock: 0, promptVersion: overrides.promptVersion };
   all.push(h); return h;
 }
 async function transcript(h, role, text, options = {}) {
@@ -54,7 +54,8 @@ async function prepare(h, kind, args = {}) {
   const result = await call(h, "prepare_protected_question", { kind, ...args }); assert.equal(result.status, "accepted", JSON.stringify(result)); return result.exact_question;
 }
 async function consent(h) {
-  await transcript(h, "assistant", await prepare(h, "callback_consent")); await transcript(h, "user", "Yes, please.");
+  await transcript(h, "assistant", h.promptVersion === "v20.1" ? "Would you like an estimator to call you back?" : await prepare(h, "callback_consent")); await transcript(h, "user", "Yes, please.");
+  await transcript(h, "assistant", "What is your name?");
 }
 
 const config = buildManagedLiveStart("LIVE SPEECH", "marin", { backendModel: "gpt-6-luna", reasoningEffort: "none", instructions: "BUSINESS RULES", tools: harness().tools });
@@ -125,13 +126,132 @@ await transcript(spelling, "user", "My name is Jon. My last name is L E H "); aw
 assert.equal((await call(spelling, "data_capture", { first_name: "Jon", last_name: "Lehman" })).action_status, "completed", "spelled surname fragments stay valid");
 assert.equal((await call(spelling, "data_capture", { first_name: "on" })).reason, "protected_action_not_authorized", "partial-word substring is not name evidence");
 
-// An unregistered spoken question or a yes before a prepared question is heard grants no consent.
+// A name prompt or a yes before a callback offer is heard grants no consent.
 const unauthorized = harness(); await start(unauthorized, "I need a repair.");
-await transcript(unauthorized, "assistant", LIVE_CALLBACK_QUESTION); await transcript(unauthorized, "user", "Yes.");
+await transcript(unauthorized, "assistant", "What is your name?"); await transcript(unauthorized, "user", "Yes.");
 assert.equal((await call(unauthorized, "data_capture", { first_name: "Ada" })).reason, "protected_action_not_authorized");
 await prepare(unauthorized, "callback_consent"); await transcript(unauthorized, "user", "Yes.");
 assert.equal((await call(unauthorized, "data_capture", { first_name: "Ada" })).reason, "protected_action_not_authorized");
 assert.equal(unauthorized.executed.length, 0);
+
+// Option A binds a completed natural offer to exactly its next relevant caller
+// turn; neither provider/tool assertions nor an old offer can supply authority.
+for (const offer of [
+  "Would you like an estimator to call you back?",
+  "Can I have one of our plumbers give you a call?",
+  "A technician can call you back to walk you through your options. Would you like that?",
+  "Would you like a callback"
+]) {
+  const natural = harness({ promptVersion: "v20.1" }); await start(natural, "My name is Ada. I need a repair.");
+  await transcript(natural, "assistant", offer); await transcript(natural, "user", "Yes, please.");
+  assert.equal((await call(natural, "data_capture", { first_name: "Ada" })).action_status, "completed", offer);
+  const recorded = natural.audits.find(entry => entry.decision === "offer_recorded");
+  const bound = natural.audits.find(entry => entry.decision === "agreed");
+  assert.ok(recorded.offerId); assert.equal(bound.offerId, recorded.offerId); assert.ok(bound.callerTurnId);
+}
+for (const answer of ["Yes, but do you guys do decks too?", "Yes… actually, no", "Okay", "I guess so", "Yes, and when are you open?"]) {
+  const ambiguous = harness({ promptVersion: "v20.1" }); await start(ambiguous, "My name is Ada. I need help.");
+  await transcript(ambiguous, "assistant", "Would you like an estimator to call you back?");
+  await transcript(ambiguous, "user", answer);
+  assert.equal((await call(ambiguous, "data_capture", { first_name: "Ada" })).reason, "protected_action_not_authorized", answer);
+  if (!answer.includes("no")) assert.ok(JSON.stringify(ambiguous.sent).includes("callback-specific follow-up"));
+  await transcript(ambiguous, "assistant", "Would you like a callback?"); await transcript(ambiguous, "user", "Yes.");
+  assert.equal((await call(ambiguous, "data_capture", { first_name: "Ada" })).action_status, "completed");
+  const offers = ambiguous.audits.filter(entry => entry.event === "openai_live_consent_binding" && entry.decision === "offer_recorded");
+  assert.equal(offers.length, 2); assert.notEqual(offers[0].offerId, offers[1].offerId);
+  assert.equal(ambiguous.audits.find(entry => entry.decision === "agreed").offerId, offers[1].offerId);
+}
+for (const notAnOffer of ["Would you like a callback or a transfer?", "Would you like a callback? What is your name?", "We can call you back. Is the paint peeling?", "You don't need a callback. Would you like that?", "Would you like me to call you an expert?", "Would you like me to call you back and",
+  "Would you like me to explain what happens on a callback?", "Would you like a callback and a brochure?", "Would you like a callback from our estimator and a brochure?", "I can explain what happens on a callback. Would you like that?", "Would you like an explanation of how to call you back?",
+  "Would you like a callback from our estimator, what is your name?", "Would you like an estimator to call you back about that, may I have your name?",
+  "Would you like a callback from our estimator what is your name", "Would you like a callback from our estimator what's your name", "Would you like a callback from our estimator tell me your name",
+  "What is your name. Would you like a callback?", "Would you like a callback from our estimator your name please",
+  "An estimator can call you back about the project; tell me your name. Would you like that?",
+  "An estimator can call you back about the project and we can send you a brochure. Would you like that?",
+  "An estimator can call you back about the project tell me your name. Would you like that?",
+  "An estimator can call you back about the project what is your name. Would you like that?"]) {
+  const invalidOffer = harness({ promptVersion: "v20.1" }); await start(invalidOffer, "My name is Ada.");
+  await transcript(invalidOffer, "assistant", notAnOffer); await transcript(invalidOffer, "user", "Yes.");
+  assert.equal((await call(invalidOffer, "data_capture", { first_name: "Ada" })).reason, "protected_action_not_authorized", notAnOffer);
+}
+for (const callbackRole of ["our owner", "our designer", "our custom project adviser"]) {
+  for (const offer of [`Would you like ${callbackRole} to call you back?`, `${callbackRole} can call you back to walk you through your options. Would you like that?`]) {
+    const customRole = harness({ promptVersion: "v20.1", callbackRole }); await start(customRole, "My name is Ada.");
+    await transcript(customRole, "assistant", offer); await transcript(customRole, "user", "Yes.");
+    assert.equal((await call(customRole, "data_capture", { first_name: "Ada" })).action_status, "completed", offer);
+  }
+}
+const invalidRolePattern = harness({ promptVersion: "v20.1", callbackRole: "our owner)|.*(" });
+await start(invalidRolePattern, "My name is Ada.");
+await transcript(invalidRolePattern, "assistant", "Would you like our owner to call you back?"); await transcript(invalidRolePattern, "user", "Yes.");
+assert.equal((await call(invalidRolePattern, "data_capture", { first_name: "Ada" })).reason, "protected_action_not_authorized", "role text cannot inject recognition grammar");
+const reopened = harness({ promptVersion: "v20.1" }); await start(reopened, "My name is Ada.");
+await transcript(reopened, "assistant", "Would you like a callback?"); await transcript(reopened, "user", "No thanks.");
+await transcript(reopened, "assistant", "We also do decks."); await transcript(reopened, "user", "Actually, sure, have them call me.");
+assert.equal((await call(reopened, "data_capture", { first_name: "Ada" })).reason, "protected_action_not_authorized", "reopened interest requires a new offer, never binds the declined old offer");
+await transcript(reopened, "assistant", "Would you like an estimator to call you back?"); await transcript(reopened, "user", "Please do.");
+assert.equal((await call(reopened, "data_capture", { first_name: "Ada" })).action_status, "completed");
+
+const fragment = harness({ promptVersion: "v20.1" }); await start(fragment, "My name is Ada.");
+await transcript(fragment, "assistant", "Would you like a callback?");
+await transcript(fragment, "user", "Yes", { start: 220 });
+await transcript(fragment, "user", ", actually no", { start: 50 });
+assert.equal((await call(fragment, "data_capture", { first_name: "Ada" })).reason, "protected_action_not_authorized", "late fragment spanning offer boundary cannot consent");
+assert.ok(fragment.audits.some(entry => entry.decision === "overlap_or_delayed_fragment"));
+
+const lateCorrection = harness({ promptVersion: "v20.1" }); await start(lateCorrection, "My name is Ada.");
+await transcript(lateCorrection, "assistant", "Would you like a callback?");
+await transcript(lateCorrection, "user", "Yes", { start: 220 });
+await transcript(lateCorrection, "assistant", "What is your name?");
+await transcript(lateCorrection, "user", ", but I have a question", { start: 230 });
+assert.equal((await call(lateCorrection, "data_capture", { first_name: "Ada" })).reason, "protected_action_not_authorized", "a delayed suffix invalidates uncommitted consent");
+assert.ok(lateCorrection.audits.some(entry => entry.decision === "late_fragment_after_consent"));
+
+const audioOverlap = harness({ promptVersion: "v20.1", settleMs: 20 }); await start(audioOverlap, "My name is Ada.");
+await transcript(audioOverlap, "assistant", "Would you like a callback?");
+audioOverlap.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+await new Promise(resolve => setTimeout(resolve, 25));
+await transcript(audioOverlap, "user", "Yes.");
+assert.equal((await call(audioOverlap, "data_capture", { first_name: "Ada" })).reason, "protected_action_not_authorized", "detected caller audio during offer invalidates it even if transcript timing appears clean");
+assert.ok(audioOverlap.audits.some(entry => entry.decision === "offer_interrupted"));
+
+const untimed = harness({ promptVersion: "v20.1" }); await start(untimed, "My name is Ada.");
+await untimed.runtime.handle({ type: "session.output_transcript.delta", delta: "Would you like a callback?" }); await pause();
+await transcript(untimed, "user", "Yes.");
+assert.equal((await call(untimed, "data_capture", { first_name: "Ada" })).reason, "protected_action_not_authorized", "missing provider timing fails closed");
+
+const v201 = harness({ promptVersion: "v20.1", buildVersion: "test-build" }); await start(v201, "My name is Ada. I need help.");
+assert.equal((await call(v201, "prepare_protected_question", { kind: "callback_consent" })).reason, "live_owns_callback_and_contact_questions");
+await consent(v201); await transcript(v201, "user", "My number is 5095550123.");
+assert.equal((await call(v201, "prepare_protected_question", { kind: "phone_confirmation", value: "5095550123" })).status, "accepted", "v20.1 phone readback can infer its schema field");
+const protectedKinds = buildManagedLiveStart("LIVE", "marin", { backendModel: "gpt-6-luna", instructions: "BUSINESS", tools: v201.tools, promptVersion: "v20.1" })
+  .session.delegation.responses.tools.find(tool => tool.name === "prepare_protected_question").parameters.properties.kind.enum;
+assert.deepEqual(protectedKinds, ["phone_confirmation", "transfer_confirmation", "other_questions"]);
+assert.ok(buildManagedLiveStart("LIVE", "marin", { backendModel: "gpt-6-luna", instructions: "BUSINESS", tools: v201.tools, promptVersion: "v20.1" }).session.delegation.responses.instructions.endsWith(MANAGED_BACKEND_INSTRUCTIONS_V201));
+for (const promptVersion of [undefined, "legacy", "v19", "v20"]) {
+  const legacy = harness({ promptVersion }); await start(legacy, "My name is Ada.");
+  await transcript(legacy, "assistant", "Would you like an estimator to call you back?"); await transcript(legacy, "user", "Yes.");
+  assert.equal((await call(legacy, "data_capture", { first_name: "Ada" })).reason, "protected_action_not_authorized", "legacy cannot acquire natural-offer authority");
+  await consent(legacy);
+  assert.equal((await call(legacy, "prepare_protected_question", { kind: "contact", contact_field: "first_name" })).status, "accepted");
+  assert.equal((await call(legacy, "data_capture", { first_name: "Ada" })).action_status, "completed");
+  assert.ok(buildManagedLiveStart("LIVE", "marin", { backendModel: "gpt-6-luna", instructions: "BUSINESS", tools: legacy.tools, promptVersion }).session.delegation.responses.instructions.endsWith(MANAGED_BACKEND_INSTRUCTIONS));
+}
+
+const audit = harness({ promptVersion: "v20.1", buildVersion: "build-123" });
+await start(audit, "My name is Ada Lovelace. My phone is 5095550123 and email is ada@example.test.");
+await consent(audit);
+const auditResponse = await openResponse(audit);
+await nested(audit, auditResponse.delegationId, { type: "response.output_item.done", item: { type: "reasoning", summary: [{ text: "PRIVATE_REASONING_SENTINEL" }] } });
+await nested(audit, auditResponse.delegationId, { type: "response.output_item.done", item: { type: "message", role: "assistant", content: [
+  { type: "output_text", text: "Ada Lovelace, 5095550123, ada@example.test. We serve King County. Martha, I can help you and Felix." }
+] } });
+await complete(audit, auditResponse);
+const auditResult = audit.audits.find(entry => entry.event === "openai_live_delegation_result" && entry.responseId === auditResponse.responseId);
+assert.equal(auditResult.promptVersion, "v20.1"); assert.equal(auditResult.buildVersion, "build-123");
+assert.equal(auditResult.consentConfirmed, true); assert.ok(auditResult.offerId);
+assert.match(auditResult.returnedText[0], /^\[redacted adviser text: \d+ characters\]$/);
+assert.doesNotMatch(JSON.stringify(audit.audits), /Ada|Lovelace|5095550123|ada@example|Martha|Felix|PRIVATE_REASONING_SENTINEL/);
 
 // Exact question, answer timing, caller spelling, and phone readback are separately bound.
 const capture = harness(); await start(capture, "I need a repair."); await consent(capture);

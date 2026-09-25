@@ -551,6 +551,17 @@ export const knowledgeGatewayRuntimeContextSchema = z.object({
   business_call_intent_summary: z.string().default(""),
   prompt_blueprint: jsonRecordSchema.optional(),
   tenant_prompt_profile: jsonRecordSchema.optional(),
+  live_brief: z.object({
+    prompt_version: z.literal("v20.1"),
+    build_version: z.string().min(1),
+    assistant_name: z.string().min(1),
+    business_name: z.string().min(1),
+    required_contact_fields: z.array(z.string().min(1)).min(1),
+    callback_role: z.string().min(1),
+    callback_role_does: z.string().min(1),
+    by_heart_block: z.string().max(1200),
+    ai_disclosure_line: z.string().min(1)
+  }).optional(),
   rendered_prompt_sections: arbitraryObjectArraySchema.default([]),
   approved_configuration: knowledgeGatewayConfigurationSchema,
   token_counts: z.object({

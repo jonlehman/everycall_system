@@ -124,6 +124,61 @@ const callbackRefusal = (text: string) => /\b(?:no|not|never|don't|do not|stop|c
 const callbackHesitation = (text: string) => /\b(?:not ready|not comfortable|unsure|uncertain|maybe later)\b.{0,60}\b(?:call|callback|contact|phone|number|details)\b/.test(normalized(text))
   || /\b(?:only|just)\b.{0,24}\b(?:want|need)\b.{0,24}\b(?:information|answer|details)\b/.test(normalized(text));
 
+/** Conservative semantic boundary, independent of a prepared question or model
+ * claim. Unknown or multi-intent wording must get a fresh callback-specific
+ * question. Never delete arbitrary characters before an authorization match. */
+export function isCallbackInvitation(text: string, confirmedCallbackRole?: string): boolean {
+  const value = text.toLowerCase().replace(/[’]/g, "'").replace(/\s+/g, " ").trim();
+  if ((value.match(/\?/g)?.length || 0) > 1 || /\b(?:or|not|don't|do not|never|unless)\b/.test(value)) return false;
+  const sentences = value.split(/[.!?]+/).map(part => part.trim()).filter(Boolean);
+  const question = sentences.at(-1) || "";
+  // One invitation must be the only question/request in the completed turn.
+  // Question marks are unreliable in live transcription: reject comma-joined,
+  // unpunctuated and imperative contact questions as well.
+  const questionStart = /^(?:what|where|when|why|how|which|who|would|could|can|may|shall|should|do|does|did|are|is|will|have|has|tell|give|share|spell|provide|confirm)\b/;
+  if (sentences.slice(0, -1).some(sentence => questionStart.test(sentence))) return false;
+  if (/[,;:]|\b(?:and|also|plus)\b/.test(question)) return false;
+  if (/\b(?:and|or|to|if|because|with|about|from|for|the|a|an)$/.test(question)) return false;
+  const invitation = /^(?:would you like|do you want|shall i|should i|can i|may i|could i|are you interested in|would it help|would that help|would that work|does that sound good|is that something you'd like)\b/;
+  const opening = question.match(invitation)?.[0];
+  if (!opening) return false;
+  const competingClause = (clause: string) => {
+    const expanded = clause.replace(/\b(what|where|when|why|how|who|there|that)'s\b/g, "$1 is");
+    return /[,;:]|\b(?:and|also|plus)\b/.test(expanded)
+      || /\b(?:may|can|could|would|will|shall|should|do|does|did|are|is|have|has)\s+(?:i|you|we|your|our|the|there|it|this|that)\b/.test(expanded)
+      || /\b(?:tell|give|share|spell|provide|confirm)\s+(?:me|us|your)\b/.test(expanded)
+      || /\b(?:your|first|last|full|best|callback)\s+(?:name|phone|number|email|address)\b/.test(expanded);
+  };
+  if (competingClause(question.slice(opening.length))) return false;
+  const role = "(?:estimator|plumber|technician|electrician|roofer|project manager|team member|representative|specialist|coordinator|office manager|manager|consultant)";
+  const confirmedRole = confirmedCallbackRole?.toLowerCase().replace(/[’]/g, "'").replace(/\s+/g, " ").trim();
+  const tenantActor = confirmedRole && /^[\p{L}][\p{L} '-]{0,100}$/u.test(confirmedRole)
+    ? `|${confirmedRole.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` : "";
+  const actor = `(?:someone(?: from (?:the|our) team)?|one of our ${role}s|(?:an?|our|the) ${role}|(?:our|the) team|them${tenantActor})`;
+  const call = "(?:(?:call|phone|ring) you(?: back)?|give you a call)(?=$|[, ](?:about|to|for|on|later|this|tomorrow|at|so|who|from)\\b)";
+  const direct = new RegExp(`^(?:would you like|do you want|are you interested in) (?:a (?:callback|call back|return call)(?:$| (?:from|about|to|so)\\b)|${actor} to ${call}|me to (?:${call}|(?:have|ask|arrange for) ${actor} (?:to )?${call}))`);
+  const arrange = new RegExp(`^(?:(?:shall|should|can|may|could) i |would it help (?:if i |to ))(?:(?:have|ask|arrange for) ${actor} (?:to )?${call}|arrange a (?:callback|call back|return call)(?:$| (?:from|about|to|so)\\b))`);
+  // A deictic invitation is safe only with one immediately preceding callback
+  // statement in this same completed assistant turn.
+  if (direct.test(question) || arrange.test(question)) return true;
+  const antecedent = sentences.at(-2) || "";
+  return /^(?:would you like that|would that help|would that work|does that sound good|is that something you'd like)$/.test(question)
+    && !competingClause(antecedent)
+    && new RegExp(`^(?:${actor} (?:can|will|would) ${call}|(?:the natural next step|the next step) is a (?:callback|call back|return call)(?:$| from\\b))`).test(antecedent);
+}
+
+export function callbackAgreement(text: string): "agreed" | "declined" | "ambiguous" {
+  const value = text.toLowerCase().replace(/[’]/g, "'").replace(/[.!?,;:…]/g, " ").replace(/\s+/g, " ").trim();
+  if (/\b(?:no|nope|don't|do not|not now|not interested|cancel|stop)\b/.test(value)) return "declined";
+  if (/[?]/.test(text) || /\b(?:but|actually|instead|wait|correction|rather|maybe|perhaps|probably|guess|think|suppose)\b/.test(value)) return "ambiguous";
+  const bare = value.replace(/ (?:please|thanks|thank you)$/, "");
+  const agreement = /^(?:yes|yeah|yep|sure|absolutely|certainly|definitely|please do|go ahead|sounds good|that sounds good|that'd be (?:helpful|great)|that would be (?:helpful|great|fine|good)|i'd like that|i would like that)$/;
+  if (agreement.test(bare) || agreement.test(bare.replace(/^(?:yes|yeah|yep|sure|absolutely|certainly|definitely) /, ""))) return "agreed";
+  if (/^(?:(?:yes|yeah|yep|sure|okay|ok) )?(?:please )?(?:have (?:them|someone|the team|an estimator|a technician) call me(?: back)?|call me(?: back)?|i(?:'d| would) like a callback|i want a callback)(?: please)?$/.test(bare)) return "agreed";
+  // In particular, a lone okay is not explicit callback agreement.
+  return "ambiguous";
+}
+
 /** Tracks accepted decisions, without trying to derive business intent from transcript regexes. */
 export class LiveConversationController {
   private discoveryQuestions = 0;
@@ -132,6 +187,11 @@ export class LiveConversationController {
   private callbackDeclined = false;
   private repeatedQuestions = new Set<string>();
   private clarifiedCallerQuestions = new Set<string>();
+
+  bindCallbackDecision(decision: "agreed" | "declined" | "ambiguous") {
+    this.callbackConsent = decision === "agreed";
+    this.callbackDeclined = decision === "declined";
+  }
 
   canOfferCallback(caller?: CallerEvidence) {
     const text = normalized(caller?.text || "");

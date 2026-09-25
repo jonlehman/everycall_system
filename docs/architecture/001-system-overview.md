@@ -11,7 +11,7 @@ Build a white-labeled, multi-tenant voice platform for service businesses using:
 - `api-gateway`: tenant/admin APIs, auth/RBAC, portal backend surface.
 - `worker`: async side effects (retries, notifications, post-call tasks).
 - `db`: system-of-record for tenants, contacts, calls, leads, and compiled tenant knowledge.
-- The by-heart catalog separates immutable build-scoped factual candidates and append-only processing artifacts from durable tenant facts and tenant-owned selection snapshots. `kb_block` is the only by-heart artifact read during call startup.
+- The legacy by-heart catalog separates immutable build-scoped factual candidates and append-only processing artifacts from durable tenant facts and tenant-owned selection snapshots. Legacy calls read `kb_block`. Opted-in v20.1 Live calls read the separately materialized, fixed-slot `live_brief_blocks` for the active build; no curation model runs on the call path.
 
 ## High-Level Call Flow
 For `CALL_GATEWAY_VOICE_RUNTIME=live`, GPT-Live is the voice receptionist. It

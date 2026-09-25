@@ -10,7 +10,7 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 
 ## Primary Workflows
 1. Inbound call is answered.
-2. On the GPT-Live path, the gateway starts the session with Sarah's conversation prompt and managed Responses delegation configured with the canonical backend instructions, tenant knowledge, and private tools; the tenant greeting is appended after Live is ready.
+2. On the GPT-Live path, the gateway starts the session with Sarah's conversation prompt and managed Responses delegation. Legacy tenants retain their current canonical backend instructions. Opted-in v20.1 tenants instead receive the short tenant-specific Live brief; Luna receives Business Details and her back-office contract, not the canonical receptionist sections. The tenant greeting is appended after Live is ready.
 3. Assistant gathers required details as defined by the EveryCall system.
 4. Caller questions are answered via tenant knowledge lookup or tools; if unknown, assistant says it doesn’t know and offers a callback.
 5. When the caller explicitly asks for a configured person or extension and confirms the match, the gateway can blind-transfer the call.
