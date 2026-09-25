@@ -4560,7 +4560,8 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
         await assertOwned();
         if (normalizeText(lease?.status).toLowerCase() === "ready_to_publish") {
           await publishKnowledgeBuild(db, row.tenant_key, row.build_id, {
-            executionLeaseToken: token
+            executionLeaseToken: token,
+            expectedActiveBuildId: options.expectedActiveBuildId
           });
           return {
             buildId: normalizeText(row.build_id),
@@ -4587,7 +4588,8 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
           await heartbeat();
           await assertOwned();
           await publishKnowledgeBuild(db, row.tenant_key, executionInput.buildId, {
-            executionLeaseToken: token
+            executionLeaseToken: token,
+            expectedActiveBuildId: options.expectedActiveBuildId
           });
           return {
             buildId: executionInput.buildId,
@@ -5127,9 +5129,23 @@ async function preparePublicationCatalog(db, tenantKey, buildId) {
   await buildKnowledgeHeartCatalogRevision(db, { tenantKey, buildId });
 }
 
+// Called under the publication transaction's tenant lock, before activation
+// writes. An explicit null expects no active build; omission preserves cron behavior.
+async function loadPublicationPointerForUpdate(db, tenantKey, expectedActiveBuildId) {
+  const pointer = await db.query(`SELECT active_build_id FROM tenant_active_knowledge_builds
+    WHERE tenant_key = $1 FOR UPDATE`, [tenantKey]);
+  const activeBuildId = normalizeText(pointer.rows[0]?.active_build_id) || null;
+  if (expectedActiveBuildId !== undefined
+    && activeBuildId !== (normalizeText(expectedActiveBuildId) || null)) {
+    throw new Error("knowledge_build_active_pointer_conflict");
+  }
+  return activeBuildId;
+}
+
 export async function publishKnowledgeBuild(db, tenantKey, buildId, {
   executionLeaseToken = "",
-  allowUnleasedForValidation = false
+  allowUnleasedForValidation = false,
+  expectedActiveBuildId = undefined
 } = {}) {
   if (!normalizeText(executionLeaseToken) && allowUnleasedForValidation !== true) {
     throw new Error("knowledge_build_execution_lease_required");
@@ -5166,14 +5182,7 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId, {
       throw new Error("build_not_ready_to_publish");
     }
 
-    const pointerRes = await client.query(
-      `SELECT active_build_id, previous_build_id
-       FROM tenant_active_knowledge_builds
-       WHERE tenant_key = $1
-       FOR UPDATE`,
-      [tenantKey]
-    );
-    const currentActiveBuildId = normalizeText(pointerRes.rows[0]?.active_build_id) || null;
+    const currentActiveBuildId = await loadPublicationPointerForUpdate(client, tenantKey, expectedActiveBuildId);
     const prewarmedAssets = await loadBuildAssetsFromDb(client, tenantKey, buildId);
 
     await publishKnowledgeHeartCatalog(client, { tenantKey, buildId });
@@ -5229,7 +5238,8 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId, {
 }
 
 export async function publishKnowledgeBuildWithExecutionLease(db, tenantKey, buildId, {
-  owner = "knowledge-build-manual-publish"
+  owner = "knowledge-build-manual-publish",
+  expectedActiveBuildId = undefined
 } = {}) {
   const leased = await withKnowledgeBuildExecutionLease(db, {
     tenantKey,
@@ -5238,7 +5248,8 @@ export async function publishKnowledgeBuildWithExecutionLease(db, tenantKey, bui
   }, async ({ token, assertOwned }) => {
     await assertOwned();
     return publishKnowledgeBuild(db, tenantKey, buildId, {
-      executionLeaseToken: token
+      executionLeaseToken: token,
+      expectedActiveBuildId
     });
   });
   if (!leased.acquired) {

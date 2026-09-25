@@ -11,10 +11,10 @@ import {
 const buildUrl = new URL("../pages/api/_lib/knowledgeReceptionistBuilds.js", import.meta.url).href;
 const hook = registerHooks({ load(url, context, nextLoad) {
   const loaded = nextLoad(url, context);
-  if (url === buildUrl) return { ...loaded, source: `${loaded.source}\nexport { persistCompiledBuildDraft, updateBuildAfterValidation, assertBuildCommitLease };` };
+  if (url === buildUrl) return { ...loaded, source: `${loaded.source}\nexport { persistCompiledBuildDraft, updateBuildAfterValidation, assertBuildCommitLease, loadPublicationPointerForUpdate };` };
   return loaded;
 } });
-const { persistCompiledBuildDraft, updateBuildAfterValidation, assertBuildCommitLease } = await import(buildUrl);
+const { persistCompiledBuildDraft, updateBuildAfterValidation, assertBuildCommitLease, loadPublicationPointerForUpdate } = await import(buildUrl);
 hook.deregister();
 
 const db = new PGlite();
@@ -58,6 +58,21 @@ await db.exec(`
 `);
 
 const buildInfo = { tenant_key: "tenant-a", build_id: "draft" };
+// The approved prior pointer can change while a long compilation is running.
+// Publication must compare that original expectation under its commit locks.
+await db.query("UPDATE tenant_active_knowledge_builds SET active_build_id = 'newer-build'");
+await db.query("BEGIN");
+await db.query("SELECT tenant_key FROM tenants WHERE tenant_key = 'tenant-a' FOR UPDATE");
+await assert.rejects(loadPublicationPointerForUpdate(db, "tenant-a", "old"), /active_pointer_conflict/);
+await db.query("ROLLBACK");
+assert.equal((await db.query("SELECT active_build_id FROM tenant_active_knowledge_builds")).rows[0].active_build_id, "newer-build");
+await db.query("BEGIN");
+assert.equal(await loadPublicationPointerForUpdate(db, "tenant-a", "newer-build"), "newer-build");
+assert.equal(await loadPublicationPointerForUpdate(db, "tenant-a", undefined), "newer-build", "ordinary cron keeps existing behavior");
+await assert.rejects(loadPublicationPointerForUpdate(db, "tenant-a", null), /active_pointer_conflict/);
+assert.equal(await loadPublicationPointerForUpdate(db, "tenant-without-pointer", null), null);
+await db.query("ROLLBACK");
+await db.query("UPDATE tenant_active_knowledge_builds SET active_build_id = 'old'");
 const resumed = await persistCompiledBuildDraft(db, buildInfo, {}, null, "lease-a");
 assert.equal(resumed.counts.facts, 1);
 assert.deepEqual(resumed.compilerWarnings, ["source_artifact_stage_no_model_completed_sources"]);
