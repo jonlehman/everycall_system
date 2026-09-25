@@ -1,7 +1,43 @@
 import crypto from "node:crypto";
+import { performance } from "node:perf_hooks";
 
 const DEFAULT_LEASE_SECONDS = 180;
 const DEFAULT_HEARTBEAT_SECONDS = 30;
+const HEARTBEAT_MAX_ATTEMPTS = 3;
+
+async function beforeLeaseDeadline(operation, deadline) {
+  const remainingMs = deadline - performance.now();
+  if (!(remainingMs > 0)) throw new Error("knowledge_build_execution_lease_lost");
+  let timer;
+  try {
+    const result = await Promise.race([
+      Promise.resolve().then(() => {
+        if (performance.now() >= deadline) throw new Error("knowledge_build_execution_lease_lost");
+        return operation();
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("knowledge_build_execution_lease_lost")), remainingMs);
+      })
+    ]);
+    if (performance.now() >= deadline) throw new Error("knowledge_build_execution_lease_lost");
+    return result;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isTransientLeaseError(error) {
+  const codes = new Set([
+    "ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EPIPE", "EAI_AGAIN",
+    "08000", "08003", "08006", "57P01", "57P02", "57P03"
+  ]);
+  const seen = new Set();
+  for (let current = error; current && !seen.has(current); current = current.cause) {
+    seen.add(current);
+    if (codes.has(current.code)) return true;
+  }
+  return false;
+}
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -179,6 +215,7 @@ export async function withKnowledgeBuildExecutionLease(db, {
   leaseSeconds = knowledgeBuildLeaseTiming().leaseSeconds,
   heartbeatSeconds = knowledgeBuildLeaseTiming().heartbeatSeconds
 } = {}, work) {
+  const claimStartedAt = performance.now();
   const claim = await claimKnowledgeBuildExecutionLease(db, {
     tenantKey,
     buildId,
@@ -188,18 +225,45 @@ export async function withKnowledgeBuildExecutionLease(db, {
   if (!claim.acquired) return { acquired: false, result: null };
 
   let heartbeatInFlight = null;
+  let heartbeatQueryInFlight = null;
   let heartbeatError = null;
+  let stopped = false;
+  // Query-start time is conservative even with clock skew or a slow DB response.
+  // Only an acknowledged renewal advances this deadline; an ambiguous write does not.
+  let confirmedUntil = claimStartedAt + Number(leaseSeconds) * 1000;
+  const leaseLost = () => new Error("knowledge_build_execution_lease_lost");
+  const renew = async () => {
+    for (let attempt = 0; attempt < HEARTBEAT_MAX_ATTEMPTS; attempt += 1) {
+      if (stopped) return { owned: false, row: null };
+      if (performance.now() >= confirmedUntil) throw leaseLost();
+      const startedAt = performance.now();
+      try {
+        const result = await beforeLeaseDeadline(() => {
+          heartbeatQueryInFlight = heartbeatKnowledgeBuildExecutionLease(db, {
+            tenantKey,
+            buildId,
+            token: claim.token,
+            leaseSeconds
+          }).finally(() => { heartbeatQueryInFlight = null; });
+          return heartbeatQueryInFlight;
+        }, confirmedUntil);
+        if (!result.owned) throw leaseLost();
+        confirmedUntil = startedAt + Number(leaseSeconds) * 1000;
+        if (performance.now() >= confirmedUntil) throw leaseLost();
+        return result;
+      } catch (error) {
+        const delayMs = 250 * (2 ** attempt);
+        if (stopped || !isTransientLeaseError(error)
+          || attempt + 1 >= HEARTBEAT_MAX_ATTEMPTS
+          || performance.now() + delayMs >= confirmedUntil) throw error;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  };
   const heartbeat = async () => {
     if (heartbeatInFlight) return heartbeatInFlight;
-    heartbeatInFlight = heartbeatKnowledgeBuildExecutionLease(db, {
-      tenantKey,
-      buildId,
-      token: claim.token,
-      leaseSeconds
-    }).then((result) => {
-      if (!result.owned) heartbeatError = new Error("knowledge_build_execution_lease_lost");
-      return result;
-    }).catch((error) => {
+    if (stopped || heartbeatError) return { owned: false, row: null };
+    heartbeatInFlight = renew().catch((error) => {
       heartbeatError = error;
       return { owned: false, row: null };
     }).finally(() => {
@@ -207,13 +271,24 @@ export async function withKnowledgeBuildExecutionLease(db, {
     });
     return heartbeatInFlight;
   };
-  const assertOwned = async () => {
+  const checkHeartbeat = async () => {
+    if (performance.now() >= confirmedUntil) heartbeatError ||= leaseLost();
+    if (heartbeatInFlight) await heartbeatInFlight;
     if (heartbeatError) throw heartbeatError;
-    return assertKnowledgeBuildExecutionLease(db, {
+    if (stopped || performance.now() >= confirmedUntil) throw leaseLost();
+  };
+  const assertOwned = async () => {
+    await checkHeartbeat();
+    const result = await beforeLeaseDeadline(() => assertKnowledgeBuildExecutionLease(db, {
       tenantKey,
       buildId,
       token: claim.token
+    }), confirmedUntil).catch((error) => {
+      heartbeatError ||= error;
+      throw error;
     });
+    await checkHeartbeat();
+    return result;
   };
   const timer = setInterval(() => {
     void heartbeat();
@@ -222,15 +297,22 @@ export async function withKnowledgeBuildExecutionLease(db, {
 
   try {
     const result = await work({ token: claim.token, lease: claim.lease, assertOwned, heartbeat });
-    if (heartbeatError) throw heartbeatError;
+    clearInterval(timer);
+    await checkHeartbeat();
     return { acquired: true, result };
   } finally {
+    stopped = true;
     clearInterval(timer);
     if (heartbeatInFlight) await heartbeatInFlight;
-    await releaseKnowledgeBuildExecutionLease(db, {
-      tenantKey,
-      buildId,
-      token: claim.token
-    }).catch(() => {});
+    // A deadline bounds our wait, not the SQL itself. Never release alongside an
+    // unresolved renewal or interpret its late acknowledgement as recovered work.
+    // Let that fenced lease expire instead; the stale query cannot touch a new token.
+    if (!heartbeatQueryInFlight) {
+      await beforeLeaseDeadline(() => releaseKnowledgeBuildExecutionLease(db, {
+        tenantKey,
+        buildId,
+        token: claim.token
+      }), Math.min(confirmedUntil, performance.now() + 5000)).catch(() => {});
+    }
   }
 }
