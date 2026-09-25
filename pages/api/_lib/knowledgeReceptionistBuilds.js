@@ -3142,7 +3142,7 @@ async function persistRawBuildSourcesFromDb(db, buildInfo, sourceIntakeSessionId
   };
 }
 
-async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
+async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled, executionLeaseToken) {
   const validTopicIds = new Set((compiled.topics || []).map((topic) => normalizeText(topic?.knowledge_topic_id)).filter(Boolean));
   const validSubtopicIds = new Set((compiled.subtopics || []).map((subtopic) => normalizeText(subtopic?.knowledge_subtopic_id)).filter(Boolean));
   const sanitizedFacts = [];
@@ -3416,7 +3416,20 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
     tenantKey: buildInfo.tenant_key, buildId: buildInfo.build_id, skipPricingSafety: true
   });
 
-  await db.query(
+  const compilerWarnings = uniqueValues([
+    ...(compiled.warnings || []),
+    ...(sanitizedFactTopicRefs ? [`fact_topic_refs_cleared:${sanitizedFactTopicRefs}`] : []),
+    ...(sanitizedCardTopicRefs ? [`card_topic_refs_cleared:${sanitizedCardTopicRefs}`] : [])
+  ]);
+  await persistDraftCheckpoint(db, buildInfo, compiled, sourceCounts, compilerWarnings, executionLeaseToken);
+
+  return { counts: sourceCounts, compilerWarnings, compiled };
+}
+
+async function persistDraftCheckpoint(db, buildInfo, compiled, sourceCounts, compilerWarnings, executionLeaseToken) {
+  // This is the first exclusive build-row lock in draft persistence. Heartbeats
+  // can update the non-key lease fields until this final, conditional write.
+  const updated = await db.query(
     `UPDATE knowledge_builds
      SET compiler_version = $2,
          topic_inventory_summary_json = $3::jsonb,
@@ -3426,7 +3439,10 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
          warnings_json = $7::jsonb,
          validation_summary_json = jsonb_build_object('draft_checkpoint', jsonb_build_object('compiler_warnings', $7::jsonb)),
          updated_at = NOW()
-     WHERE build_id = $1`,
+     WHERE build_id = $1 AND tenant_key = $8 AND status = 'running'
+       AND (($9 = '' AND execution_lease_token IS NULL)
+         OR (execution_lease_token = $9 AND execution_lease_expires_at > clock_timestamp()))
+     RETURNING build_id`,
     [
       buildInfo.build_id,
       compiled.compilerVersion,
@@ -3434,23 +3450,13 @@ async function insertCompiledArtifacts(db, buildInfo, rawCounts, compiled) {
       compiled.embeddingModel,
       compiled.plannerModel,
       JSON.stringify(sourceCounts),
-      JSON.stringify(uniqueValues([
-        ...(compiled.warnings || []),
-        ...(sanitizedFactTopicRefs ? [`fact_topic_refs_cleared:${sanitizedFactTopicRefs}`] : []),
-        ...(sanitizedCardTopicRefs ? [`card_topic_refs_cleared:${sanitizedCardTopicRefs}`] : [])
-      ]))
+      JSON.stringify(compilerWarnings),
+      buildInfo.tenant_key,
+      executionLeaseToken
     ]
   );
 
-  return {
-    counts: sourceCounts,
-    compilerWarnings: uniqueValues([
-      ...(compiled.warnings || []),
-      ...(sanitizedFactTopicRefs ? [`fact_topic_refs_cleared:${sanitizedFactTopicRefs}`] : []),
-      ...(sanitizedCardTopicRefs ? [`card_topic_refs_cleared:${sanitizedCardTopicRefs}`] : [])
-    ]),
-    compiled
-  };
+  if (updated.rows.length !== 1) throw new Error("knowledge_build_execution_lease_lost");
 }
 
 async function loadBuildAssetsFromDb(db, tenantKey, buildId) {
@@ -5092,12 +5098,13 @@ async function assertBuildCommitLease(db, tenantKey, buildId, token) {
 async function persistCompiledBuildDraft(db, buildInfo, rawCounts, compiled, executionLeaseToken) {
   const { tenant_key: tenantKey, build_id: buildId } = buildInfo;
   return withTransaction(db, async (client) => {
-    // Only SQL runs while this lock temporarily excludes heartbeat/takeover.
+    // Keep the parent/FK stable without blocking heartbeat updates. A takeover
+    // may change the token; the final checkpoint UPDATE then rolls this draft back.
     const owned = await client.query(`SELECT build_id FROM knowledge_builds
       WHERE tenant_key = $1 AND build_id = $2 AND status = 'running'
         AND (($3 = '' AND execution_lease_token IS NULL)
           OR (execution_lease_token = $3 AND execution_lease_expires_at > clock_timestamp()))
-      FOR UPDATE`, [tenantKey, buildId, executionLeaseToken]);
+      FOR KEY SHARE`, [tenantKey, buildId, executionLeaseToken]);
     if (!owned.rows.length) throw new Error("knowledge_build_execution_lease_lost");
     // Candidates reference facts with cascading deletes. A committed draft must
     // resume unchanged; replacing its facts would erase the immutable catalog.
@@ -5115,7 +5122,7 @@ async function persistCompiledBuildDraft(db, buildInfo, rawCounts, compiled, exe
       return { counts, compilerWarnings: checkpoint.rows[0].compiler_warnings };
     }
     await client.query("DELETE FROM live_brief_builds WHERE tenant_key = $1 AND build_id = $2", [tenantKey, buildId]);
-    const inserted = await insertCompiledArtifacts(client, buildInfo, rawCounts, compiled);
+    const inserted = await insertCompiledArtifacts(client, buildInfo, rawCounts, compiled, executionLeaseToken);
     await assertBuildCommitLease(client, tenantKey, buildId, executionLeaseToken);
     return inserted;
   });

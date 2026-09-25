@@ -11,10 +11,18 @@ import {
 const buildUrl = new URL("../pages/api/_lib/knowledgeReceptionistBuilds.js", import.meta.url).href;
 const hook = registerHooks({ load(url, context, nextLoad) {
   const loaded = nextLoad(url, context);
-  if (url === buildUrl) return { ...loaded, source: `${loaded.source}\nexport { persistCompiledBuildDraft, updateBuildAfterValidation, assertBuildCommitLease, loadPublicationPointerForUpdate };` };
+  if (url === buildUrl) {
+    const source = String(loaded.source);
+    const draftBody = source.slice(source.indexOf("async function persistCompiledBuildDraft("), source.indexOf("async function preparePublicationCatalog("));
+    assert.match(draftBody, /FOR KEY SHARE/, "long draft lock must allow non-key heartbeat updates");
+    assert.doesNotMatch(draftBody, /FOR UPDATE|FOR NO KEY UPDATE/, "no exclusive lock before slow draft inserts");
+    const insertBody = source.slice(source.indexOf("async function insertCompiledArtifacts("), source.indexOf("async function persistDraftCheckpoint("));
+    assert.doesNotMatch(insertBody, /UPDATE knowledge_builds/, "metadata must not acquire an early exclusive build lock");
+    return { ...loaded, source: `${source}\nexport { persistCompiledBuildDraft, persistDraftCheckpoint, updateBuildAfterValidation, assertBuildCommitLease, loadPublicationPointerForUpdate };` };
+  }
   return loaded;
 } });
-const { persistCompiledBuildDraft, updateBuildAfterValidation, assertBuildCommitLease, loadPublicationPointerForUpdate } = await import(buildUrl);
+const { persistCompiledBuildDraft, persistDraftCheckpoint, updateBuildAfterValidation, assertBuildCommitLease, loadPublicationPointerForUpdate } = await import(buildUrl);
 hook.deregister();
 
 const db = new PGlite();
@@ -28,7 +36,8 @@ await db.exec(`
   CREATE TABLE knowledge_builds (tenant_key TEXT, build_id TEXT PRIMARY KEY, status TEXT,
     artifact_counts_json JSONB, validation_summary_json JSONB, quality_summary_json JSONB,
     warnings_json JSONB, execution_lease_token TEXT, execution_lease_expires_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ DEFAULT NOW());
+    updated_at TIMESTAMPTZ DEFAULT NOW(), compiler_version TEXT, topic_inventory_summary_json JSONB,
+    embedding_model TEXT, planner_model TEXT);
   CREATE TABLE knowledge_build_facts (knowledge_fact_id TEXT PRIMARY KEY, build_id TEXT REFERENCES knowledge_builds(build_id));
   CREATE TABLE kb_catalog_revisions (id TEXT PRIMARY KEY, tenant_key TEXT, knowledge_build_id TEXT REFERENCES knowledge_builds(build_id));
   CREATE TABLE kb_candidates (id TEXT PRIMARY KEY, revision_id TEXT REFERENCES kb_catalog_revisions(id),
@@ -119,5 +128,36 @@ const profile = (await db.query("SELECT * FROM tenant_prompt_profiles")).rows[0]
 assert.equal(profile.company_description, "We paint residential homes and locally owned commercial buildings.");
 assert.equal(profile.basic_no_tool_allowed_statement, profile.company_description);
 assert.equal((await db.query("SELECT active_build_id FROM tenant_active_knowledge_builds")).rows[0].active_build_id, "draft");
+
+const compiled = { compilerVersion: "test", embeddingModel: "test", plannerModel: "test" };
+// PGlite has one backend: this tests the real final SQL fence and rollback, not
+// concurrent PostgreSQL lock compatibility. Source assertions guard lock choice.
+await db.query("UPDATE knowledge_builds SET status = 'running', execution_lease_token = 'successor', execution_lease_expires_at = clock_timestamp() + INTERVAL '60 seconds'");
+await db.query("BEGIN");
+await db.query("INSERT INTO knowledge_build_facts VALUES ('stale-fact','draft')");
+await db.query("INSERT INTO kb_candidates VALUES ('stale-candidate','catalog-a','stale-fact')");
+await assert.rejects(persistDraftCheckpoint(db, buildInfo, compiled, resumed.counts, [], "lease-a"), /execution_lease_lost/);
+await db.query("ROLLBACK");
+assert.equal((await db.query("SELECT count(*)::int AS n FROM knowledge_build_facts WHERE knowledge_fact_id = 'stale-fact'")).rows[0].n, 0);
+assert.equal((await db.query("SELECT count(*)::int AS n FROM kb_candidates WHERE id = 'stale-candidate'")).rows[0].n, 0);
+assert.equal((await db.query("SELECT execution_lease_token FROM knowledge_builds")).rows[0].execution_lease_token, "successor");
+
+await db.query("UPDATE knowledge_builds SET execution_lease_token = 'lease-a', execution_lease_expires_at = clock_timestamp() + INTERVAL '100 milliseconds'");
+await db.query("BEGIN");
+await db.query("SELECT build_id FROM knowledge_builds WHERE build_id = 'draft' FOR KEY SHARE");
+await db.query("INSERT INTO knowledge_build_facts VALUES ('expired-fact','draft')");
+await new Promise((resolve) => setTimeout(resolve, 150));
+await assert.rejects(persistDraftCheckpoint(db, buildInfo, compiled, resumed.counts, [], "lease-a"), /execution_lease_lost/,
+  "final fence checks wall clock, not transaction-start NOW(), after a slow draft");
+await db.query("ROLLBACK");
+assert.equal((await db.query("SELECT count(*)::int AS n FROM knowledge_build_facts WHERE knowledge_fact_id = 'expired-fact'")).rows[0].n, 0);
+
+await db.query("UPDATE knowledge_builds SET execution_lease_expires_at = clock_timestamp() + INTERVAL '60 seconds'");
+await db.query("BEGIN");
+await db.query("INSERT INTO knowledge_build_facts VALUES ('fresh-fact','draft')");
+await persistDraftCheckpoint(db, buildInfo, compiled, resumed.counts, ["saved-warning"], "lease-a");
+await db.query("COMMIT");
+assert.equal((await db.query("SELECT count(*)::int AS n FROM knowledge_build_facts WHERE knowledge_fact_id = 'fresh-fact'")).rows[0].n, 1);
+assert.deepEqual((await db.query("SELECT validation_summary_json FROM knowledge_builds")).rows[0].validation_summary_json.draft_checkpoint.compiler_warnings, ["saved-warning"]);
 await db.close();
 console.log("PASS knowledge build transactions: immutable draft retry, preserved blockers, lease fencing, profile conflict/rollback and atomic publication");
