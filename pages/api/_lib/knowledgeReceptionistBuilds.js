@@ -1882,14 +1882,25 @@ async function assertSliceTablesReady(db) {
   if (!normalizeText(res.rows[0]?.table_name)) {
     throw new Error("knowledge_receptionist_migrations_not_applied");
   }
-  await db.query(
-    `ALTER TABLE knowledge_builds
-       ADD COLUMN IF NOT EXISTS build_kind TEXT NOT NULL DEFAULT 'legacy_combined',
-       ADD COLUMN IF NOT EXISTS base_build_id TEXT REFERENCES knowledge_builds(build_id) ON DELETE SET NULL,
-       ADD COLUMN IF NOT EXISTS overlay_build_id TEXT REFERENCES knowledge_builds(build_id) ON DELETE SET NULL,
-       ADD COLUMN IF NOT EXISTS composite_parent_build_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-       ADD COLUMN IF NOT EXISTS source_fingerprint_json JSONB NOT NULL DEFAULT '{}'::jsonb;`
+  const requiredColumns = [
+    "build_kind",
+    "base_build_id",
+    "overlay_build_id",
+    "composite_parent_build_ids_json",
+    "source_fingerprint_json"
+  ];
+  const columns = await db.query(
+    `SELECT attname
+     FROM pg_attribute
+     WHERE attrelid = to_regclass('knowledge_builds')
+       AND attname = ANY($1::text[])
+       AND NOT attisdropped`,
+    [requiredColumns]
   );
+  const found = new Set((columns.rows || []).map((row) => normalizeText(row.attname)));
+  if (requiredColumns.some((column) => !found.has(column))) {
+    throw new Error("knowledge_receptionist_migrations_not_applied");
+  }
 }
 
 async function nextBuildVersion(db, tenantKey) {
