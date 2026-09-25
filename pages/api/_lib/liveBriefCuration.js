@@ -210,7 +210,9 @@ export async function generateLiveBriefSlots({ candidates, trade = "", modelCall
       evidenceFormat,
       "Check original evidence_text as well as claims, qualifiers and boundaries. Any conflicting or limiting evidence in the complete evidence set makes an unqualified claim unsupported, even when that fact is not cited.",
       "unique=true only if no two slots repeat a fact semantically, including paraphrases or overlapping parts of sentences.",
-      "figure_free=true only if there is no fixed, conditional, spelled-out, comparative or reconstructable monetary amount charged by this business. Free estimates/inspections explicitly in evidence may be stated.",
+      "Evaluate figure_free on the generated slots' text only, not on monetary amounts merely present in source evidence. A source price that is not stated or implied in the generated slots does not make figure_free false; keep the complete evidence for supported checks and for interpreting any implied or reconstructable amount in the slots.",
+      "figure_free=true only if the generated slots contain no fixed, conditional, spelled-out, comparative, implied or reconstructable monetary amount charged by this business. Website prices are not authorized: approved_prices must remain empty in this generated brief, and no other slot may contain such amounts.",
+      "Explicit free estimates or inspections may appear in estimate_policy or trade_faq only when supported by the evidence with all conditions preserved. This exception does not authorize other free services or discounts. Return false for any doubtful validation.",
       "spoken_register=true only for plain first-person business speech, no marketing adjectives, field labels, instructions or implementation details. Do not repair the brief."
     ].join("\n"), user: JSON.stringify({ evidence, slots: generated }), schema: verdictSchema,
     jsonSchemaName: "live_brief_verify_v201", jsonSchema: verdictJsonSchema,

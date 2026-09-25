@@ -49,6 +49,79 @@ const model = async (args) => { calls++; return { parsed: args.jsonSchemaName ==
 const curated = await generateLiveBriefSlots({ candidates, trade: "painting", modelCaller: model });
 assert.equal(calls, 2, "valid first output needs only generation and independent verification, no repair calls");
 assert.deepEqual(curated.services.source_refs, [source]);
+
+// Prompt-contract fixtures use scripted verdicts: they verify the exact scope
+// sent to the independent model and fail-closed handling, not model judgment.
+const priceEvidence = { ...candidates[0], id: "website-price", category: "pricing",
+  text: "We charge $500 per day.", evidence_text: "We charge $500 per day; exterior projects start at $2,000.",
+  qualifiers: { condition: "Residential projects only." }, boundaries: { exclusions: "Materials are separate." } };
+const pricedCandidates = [...candidates, priceEvidence];
+const priceScopeCalls = [];
+const priceFreeSlots = await generateLiveBriefSlots({ candidates: pricedCandidates, modelCaller: async (args) => {
+  priceScopeCalls.push(args);
+  return { parsed: args.jsonSchemaName === "live_brief_slots_v201" ? draft : okay };
+} });
+assert.equal(priceScopeCalls.length, 2);
+const priceVerifier = priceScopeCalls[1];
+assert.equal(priceVerifier.jsonSchemaName, "live_brief_verify_v201");
+assert.match(priceVerifier.system, /Evaluate figure_free on the generated slots' text only, not on monetary amounts merely present in source evidence/);
+assert.match(priceVerifier.system, /source price that is not stated or implied in the generated slots does not make figure_free false/);
+assert.match(priceVerifier.system, /keep the complete evidence for supported checks and for interpreting any implied or reconstructable amount in the slots/);
+assert.match(priceVerifier.system, /no fixed, conditional, spelled-out, comparative, implied or reconstructable monetary amount/);
+assert.match(priceVerifier.system, /Website prices are not authorized: approved_prices must remain empty/);
+assert.match(priceVerifier.system, /no other slot may contain such amounts/);
+assert.match(priceVerifier.system, /Explicit free estimates or inspections may appear in estimate_policy or trade_faq only when supported by the evidence with all conditions preserved/);
+assert.match(priceVerifier.system, /does not authorize other free services or discounts/);
+assert.match(priceVerifier.system, /Return false for any doubtful validation/);
+assert.match(priceVerifier.system, /Any conflicting or limiting evidence in the complete evidence set makes an unqualified claim unsupported, even when that fact is not cited/);
+const priceVerifierPayload = JSON.parse(priceVerifier.user);
+assert.deepEqual(priceVerifierPayload.evidence, JSON.parse(priceScopeCalls[0].user).evidence,
+  "source prices and counterevidence are retained without filtering");
+assert.deepEqual(priceVerifierPayload.evidence.facts.find(({ id }) => id === priceEvidence.id), {
+  id: priceEvidence.id, text: priceEvidence.text, category: priceEvidence.category,
+  source_ref_ids: [source.source_ref_id], qualifiers: priceEvidence.qualifiers,
+  boundaries: priceEvidence.boundaries, evidence_text: priceEvidence.evidence_text
+});
+assert.deepEqual(priceVerifierPayload.slots, draft, "verifier assesses generated text separately from source prices");
+assert.equal(renderLiveBriefSlots(priceFreeSlots), draft.services.text);
+for (const [slot, text] of [
+  ["estimate_policy", "We offer free estimates for residential work."],
+  ["trade_faq", "We offer free inspections for residential work."]
+]) {
+  const freeFact = { ...candidates[0], id: "free-policy", text };
+  const freeDraft = { ...draft, [slot]: { text, fact_ids: [freeFact.id] } };
+  const result = await generateLiveBriefSlots({ candidates: [...pricedCandidates, freeFact], modelCaller: async (args) => ({
+    parsed: args.jsonSchemaName === "live_brief_slots_v201" ? freeDraft : okay
+  }) });
+  assert.equal(result[slot].text, text, "evidenced free estimates/inspections remain eligible alongside unrelated source prices");
+}
+for (const text of [
+  "We charge five hundred for each day.",
+  "We charge half our published daily rate.",
+  "We waive the project charge if you book today.",
+  "We charge less than our published minimum.",
+  "We charge our published daily rate for each day on site."
+]) {
+  const semanticDraft = { ...draft, services: { text, fact_ids: [priceEvidence.id] } };
+  let semanticCalls = 0;
+  await assert.rejects(generateLiveBriefSlots({ candidates: pricedCandidates, modelCaller: async (args) => {
+    semanticCalls++;
+    if (args.jsonSchemaName === "live_brief_slots_v201") return { parsed: semanticDraft };
+    assert.deepEqual(JSON.parse(args.user).slots, semanticDraft, "semantic prices must reach independent verification intact");
+    return { parsed: { ...okay, figure_free: false } };
+  } }), /verification_failed/, "semantic price rejection cannot be overridden by unrelated source-price guidance");
+  assert.equal(semanticCalls, 2, "negative semantic verdict is never repaired or retried");
+}
+const conditionalFree = { ...candidates[0], id: "conditional-free", text: "We offer free estimates only for returning customers." };
+const unqualifiedFreeDraft = { ...draft, estimate_policy: { text: "We offer free estimates.", fact_ids: [conditionalFree.id] } };
+for (const verdictKey of Object.keys(okay)) {
+  let negativeCalls = 0;
+  await assert.rejects(generateLiveBriefSlots({ candidates: [...pricedCandidates, conditionalFree], modelCaller: async (args) => {
+    negativeCalls++;
+    return { parsed: args.jsonSchemaName === "live_brief_slots_v201" ? unqualifiedFreeDraft : { ...okay, [verdictKey]: false } };
+  } }), /verification_failed/, `${verdictKey}=false remains fatal with source prices and a free-estimate claim`);
+  assert.equal(negativeCalls, 2, "a free-estimate claim cannot bypass or retry any negative independent verdict");
+}
 await assert.rejects(generateLiveBriefSlots({ candidates, modelCaller: async (args) => ({ parsed:
   args.jsonSchemaName === "live_brief_slots_v201" ? draft : { ...okay, supported: false }
 }) }), /verification_failed/, "scope widening rejected by verifier");
