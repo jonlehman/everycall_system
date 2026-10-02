@@ -511,6 +511,7 @@ export async function ensureTables(pool) {
     );
   `);
   await pool.query(`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS admin_users_email_unique_idx ON admin_users (email);`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sessions (

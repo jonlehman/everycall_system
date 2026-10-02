@@ -10,6 +10,7 @@ import adminMe from '../pages/api/v1/auth/me.js';
 import salesLogin from '../pages/api/v1/sales/auth/login.js';
 import salesMe from '../pages/api/v1/sales/auth/me.js';
 import adminOverview from '../pages/api/v1/admin/overview.js';
+import adminUsers from '../pages/api/v1/admin/users.js';
 import operatorSettings from '../pages/api/v1/admin/sales/operator-settings/index.js';
 
 process.env.DATABASE_URL = 'postgres://sales-auth-fixture';
@@ -55,6 +56,12 @@ try {
   );`);
   await ensureTables(pool);
   await db.exec(await fs.readFile(new URL('../migrations/0032_outbound_sales_demo.sql', import.meta.url), 'utf8'));
+  await db.exec('DROP INDEX admin_users_email_unique_idx;');
+  const adminEmailMigration = await fs.readFile(
+    new URL('../migrations/0033_sales_auth_admin_user_email_unique.sql', import.meta.url), 'utf8'
+  );
+  await db.exec(adminEmailMigration);
+  await db.exec(adminEmailMigration);
   const hash = await bcrypt.hash('correct-horse-battery', 4);
   const sales = (await query(
     `INSERT INTO admin_users (username, email, password_hash, role)
@@ -85,6 +92,39 @@ try {
   assert.equal((await call(adminOverview, request(salesCookie))).statusCode, 401);
   assert.equal((await call(adminOverview, request(copiedCookie))).statusCode, 401);
   assert.equal((await call(operatorSettings, request(salesCookie, 'PUT', { active: true }))).statusCode, 403);
+
+  const newSalesAccount = {
+    email: 'new-seller@example.com', username: 'new-seller',
+    password: 'correct-horse-battery', role: 'sales'
+  };
+  assert.equal((await call(adminUsers, request(adminCookie, 'POST', newSalesAccount))).statusCode, 200);
+  const created = (await query(
+    `SELECT u.id, u.role, settings.active
+     FROM admin_users u
+     JOIN sales_operator_settings settings ON settings.admin_user_id = u.id
+     WHERE u.email = $1`, [newSalesAccount.email]
+  )).rows[0];
+  assert.equal(created.role, 'sales');
+  assert.equal(created.active, true);
+  await query(
+    `INSERT INTO sessions (id, user_id, role, expires_at)
+     VALUES ('old-sales-token', $1, 'sales', NOW() + INTERVAL '1 day')`,
+    [created.id]
+  );
+  assert.equal((await call(adminUsers, request(adminCookie, 'POST', {
+    ...newSalesAccount, password: 'replaced-password'
+  }))).statusCode, 200);
+  assert.equal((await query(`SELECT id FROM admin_users WHERE email = $1`, [newSalesAccount.email])).rows[0].id, created.id);
+  assert.equal((await query(`SELECT id FROM sessions WHERE id = 'old-sales-token'`)).rowCount, 0);
+  assert.equal((await query(
+    `SELECT COUNT(*)::int AS count FROM audit_log WHERE action = 'admin.user.saved'`
+  )).rows[0].count, 2);
+  assert.equal((await call(salesLogin, request('', 'POST', {
+    email: newSalesAccount.email, password: newSalesAccount.password
+  }))).statusCode, 401);
+  assert.equal((await call(salesLogin, request('', 'POST', {
+    email: newSalesAccount.email, password: 'replaced-password'
+  }))).statusCode, 200);
 
   const salesContext = await requireSalesAdmin(request(salesCookie), response());
   assert.equal(salesContext?.session.role, 'sales');

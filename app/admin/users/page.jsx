@@ -57,7 +57,12 @@ export default function AdminUsersPage() {
       body: JSON.stringify({ email, username, role, password })
     });
     if (!resp.ok) {
-      setStatus('Save failed.');
+      const result = await resp.json().catch(() => ({}));
+      setStatus(result.error === 'password_too_short'
+        ? 'Password must be at least 8 characters.'
+        : result.error === 'missing_fields'
+          ? 'Email and password are required.'
+          : 'Could not save the user. Please try again or contact support.');
       return;
     }
     setStatus('Saved.');
@@ -90,7 +95,7 @@ export default function AdminUsersPage() {
               <option value="sales">Sales (Sales Console only)</option>
             </select>
             <label className="mt-2.5">Password</label>
-            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Set password" />
+            <input type="password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters" />
           </div>
         </div>
         <div className="mt-3 flex items-center gap-2">
