@@ -84,7 +84,7 @@ export default async function handler(req, res) {
         updated = await pool.query(
           `UPDATE admin_users
            SET password_hash = $1
-           WHERE id = $2 AND email = $3`,
+           WHERE id = $2 AND email = $3 AND role IN ('admin', 'super_admin')`,
           [hash, tokenRow.user_id, tokenRow.email]
         );
       }

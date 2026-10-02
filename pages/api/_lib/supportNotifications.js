@@ -29,6 +29,7 @@ async function getSupportRecipients(pool) {
      FROM admin_users
      WHERE email IS NOT NULL
        AND email <> ''
+       AND role IN ('admin', 'super_admin')
      ORDER BY id ASC
      LIMIT 10`
   );

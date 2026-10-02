@@ -2,34 +2,62 @@ import crypto from "crypto";
 import { getPool } from "./db.js";
 
 const SESSION_COOKIE = "everycall_session";
+const SALES_SESSION_COOKIE = "everycall_sales_session";
 const SESSION_TTL_DAYS = 7;
 
-export function getSessionCookie(req) {
+export function isAdminRole(role) {
+  return role === "admin" || role === "super_admin";
+}
+
+function readCookie(req, name) {
   const header = req.headers?.cookie || "";
-  const cookies = Object.fromEntries(
-    header.split(";").map((part) => {
-      const idx = part.indexOf("=");
-      if (idx === -1) return [part.trim(), ""];
-      return [part.slice(0, idx).trim(), decodeURIComponent(part.slice(idx + 1).trim())];
-    })
+  for (const part of header.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx === -1 || part.slice(0, idx).trim() !== name) continue;
+    try {
+      return decodeURIComponent(part.slice(idx + 1).trim());
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
+export function getSessionCookie(req) {
+  return readCookie(req, SESSION_COOKIE);
+}
+
+export function getSalesSessionCookie(req) {
+  return readCookie(req, SALES_SESSION_COOKIE);
+}
+
+export function hasSalesSessionCookie(req) {
+  return String(req.headers?.cookie || "").split(";").some((part) =>
+    part.split("=", 1)[0].trim() === SALES_SESSION_COOKIE
   );
-  return cookies[SESSION_COOKIE] || "";
 }
 
 export function clearSessionCookie(res) {
-  res.setHeader(
-    "Set-Cookie",
-    `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
-  );
+  writeSessionCookie(res, SESSION_COOKIE, "", 0);
+}
+
+function writeSessionCookie(res, name, sessionId, maxAge) {
+  const secure = process.env.NODE_ENV === "production";
+  const cookie = `${name}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
+  const existing = res.getHeader?.("Set-Cookie");
+  res.setHeader("Set-Cookie", existing ? [...(Array.isArray(existing) ? existing : [existing]), cookie] : cookie);
 }
 
 export function setSessionCookie(res, sessionId) {
-  const secure = process.env.NODE_ENV === "production";
-  const maxAge = SESSION_TTL_DAYS * 24 * 60 * 60;
-  res.setHeader(
-    "Set-Cookie",
-    `${SESSION_COOKIE}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? "; Secure" : ""}`
-  );
+  writeSessionCookie(res, SESSION_COOKIE, sessionId, SESSION_TTL_DAYS * 24 * 60 * 60);
+}
+
+export function setSalesSessionCookie(res, sessionId) {
+  writeSessionCookie(res, SALES_SESSION_COOKIE, sessionId, SESSION_TTL_DAYS * 24 * 60 * 60);
+}
+
+export function clearSalesSessionCookie(res) {
+  writeSessionCookie(res, SALES_SESSION_COOKIE, "", 0);
 }
 
 export async function createSession({ userId, tenantKey, role }) {
@@ -61,10 +89,9 @@ export async function deleteSessionsForPrincipal({ userId, role, tenantKey = nul
   );
 }
 
-export async function getSession(req) {
+async function findSession(sessionId) {
   const pool = getPool();
   if (!pool) return null;
-  const sessionId = getSessionCookie(req);
   if (!sessionId) return null;
   const row = await pool.query(
     `SELECT id, user_id, tenant_key, role, expires_at
@@ -74,11 +101,38 @@ export async function getSession(req) {
   );
   if (!row.rowCount) return null;
   const session = row.rows[0];
-  if (new Date(session.expires_at).getTime() < Date.now()) {
+  const expiresAt = new Date(session.expires_at).getTime();
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
     await pool.query(`DELETE FROM sessions WHERE id = $1`, [sessionId]);
     return null;
   }
   return session;
+}
+
+export async function getSession(req) {
+  const session = await findSession(getSessionCookie(req));
+  // Cookie names are not an authorization boundary: reject a copied sales ID.
+  if (!session || !["admin", "tenant"].includes(session.role)) return null;
+  if (session.role === "admin" && !await getAdminActor(session)) return null;
+  return session;
+}
+
+export async function getSalesSession(req) {
+  const session = await findSession(getSalesSessionCookie(req));
+  if (!session || session.role !== "sales" || session.tenant_key) return null;
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT u.id, u.username, u.email, u.role
+     FROM admin_users u
+     JOIN sales_operator_settings settings ON settings.admin_user_id = u.id
+     WHERE u.id = $1 AND u.role = 'sales'
+       AND settings.active = TRUE
+     LIMIT 1`,
+    [session.user_id]
+  );
+  const user = result.rows[0];
+  if (!user || user.role !== "sales") return null;
+  return { ...session, user };
 }
 
 export async function requireSession(req, res, options = {}) {
@@ -99,7 +153,14 @@ export async function deleteSession(req) {
   if (!pool) return;
   const sessionId = getSessionCookie(req);
   if (!sessionId) return;
-  await pool.query(`DELETE FROM sessions WHERE id = $1`, [sessionId]);
+  await pool.query(`DELETE FROM sessions WHERE id = $1 AND role IN ('admin', 'tenant')`, [sessionId]);
+}
+
+export async function deleteSalesSession(req) {
+  const pool = getPool();
+  const sessionId = getSalesSessionCookie(req);
+  if (!pool || !sessionId) return;
+  await pool.query(`DELETE FROM sessions WHERE id = $1 AND role = 'sales'`, [sessionId]);
 }
 
 export function resolveTenantKey(session, requestedTenantKey) {
@@ -120,5 +181,6 @@ export async function getAdminActor(session) {
      LIMIT 1`,
     [session.user_id]
   );
-  return row.rows[0] || null;
+  const user = row.rows[0];
+  return user && isAdminRole(user.role) ? user : null;
 }

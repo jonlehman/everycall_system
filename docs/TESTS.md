@@ -157,7 +157,7 @@ The second 8/19 WVG call contained one possible early VAD handoff (“Got it—a
 - Run `corepack pnpm validate:sales-system`.
 - Run `corepack pnpm typecheck` and `corepack pnpm build`.
 - The sales validator suite covers CSV permission parsing, the 11-record warm queue, 30-day demo expiry, outcome advancement, durable Smartlead jobs, separate phone/email suppression, signup-token open/consume semantics, browser call options, gateway authentication, webhook signature checks and replay handling, parked-leg fail-safe behavior, conference controls, exact demo greeting, pause audio clearing, teardown, and database-backed integration.
-- Browser verification must use a disposable database and confirm `/admin/sales` renders the current prospect, next prepared prospects, website facts, call readiness, conversion controls, and a visible provider-configuration error when credentials are intentionally absent.
+- Browser verification must use a disposable database and confirm `/sales/login` and `/sales` render without the admin shell; a sales-only session can reach Sales APIs but redirects away from `/admin` and receives 401 from unrelated admin APIs; an admin session can also open `/sales`. Confirm the current prospect, next prepared prospects, website facts, call readiness, conversion controls, and a visible provider-configuration error when credentials are intentionally absent.
 - Before pilot traffic, make one controlled live provider call and verify:
   - the operator leg is parked on the dedicated sales connection
   - the gateway answers the parked operator leg and does not create the conference before the matching operator `call.answered` webhook

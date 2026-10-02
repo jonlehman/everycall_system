@@ -40,30 +40,33 @@ export function assertSalesCallAdmin(call, adminUserId) {
   return call;
 }
 
-async function loadLatestSignupProgress(pool, call) {
+async function loadLatestSignupProgress(pool, call, operatorUserId) {
+  const ownerScoped = operatorUserId !== null;
   const invitationResult = await pool.query(
     `SELECT invitation_id
      FROM sales_signup_invitations
-     WHERE sales_call_id = $1
-        OR (sales_call_id IS NULL AND prospect_id = $2)
+     WHERE (sales_call_id = $1
+        OR (sales_call_id IS NULL AND prospect_id = $2))
+       ${ownerScoped ? "AND created_by_admin_user_id = $3 AND sales_call_id = $1" : ""}
      ORDER BY
        CASE WHEN sales_call_id = $1 THEN 0 ELSE 1 END,
        created_at DESC
      LIMIT 1`,
-    [call.salesCallId, call.prospectId]
+    ownerScoped ? [call.salesCallId, call.prospectId, operatorUserId] : [call.salesCallId, call.prospectId]
   );
   const invitationId = invitationResult.rows[0]?.invitation_id;
   if (!invitationId) return null;
-  return getSalesSignupInvitation(pool, invitationId);
+  return getSalesSignupInvitation(pool, invitationId, { operatorUserId });
 }
 
 export async function buildSalesCallView(pool, call, {
-  webrtc = null
+  webrtc = null,
+  operatorUserId = null
 } = {}) {
   if (!call) return null;
   const state = normalizeSalesText(call.state, 80).toLowerCase();
   const aiState = normalizeSalesText(call.aiState, 80).toLowerCase();
-  const signup = await loadLatestSignupProgress(pool, call);
+  const signup = await loadLatestSignupProgress(pool, call, operatorUserId);
   return {
     salesCallId: call.salesCallId,
     prospectId: call.prospectId,

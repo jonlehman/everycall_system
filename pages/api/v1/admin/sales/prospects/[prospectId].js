@@ -20,7 +20,9 @@ export default async function handler(req, res) {
     if (!context) return;
     const prospectId = String(req.query?.prospectId || "").trim();
     if (req.method === "GET") {
-      const prospect = await getSalesProspectDetail(context.pool, prospectId);
+      const prospect = await getSalesProspectDetail(context.pool, prospectId, {
+        operatorUserId: context.session.role === "sales" ? context.admin.id : null
+      });
       if (!prospect) {
         return res.status(404).json({ ok: false, error: "prospect_not_found" });
       }

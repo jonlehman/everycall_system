@@ -382,6 +382,15 @@ export async function assignSupportConversation(pool, {
   const normalizedAdminUserId = Number.isFinite(Number(adminUserId)) && Number(adminUserId) > 0
     ? Number(adminUserId)
     : null;
+  if (normalizedAdminUserId) {
+    const assignee = await pool.query(
+      `SELECT id FROM admin_users WHERE id = $1 AND role IN ('admin', 'super_admin') LIMIT 1`,
+      [normalizedAdminUserId]
+    );
+    if (!assignee.rowCount) {
+      throw Object.assign(new Error("support_assignee_not_admin"), { statusCode: 400 });
+    }
+  }
   const result = await pool.query(
     `UPDATE support_conversations
      SET assigned_admin_user_id = $2,

@@ -71,10 +71,10 @@ export default function AdminUsersPage() {
   return (
     <section className="grid gap-3">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="m-0 text-2xl font-semibold tracking-tight">Admin Users</h1>
+        <h1 className="m-0 text-2xl font-semibold tracking-tight">Platform Users</h1>
       </div>
       <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-        <h2 className="mt-0 text-lg font-semibold">Create / Reset Admin User</h2>
+        <h2 className="mt-0 text-lg font-semibold">Create / Reset User</h2>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
             <label>Email</label>
@@ -87,13 +87,14 @@ export default function AdminUsersPage() {
             <select value={role} onChange={(event) => setRole(event.target.value)}>
               <option value="admin">Admin</option>
               <option value="super_admin">Super Admin</option>
+              <option value="sales">Sales (Sales Console only)</option>
             </select>
             <label className="mt-2.5">Password</label>
             <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Set password" />
           </div>
         </div>
         <div className="mt-3 flex items-center gap-2">
-          <Button onClick={saveUser}>Save Admin User</Button>
+          <Button onClick={saveUser}>Save User</Button>
           <span className="text-sm text-slate-500">{status}</span>
         </div>
       </div>
@@ -105,7 +106,7 @@ export default function AdminUsersPage() {
           disableRowSelectionOnClick
           pageSizeOptions={[10, 25, 50]}
           initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
-          localeText={{ noRowsLabel: 'No admin users yet.' }}
+          localeText={{ noRowsLabel: 'No platform users yet.' }}
           sx={{
             border: 'none',
             '& .MuiDataGrid-cell': { alignItems: 'center', lineHeight: '1.4' },

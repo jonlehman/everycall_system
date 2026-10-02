@@ -25,6 +25,7 @@ import {
   validateSalesSignupInvitationForOnboarding
 } from "../pages/api/_lib/salesRepository.js";
 import { processSalesFollowupJobs } from "../pages/api/_lib/salesFollowupJobs.js";
+import { buildSalesCallView } from "../pages/api/_lib/salesCallView.js";
 
 function withRowCount(result) {
   const returnedRows = Array.isArray(result?.rows) ? result.rows.length : 0;
@@ -380,6 +381,74 @@ async function main() {
     });
     assert.equal(invitation.replayed, false);
     assert.match(invitation.signupUrl, /salesInvite=/);
+    // Sales operators can only create and inspect invitations tied to their own call.
+    const otherOperator = await pool.query(
+      `INSERT INTO admin_users (username, email, role)
+       VALUES ('other-sales', 'other-sales@example.com', 'sales') RETURNING id`
+    );
+    const otherOperatorId = Number(otherOperator.rows[0].id);
+    await assert.rejects(
+      addSalesProspectNote(pool, {
+        prospectId: firstId,
+        salesCallId: call.salesCallId,
+        body: "Should not attach to another operator's call.",
+        adminUserId: otherOperatorId,
+        requireCallOwnership: true
+      }),
+      (error) => error?.code === "sales_call_not_owned"
+    );
+    const ownedInvitationRequest = {
+      prospectId: firstId,
+      salesCallId: call.salesCallId,
+      contactEmail: "owner@example.com",
+      leadDeliveryEmail: "dispatch@example.com",
+      adminUserId,
+      requireCallOwnership: true,
+      idempotencyKey: "signup-owned-validation",
+      appBaseUrl: "https://everycall.example"
+    };
+    await assert.rejects(
+      createSalesSignupInvitation(pool, { ...ownedInvitationRequest, salesCallId: null }),
+      (error) => error?.code === "sales_call_required"
+    );
+    await assert.rejects(
+      createSalesSignupInvitation(pool, { ...ownedInvitationRequest, adminUserId: otherOperatorId }),
+      (error) => error?.code === "sales_call_forbidden"
+    );
+    const ownedInvitation = await createSalesSignupInvitation(pool, ownedInvitationRequest);
+    const ownedInvitationId = ownedInvitation.invitation.invitationId;
+    assert.equal((await getSalesSignupInvitation(pool, ownedInvitationId, {
+      operatorUserId: adminUserId
+    })).invitationId, ownedInvitationId);
+    assert.equal(await getSalesSignupInvitation(pool, ownedInvitationId, {
+      operatorUserId: otherOperatorId
+    }), null);
+    assert.equal(await getSalesSignupInvitation(pool, invitation.invitation.invitationId, {
+      operatorUserId: adminUserId
+    }), null, "Unbound admin invitation must not become readable through the sales scope");
+    assert.equal((await getSalesSignupInvitation(pool, ownedInvitationId)).invitationId, ownedInvitationId);
+    const ownedDetail = await getSalesProspectDetail(pool, firstId, { operatorUserId: adminUserId });
+    assert.equal(ownedDetail.signupInvitations.some((item) => item.invitationId === ownedInvitationId), true);
+    const otherDetail = await getSalesProspectDetail(pool, firstId, { operatorUserId: otherOperatorId });
+    assert.equal(otherDetail.signupInvitations.length, 0);
+    assert.equal(otherDetail.calls.length, 0);
+    assert.equal((await buildSalesCallView(pool, call, { operatorUserId: adminUserId })).signup.invitationId,
+      ownedInvitationId);
+    assert.equal((await buildSalesCallView(pool, call, { operatorUserId: otherOperatorId })).signup, null);
+    await pool.query(
+      `UPDATE sales_call_sessions SET admin_user_id = $2 WHERE sales_call_id = $1`,
+      [call.salesCallId, otherOperatorId]
+    );
+    assert.equal(await getSalesSignupInvitation(pool, ownedInvitationId, {
+      operatorUserId: adminUserId
+    }), null, "A former call owner must lose invitation access");
+    assert.equal(await getSalesSignupInvitation(pool, ownedInvitationId, {
+      operatorUserId: otherOperatorId
+    }), null, "Owning a call does not confer another creator's invitation");
+    await pool.query(
+      `UPDATE sales_call_sessions SET admin_user_id = $2 WHERE sales_call_id = $1`,
+      [call.salesCallId, adminUserId]
+    );
     const unsupportedPrefill = await pool.query(
       `SELECT safe_prefill_json
        FROM sales_signup_invitations

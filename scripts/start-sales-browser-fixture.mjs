@@ -6,6 +6,7 @@ import { importSalesProspects } from "../pages/api/_lib/salesRepository.js";
 
 const PORT = Number(process.env.SALES_BROWSER_DB_PORT || 55432);
 const SESSION_ID = "sales-browser-validation-session";
+const SALES_SESSION_ID = "sales-browser-operator-session";
 
 function adaptResult(result) {
   const returnedRows = Array.isArray(result?.rows) ? result.rows.length : 0;
@@ -55,6 +56,22 @@ await pool.query(
   `INSERT INTO sessions (id, user_id, role, expires_at)
    VALUES ($1, $2, 'admin', NOW() + INTERVAL '1 day')`,
   [SESSION_ID, adminUserId]
+);
+const salesOperator = await pool.query(
+  `INSERT INTO admin_users (username, email, role)
+   VALUES ('sales-browser-operator', 'sales-browser-operator@example.com', 'sales')
+   RETURNING id`
+);
+const salesOperatorId = Number(salesOperator.rows[0].id);
+await pool.query(
+  `INSERT INTO sales_operator_settings (admin_user_id, active)
+   VALUES ($1, TRUE)`,
+  [salesOperatorId]
+);
+await pool.query(
+  `INSERT INTO sessions (id, user_id, role, expires_at)
+   VALUES ($1, $2, 'sales', NOW() + INTERVAL '1 day')`,
+  [SALES_SESSION_ID, salesOperatorId]
 );
 
 const imported = await importSalesProspects(pool, {
@@ -172,7 +189,9 @@ console.log(JSON.stringify({
   ready: true,
   port: PORT,
   sessionId: SESSION_ID,
-  adminUserId
+  adminUserId,
+  salesSessionId: SALES_SESSION_ID,
+  salesOperatorId
 }));
 
 async function shutdown() {

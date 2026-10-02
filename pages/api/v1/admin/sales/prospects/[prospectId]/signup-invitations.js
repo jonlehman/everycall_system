@@ -35,6 +35,7 @@ export default async function handler(req, res) {
       prospectId,
       ...request,
       adminUserId: context.admin.id,
+      requireCallOwnership: context.session.role === "sales",
       idempotencyKey: salesIdempotencyKey(req),
       appBaseUrl: salesAppBaseUrl(req)
     });

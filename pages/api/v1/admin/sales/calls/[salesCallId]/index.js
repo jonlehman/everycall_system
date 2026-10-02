@@ -26,7 +26,9 @@ export default async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
     return res.status(200).json({
       ok: true,
-      call: await buildSalesCallView(context.pool, call)
+      call: await buildSalesCallView(context.pool, call, {
+        operatorUserId: context.session.role === "sales" ? context.admin.id : null
+      })
     });
   } catch (error) {
     return sendSalesApiError(res, error, "sales_call_load_failed");

@@ -54,7 +54,7 @@
     "typecheck": "pnpm -r typecheck",
     "dev:call-gateway": "PORT=3101 pnpm --filter @everycall/call-gateway dev",
     "dev:sales-call-gateway": "PORT=3102 pnpm --filter @everycall/sales-call-gateway dev",
-    "validate:sales-system": "node --no-warnings scripts/validate-sales-data.mjs && node --no-warnings scripts/validate-sales-database.mjs && node --no-warnings scripts/validate-sales-smartlead.mjs && node --no-warnings scripts/validate-sales-webrtc.mjs && node --no-warnings scripts/validate-sales-gateway-client.mjs && node --no-warnings scripts/validate-sales-telephony.mjs && pnpm --filter @everycall/sales-call-gateway validate",
+    "validate:sales-system": "node --no-warnings scripts/validate-sales-auth.mjs && node --no-warnings scripts/validate-sales-data.mjs && node --no-warnings scripts/validate-sales-database.mjs && node --no-warnings scripts/validate-sales-smartlead.mjs && node --no-warnings scripts/validate-sales-webrtc.mjs && node --no-warnings scripts/validate-sales-gateway-client.mjs && node --no-warnings scripts/validate-sales-telephony.mjs && pnpm --filter @everycall/sales-call-gateway validate",
     "smoke": "node scripts/smoke.mjs",
     "smoke:production": "node scripts/smoke-production.mjs",
     "test:client-ui:v2:e2e": "node scripts/test-client-ui-v2-e2e.mjs",

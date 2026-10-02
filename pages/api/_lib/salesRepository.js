@@ -923,7 +923,10 @@ export async function getSalesProspect(pool, prospectId) {
   return serializeProspect(result.rows[0]);
 }
 
-export async function getSalesProspectDetail(pool, prospectId) {
+export async function getSalesProspectDetail(pool, prospectId, { operatorUserId = null } = {}) {
+  const ownerScoped = operatorUserId !== null;
+  const actorId = Number(operatorUserId);
+  if (ownerScoped && (!Number.isSafeInteger(actorId) || actorId <= 0)) return null;
   const prospect = await getSalesProspect(pool, prospectId);
   if (!prospect) return null;
   const [notes, calls, invitations, profile, followups] = await Promise.all([
@@ -939,16 +942,24 @@ export async function getSalesProspectDetail(pool, prospectId) {
       `SELECT *
        FROM sales_call_sessions
        WHERE prospect_id = $1
+         ${ownerScoped ? "AND admin_user_id = $2" : ""}
        ORDER BY created_at DESC
        LIMIT 100`,
-      [prospect.prospectId]
+      ownerScoped ? [prospect.prospectId, actorId] : [prospect.prospectId]
     ),
     pool.query(
       `${SIGNUP_INVITATION_PROGRESS_SELECT}
        WHERE i.prospect_id = $1
+         ${ownerScoped ? `AND i.created_by_admin_user_id = $2
+           AND EXISTS (
+             SELECT 1 FROM sales_call_sessions owned_call
+             WHERE owned_call.sales_call_id = i.sales_call_id
+               AND owned_call.prospect_id = i.prospect_id
+               AND owned_call.admin_user_id = $2
+           )` : ""}
        ORDER BY i.created_at DESC
        LIMIT 100`,
-      [prospect.prospectId]
+      ownerScoped ? [prospect.prospectId, actorId] : [prospect.prospectId]
     ),
     pool.query(
       `SELECT *
@@ -1875,7 +1886,8 @@ export async function addSalesProspectNote(pool, {
   prospectId,
   salesCallId = null,
   body,
-  adminUserId
+  adminUserId,
+  requireCallOwnership = false
 }) {
   const normalizedBody = normalizeSalesText(body, MAX_NOTE_LENGTH);
   if (!normalizedBody) throw salesError("note_required", "Note text is required.");
@@ -1884,7 +1896,7 @@ export async function addSalesProspectNote(pool, {
   const normalizedSalesCallId = normalizeSalesText(salesCallId, 200) || null;
   if (normalizedSalesCallId) {
     const callMatch = await pool.query(
-      `SELECT 1
+      `SELECT admin_user_id
        FROM sales_call_sessions
        WHERE sales_call_id = $1
          AND prospect_id = $2
@@ -1897,6 +1909,9 @@ export async function addSalesProspectNote(pool, {
         "The selected sales call does not belong to this prospect.",
         409
       );
+    }
+    if (requireCallOwnership && Number(callMatch.rows[0].admin_user_id) !== Number(adminUserId)) {
+      throw salesError("sales_call_not_owned", "The selected sales call is not yours.", 403);
     }
   }
   const noteId = createId("sales_note");
@@ -2408,6 +2423,7 @@ export async function createSalesSignupInvitation(pool, {
   contactEmail,
   leadDeliveryEmail,
   adminUserId,
+  requireCallOwnership = false,
   expiresInMinutes,
   idempotencyKey,
   appBaseUrl = ""
@@ -2431,9 +2447,13 @@ export async function createSalesSignupInvitation(pool, {
     );
   }
   const normalizedSalesCallId = normalizeSalesText(salesCallId, 200) || null;
+  const actorId = Number(adminUserId);
+  if (requireCallOwnership && (!normalizedSalesCallId || !Number.isSafeInteger(actorId) || actorId <= 0)) {
+    throw salesError("sales_call_required", "Your sales call is required to send a signup invitation.", 403);
+  }
   if (normalizedSalesCallId) {
     const callMatch = await pool.query(
-      `SELECT 1
+      `SELECT admin_user_id
        FROM sales_call_sessions
        WHERE sales_call_id = $1
          AND prospect_id = $2
@@ -2446,6 +2466,9 @@ export async function createSalesSignupInvitation(pool, {
         "The selected sales call does not belong to this prospect.",
         409
       );
+    }
+    if (requireCallOwnership && Number(callMatch.rows[0].admin_user_id) !== actorId) {
+      throw salesError("sales_call_forbidden", "This sales call belongs to another operator.", 403);
     }
   }
   const configuredTtl = Number.parseInt(
@@ -2463,7 +2486,6 @@ export async function createSalesSignupInvitation(pool, {
   if (!normalizedIdempotencyKey) {
     throw salesError("idempotency_key_required", "Idempotency-Key header is required.", 400);
   }
-  const actorId = Number(adminUserId);
   const creationIdempotencyHash = crypto
     .createHash("sha256")
     .update(`${actorId}|${normalizedIdempotencyKey}`, "utf8")
@@ -2601,12 +2623,22 @@ function serializeSignupInvitation(row) {
   };
 }
 
-export async function getSalesSignupInvitation(pool, invitationId) {
+export async function getSalesSignupInvitation(pool, invitationId, { operatorUserId = null } = {}) {
+  const ownerScoped = operatorUserId !== null;
+  const actorId = Number(operatorUserId);
+  if (ownerScoped && (!Number.isSafeInteger(actorId) || actorId <= 0)) return null;
   const result = await pool.query(
     `${SIGNUP_INVITATION_PROGRESS_SELECT}
      WHERE i.invitation_id = $1
+       ${ownerScoped ? `AND i.created_by_admin_user_id = $2
+         AND EXISTS (
+           SELECT 1 FROM sales_call_sessions owned_call
+           WHERE owned_call.sales_call_id = i.sales_call_id
+             AND owned_call.prospect_id = i.prospect_id
+             AND owned_call.admin_user_id = $2
+         )` : ""}
      LIMIT 1`,
-    [normalizeSalesText(invitationId, 200)]
+    ownerScoped ? [normalizeSalesText(invitationId, 200), actorId] : [normalizeSalesText(invitationId, 200)]
   );
   return serializeSignupInvitation(result.rows[0]);
 }

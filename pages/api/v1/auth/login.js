@@ -1,6 +1,12 @@
 import bcrypt from "bcryptjs";
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { createSession, setSessionCookie } from "../../_lib/auth.js";
+import {
+  clearSalesSessionCookie,
+  createSession,
+  deleteSalesSession,
+  isAdminRole,
+  setSessionCookie
+} from "../../_lib/auth.js";
 import { writeAuditLog } from "../../_lib/auditLog.js";
 import { enforceRateLimit, getClientIp } from "../../_lib/rateLimit.js";
 
@@ -41,6 +47,9 @@ export default async function handler(req, res) {
     if (!email || !password) {
       return res.status(400).json({ error: "missing_fields" });
     }
+    if (!["admin", "client", "tenant"].includes(role)) {
+      return res.status(400).json({ error: "invalid_role" });
+    }
 
     const accountLimit = await enforceRateLimit(res, pool, {
       scope: "auth.login.account",
@@ -64,7 +73,9 @@ export default async function handler(req, res) {
       if (!row.rowCount) {
         const bootstrapEmail = normalizeText(process.env.ADMIN_BOOTSTRAP_EMAIL).toLowerCase();
         const bootstrapPassword = String(process.env.ADMIN_BOOTSTRAP_PASSWORD || "");
-        const adminCount = await pool.query(`SELECT COUNT(*)::int AS count FROM admin_users`);
+        const adminCount = await pool.query(
+          `SELECT COUNT(*)::int AS count FROM admin_users WHERE role IN ('admin', 'super_admin')`
+        );
         const bootstrapAllowed = Number(adminCount.rows?.[0]?.count || 0) === 0;
         if (bootstrapAllowed && bootstrapEmail && bootstrapPassword && email === bootstrapEmail && password === bootstrapPassword) {
           const hash = await bcrypt.hash(password, 10);
@@ -76,7 +87,10 @@ export default async function handler(req, res) {
           );
           const user = inserted.rows[0];
           const sessionId = await createSession({ userId: user.id, tenantKey: null, role: "admin" });
-          if (sessionId) setSessionCookie(res, sessionId);
+          if (!sessionId) return res.status(500).json({ error: "database_unavailable" });
+          await deleteSalesSession(req);
+          clearSalesSessionCookie(res);
+          setSessionCookie(res, sessionId);
           await writeAuditLog(pool, {
             tenantKey: null,
             actor: `admin:${user.id}`,
@@ -95,6 +109,15 @@ export default async function handler(req, res) {
       }
 
       const user = row.rows[0];
+      if (!isAdminRole(user.role)) {
+        await writeAuditLog(pool, {
+          tenantKey: null,
+          actor: "anonymous",
+          action: "auth.login.failed",
+          details: { role: "admin", email, reason: "invalid_credentials", ip: clientIp }
+        });
+        return res.status(401).json({ error: "invalid_credentials" });
+      }
       if (!user.password_hash) {
         await writeAuditLog(pool, {
           tenantKey: null,
@@ -115,7 +138,10 @@ export default async function handler(req, res) {
         return res.status(401).json({ error: "invalid_credentials" });
       }
       const sessionId = await createSession({ userId: user.id, tenantKey: null, role: "admin" });
-      if (sessionId) setSessionCookie(res, sessionId);
+      if (!sessionId) return res.status(500).json({ error: "database_unavailable" });
+      await deleteSalesSession(req);
+      clearSalesSessionCookie(res);
+      setSessionCookie(res, sessionId);
       await pool.query(
         `UPDATE admin_users
          SET last_active_at = NOW()
@@ -177,7 +203,10 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "invalid_credentials" });
     }
     const sessionId = await createSession({ userId: user.id, tenantKey: user.tenant_key, role: "tenant" });
-    if (sessionId) setSessionCookie(res, sessionId);
+    if (!sessionId) return res.status(500).json({ error: "database_unavailable" });
+    await deleteSalesSession(req);
+    clearSalesSessionCookie(res);
+    setSessionCookie(res, sessionId);
     await writeAuditLog(pool, {
       tenantKey: user.tenant_key || null,
       actor: `tenant:${user.id}`,

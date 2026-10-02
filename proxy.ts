@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 const protectedPaths = ['/client', '/admin', '/dashboard', '/config'];
+const salesPath = (pathname: string) => pathname === '/sales' || pathname.startsWith('/sales/');
 const clientBillingPath = '/client/account/billing';
 const billingAllowedClientPaths = new Set([
   clientBillingPath,
@@ -26,9 +27,17 @@ export async function proxy(req: Request) {
     headers: { cookie: cookieHeader }
   });
   const me = await meResp.json().catch(() => ({ authenticated: false }));
+  const getSalesState = async () => {
+    const response = await fetch(new URL('/api/v1/sales/auth/me', url.origin), {
+      headers: { cookie: cookieHeader }
+    });
+    return response.ok ? response.json().catch(() => ({ authenticated: false })) : { authenticated: false };
+  };
 
   if (pathname === '/') {
     if (!me?.authenticated) {
+      const sales = await getSalesState();
+      if (sales?.authenticated) return NextResponse.redirect(new URL('/sales', url.origin));
       return NextResponse.redirect(new URL('/login', url.origin));
     }
     if (me.role === 'admin') {
@@ -46,6 +55,20 @@ export async function proxy(req: Request) {
       clientUrl.searchParams.set('tenantKey', String(me.tenantKey));
     }
     return NextResponse.redirect(clientUrl);
+  }
+
+  if (pathname === '/admin/sales') {
+    return NextResponse.redirect(new URL('/sales', url.origin));
+  }
+
+  if (salesPath(pathname)) {
+    if (pathname === '/sales/login') return NextResponse.next();
+    if (me?.authenticated && me.role === 'admin') return NextResponse.next();
+    const sales = await getSalesState();
+    if (sales?.authenticated) return NextResponse.next();
+    const redirectUrl = new URL('/sales/login', url.origin);
+    redirectUrl.searchParams.set('next', `${pathname}${url.search}`);
+    return NextResponse.redirect(redirectUrl);
   }
 
   if (!protectedPaths.some((path) => pathname.startsWith(path))) {
@@ -86,5 +109,5 @@ export async function proxy(req: Request) {
 }
 
 export const config = {
-  matcher: ['/', '/client/:path*', '/admin/:path*', '/dashboard', '/config']
+  matcher: ['/', '/client/:path*', '/admin/:path*', '/sales/:path*', '/dashboard', '/config']
 };

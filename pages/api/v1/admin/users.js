@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { requireSession } from "../../_lib/auth.js";
+import { writeAuditLog } from "../../_lib/auditLog.js";
 
 export default async function handler(req, res) {
   try {
@@ -15,7 +16,7 @@ export default async function handler(req, res) {
 
     if (req.method === "GET") {
       const rows = await pool.query(
-        `SELECT username, email, role, last_active_at
+        `SELECT id, username, email, role, last_active_at
          FROM admin_users
          ORDER BY username ASC`
       );
@@ -31,16 +32,54 @@ export default async function handler(req, res) {
       if (!email || !password) {
         return res.status(400).json({ error: "missing_fields" });
       }
+      if (!["admin", "super_admin", "sales"].includes(role)) {
+        return res.status(400).json({ error: "invalid_role" });
+      }
+      if (password.length < 8) {
+        return res.status(400).json({ error: "password_too_short" });
+      }
       const hash = await bcrypt.hash(password, 10);
-      await pool.query(
-        `INSERT INTO admin_users (username, email, role, password_hash)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (email)
-         DO UPDATE SET username = EXCLUDED.username,
-                       role = EXCLUDED.role,
-                       password_hash = EXCLUDED.password_hash`,
-        [username, email, role, hash]
-      );
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const saved = await client.query(
+          `INSERT INTO admin_users (username, email, role, password_hash)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (email)
+           DO UPDATE SET username = EXCLUDED.username,
+                         role = EXCLUDED.role,
+                         password_hash = EXCLUDED.password_hash
+           RETURNING id`,
+          [username, email, role, hash]
+        );
+        const userId = saved.rows[0].id;
+        if (role === "sales") {
+          await client.query(
+            `INSERT INTO sales_operator_settings (admin_user_id, display_name, active)
+             VALUES ($1, $2, TRUE)
+             ON CONFLICT (admin_user_id) DO NOTHING`,
+            [userId, username]
+          );
+        }
+        await client.query(
+          `DELETE FROM sessions WHERE user_id = $1 AND role IN ('admin', 'sales')`,
+          [userId]
+        );
+        await client.query(
+          `DELETE FROM auth_tokens WHERE user_id = $1 AND email = $2 AND tenant_key IS NULL`,
+          [userId, email]
+        );
+        await writeAuditLog(client, {
+          actor: `admin:${session.user_id}`, action: "admin.user.saved",
+          details: { userId, email, role, sessionsRevoked: true }
+        });
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
       return res.status(200).json({ ok: true });
     }
 

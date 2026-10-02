@@ -14,7 +14,8 @@ export default async function handler(req, res) {
     if (!context) return;
     const invitation = await getSalesSignupInvitation(
       context.pool,
-      req.query?.invitationId
+      req.query?.invitationId,
+      { operatorUserId: context.session.role === "sales" ? context.admin.id : null }
     );
     if (!invitation) {
       return res.status(404).json({ ok: false, error: "signup_invitation_not_found" });

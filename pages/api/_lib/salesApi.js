@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { getAdminActor, requireSession } from "./auth.js";
+import { getAdminActor, getSalesSession, hasSalesSessionCookie, requireSession } from "./auth.js";
 import { buildAuditActor, writeAuditLog } from "./auditLog.js";
 import { ensureTables, getPool } from "./db.js";
 import {
@@ -25,6 +25,14 @@ export async function requireSalesAdmin(req, res) {
     return null;
   }
   await ensureTables(pool);
+  if (hasSalesSessionCookie(req)) {
+    const session = await getSalesSession(req);
+    if (!session) {
+      res.status(401).json({ ok: false, error: "unauthorized" });
+      return null;
+    }
+    return { pool, session, admin: session.user };
+  }
   const session = await requireSession(req, res, { role: "admin" });
   if (!session) return null;
   const admin = await getAdminActor(session);
@@ -33,6 +41,12 @@ export async function requireSalesAdmin(req, res) {
     return null;
   }
   return { pool, session, admin };
+}
+
+function salesAuditActor(context) {
+  return context.session.role === "sales"
+    ? `sales:${context.session.user_id}`
+    : buildAuditActor({ session: context.session, admin: context.admin });
 }
 
 function safeEqual(left, right) {
@@ -107,10 +121,7 @@ export async function runSalesAdminMutation(req, context, {
     const response = await callback();
     if (action) {
       await writeAuditLog(context.pool, {
-        actor: buildAuditActor({
-          session: context.session,
-          admin: context.admin
-        }),
+        actor: salesAuditActor(context),
         action,
         details: typeof auditDetails === "function"
           ? auditDetails(response)
@@ -124,10 +135,7 @@ export async function runSalesAdminMutation(req, context, {
 
 export async function writeSalesAdminAudit(context, action, details = null) {
   await writeAuditLog(context.pool, {
-    actor: buildAuditActor({
-      session: context.session,
-      admin: context.admin
-    }),
+    actor: salesAuditActor(context),
     action,
     details
   });

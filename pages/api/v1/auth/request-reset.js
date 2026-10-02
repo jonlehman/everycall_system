@@ -48,7 +48,10 @@ export default async function handler(req, res) {
 
     let user = null;
     if (role === "admin") {
-      const row = await pool.query(`SELECT id, email FROM admin_users WHERE email = $1 LIMIT 1`, [email]);
+      const row = await pool.query(
+        `SELECT id, email FROM admin_users WHERE email = $1 AND role IN ('admin', 'super_admin') LIMIT 1`,
+        [email]
+      );
       user = row.rows[0] || null;
     } else {
       const row = await pool.query(`SELECT id, email, tenant_key FROM tenant_users WHERE email = $1 LIMIT 1`, [email]);

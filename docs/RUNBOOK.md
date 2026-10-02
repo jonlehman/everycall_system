@@ -41,6 +41,7 @@
 
 ## Outbound Sales Calling
 - Apply `migrations/0032_outbound_sales_demo.sql` before enabling the Sales Console.
+- Sales operators use the standalone `/sales/login` link and are limited to `/sales` and Sales APIs. Admins can open `/sales` with their existing login; the Sales Console is not in the admin navigation. Create or reset a sales-only account in `/admin/users` with the `Sales` role. The account is provisioned with active operator settings; an admin can disable it through operator settings. Do not give sales operators an admin login.
 - Configure the Vercel values documented under `# outbound sales console` in `.env.example`.
 - Leave `SALES_OUTBOUND_ENABLED=false` until the migration, credentials, webhook routes, and controlled provider canary have passed. Human-requested website demo builds continue to run while it is false; set it to `true` only to start automated sales follow-up processing.
 - Configure the isolated Render values under `# isolated outbound sales call gateway`. Never substitute generic production `TELNYX_*` or `OPENAI_*` credentials.

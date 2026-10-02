@@ -87,7 +87,8 @@ export default async function handler(req, res) {
         callerName: operatorSettings?.displayName || "EveryCall"
       });
       const view = await buildSalesCallView(context.pool, call, {
-        webrtc: { callOptions }
+        webrtc: { callOptions },
+        operatorUserId: context.session.role === "sales" ? context.admin.id : null
       });
       return {
         status: 201,

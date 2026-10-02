@@ -58,7 +58,9 @@ export default async function handler(req, res) {
         status: 200,
         body: {
           ok: true,
-          call: await buildSalesCallView(context.pool, updated)
+          call: await buildSalesCallView(context.pool, updated, {
+            operatorUserId: context.session.role === "sales" ? context.admin.id : null
+          })
         }
       };
     });

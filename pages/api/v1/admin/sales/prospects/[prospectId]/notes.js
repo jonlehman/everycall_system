@@ -33,7 +33,8 @@ export default async function handler(req, res) {
           prospectId,
           salesCallId: request.salesCallId,
           body: request.body,
-          adminUserId: context.admin.id
+          adminUserId: context.admin.id,
+          requireCallOwnership: context.session.role === "sales"
         })
       }
     }));
