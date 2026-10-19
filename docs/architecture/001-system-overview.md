@@ -53,7 +53,7 @@ rollback path.
 - Dead-letter queue for failed async tasks.
 
 ## Outbound Sales Isolation
-- The sales console and its tables are admin-only and separate from tenants, production calls, and public-demo sessions.
+- Sales administration and reporting live at `/admin/sales`; Sales-role operators and admins use the separate caller workspace at `/sales`. Dedicated Sales sessions cannot access admin pages or unrelated APIs. Sales tables remain separate from tenants, production calls, and public-demo sessions.
 - A dedicated Telnyx sales connection and credential park the browser operator leg before the sales gateway creates a conference.
 - The sales gateway uses only `SALES_TELNYX_*` and `SALES_OPENAI_*` credentials and verifies both providers' webhook signatures.
 - OpenAI Realtime monitor sockets and per-call locks are process-local, so the sales gateway runs as exactly one service instance until shared session coordination is introduced.

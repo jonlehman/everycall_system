@@ -1,4 +1,5 @@
 import {
+  evaluateSalesCallingWindow,
   getSalesOperatorSettings,
   upsertSalesOperatorSettings
 } from "../../../../_lib/salesRepository.js";
@@ -17,6 +18,28 @@ export default async function handler(req, res) {
   try {
     const context = await requireSalesAdmin(req, res);
     if (!context) return;
+    if (req.method === "GET" && req.query?.list === "true") {
+      if (context.session.role !== "admin") {
+        return res.status(403).json({ ok: false, error: "forbidden" });
+      }
+      const result = await context.pool.query(
+        `SELECT u.id, u.username, u.email, u.role,
+          s.admin_user_id AS "settingsUserId", s.display_name AS "displayName",
+          s.telnyx_telephony_credential_id AS "telnyxTelephonyCredentialId",
+          s.caller_id_number AS "callerIdNumber", s.active
+         FROM admin_users u LEFT JOIN sales_operator_settings s ON s.admin_user_id = u.id
+         WHERE u.role IN ('sales', 'admin', 'super_admin')
+         ORDER BY u.username, u.id`
+      );
+      const window = evaluateSalesCallingWindow(null);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json({ ok: true, operators: result.rows, policy: {
+        outboundEnabled: String(process.env.SALES_OUTBOUND_ENABLED || "false").toLowerCase() === "true",
+        callingWindowStart: window.startLocal,
+        callingWindowEnd: window.endLocal,
+        missingTimezonePolicy: window.missingTimezonePolicy
+      } });
+    }
     if (req.method === "GET") {
       const settings = await getSalesOperatorSettings(context.pool, context.admin.id);
       const visibleSettings = context.session.role === "sales" && settings

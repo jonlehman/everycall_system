@@ -1,5 +1,5 @@
-import SalesConsole from '../admin/sales/page';
+import CallerWorkspace from '../admin/sales/CallerWorkspace';
 
 export default function SalesPage() {
-  return <SalesConsole />;
+  return <CallerWorkspace />;
 }

@@ -878,7 +878,7 @@ async function validateStaticIsolationAndRoutes() {
   );
 
   const salesConsole = await fs.readFile(
-    path.join(root, "app/admin/sales/page.jsx"),
+    path.join(root, "app/admin/sales/CallerWorkspace.jsx"),
     "utf8"
   );
   assert.match(salesConsole, /const RECEPTIONIST_MUTE_SETTLE_MS = 1000/);
@@ -890,17 +890,21 @@ async function validateStaticIsolationAndRoutes() {
   assert.ok(startActionRequestIndex > muteSettleIndex);
   assert.match(salesConsole, /if \(action === 'end_demo'\) setBrowserCallMuted\(false\)/);
   assert.match(salesConsole, /operatorMuted \? 'Unmute' : 'Mute'/);
-  assert.match(salesConsole, /\/samples\/sales-prospects-demo\.csv/);
-  assert.match(salesConsole, /Skip unusable demo/);
-  assert.match(salesConsole, /Reload calling queue/);
-  assert.match(salesConsole, /Queue website demo build/);
-  assert.match(salesConsole, /Queue demo builds for current \+ next 10/);
+  const csvPanel = await fs.readFile(path.join(root, "app/admin/sales/CsvImportPanel.jsx"), "utf8");
+  assert.match(csvPanel, /\/samples\/sales-prospects-demo\.csv/);
+  const queuePanel = await fs.readFile(path.join(root, "app/admin/sales/QueuePanel.jsx"), "utf8");
+  assert.match(queuePanel, /Skip unusable demo/);
+  assert.match(queuePanel, /Reload calling queue/);
+  assert.match(queuePanel, /Queue website demo build/);
+  assert.match(queuePanel, /Queue demo builds for current \+ next 10/);
   assert.match(salesConsole, /Demo needs rebuilding/);
   assert.doesNotMatch(salesConsole, />Refresh</);
   assert.doesNotMatch(salesConsole, /Prepare demo/);
   assert.doesNotMatch(salesConsole, /Replenish warm queue/);
   assert.match(salesConsole, /Prior activity/);
-  assert.match(salesConsole, /ProspectsManager/);
+  const adminSales = await fs.readFile(path.join(root, "app/admin/sales/page.jsx"), "utf8");
+  assert.match(adminSales, /ProspectsManager/);
+  assert.doesNotMatch(salesConsole, /ProspectsManager|CsvImportPanel/);
   assert.doesNotMatch(
     salesConsole,
     /\|\|\s*invitation\.convertedTenantKey\)\s*return 4/

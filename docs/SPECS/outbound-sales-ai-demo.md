@@ -2,7 +2,51 @@
 
 ## Purpose
 
-Provide an admin-only, human-led browser dialer that can bring a prepared EveryCall receptionist into an active sales call without changing production inbound and public-demo behavior.
+Provide a Sales-role and admin-accessible, human-led browser dialer that can bring a prepared EveryCall receptionist into an active sales call without changing production inbound and public-demo behavior.
+
+## Administration and Caller Workspace
+
+- Admin **Operations → Sales** (`/admin/sales`) owns prospect creation, editing,
+  removal, CSV export, CSV/TSV import and mapping, queue/demo preparation, rep
+  reporting, and operator settings. The existing prospect detail views retain
+  call outcomes and follow-up status. An explicit **Open caller workspace** link
+  opens `/sales` in a new tab without initializing a phone on the admin page.
+- `/sales` is the caller workspace: current prospect and primary call controls,
+  concise website context, assisted signup, wrap-up outcome/notes, then the next
+  queue. Bulk prospect management and imports belong to the admin workspace.
+  Browser connection details and reconnect controls remain available to reps.
+- Both screens share queue loading, preparation, retry and skip behavior; only
+  the caller screen initializes WebRTC and automatically warms its queue.
+  Administrative queue preparation is explicit. Import validation still uses
+  the effective missing-timezone policy.
+- `/sales/login`, dedicated Sales cookies, existing call/note/invitation ownership
+  checks, and admin route isolation remain in force. Existing Sales API access
+  contracts remain unchanged; removing bulk controls from the caller UI is not
+  a new API permission policy. The new reports and operator-directory reads
+  require an admin session and return 403 for Sales sessions.
+- Operator settings expose display name, dedicated sales Telnyx credential ID,
+  sales caller ID, and active status using the existing audited/idempotent update
+  API. Account creation/password reset links to Admin Users. Calling windows,
+  missing-timezone policy, and the outbound-enabled flag are displayed from
+  deployment configuration; provider secrets, campaign IDs, and rollout gates
+  remain deployment-managed.
+
+### Reporting definitions
+
+Reports filter `sales_call_sessions.created_at` by inclusive UTC calendar dates
+(default last 30 days, maximum 366 days) and optional rep or unassigned/deleted
+user. All matching records contribute to totals; only the most recent 100 are
+listed. No schema changes or provider calls are needed to generate a report.
+
+- **Call sessions:** created session records, including failures before a dial.
+- **Connected:** sessions with `connected_at` recorded.
+- **Demos started:** sessions with `demo_started_at` recorded.
+- **Outcomes saved:** sessions with `outcome_recorded_at` recorded.
+- Outcome breakdowns show the stored outcome, or **Not recorded**. Outcomes can
+  be recorded by reps or updated when signup completes. They are not revenue
+  metrics or independently verified conversions. Events and outcomes may occur
+  after the filtered creation dates; attribution stays with the session creator.
+- Zero matching records is an explicit empty state, not fabricated activity.
 
 ## Invariants
 

@@ -178,6 +178,19 @@ if (activityProspectId) {
   );
 }
 
+// Reporting fixtures are database records only; they never create provider calls.
+const secondRep = (await pool.query(
+  `INSERT INTO admin_users (username, email, role) VALUES ('Jordan Rep', 'jordan-rep@example.com', 'sales') RETURNING id`
+)).rows[0];
+await pool.query(`INSERT INTO sales_operator_settings (admin_user_id, display_name, active) VALUES ($1, 'Jordan Rep', TRUE)`, [secondRep.id]);
+await pool.query(`INSERT INTO sales_call_sessions (sales_call_id, prospect_id, admin_user_id, state,
+    created_at, connected_at, demo_started_at, ended_at, outcome, outcome_recorded_at) VALUES
+  ('fixture-report-demo', $1, $2, 'ended', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days', 'demo_completed', NOW() - INTERVAL '2 days'),
+  ('fixture-report-no-answer', $1, $2, 'ended', NOW() - INTERVAL '1 day', NULL, NULL, NOW() - INTERVAL '1 day', 'no_answer', NOW() - INTERVAL '1 day'),
+  ('fixture-report-connected', $1, $3, 'ended', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day', NULL, NOW() - INTERVAL '1 day', 'callback_requested', NOW() - INTERVAL '1 day'),
+  ('fixture-report-old', $1, $3, 'failed', NOW() - INTERVAL '60 days', NULL, NULL, NOW() - INTERVAL '60 days', NULL, NULL)`,
+  [imported.imported[0].prospectId, salesOperatorId, secondRep.id]);
+
 const server = new PGLiteSocketServer({
   db,
   host: "127.0.0.1",

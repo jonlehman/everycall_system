@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import { stripTypeScriptTypes } from 'node:module';
 import bcrypt from 'bcryptjs';
 import { PGlite } from '@electric-sql/pglite';
 import { ensureTables } from '../pages/api/_lib/db.js';
@@ -11,6 +12,8 @@ import salesLogin from '../pages/api/v1/sales/auth/login.js';
 import salesMe from '../pages/api/v1/sales/auth/me.js';
 import adminOverview from '../pages/api/v1/admin/overview.js';
 import adminUsers from '../pages/api/v1/admin/users.js';
+import { getSalesReport, salesReportFilters } from '../pages/api/_lib/salesReporting.js';
+import salesReports from '../pages/api/v1/admin/sales/reports.js';
 import operatorSettings from '../pages/api/v1/admin/sales/operator-settings/index.js';
 
 process.env.DATABASE_URL = 'postgres://sales-auth-fixture';
@@ -28,7 +31,7 @@ const pool = { query, connect: async () => client };
 globalThis.__everycallPool = pool;
 
 function request(cookie = '', method = 'GET', body = {}) {
-  return { method, body, headers: { cookie }, socket: { remoteAddress: '127.0.0.1' } };
+  return { method, body, headers: { cookie, 'idempotency-key': globalThis.crypto.randomUUID() }, socket: { remoteAddress: '127.0.0.1' } };
 }
 
 function response() {
@@ -92,6 +95,87 @@ try {
   assert.equal((await call(adminOverview, request(salesCookie))).statusCode, 401);
   assert.equal((await call(adminOverview, request(copiedCookie))).statusCode, 401);
   assert.equal((await call(operatorSettings, request(salesCookie, 'PUT', { active: true }))).statusCode, 403);
+
+  const operatorListRequest = (cookie) => ({ ...request(cookie), query: { list: 'true' } });
+  assert.equal((await call(operatorSettings, operatorListRequest(salesCookie))).statusCode, 403);
+  const operators = await call(operatorSettings, operatorListRequest(adminCookie));
+  assert.equal(operators.statusCode, 200);
+  assert.equal(operators.body.operators.length, 2);
+  assert.equal((await call(operatorSettings, request(salesCookie))).body.settings.active, true);
+  assert.equal((await call(salesReports, request(salesCookie))).statusCode, 403);
+  assert.equal((await call(salesReports, request(copiedCookie))).statusCode, 401);
+  assert.equal((await call(salesReports, request(''))).statusCode, 401);
+  assert.equal((await call(salesReports, request(adminCookie))).body.totals.sessions, 0);
+  assert.equal((await call(salesReports, { ...request(adminCookie), query: { from: '2026-02-30' } })).statusCode, 400);
+  await query(`INSERT INTO sales_prospects (prospect_id, source_key, business_name, phone_e164, timezone, permission_granted)
+    VALUES ('report-prospect', 'report-fixture', 'Reporting fixture', '+12065550111', 'UTC', TRUE)`);
+  await query(`INSERT INTO sales_call_sessions (sales_call_id, prospect_id, admin_user_id, state,
+      created_at, connected_at, demo_started_at, ended_at, outcome, outcome_recorded_at) VALUES
+    ('r1', 'report-prospect', $1, 'ended', '2026-10-01T00:00:00Z', '2026-10-01T00:00:10Z', '2026-10-01T00:01:00Z', '2026-10-01T00:02:00Z', 'demo_completed', '2026-10-01T00:03:00Z'),
+    ('r2', 'report-prospect', $1, 'failed', '2026-10-01T23:59:59Z', NULL, NULL, '2026-10-02T00:00:01Z', 'no_answer', '2026-10-02T00:01:00Z'),
+    ('r3', 'report-prospect', $2, 'ended', '2026-10-01T12:00:00Z', '2026-10-01T12:00:10Z', NULL, '2026-10-01T12:01:00Z', NULL, NULL),
+    ('r4', 'report-prospect', $1, 'created', '2026-10-02T00:00:00Z', NULL, NULL, NULL, NULL, NULL),
+    ('r5', 'report-prospect', NULL, 'failed', '2026-10-01T10:00:00Z', NULL, NULL, NULL, NULL, NULL),
+    ('r0', 'report-prospect', $1, 'failed', '2026-09-30T23:59:59Z', NULL, NULL, NULL, NULL, NULL)`, [sales.id, admin.id]);
+  // Query boundaries remain UTC even when the database connection is not.
+  await query("SET TIME ZONE 'America/Los_Angeles'");
+  const report = await getSalesReport(pool, { from: '2026-10-01', to: '2026-10-01' });
+  assert.deepEqual(report.totals, { sessions: 4, connected: 2, demosStarted: 1, ended: 3, outcomesRecorded: 2 });
+  assert.equal(report.summary.length, 3);
+  assert.deepEqual(report.recent.map((row) => row.id), ['r2', 'r3', 'r5', 'r1']);
+  assert.equal(report.outcomes.find((row) => row.outcome === 'not_recorded').count, 2);
+  const singleRep = await getSalesReport(pool, { from: '2026-10-01', to: '2026-10-01', operator: String(sales.id) });
+  assert.equal(singleRep.totals.sessions, 2);
+  const unassigned = await getSalesReport(pool, { from: '2026-10-01', to: '2026-10-01', operator: 'unassigned' });
+  assert.equal(unassigned.totals.sessions, 1);
+  assert.equal((await getSalesReport(pool, { from: '2026-01-01', to: '2026-01-01' })).recent.length, 0);
+  assert.throws(() => salesReportFilters({ from: '2026-10-02', to: '2026-10-01' }), /valid UTC/);
+  assert.throws(() => salesReportFilters({ from: '2024-01-01', to: '2026-10-01' }), /valid UTC/);
+  assert.throws(() => salesReportFilters({ operator: '1 OR 1=1' }), /valid sales rep/);
+  // The detail cap must never cap aggregate totals.
+  await query(`INSERT INTO sales_call_sessions (sales_call_id, prospect_id, admin_user_id, created_at)
+    SELECT 'cap-' || value, 'report-prospect', $1, '2026-10-03T12:00:00Z'::timestamptz FROM generate_series(1, 105) value`, [sales.id]);
+  const capped = await getSalesReport(pool, { from: '2026-10-03', to: '2026-10-03' });
+  assert.equal(capped.totals.sessions, 105);
+  assert.equal(capped.recent.length, 100);
+  await query("SET TIME ZONE 'UTC'");
+  const savedSettings = await call(operatorSettings, request(adminCookie, 'PUT', {
+    adminUserId: sales.id, displayName: 'Updated rep', callerIdNumber: '+12065550123',
+    telnyxTelephonyCredentialId: 'dedicated-sales-credential', active: true
+  }));
+  assert.equal(savedSettings.statusCode, 200);
+  const listedSettings = (await call(operatorSettings, operatorListRequest(adminCookie))).body.operators.find((row) => Number(row.id) === Number(sales.id));
+  assert.equal(listedSettings.displayName, 'Updated rep');
+  assert.equal(listedSettings.telnyxTelephonyCredentialId, 'dedicated-sales-credential');
+  const salesSettings = (await call(operatorSettings, request(salesCookie))).body.settings;
+  assert.deepEqual(Object.keys(salesSettings).sort(), ['active', 'displayName']);
+
+  // Exercise the real proxy against the fixture auth endpoints. Resolve the
+  // Next module explicitly because this validator runs directly in Node.
+  const proxySource = stripTypeScriptTypes(await fs.readFile(new URL('../proxy.ts', import.meta.url), 'utf8'))
+    .replace("'next/server'", JSON.stringify(import.meta.resolve('next/server.js')));
+  const { proxy } = await import(`data:text/javascript;base64,${Buffer.from(proxySource).toString('base64')}`);
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url, options = {}) => {
+      const pathname = new URL(url).pathname;
+      assert.ok(['/api/v1/auth/me', '/api/v1/sales/auth/me'].includes(pathname));
+      const result = await call(pathname === '/api/v1/auth/me' ? adminMe : salesMe,
+        request(options.headers?.cookie || ''));
+      return Response.json(result.body, { status: result.statusCode });
+    };
+    const route = (pathname, cookie) => proxy(new Request(`https://everycall.test${pathname}`, { headers: { cookie } }));
+    assert.equal((await route('/admin/sales', adminCookie)).headers.get('x-middleware-next'), '1');
+    for (const cookie of [salesCookie, copiedCookie, '']) {
+      const result = await route('/admin/sales', cookie);
+      assert.equal(new URL(result.headers.get('location')).pathname, '/admin/login');
+    }
+    assert.equal((await route('/sales', salesCookie)).headers.get('x-middleware-next'), '1');
+    assert.equal((await route('/sales', adminCookie)).headers.get('x-middleware-next'), '1');
+    assert.equal(new URL((await route('/sales', '')).headers.get('location')).pathname, '/sales/login');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 
   const newSalesAccount = {
     email: 'new-seller@example.com', username: 'new-seller',

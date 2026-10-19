@@ -57,10 +57,6 @@ export async function proxy(req: Request) {
     return NextResponse.redirect(clientUrl);
   }
 
-  if (pathname === '/admin/sales') {
-    return NextResponse.redirect(new URL('/sales', url.origin));
-  }
-
   if (salesPath(pathname)) {
     if (pathname === '/sales/login') return NextResponse.next();
     if (me?.authenticated && me.role === 'admin') return NextResponse.next();
