@@ -24,30 +24,23 @@ function asStringArray(value: unknown) {
   return Array.isArray(value) ? value.map((item) => normalizeText(item)).filter(Boolean) : [];
 }
 
-function maxScore(values: string[], scores: Record<string, number>) {
-  let best = 0;
-  for (const value of values) {
-    const normalized = normalizeText(value).toLowerCase();
-    best = Math.max(best, scores[normalized] || 0);
-  }
-  return best;
+function maxScore(values: string[], scores: Record<string, number>, fallback = 0) {
+  const known = values.map((value) => scores[normalizeText(value).toLowerCase()])
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  // Zero is not a candidate: it would erase educational/marketing penalties.
+  return known.length ? Math.max(...known) : fallback;
 }
 
-const SOURCE_CHANNEL_SCORES: Record<string, number> = {
-  owner_interview: 0.1,
-  uploaded_document: 0.06,
-  website_file: 0.03,
-  website_page: 0
-};
-
+// A private intake channel alone confers no authority. Confirmation and document
+// classification are prerequisites, not bonuses that a channel score can bypass.
 const SOURCE_AUTHORITY_SCORES: Record<string, number> = {
-  owner_interview_confirmed: 0.12,
-  owner_interview_unconfirmed: 0.04,
-  uploaded_first_party_policy: 0.1,
-  uploaded_first_party_operational: 0.08,
-  uploaded_first_party_reference: 0.05,
-  uploaded_first_party_marketing: 0.01,
-  uploaded_unclassified_pending_review: 0.02,
+  owner_interview_confirmed: 0.22,
+  owner_interview_unconfirmed: -0.04,
+  uploaded_first_party_policy: 0.16,
+  uploaded_first_party_operational: 0.14,
+  uploaded_first_party_reference: -0.01,
+  uploaded_first_party_marketing: -0.06,
+  uploaded_unclassified_pending_review: -0.04,
   website_public_downloadable: 0.02,
   website_public_page: 0
 };
@@ -63,10 +56,6 @@ const CONTENT_CLASS_SCORES: Record<string, number> = {
 
 export function sourcePrecedenceScoreFromMetadata(metadataInput: unknown) {
   const metadata = asRecord(metadataInput);
-  const sourceChannels = uniqueValues([
-    normalizeText(metadata.source_channel),
-    ...asStringArray(metadata.source_channels)
-  ]);
   const sourceAuthorities = uniqueValues([
     normalizeText(metadata.source_authority),
     ...asStringArray(metadata.source_authorities)
@@ -76,8 +65,7 @@ export function sourcePrecedenceScoreFromMetadata(metadataInput: unknown) {
     ...asStringArray(metadata.content_classes)
   ]);
 
-  const score = maxScore(sourceChannels, SOURCE_CHANNEL_SCORES)
-    + maxScore(sourceAuthorities, SOURCE_AUTHORITY_SCORES)
+  const score = maxScore(sourceAuthorities, SOURCE_AUTHORITY_SCORES, -0.04)
     + maxScore(contentClasses, CONTENT_CLASS_SCORES);
 
   return Number(score.toFixed(4));

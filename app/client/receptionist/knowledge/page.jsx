@@ -12,6 +12,7 @@ import StepSection from '../../_components/StepSection';
 import { isKnowledgeBuildActive, resolveKnowledgeBuildHeaderStatus } from './buildHeaderStatus.mjs';
 import KnowsByHeartSection from './KnowsByHeartSection';
 import LiveBriefSection from './LiveBriefSection';
+import KnowledgeReviewSection from './KnowledgeReviewSection';
 
 function fetchJson(url, options) {
   return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
@@ -57,7 +58,7 @@ function buildBadgeTone(status) {
 
 function buildStatusLabel(status) {
   const normalized = String(status || '').trim().toLowerCase();
-  if (normalized === 'ready_to_publish') return 'Publishing Soon';
+  if (normalized === 'ready_to_publish') return 'Ready for Review';
   if (normalized === 'qa_blocked') return 'Needs Review';
   return formatLabel(normalized || status) || 'Unknown';
 }
@@ -294,7 +295,7 @@ const guideByContext = {
   websiteBuild: {
     step: '01',
     title: 'Rescan Website',
-    body: 'Rescan Website refreshes the website crawl and publishes it when ready.',
+    body: 'Rescan Website refreshes the website crawl. Review and publish the new build when it is ready.',
     tip: 'Use this after website changes.'
   },
   documentApply: {
@@ -486,7 +487,7 @@ export default function ReceptionistKnowledgePage() {
       await loadWorkspace({ silent: true });
       const finalStatus = String(data.status || '').trim().toLowerCase();
       setStatus({
-        message: `${isWebsiteBuild ? 'Website rebuild' : 'Document apply'} ${buildId || 'request'} ${finalStatus === 'running' ? 'is already running' : 'queued'} and will publish automatically when it is ready. This page will update automatically.`,
+        message: `${isWebsiteBuild ? 'Website rebuild' : 'Document apply'} ${buildId || 'request'} ${finalStatus === 'running' ? 'is already running' : 'queued'}. Review and publish it when ready. This page will update automatically.`,
         tone: 'ok'
       });
     } catch {
@@ -574,7 +575,9 @@ export default function ReceptionistKnowledgePage() {
         fileBase64: ''
       });
       await loadWorkspace({ silent: true });
-      setStatus({ message: sourceKind === 'single_page_url' ? 'Web page document saved. Apply documents to make it live.' : 'Uploaded document saved. Apply documents to make it live.', tone: 'ok' });
+      setStatus({ message: data.document?.review_required
+        ? 'Document submitted for approval. A second owner or admin must review it before it can be applied.'
+        : 'Document saved. Apply documents, then review and publish the new build.', tone: 'ok' });
     } catch {
       setStatus({ message: sourceKind === 'single_page_url' ? 'Could not save that web page document.' : 'Could not save uploaded document.', tone: 'bad' });
     } finally {
@@ -662,6 +665,11 @@ export default function ReceptionistKnowledgePage() {
         setStatus({ message: data?.message || 'Could not save those business facts.', tone: 'bad' });
         return;
       }
+      if (data.review_required) {
+        await loadWorkspace({ silent: true });
+        setStatus({ message: 'Business facts are awaiting a second owner or admin’s approval. After approval, submit these answers again to apply them.', tone: 'warn' });
+        return;
+      }
       const buildId = String(data?.build?.build_id || '').trim();
       if (buildId) {
         void fetch(`/api/v1/knowledge/builds/${encodeURIComponent(buildId)}/run`, {
@@ -672,7 +680,7 @@ export default function ReceptionistKnowledgePage() {
       }
       setCallerFaqConfirmation(data.confirmation || null);
       await loadWorkspace({ silent: true });
-      setStatus({ message: 'Business facts confirmed. The knowledge update is queued and will publish automatically.', tone: 'ok' });
+      setStatus({ message: 'Business facts submitted. Review any required approvals, then publish the knowledge update when it is ready.', tone: 'ok' });
     } catch {
       setStatus({ message: 'Could not save those business facts.', tone: 'bad' });
     } finally {
@@ -724,7 +732,7 @@ export default function ReceptionistKnowledgePage() {
     : hasPendingDocumentChanges
       ? { tone: 'warn', label: 'Documents Pending' }
       : latestBuildStatus === 'ready_to_publish'
-        ? { tone: 'warn', label: 'Publishing Soon' }
+        ? { tone: 'warn', label: 'Ready for Review' }
         : latestBuildStatus === 'published'
           ? null
           : { tone: 'warn', label: 'Create Knowledge Base' };
@@ -777,6 +785,7 @@ export default function ReceptionistKnowledgePage() {
     >
       <div className="mt-[36px] grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
         <div className="grid min-w-0 gap-3">
+          <KnowledgeReviewSection builds={buildState.builds} onPublished={() => loadWorkspace({ silent: true })} />
           {kbHighFlagCount > 0 ? (
             <button
               type="button"

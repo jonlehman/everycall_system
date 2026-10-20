@@ -269,6 +269,7 @@ export function createSalesCallOrchestrator({
             state: "failed",
             ai_state: "not_started",
             ...(conferenceId ? { conference_id: conferenceId } : {}),
+            metadata_json: { preparation_unknown_resources: conferenceId ? [] : ["conference"] },
             ...providerPatch,
             ended_at: nowIso(now)
           }
@@ -371,6 +372,12 @@ export function createSalesCallOrchestrator({
             ...salesTelnyxCallPatch("operator", selectedOperator),
             ...(prospect ? salesTelnyxCallPatch("prospect", prospect.call) : {}),
             ...(ai ? salesTelnyxCallPatch("ai", ai.call) : {}),
+            // A rejected dial without a returned call ID may have succeeded at
+            // the provider. Known-leg rollback cannot prove that leg is gone.
+            metadata_json: { preparation_unknown_resources: [
+              ...(!prospect?.call?.call_control_id ? ["prospect"] : []),
+              ...(!ai?.call?.call_control_id ? ["ai"] : [])
+            ] },
             ...providerPatch,
             ended_at: nowIso(now)
           }

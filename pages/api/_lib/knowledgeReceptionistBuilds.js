@@ -1,3 +1,4 @@
+import { assertKnowledgePublishAllowed, assertKnowledgeReviewer } from './knowledgeGovernance.js';
 import crypto from "node:crypto";
 import dns from "node:dns/promises";
 import net from "node:net";
@@ -600,9 +601,11 @@ function extractTagTextList(html, tagName) {
 function looksLikeBoilerplate(line) {
   const text = normalizeText(line).toLowerCase();
   if (!text) return true;
-  if (text.includes("privacy policy") || text.includes("terms of service")) return true;
-  if (text.includes("copyright")) return true;
-  if (text.includes("book online") || text.includes("call today")) return true;
+  // Suppress recognizable standalone labels only. A phrase inside a factual
+  // sentence is evidence, even when the same sentence also contains a CTA.
+  if (/^(privacy policy|terms of service)[.!\s]*$/.test(text)) return true;
+  if (/^(book online|call today)(?: for an appointment)?[.!\s]*$/.test(text)) return true;
+  if (/^(?:copyright|©)\s*(?:©\s*)?\d{4}(?:[-–]\d{4})?\s*(?:all rights reserved[.!]?)?$/.test(text)) return true;
   return false;
 }
 
@@ -814,14 +817,24 @@ export async function fetchWebsitePage(url, options = {}) {
         text: ""
       };
     }
-    const html = (await readResponseBufferWithLimit(response, MAX_WEBSITE_PAGE_BYTES)).toString("utf8");
+    const originalBytes = await readResponseBufferWithLimit(response, MAX_WEBSITE_PAGE_BYTES);
+    const html = originalBytes.toString("utf8");
+    const crawledAt = new Date().toISOString();
+    const originalCapture = {
+      encoding: "base64", body: originalBytes.toString("base64"),
+      sha256: crypto.createHash("sha256").update(originalBytes).digest("hex"),
+      byte_length: originalBytes.length, fetched_at: crawledAt,
+      requested_url: String(url), fetched_url: finalUrl, status: response.status,
+      content_type: response.headers.get("content-type") || "text/html"
+    };
     const structured = extractStructuredPageContent(html);
     return {
       ok: true,
       status: response.status,
       url: finalUrl,
       html,
-      crawledAt: new Date().toISOString(),
+      crawledAt,
+      originalCapture,
       title: structured.title,
       headings: structured.headings,
       lines: structured.lines,
@@ -933,6 +946,13 @@ async function fetchWebsiteDownloadable(url, options = {}) {
       status: response.status,
       url: finalUrl,
       mimeType: parsed.mimeType,
+      originalCapture: {
+        encoding: "base64", body: buffer.toString("base64"),
+        sha256: crypto.createHash("sha256").update(buffer).digest("hex"),
+        byte_length: buffer.length, fetched_at: new Date().toISOString(),
+        requested_url: String(url), fetched_url: finalUrl, status: response.status,
+        content_type: response.headers.get("content-type") || parsed.mimeType
+      },
       sourceKind: parsed.sourceKind,
       title,
       lines: splitPlainTextToLines(parsed.bodyText),
@@ -1078,7 +1098,7 @@ async function crawlWebsiteSources(rootUrl) {
       }
       failedPageByLocator.delete(result.url);
       pages.push(result);
-      const linkInventory = extractLinkInventory(crawlOrigin, result.html);
+      const linkInventory = extractLinkInventory(result.url, result.html);
       duplicateDiscoveryCount += Number(linkInventory.duplicateCount || 0);
       canonicalizedDiscoveryCount += Number(linkInventory.canonicalizedCount || 0);
       for (const entry of linkInventory.skippedLinks) {
@@ -1145,6 +1165,7 @@ async function crawlWebsiteSources(rootUrl) {
         lines: result.lines,
         text: result.text,
         mimeType: result.mimeType,
+        originalCapture: result.originalCapture,
         sourceKind: result.sourceKind,
         parseMethod: result.parseMethod,
         pageType: classifyTextPageType(result.title, result.text, "policy")
@@ -1180,6 +1201,7 @@ async function crawlWebsiteSources(rootUrl) {
     pages: pages.map((page) => ({
       sourceUrl: page.url,
       crawledAt: page.crawledAt,
+      originalCapture: page.originalCapture,
       title: page.title || new URL(page.url).hostname,
       headings: page.headings,
       lines: page.lines,
@@ -1355,6 +1377,7 @@ function normalizeSourceItem(item) {
     documentClass,
     contentClass,
     compileEnabled: item?.compileEnabled !== false,
+    originalCapture: item?.originalCapture || item?.original_capture_json || null,
     metadata: normalizedMetadata,
     sourcePriority: sourceAuthorityPriority(sourceAuthority),
     contentPriority: contentClassPriority(contentClass),
@@ -1914,9 +1937,32 @@ async function nextBuildVersion(db, tenantKey) {
   return `v${count}`;
 }
 
-async function assertBuildRateLimit(db, tenantKey) {
-  void db;
-  void tenantKey;
+// Must run inside the same transaction that inserts the new build. ON CONFLICT
+// serializes competing allocations on the tenant row, including pooled clients.
+async function assertBuildRateLimit(db, tenantKey, { buildKind, buildId, actor, rateLimitOverride } = {}) {
+  if (rateLimitOverride === true && (actor?.role !== "admin" || !normalizeText(actor?.user_id))) {
+    throw new Error("knowledge_build_rate_limit_override_forbidden");
+  }
+  // Every new build, including an overlay, consumes compiler capacity.
+  // A resumed build never enters this allocator.
+  const override = rateLimitOverride === true;
+  const result = await db.query(
+    `INSERT INTO knowledge_build_allocations (tenant_key, allocated_at, build_id, override_actor_id)
+     VALUES ($1, clock_timestamp(), $2, $3)
+     ON CONFLICT (tenant_key) DO UPDATE
+     SET allocated_at = EXCLUDED.allocated_at, build_id = EXCLUDED.build_id,
+         override_actor_id = EXCLUDED.override_actor_id
+     WHERE knowledge_build_allocations.allocated_at <= clock_timestamp() - INTERVAL '24 hours'
+        OR $4::boolean
+     RETURNING tenant_key`,
+    [tenantKey, buildId, override ? String(actor.user_id) : null, override]
+  );
+  if (!result.rows.length) throw new Error("knowledge_build_rate_limited");
+  if (override) {
+    await db.query(`INSERT INTO audit_log (tenant_key, actor, action, details)
+      VALUES ($1, $2, 'knowledge_receptionist.build.rate_limit_override', $3::jsonb)`,
+    [tenantKey, `admin:${actor.user_id}`, JSON.stringify({ build_id: buildId, build_kind: buildKind })]);
+  }
 }
 
 function sameNormalizedIdArray(left, right) {
@@ -2025,6 +2071,7 @@ async function loadUploadedDocumentSourceItems(db, tenantKey, uploadedDocumentId
     sourceLocator: normalizeText(row.source_locator) || `uploaded-document:${row.uploaded_document_id}`,
     title: row.title,
     text: row.body_text,
+    originalCapture: row.original_capture_json,
     pageType: classifyTextPageType(row.title, row.body_text, row.document_class === "policy" ? "policy" : "unknown_mixed"),
     documentClass: row.document_class,
     metadata: {
@@ -2250,6 +2297,7 @@ export function buildWebsiteSourceItems(websiteSources) {
       headings: page.headings,
       lines: page.lines,
       text: page.text,
+      originalCapture: page.originalCapture,
       pageType,
       metadata: { headings: page.headings || [], ...(page.crawledAt ? { crawled_at: page.crawledAt } : {}) }
     });
@@ -2266,6 +2314,7 @@ export function buildWebsiteSourceItems(websiteSources) {
       title: file.title || file.sourceUrl,
       lines: file.lines,
       text: file.text,
+      originalCapture: file.originalCapture,
       pageType,
       metadata: {
         mime_type: file.mimeType || null,
@@ -2299,6 +2348,7 @@ function buildDiscoveryEntryFromSourceItem(buildInfo, sourceIntakeSessionId, raw
     headings_json: sourceItem.headings || [],
     lines_json: sourceItem.lines || [],
     text_content: sourceItem.text || null,
+    original_capture_json: sourceItem.originalCapture,
     metadata_json: {
       headings: sourceItem.headings || [],
       content_class: sourceItem.contentClass,
@@ -2558,7 +2608,7 @@ async function updateSourceIntakeSessionPersistenceCheckpoint(db, sourceIntakeSe
 
 async function upsertSourceIntakeItemBatch(db, rows) {
   if (!rows.length) return;
-  const { placeholders, values } = buildValuesClause(rows, 22, (row) => [
+  const { placeholders, values } = buildValuesClause(rows, 23, (row) => [
     row.source_intake_item_id,
     row.tenant_key,
     row.build_id,
@@ -2580,14 +2630,15 @@ async function upsertSourceIntakeItemBatch(db, rows) {
     row.text_content || null,
     toJson(row.metadata_json || {}, {}),
     row.discovered_at || new Date().toISOString(),
-    row.updated_at || new Date().toISOString()
+    row.updated_at || new Date().toISOString(),
+    row.original_capture_json ? toJson(row.original_capture_json, {}) : null
   ]);
   await db.query(
     `INSERT INTO source_intake_items (
        source_intake_item_id, tenant_key, build_id, source_intake_session_id, source_key,
        source_channel, source_kind, source_authority, source_locator, title, page_type, content_hash,
        discovery_status, persistence_status, failure_reason, source_ref_id, headings_json, lines_json,
-       text_content, metadata_json, discovered_at, updated_at
+       text_content, metadata_json, discovered_at, updated_at, original_capture_json
      )
      VALUES ${placeholders}
      ON CONFLICT (build_id, source_key)
@@ -2610,6 +2661,7 @@ async function upsertSourceIntakeItemBatch(db, rows) {
        lines_json = EXCLUDED.lines_json,
        text_content = EXCLUDED.text_content,
        metadata_json = EXCLUDED.metadata_json,
+       original_capture_json = COALESCE(source_intake_items.original_capture_json, EXCLUDED.original_capture_json),
        updated_at = NOW()`,
     values
   );
@@ -2662,6 +2714,7 @@ function buildSourceItemFromIntakeRow(row) {
     headings: Array.isArray(row.headings_json) ? row.headings_json : [],
     lines: Array.isArray(row.lines_json) ? row.lines_json : [],
     text: row.text_content,
+    originalCapture: row.original_capture_json,
     pageType: row.page_type,
     compileEnabled: metadata.compile_enabled !== false,
     metadata
@@ -4546,7 +4599,7 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
     params.push(buildId);
     where.push(`build_id = $${params.length}`);
   }
-  where.push(`status IN ('queued', 'running', 'ready_to_publish')`);
+  where.push(`status IN ('queued', 'running')`);
   if (!buildId && KNOWLEDGE_BUILD_JOB_MAX_AUTO_RESUME_AGE_MINUTES > 0) {
     params.push(KNOWLEDGE_BUILD_JOB_MAX_AUTO_RESUME_AGE_MINUTES);
     where.push(`updated_at >= NOW() - ($${params.length}::int * INTERVAL '1 minute')`);
@@ -4576,18 +4629,7 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
       try {
         await assertOwned();
         if (normalizeText(lease?.status).toLowerCase() === "ready_to_publish") {
-          await publishKnowledgeBuild(db, row.tenant_key, row.build_id, {
-            executionLeaseToken: token,
-            expectedActiveBuildId: options.expectedActiveBuildId
-          });
-          return {
-            buildId: normalizeText(row.build_id),
-            tenantKey: normalizeText(row.tenant_key),
-            action: "processed",
-            status: "published",
-            autoPublished: true,
-            resumedReadyBuild: true
-          };
+          return { buildId: row.build_id, tenantKey: row.tenant_key, action: "awaiting_review", status: "ready_to_publish", autoPublished: false };
         }
         const executionInput = await loadKnowledgeBuildExecutionInput(db, row.tenant_key, row.build_id);
         const buildResult = await createKnowledgeBuild(db, row.tenant_key, {
@@ -4601,21 +4643,6 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
           executionLeaseToken: token,
           assertExecutionLease: assertOwned
         });
-        if (normalizeText(buildResult?.status).toLowerCase() === "ready_to_publish") {
-          await heartbeat();
-          await assertOwned();
-          await publishKnowledgeBuild(db, row.tenant_key, executionInput.buildId, {
-            executionLeaseToken: token,
-            expectedActiveBuildId: options.expectedActiveBuildId
-          });
-          return {
-            buildId: executionInput.buildId,
-            tenantKey: row.tenant_key,
-            action: "processed",
-            status: "published",
-            autoPublished: true
-          };
-        }
         return {
           buildId: executionInput.buildId,
           tenantKey: row.tenant_key,
@@ -4734,10 +4761,6 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
   if (preferredBuildId && normalizeText(resumableState?.build_id) !== preferredBuildId) {
     throw new Error("build_not_found");
   }
-  if (!resumableState) {
-    await assertBuildRateLimit(db, tenantKey);
-  }
-
   const assignments = await resolveTenantDomainAssignments(db, tenantKey, input.assignments || []);
   if (!assignments.length) {
     throw new Error("domain_assignment_required");
@@ -4761,15 +4784,21 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
     extraWarnings.push("multi_domain_assignment_present_slice_uses_primary_assignment_only");
   }
   const sourceChannels = [];
-  if (websiteUrl || buildKind === "document_overlay") sourceChannels.push("website_page", "website_file");
-  if (uploadedDocumentIds.length) sourceChannels.push("uploaded_document");
-  if (setupInterviewSessionIds.length) sourceChannels.push("owner_interview");
+
   const runtimeEntryMode = setupInterviewSessionIds.length && !websiteUrl && !uploadedDocumentIds.length
     ? "setup_interview"
     : "customer_call";
 
   if (!resumableState) {
     await withTransaction(db, async (client) => {
+      // The API supplies the authenticated session separately from caller input.
+      // Worker resumes retain the originally recorded creator.
+      const creator = input.actor ? await assertKnowledgeReviewer(client, tenantKey, input.actor) : null;
+      const creatorType = creator ? creator.split(':')[0] : 'system';
+      const creatorId = creator ? creator.slice(creator.indexOf(':') + 1) : null;
+      await assertBuildRateLimit(client, tenantKey, {
+        buildKind, buildId, actor: input.actor, rateLimitOverride: input.rateLimitOverride
+      });
       await client.query(
         `INSERT INTO knowledge_builds (
            build_id, tenant_key, status, version, domain_assignments_json, source_snapshot_id,
@@ -4779,7 +4808,7 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
          )
          VALUES (
            $1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, '{}'::jsonb, '{}'::jsonb, '[]'::jsonb,
-           '{}'::jsonb, 'tenant', NULL, $8, $9, $10::jsonb, $11::jsonb
+           '{}'::jsonb, $12, $13, $8, $9, $10::jsonb, $11::jsonb
          )`,
         [
           buildId,
@@ -4792,7 +4821,9 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
           buildKind,
           baseBuildId || null,
           JSON.stringify(inputFingerprint),
-          JSON.stringify(baseBuildId ? [baseBuildId] : [])
+          JSON.stringify(baseBuildId ? [baseBuildId] : []),
+          creatorType,
+          creatorId
         ]
       );
       await client.query(
@@ -5008,6 +5039,7 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
     }
 
     const rawSources = await persistRawBuildSourcesFromDb(db, rawBuildInfo, intakeSessionId);
+    await updateCapturedSourceChannels(db, tenantKey, buildId, intakeSessionId);
     const classificationSummary = await refreshPersistedSourceClassification(db, rawBuildInfo, intakeSessionId);
     logBuildProgress("raw_source_stage_ready", {
       buildId,
@@ -5036,6 +5068,9 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
     await curateLiveBriefBuild(db, { tenantKey, buildId, executionLeaseToken });
     await checkLease();
     const validationSummary = await validateBuildBudgetsAndLatency(db, tenantKey, buildId);
+    validationSummary.content_qa = compiled.contentQa;
+    validationSummary.blockers = uniqueValues([...(validationSummary.blockers || []), ...(compiled.contentQa?.blockers || [])]);
+    validationSummary.warnings = uniqueValues([...(validationSummary.warnings || []), ...(compiled.contentQa?.warnings || [])]);
     await checkLease();
     const nextStatus = await withTransaction(db, async (client) => {
       const status = await updateBuildAfterValidation(client, buildId, counts, validationSummary,
@@ -5075,6 +5110,7 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
       allowUnleasedForValidation
     });
     if (failedBuild) {
+      await updateCapturedSourceChannels(db, tenantKey, buildId, intakeSessionId);
       await db.query(
         `UPDATE source_intake_sessions
          SET status = 'failed',
@@ -5163,13 +5199,15 @@ async function loadPublicationPointerForUpdate(db, tenantKey, expectedActiveBuil
 export async function publishKnowledgeBuild(db, tenantKey, buildId, {
   executionLeaseToken = "",
   allowUnleasedForValidation = false,
-  expectedActiveBuildId = undefined
+  expectedActiveBuildId = undefined,
+  actor = null
 } = {}) {
   if (!normalizeText(executionLeaseToken) && allowUnleasedForValidation !== true) {
     throw new Error("knowledge_build_execution_lease_required");
   }
   await assertSliceTablesReady(db);
   if (executionLeaseToken) await assertKnowledgeBuildExecutionLease(db, { tenantKey, buildId, token: executionLeaseToken });
+  await assertKnowledgePublishAllowed(db, tenantKey, buildId, { actor, recordAudit: false });
   await preparePublicationCatalog(db, tenantKey, buildId);
   await curateLiveBriefBuild(db, { tenantKey, buildId, executionLeaseToken });
   const preparedBrief = await prepareLiveBriefPublication(db, { tenantKey, buildId });
@@ -5200,6 +5238,7 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId, {
       throw new Error("build_not_ready_to_publish");
     }
 
+    await assertKnowledgePublishAllowed(client, tenantKey, buildId, { actor });
     const currentActiveBuildId = await loadPublicationPointerForUpdate(client, tenantKey, expectedActiveBuildId);
     const prewarmedAssets = await loadBuildAssetsFromDb(client, tenantKey, buildId);
 
@@ -5257,7 +5296,8 @@ export async function publishKnowledgeBuild(db, tenantKey, buildId, {
 
 export async function publishKnowledgeBuildWithExecutionLease(db, tenantKey, buildId, {
   owner = "knowledge-build-manual-publish",
-  expectedActiveBuildId = undefined
+  expectedActiveBuildId = undefined,
+  actor = null
 } = {}) {
   const leased = await withKnowledgeBuildExecutionLease(db, {
     tenantKey,
@@ -5267,7 +5307,8 @@ export async function publishKnowledgeBuildWithExecutionLease(db, tenantKey, bui
     await assertOwned();
     return publishKnowledgeBuild(db, tenantKey, buildId, {
       executionLeaseToken: token,
-      expectedActiveBuildId
+      expectedActiveBuildId,
+      actor
     });
   });
   if (!leased.acquired) {
@@ -5288,8 +5329,34 @@ export async function publishKnowledgeBuildWithExecutionLease(db, tenantKey, bui
   return leased.result;
 }
 
+async function updateCapturedSourceChannels(db, tenantKey, buildId, intakeSessionId) {
+  // source_refs exist only after a captured source was successfully persisted.
+  const result = await db.query(`SELECT DISTINCT source_channel FROM source_refs
+    WHERE tenant_key = $1 AND build_id = $2 ORDER BY source_channel`, [tenantKey, buildId]);
+  const channels = JSON.stringify(uniqueValues(result.rows.map((row) => row.source_channel)));
+  await withTransaction(db, async (client) => {
+    await client.query(`UPDATE knowledge_builds SET source_channels_json = $3::jsonb
+      WHERE tenant_key = $1 AND build_id = $2`, [tenantKey, buildId, channels]);
+    await client.query(`UPDATE source_intake_sessions SET source_channels_json = $4::jsonb
+      WHERE tenant_key = $1 AND build_id = $2 AND source_intake_session_id = $3`,
+    [tenantKey, buildId, intakeSessionId, channels]);
+  });
+}
+
+function assertRollbackTargetEligible(row) {
+  if (!row) throw new Error("build_not_found");
+  const blockers = row.validation_summary_json?.blockers;
+  if (!["published", "superseded"].includes(row.status) || !row.published_at
+    || !Array.isArray(blockers) || blockers.length) {
+    throw new Error("build_not_eligible_for_rollback");
+  }
+}
+
 export async function rollbackKnowledgeBuild(db, tenantKey, buildId) {
   await assertSliceTablesReady(db);
+  const eligibility = await db.query(`SELECT build_id, status, published_at, validation_summary_json
+    FROM knowledge_builds WHERE tenant_key = $1 AND build_id = $2`, [tenantKey, buildId]);
+  assertRollbackTargetEligible(eligibility.rows[0]);
   await preparePublicationCatalog(db, tenantKey, buildId);
   await curateLiveBriefBuild(db, { tenantKey, buildId });
   const preparedBrief = await prepareLiveBriefPublication(db, { tenantKey, buildId });
@@ -5297,16 +5364,14 @@ export async function rollbackKnowledgeBuild(db, tenantKey, buildId) {
     await client.query("SET LOCAL lock_timeout = '5s'");
     await client.query("SELECT tenant_key FROM tenants WHERE tenant_key = $1 FOR UPDATE", [tenantKey]);
     const targetRes = await client.query(
-      `SELECT build_id, status
+      `SELECT build_id, status, published_at, validation_summary_json
        FROM knowledge_builds
        WHERE tenant_key = $1
          AND build_id = $2
        FOR UPDATE`,
       [tenantKey, buildId]
     );
-    if (!targetRes.rowCount) {
-      throw new Error("build_not_found");
-    }
+    assertRollbackTargetEligible(targetRes.rows[0]);
 
     const pointerRes = await client.query(
       `SELECT active_build_id

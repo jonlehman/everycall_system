@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import bcrypt from 'bcryptjs';
 import { PGlite } from '@electric-sql/pglite';
-import { ensureTables } from '../pages/api/_lib/db.js';
+import { bootstrapFixtureSchema } from './lib/schema-migrations.mjs';
 import { getSalesSession, getSession } from '../pages/api/_lib/auth.js';
 import { requireSalesAdmin } from '../pages/api/_lib/salesApi.js';
 import adminLogin from '../pages/api/v1/auth/login.js';
@@ -53,11 +53,7 @@ async function call(handler, req) {
 }
 
 try {
-  await db.exec(`CREATE TABLE knowledge_coverage_events (
-    knowledge_coverage_event_id TEXT PRIMARY KEY,
-    top_scores_json JSONB NOT NULL DEFAULT '[]'::jsonb
-  );`);
-  await ensureTables(pool);
+  await bootstrapFixtureSchema(pool, { executeSql: sql => db.exec(sql) });
   await db.exec(await fs.readFile(new URL('../migrations/0032_outbound_sales_demo.sql', import.meta.url), 'utf8'));
   await db.exec('DROP INDEX admin_users_email_unique_idx;');
   const adminEmailMigration = await fs.readFile(
@@ -133,8 +129,8 @@ try {
   assert.throws(() => salesReportFilters({ from: '2024-01-01', to: '2026-10-01' }), /valid UTC/);
   assert.throws(() => salesReportFilters({ operator: '1 OR 1=1' }), /valid sales rep/);
   // The detail cap must never cap aggregate totals.
-  await query(`INSERT INTO sales_call_sessions (sales_call_id, prospect_id, admin_user_id, created_at)
-    SELECT 'cap-' || value, 'report-prospect', $1, '2026-10-03T12:00:00Z'::timestamptz FROM generate_series(1, 105) value`, [sales.id]);
+  await query(`INSERT INTO sales_call_sessions (sales_call_id, prospect_id, admin_user_id, state, created_at)
+    SELECT 'cap-' || value, 'report-prospect', $1, 'closed', '2026-10-03T12:00:00Z'::timestamptz FROM generate_series(1, 105) value`, [sales.id]);
   const capped = await getSalesReport(pool, { from: '2026-10-03', to: '2026-10-03' });
   assert.equal(capped.totals.sessions, 105);
   assert.equal(capped.recent.length, 100);

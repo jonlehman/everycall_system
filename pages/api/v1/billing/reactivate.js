@@ -34,6 +34,12 @@ export default async function handler(req, res) {
     if (!row) {
       return res.status(404).json({ error: "tenant_not_found" });
     }
+    if (["requested", "submitted", "failed", "released"].includes(row.telnyx_release_status)) {
+      return res.status(409).json({
+        error: "voice_number_recovery_required",
+        message: "Contact support to select and configure a replacement voice number before restoring service. No replacement number has been ordered."
+      });
+    }
     if (row.billing_status !== "deactivated") {
       return res.status(400).json({
         error: "tenant_not_deactivated",

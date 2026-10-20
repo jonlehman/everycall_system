@@ -39,6 +39,9 @@ export default async function handler(req, res) {
     return fail(res, 405, "method_not_allowed", "Method not allowed.");
   } catch (err) {
     const message = String(err?.message || "unknown");
+    if (message === "uploaded_document_not_found") {
+      return fail(res, 404, message, "Uploaded document not found.");
+    }
     if (message === "knowledge_receptionist_migrations_not_applied") {
       return fail(res, 503, "migrations_required", "Knowledge receptionist migrations have not been applied.");
     }

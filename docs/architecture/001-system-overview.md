@@ -5,6 +5,8 @@ Build a white-labeled, multi-tenant voice platform for service businesses using:
 - Telnyx for telephony ingress/egress
 - OpenAI Realtime for conversational audio responses
 
+The website knowledge design is governed by the [frozen subsystem index](knowledge-receptionist-subsystem/v1.0/00-spec-index.md), its 163 requirements, and explicit later decisions in [DECISIONS](../DECISIONS.md). The [October conformance review](knowledge-receptionist-subsystem/conformance-review-2026-10-20.md) records the historical implementation gaps; the [remediation ledger](../plan/production-remediation-2026-10-20.md) tracks their fixes and release evidence. A passing regression or a proposed specification does not amend a frozen requirement.
+
 ## Core Services
 - `call-gateway`: receives Telnyx webhooks, validates signatures, resolves tenant by called number.
 - `sales-call-gateway`: isolated, single-instance outbound-sales conference controller for parked browser operator legs, prospect legs, and OpenAI SIP standby legs.

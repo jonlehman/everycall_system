@@ -1,5 +1,17 @@
 # Manual Call Test Scripts
 
+## Production recovery and knowledge design regression gates
+
+- `pnpm validate:knowledge-design` checks that the Markdown matrix, CSV and manifest contain the same 163 original requirements without altering their text.
+- `pnpm validate:knowledge-integrity` exercises tenant isolation, original capture, factual cleanup, nested links, rebuild allocation, source authority and rollback admission against isolated fixtures.
+- `pnpm validate:knowledge-governance` exercises structured facts, source conflicts and provenance across synthetic industry/source fixtures, qualified second-person approval, evidence-bound readiness and transactional publication. Model extraction and catalog preparation are substituted; this does not establish model-semantic acceptance. The historical cutover validator now runs this safe offline suite by default; its provider path requires `--live-integration` and the existing explicit safety gates.
+- `pnpm validate:knowledge-source-preservation` verifies exact original bytes and hashes survive direct and reviewed metadata/authority changes, single-page metadata edits do not refetch sources, and deliberate source replacement captures the new bytes. Historical missing captures stay missing until an explicit replacement.
+- `pnpm validate:production-recovery` exercises invitation/setup tokens, Stripe retries, worker ownership and shutdown, trial cleanup and onboarding collisions with real SQL and stubbed providers.
+- `EVERYCALL_TEST_POSTGRES_URL=postgresql://...@127.0.0.1:.../... pnpm validate:production-contention` exercises separate PostgreSQL connections. The runner rejects non-loopback targets, creates a random schema and removes it afterward. It never reads `DATABASE_URL` or production data. CI supplies an isolated PostgreSQL 16 service.
+- `pnpm validate:runtime-schema` checks read-only request readiness, failed-check recovery, independent pool caches, explicit empty-fixture bootstrap and atomic migration receipts. `pnpm validate:call-recovery` uses the same isolated PostgreSQL target for voice-event recovery, cleanup failures, simultaneous prospect reservations and authorized dead-letter retry.
+- `pnpm validate:call-release` adds actual provider-setup/DB-read failures, retained uncertain Sales reservations, summary/usage persistence failures and automatic cleanup retries, summary-job deduplication, trusted gateway URL selection and the startup recovery scanner.
+- These offline checks do not establish live provider behavior, audible call quality or the semantic accuracy of future model extractions. Record those acceptance results separately in the [remediation ledger](plan/production-remediation-2026-10-20.md).
+
 ## Managed GPT-Live/Responses delegation acceptance
 
 - Build and run `node scripts/validate-managed-live-runtime.mjs`. Verify a Responses delegation at session start, completed function-item collection from nested `response.event`, one result per function call through `response.item.create`, and explicit `response.create` continuation. The gateway must reject stale, duplicate, parallel, or unauthorized effects without executing them.

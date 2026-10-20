@@ -36,24 +36,25 @@ export default async function handler(req, res) {
     if (!ALLOWED_ACTIONS.has(action)) {
       throw salesError("invalid_sales_call_action", "Sales call action is not supported.", 400);
     }
-    const call = assertSalesCallAdmin(
-      await getSalesCallSession(context.pool, salesCallId),
-      context.admin.id
-    );
+    // Admins may recover another operator's orphaned reservation by ending it.
+    // All other actions, and every Sales-role action, remain owner-scoped.
+    const adminRecovery = action === "end_call" && context.session.role === "admin";
+    const authorizeCall = (candidate) => {
+      if (!candidate) throw salesError("sales_call_not_found", "Sales call not found.", 404);
+      return adminRecovery ? candidate : assertSalesCallAdmin(candidate, context.admin.id);
+    };
+    const call = authorizeCall(await getSalesCallSession(context.pool, salesCallId));
     const request = { action, payload: body.payload || {} };
     const result = await runSalesAdminMutation(req, context, {
       scope: `sales.call.action:${salesCallId}`,
       request,
       action: "sales.call.action_requested",
-      auditDetails: { salesCallId, action }
+      auditDetails: { salesCallId, action, adminRecovery, callOwnerId: call.adminUserId }
     }, async () => {
       await sendSalesCallAction(call.salesCallId, action, {
         payload: request.payload
       });
-      const updated = assertSalesCallAdmin(
-        await getSalesCallSession(context.pool, call.salesCallId),
-        context.admin.id
-      );
+      const updated = authorizeCall(await getSalesCallSession(context.pool, call.salesCallId));
       return {
         status: 200,
         body: {

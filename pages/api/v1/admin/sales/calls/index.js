@@ -58,6 +58,13 @@ export default async function handler(req, res) {
 
       const id = salesCallId();
       const businessName = demoProfile.businessName || prospect.businessName;
+      const callerIdNumber = operatorSettings?.callerIdNumber
+        || process.env.SALES_TELNYX_CALLER_ID;
+      // Validate browser startup options before taking the durable reservation.
+      buildSalesWebrtcCallOptions({
+        salesCallId: id, prospectPhone: prospect.phoneE164, callerIdNumber,
+        callerName: operatorSettings?.displayName || "EveryCall"
+      });
       const call = await createSalesCallSession(context.pool, {
         salesCallId: id,
         prospectId: prospect.prospectId,
@@ -78,8 +85,6 @@ export default async function handler(req, res) {
         }
       });
 
-      const callerIdNumber = operatorSettings?.callerIdNumber
-        || process.env.SALES_TELNYX_CALLER_ID;
       const callOptions = buildSalesWebrtcCallOptions({
         salesCallId: call.salesCallId,
         prospectPhone: prospect.phoneE164,

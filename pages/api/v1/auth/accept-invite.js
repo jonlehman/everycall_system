@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { consumeAuthToken, findAuthToken } from "../../_lib/authTokens.js";
+import { findAuthToken } from "../../_lib/authTokens.js";
 import { writeAuditLog } from "../../_lib/auditLog.js";
 import { enforceRateLimit, getClientIp } from "../../_lib/rateLimit.js";
 
@@ -49,7 +49,8 @@ export default async function handler(req, res) {
     });
     if (tokenLimit?.limited) return;
 
-    const tokenRow = await findAuthToken(pool, token, { tokenType: "invite" });
+    const tokenRow = await findAuthToken(pool, token, { tokenType: "invite" })
+      || await findAuthToken(pool, token, { tokenType: "account_setup" });
     if (!tokenRow) {
       return res.status(400).json({ error: "invalid_token" });
     }
@@ -57,33 +58,51 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "token_expired" });
     }
 
-    const userRow = await pool.query(
-      `SELECT id, status FROM tenant_users WHERE email = $1 LIMIT 1`,
-      [tokenRow.email]
-    );
-    if (!userRow.rowCount) {
-      return res.status(404).json({ error: "user_not_found" });
-    }
     const hash = await bcrypt.hash(password, 10);
-    await pool.query(
-      `UPDATE tenant_users
-       SET password_hash = $1,
-           status = 'active',
-           updated_at = NOW()
-       WHERE id = $2`,
-      [hash, userRow.rows[0].id]
-    );
-
-    await consumeAuthToken(pool, token, { tokenType: "invite" });
-    await writeAuditLog(pool, {
-      tenantKey: tokenRow.tenant_key || null,
-      actor: `tenant:${userRow.rows[0].id}`,
-      action: "auth.invite.accepted",
-      details: {
-        email: tokenRow.email || null,
-        ip: clientIp
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      // Lock user first, matching invitation issuance and revocation trigger order.
+      const user = await client.query(
+        `SELECT id FROM tenant_users
+         WHERE id = $1 AND tenant_key = $2 AND email = $3
+           AND (($4 = 'invite' AND status = 'invited')
+             OR ($4 = 'account_setup' AND status = 'active' AND password_hash IS NULL))
+         FOR UPDATE`,
+        [tokenRow.user_id, tokenRow.tenant_key, tokenRow.email, tokenRow.token_type]
+      );
+      if (!user.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "invalid_token" });
       }
-    });
+      const consumed = await client.query(
+        `DELETE FROM auth_tokens
+         WHERE id = $1 AND user_id = $2 AND tenant_key = $3 AND email = $4
+           AND token_type = $5 AND used_at IS NULL AND expires_at > NOW()
+         RETURNING id`,
+        [tokenRow.id, tokenRow.user_id, tokenRow.tenant_key, tokenRow.email, tokenRow.token_type]
+      );
+      if (!consumed.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "invalid_token" });
+      }
+      await client.query(
+        `UPDATE tenant_users SET password_hash = $1, status = 'active', updated_at = NOW()
+         WHERE id = $2`, [hash, tokenRow.user_id]
+      );
+      await writeAuditLog(client, {
+        tenantKey: tokenRow.tenant_key,
+        actor: `tenant:${tokenRow.user_id}`,
+        action: "auth.invite.accepted",
+        details: { email: tokenRow.email, ip: clientIp }
+      });
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
     return res.status(200).json({ ok: true });
   } catch (err) {
     return res.status(500).json({ error: "invite_accept_error", message: err?.message || "unknown" });

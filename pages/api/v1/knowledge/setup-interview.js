@@ -37,7 +37,7 @@ export default async function handler(req, res) {
       if (!manager) return;
       const body = typeof req.body === "object" && req.body ? req.body : {};
       if (body.intent && body.session) {
-        const result = await saveSetupInterviewSubmission(pool, tenantKey, body);
+        const result = await saveSetupInterviewSubmission(pool, tenantKey, body, session);
         return res.status(200).json({ ok: true, ...result });
       }
       const intent = body.intent ? await saveSetupInterviewIntent(pool, tenantKey, body.intent) : null;
@@ -45,7 +45,7 @@ export default async function handler(req, res) {
         ? await createSetupInterviewSessionSkeleton(pool, tenantKey, {
             ...body.session,
             setupInterviewIntentId: body.session.setupInterviewIntentId || intent?.setup_interview_intent_id || null
-          })
+          }, session)
         : null;
       return res.status(200).json({ ok: true, intent, session: sessionSkeleton?.session || null, summaryBlocks: sessionSkeleton?.summaryBlocks || [] });
     }

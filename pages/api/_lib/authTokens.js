@@ -23,6 +23,42 @@ export async function issueAuthToken(pool, {
   tenantKey = null,
   expiresAt
 }) {
+  // Lock the immutable invitee before replacing invitations. Acceptance and user
+  // mutations use the same row, so disabling/deleting cannot race issuance.
+  const boundType = normalizeText(tokenType);
+  if (boundType === "invite" || boundType === "account_setup") {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const invitee = await client.query(
+        `SELECT id FROM tenant_users
+         WHERE tenant_key = $1 AND email = $2
+           AND (($4 = 'invite' AND status = 'invited')
+             OR ($4 = 'account_setup' AND status = 'active' AND password_hash IS NULL))
+           AND ($3::bigint IS NULL OR id = $3::bigint)
+         FOR UPDATE`,
+        [normalizeText(tenantKey), normalizeText(email).toLowerCase(), userId, boundType]
+      );
+      if (!invitee.rowCount) throw new Error("invitee_not_invited");
+      const id = invitee.rows[0].id;
+      await revokeAuthTokens(client, { tokenType: "invite", userId: id });
+      await revokeAuthTokens(client, { tokenType: "account_setup", userId: id });
+      const rawToken = createRawAuthToken();
+      await client.query(
+        `INSERT INTO auth_tokens (token, token_hash, token_type, user_id, email, tenant_key, expires_at)
+         VALUES ($1, $2, $7, $3, $4, $5, $6)`,
+        [createOpaqueReference(), hashAuthToken(rawToken), id, normalizeText(email).toLowerCase(),
+          normalizeText(tenantKey), expiresAt instanceof Date ? expiresAt.toISOString() : expiresAt, boundType]
+      );
+      await client.query("COMMIT");
+      return rawToken;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
   const rawToken = createRawAuthToken();
   await pool.query(
     `INSERT INTO auth_tokens (

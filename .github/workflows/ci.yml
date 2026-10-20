@@ -7,6 +7,20 @@ on:
 jobs:
   typecheck:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: everycall_test
+          POSTGRES_PASSWORD: isolated_test_only
+          POSTGRES_DB: everycall_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -16,3 +30,19 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile=false
       - run: pnpm typecheck
+      - run: pnpm exec tsc -p packages/contracts/tsconfig.json
+      - run: pnpm validate:knowledge-design
+      - run: pnpm validate:knowledge-integrity
+      - run: pnpm validate:knowledge-governance
+      - run: pnpm validate:knowledge-source-preservation
+      - run: pnpm validate:production-recovery
+      - run: pnpm validate:production-contention
+        env:
+          EVERYCALL_TEST_POSTGRES_URL: postgresql://everycall_test:isolated_test_only@127.0.0.1:5432/everycall_test
+      - run: pnpm validate:call-recovery
+        env:
+          EVERYCALL_TEST_POSTGRES_URL: postgresql://everycall_test:isolated_test_only@127.0.0.1:5432/everycall_test
+      - run: pnpm validate:call-release
+        env:
+          EVERYCALL_TEST_POSTGRES_URL: postgresql://everycall_test:isolated_test_only@127.0.0.1:5432/everycall_test
+      - run: pnpm validate:runtime-schema

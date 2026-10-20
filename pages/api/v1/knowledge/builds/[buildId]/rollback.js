@@ -44,6 +44,9 @@ export default async function handler(req, res) {
     if (message === "build_not_found") {
       return fail(res, 404, "build_not_found", "Build not found.");
     }
+    if (message === "build_not_eligible_for_rollback") {
+      return fail(res, 409, message, "Rollback requires a previously published build with cleared validation blockers.");
+    }
     if (message === "no_active_build") {
       return fail(res, 409, "no_active_build", "There is no active build to roll back.");
     }

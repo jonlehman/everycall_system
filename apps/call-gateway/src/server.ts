@@ -1,3 +1,4 @@
+import { runSessionShutdown, type ShutdownProgress } from "./sessionShutdown.js";
 import express from "express";
 import http from "node:http";
 import crypto from "node:crypto";
@@ -13,7 +14,7 @@ import {
   isValidInternalServiceToken,
   resolveInternalServiceSecret
 } from "@everycall/contracts/internalAuth";
-import { claimInboundWebhookEvent } from "@everycall/contracts/providerWebhookIdempotency";
+import { processInboundVoiceWebhook, recoverInboundVoiceWebhooks } from "@everycall/contracts/providerWebhookIdempotency";
 import { logError as baseLogError, logInfo as baseLogInfo, type LogContext } from "@everycall/observability";
 import { normalizePhone, validateTelnyxSignature } from "@everycall/telephony";
 import pg from "pg";
@@ -106,7 +107,15 @@ const gatewayToolResultToken = getInternalServiceToken(process.env, INTERNAL_AUT
 const gatewayErrorToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PURPOSES.gatewayError);
 const callSummaryFinalizeToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PURPOSES.callSummaryFinalize);
 const gatewayDebugLogToken = getInternalServiceToken(process.env, INTERNAL_AUTH_PURPOSES.gatewayDebugLog);
-const callGatewayBaseUrl = process.env.CALL_GATEWAY_BASE_URL || "";
+function resolveCallGatewayBaseUrl(env: NodeJS.ProcessEnv): string {
+  const configured = String(env.CALL_GATEWAY_BASE_URL || env.RENDER_EXTERNAL_URL || "").trim();
+  if (!configured) throw new Error("call_gateway_public_url_required");
+  const url = new URL(configured);
+  if (!["https:", "http:"].includes(url.protocol) || url.username || url.password
+    || url.pathname !== "/" || url.search || url.hash) throw new Error("call_gateway_public_url_invalid");
+  return url.origin;
+}
+const callGatewayBaseUrl = resolveCallGatewayBaseUrl(process.env);
 const openAiKey = process.env.OPENAI_API_KEY || "";
 // Trusted gateway deployment configuration; never read from caller input.
 const voiceRuntime = resolveVoiceRuntime(process.env.CALL_GATEWAY_VOICE_RUNTIME);
@@ -308,6 +317,9 @@ type StreamSession = {
   callerNumber?: string;
   callActive?: boolean;
   isShuttingDown?: boolean;
+  shutdownProgress?: ShutdownProgress;
+  shutdownRetryTimer?: ReturnType<typeof setTimeout>;
+  shutdownHangupRequested?: boolean;
   telnyxStreamId?: string;
   telnyxWs?: WebSocket;
   openAiWs?: WebSocket;
@@ -562,15 +574,19 @@ function estimateUsageCostMicrosUsd(usage: {
   });
 }
 
-async function persistCallUsage(session: StreamSession) {
-  if (!pool) return;
+async function persistCallUsage(session: StreamSession, throwOnError = false) {
+  if (!pool) {
+    if (throwOnError) throw new Error("call_usage_database_unavailable");
+    return;
+  }
   if (session.live) {
     // Live duration and delegated token usage are recorded separately in call_events.
     // Never apply Realtime token prices to duration-billed Live sessions.
     try {
       await pool.query("UPDATE calls SET ai_model = $2 WHERE call_sid = $1 AND tenant_key = $3", [session.callSid, "gpt-live-1", session.tenantKey]);
-    } catch {
+    } catch (error) {
       logError("openai_live_usage_persist_failed", { callSid: session.callSid });
+      if (throwOnError) throw error;
     }
     return;
   }
@@ -619,6 +635,7 @@ async function persistCallUsage(session: StreamSession) {
       callSid: session.callSid,
       message: err instanceof Error ? err.message : "unknown"
     });
+    if (throwOnError) throw err;
   }
 }
 
@@ -842,9 +859,8 @@ function verifyTelnyx(req: express.Request, rawBody: string) {
   });
 }
 
-function buildBaseUrl(req: express.Request) {
-  if (callGatewayBaseUrl) return callGatewayBaseUrl;
-  return `${req.protocol}://${req.get("host")}`;
+function buildBaseUrl(_req: express.Request) {
+  return callGatewayBaseUrl;
 }
 
 function toWebSocketUrl(baseUrl: string) {
@@ -1345,12 +1361,35 @@ async function telnyxCallAction(callControlId: string, action: string, payload: 
       Authorization: `Bearer ${telnyxApiKey}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15000)
   });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`telnyx_${action}_failed:${resp.status}:${text.slice(0, 200)}`);
+    throw Object.assign(new Error(`telnyx_${action}_failed:${resp.status}:${text.slice(0, 200)}`), { status: resp.status });
   }
+}
+
+async function telnyxCallIsAlive(callControlId: string): Promise<boolean> {
+  const response = await fetch(`https://api.telnyx.com/v2/calls/${encodeURIComponent(callControlId)}`, {
+    headers: { Authorization: `Bearer ${telnyxApiKey}` }, signal: AbortSignal.timeout(15000)
+  });
+  if (!response.ok) throw new Error(`telnyx_call_status_failed:${response.status}`);
+  const payload = await response.json() as any;
+  if (typeof payload?.data?.is_alive !== "boolean") throw new Error("telnyx_call_status_invalid");
+  return payload.data.is_alive;
+}
+
+async function reconcileInboundCommand(callControlId: string, action: string) {
+  if (!await telnyxCallIsAlive(callControlId)) return true;
+  const eventTypes = action === "answer" ? ["call.answered", "call_answered"]
+    : action === "streaming_start" ? ["streaming.started", "streaming.started.v1"] : [];
+  if (!eventTypes.length || !pool) return false;
+  const result = await pool.query(
+    `SELECT id FROM inbound_webhook_events WHERE provider='telnyx_voice_inbound'
+       AND resource_id=$1 AND event_type=ANY($2::text[]) LIMIT 1`, [callControlId, eventTypes]
+  );
+  return Boolean(result.rowCount);
 }
 
 async function markCallCompleted(callSid: string, answeredAtHint: string | null = null) {
@@ -1411,6 +1450,7 @@ async function markCallCompleted(callSid: string, answeredAtHint: string | null 
       callSid,
       message: err instanceof Error ? err.message : "unknown"
     });
+    throw err;
   }
 }
 
@@ -1428,6 +1468,7 @@ async function markCallAnswered(callSid: string) {
       callSid,
       message: err instanceof Error ? err.message : "unknown"
     });
+    throw err;
   }
 }
 
@@ -1892,7 +1933,7 @@ async function handleTransferFailed(session: StreamSession, source: string, deta
 }
 
 async function loadCombinedTranscriptForCall(callSid: string) {
-  if (!pool) return "";
+  if (!pool) throw new Error("call_transcript_database_unavailable");
   try {
     const events = await pool.query(
       `SELECT role, text, event_type
@@ -1907,12 +1948,12 @@ async function loadCombinedTranscriptForCall(callSid: string) {
       callSid,
       message: err instanceof Error ? err.message : "unknown"
     });
-    return "";
+    throw err;
   }
 }
 
 async function finalizeCallSummary(session: StreamSession) {
-  if (!appBaseUrl || !callSummaryFinalizeToken) return;
+  if (!appBaseUrl || !callSummaryFinalizeToken) throw new Error("call_summary_configuration_missing");
 
   const capturedFieldSource = session.knowledgeCallState?.captured_fields
     && typeof session.knowledgeCallState.captured_fields === "object"
@@ -1949,7 +1990,8 @@ async function finalizeCallSummary(session: StreamSession) {
         ...(urgency ? { urgency } : {}),
         ...(disposition ? { disposition } : {}),
         extracted: capturedFields
-      })
+      }),
+      signal: AbortSignal.timeout(15000)
     });
 
     if (!resp.ok) {
@@ -1959,76 +2001,92 @@ async function finalizeCallSummary(session: StreamSession) {
         status: resp.status,
         message: text.slice(0, 200)
       });
+      throw new Error(`call_summary_http_failed:${resp.status}`);
     }
   } catch (err) {
     logError("call_summary_finalize_failed", {
       callSid: session.callSid,
       message: err instanceof Error ? err.message : "unknown"
     });
+    throw err;
   }
 }
 
 async function endCallSession(session: StreamSession | undefined, reason: string, shouldHangup: boolean) {
-  if (!session || session.isShuttingDown) return;
+  if (!session) return true;
   session.isShuttingDown = true;
   session.callActive = false;
-  if (session.liveTimer) clearInterval(session.liveTimer);
-  if (session.live) await session.live.close();
-  await session.livePersistenceTail;
-  await persistCallUsage(session);
-  if (session.knowledgeCallState) {
-    await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
-      source: "call_end",
-      end_reason: reason
-    });
+  session.shutdownHangupRequested ||= shouldHangup;
+  const progress = session.shutdownProgress ||= { done: new Set<string>() };
+  if (progress.running) {
+    const completed = await progress.running;
+    if (completed && session.shutdownHangupRequested && session.callControlId && !progress.done.has("hangup")) {
+      return endCallSession(session, reason, true);
+    }
+    return completed;
   }
-
-  logInfo("gateway_call_session_end", {
-    callSid: session.callSid,
-    callControlId: session.callControlId,
-    reason
-  });
-
-  if (session.outputTimer) {
-    clearInterval(session.outputTimer);
-    session.outputTimer = null;
-  }
-  session.outputNextFrameAtMs = null;
-
-  if (session.hangupTimer) {
-    clearTimeout(session.hangupTimer);
-    session.hangupTimer = null;
-  }
-
-  if (session.openAiWs && session.openAiWs.readyState === WebSocket.OPEN) {
-    session.openAiWs.close();
-  } else if (session.live && session.openAiWs?.readyState === WebSocket.CONNECTING) {
-    session.openAiWs.terminate();
-  }
-
-  await finalizeCallSummary(session);
-
-  if (shouldHangup && session.callControlId) {
-    try {
-      await telnyxCallAction(session.callControlId, "hangup", {});
-    } catch (err) {
-      logError("telnyx_call_control_hangup_error", {
-        callSid: session.callSid,
-        message: err instanceof Error ? err.message : "unknown"
+  const liveClose = progress.done.has("live") ? Promise.resolve() : Promise.resolve().then(() => session.live?.close());
+  const persistence = progress.done.has("persistence") ? Promise.resolve() : liveClose.then(async () => {
+    await session.livePersistenceTail?.catch(error => logError("live_persistence_tail_failed_at_close", { callSid: session.callSid, message: String(error) }));
+    await persistCallUsage(session, true);
+    if (session.knowledgeCallState) {
+      await persistKnowledgeCallState(pool, session.tenantKey, session.callSid, session.knowledgeCallState, {
+        source: "call_end", end_reason: reason
       });
     }
+  });
+  const completed = await runSessionShutdown(progress, {
+    sockets: () => {
+      if (session.liveTimer) clearInterval(session.liveTimer);
+      if (session.outputTimer) clearInterval(session.outputTimer);
+      session.outputTimer = null;
+      session.outputNextFrameAtMs = null;
+      if (session.hangupTimer) clearTimeout(session.hangupTimer);
+      session.hangupTimer = null;
+      for (const socket of [session.openAiWs, session.telnyxWs]) {
+        if (socket?.readyState === WebSocket.OPEN) socket.close();
+        else if (socket?.readyState === WebSocket.CONNECTING) socket.terminate();
+      }
+      if (session.telnyxStreamId) streamIdToCall.delete(session.telnyxStreamId);
+    },
+    live: () => liveClose,
+    persistence: () => persistence,
+    summary: async () => { await persistence; await finalizeCallSummary(session); },
+    ...(session.shutdownHangupRequested && session.callControlId ? {
+      hangup: async () => {
+        // Hangup is idempotent by desired state; a lost response is reconciled
+        // against current provider state before the next attempt.
+        if (await telnyxCallIsAlive(session.callControlId) === false) return;
+        await telnyxCallAction(session.callControlId, "hangup", {
+          command_id: crypto.createHash("sha256").update(`hangup:${session.callControlId}`).digest("hex").slice(0, 32)
+        });
+      }
+    } : {}),
+    completed: async () => { await persistence; await markCallCompleted(session.callSid, session.callAnsweredAt || null); }
+  }, (step, error) => logError("gateway_call_cleanup_failed", {
+    callSid: session.callSid, step, message: error instanceof Error ? error.message : "unknown"
+  }));
+  if (completed && session.shutdownHangupRequested && session.callControlId && !progress.done.has("hangup")) {
+    return endCallSession(session, reason, true);
   }
-
-  if (session.telnyxStreamId) {
-    streamIdToCall.delete(session.telnyxStreamId);
+  if (completed) {
+    if (session.shutdownRetryTimer) clearTimeout(session.shutdownRetryTimer);
+    delete session.shutdownRetryTimer;
+    streamSessions.delete(session.callControlId);
+    logInfo("gateway_call_session_end", { callSid: session.callSid, callControlId: session.callControlId, reason });
+  } else if (!session.shutdownRetryTimer) {
+    session.shutdownRetryTimer = setTimeout(() => {
+      delete session.shutdownRetryTimer;
+      void endCallSession(session, reason, Boolean(session.shutdownHangupRequested));
+    }, 5000);
+    session.shutdownRetryTimer.unref?.();
   }
-  streamSessions.delete(session.callControlId);
-  await markCallCompleted(session.callSid, session.callAnsweredAt || null);
+  return completed;
 }
 
 async function flushFinalAudioAndEnd(session: StreamSession | undefined, reason: string, shouldHangup: boolean) {
   if (!session) return;
-  await endCallSession(session, reason, shouldHangup);
+  return endCallSession(session, reason, shouldHangup);
 }
 
 async function handleStreamingStoppedForSession(session: StreamSession | undefined, reason: string) {
@@ -2062,7 +2120,7 @@ async function handleStreamingStoppedForSession(session: StreamSession | undefin
     });
     return;
   }
-  await flushFinalAudioAndEnd(session, reason, false);
+  return flushFinalAudioAndEnd(session, reason, false);
 }
 
 async function fetchPromptPayload(tenantKey: string, callSid: string, to: string, from: string): Promise<GatewayPromptPayload> {
@@ -3385,6 +3443,305 @@ function connectOpenAiRealtime(session: StreamSession) {
   });
 }
 
+async function processVerifiedVoiceWebhook(rawBody: string, baseUrl: string) {
+  if (!pool) throw new Error("database_unavailable");
+  const payload = JSON.parse(rawBody);
+  const eventType = payload.data?.event_type || payload.event_type || payload.data?.eventType || "";
+  const eventPayload = payload.data?.payload || payload.payload || payload.data || payload;
+  const providerEventId = String(payload.data?.id || payload.id || "").trim();
+  const transferLegState = parseTransferLegClientState(eventPayload.client_state);
+
+  return processInboundVoiceWebhook(pool, {
+    eventId: providerEventId, eventType, rawPayload: rawBody,
+    resourceId: String(eventPayload.call_control_id || "")
+  }, async (eventContext) => {
+    // A delayed/recovered initiation must never answer or start media on a dead
+    // call, even if the crash occurred before a command checkpoint was written.
+    const resourceId = String(eventPayload.call_control_id || "");
+    if (eventContext.attempt > 1 && resourceId && !transferLegState
+      && ["call_initiated", "call.initiated", "call.answered", "call_answered"].includes(eventType)) {
+      await eventContext.assertOwned();
+      if (!await telnyxCallIsAlive(resourceId)) {
+        const staleSession = streamSessions.get(resourceId);
+        if (staleSession) {
+          if (!await endCallSession(staleSession, "recovered_call_already_ended", false)) throw new Error("call_cleanup_incomplete");
+        } else {
+          await markCallCompleted(resourceId);
+        }
+        return;
+      }
+    }
+
+    const webhookCallAction = async (callControlId: string, action: string, body: Record<string, unknown> = {}) => {
+      await eventContext.command(action,
+        commandId => telnyxCallAction(callControlId, action, { ...body, command_id: commandId }),
+        () => reconcileInboundCommand(callControlId, action));
+    };
+
+    if (eventType === "call_initiated" || eventType === "call.initiated") {
+      const callControlId = String(eventPayload.call_control_id || "");
+      const callSid = callControlId || String(eventPayload.call_session_id || "unknown");
+      const to = normalizePhone(String(eventPayload.to || ""));
+      const from = normalizePhone(String(eventPayload.from || ""));
+
+      if (transferLegState) {
+        const sourceSession = streamSessions.get(transferLegState.source_call_control_id);
+        if (sourceSession?.transferState?.status === "pending" && sourceSession.transferState.targetId === transferLegState.target_id) {
+          sourceSession.transferState = {
+            ...sourceSession.transferState,
+            targetCallControlId: callControlId || null,
+            targetCallSessionId: String(eventPayload.call_session_id || "").trim() || null
+          };
+          logInfo("call_transfer_target_leg_initiated", {
+            callSid: sourceSession.callSid,
+            callControlId: sourceSession.callControlId,
+            targetCallControlId: callControlId,
+            targetId: transferLegState.target_id,
+            to,
+            from
+          });
+        }
+        return;
+      }
+
+      logInfo("telnyx_call_control_initiated", { callSid, callControlId, to, from });
+
+      const tenantRow = await pool.query(
+        `SELECT tenant_key, status, live_prompt_mode
+         FROM tenants
+         WHERE telnyx_voice_number = $1
+         LIMIT 1`,
+        [to]
+      );
+      if (!tenantRow.rowCount || tenantRow.rows[0].status !== "active"
+        || tenantRow.rows[0].live_prompt_mode === "pending_v20") {
+        try {
+          if (callControlId) {
+            await webhookCallAction(callControlId, "hangup", {});
+          }
+        } catch (err) {
+          logError("telnyx_call_control_hangup_error", {
+            message: err instanceof Error ? err.message : "unknown"
+          });
+          throw err;
+        }
+        return;
+      }
+
+      const tenantKey = tenantRow.rows[0].tenant_key;
+
+      await pool.query(
+        `INSERT INTO calls (call_sid, tenant_key, from_number, to_number, status)
+         VALUES ($1, $2, $3, $4, 'in_progress')
+         ON CONFLICT (call_sid)
+         DO UPDATE SET from_number = EXCLUDED.from_number,
+                       to_number = EXCLUDED.to_number`,
+        [callSid, tenantKey, from, to]
+      );
+
+      const existingSession = streamSessions.get(callControlId);
+      if (existingSession) {
+        if (existingSession.isShuttingDown) {
+          if (!await endCallSession(existingSession, "initiation_retry_cleanup", true)) throw new Error("call_cleanup_incomplete");
+          return;
+        }
+        await webhookCallAction(callControlId, "answer", {});
+        return;
+      }
+      const storedCall = await pool.query(`SELECT status FROM calls WHERE call_sid=$1`, [callSid]);
+      if (storedCall.rows[0]?.status === "completed") return;
+      let promptPayload: GatewayPromptPayload;
+      try {
+        promptPayload = await fetchPromptPayload(tenantKey, callSid, to, from);
+      } catch (err) {
+        logError("prompt_payload_fetch_failed", {
+          callSid,
+          tenantKey,
+          message: err instanceof Error ? err.message : "unknown"
+        });
+        await notifyGatewayError(
+          callSid,
+          tenantKey,
+          "prompt_payload_fetch_failed",
+          err instanceof Error ? err.message : "unknown"
+        );
+        const cleanupComplete = await endCallSession(
+          {
+            callControlId,
+            callSid,
+            tenantKey
+          },
+          "prompt_payload_fetch_failed",
+          true
+        );
+        if (!cleanupComplete) throw new Error("call_cleanup_incomplete");
+        return;
+      }
+
+      await safePrewarmBuildAssets(callSid, tenantKey, promptPayload.knowledge_runtime.active_build_id, "call_initiated");
+      const realtimeLogPath = realtimeDebug || realtimeTrace ? initRealtimeLog(callSid) : undefined;
+      const knowledgeCallState = initializeKnowledgeCallState(promptPayload);
+      await persistKnowledgeCallState(pool, tenantKey, callSid, knowledgeCallState, {
+        source: "call_initiated"
+      });
+      streamSessions.set(callControlId, createStreamSession(
+        callControlId,
+        callSid,
+        tenantKey,
+        promptPayload,
+        knowledgeCallState,
+        from,
+        realtimeLogPath
+      ));
+
+      try {
+        await webhookCallAction(callControlId, "answer", {});
+      } catch (err) {
+        logError("telnyx_call_control_answer_error", {
+          callSid,
+          message: err instanceof Error ? err.message : "unknown"
+        });
+          throw err;
+      }
+
+      return;
+    }
+
+    if (eventType === "call.bridged" || eventType === "call.bridged.v1") {
+      if (transferLegState) {
+        const sourceSession = streamSessions.get(transferLegState.source_call_control_id);
+        if (sourceSession?.transferState?.status === "pending" && sourceSession.transferState.targetId === transferLegState.target_id) {
+          await handleTransferConnected(sourceSession, "target_leg_bridged", {
+            targetCallControlId: eventPayload.call_control_id,
+            targetCallSessionId: eventPayload.call_session_id
+          });
+        }
+        return;
+      }
+
+      const callControlId = String(eventPayload.call_control_id || "");
+      const session = streamSessions.get(callControlId);
+      if (session?.transferState?.status === "pending") {
+        await handleTransferConnected(session, "source_leg_bridged", {
+          targetCallControlId: session.transferState.targetCallControlId,
+          targetCallSessionId: session.transferState.targetCallSessionId
+        });
+      }
+      return;
+    }
+
+    if (eventType === "call.answered" || eventType === "call_answered") {
+      const callControlId = String(eventPayload.call_control_id || "");
+      if (!callControlId) return;
+
+      if (transferLegState) {
+        const sourceSession = streamSessions.get(transferLegState.source_call_control_id);
+        if (sourceSession?.transferState?.status === "pending" && sourceSession.transferState.targetId === transferLegState.target_id) {
+          await handleTransferConnected(sourceSession, "target_leg_answered", {
+            targetCallControlId: callControlId,
+            targetCallSessionId: eventPayload.call_session_id
+          });
+        }
+        return;
+      }
+
+      const callState = await pool.query(`SELECT status FROM calls WHERE call_sid=$1`, [callControlId]);
+      if (callState.rows[0]?.status === "completed") return;
+      let session = streamSessions.get(callControlId);
+      if (!session) {
+        const callSid = callControlId;
+        logInfo("call_answered_session_recovery_attempt", { callSid, callControlId });
+        try {
+          session = await recoverSessionForCallControlId(callControlId, "call_answered_recovery");
+          if (session) {
+            logInfo("call_answered_session_recovered", { callSid, callControlId, tenantKey: session.tenantKey });
+          } else {
+            logError("call_answered_session_missing_tenant", { callSid, callControlId });
+          }
+        } catch (err) {
+          logError("call_answered_session_recovery_failed", {
+            callSid,
+            callControlId,
+            message: err instanceof Error ? err.message : "unknown"
+          });
+          throw err;
+        }
+      }
+
+      if (session) {
+        session.callAnsweredAt = session.callAnsweredAt || new Date().toISOString();
+        await markCallAnswered(session.callSid);
+        const streamUrl = `${toWebSocketUrl(baseUrl)}/v1/telnyx/stream`;
+        session.telnyxStreamBaseUrl = streamUrl;
+        try {
+          logInfo("telnyx_stream_start_request", {
+            callSid: session.callSid,
+            callControlId,
+            streamUrl,
+            bidirectionalPayloadMode: resolveBidirectionalPayloadMode()
+          });
+          await webhookCallAction(callControlId, "streaming_start", getTelnyxStreamingStartPayload(streamUrl, callControlId));
+          logInfo("telnyx_stream_start_requested", { callSid: session.callSid, callControlId });
+        } catch (err) {
+          logError("telnyx_call_control_stream_start_error", {
+            callSid: session.callSid,
+            callControlId,
+            streamUrl,
+            message: err instanceof Error ? err.message : "unknown"
+          });
+          throw err;
+        }
+      } else {
+        throw new Error("telnyx_stream_start_no_session");
+      }
+      return;
+    }
+
+    if (eventType === "streaming.started" || eventType === "streaming.started.v1") {
+      return;
+    }
+
+    if (eventType === "streaming.stopped" || eventType === "streaming.stopped.v1") {
+      const callControlId = String(eventPayload.call_control_id || "");
+      if (callControlId) {
+        const session = streamSessions.get(callControlId);
+        if (session) {
+          if (await handleStreamingStoppedForSession(session, "telnyx_streaming_stopped") === false) throw new Error("call_cleanup_incomplete");
+        } else {
+          await markCallCompleted(callControlId);
+        }
+      }
+      return;
+    }
+
+    if (eventType === "call.hangup" || eventType === "call.hangup.v1") {
+      if (transferLegState) {
+        const sourceSession = streamSessions.get(transferLegState.source_call_control_id);
+        if (sourceSession?.transferState?.status === "pending" && sourceSession.transferState.targetId === transferLegState.target_id) {
+          await handleTransferFailed(sourceSession, "target_leg_hangup", {
+            targetCallControlId: eventPayload.call_control_id,
+            hangupCause: normalizeOptionalText(eventPayload.hangup_cause)
+          });
+        }
+        return;
+      }
+
+      const callControlId = String(eventPayload.call_control_id || "");
+      if (callControlId) {
+        const session = streamSessions.get(callControlId);
+        if (session) {
+          if (!await flushFinalAudioAndEnd(session, "telnyx_hangup", false)) throw new Error("call_cleanup_incomplete");
+        } else {
+          await markCallCompleted(callControlId);
+        }
+      }
+      return;
+    }
+
+    return;
+  });
+}
+
 app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: "256kb" }), async (req, res) => {
   const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
   logInfo("telnyx_call_control_request", {
@@ -3413,268 +3770,17 @@ app.post("/v1/telnyx/webhooks/voice/inbound", express.raw({ type: "*/*", limit: 
     return res.status(400).send("invalid_json");
   }
 
-  const eventType = payload.data?.event_type || payload.event_type || payload.data?.eventType || "";
-  const eventPayload = payload.data?.payload || payload.payload || payload.data || payload;
-  const providerEventId = String(payload.data?.id || payload.id || "").trim();
-  const transferLegState = parseTransferLegClientState(eventPayload.client_state);
-
-  if (!pool) {
+  try {
+    const result = await processVerifiedVoiceWebhook(rawBody, buildBaseUrl(req));
+    if (result === "busy") return res.status(503).send("processing_retry");
     return res.status(200).send("ok");
-  }
-
-  const claim = await claimInboundWebhookEvent(pool, {
-    provider: "telnyx_voice_inbound",
-    eventId: providerEventId,
-    eventType,
-    rawPayload: rawBody
-  });
-  if (claim.duplicate) {
-    return res.status(200).send("ok");
-  }
-
-  if (eventType === "call_initiated" || eventType === "call.initiated") {
-    const callControlId = String(eventPayload.call_control_id || "");
-    const callSid = callControlId || String(eventPayload.call_session_id || "unknown");
-    const to = normalizePhone(String(eventPayload.to || ""));
-    const from = normalizePhone(String(eventPayload.from || ""));
-
-    if (transferLegState) {
-      const sourceSession = streamSessions.get(transferLegState.source_call_control_id);
-      if (sourceSession?.transferState?.status === "pending" && sourceSession.transferState.targetId === transferLegState.target_id) {
-        sourceSession.transferState = {
-          ...sourceSession.transferState,
-          targetCallControlId: callControlId || null,
-          targetCallSessionId: String(eventPayload.call_session_id || "").trim() || null
-        };
-        logInfo("call_transfer_target_leg_initiated", {
-          callSid: sourceSession.callSid,
-          callControlId: sourceSession.callControlId,
-          targetCallControlId: callControlId,
-          targetId: transferLegState.target_id,
-          to,
-          from
-        });
-      }
-      return res.status(200).send("ok");
-    }
-
-    logInfo("telnyx_call_control_initiated", { callSid, callControlId, to, from });
-
-    const tenantRow = await pool.query(
-      `SELECT tenant_key, status, live_prompt_mode
-       FROM tenants
-       WHERE telnyx_voice_number = $1
-       LIMIT 1`,
-      [to]
-    );
-    if (!tenantRow.rowCount || tenantRow.rows[0].status !== "active"
-      || tenantRow.rows[0].live_prompt_mode === "pending_v20") {
-      try {
-        if (callControlId) {
-          await telnyxCallAction(callControlId, "hangup", {});
-        }
-      } catch (err) {
-        logError("telnyx_call_control_hangup_error", {
-          message: err instanceof Error ? err.message : "unknown"
-        });
-      }
-      return res.status(200).send("ok");
-    }
-
-    const tenantKey = tenantRow.rows[0].tenant_key;
-
-    await pool.query(
-      `INSERT INTO calls (call_sid, tenant_key, from_number, to_number, status)
-       VALUES ($1, $2, $3, $4, 'in_progress')
-       ON CONFLICT (call_sid)
-       DO UPDATE SET from_number = EXCLUDED.from_number,
-                     to_number = EXCLUDED.to_number`,
-      [callSid, tenantKey, from, to]
-    );
-
-    let promptPayload: GatewayPromptPayload;
-    try {
-      promptPayload = await fetchPromptPayload(tenantKey, callSid, to, from);
-    } catch (err) {
-      logError("prompt_payload_fetch_failed", {
-        callSid,
-        tenantKey,
-        message: err instanceof Error ? err.message : "unknown"
-      });
-      await notifyGatewayError(
-        callSid,
-        tenantKey,
-        "prompt_payload_fetch_failed",
-        err instanceof Error ? err.message : "unknown"
-      );
-      await endCallSession(
-        {
-          callControlId,
-          callSid,
-          tenantKey
-        },
-        "prompt_payload_fetch_failed",
-        true
-      );
-      return res.status(200).send("ok");
-    }
-
-    await safePrewarmBuildAssets(callSid, tenantKey, promptPayload.knowledge_runtime.active_build_id, "call_initiated");
-    const realtimeLogPath = realtimeDebug || realtimeTrace ? initRealtimeLog(callSid) : undefined;
-    const knowledgeCallState = initializeKnowledgeCallState(promptPayload);
-    await persistKnowledgeCallState(pool, tenantKey, callSid, knowledgeCallState, {
-      source: "call_initiated"
+  } catch (error) {
+    logError("voice_webhook_processing_failed", {
+      eventId: String(payload.data?.id || payload.id || ""),
+      message: error instanceof Error ? error.message : "unknown"
     });
-    streamSessions.set(callControlId, createStreamSession(
-      callControlId,
-      callSid,
-      tenantKey,
-      promptPayload,
-      knowledgeCallState,
-      from,
-      realtimeLogPath
-    ));
-
-    try {
-      await telnyxCallAction(callControlId, "answer", {});
-    } catch (err) {
-      logError("telnyx_call_control_answer_error", {
-        callSid,
-        message: err instanceof Error ? err.message : "unknown"
-      });
-    }
-
-    return res.status(200).send("ok");
+    return res.status(503).send("processing_retry");
   }
-
-  if (eventType === "call.bridged" || eventType === "call.bridged.v1") {
-    if (transferLegState) {
-      const sourceSession = streamSessions.get(transferLegState.source_call_control_id);
-      if (sourceSession?.transferState?.status === "pending" && sourceSession.transferState.targetId === transferLegState.target_id) {
-        await handleTransferConnected(sourceSession, "target_leg_bridged", {
-          targetCallControlId: eventPayload.call_control_id,
-          targetCallSessionId: eventPayload.call_session_id
-        });
-      }
-      return res.status(200).send("ok");
-    }
-
-    const callControlId = String(eventPayload.call_control_id || "");
-    const session = streamSessions.get(callControlId);
-    if (session?.transferState?.status === "pending") {
-      await handleTransferConnected(session, "source_leg_bridged", {
-        targetCallControlId: session.transferState.targetCallControlId,
-        targetCallSessionId: session.transferState.targetCallSessionId
-      });
-    }
-    return res.status(200).send("ok");
-  }
-
-  if (eventType === "call.answered" || eventType === "call_answered") {
-    const callControlId = String(eventPayload.call_control_id || "");
-    if (!callControlId) return res.status(200).send("ok");
-
-    if (transferLegState) {
-      const sourceSession = streamSessions.get(transferLegState.source_call_control_id);
-      if (sourceSession?.transferState?.status === "pending" && sourceSession.transferState.targetId === transferLegState.target_id) {
-        await handleTransferConnected(sourceSession, "target_leg_answered", {
-          targetCallControlId: callControlId,
-          targetCallSessionId: eventPayload.call_session_id
-        });
-      }
-      return res.status(200).send("ok");
-    }
-
-    let session = streamSessions.get(callControlId);
-    if (!session) {
-      const callSid = callControlId;
-      logInfo("call_answered_session_recovery_attempt", { callSid, callControlId });
-      try {
-        session = await recoverSessionForCallControlId(callControlId, "call_answered_recovery");
-        if (session) {
-          logInfo("call_answered_session_recovered", { callSid, callControlId, tenantKey: session.tenantKey });
-        } else {
-          logError("call_answered_session_missing_tenant", { callSid, callControlId });
-        }
-      } catch (err) {
-        logError("call_answered_session_recovery_failed", {
-          callSid,
-          callControlId,
-          message: err instanceof Error ? err.message : "unknown"
-        });
-      }
-    }
-
-    if (session) {
-      session.callAnsweredAt = session.callAnsweredAt || new Date().toISOString();
-      await markCallAnswered(session.callSid);
-      const streamUrl = `${toWebSocketUrl(callGatewayBaseUrl || buildBaseUrl(req))}/v1/telnyx/stream`;
-      session.telnyxStreamBaseUrl = streamUrl;
-      try {
-        logInfo("telnyx_stream_start_request", {
-          callSid: session.callSid,
-          callControlId,
-          streamUrl,
-          bidirectionalPayloadMode: resolveBidirectionalPayloadMode()
-        });
-        await telnyxCallAction(callControlId, "streaming_start", getTelnyxStreamingStartPayload(streamUrl, callControlId));
-        logInfo("telnyx_stream_start_requested", { callSid: session.callSid, callControlId });
-      } catch (err) {
-        logError("telnyx_call_control_stream_start_error", {
-          callSid: session.callSid,
-          callControlId,
-          streamUrl,
-          message: err instanceof Error ? err.message : "unknown"
-        });
-      }
-    } else {
-      logError("telnyx_stream_start_skipped_no_session", { callControlId });
-    }
-    return res.status(200).send("ok");
-  }
-
-  if (eventType === "streaming.started" || eventType === "streaming.started.v1") {
-    return res.status(200).send("ok");
-  }
-
-  if (eventType === "streaming.stopped" || eventType === "streaming.stopped.v1") {
-    const callControlId = String(eventPayload.call_control_id || "");
-    if (callControlId) {
-      const session = streamSessions.get(callControlId);
-      if (session) {
-        await handleStreamingStoppedForSession(session, "telnyx_streaming_stopped");
-      } else {
-        await markCallCompleted(callControlId);
-      }
-    }
-    return res.status(200).send("ok");
-  }
-
-  if (eventType === "call.hangup" || eventType === "call.hangup.v1") {
-    if (transferLegState) {
-      const sourceSession = streamSessions.get(transferLegState.source_call_control_id);
-      if (sourceSession?.transferState?.status === "pending" && sourceSession.transferState.targetId === transferLegState.target_id) {
-        await handleTransferFailed(sourceSession, "target_leg_hangup", {
-          targetCallControlId: eventPayload.call_control_id,
-          hangupCause: normalizeOptionalText(eventPayload.hangup_cause)
-        });
-      }
-      return res.status(200).send("ok");
-    }
-
-    const callControlId = String(eventPayload.call_control_id || "");
-    if (callControlId) {
-      const session = streamSessions.get(callControlId);
-      if (session) {
-        await flushFinalAudioAndEnd(session, "telnyx_hangup", false);
-      } else {
-        await markCallCompleted(callControlId);
-      }
-    }
-    return res.status(200).send("ok");
-  }
-
-  return res.status(200).send("ok");
 });
 
 app.get("/healthz", (_req, res) => {
@@ -3812,11 +3918,29 @@ wss.on("connection", (ws, req) => {
       if (session) {
         await handleStreamingStoppedForSession(session, "telnyx_stream_stop");
       } else {
-        await markCallCompleted(callControlId);
+        await markCallCompleted(callControlId).catch(error => logError("stream_stop_completion_failed", { callSid: callControlId, message: String(error) }));
       }
     }
   });
 });
+
+let voiceRecoveryRunning = false;
+async function recoverPendingVoiceWebhooks() {
+  if (!pool || voiceRecoveryRunning) return;
+  voiceRecoveryRunning = true;
+  try {
+    const results = await recoverInboundVoiceWebhooks(pool, raw => processVerifiedVoiceWebhook(raw, callGatewayBaseUrl));
+    for (const result of results) {
+      if (result.status === "rejected") logError("voice_webhook_recovery_failed", { message: String(result.reason?.message || result.reason) });
+    }
+  } catch (error) {
+    logError("voice_webhook_recovery_scan_failed", { message: error instanceof Error ? error.message : "unknown" });
+  } finally {
+    voiceRecoveryRunning = false;
+  }
+}
+const voiceRecoveryTimer = setInterval(() => { void recoverPendingVoiceWebhooks(); }, 15000);
+voiceRecoveryTimer.unref();
 
 const port = Number(process.env.PORT || 3101);
 server.listen(port, () => {
@@ -3830,4 +3954,5 @@ server.listen(port, () => {
     outboundBufferMs: outboundJitterBufferFrames * outboundAudioFrameMs
   });
   void preloadActiveBuildAssetsOnStartup();
+  void recoverPendingVoiceWebhooks();
 });

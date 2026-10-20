@@ -734,7 +734,7 @@ const buildSource = await fs.readFile(new URL("../pages/api/_lib/knowledgeRecept
 assert.match(buildSource, /refreshNoToolStatement: true/, "website publication must refresh the persisted no-tool statement");
 assert.match(buildSource, /withKnowledgeBuildExecutionLease/);
 assert.doesNotMatch(buildSource, /pg_try_advisory_lock|pg_advisory_unlock/, "transaction-pooled builds must not use session advisory locks");
-assert.match(buildSource, /status IN \('queued', 'running', 'ready_to_publish'\)/, "failure updates must be terminal-status guarded");
+assert.match(buildSource, /status IN \('queued', 'running'\)/, "failure updates must preserve builds already ready for review or terminal");
 const gatewayPromptResponseSource = await fs.readFile(new URL("../pages/api/_lib/gatewayPromptResponse.js", import.meta.url), "utf8");
 assert.match(gatewayPromptResponseSource, /businessDetailsLayer/);
 assert.match(gatewayPromptResponseSource, /TRANSFER_RULES_PROMPT_BLOCK/);

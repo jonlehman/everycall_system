@@ -1,3 +1,4 @@
+import { normalizeKnowledgeClaim, resolveKnowledgeConflicts, analyzeKnowledgeContent, selectKnowledgeEvidence } from './knowledgeContentValidation.js';
 import crypto from "node:crypto";
 import { z } from "zod";
 import { callOpenAiJsonModel, embedOpenAiTexts } from "@everycall/contracts";
@@ -2625,7 +2626,7 @@ async function runSourceArtifactStage(db, buildInfo, sourceRecords, topicRows, w
   return usableRows;
 }
 
-function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
+export function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
   const factMap = new Map();
   const cardMap = new Map();
 
@@ -2638,12 +2639,13 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
       const topicId = findTopicId(topicRows, fact.topic_name);
       const subtopicId = findSubtopicId(topicRows, fact.topic_name, fact.subtopic_name);
       const key = [
-        sourceLocalOnly ? normalizeText(sourceRefId).toLowerCase() : "",
+        normalizeText(sourceRefId).toLowerCase(),
         normalizeText(fact.topic_name).toLowerCase(),
         normalizeText(fact.subtopic_name).toLowerCase(),
         normalizeText(fact.fact_role).toLowerCase(),
         normalizeText(fact.claim_text).toLowerCase()
       ].join("::");
+      const normalized = normalizeKnowledgeClaim(fact, sourceItem);
       const current = factMap.get(key) || {
         knowledge_fact_id: createId("kf"),
         tenant_key: buildInfo.tenant_key,
@@ -2652,15 +2654,16 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
         subdomain_id: buildInfo.primarySubdomainId,
         knowledge_topic_id: topicId,
         knowledge_subtopic_id: subtopicId,
-        fact_type: "source_compiled_fact",
-        object_type: "knowledge_support",
+        fact_type: normalized.fact_type,
+        object_type: normalized.object_type,
         subject: normalizeText(fact.topic_name) || normalizeText(sourceItem.title),
-        predicate: normalizeText(fact.fact_role) || "supports",
+        predicate: normalized.predicate,
         object_text: fact.claim_text,
-        normalized_value_json: null,
+        normalized_value_json: normalized.normalized_value_json,
         confidence: sourceItem.sourceAuthority === "owner_interview_confirmed" ? 0.94 : 0.82,
         source_ref_ids_json: [],
         scope_json: {
+          explicit: !/implied|inferred/i.test(fact.support_type || "source_backed"),
           source_authority: sourceItem.sourceAuthority,
           source_channel: sourceItem.sourceChannel,
           source_locator: sourceItem.sourceLocator,
@@ -2671,7 +2674,7 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
         content_class: sourceItem.contentClass,
         risk_level: "normal",
         claim_text: fact.claim_text,
-        evidence_text: fact.claim_text,
+        evidence_text: selectKnowledgeEvidence(fact.claim_text, sourceChunks, fact.source_chunk_ids),
         fact_role: normalizeText(fact.fact_role) || "detail",
         support_type: normalizeText(fact.support_type) || "source_backed",
         core_fact_creation_rating: {
@@ -2687,6 +2690,7 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
         qualifier_json: { statements: uniqueValues(fact.qualifiers || []) },
         boundary_json: { statements: uniqueValues(fact.boundary_notes || []) },
         support_metadata_json: {
+          semantic_key: normalized.semantic_key,
           next_steps: uniqueValues(fact.next_steps || []),
           card_ids: [],
           source_channels: uniqueValues([sourceItem.sourceChannel]),
@@ -2736,7 +2740,7 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
       const topicId = findTopicId(topicRows, card.topic_name);
       const subtopicId = findSubtopicId(topicRows, card.topic_name, card.subtopic_name);
       const key = [
-        sourceLocalOnly ? normalizeText(sourceRefId).toLowerCase() : "",
+        normalizeText(sourceRefId).toLowerCase(),
         normalizeText(card.topic_name).toLowerCase(),
         normalizeText(card.subtopic_name).toLowerCase(),
         normalizeText(card.card_role).toLowerCase(),
@@ -2754,7 +2758,7 @@ function consolidateArtifacts(buildInfo, topicRows, extractedBySource) {
         knowledge_subtopic_id: subtopicId,
         card_type: "answer_unit",
         card_role: normalizeText(card.card_role) || "answer_unit",
-        object_type: "knowledge_answer_unit",
+        object_type: supportingFacts[0]?.object_type || "faq",
         canonical_name: card.canonical_name,
         topic_path: uniqueValues([card.topic_name, card.subtopic_name]).join(" / ") || null,
         intent_tags_json: uniqueValues([card.card_role, card.topic_name, card.subtopic_name]),
@@ -3131,7 +3135,14 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo, assertExec
     };
   });
 
-  const consolidated = consolidateArtifacts(buildInfo, topicRows, extractedBySource);
+  const preliminary = consolidateArtifacts(buildInfo, topicRows, extractedBySource);
+  const consolidated = resolveKnowledgeConflicts(preliminary.facts, preliminary.cards);
+  const previous = await db.query(`SELECT f.claim_text, f.build_id FROM knowledge_facts f
+    JOIN tenant_active_knowledge_builds active ON active.tenant_key=f.tenant_key AND active.active_build_id=f.build_id
+    WHERE f.tenant_key=$1`, [buildInfo.tenant_key]);
+  const contentQa = analyzeKnowledgeContent({ buildInfo, facts: consolidated.facts, cards: consolidated.cards, sources: sourceRecords, conflicts: consolidated.conflicts,
+    previousFacts: previous.rows, previousBuildId: previous.rows[0]?.build_id || null });
+  warnings.push(...contentQa.warnings);
   logCompilerProgress("artifact_consolidation_completed", {
     cardCount: consolidated.cards.length,
     factCount: consolidated.facts.length
@@ -3244,7 +3255,8 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo, assertExec
     },
     embeddingModel: embedded.embeddingModel,
     plannerModel: process.env.OPENAI_PLANNER_MODEL || "gpt-4.1-mini",
-    compilerVersion: "planner_pgvector_v2_batched",
+    compilerVersion: "planner_pgvector_v3_governed",
+    contentQa,
     warnings
   };
 }

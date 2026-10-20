@@ -60,3 +60,9 @@ This document captures operating guidelines for voice + SMS agents and the suppo
   - `docs/DECISIONS.md`
   - `docs/TESTS.md`
   - `docs/RUNBOOK.md`
+
+## Knowledge Design Constraints
+- Before changing source capture, crawling, analysis, knowledge artifacts, source authority, or build publication, also read the frozen subsystem index and the relevant documents under `docs/architecture/knowledge-receptionist-subsystem/v1.0/`, especially 05, 06, 07, 10, 11, and 16.
+- Preserve original requirement IDs and text. Record an intentional architecture change or supersession explicitly; a Proposed specification alone does not establish approval.
+- Map behavior changes to requirement IDs, current implementation, and a regression test. Preserve raw source capture separately from budgeted AI evidence, tenant-owned corrections, source-authority rules, and validated publication.
+- Run `node scripts/validate-knowledge-design-inventory.mjs` after changing the design inventory. Keep historical conformance reviews separate from current remediation/release evidence.

@@ -330,6 +330,7 @@ const telnyx = {
     const state = decodeSalesClientState(clientState);
     assert.equal(state?.role, "operator");
     providerEvents.push(`telnyx:answer_operator:${callControlId}`);
+    if (consumeProviderFailure(`answer:${callControlId}`)) throw new Error("operator answer failed");
     return { data: { result: "ok" } };
   },
   async createConference({ anchorCallControlId, name }) {
@@ -1262,6 +1263,18 @@ try {
   assert.ok(providerEvents.includes(
     "telnyx:end_conference:conf-sales-sales-call-1"
   ));
+
+  const reservationFailure = baseCall("sales-call-reservation-failure");
+  repository.calls.set(reservationFailure.salesCallId, reservationFailure);
+  failProviderTimes("answer:operator-control-sales-call-reservation-failure", 1);
+  failProviderTimes("hangup:operator-control-sales-call-reservation-failure", 1);
+  const failedOperator = await postTelnyx(operatorEvent(reservationFailure.salesCallId, "operator-reservation-failure"));
+  assert.ok(failedOperator.status >= 500);
+  assert.equal(repository.calls.get(reservationFailure.salesCallId).state, "ending",
+    "Ambiguous operator teardown must retain the prospect reservation");
+  await gateway.recoverRealtimeSessions();
+  assert.equal(repository.calls.get(reservationFailure.salesCallId).state, "closed",
+    "Successful teardown recovery releases the prospect reservation");
 
   const invalidOpenAI = {
     ...incomingEvent,

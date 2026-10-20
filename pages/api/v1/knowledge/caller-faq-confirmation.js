@@ -1,3 +1,4 @@
+import { findCurrentApprovedKnowledgeChange } from '../../_lib/knowledgeGovernance.js';
 import { getPool } from "../../_lib/db.js";
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { requireTenantBillingAccess, requireTenantRoles } from "../../_lib/billing.js";
@@ -8,7 +9,7 @@ import {
   loadCallerFaqConfirmation,
   normalizeCallerFaqAnswers
 } from "../../_lib/knowledgeCallerFaqConfirmation.js";
-import { saveSetupInterviewSubmission } from "../../_lib/knowledgeReceptionistSetupInterview.js";
+import { saveSetupInterviewSubmission, loadSetupInterviewState } from "../../_lib/knowledgeReceptionistSetupInterview.js";
 import { enqueueKnowledgeBuild } from "../../_lib/knowledgeReceptionistBuilds.js";
 import { confirmKnowledgeHeartFacts } from "../../_lib/knowledgeHeartCatalog.js";
 
@@ -50,7 +51,7 @@ export default async function handler(req, res) {
       return fail(res, 400, "caller_faq_confirmed_fact_required", "Confirm at least one fact before submitting.");
     }
     const ids = callerFaqConfirmationIds(tenantKey);
-    const submission = await saveSetupInterviewSubmission(pool, tenantKey, {
+    const submissionPayload = {
       intent: {
         setupInterviewIntentId: ids.intentId,
         version: "caller_faq_v1",
@@ -68,7 +69,14 @@ export default async function handler(req, res) {
         confirmedSummaryBlocks: summaryBlocks,
         metadata: { source: "caller_faq_confirmation_v1", trigger_build_id: current.trigger_build_id }
       }
-    });
+    };
+    const priorApproval = await findCurrentApprovedKnowledgeChange(pool, tenantKey, 'setup_interview', submissionPayload, session);
+    const submission = priorApproval
+      ? { session: (await loadSetupInterviewState(pool, tenantKey)).sessions.find(item => item.setup_interview_session_id === ids.sessionId) }
+      : await saveSetupInterviewSubmission(pool, tenantKey, submissionPayload, session);
+    if (submission.review_required) {
+      return res.status(202).json({ ok: true, review_required: true, change_id: submission.change_id, status: 'draft', message: 'A second administrator must approve these facts. Submit the same answers again after approval to finish confirmation.' });
+    }
     const activeResult = await pool.query(
       `SELECT active.active_build_id
        FROM tenant_active_knowledge_builds active
@@ -81,6 +89,14 @@ export default async function handler(req, res) {
     );
     const baseBuildId = String(activeResult.rows?.[0]?.active_build_id || "").trim();
     if (!baseBuildId) throw new Error("overlay_base_build_required");
+    // Allocate the rolling build quota before any tenant-owned fact mutation.
+    // A quota refusal must leave manual selections and confirmation untouched.
+    const queued = await enqueueKnowledgeBuild(pool, tenantKey, {
+      actor: session,
+      buildKind: "document_overlay",
+      baseBuildId,
+      setupInterviewSessionIds: [ids.sessionId]
+    });
     const selectionStateResult = await pool.query(
       `SELECT selection_version FROM kb_selection_state WHERE tenant_key = $1 LIMIT 1`,
       [tenantKey]
@@ -92,11 +108,6 @@ export default async function handler(req, res) {
       actor: session.user_id ? `${session.role || "tenant"}:${session.user_id}` : "tenant:caller-faq-confirmation",
       requestId: String(req.headers?.["x-request-id"] || ""),
       idempotencyKey: `caller-faq:${ids.sessionId}`
-    });
-    const queued = await enqueueKnowledgeBuild(pool, tenantKey, {
-      buildKind: "document_overlay",
-      baseBuildId,
-      setupInterviewSessionIds: [ids.sessionId]
     });
     const followupBuildId = String(queued?.build?.build_id || "").trim();
     await completeCallerFaqConfirmation(pool, {
@@ -119,6 +130,9 @@ export default async function handler(req, res) {
     }
     if (message.startsWith("caller_faq_answer_too_long:")) {
       return fail(res, 400, "caller_faq_answer_too_long", "Keep each answer under 500 characters.");
+    }
+    if (message === "knowledge_build_rate_limited") {
+      return fail(res, 429, message, "A knowledge build was already initiated within the last 24 hours. Your manual facts and confirmation status have not changed.");
     }
     if (message === "overlay_base_build_required") {
       return fail(res, 409, "overlay_base_build_required", "Publish a website knowledge build before confirming these facts.");

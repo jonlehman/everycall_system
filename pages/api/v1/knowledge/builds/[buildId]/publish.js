@@ -35,13 +35,17 @@ export default async function handler(req, res) {
     }
 
     const result = await publishKnowledgeBuildWithExecutionLease(pool, tenantKey, buildId, {
-      owner: `knowledge-publish:${process.env.VERCEL_REGION || "local"}:${process.pid}`
+      owner: `knowledge-publish:${process.env.VERCEL_REGION || "local"}:${process.pid}`,
+      actor: session
     });
     return res.status(200).json({ ok: true, ...result });
   } catch (err) {
     const message = String(err?.message || "unknown");
     if (message === "knowledge_receptionist_migrations_not_applied") {
       return fail(res, 503, "migrations_required", "Knowledge receptionist migrations have not been applied.");
+    }
+    if (message.startsWith("knowledge_") && /required|forbidden|blocked/.test(message)) {
+      return res.status(message.includes("forbidden") ? 403 : 409).json({ ok: false, error: message, blockers: err.blockers || [] });
     }
     if (message === "build_not_found") {
       return fail(res, 404, "build_not_found", "Build not found.");

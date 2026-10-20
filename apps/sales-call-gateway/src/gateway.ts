@@ -208,6 +208,21 @@ function errorPatch(error: any): SalesCallPatch {
   };
 }
 
+function guardPreparationRecovery(call: SalesCallContext, patch: SalesCallPatch): SalesCallPatch {
+  const unknown = call.metadata.preparation_unknown_resources;
+  if (!Array.isArray(unknown)) return patch;
+  const unresolved = unknown.filter(resource =>
+    resource === "conference" ? !call.conferenceId
+      : resource === "prospect" ? !call.prospectCallControlId
+        : resource === "ai" ? !call.aiTelnyxCallControlId : true);
+  if (!unresolved.length) return patch;
+  return {
+    ...patch, state: "ending", ai_state: "tearing_down", ended_at: null,
+    provider_error_code: "preparation_reconciliation_required",
+    provider_error_message: `Provider outcomes remain unconfirmed for: ${unresolved.join(", ")}. Await correlated provider events or reconcile with the provider before releasing this prospect.`
+  };
+}
+
 function teardownErrorPatch(teardown: unknown): SalesCallPatch {
   const failed = Array.isArray(teardown)
     ? teardown.filter((entry) => entry?.status === "rejected")
@@ -488,6 +503,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
     providerPatch: SalesCallPatch = {}
   ): Promise<SalesCallContext> {
     const salesCallId = call.salesCallId;
+    let preparationPatch: SalesCallPatch = {};
     try {
       const result = await orchestrator.beginCall({
         salesCallId,
@@ -520,12 +536,14 @@ export function createSalesCallGateway(options: GatewayOptions) {
               call_session_id: call.aiTelnyxSessionId
             }
           : null,
-        onCheckpoint: (patch: SalesCallPatch) => (
-          repository.patchCall(salesCallId, patch)
-        )
+        onCheckpoint: (patch: SalesCallPatch) => {
+          preparationPatch = { ...preparationPatch, ...patch };
+          return repository.patchCall(salesCallId, patch);
+        }
       });
+      preparationPatch = { ...preparationPatch, ...result.patch };
       const latest = await loadRequiredCall(salesCallId);
-      return repository.patchCall(salesCallId, {
+      return await repository.patchCall(salesCallId, {
         ...result.patch,
         ...(latest.connectedAt ? { state: "prospect_connected" } : {}),
         provider_error_code: null,
@@ -535,15 +553,26 @@ export function createSalesCallGateway(options: GatewayOptions) {
       const teardown = Array.isArray((error as any)?.teardown)
         ? (error as any).teardown
         : [];
-      const teardownFailed = teardown.some((entry: any) => (
-        entry?.status === "rejected"
-      ));
+      const failurePatch = errorPatch(error);
+      const known = { ...preparationPatch, ...failurePatch };
+      const explicitUnknown = asObject(failurePatch.metadata_json).preparation_unknown_resources;
+      const unknown = Array.isArray(explicitUnknown) ? explicitUnknown : [
+        ...(!(known.conference_id || call.conferenceId) ? ["conference"] : []),
+        ...(!(known.prospect_call_control_id || call.prospectCallControlId) ? ["prospect"] : []),
+        ...(!(known.ai_telnyx_call_control_id || call.aiTelnyxCallControlId) ? ["ai"] : [])
+      ];
+      // An absent/empty teardown is not proof of cleanup. Persist every known
+      // resource and retain the reservation until endCall confirms teardown.
       await repository.patchCall(salesCallId, {
-        ...errorPatch(error),
-        ...(teardownFailed ? teardownErrorPatch(teardown) : {}),
-        state: teardownFailed ? "ending" : "failed",
-        ai_state: teardownFailed ? "tearing_down" : "failed",
-        ...(teardownFailed ? {} : { ended_at: nowIso(now) })
+        ...known,
+        ...(teardown.some((entry: any) => entry?.status === "rejected") ? teardownErrorPatch(teardown) : {}),
+        state: "ending",
+        ai_state: "tearing_down",
+        ended_at: null,
+        metadata_json: {
+          ...asObject(preparationPatch.metadata_json), ...asObject(failurePatch.metadata_json),
+          preparation_unknown_resources: unknown
+        }
       });
       throw error;
     }
@@ -704,6 +733,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
       });
     } catch (error) {
       const providerError = summarizeSalesProviderError(error);
+      let teardownFailed = false;
       try {
         await telnyx.hangupCall({
           callControlId: operatorCallControlId,
@@ -714,13 +744,13 @@ export function createSalesCallGateway(options: GatewayOptions) {
           })
         });
       } catch {
-        // The answer error remains primary; a provider retry may find the leg gone.
+        teardownFailed = true;
       }
       await repository.patchCall(salesCallId, {
         ...providerError,
-        state: "failed",
-        ai_state: "failed",
-        ended_at: nowIso(now)
+        state: teardownFailed ? "ending" : "failed",
+        ai_state: teardownFailed ? "tearing_down" : "failed",
+        ...(teardownFailed ? {} : { ended_at: nowIso(now) })
       });
       throw error;
     }
@@ -826,15 +856,15 @@ export function createSalesCallGateway(options: GatewayOptions) {
         outcome
       });
       return repository.patchCall(current.salesCallId, {
-        ...result.patch,
         ...teardownErrorPatch(result.teardown),
+        ...guardPreparationRecovery(current, result.patch),
         ...(outcome ? { outcome } : {})
       });
     } catch (error) {
       await repository.patchCall(current.salesCallId, {
         ...errorPatch(error),
-        state: "failed",
-        ended_at: nowIso(now)
+        state: "ending",
+        ai_state: "tearing_down"
       });
       throw error;
     }
@@ -1740,8 +1770,8 @@ export function createSalesCallGateway(options: GatewayOptions) {
         outcome: call.outcome
       });
       await repository.patchCall(call.salesCallId, {
-        ...result.patch,
-        ...teardownErrorPatch(result.teardown)
+        ...teardownErrorPatch(result.teardown),
+        ...guardPreparationRecovery(call, result.patch)
       });
       return true;
     }

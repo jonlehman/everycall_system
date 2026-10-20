@@ -14,7 +14,9 @@ import {
   ASYNC_JOB_TYPES,
   claimAsyncJobs,
   completeAsyncJob,
-  failAsyncJob
+  failAsyncJob,
+  heartbeatAsyncJob,
+  releaseAsyncJob
 } from "../../../lib/asyncJobs.js";
 
 const databaseUrl = String(process.env.DATABASE_URL || "").trim();
@@ -28,6 +30,28 @@ if (!databaseUrl) {
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
 let shuttingDown = false;
+const heldClaims = new Map();
+let activeJobId = null;
+let loopPromise;
+const shutdownTimeoutMs = Math.max(1000, Math.min(25000, Number(process.env.WORKER_SHUTDOWN_TIMEOUT_MS) || 25000));
+
+// Heartbeat the whole claimed batch, including jobs waiting behind a slow job.
+let heartbeatRunning = false;
+const heartbeatTimer = setInterval(async () => {
+  if (heartbeatRunning) return;
+  heartbeatRunning = true;
+  try {
+    for (const job of heldClaims.values()) {
+      const owned = await heartbeatAsyncJob(pool, job.id, { claimToken: job.claim_token });
+      if (!owned) heldClaims.delete(job.id);
+    }
+  } catch (err) {
+    logError("worker_heartbeat_failed", { workerId, message: err?.message || "unknown" });
+  } finally {
+    heartbeatRunning = false;
+  }
+}, 30000);
+heartbeatTimer.unref();
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -182,10 +206,22 @@ async function runLoop() {
       continue;
     }
 
+    for (const job of jobs) heldClaims.set(job.id, job);
     for (const job of jobs) {
       try {
+        if (shuttingDown) {
+          await releaseAsyncJob(pool, job.id, { claimToken: job.claim_token });
+          continue;
+        }
+        // A missed heartbeat must never let a waiting stale claim start effects.
+        if (!await heartbeatAsyncJob(pool, job.id, { claimToken: job.claim_token })) continue;
+        if (shuttingDown) {
+          await releaseAsyncJob(pool, job.id, { claimToken: job.claim_token });
+          continue;
+        }
+        activeJobId = job.id;
         await processJob(job);
-        await completeAsyncJob(pool, job.id);
+        await completeAsyncJob(pool, job.id, { claimToken: job.claim_token });
       } catch (err) {
         const message = err instanceof Error ? err.message : "unknown";
         logError("worker_job_failed", {
@@ -197,10 +233,14 @@ async function runLoop() {
           message
         });
         await failAsyncJob(pool, job.id, {
+          claimToken: job.claim_token,
           attempts: job.attempts,
           maxAttempts: job.max_attempts,
           errorMessage: message
         });
+      } finally {
+        heldClaims.delete(job.id);
+        activeJobId = null;
       }
     }
   }
@@ -210,17 +250,32 @@ async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   logInfo("worker_shutdown_requested", { workerId, signal });
+  // Do not close the pool underneath active work. Unstarted claims return to
+  // pending; a timed-out in-flight job retains its lease until process exit.
+  const deadline = setTimeout(() => process.exit(1), shutdownTimeoutMs);
   try {
+    for (const job of heldClaims.values()) {
+      if (job.id !== activeJobId) {
+        await releaseAsyncJob(pool, job.id, { claimToken: job.claim_token });
+        heldClaims.delete(job.id);
+      }
+    }
+    await loopPromise;
+    clearInterval(heartbeatTimer);
     await pool.end();
-  } finally {
+    clearTimeout(deadline);
     process.exit(0);
+  } catch (err) {
+    logError("worker_shutdown_failed", { workerId, message: err?.message || "unknown" });
+    process.exit(1);
   }
 }
 
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 
-runLoop().catch(async (err) => {
+loopPromise = runLoop();
+loopPromise.catch(async (err) => {
   logError("worker_fatal", {
     workerId,
     message: err instanceof Error ? err.message : "unknown"

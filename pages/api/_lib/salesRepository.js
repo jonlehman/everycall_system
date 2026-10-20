@@ -543,7 +543,7 @@ function serializeProspect(row) {
   const salesSkip = asObject(prospectMetadata.salesSkip);
   const preparationBlock = prospectPreparationBlock(row);
   const callingWindow = evaluateSalesCallingWindow(row.timezone);
-  const callBlock = preparationBlock || (!callingWindow.allowed
+  const callBlock = (row.active_sales_call_id ? { code: "prospect_reserved", reason: "Another sales call reserves this prospect. End that call before retrying." } : null) || preparationBlock || (!callingWindow.allowed
     ? { code: callingWindow.reasonCode, reason: callingWindow.reason }
     : null);
   const effectiveDemoStatus = demoStatus(row);
@@ -594,6 +594,8 @@ function serializeProspect(row) {
     doNotCall: Boolean(row.do_not_call),
     preparationEligible: !preparationBlock,
     eligible: !callBlock,
+    activeSalesCallId: row.active_sales_call_id || null,
+    activeCallState: row.active_call_state || null,
     callBlockedCode: callBlock?.code || null,
     callBlockedReason: callBlock?.reason || null,
     callingWindow,
@@ -632,6 +634,10 @@ function serializeProspect(row) {
 
 const PROSPECT_WITH_DEMO_SELECT = `
   SELECT p.*,
+         (SELECT sales_call_id FROM sales_call_sessions s WHERE s.prospect_id=p.prospect_id
+           AND s.state NOT IN ('closed', 'ended', 'completed', 'failed', 'no_answer', 'voicemail', 'wrong_number', 'not_interested', 'do_not_call', 'canceled', 'cancelled') LIMIT 1) AS active_sales_call_id,
+         (SELECT state FROM sales_call_sessions s WHERE s.prospect_id=p.prospect_id
+           AND s.state NOT IN ('closed', 'ended', 'completed', 'failed', 'no_answer', 'voicemail', 'wrong_number', 'not_interested', 'do_not_call', 'canceled', 'cancelled') LIMIT 1) AS active_call_state,
          d.demo_profile_id,
          d.status AS demo_status,
          d.business_name AS demo_business_name,
@@ -2036,11 +2042,40 @@ export async function upsertSalesOperatorSettings(pool, adminUserId, input = {})
   return serializeSalesOperatorSettings(result.rows[0]);
 }
 
+export async function expireUnstartedSalesCalls(pool, prospectId = null) {
+  // Only browser setup that never obtained ANY provider resource can expire.
+  // Active/ambiguous provider calls require the audited end_call action.
+  return pool.query(
+    `UPDATE sales_call_sessions SET state='failed', ended_at=NOW(), updated_at=NOW(),
+       provider_error_code='browser_reservation_expired',
+       provider_error_message='Browser setup expired before a provider leg was attached.',
+       metadata_json=metadata_json || '{"reservation_release_reason":"browser_setup_timeout"}'::jsonb
+     WHERE ($1::text IS NULL OR prospect_id=$1)
+       AND state IN ('created', 'connecting_browser') AND created_at < NOW()-INTERVAL '10 minutes'
+       AND operator_call_control_id IS NULL AND operator_leg_id IS NULL AND operator_session_id IS NULL
+       AND prospect_call_control_id IS NULL AND ai_telnyx_call_control_id IS NULL
+       AND openai_call_id IS NULL AND conference_id IS NULL
+     RETURNING sales_call_id`, [prospectId]
+  );
+}
+
 export async function createSalesCallSession(pool, input = {}) {
   const prospectId = normalizeSalesText(input.prospectId || input.prospect_id, 200);
   if (!prospectId) throw salesError("prospect_id_required", "Prospect ID is required.");
+  await expireUnstartedSalesCalls(pool, prospectId);
+  const requestKey = normalizeSalesText(input.idempotencyKey || input.idempotency_key, 240);
+  if (requestKey) {
+    const replay = await pool.query(`SELECT * FROM sales_call_sessions WHERE admin_user_id=$1 AND idempotency_key=$2`,
+      [Number(input.adminUserId || input.admin_user_id || 0) || null, requestKey]);
+    if (replay.rowCount) {
+      if (replay.rows[0].prospect_id !== prospectId) throw salesError("idempotency_key_conflict", "This idempotency key was already used for a different sales call.", 409);
+      return serializeSalesCallSession(replay.rows[0]);
+    }
+  }
   const prospect = await getSalesProspect(pool, prospectId);
   if (!prospect) throw salesError("prospect_not_found", "Prospect not found.", 404);
+  if (prospect.activeSalesCallId) throw salesError("prospect_reserved", "This prospect has an active or unreconciled call. Its operator or an administrator must use end_call before retrying.", 409,
+    { salesCallId: prospect.activeSalesCallId, state: prospect.activeCallState, recoveryAction: "end_call" });
   if (!prospect.eligible) {
     throw salesError(
       prospect.callBlockedCode === "outside_calling_window"
@@ -2061,7 +2096,9 @@ export async function createSalesCallSession(pool, input = {}) {
   const salesCallId = normalizeSalesText(input.salesCallId || input.sales_call_id, 200)
     || createId("sales_call");
 
-  const result = await pool.query(
+  let result;
+  try {
+    result = await pool.query(
     `INSERT INTO sales_call_sessions (
        sales_call_id, prospect_id, admin_user_id, state, conference_id, conference_name,
        operator_call_control_id, operator_leg_id, operator_session_id,
@@ -2113,6 +2150,14 @@ export async function createSalesCallSession(pool, input = {}) {
       json(asObject(input.metadata || input.metadata_json), {})
     ]
   );
+  } catch (error) {
+    if (error?.code === "23505" && error?.constraint === "sales_call_sessions_active_prospect_idx") {
+      const reserved = await getSalesProspect(pool, prospectId);
+      throw salesError("prospect_reserved", "This prospect was reserved by another call. Its operator or an administrator must use end_call before retrying.", 409,
+        { salesCallId: reserved?.activeSalesCallId, state: reserved?.activeCallState, recoveryAction: "end_call" });
+    }
+    throw error;
+  }
   if (result.rows[0]?.prospect_id !== prospectId) {
     throw salesError(
       "idempotency_key_conflict",
@@ -2297,7 +2342,8 @@ export async function recordSalesCallOutcome(pool, {
   return withTransaction(pool, async (db) => {
     const normalizedSalesCallId = normalizeSalesText(salesCallId, 200);
     const existing = await db.query(
-      `SELECT sales_call_id, prospect_id, outcome
+      `SELECT sales_call_id, prospect_id, outcome, state, operator_call_control_id,
+              prospect_call_control_id, ai_telnyx_call_control_id, openai_call_id, conference_id
        FROM sales_call_sessions
        WHERE sales_call_id = $1
        FOR UPDATE`,
@@ -2305,6 +2351,11 @@ export async function recordSalesCallOutcome(pool, {
     );
     if (!existing.rowCount) {
       throw salesError("sales_call_not_found", "Sales call not found.", 404);
+    }
+    const active = existing.rows[0];
+    if (!["closed", "ended", "completed", "failed", "no_answer", "voicemail", "wrong_number", "not_interested", "do_not_call", "canceled", "cancelled"].includes(active.state)
+      && (active.operator_call_control_id || active.prospect_call_control_id || active.ai_telnyx_call_control_id || active.openai_call_id || active.conference_id)) {
+      throw salesError("sales_call_end_required", "End the provider call before recording its outcome.", 409);
     }
     const updated = await db.query(
       `UPDATE sales_call_sessions

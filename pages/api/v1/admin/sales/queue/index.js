@@ -1,5 +1,6 @@
 import {
   getSalesMissingTimezonePolicy,
+  expireUnstartedSalesCalls,
   listSalesProspects,
   SALES_WARM_QUEUE_SIZE
 } from "../../../../_lib/salesRepository.js";
@@ -16,6 +17,7 @@ export default async function handler(req, res) {
   try {
     const context = await requireSalesAdmin(req, res);
     if (!context) return;
+    await expireUnstartedSalesCalls(context.pool);
     const queue = await listSalesProspects(context.pool, {
       limit: req.query?.limit || SALES_WARM_QUEUE_SIZE,
       afterQueuePosition: req.query?.afterQueuePosition,

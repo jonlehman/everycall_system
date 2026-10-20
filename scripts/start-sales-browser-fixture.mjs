@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
-import { ensureTables } from "../pages/api/_lib/db.js";
+import { bootstrapFixtureSchema } from "./lib/schema-migrations.mjs";
 import { importSalesProspects } from "../pages/api/_lib/salesRepository.js";
 
 const PORT = Number(process.env.SALES_BROWSER_DB_PORT || 55432);
@@ -34,13 +34,7 @@ function createPool(db) {
 const db = new PGlite();
 const pool = createPool(db);
 
-await db.exec(`
-  CREATE TABLE knowledge_coverage_events (
-    knowledge_coverage_event_id TEXT PRIMARY KEY,
-    top_scores_json JSONB NOT NULL DEFAULT '[]'::jsonb
-  );
-`);
-await ensureTables(pool);
+await bootstrapFixtureSchema(pool, { executeSql: sql => db.exec(sql) });
 await db.exec(await fs.readFile(
   new URL("../migrations/0032_outbound_sales_demo.sql", import.meta.url),
   "utf8"

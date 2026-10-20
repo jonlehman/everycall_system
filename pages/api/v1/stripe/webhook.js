@@ -80,22 +80,40 @@ async function getTenantBillingRow(pool, { tenantKey, customerId, subscriptionId
   return null;
 }
 
-async function decrementOverrideCyclesIfNeeded(pool, tenantKey) {
-  const row = await pool.query(
-    `SELECT price_override_cycles_remaining
-     FROM tenant_billing_accounts
-     WHERE tenant_key = $1
-     LIMIT 1`,
-    [tenantKey]
+async function boundedProviderRead(operation) {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("stripe_provider_timeout")), 10000); })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function hydrateSubscriptionSchedule(subscription) {
+  const ref = subscription?.schedule;
+  const scheduleId = typeof ref === "string" ? ref : ref?.id;
+  if (scheduleId && !ref?.phases) {
+    // The general sync helper tolerates a failed schedule read. Webhooks must
+    // retry that failure instead of committing an incomplete processed event.
+    return { ...subscription, schedule: await boundedProviderRead(() => retrieveSubscriptionSchedule(scheduleId)) };
+  }
+  return subscription;
+}
+
+async function decrementOverrideCyclesIfNeeded(pool, tenantKey, invoiceId) {
+  if (!invoiceId) throw new Error("paid_invoice_id_missing");
+  const effect = await pool.query(
+    `INSERT INTO billing_invoice_effects (invoice_id, tenant_key) VALUES ($1, $2)
+     ON CONFLICT (invoice_id) DO NOTHING RETURNING invoice_id`, [invoiceId, tenantKey]
   );
-  const cycles = Number(row.rows[0]?.price_override_cycles_remaining ?? -1);
-  if (cycles <= 0) return;
+  if (!effect.rowCount) return;
   await pool.query(
     `UPDATE tenant_billing_accounts
-     SET price_override_cycles_remaining = GREATEST(price_override_cycles_remaining - 1, 0),
-         updated_at = NOW()
-     WHERE tenant_key = $1`,
-    [tenantKey]
+     SET price_override_cycles_remaining = GREATEST(price_override_cycles_remaining - 1, 0), updated_at = NOW()
+     WHERE tenant_key = $1 AND price_override_cycles_remaining > 0`, [tenantKey]
   );
 }
 
@@ -105,30 +123,51 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
-  const pool = getPool();
+  const database = getPool();
+  let pool = database;
+  let client = null;
+  let event = null;
+  let ownsLock = false;
+  let verified = false;
   if (!pool) {
     return res.status(500).json({ error: "database_unavailable" });
   }
 
-  await ensureTables(pool);
-
   try {
     const rawBody = await readRawBody(req);
     const signature = String(req.headers["stripe-signature"] || "");
-    const event = constructWebhookEvent(rawBody, signature);
+    event = constructWebhookEvent(rawBody, signature);
+    verified = true;
+    await ensureTables(pool);
 
-    const existing = await pool.query(
-      `SELECT id FROM billing_events WHERE stripe_event_id = $1 LIMIT 1`,
-      [event.id]
+    // Persist a retryable identity, then serialize every effect and the final
+    // marker in one transaction. A crash rolls back all local effects.
+    client = await database.connect();
+    pool = client;
+    await client.query("BEGIN");
+    await client.query("SET LOCAL lock_timeout = '1s'");
+    await client.query("SET LOCAL statement_timeout = '5s'");
+    await client.query(
+      `INSERT INTO billing_events (tenant_key, stripe_event_id, event_type, payload_json, processed_at, status)
+       VALUES (NULL, $1, $2, $3::jsonb, NULL, 'pending')
+       ON CONFLICT (stripe_event_id) DO NOTHING`,
+      [event.id, event.type, JSON.stringify(event)]
     );
-    if (existing.rowCount) {
+    await client.query("COMMIT");
+    await client.query("BEGIN");
+    await client.query("SET LOCAL lock_timeout = '1s'");
+    await client.query("SET LOCAL statement_timeout = '25s'");
+    await client.query("SET LOCAL idle_in_transaction_session_timeout = '60s'");
+    const existing = await client.query(
+      `SELECT status FROM billing_events WHERE stripe_event_id = $1 FOR UPDATE NOWAIT`, [event.id]
+    );
+    ownsLock = true;
+    if (existing.rows[0]?.status === 'processed') {
+      await client.query("COMMIT");
       return res.status(200).json({ ok: true, duplicate: true });
     }
-
-    await pool.query(
-      `INSERT INTO billing_events (tenant_key, stripe_event_id, event_type, payload_json, processed_at, status)
-       VALUES ($1, $2, $3, $4::jsonb, NOW(), 'processed')`,
-      [null, event.id, event.type, JSON.stringify(event)]
+    await client.query(
+      `UPDATE billing_events SET status = 'processing', error_message = NULL WHERE stripe_event_id = $1`, [event.id]
     );
 
     const object = event.data?.object || {};
@@ -156,10 +195,10 @@ export default async function handler(req, res) {
           ]
         );
         if (object.subscription) {
-          const subscription = await retrieveSubscription(String(object.subscription));
+          const subscription = await hydrateSubscriptionSchedule(await boundedProviderRead(() => retrieveSubscription(String(object.subscription))));
           await syncTenantStripeSubscription(pool, tenantRow.tenant_key, tenantRow, subscription, event.type);
           if (String(subscription?.status || "").trim().toLowerCase() !== "trialing") {
-            await activatePendingCouponDiscountWindow(pool, tenantRow.tenant_key, { subscription }).catch(() => null);
+            await activatePendingCouponDiscountWindow(pool, tenantRow.tenant_key, { subscription });
           }
         }
       }
@@ -170,9 +209,11 @@ export default async function handler(req, res) {
       event.type === "customer.subscription.updated" ||
       event.type === "customer.subscription.deleted"
     ) {
-      const canonicalSubscription = object.id
-        ? await retrieveSubscription(String(object.id)).catch(() => object)
-        : object;
+      const canonicalSubscription = await hydrateSubscriptionSchedule(
+        object.id && event.type !== "customer.subscription.deleted"
+          ? await boundedProviderRead(() => retrieveSubscription(String(object.id)))
+          : object
+      );
       const tenantRow = await getTenantBillingRow(pool, {
         tenantKey: metadataTenantKey || String(canonicalSubscription.metadata?.tenant_key || "").trim() || null,
         customerId: canonicalSubscription.customer ? String(canonicalSubscription.customer) : null,
@@ -181,7 +222,7 @@ export default async function handler(req, res) {
       if (tenantRow) {
         await syncTenantStripeSubscription(pool, tenantRow.tenant_key, tenantRow, canonicalSubscription, event.type);
         if (String(canonicalSubscription?.status || "").trim().toLowerCase() !== "trialing") {
-          await activatePendingCouponDiscountWindow(pool, tenantRow.tenant_key, { subscription: canonicalSubscription }).catch(() => null);
+          await activatePendingCouponDiscountWindow(pool, tenantRow.tenant_key, { subscription: canonicalSubscription });
         }
       }
     }
@@ -194,7 +235,7 @@ export default async function handler(req, res) {
       event.type === "subscription_schedule.canceled"
     ) {
       const canonicalSchedule = object.id
-        ? await retrieveSubscriptionSchedule(String(object.id)).catch(() => object)
+        ? await boundedProviderRead(() => retrieveSubscriptionSchedule(String(object.id)))
         : object;
       const scheduleSubscriptionId = canonicalSchedule.subscription
         ? String(canonicalSchedule.subscription)
@@ -230,23 +271,39 @@ export default async function handler(req, res) {
           [tenantRow.tenant_key, object.id || null]
         );
         if (event.type === "invoice.paid") {
-          await decrementOverrideCyclesIfNeeded(pool, tenantRow.tenant_key);
+          await decrementOverrideCyclesIfNeeded(pool, tenantRow.tenant_key, object.id);
         }
       }
     }
 
+    await client.query(
+      `UPDATE billing_events SET status = 'processed', processed_at = NOW(), error_message = NULL
+       WHERE stripe_event_id = $1`, [event.id]
+    );
+    await client.query("COMMIT");
     return res.status(200).json({ ok: true });
   } catch (err) {
-    const poolError = getPool();
-    if (poolError && req.method === "POST") {
-      try {
-        await poolError.query(
-          `INSERT INTO billing_events (tenant_key, stripe_event_id, event_type, payload_json, processed_at, status, error_message)
-           VALUES ($1, $2, $3, $4::jsonb, NOW(), 'failed', $5)`,
-          [null, `failed_${Date.now()}`, "webhook_error", JSON.stringify({}), err?.message || "unknown"]
-        );
-      } catch {}
+    if (client) {
+      await client.query("ROLLBACK").catch(() => null);
+      if (ownsLock && event?.id) {
+        try {
+          await client.query("BEGIN");
+          await client.query("SET LOCAL lock_timeout = '1s'");
+          await client.query("SET LOCAL statement_timeout = '5s'");
+          await client.query(
+            `UPDATE billing_events SET status = 'failed', processed_at = NULL, error_message = $2
+             WHERE stripe_event_id = $1 AND status <> 'processed'`,
+            [event.id, String(err?.message || "unknown").slice(0, 1000)]
+          );
+          await client.query("COMMIT");
+        } catch {
+          await client.query("ROLLBACK").catch(() => null);
+        }
+      }
     }
-    return res.status(400).json({ error: "stripe_webhook_error", message: err?.message || "unknown" });
+    if (verified) res.setHeader("Retry-After", "10");
+    return res.status(verified ? 503 : 400).json({ error: "stripe_webhook_error" });
+  } finally {
+    if (client) client.release();
   }
 }

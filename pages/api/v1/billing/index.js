@@ -258,6 +258,14 @@ function buildPlanSummary(row, planDisplay, pendingPlan = null) {
 }
 
 function buildBillingAlert({ row, paymentMethodSummary }) {
+  if (["requested", "submitted", "failed", "released"].includes(row?.telnyx_release_status)) {
+    return {
+      tone: "warn",
+      message: row.telnyx_release_status === "released"
+        ? "Your previous voice number has been released. Contact support to select and configure a replacement before restoring voice service."
+        : "Voice service is paused while your previous number is being released. Contact support to select a replacement before restoring voice service."
+    };
+  }
   const normalizedStatus = normalizeText(row?.billing_status).toLowerCase();
   if (normalizedStatus === "past_due") {
     return {
@@ -590,6 +598,7 @@ export default async function handler(req, res) {
         serviceAccessStatus: row.service_access_status,
         appAccessStatus: row.app_access_status,
         lockReason: row.billing_lock_reason || null,
+        voiceReleaseStatus: row.telnyx_release_status || null,
         stripeCustomerId: canViewStripeDetails ? (row.stripe_customer_id || null) : null,
         stripeSubscriptionId: canViewStripeDetails ? (row.stripe_subscription_id || null) : null,
         hasStripeCustomer: Boolean(row.stripe_customer_id),

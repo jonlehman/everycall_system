@@ -491,6 +491,7 @@ export async function getTenantBillingState(pool, tenantKey) {
        tu.name AS owner_name,
        tu.email AS owner_email,
        t.telnyx_voice_number,
+       t.telnyx_release_status,
        t.billing_status,
        t.trial_started_at,
        t.trial_end,
@@ -977,19 +978,25 @@ export async function syncTenantStripeSubscription(pool, tenantKey, currentRow, 
     ]
   );
 
-  await pool.query(
+  const updatedAccess = await pool.query(
     `UPDATE tenants
      SET billing_status = $2,
-         service_access_status = $3,
+         service_access_status = CASE WHEN $3 = 'enabled'
+           AND telnyx_release_status IN ('requested', 'submitted', 'failed', 'released')
+           THEN 'disabled' ELSE $3 END,
          app_access_status = $4,
-         billing_lock_reason = $5,
+         billing_lock_reason = CASE WHEN $3 = 'enabled'
+           AND telnyx_release_status IN ('requested', 'submitted', 'failed', 'released')
+           THEN CASE WHEN telnyx_release_status = 'released' THEN 'voice_number_replacement_required'
+             ELSE 'voice_number_release_pending' END ELSE $5 END,
          plan_code = COALESCE($6, plan_code),
          plan = CASE
            WHEN $6 IS NULL THEN plan
            ELSE $7
          END,
          billing_status_updated_at = NOW()
-     WHERE tenant_key = $1`,
+     WHERE tenant_key = $1
+     RETURNING service_access_status, billing_lock_reason`,
     [
       tenantKey,
       mapped.billingStatus,
@@ -1000,6 +1007,12 @@ export async function syncTenantStripeSubscription(pool, tenantKey, currentRow, 
       shouldApplyPlanNow ? (appliedPlan?.label || null) : null
     ]
   );
+  // Reflect the provider-release guard in lifecycle audit, including changes
+  // enforced by the database during concurrent payment/release transitions.
+  if (updatedAccess.rows[0]) {
+    mapped.serviceAccessStatus = updatedAccess.rows[0].service_access_status;
+    mapped.billingLockReason = updatedAccess.rows[0].billing_lock_reason;
+  }
 
   if (
     currentRow?.billing_status !== mapped.billingStatus ||

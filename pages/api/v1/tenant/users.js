@@ -5,7 +5,7 @@ import { requireTenantBillingAccess, requireTenantRoles } from "../../_lib/billi
 import { sendTelnyxSms } from "../../_lib/telnyx.js";
 import { getSharedSmsNumber } from "../../_lib/alerts.js";
 import { normalizePhoneNumber } from "../../_lib/phone.js";
-import { issueAuthToken, revokeAuthTokens } from "../../_lib/authTokens.js";
+import { issueAuthToken } from "../../_lib/authTokens.js";
 import { buildAuditActor, writeAuditLog } from "../../_lib/auditLog.js";
 import { sendTransactionalEmail } from "../../_lib/mail.js";
 import { sanitizeCallCategorySelection } from "../../../../lib/callCategories.js";
@@ -116,28 +116,23 @@ async function countActiveTenantUsers(pool, tenantKey) {
   return Number(result.rows[0]?.count || 0);
 }
 
-async function createInviteToken({ email, tenantKey }) {
+async function createInviteToken({ email, tenantKey, tokenType = "invite" }) {
   const pool = getPool();
   if (!pool) return crypto.randomBytes(24).toString("hex");
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  await revokeAuthTokens(pool, {
-    tokenType: "invite",
-    email,
-    tenantKey
-  });
   return issueAuthToken(pool, {
-    tokenType: "invite",
+    tokenType,
     email,
     tenantKey,
     expiresAt
   });
 }
 
-async function sendInviteEmail({ tenantKey, name, email, role }) {
+async function sendInviteEmail({ tenantKey, name, email, role, tokenType = "invite" }) {
   const baseUrl = process.env.APP_BASE_URL || "https://app.everycall.io";
 
   const subject = `You're invited to EveryCall (${tenantKey})`;
-  const token = await createInviteToken({ email, tenantKey });
+  const token = await createInviteToken({ email, tenantKey, tokenType });
   const inviteUrl = `${baseUrl}/accept-invite?token=${encodeURIComponent(token)}`;
   const text = [
     `Hi ${name},`,
@@ -269,12 +264,13 @@ export default async function handler(req, res) {
           return fail(404, "not_found", "User not found.");
         }
         const user = row.rows[0];
-        await sendInviteEmail({ tenantKey, name: user.name, email: user.email, role: user.role });
         await pool.query(
           `UPDATE tenant_users SET status = 'invited', updated_at = NOW()
            WHERE tenant_key = $1 AND id = $2`,
           [tenantKey, id]
         );
+        await endTenantUserSessions(id);
+        await sendInviteEmail({ tenantKey, name: user.name, email: user.email, role: user.role });
         await audit(manager, "tenant.team_user.invite_resent", {
           user_id: id,
           email: user.email,
@@ -645,7 +641,10 @@ export default async function handler(req, res) {
         ]
       );
       try {
-        await sendInviteEmail({ tenantKey, name, email, role });
+        if (status === "invited" || status === "active") {
+          await sendInviteEmail({ tenantKey, name, email, role,
+            tokenType: status === "active" ? "account_setup" : "invite" });
+        }
       } catch (mailErr) {
         // Email failure should not block user creation.
         console.error("mailtrap_invite_failed", mailErr?.message || mailErr);

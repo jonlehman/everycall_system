@@ -401,18 +401,15 @@ export default async function handler(req, res) {
 
       for (let attempt = 0; attempt < 50; attempt += 1) {
         tenantKey = attempt === 0 ? baseTenantKey : `${baseTenantKey}_${attempt + 1}`;
-        try {
-          await client.query(
-            `INSERT INTO tenants (tenant_key, name, status, data_region, plan, primary_number, industry, live_prompt_mode)
-             VALUES ($1, $2, 'active', 'US', 'Growth', $3, $4, 'pending_v20')`,
-            [tenantKey, payload.businessName, null, payload.businessCategory]
-          );
-          break;
-        } catch (err) {
-          if (err?.code !== "23505" || attempt === 49) {
-            throw err;
-          }
-        }
+        const inserted = await client.query(
+          `INSERT INTO tenants (tenant_key, name, status, data_region, plan, primary_number, industry, live_prompt_mode)
+           VALUES ($1, $2, 'active', 'US', 'Growth', $3, $4, 'pending_v20')
+           ON CONFLICT (tenant_key) DO NOTHING
+           RETURNING tenant_key`,
+          [tenantKey, payload.businessName, null, payload.businessCategory]
+        );
+        if (inserted.rowCount) break;
+        if (attempt === 49) throw new Error("tenant_key_exhausted");
       }
 
       await client.query(
@@ -591,6 +588,7 @@ export default async function handler(req, res) {
       if (payload.website) {
         try {
           initialKnowledgeBuild = await enqueueKnowledgeBuild(pool, tenantKey, {
+            actor: { role: "tenant", user_id: ownerUserId },
             buildKind: "website_base",
             websiteUrl: payload.website,
             assignments

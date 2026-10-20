@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { getAdminActor, requireSession } from "../../_lib/auth.js";
 import { runKnowledgeBuildJobs } from "../../_lib/knowledgeReceptionistBuilds.js";
@@ -283,16 +284,19 @@ export default async function handler(req, res) {
              available_at = NOW(),
              locked_at = NULL,
              locked_by = NULL,
+             claim_token = $2,
+             lease_expires_at = NULL,
              completed_at = NULL,
              last_error = NULL,
              updated_at = NOW()
-         WHERE id = $1
+         WHERE id = $1 AND status = 'dead_letter'
          RETURNING id, tenant_key, job_type`,
-        [jobId]
+        [jobId, `retired:manual:${crypto.randomUUID()}`]
       );
       const job = result.rows[0] || null;
       if (!job) {
-        return res.status(404).json({ error: "job_not_found" });
+        const existing = await pool.query(`SELECT id FROM async_jobs WHERE id=$1`, [jobId]);
+        return res.status(existing.rowCount ? 409 : 404).json({ error: existing.rowCount ? "job_not_retryable" : "job_not_found" });
       }
       await writeAuditLog(pool, {
         tenantKey: job.tenant_key || null,

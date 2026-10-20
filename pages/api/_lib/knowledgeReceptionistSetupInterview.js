@@ -1,3 +1,4 @@
+import { submitKnowledgeChange } from './knowledgeGovernance.js';
 import crypto from "node:crypto";
 
 function normalizeText(value) {
@@ -99,6 +100,8 @@ async function resolveLinkedSetupInterviewIntentId(db, tenantKey, setupInterview
 
 async function upsertSetupInterviewIntentRecord(db, tenantKey, payload = {}) {
   const intentId = normalizeText(payload.setupInterviewIntentId || payload.setup_interview_intent_id) || createId("setup_intent");
+  const existing = await loadSetupInterviewIntentById(db, intentId);
+  if (existing && existing.tenant_key !== tenantKey) throw new Error('setup_interview_intent_tenant_mismatch');
   const version = normalizeText(payload.version) || await nextSetupInterviewIntentVersion(db, tenantKey);
 
   await db.query(
@@ -120,7 +123,8 @@ async function upsertSetupInterviewIntentRecord(db, tenantKey, payload = {}) {
                    interview_stage_playbook_json = EXCLUDED.interview_stage_playbook_json,
                    pause_resume_policy_json = EXCLUDED.pause_resume_policy_json,
                    review_and_confirm_policy_json = EXCLUDED.review_and_confirm_policy_json,
-                   updated_at = NOW()`,
+                   updated_at = NOW()
+     WHERE setup_interview_intents.tenant_key = EXCLUDED.tenant_key`,
     [
       intentId,
       tenantKey,
@@ -139,15 +143,18 @@ async function upsertSetupInterviewIntentRecord(db, tenantKey, payload = {}) {
   const res = await db.query(
     `SELECT *
      FROM setup_interview_intents
-     WHERE setup_interview_intent_id = $1
+     WHERE setup_interview_intent_id = $1 AND tenant_key = $2
      LIMIT 1`,
-    [intentId]
+    [intentId, tenantKey]
   );
-  return res.rows[0] || null;
+  if (!res.rows[0]) throw new Error('setup_interview_intent_tenant_mismatch');
+  return res.rows[0];
 }
 
 async function upsertSetupInterviewSessionRecord(db, tenantKey, payload = {}) {
   const sessionId = normalizeText(payload.setupInterviewSessionId || payload.setup_interview_session_id) || createId("setup_session");
+  const prior = await db.query('SELECT tenant_key FROM setup_interview_sessions WHERE setup_interview_session_id=$1 FOR UPDATE', [sessionId]);
+  if (prior.rows[0] && prior.rows[0].tenant_key !== tenantKey) throw new Error('setup_interview_tenant_mismatch');
   const intentId = await resolveLinkedSetupInterviewIntentId(
     db,
     tenantKey,
@@ -156,7 +163,7 @@ async function upsertSetupInterviewSessionRecord(db, tenantKey, payload = {}) {
   const rawTranscriptText = normalizeText(payload.rawTranscriptText || payload.raw_transcript_text) || null;
   const summaryBlocks = normalizeSummaryBlocks(payload.confirmedSummaryBlocks || payload.confirmed_summary_blocks);
 
-  await db.query(
+  const savedSession = await db.query(
     `INSERT INTO setup_interview_sessions (
        setup_interview_session_id, tenant_key, setup_interview_intent_id, status, completion_status,
        raw_transcript_text, metadata_json, updated_at
@@ -168,7 +175,9 @@ async function upsertSetupInterviewSessionRecord(db, tenantKey, payload = {}) {
                    completion_status = EXCLUDED.completion_status,
                    raw_transcript_text = EXCLUDED.raw_transcript_text,
                    metadata_json = EXCLUDED.metadata_json,
-                   updated_at = NOW()`,
+                   updated_at = NOW()
+     WHERE setup_interview_sessions.tenant_key = EXCLUDED.tenant_key
+     RETURNING setup_interview_session_id`,
     [
       sessionId,
       tenantKey,
@@ -179,6 +188,8 @@ async function upsertSetupInterviewSessionRecord(db, tenantKey, payload = {}) {
       JSON.stringify(payload.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata) ? payload.metadata : {})
     ]
   );
+
+  if (!savedSession.rows.length) throw new Error('setup_interview_tenant_mismatch');
 
   for (const block of summaryBlocks) {
     await db.query(
@@ -194,7 +205,8 @@ async function upsertSetupInterviewSessionRecord(db, tenantKey, payload = {}) {
                      authority_level = 'confirmed_summary',
                      source_hash = EXCLUDED.source_hash,
                      metadata_json = EXCLUDED.metadata_json,
-                     updated_at = NOW()`,
+                     updated_at = NOW()
+       WHERE setup_interview_summary_blocks.tenant_key = EXCLUDED.tenant_key`,
       [
         sessionId,
         tenantKey,
@@ -253,7 +265,11 @@ export async function saveSetupInterviewIntent(db, tenantKey, payload = {}) {
   return upsertSetupInterviewIntentRecord(db, tenantKey, payload);
 }
 
-export async function createSetupInterviewSessionSkeleton(db, tenantKey, payload = {}) {
+export async function createSetupInterviewSessionSkeleton(db, tenantKey, payload = {}, actor = null) {
+  return submitKnowledgeChange(db, { tenantKey, actor, kind: "setup_interview_session", payload, apply: client => createSetupInterviewSessionSkeletonApproved(client, tenantKey, payload) });
+}
+
+async function createSetupInterviewSessionSkeletonApproved(db, tenantKey, payload = {}) {
   await assertSetupInterviewTablesReady(db);
   const { sessionId } = await withTransaction(db, async (client) =>
     upsertSetupInterviewSessionRecord(client, tenantKey, payload)
@@ -266,7 +282,11 @@ export async function createSetupInterviewSessionSkeleton(db, tenantKey, payload
   };
 }
 
-export async function saveSetupInterviewSubmission(db, tenantKey, payload = {}) {
+export async function saveSetupInterviewSubmission(db, tenantKey, payload = {}, actor = null) {
+  return submitKnowledgeChange(db, { tenantKey, actor, kind: "setup_interview", payload, apply: client => saveSetupInterviewSubmissionApproved(client, tenantKey, payload) });
+}
+
+async function saveSetupInterviewSubmissionApproved(db, tenantKey, payload = {}) {
   await assertSetupInterviewTablesReady(db);
   const result = await withTransaction(db, async (client) => {
     const intent = payload.intent

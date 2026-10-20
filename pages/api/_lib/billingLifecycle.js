@@ -3,7 +3,7 @@ import { refreshTenantCouponState, syncTenantCouponSubscriptionPricing } from ".
 import { finalizeDueBillingPeriods } from "./callBilling.js";
 import { getSharedSmsNumber } from "./alerts.js";
 import { sendTransactionalEmail } from "./mail.js";
-import { sendTelnyxSms, releaseVoiceNumber } from "./telnyx.js";
+import { sendTelnyxSms, releaseVoiceNumber, getOwnedPhoneNumber } from "./telnyx.js";
 
 const SUPPORT_REACTIVATION_MESSAGE = "Open Billing in EveryCall to restart service and reactivate your account.";
 
@@ -304,68 +304,119 @@ async function runShutdownWarnings(pool, today) {
 
 async function deactivateExpiredPostTrial(pool, today) {
   const tenants = await pool.query(
-    `SELECT tenant_key, telnyx_voice_number, billing_status, service_access_status, app_access_status
-     FROM tenants
-     WHERE billing_status = 'trial_expired'
-       AND post_trial_access_ends_at IS NOT NULL
-       AND post_trial_access_ends_at < $1`,
-    [today.toISOString()]
+    `SELECT tenant_key FROM tenants
+     WHERE (billing_status = 'trial_expired' AND post_trial_access_ends_at < $1::timestamptz)
+        OR telnyx_release_status IN ('requested', 'submitted', 'failed')`, [today.toISOString()]
   );
   let deactivated = 0;
-  for (const tenant of tenants.rows) {
-    let releaseError = null;
-    if (tenant.telnyx_voice_number) {
-      try {
-        await releaseVoiceNumber({ phoneNumber: tenant.telnyx_voice_number });
-      } catch (err) {
-        releaseError = err?.message || "unknown";
+  for (const candidate of tenants.rows) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const current = await client.query(
+        `SELECT * FROM tenants WHERE tenant_key = $1
+           AND ((billing_status = 'trial_expired' AND post_trial_access_ends_at < $2::timestamptz)
+             OR telnyx_release_status IN ('requested', 'submitted', 'failed'))
+         FOR UPDATE SKIP LOCKED`, [candidate.tenant_key, today.toISOString()]
+      );
+      if (!current.rowCount) {
+        await client.query("COMMIT");
+        continue;
       }
-    }
-
-    await pool.query(
-      `UPDATE tenants
-       SET billing_status = 'deactivated',
-           service_access_status = 'disabled',
-           app_access_status = 'billing_locked',
-           billing_lock_reason = 'post_trial_shutdown',
-           deactivated_at = NOW(),
-           telnyx_voice_number = NULL,
-           telnyx_voice_number_id = NULL,
-           telnyx_voice_order_id = NULL,
-           telnyx_voice_status = CASE WHEN $2 IS NULL THEN 'released' ELSE telnyx_voice_status END,
+      if (!current.rows[0].telnyx_release_status) {
+        await client.query(
+          `UPDATE tenants SET telnyx_release_status = 'requested',
+             telnyx_release_number = telnyx_voice_number,
+             telnyx_release_number_id = telnyx_voice_number_id,
+             telnyx_release_requested_at = NOW(), telnyx_release_error = NULL,
+             telnyx_voice_status = 'release_pending', service_access_status = 'disabled',
+             app_access_status = 'billing_locked', billing_lock_reason = 'post_trial_shutdown'
+           WHERE tenant_key = $1`, [candidate.tenant_key]
+        );
+      }
+      // Commit intent BEFORE provider I/O. A crash after submission must leave
+      // durable evidence that payment cannot safely re-enable this number.
+      await client.query("COMMIT");
+      await client.query("BEGIN");
+      const claimed = await client.query(
+        `SELECT * FROM tenants WHERE tenant_key = $1
+           AND telnyx_release_status IN ('requested', 'submitted', 'failed')
+         FOR UPDATE SKIP LOCKED`, [candidate.tenant_key]
+      );
+      if (!claimed.rowCount) {
+        await client.query("COMMIT");
+        continue;
+      }
+      const tenant = claimed.rows[0];
+      const phoneNumber = tenant.telnyx_release_number;
+      let releaseError = null;
+      let released = !phoneNumber;
+      let submitted = false;
+      let jobId = tenant.telnyx_release_job_id;
+      if (phoneNumber) {
+        try {
+          const owned = await getOwnedPhoneNumber({ phoneNumber });
+          if (!owned) {
+            released = true;
+          } else {
+            if (tenant.telnyx_release_number_id && String(owned.phoneNumberId) !== String(tenant.telnyx_release_number_id)) {
+              throw new Error("phone_number_ownership_changed_contact_support");
+            }
+            const retryDue = tenant.telnyx_release_status !== 'submitted'
+              || Date.now() - new Date(tenant.telnyx_release_requested_at).getTime() >= 15 * 60 * 1000;
+            if (retryDue) {
+              const result = await releaseVoiceNumber({ phoneNumber });
+              jobId = result?.data?.id || result?.id || jobId || null;
+              submitted = true;
+              released = !await getOwnedPhoneNumber({ phoneNumber });
+            }
+          }
+        } catch (err) {
+          releaseError = err?.message || "unknown";
+        }
+      }
+      const expired = tenant.billing_status === 'trial_expired';
+      const nextBillingStatus = expired && released ? 'deactivated' : tenant.billing_status;
+      const nextAppStatus = expired ? 'billing_locked' : tenant.app_access_status;
+      const reason = expired ? 'post_trial_shutdown'
+        : (released ? 'voice_number_replacement_required' : 'voice_number_release_pending');
+      await client.query(
+        `UPDATE tenants SET billing_status = $2, service_access_status = 'disabled',
+           app_access_status = $3, billing_lock_reason = $4,
+           deactivated_at = CASE WHEN $5::boolean AND $6::boolean THEN NOW() ELSE deactivated_at END,
+           telnyx_voice_number = CASE WHEN $5::boolean AND telnyx_voice_number IS NOT DISTINCT FROM telnyx_release_number THEN NULL ELSE telnyx_voice_number END,
+           telnyx_voice_number_id = CASE WHEN $5::boolean AND telnyx_voice_number IS NOT DISTINCT FROM telnyx_release_number THEN NULL ELSE telnyx_voice_number_id END,
+           telnyx_voice_order_id = CASE WHEN $5::boolean AND telnyx_voice_number IS NOT DISTINCT FROM telnyx_release_number THEN NULL ELSE telnyx_voice_order_id END,
+           telnyx_voice_status = CASE WHEN $5::boolean THEN 'released' WHEN $7::text IS NOT NULL THEN 'release_failed' ELSE 'release_pending' END,
+           telnyx_release_status = CASE WHEN $5::boolean THEN 'released' WHEN $7::text IS NOT NULL THEN 'failed' ELSE 'submitted' END,
+           telnyx_release_error = $7, telnyx_release_job_id = $8,
+           telnyx_release_requested_at = CASE WHEN $9::boolean THEN NOW() ELSE telnyx_release_requested_at END,
            billing_status_updated_at = NOW()
-       WHERE tenant_key = $1`,
-      [tenant.tenant_key, releaseError]
-    );
-
-    await recordBillingLifecycleEvent(pool, {
-      tenantKey: tenant.tenant_key,
-      eventType: "billing.post_trial_shutdown_executed",
-      fromBillingStatus: tenant.billing_status,
-      toBillingStatus: "deactivated",
-      fromServiceAccessStatus: tenant.service_access_status,
-      toServiceAccessStatus: "disabled",
-      fromAppAccessStatus: tenant.app_access_status,
-      toAppAccessStatus: "billing_locked",
-      reason: releaseError ? "number_release_failed_manual_followup_needed" : "post_trial_window_ended",
-      metadata: {
-        phone_release_error: releaseError,
-        login_message: SUPPORT_REACTIVATION_MESSAGE
-      },
-      createdByType: "system"
-    });
-
-    await pool.query(
-      `INSERT INTO audit_log (tenant_key, actor, action, details)
-       VALUES ($1, $2, $3, $4)`,
-      [
-        tenant.tenant_key,
-        "system",
-        "billing.post_trial_shutdown_executed",
-        releaseError ? `number_release_error=${releaseError}` : "number_released"
-      ]
-    );
-    deactivated += 1;
+         WHERE tenant_key = $1`,
+        [tenant.tenant_key, nextBillingStatus, nextAppStatus, reason, released, expired, releaseError, jobId, submitted]
+      );
+      const eventType = released ? "billing.voice_release_reconciled" : "billing.post_trial_release_pending";
+      await recordBillingLifecycleEvent(client, {
+        tenantKey: tenant.tenant_key, eventType,
+        fromBillingStatus: tenant.billing_status, toBillingStatus: nextBillingStatus,
+        fromServiceAccessStatus: tenant.service_access_status, toServiceAccessStatus: "disabled",
+        fromAppAccessStatus: tenant.app_access_status, toAppAccessStatus: nextAppStatus,
+        reason, metadata: { phone_release_error: releaseError, provider_job_id: jobId,
+          recovery_action: released ? "Contact support to select and configure a replacement voice number." : "Number deletion is pending; contact support before restoring voice service." },
+        createdByType: "system"
+      });
+      await client.query(
+        `INSERT INTO audit_log (tenant_key, actor, action, details) VALUES ($1, 'system', $2, $3)`,
+        [tenant.tenant_key, eventType, releaseError || reason]
+      );
+      await client.query("COMMIT");
+      if (released && expired) deactivated += 1;
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => null);
+      console.error("billing_post_trial_cleanup_failed", { tenantKey: candidate.tenant_key, message: err?.message || "unknown" });
+    } finally {
+      client.release();
+    }
   }
   return deactivated;
 }

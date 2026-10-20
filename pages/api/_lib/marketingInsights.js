@@ -1,3 +1,5 @@
+import { ensureTables } from "./db.js";
+
 const CLARITY_ENDPOINT = "https://www.clarity.ms/export-data/api/v1/project-live-insights";
 const CLARITY_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const GOOGLE_ADS_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -134,21 +136,6 @@ async function fetchJson(url, options = {}) {
   }
 }
 
-async function ensureAnalyticsCacheTable(pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS external_analytics_snapshots (
-      cache_key TEXT PRIMARY KEY,
-      source TEXT NOT NULL,
-      payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-      fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      expires_at TIMESTAMPTZ NOT NULL
-    );
-  `);
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS external_analytics_snapshots_expires_idx
-    ON external_analytics_snapshots (expires_at);
-  `);
-}
 
 async function readCache(pool, cacheKey) {
   const result = await pool.query(
@@ -958,7 +945,7 @@ function buildRecommendations({ clarity, ads, joinedCampaigns, joinedLandingPage
 export async function loadMarketingInsights({ pool, days: rawDays, refresh: rawRefresh }) {
   const days = clampDays(rawDays);
   const refresh = truthy(rawRefresh);
-  await ensureAnalyticsCacheTable(pool);
+  await ensureTables(pool);
 
   const [clarity, googleAds] = await Promise.all([
     loadClarityInsights({ pool, days, refresh }),

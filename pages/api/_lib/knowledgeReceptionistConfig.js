@@ -1,3 +1,4 @@
+import { submitKnowledgeChange } from './knowledgeGovernance.js';
 import crypto from "node:crypto";
 import { extractTextFromDocumentBuffer } from "./knowledgeReceptionistFiles.js";
 import { fetchWebsitePage } from "./knowledgeReceptionistBuilds.js";
@@ -225,7 +226,7 @@ async function withTransaction(db, work) {
   }
 }
 
-async function assertConfigTablesReady(db) {
+export async function assertConfigTablesReady(db) {
   const res = await db.query(
     `SELECT to_regclass('business_call_intents') AS business_call_intents,
             to_regclass('call_outcome_schemas') AS call_outcome_schemas,
@@ -238,16 +239,17 @@ async function assertConfigTablesReady(db) {
   ) {
     throw new Error("knowledge_receptionist_migrations_not_applied");
   }
-  await db.query(`ALTER TABLE knowledge_runtime_profiles ADD COLUMN IF NOT EXISTS company_description TEXT;`);
-  await db.query(`ALTER TABLE knowledge_runtime_profiles ALTER COLUMN greeting_text DROP NOT NULL;`);
-  await db.query(
-    `ALTER TABLE uploaded_documents
-       ADD COLUMN IF NOT EXISTS source_kind TEXT NOT NULL DEFAULT 'file_upload',
-       ADD COLUMN IF NOT EXISTS source_locator TEXT,
-       ADD COLUMN IF NOT EXISTS fetch_status TEXT,
-       ADD COLUMN IF NOT EXISTS fetch_metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-       ADD COLUMN IF NOT EXISTS content_fingerprint TEXT;`
-  );
+  const columns = await db.query(`SELECT table_name, column_name, is_nullable
+    FROM information_schema.columns WHERE table_schema=current_schema()
+      AND table_name IN ('knowledge_runtime_profiles', 'uploaded_documents')`);
+  const present = new Map(columns.rows.map(row => [`${row.table_name}.${row.column_name}`, row]));
+  const required = ['knowledge_runtime_profiles.company_description', 'knowledge_runtime_profiles.greeting_text',
+    'uploaded_documents.source_kind', 'uploaded_documents.source_locator', 'uploaded_documents.fetch_status',
+    'uploaded_documents.fetch_metadata_json', 'uploaded_documents.content_fingerprint'];
+  if (required.some(column => !present.has(column))
+    || present.get('knowledge_runtime_profiles.greeting_text')?.is_nullable !== 'YES') {
+    throw new Error("knowledge_receptionist_migrations_not_applied");
+  }
 }
 
 function actorId(actor) {
@@ -382,6 +384,10 @@ export async function loadBusinessCallIntentState(db, tenantKey) {
 }
 
 export async function saveBusinessCallIntent(db, tenantKey, payload = {}, actor = null) {
+  return submitKnowledgeChange(db, { tenantKey, actor, kind: "business_call_intent", payload, apply: client => saveBusinessCallIntentApproved(client, tenantKey, payload, actor) });
+}
+
+async function saveBusinessCallIntentApproved(db, tenantKey, payload = {}, actor = null) {
   await assertConfigTablesReady(db);
   return withTransaction(db, async (client) => {
     const normalized = normalizeBusinessCallIntentPayload(payload);
@@ -508,11 +514,15 @@ export async function listKnowledgeOverrides(db, tenantKey, { activeOnly = false
 }
 
 export async function saveKnowledgeOverride(db, tenantKey, payload = {}, actor = null) {
+  return submitKnowledgeChange(db, { tenantKey, actor, kind: "override", payload, apply: client => saveKnowledgeOverrideApproved(client, tenantKey, payload, actor) });
+}
+
+async function saveKnowledgeOverrideApproved(db, tenantKey, payload = {}, actor = null) {
   await assertConfigTablesReady(db);
   return withTransaction(db, async (client) => {
     const normalized = normalizeOverridePayload(payload);
     const overrideId = normalized.knowledgeOverrideId || createId("ovr");
-    await client.query(
+    const saved = await client.query(
       `INSERT INTO knowledge_overrides (
          knowledge_override_id, tenant_key, override_type, scope_json, priority, status, title, body,
          applies_to_intents_json, applies_to_domains_json, applies_to_subdomains_json,
@@ -536,7 +546,9 @@ export async function saveKnowledgeOverride(db, tenantKey, payload = {}, actor =
                      effective_until = EXCLUDED.effective_until,
                      metadata_json = EXCLUDED.metadata_json,
                      updated_by_id = EXCLUDED.updated_by_id,
-                     updated_at = NOW()`,
+                     updated_at = NOW()
+       WHERE knowledge_overrides.tenant_key = EXCLUDED.tenant_key
+       RETURNING knowledge_override_id`,
       [
         overrideId,
         tenantKey,
@@ -555,6 +567,7 @@ export async function saveKnowledgeOverride(db, tenantKey, payload = {}, actor =
         actorId(actor)
       ]
     );
+    if (!saved.rows.length) throw new Error("knowledge_override_not_found");
     await writeAuditLog(client, tenantKey, actor, "knowledge_receptionist.override.saved", {
       knowledge_override_id: overrideId,
       override_type: normalized.overrideType,
@@ -563,9 +576,9 @@ export async function saveKnowledgeOverride(db, tenantKey, payload = {}, actor =
     const res = await client.query(
       `SELECT *
        FROM knowledge_overrides
-       WHERE knowledge_override_id = $1
+       WHERE knowledge_override_id = $1 AND tenant_key = $2
        LIMIT 1`,
-      [overrideId]
+      [overrideId, tenantKey]
     );
     return res.rows[0] || null;
   });
@@ -585,11 +598,15 @@ export async function listKnowledgeGuardrails(db, tenantKey, { activeOnly = fals
 }
 
 export async function saveKnowledgeGuardrail(db, tenantKey, payload = {}, actor = null) {
+  return submitKnowledgeChange(db, { tenantKey, actor, kind: "guardrail", payload, apply: client => saveKnowledgeGuardrailApproved(client, tenantKey, payload, actor) });
+}
+
+async function saveKnowledgeGuardrailApproved(db, tenantKey, payload = {}, actor = null) {
   await assertConfigTablesReady(db);
   return withTransaction(db, async (client) => {
     const normalized = normalizeGuardrailPayload(payload);
     const guardrailId = normalized.knowledgeGuardrailId || createId("gr");
-    await client.query(
+    const saved = await client.query(
       `INSERT INTO knowledge_guardrails (
          knowledge_guardrail_id, tenant_key, guardrail_type, trigger_patterns_json, trigger_intents_json, risk_level,
          mode, approved_response_pattern, required_next_step, optional_capture_fields_json, escalation_instruction,
@@ -616,7 +633,9 @@ export async function saveKnowledgeGuardrail(db, tenantKey, payload = {}, actor 
                      status = EXCLUDED.status,
                      metadata_json = EXCLUDED.metadata_json,
                      updated_by_id = EXCLUDED.updated_by_id,
-                     updated_at = NOW()`,
+                     updated_at = NOW()
+       WHERE knowledge_guardrails.tenant_key = EXCLUDED.tenant_key
+       RETURNING knowledge_guardrail_id`,
       [
         guardrailId,
         tenantKey,
@@ -637,6 +656,7 @@ export async function saveKnowledgeGuardrail(db, tenantKey, payload = {}, actor 
         actorId(actor)
       ]
     );
+    if (!saved.rows.length) throw new Error("knowledge_guardrail_not_found");
     await writeAuditLog(client, tenantKey, actor, "knowledge_receptionist.guardrail.saved", {
       knowledge_guardrail_id: guardrailId,
       guardrail_type: normalized.guardrailType,
@@ -645,9 +665,9 @@ export async function saveKnowledgeGuardrail(db, tenantKey, payload = {}, actor 
     const res = await client.query(
       `SELECT *
        FROM knowledge_guardrails
-       WHERE knowledge_guardrail_id = $1
+       WHERE knowledge_guardrail_id = $1 AND tenant_key = $2
        LIMIT 1`,
-      [guardrailId]
+      [guardrailId, tenantKey]
     );
     return res.rows[0] || null;
   });
@@ -700,6 +720,13 @@ function isSupportedUploadedDocumentFile({ filename = "", mimeType = "" } = {}) 
   return false;
 }
 
+// Raw source bytes are retained for audit/reprocessing, not normal list/save payloads.
+function withoutOriginalCapture(row) {
+  if (!row) return null;
+  const { original_capture_json, ...document } = row;
+  return document;
+}
+
 export async function listUploadedDocuments(db, tenantKey, options = {}) {
   await assertConfigTablesReady(db);
   const includeArchived = options?.includeArchived === true;
@@ -711,13 +738,36 @@ export async function listUploadedDocuments(db, tenantKey, options = {}) {
      ORDER BY updated_at DESC`,
     [tenantKey, includeArchived]
   );
-  return res.rows || [];
+  return (res.rows || []).map(withoutOriginalCapture);
 }
 
 export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = null) {
+  return submitKnowledgeChange(db, { tenantKey, actor, kind: "uploaded_document", payload, apply: client => saveUploadedDocumentApproved(client, tenantKey, payload, actor) });
+}
+
+async function saveUploadedDocumentApproved(db, tenantKey, payload = {}, actor = null) {
   await assertConfigTablesReady(db);
   return withTransaction(db, async (client) => {
-    const normalized = normalizeUploadedDocumentPayload(payload);
+    const requestedId = normalizeText(payload.uploadedDocumentId || payload.uploaded_document_id);
+    const existing = requestedId
+      ? (await client.query('SELECT * FROM uploaded_documents WHERE uploaded_document_id=$1 FOR UPDATE', [requestedId])).rows[0]
+      : null;
+    if (existing && existing.tenant_key !== tenantKey) throw new Error('uploaded_document_not_found');
+    const normalized = normalizeUploadedDocumentPayload({
+      ...(existing || {}), ...payload,
+      metadata: payload.metadata ?? payload.metadata_json ?? existing?.metadata_json
+    });
+    const existingSource = existing ? normalizeUploadedDocumentPayload(existing) : null;
+    const bodySupplied = Object.hasOwn(payload, 'bodyText') || Object.hasOwn(payload, 'body_text');
+    // API responses intentionally omit original_capture_json. Resubmitting a
+    // returned row for authority/metadata review is not a new source capture.
+    // New bytes, changed source text/locator/kind, or replaceSource explicitly
+    // opt into replacement; otherwise preserve the exact stored capture.
+    const replaceSource = !existing || Boolean(normalized.fileBase64)
+      || payload.replaceSource === true || payload.replace_source === true
+      || normalized.sourceKind !== existingSource.sourceKind
+      || normalized.sourceLocator !== existingSource.sourceLocator
+      || (bodySupplied && normalized.bodyText !== normalizeText(existing.body_text));
     if (normalized.sourceKind === "file_upload" && normalized.fileBase64 && !isSupportedUploadedDocumentFile({ filename: normalized.filename, mimeType: normalized.mimeType })) {
       throw new Error("uploaded_document_file_type_not_supported");
     }
@@ -730,10 +780,12 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
     let title = normalized.title || normalized.filename || "Uploaded Document";
     let filename = normalized.filename;
     let sourceLocator = normalized.sourceLocator || null;
-    let fetchStatus = null;
-    let fetchMetadata = {};
+    let fetchStatus = replaceSource ? null : existing.fetch_status;
+    let fetchMetadata = replaceSource ? {} : asObject(existing.fetch_metadata_json);
+    let originalCapture = replaceSource ? null : existing.original_capture_json;
 
-    if (normalized.sourceKind === "single_page_url") {
+
+    if (replaceSource && normalized.sourceKind === "single_page_url") {
       if (!sourceLocator) {
         throw new Error("single_page_url_required");
       }
@@ -741,6 +793,7 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
       if (!fetchedPage.ok) {
         throw new Error("single_page_fetch_failed");
       }
+      originalCapture = fetchedPage.originalCapture;
       bodyText = normalizeText(fetchedPage.text);
       if (!bodyText) {
         throw new Error("single_page_empty_text");
@@ -761,7 +814,7 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
         imported_from_single_page: true
       };
       filename = null;
-    } else if (!bodyText && normalized.fileBase64) {
+    } else if (normalized.fileBase64) {
       const parsed = extractTextFromDocumentBuffer({
         buffer: Buffer.from(normalized.fileBase64, "base64"),
         mimeType: normalized.mimeType,
@@ -776,6 +829,18 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
       };
     }
 
+    if (replaceSource && !originalCapture) {
+      const originalBytes = normalized.fileBase64
+        ? Buffer.from(normalized.fileBase64, "base64")
+        : Buffer.from(String(payload.bodyText ?? payload.body_text ?? bodyText), "utf8");
+      originalCapture = {
+        encoding: "base64", body: originalBytes.toString("base64"),
+        sha256: crypto.createHash("sha256").update(originalBytes).digest("hex"),
+        byte_length: originalBytes.length, captured_at: new Date().toISOString(),
+        source_kind: normalized.sourceKind, content_type: mimeType,
+        filename: filename || null, source_locator: sourceLocator
+      };
+    }
     if (!title || !bodyText) {
       throw new Error("uploaded_document_title_and_body_required");
     }
@@ -796,13 +861,13 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
       mimeType,
       sourceKind: normalized.sourceKind
     });
-    await client.query(
+    const saved = await client.query(
       `INSERT INTO uploaded_documents (
          uploaded_document_id, tenant_key, status, title, filename, mime_type, source_authority, document_class,
          body_text, metadata_json, source_hash, created_by_type, created_by_id, updated_at,
-         source_kind, source_locator, fetch_status, fetch_metadata_json, content_fingerprint
+         source_kind, source_locator, fetch_status, fetch_metadata_json, content_fingerprint, original_capture_json
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, 'tenant', $12, NOW(), $13, $14, $15, $16::jsonb, $17)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, 'tenant', $12, NOW(), $13, $14, $15, $16::jsonb, $17, $18::jsonb)
        ON CONFLICT (uploaded_document_id)
        DO UPDATE SET status = EXCLUDED.status,
                      title = EXCLUDED.title,
@@ -818,8 +883,11 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
                      fetch_status = EXCLUDED.fetch_status,
                      fetch_metadata_json = EXCLUDED.fetch_metadata_json,
                      content_fingerprint = EXCLUDED.content_fingerprint,
+                     original_capture_json = EXCLUDED.original_capture_json,
                      created_by_id = EXCLUDED.created_by_id,
-                     updated_at = NOW()`,
+                     updated_at = NOW()
+       WHERE uploaded_documents.tenant_key = EXCLUDED.tenant_key
+       RETURNING uploaded_document_id`,
       [
         uploadedDocumentId,
         tenantKey,
@@ -837,22 +905,27 @@ export async function saveUploadedDocument(db, tenantKey, payload = {}, actor = 
         sourceLocator,
         fetchStatus,
         JSON.stringify(fetchMetadata),
-        contentFingerprint
+        contentFingerprint,
+        JSON.stringify(originalCapture)
       ]
     );
+    if (!saved.rows.length) throw new Error("uploaded_document_not_found");
     await writeAuditLog(client, tenantKey, actor, "knowledge_receptionist.uploaded_document.saved", {
       uploaded_document_id: uploadedDocumentId,
       document_class: normalized.documentClass,
-      source_authority: normalized.sourceAuthority
+      source_authority: normalized.sourceAuthority,
+      source_replaced: replaceSource,
+      previous_capture_sha256: existing?.original_capture_json?.sha256 || null,
+      capture_sha256: originalCapture?.sha256 || null
     });
     const res = await client.query(
       `SELECT *
        FROM uploaded_documents
-       WHERE uploaded_document_id = $1
+       WHERE uploaded_document_id = $1 AND tenant_key = $2
        LIMIT 1`,
-      [uploadedDocumentId]
+      [uploadedDocumentId, tenantKey]
     );
-    return res.rows[0] || null;
+    return withoutOriginalCapture(res.rows[0]);
   });
 }
 
@@ -877,7 +950,7 @@ export async function archiveUploadedDocument(db, tenantKey, uploadedDocumentId,
       throw new Error("uploaded_document_not_found");
     }
     if (normalizeText(existing.status) === "archived") {
-      return existing;
+      return withoutOriginalCapture(existing);
     }
 
     const archivedRes = await client.query(
@@ -895,7 +968,7 @@ export async function archiveUploadedDocument(db, tenantKey, uploadedDocumentId,
       prior_status: existing.status || null,
       title: existing.title || null
     });
-    return archived;
+    return withoutOriginalCapture(archived);
   });
 }
 

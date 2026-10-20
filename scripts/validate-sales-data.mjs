@@ -453,6 +453,7 @@ async function validateOutcomeAdvancesQueue() {
   const inactivePool = {
     async query(sql, params = []) {
       assertPlaceholderContract(sql, params);
+      if (/SELECT \* FROM sales_call_sessions/.test(sql) || /UPDATE sales_call_sessions/.test(sql)) return { rowCount: 0, rows: [] };
       return {
         rowCount: 1,
         rows: [{ ...prospectRow(), status: "callback_requested" }]

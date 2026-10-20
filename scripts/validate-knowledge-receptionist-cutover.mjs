@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
@@ -6,6 +8,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import pg from "pg";
 
+import { bootstrapSchemaBaseline } from "./lib/schema-migrations.mjs";
 import { ensureTables, getPool } from "../pages/api/_lib/db.js";
 import { syncCanonicalKnowledgePacks } from "../pages/api/_lib/knowledgeReceptionistPacks.js";
 
@@ -23,6 +26,15 @@ import publishBuildHandler from "../pages/api/v1/knowledge/builds/[buildId]/publ
 import promptHandler from "../pages/api/v1/gateway/prompt.js";
 import { assembleKnowledgeRuntimeTurn } from "../pages/api/_lib/knowledgeReceptionistPrompt.js";
 import { requireSchemaResetApproval } from "./_safety.mjs";
+
+// Default acceptance is isolated and deterministic. The retained provider suite
+// is explicitly opt-in and still requires the existing schema-reset approval.
+// Offline fixtures do not certify model semantics or a heard production call.
+if (!process.argv.includes('--live-integration')) {
+  const result = spawnSync(process.execPath, ['--no-warnings', fileURLToPath(new URL('./validate-knowledge-governance.mjs', import.meta.url))], { stdio: 'inherit' });
+  if (result.error) throw result.error;
+  process.exit(result.status ?? 1);
+}
 
 const { Pool } = pg;
 
@@ -395,8 +407,9 @@ async function main() {
     const pool = getPool();
     sharedPool = pool;
     assert(pool, "Shared pool is unavailable");
-    await ensureTables(pool);
+    await bootstrapSchemaBaseline(pool);
     summary.migrations = await applyMigrations(pool);
+    await ensureTables(pool);
     const packRun = await syncCanonicalKnowledgePacks(pool);
     summary.packSeeding = packRun;
     console.error("phase:migrations_and_packs");
@@ -647,21 +660,13 @@ async function main() {
     };
     console.error("phase:build_created");
 
-    const publishRes = await invokeHandler(publishBuildHandler, {
-      method: "POST",
-      query: { tenantKey, buildId },
-      headers: { cookie }
-    });
-    assert.equal(publishRes.statusCode, 200, JSON.stringify(publishRes.body));
-    assert.equal(publishRes.body?.cache_prewarmed, true);
-    summary.builds.published = publishRes.body;
-    console.error("phase:build_published");
-
     const readinessRes = await invokeHandler(readinessHandler, {
       method: "POST",
       query: { tenantKey },
       headers: { cookie },
       body: {
+        build_id: buildId,
+        evidence_note: "Explicit live integration fixture: operational inputs, guardrails and configured sample scenarios reviewed.",
         checklist: {
           hours_confirmed: true,
           address_confirmed: true,
@@ -686,6 +691,16 @@ async function main() {
       JSON.stringify(summary.readiness)
     );
     console.error("phase:readiness");
+
+    const publishRes = await invokeHandler(publishBuildHandler, {
+      method: "POST",
+      query: { tenantKey, buildId },
+      headers: { cookie }
+    });
+    assert.equal(publishRes.statusCode, 200, JSON.stringify(publishRes.body));
+    assert.equal(publishRes.body?.cache_prewarmed, true);
+    summary.builds.published = publishRes.body;
+    console.error("phase:build_published");
 
     const promptRes = await invokeHandler(promptHandler, {
       method: "POST",

@@ -67,7 +67,14 @@ export default async function handler(req, res) {
       });
       if (!manager) return;
       const body = typeof req.body === "object" && req.body ? req.body : {};
-      const buildResult = await enqueueKnowledgeBuild(pool, tenantKey, normalizeKnowledgeBuildEnqueueInput(body));
+      if (body.rateLimitOverride === true && session.role !== "admin") {
+        return fail(res, 403, "knowledge_build_rate_limit_override_forbidden", "Only a platform admin can override the rebuild limit.");
+      }
+      const buildResult = await enqueueKnowledgeBuild(pool, tenantKey, {
+        ...normalizeKnowledgeBuildEnqueueInput(body),
+        actor: session,
+        rateLimitOverride: body.rateLimitOverride === true
+      });
       return res.status(202).json({ ok: true, ...buildResult });
     }
 
@@ -76,6 +83,12 @@ export default async function handler(req, res) {
   } catch (err) {
     const errorCode = String(err?.code || "").trim();
     const message = String(err?.message || "unknown");
+    if (message === "knowledge_build_rate_limit_override_forbidden") {
+      return fail(res, 403, message, "Only a platform admin can override the rebuild limit.");
+    }
+    if (message === "knowledge_build_rate_limited") {
+      return fail(res, 429, message, "Only one new knowledge build is allowed every 24 hours. An EveryCall admin can approve an override.");
+    }
     if (message === "knowledge_receptionist_migrations_not_applied") {
       return fail(res, 503, "migrations_required", "Knowledge receptionist migrations have not been applied.");
     }
