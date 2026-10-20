@@ -1,0 +1,432 @@
+{
+  "date": "2026-10-20",
+  "source_commit": "26d0f30",
+  "scope": "Website/source ingestion, normalization, analysis, knowledge artifacts, ownership, build storage, validation and publication.",
+  "implementation_changed": false,
+  "baseline_requirements": 163,
+  "assigned_requirement_count": 101,
+  "status_counts": {
+    "CONFORMS": 29,
+    "DEVIATES": 12,
+    "DOCUMENTED_CHANGE": 4,
+    "OUT_OF_SCOPE": 75,
+    "PARTIAL": 41,
+    "UNVERIFIED": 2
+  },
+  "assigned_status_counts": {
+    "CONFORMS": 29,
+    "DEVIATES": 12,
+    "DOCUMENTED_CHANGE": 4,
+    "OUT_OF_SCOPE": 13,
+    "PARTIAL": 41,
+    "UNVERIFIED": 2
+  },
+  "original_design_document_sha256": {
+    "docs/DECISIONS.md": "c7ba7f65e3f299695fa9ec32a18475b376ab633f9a4c79a25d6c667d8097ab47",
+    "docs/PRD.md": "16887a3775dfed1133a65e231fea2ed52ceb9439b6da75766b5f8e557d3b87d9",
+    "docs/RUNBOOK.md": "0f939841750a52fa1b5cc95fee5bcad6a7925d3f8ffae173c80cc0186dcc41ff",
+    "docs/SPECS/knowledge-system-v1.md": "8bdef2075040db2baf7d7ea3038535697e72e89f0733698144428ed6ee3519e7",
+    "docs/SPECS/layered-knowledge-builds.md": "66bd51ec2ea1ead66a95c10d0165710940ba5c2b3ab1f39d7c9c1ea7af4d44b0",
+    "docs/SPECS/live-v20-1-rollout.md": "ab7aa907191ee671b6bdd8120da90934df6c1f2b79a94d901d749ffc0bb8937f",
+    "docs/TESTS.md": "c3ef50d847c18f5eec79459dba3cadafd3c170cc3313eae24f1788da1a1cbff4",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/00-spec-index.md": "e5c6fe96ac2187967bb90ea94cc03977620a894974b991d34d0c34b291f613ff",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/01-product-purpose-and-scope.md": "31464c611649c40265a06e3e610bef62bc65e57bf64a9e2554e0b680196bba52",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/02-core-concepts-and-glossary.md": "96fce23443d981cab2302e26cc5e213827737625273d4703b59b738309f736f7",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/03-domain-subdomain-model.md": "7ef6fd07dcd7a1fd8a90e0261e38b829f5c009bfdf9cb88790557c8915eea529",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/04-business-call-intent-and-stage-playbooks.md": "a62906eb5a0bcc7445d0789679e3091c4be4b36c3e925a625910f0fa63bebbd5",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/05-knowledge-artifacts-and-schemas.md": "228da6502f82b65d2fd3360a0312aad141e01867af95ddc812fce039095c33f9",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/06-ingestion-and-compilation-pipeline.md": "3669f6c439837320c276b509fcbe8ed703f9e168dc21c46e0f1dff643cd7bd93",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/07-source-precedence-conflicts-and-content-classification.md": "be301e95b516906ae1300b2b60d4c8901a5047460ce377ae3f2965056f7fdff0",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/08-runtime-retrieval-gateway-and-realtime-contract.md": "8a3891b894b429036006f30af6c8061fd703070d0de3dd4d83a4399d9d24a8a9",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/09-prompting-and-instruction-generation.md": "ff3d9f3209d896703c5af90db782cfdff6659320fd1f8ce6be7b3776842e3b02",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/10-overrides-guardrails-and-business-configuration.md": "8ea2e18e53147362f612adc70fd6afd0c45ac4d84389b2fbc440946ddfe5a185",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/11-go-live-rebuild-versioning-and-admin-workflows.md": "4f7ffe76cd5bb0fab300a7c0accf7b43e403d71c7d26786cc2ae61249bd3fcd5",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/12-testing-evals-and-acceptance.md": "22710593d095c49c8baa67b3e868e1d26d92b98393ff4be7d527cfe698c3e301",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/13-current-codebase-integration-notes.md": "7a8c3c09a49afbfb7cea4413ce792561f173f09e989513439e22b665cd010be8",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/14-requirements-traceability-matrix.md": "2ccc52d8d78b5c91f3c3ea8fc6321ba68a46f0a6aec6cb2ade0c858bbe1daa8f",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/15-decision-ledger.md": "bfbe75da9b8ba7c408dd5bc875347ebc2ddfdadbb74764c919ed567a56e3ea05",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/16-open-questions-and-deferred-items.md": "2e15bc4dbb5ede131b02354daaa5e3753533e51510afaf1719adc113598eeff5",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/17-end-to-end-walkthroughs.md": "acf91769ab58ef4cade0f465a5389faefae89b6745499887f740ededa2fe2753",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/18-spec-completeness-checklist.md": "2bd6bf2779eb8ae598d8d2d60c40fec3f25e535889ab833907fa11411b8fea06",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/requirements-traceability.csv": "598e2e2b5a57a0d1c80b05a7a17240191794a0f1d553ca43f9a71aa02ddaaedc",
+    "docs/architecture/knowledge-receptionist-subsystem/v1.0/spec-bundle-manifest.json": "efdee777fb7aa1213746ab4f0471a7c51cb5602f3d13fcfc4eba3b96ebbdcc67"
+  },
+  "baseline_test_runs": [
+    {
+      "script": "scripts/validate-knowledge-source-pages.mjs",
+      "result": "PASS",
+      "output": "knowledge source page validation passed"
+    },
+    {
+      "script": "scripts/validate-knowledge-rescan-fresh.mjs",
+      "result": "PASS",
+      "output": "fresh website rescan validation passed"
+    },
+    {
+      "script": "scripts/validate-knowledge-build-leases.mjs",
+      "result": "PASS",
+      "output": "knowledge build lease validation passed"
+    },
+    {
+      "script": "scripts/validate-knowledge-build-transactions.mjs",
+      "result": "PASS",
+      "output": "PASS knowledge build transactions: immutable draft retry, preserved blockers, lease fencing, profile conflict/rollback and atomic publication"
+    },
+    {
+      "script": "scripts/validate-knows-by-heart-part9.mjs",
+      "result": "PASS",
+      "output": "Knows By Heart Part 9 validation passed"
+    }
+  ],
+  "capture_analysis": {
+    "summary": {
+      "state": "complete",
+      "source_head": "26d0f30ef333229fe43e18335c5d37bfcd52c295",
+      "assigned_requirements": 49,
+      "counts": {
+        "PARTIAL": 21,
+        "OUT_OF_SCOPE": 8,
+        "CONFORMS": 15,
+        "DEVIATES": 4,
+        "DOCUMENTED_CHANGE": 1
+      },
+      "scope": "Read-only HEAD audit: website/source capture through analysis and persisted build. Runtime-only behavior explicitly excluded; 49 assigned IDs include CSV-only PIPE021/022.",
+      "preserved_design": [
+        "All four source channels normalize into a common compiler.",
+        "Persisted staged jobs, analysis batches/checkpoints and leased execution exist.",
+        "AI summary/topic/artifact extraction, aliases and embeddings exist.",
+        "Inactive drafts and transactional publication protect the old active build."
+      ],
+      "documented_evolution": [
+        "DECISIONS.md:58 explicitly replaces arbitrary line chunks with whole-page evidence and a 12000-token beginning/end budget.",
+        "DECISIONS.md:61-62 explicitly require durable row leases and token-fenced state transitions."
+      ],
+      "limits": [
+        "No external crawl, model call, production read/write, migrations, commits or deployment.",
+        "Existing offline tests prove their isolated assertions, not semantic extraction/synthesis quality.",
+        "Later Proposed layered-build spec is explanatory evidence, not proof of owner-approved design change.",
+        "Not every PARTIAL is a confirmed defect: semantic unverified portions and narrowed implementation are stated per row."
+      ],
+      "core_docs_summary": "PRD/system overview define tenant-grounded receptionist knowledge and gateway authority. DECISIONS preserve recorded whole-page/lease evolution. TESTS separate offline checks from real model/provider acceptance. RUNBOOK deployment/provider procedures were not invoked."
+    },
+    "findings": [
+      {
+        "id": "F-CAP-01",
+        "priority": "high",
+        "requirements": [
+          "REQ-PIPE-007",
+          "REQ-PIPE-005",
+          "REQ-SCOPE-001"
+        ],
+        "title": "Cleanup removes supported facts when a line contains a CTA phrase",
+        "trigger": "A visible line says: Our office is open Monday through Friday, 8 AM to 5 PM; call today for an appointment.",
+        "design_impact": "The entire hours line is discarded before persisted source evidence and AI extraction; replaying stored source cannot recover it.",
+        "code_references": [
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:600",
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:638",
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:2237",
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:2279"
+        ],
+        "evidence": "Executed isolated real exported extractor and source projection in /tmp/everycall-capture-audit-repro.mjs:9-16: no 8 AM text remains. Existing source-pages suite passes but lacks this mixed fact/CTA case.",
+        "recommendation": "Preserve factual spans and suppress only identified repeated boilerplate; retain recoverable original capture."
+      },
+      {
+        "id": "F-CAP-02",
+        "priority": "high",
+        "requirements": [
+          "REQ-PIPE-013",
+          "REQ-PIPE-015",
+          "REQ-RULE-004",
+          "REQ-RULE-009"
+        ],
+        "title": "Build lacks general deterministic conflict resolution and content-readiness QA",
+        "trigger": "Approved sources state different values for the same operational fact, such as office hours.",
+        "design_impact": "Consolidation keys include claim text, so different values remain separate. Validation samples existing artifacts for budgets/latency, not unresolved contradictions or missing topic/guardrail coverage.",
+        "code_references": [
+          "pages/api/_lib/knowledgeReceptionistCompiler.js:2638",
+          "pages/api/_lib/knowledgeReceptionistCompiler.js:3164",
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:3599",
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:3658"
+        ],
+        "evidence": "Read-only inspection of full compile orchestrator, consolidation, validation and downstream catalog safeguards; no model semantic simulation or full build executed. By-heart safety and tenant corrections were considered but do not provide general cross-source resolution.",
+        "recommendation": "Restore same-fact deterministic precedence/conflict quarantine and original content QA gates, or obtain explicit architectural disposition."
+      },
+      {
+        "id": "F-CAP-03",
+        "priority": "medium",
+        "requirements": [
+          "REQ-PIPE-004"
+        ],
+        "title": "Once-per-day build initiation guard is disabled",
+        "trigger": "A tenant initiates more than one fresh build in a day.",
+        "design_impact": "The frozen daily cap has no enforcement in the build allocator.",
+        "code_references": [
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:1917",
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:4742"
+        ],
+        "evidence": "Executed exact helper twice in isolated VM with throwing DB spy; both pass and query count remains zero. No decision removing limit found in reviewed later docs.",
+        "recommendation": "Restore atomic per-tenant daily enforcement and concurrent-call regression, or explicitly approve the requirement change."
+      },
+      {
+        "id": "F-CAP-04",
+        "priority": "medium",
+        "requirements": [
+          "REQ-SCOPE-001",
+          "REQ-PIPE-005"
+        ],
+        "title": "Nested relative links resolve against site origin",
+        "trigger": "A fetched /services/ page links to details or a relative downloadable filename.",
+        "design_impact": "Crawler asks for /details rather than /services/details, potentially omitting approved linked source evidence.",
+        "code_references": [
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:301",
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:845",
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:1081"
+        ],
+        "evidence": "Source caller passes crawlOrigin; isolated extractLinkInventory(origin, relative href) returns origin/details. No external crawl was performed.",
+        "recommendation": "Resolve nested links against the fetched page URL while preserving same-origin scope checks; add nested-relative page/file fixtures."
+      },
+      {
+        "id": "F-CAP-05",
+        "priority": "high",
+        "requirements": [
+          "REQ-PIPE-022",
+          "REQ-RULE-007",
+          "REQ-RULE-012"
+        ],
+        "title": "Authority scoring favors unclassified uploads and drops negative content penalties",
+        "trigger": "An approved but unclassified upload competes with an operational website source; educational/marketing metadata is ranked.",
+        "design_impact": "Unclassified upload receives a 0.10 metadata boost versus website 0.02, contrary to confirmation/classification prerequisite. maxScore starts at zero, making educational/marketing negative penalties ineffective.",
+        "code_references": [
+          "packages/contracts/src/knowledgeSourcePrecedence.ts:27",
+          "packages/contracts/src/knowledgeSourcePrecedence.ts:36",
+          "packages/contracts/src/knowledgeSourcePrecedence.ts:43",
+          "packages/contracts/src/knowledgeSourcePrecedence.ts:55",
+          "packages/contracts/src/knowledgeSourcePrecedence.ts:64",
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:2004"
+        ],
+        "evidence": "Executed local compiled helper: website operational=0.02; unclassified uploaded operational=0.10; educational=0; marketing=0. This proves metadata scoring, not an end-to-end spoken answer.",
+        "recommendation": "Remove unclassified-source precedence advantage until classified and preserve negative class penalties; test same-fact and marketing-only support fixtures."
+      },
+      {
+        "id": "F-CAP-06",
+        "priority": "medium",
+        "requirements": [
+          "REQ-PIPE-010"
+        ],
+        "title": "Main compiler stores generic claims without semantic value normalization",
+        "trigger": "AI emits hours, booleans, service lists or other typed operational claims.",
+        "design_impact": "Main consolidation always writes generic source_compiled_fact/knowledge_support and null normalized_value_json; original structured normalization contract is only partly implemented.",
+        "code_references": [
+          "pages/api/_lib/knowledgeReceptionistCompiler.js:2655",
+          "pages/api/_lib/knowledgeReceptionistCompiler.js:2656",
+          "pages/api/_lib/knowledgeReceptionistCompiler.js:2660",
+          "pages/api/_lib/knowledgeReceptionistCompiler.js:2661"
+        ],
+        "evidence": "Read-only active compiler/caller tracing. Legacy typed deterministic helpers exist but are not used by compileKnowledgeBuildArtifacts.",
+        "recommendation": "Restore meaningful fact/object typing and normalized values or explicitly approve revised artifact semantics."
+      }
+    ],
+    "test_runs": [
+      {
+        "command": "node /tmp/everycall-capture-audit-repro.mjs",
+        "executed_by": "capture audit agent",
+        "result": "PASS (asserted observed defects)",
+        "coverage": "Real exported HTML extraction/source projection; isolated private daily-limit and link-inventory helpers. No DB/network/model calls.",
+        "limits": "Source projection is not a database integration test; relative link proof combines actual helper output with reviewed caller argument. Incidental classification output is not used as a finding."
+      },
+      {
+        "command": "node --input-type=module (import packages/contracts/dist/knowledgeSourcePrecedence.js and score four metadata fixtures)",
+        "executed_by": "capture audit agent",
+        "result": "PASS",
+        "coverage": "website=0.02; unclassified upload=0.10; educational=0; marketing=0",
+        "limits": "Local built helper inspected against TypeScript source; full retrieval/model behavior not executed."
+      },
+      {
+        "command": "source-pages; fresh-rescan; knowledge-build-leases; knowledge-build-transactions; Part9 ownership validators",
+        "executed_by": "primary agent (reported to capture agent)",
+        "result": "PASS",
+        "coverage": "See primary report for commands/output. Source shape, fresh rescan flags, leases, publication transaction and ownership gates.",
+        "limits": "Not rerun here; semantic model quality and real production workflow not certified."
+      }
+    ]
+  },
+  "storage_publication": {
+    "summary": {
+      "scope": "Read-only frozen-design conformance: persistent/published knowledge, tenant controls, lifecycle/governance and contract into runtime. Live voice behavior excluded.",
+      "head_requested": "26d0f30",
+      "assigned_requirement_count": 52,
+      "status_counts": {
+        "CONFORMS": 14,
+        "PARTIAL": 20,
+        "DOCUMENTED_CHANGE": 3,
+        "OUT_OF_SCOPE": 5,
+        "DEVIATES": 8,
+        "UNVERIFIED": 2
+      },
+      "positive_preserved_design": [
+        "Separate build-scoped facts/cards with source links and organizational topics",
+        "Shared normalized multi-source compiler and staged durable persistence",
+        "Execution leases, transactional draft checkpoints and active pointer publication",
+        "Canonical versioned packs and materialized tenant-owned fact safeguards"
+      ],
+      "assumptions": [
+        "Later recorded decisions are explanatory changes; Proposed specs do not establish user approval.",
+        "Equivalent module names, database representation and queue technology are allowed implementation choices.",
+        "No production/schema/provider calls were made.",
+        "Passing mocked semantic decisions prove mechanics, not model judgment."
+      ]
+    },
+    "findings": [
+      {
+        "priority": "P1",
+        "title": "Caller-supplied override/guardrail IDs can overwrite another tenant row",
+        "effect": "Authenticated tenant owner/admin who knows a foreign artifact ID can mutate that tenant operational truth/guardrail and receive the row.",
+        "requirements": [
+          "REQ-OVR-001",
+          "REQ-OVR-003"
+        ],
+        "code_references": [
+          "pages/api/_lib/knowledgeReceptionistConfig.js:510",
+          "pages/api/_lib/knowledgeReceptionistConfig.js:587",
+          "pages/api/v1/knowledge/overrides.js:34",
+          "pages/api/v1/knowledge/guardrails.js:34"
+        ],
+        "evidence": "Isolated production-function/PGlite repro passed; no live database involved."
+      },
+      {
+        "priority": "P1",
+        "title": "Rollback bypasses known-good lifecycle requirement",
+        "effect": "qa_blocked or never-published target can be activated if catalog/live-brief preparation succeeds, bypassing normal ready_to_publish status guard.",
+        "requirements": [
+          "REQ-OPS-004",
+          "REQ-OPS-013"
+        ],
+        "code_references": [
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:5291",
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:5300",
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:5341"
+        ],
+        "evidence": "Production rollback body and real SQL isolated PGlite repro; preparation helpers intentionally stubbed successful."
+      },
+      {
+        "priority": "P1",
+        "title": "Readiness lacks several required governance prerequisites",
+        "effect": "Existing readiness can declare ready without completed intent/playbook, override review, dangerous-question review, conflict clearance or sample-call QA; basics/routing are only warnings.",
+        "requirements": [
+          "REQ-OPS-001",
+          "REQ-OPS-003",
+          "REQ-OPS-005",
+          "REQ-OPS-006",
+          "REQ-OPS-007",
+          "REQ-OPS-010"
+        ],
+        "code_references": [
+          "pages/api/_lib/clientSetupStatus.js:463",
+          "pages/api/_lib/knowledgeReceptionistPrompt.js:77",
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:3800",
+          "pages/api/v1/gateway/prompt.js:46"
+        ],
+        "evidence": "Static trace of build creation, validation, publication, setup readiness and prompt admission; narrow active-build/domain/v20 checks positively identified."
+      },
+      {
+        "priority": "P2",
+        "title": "Configurable approval-required mode is not implemented in these save paths",
+        "effect": "No tenant/org review-required policy and second-approver transition is evidenced in these save paths; only caller-chosen status plus audit. Immediate-save mode is valid where review is not required.",
+        "requirements": [
+          "REQ-OVR-008"
+        ],
+        "code_references": [
+          "pages/api/_lib/knowledgeReceptionistConfig.js:397",
+          "pages/api/_lib/knowledgeReceptionistConfig.js:462",
+          "pages/api/_lib/knowledgeReceptionistConfig.js:492"
+        ],
+        "evidence": "Independent source review against frozen approval rules; this is a missing design capability, not proof of bypassing an enabled policy."
+      },
+      {
+        "priority": "P2",
+        "title": "Schema creation remains on gateway prompt path",
+        "effect": "First prompt per process can issue schema DDL despite explicit architectural separation requirement.",
+        "requirements": [
+          "REQ-INT-007"
+        ],
+        "code_references": [
+          "pages/api/_lib/db.js:29",
+          "pages/api/v1/gateway/prompt.js:34"
+        ],
+        "evidence": "Direct call-chain source trace."
+      },
+      {
+        "priority": "P2",
+        "title": "Universal knowledge object typing is replaced with generic labels",
+        "effect": "Persisted artifact consumers cannot use frozen offering/location/policy/etc object_type semantics from compiled records.",
+        "requirements": [
+          "REQ-KNOW-012"
+        ],
+        "code_references": [
+          "pages/api/_lib/knowledgeReceptionistCompiler.js:2656",
+          "pages/api/_lib/knowledgeReceptionistCompiler.js:2757"
+        ],
+        "evidence": "Exact generated object_type constants; no explicit superseding taxonomy decision found."
+      },
+      {
+        "priority": "P2",
+        "title": "Build channel inventory overstates actual captured channels",
+        "effect": "Website request records website_file even when no downloadable source contributed, weakening reviewer visibility into active source mix.",
+        "requirements": [
+          "REQ-KNOW-015"
+        ],
+        "code_references": [
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:4763",
+          "pages/api/_lib/knowledgeReceptionistBuilds.js:4775"
+        ],
+        "evidence": "Channel metadata derives from request presence rather than completed source rows."
+      },
+      {
+        "priority": "P2",
+        "title": "Architecture acceptance evidence is incomplete and stale",
+        "effect": "Broad legacy harness imports missing readiness endpoint; cross-vertical and multi-source acceptance not established; frozen matrix CSV/manifest lag Markdown IDs.",
+        "requirements": [
+          "REQ-QA-002",
+          "REQ-QA-003",
+          "REQ-QA-004",
+          "REQ-QA-007"
+        ],
+        "code_references": [
+          "scripts/validate-knowledge-receptionist-cutover.mjs:20",
+          "docs/architecture/knowledge-receptionist-subsystem/v1.0/14-requirements-traceability-matrix.md:1"
+        ],
+        "evidence": "Local inventory plus root mechanical 161 Markdown versus 158 CSV count, 163-ID union with five Markdown-only and two CSV-only IDs; no live test attempted."
+      }
+    ],
+    "test_runs": [
+      {
+        "command": "node /tmp/everycall-knowledge-storage-repro.mjs",
+        "result": "PASS: reproduced cross-tenant override + guardrail mutation and rollback of qa_blocked target",
+        "scope": "Isolated PGlite. Config module actual functions; table-readiness assertion bypassed. Rollback actual function body/SQL with successful catalog/live-brief/assets helper stubs."
+      },
+      {
+        "command": "root independent baseline knowledge source-pages/fresh-rescan/leases/transactions/Part9 validators",
+        "result": "PASS reported by root; not duplicated by delegate",
+        "scope": "See /tmp/everycall-conformance-*.log; semantic/live assertions remain qualified."
+      }
+    ],
+    "independent_review_corrections": [
+      "REQ-OVR-008 describes a missing configurable approval-required mode, not bypass of an existing enabled policy. Finding priority is P2.",
+      "REQ-KNOW-014 test evidence narrowed to partial normalization coverage; four-channel acceptance was not run."
+    ]
+  },
+  "interpretation": "CONFORMS records cited implementation support, not empirical model-quality certification. DOCUMENTED_CHANGE records later documentation and does not independently establish owner approval. OUT_OF_SCOPE records exclusions and is not a missing-feature finding.",
+  "independent_review": {
+    "result": "PASS",
+    "role": "Fresh-context non-author critical reviewer",
+    "scope": "Strongest source claims, original requirement inventory, CSV completeness, report wording, approval provenance, scope exclusions and fixture limitations.",
+    "corrections_applied": [
+      "Approval finding narrowed to missing configurable review-required mode; no bypass of an enabled policy asserted.",
+      "REQ-KNOW-014 test evidence limited to partial normalization; no four-channel acceptance claimed.",
+      "Source-authority findings describe ranking boost and clipped penalties, not demonstrated conflicting spoken answer.",
+      "Status table column renamed Requirement count to include excluded requirements accurately."
+    ],
+    "implementation_changed": false,
+    "live_acceptance_claimed": false
+  }
+}
