@@ -31,6 +31,8 @@ jobs:
       - run: pnpm install --frozen-lockfile=false
       - run: pnpm typecheck
       - run: pnpm exec tsc -p packages/contracts/tsconfig.json
+      - run: pnpm --filter @everycall/call-gateway build
+      - run: pnpm --filter @everycall/sales-call-gateway build
       - run: pnpm validate:knowledge-design
       - run: pnpm validate:knowledge-integrity
       - run: pnpm validate:knowledge-governance
