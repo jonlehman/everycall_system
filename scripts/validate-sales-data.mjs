@@ -901,7 +901,7 @@ async function validateStaticIsolationAndRoutes() {
   assert.doesNotMatch(salesConsole, />Refresh</);
   assert.doesNotMatch(salesConsole, /Prepare demo/);
   assert.doesNotMatch(salesConsole, /Replenish warm queue/);
-  assert.match(salesConsole, /Prior activity/);
+  assert.match(salesConsole, /Last call outcome/);
   const adminSales = await fs.readFile(path.join(root, "app/admin/sales/page.jsx"), "utf8");
   assert.match(adminSales, /ProspectsManager/);
   assert.doesNotMatch(salesConsole, /ProspectsManager|CsvImportPanel/);

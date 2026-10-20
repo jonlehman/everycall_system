@@ -9,7 +9,6 @@ import {
   normalizeInvitation,
   normalizeWebrtc
 } from './salesApi';
-import QueuePanel from './QueuePanel';
 import { useSalesQueue } from './useSalesQueue';
 import { connectTelnyxBrowserClient } from './telnyxBrowserClient';
 import { Card, StatusPill, ActionButton, Field, TextInput, ErrorNotice, Detail } from './SalesUi';
@@ -95,9 +94,9 @@ function ProspectPanel({ prospect }) {
   if (!prospect) {
     return (
       <Card>
-        <h2 className="m-0 text-base font-semibold text-slate-950">Prospect</h2>
+        <h2 className="m-0 text-base font-semibold text-slate-950">Prospect details</h2>
         <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-          Reload your queue, or ask an administrator to add callable prospects.
+          Refresh prospects, or ask an administrator to add prospects you can call.
         </div>
       </Card>
     );
@@ -107,7 +106,7 @@ function ProspectPanel({ prospect }) {
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="m-0 break-words text-xl font-semibold text-slate-950">Prospect context</h2>
+          <h2 className="m-0 break-words text-base font-semibold text-slate-950">Prospect details</h2>
           <p className="mt-1 text-sm text-slate-500">{prospect.localTime || prospect.timezone || 'Local time unavailable'}</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -129,7 +128,7 @@ function ProspectPanel({ prospect }) {
       ) : null}
 
       <div className="mt-4">
-        <h3 className="m-0 text-sm font-semibold text-slate-900">Website-derived talking points</h3>
+        <h3 className="m-0 text-sm font-semibold text-slate-900">Talking points</h3>
         {prospect.talkingPoints.length ? (
           <ul className="mt-2 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
             {prospect.talkingPoints.map((point, index) => (
@@ -143,13 +142,13 @@ function ProspectPanel({ prospect }) {
         )}
       </div>
       <details className="mt-4 text-sm text-slate-600">
-        <summary className="cursor-pointer font-semibold">Contact details & prior activity</summary>
+        <summary className="cursor-pointer font-semibold">Contact & call history</summary>
       <div className="mt-4 grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
         <Detail label="Phone" value={prospect.phone} />
         <Detail label="Local time" value={prospect.localTime || prospect.timezone} />
-        <Detail label="Category" value={prospect.businessCategory} />
+        <Detail label="Business type" value={prospect.businessCategory} />
         <Detail
-          label="Prior activity"
+          label="Last call outcome"
           value={prospect.outcome
             ? `${displayStatus(prospect.outcome)}${prospect.lastOutcomeAt
               ? ` · ${new Date(prospect.lastOutcomeAt).toLocaleString()}`
@@ -207,12 +206,12 @@ function CallPanel({
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="m-0 text-base font-semibold text-slate-950">Call controls</h2>
+          <h2 className="m-0 text-base font-semibold text-slate-950">Call & demo</h2>
           <p className="mt-1 text-sm text-slate-500">You stay connected while the receptionist demonstrates the call.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <StatusPill status={call?.state || 'Not started'} tone={call?.prospectConnected ? 'blue' : undefined} />
-          <StatusPill status={`AI: ${displayStatus(call?.aiState || 'Not started')}`} tone={call?.aiReady ? 'good' : 'warn'} />
+          <StatusPill status={`Receptionist: ${displayStatus(call?.aiState || 'Not started')}`} tone={call?.aiReady ? 'good' : 'warn'} />
         </div>
       </div>
 
@@ -227,8 +226,8 @@ function CallPanel({
 
 
 
-      <ErrorNotice title="Browser calling error" message={softphoneError ? (/credential|not_configured|configuration|api_key|caller_id|operator_inactive/i.test(softphoneError) ? 'Calling is not set up for your account. Ask an administrator to finish phone setup.' : 'Browser calling needs attention. Reconnect, check microphone access, or open Connection details below.') : ''} />
-      <ErrorNotice title="Provider error" message={providerError} />
+      <ErrorNotice title="Calling unavailable" message={softphoneError ? (/credential|not_configured|configuration|api_key|caller_id|operator_inactive/i.test(softphoneError) ? 'Calling is not set up for your account. Ask an administrator to finish phone setup.' : 'Browser calling needs attention. Reconnect, check microphone access, or open Calling status below.') : ''} />
+      <ErrorNotice title="Call error" message={providerError} />
 
       {softphoneState === 'error' || softphoneState === 'disconnected' ? (
         <div className="mt-3">
@@ -289,15 +288,15 @@ function CallPanel({
       ) : null}
 
       <details className="mt-4 text-sm text-slate-600">
-        <summary className="cursor-pointer font-semibold">Connection details</summary>
+        <summary className="cursor-pointer font-semibold">Calling status</summary>
         {callBlocked !== callBlockedMessage ? <p className="mt-2 text-xs">{callBlocked}</p> : null}
         {softphoneError ? <p className="mt-2 break-words text-xs text-red-700">{softphoneError}</p> : null}
       <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
-        <Detail label="Browser softphone" value={displayStatus(softphoneState)} />
+        <Detail label="Browser calling" value={displayStatus(softphoneState)} />
         <Detail label="Microphone" value={displayStatus(microphoneState)} />
         <Detail label="Browser call" value={displayStatus(browserCallState)} />
-        <Detail label="Prospect leg" value={call?.prospectConnected ? 'Connected' : displayStatus(call?.state || 'Not started')} />
-        <Detail label="AI standby" value={call?.aiReady ? 'Ready' : displayStatus(call?.aiState || 'Not started')} />
+        <Detail label="Prospect" value={call?.prospectConnected ? 'Connected' : displayStatus(call?.state || 'Not started')} />
+        <Detail label="Receptionist" value={call?.aiReady ? 'Ready' : displayStatus(call?.aiState || 'Not started')} />
       </div>
       </details>
 
@@ -338,8 +337,8 @@ function ConversionPanel({
 
   return (
     <Card className="h-fit">
-      <h2 className="m-0 text-base font-semibold text-slate-950">Wrap up & next prospect</h2>
-      <p className="mt-1 text-sm text-slate-500">End the call, choose an outcome, and save to advance your queue.</p>
+      <h2 className="m-0 text-base font-semibold text-slate-950">Wrap up</h2>
+      <p className="mt-1 text-sm text-slate-500">End the call, save the outcome, and move to the next prospect.</p>
 
       <div className="mt-4">
         <ActionButton
@@ -349,7 +348,7 @@ function ConversionPanel({
           disabled={!canStartSetup && !setupOpen}
           title={!canStartSetup ? 'Connect the prospect before starting assisted setup.' : ''}
         >
-          {setupOpen ? 'Hide setup' : 'Start Setup'}
+          {setupOpen ? 'Hide signup' : 'Help prospect sign up'}
         </ActionButton>
       </div>
 
@@ -397,7 +396,7 @@ function ConversionPanel({
       {invitation?.id ? (
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3" aria-live="polite">
           <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-semibold text-slate-900">Signup progress</div>
+            <div className="text-sm font-semibold text-slate-900">Signup status</div>
             <StatusPill
               status={signupStatus}
               tone={invitation.attentionRequired ? 'bad' : progress >= 0 ? 'blue' : 'warn'}
@@ -446,13 +445,13 @@ function ConversionPanel({
             ))}
           </select>
         </Field>
-        <Field label="Note">
+        <Field label="Call notes">
           <textarea
             value={note}
             onChange={(event) => setNote(event.target.value)}
             rows={4}
             maxLength={4000}
-            placeholder="Add concise follow-up context."
+            placeholder="What should you know before the next call?"
             className="w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#004ac6] focus:ring-2 focus:ring-[#004ac6]/15"
           />
         </Field>
@@ -463,7 +462,7 @@ function ConversionPanel({
           disabled={Boolean(busyAction) || !prospect?.id || (!outcome && !note.trim()) || outcomeBlocked}
           title={outcomeBlocked ? 'End the live call before recording its outcome.' : ''}
         >
-          {busyAction === 'outcome' ? 'Saving…' : outcome ? 'Save outcome & next prospect' : 'Save note'}
+          {busyAction === 'outcome' ? 'Saving…' : outcome ? 'Save & next prospect' : 'Save notes'}
         </ActionButton>
       </div>
     </Card>
@@ -471,8 +470,7 @@ function ConversionPanel({
 }
 
 export default function CallerWorkspace() {
-  const { queue, queueLoading, queueError, warmBusy, prepareBusyId, skipBusyId,
-    loadQueue, warmQueue, prepareProspect, skipProspect } = useSalesQueue({ autoWarm: true });
+  const { queue, queueLoading, queueError, loadQueue, warmQueue } = useSalesQueue({ autoWarm: true });
   const [call, setCall] = useState(null);
   const [invitation, setInvitation] = useState(null);
   const [busyAction, setBusyAction] = useState('');
@@ -876,72 +874,57 @@ export default function CallerWorkspace() {
     <div className="grid gap-4 pb-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="m-0 text-2xl font-semibold tracking-tight text-slate-950">Calling workspace</h1>
+          <h1 className="m-0 text-2xl font-semibold tracking-tight text-slate-950">Sales calls</h1>
           <p className="mt-1 text-sm text-slate-500">Call your prospect, introduce the receptionist, then save the outcome to move on.</p>
         </div>
-        <span className="text-sm font-semibold text-slate-600" aria-live="polite">{queue.prospects.length} in your queue</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm font-semibold text-slate-600" aria-live="polite">{queue.prospects.length} in your queue</span>
+          <ActionButton tone="secondary" onClick={() => { void loadQueue(); }} disabled={queueLoading}>
+            {queueLoading ? 'Refreshing…' : 'Refresh prospects'}
+          </ActionButton>
+        </div>
       </header>
-          <ErrorNotice title="Sales console action failed" message={operationError} />
-          <ErrorNotice title="Call status refresh failed" message={callRefreshError} />
+      <ErrorNotice title="Action failed" message={operationError} />
+      <ErrorNotice title="Call status unavailable" message={callRefreshError} />
+      <ErrorNotice title="Prospects unavailable" message={queueError} />
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="grid min-w-0 gap-4">
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wider text-blue-700">Current prospect</p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-950">{queue.current?.businessName || 'Your queue is empty'}</h2>
-            <p className="mt-1 text-sm text-slate-700">{queue.current ? [queue.current.contactName, queue.current.phone].filter(Boolean).join(' · ') : 'An administrator can import prospects and prepare your queue.'}</p>
-          </div>
-                <CallPanel
-                  prospect={queue.current}
-                  call={call}
-                  busyAction={busyAction}
-                  microphoneState={microphoneState}
-                  operatorMuted={operatorMuted}
-                  softphoneState={softphoneState}
-                  softphoneError={softphoneError}
-                  browserCallState={browserCallState}
-                  remoteAudioRef={remoteAudioRef}
-                  onCall={() => { void startCall(); }}
-                  onAction={(action) => { void performCallAction(action); }}
-                  onToggleMute={toggleOperatorMute}
-                  onReconnect={() => { void initializeSoftphone(); }}
-                />
-          <ProspectPanel prospect={queue.current} />
-        </div>
-        <div className="grid min-w-0 gap-4">
-              <ConversionPanel
-                prospect={queue.current}
-                call={call}
-                invitation={invitation}
-                busyAction={busyAction}
-                setupOpen={setupOpen}
-                setSetupOpen={setSetupOpen}
-                contactFields={contactFields}
-                setContactFields={setContactFields}
-                outcome={outcome}
-                setOutcome={setOutcome}
-                note={note}
-                setNote={setNote}
-                onSendInvitation={() => { void sendInvitation(); }}
-                onSaveOutcome={() => { void saveOutcome(); }}
-              />
-            <QueuePanel
-              callerMode
-              queue={queue}
-              loading={queueLoading}
-              error={queueError}
-              warmBusy={warmBusy}
-              onRefresh={() => { void loadQueue(); }}
-              onWarm={() => {
-                void warmQueue({ currentProspectId: queue.currentProspectId });
-              }}
-              onPrepare={(prospect) => { void prepareProspect(prospect); }}
-              onSkip={(prospect) => { void skipProspect(prospect); }}
-              prepareBusyId={prepareBusyId}
-              skipBusyId={skipBusyId}
-            />
-        </div>
+      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+        <p className="m-0 text-xs font-semibold uppercase tracking-wider text-blue-700">Current prospect</p>
+        <h2 className="mt-1 text-xl font-semibold text-slate-950">{queue.current?.businessName || (queueLoading ? 'Loading prospects…' : 'No prospects to call')}</h2>
+        <p className="mt-1 text-sm text-slate-700">{queue.current ? [queue.current.contactName, queue.current.phone].filter(Boolean).join(' · ') : 'An administrator can add prospects and prepare them for calling.'}</p>
       </div>
+      <ProspectPanel prospect={queue.current} />
+      <CallPanel
+        prospect={queue.current}
+        call={call}
+        busyAction={busyAction}
+        microphoneState={microphoneState}
+        operatorMuted={operatorMuted}
+        softphoneState={softphoneState}
+        softphoneError={softphoneError}
+        browserCallState={browserCallState}
+        remoteAudioRef={remoteAudioRef}
+        onCall={() => { void startCall(); }}
+        onAction={(action) => { void performCallAction(action); }}
+        onToggleMute={toggleOperatorMute}
+        onReconnect={() => { void initializeSoftphone(); }}
+      />
+      <ConversionPanel
+        prospect={queue.current}
+        call={call}
+        invitation={invitation}
+        busyAction={busyAction}
+        setupOpen={setupOpen}
+        setSetupOpen={setSetupOpen}
+        contactFields={contactFields}
+        setContactFields={setContactFields}
+        outcome={outcome}
+        setOutcome={setOutcome}
+        note={note}
+        setNote={setNote}
+        onSendInvitation={() => { void sendInvitation(); }}
+        onSaveOutcome={() => { void saveOutcome(); }}
+      />
     </div>
   );
 }
