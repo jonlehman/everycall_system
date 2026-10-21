@@ -30,8 +30,12 @@ try {
  await admin.query(`CREATE SCHEMA ${schema}`);
  await pool.query(`CREATE TABLE admin_users(id BIGSERIAL PRIMARY KEY);
  CREATE TABLE inbound_webhook_events(id BIGSERIAL PRIMARY KEY,provider TEXT,event_type TEXT);`);
+ await pool.query(`CREATE TABLE tenants(tenant_key TEXT PRIMARY KEY,service_access_status TEXT,billing_lock_reason TEXT);
+ CREATE TABLE tenant_active_knowledge_builds(tenant_key TEXT,active_build_id TEXT);
+ CREATE TABLE knowledge_builds(build_id TEXT,tenant_key TEXT,status TEXT);`);
  await pool.query(await read('migrations/0032_outbound_sales_demo.sql'));
  await pool.query(await read('migrations/0054_call_processing_recovery.sql'));
+ await pool.query(await read('migrations/0056_sales_dialer_v2.sql'));
  await pool.query(`INSERT INTO sales_prospects(prospect_id,source_key,business_name,phone_e164)
  VALUES('prospect','test','Fixture','+12065550100');
  INSERT INTO sales_call_sessions(sales_call_id,prospect_id,state,operator_call_control_id)

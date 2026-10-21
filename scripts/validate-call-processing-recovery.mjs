@@ -27,9 +27,13 @@ try {
     CREATE TABLE inbound_webhook_events(id BIGSERIAL PRIMARY KEY, provider TEXT NOT NULL, event_id TEXT NOT NULL,
       event_type TEXT, payload_hash TEXT, first_received_at TIMESTAMPTZ DEFAULT NOW(), last_seen_at TIMESTAMPTZ DEFAULT NOW(),
       duplicate_count INTEGER NOT NULL DEFAULT 0, UNIQUE(provider,event_id));`);
+  await pool.query(`CREATE TABLE tenants(tenant_key TEXT PRIMARY KEY,service_access_status TEXT,billing_lock_reason TEXT);
+    CREATE TABLE tenant_active_knowledge_builds(tenant_key TEXT,active_build_id TEXT);
+    CREATE TABLE knowledge_builds(build_id TEXT,tenant_key TEXT,status TEXT);`);
   await pool.query(await read('migrations/0032_outbound_sales_demo.sql'));
   await pool.query(await read('migrations/0054_call_processing_recovery.sql'));
   await pool.query(await read('migrations/0054_call_processing_recovery.sql'));
+  await pool.query(await read('migrations/0056_sales_dialer_v2.sql'));
 
   let attempts=0;
   await assert.rejects(processInboundVoiceWebhook(pool,event('failed'),async () => { attempts++; throw Error('database fault'); }),/database fault/);
@@ -138,24 +142,29 @@ try {
     VALUES('demo','prospect','ready',NOW()+INTERVAL '1 day','{}');`);
   const races=await Promise.allSettled(Array.from({length:8},(_,i)=>createSalesCallSession(pool,{prospectId:'prospect',adminUserId:i+1,idempotencyKey:`race-${i}`})));
   assert.equal(races.filter(r=>r.status==='fulfilled').length,1);
-  for(const result of races.filter(r=>r.status==='rejected'))assert.equal(result.reason.code,'prospect_reserved');
+  for(const result of races.filter(r=>r.status==='rejected'))assert.ok(['prospect_reserved','prospect_forbidden'].includes(result.reason.code), result.reason.message);
+  assert.equal((await pool.query("SELECT count(*)::int AS count FROM sales_call_sessions WHERE prospect_id='prospect'")).rows[0].count,1);
   let winner=races.find(r=>r.status==='fulfilled').value;
+  const ownerId=winner.adminUserId;
+  const otherId=ownerId===8?7:8;
   const replay=await createSalesCallSession(pool,{prospectId:'prospect',adminUserId:winner.adminUserId,idempotencyKey:winner.idempotencyKey});
   assert.equal(replay.salesCallId,winner.salesCallId);
   assert.equal((await listSalesProspects(pool,{eligibleOnly:true})).prospects.length,0);
   assert.equal((await getSalesProspect(pool,'prospect')).activeSalesCallId,winner.salesCallId);
   await updateSalesCallSession(pool,winner.salesCallId,{state:'failed'});
-  winner=await createSalesCallSession(pool,{prospectId:'prospect',adminUserId:2});
+  winner=await createSalesCallSession(pool,{prospectId:'prospect',adminUserId:ownerId});
   await pool.query("UPDATE sales_call_sessions SET created_at=NOW()-INTERVAL '11 minutes' WHERE sales_call_id=$1",[winner.salesCallId]);
   await expireUnstartedSalesCalls(pool,'prospect');
-  winner=await createSalesCallSession(pool,{prospectId:'prospect',adminUserId:3});
+  winner=await createSalesCallSession(pool,{prospectId:'prospect',adminUserId:ownerId});
   await updateSalesCallSession(pool,winner.salesCallId,{state:'preparing_call',operatorCallControlId:'provider-leg'});
   await pool.query("UPDATE sales_call_sessions SET created_at=NOW()-INTERVAL '1 day' WHERE sales_call_id=$1",[winner.salesCallId]);
   await expireUnstartedSalesCalls(pool,'prospect');
-  await assert.rejects(createSalesCallSession(pool,{prospectId:'prospect',adminUserId:4}),e=>e.code==='prospect_reserved');
+  await assert.rejects(createSalesCallSession(pool,{prospectId:'prospect',adminUserId:ownerId}),e=>e.code==='prospect_reserved');
   await assert.rejects(recordSalesCallOutcome(pool,{salesCallId:winner.salesCallId,outcome:'no_answer'}),e=>e.code==='sales_call_end_required');
   await updateSalesCallSession(pool,winner.salesCallId,{state:'ended'});
-  const next=await createSalesCallSession(pool,{prospectId:'prospect',adminUserId:4});
+  const next=await createSalesCallSession(pool,{prospectId:'prospect',adminUserId:ownerId});
+  await assert.rejects(recordSalesCallOutcome(pool,{salesCallId:next.salesCallId,outcome:'no_answer'}),e=>e.code==='sales_call_end_required');
+  await updateSalesCallSession(pool,next.salesCallId,{state:'ended'});
   await recordSalesCallOutcome(pool,{salesCallId:next.salesCallId,outcome:'no_answer'});
   assert.equal((await getSalesProspect(pool,'prospect')).activeSalesCallId,null);
   // Production action authorization: admins can end an orphaned call, while
@@ -173,9 +182,9 @@ try {
   }).handler;
   const response=()=>({statusCode:200,status(code){this.statusCode=code;return this;},json(body){this.body=body;return this;},setHeader(){}});
   const actionRequest={method:'POST',query:{salesCallId:winner.salesCallId},body:{action:'end_call'}};
-  context={pool,admin:{id:8},session:{role:'sales'}};
+  context={pool,admin:{id:otherId},session:{role:'sales'}};
   let result=response();await actions(actionRequest,result);assert.equal(result.statusCode,403);assert.equal(providerEnds,0);
-  context={pool,admin:{id:8},session:{role:'admin'}};
+  context={pool,admin:{id:otherId},session:{role:'admin'}};
   result=response();await actions({...actionRequest,body:{action:'start_demo'}},result);assert.equal(result.statusCode,403);
   result=response();await actions(actionRequest,result);assert.equal(result.statusCode,200);assert.equal(providerEnds,1);assert.equal(audit.at(-1).adminRecovery,true);
   console.log('PASS audited admin-only orphan end_call recovery; cross-operator sales controls and admin non-recovery controls stay denied');
