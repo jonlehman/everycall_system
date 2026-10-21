@@ -1,4 +1,4 @@
-import { getSalesProspectDetail, getSalesProspect, enqueueSalesDemoJob, salesError, serializeSalesCallSession } from './salesRepository.js';
+import { getSalesOperatorSettings, getSalesProspectDetail, getSalesProspect, enqueueSalesDemoJob, salesError, serializeSalesCallSession } from './salesRepository.js';
 
 export const SALES_PHASE_SCRIPTS = Object.freeze({
   opener: "Hi {first_name}, this is {rep_name} with EveryCall. Do you have a minute?",
@@ -30,8 +30,10 @@ export async function assertSalesProspectOwner(pool, prospectId, repId, {allowUn
 }
 export async function getSalesDialerSettings(pool, actor, env=process.env) {
   const stored=await pool.query('SELECT scripts_json FROM sales_dialer_config WHERE id=TRUE');
+  const ownSettings=await getSalesOperatorSettings(pool,actor.id);
+  const phone=String(ownSettings?.callerIdNumber||'').trim()||String(env.SALES_TELNYX_CALLER_ID||'').trim();
   const lead=Number(env.FULL_BUILD_LEAD_MINUTES);
-  return {scripts:{...SALES_PHASE_SCRIPTS,...stored.rows[0]?.scripts_json},config:{removePromptAt:Math.max(1,Number(env.REMOVE_PROMPT_AT)||4),fullBuildLeadMinutes:Number.isFinite(lead)&&lead>0?lead:null,setupCallOwner:env.SETUP_CALL_OWNER||null,scriptsEditUrl:'/sales/scripts',inboundConfigured:Boolean(env.SALES_INBOUND_RECEPTIONIST_NUMBER || (env.SALES_CALL_GATEWAY_BASE_URL && env.SALES_OPENAI_API_KEY))},operator:{id:Number(actor.id),name:actor.name||actor.display_name||actor.username||actor.email||'Rep',role:actor.role,canEditScripts:['admin','super_admin'].includes(actor.role)}};
+  return {scripts:{...SALES_PHASE_SCRIPTS,...stored.rows[0]?.scripts_json},config:{removePromptAt:Math.max(1,Number(env.REMOVE_PROMPT_AT)||4),fullBuildLeadMinutes:Number.isFinite(lead)&&lead>0?lead:null,setupCallOwner:env.SETUP_CALL_OWNER||null,scriptsEditUrl:'/sales/scripts',inboundConfigured:Boolean(env.SALES_INBOUND_RECEPTIONIST_NUMBER || (env.SALES_CALL_GATEWAY_BASE_URL && env.SALES_OPENAI_API_KEY))},operator:{id:Number(actor.id),phone,name:actor.name||actor.display_name||actor.username||actor.email||'Rep',role:actor.role,canEditScripts:['admin','super_admin'].includes(actor.role)}};
 }
 export async function saveSalesScripts(pool,scripts) {
   if(!scripts||typeof scripts!=='object'||Array.isArray(scripts)) throw salesError('invalid_scripts','Scripts must be an object.');
