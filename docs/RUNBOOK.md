@@ -66,6 +66,7 @@
 - If the console reports `operator_leg_not_parked`, stop testing and enable parking on the dedicated WebRTC credential; the gateway intentionally refuses to dial the prospect.
 - If the AI standby fails, the human call remains active and the console reports the provider error. End the demo or call cleanly before retrying.
 - Automatic deploys are disabled for the sales gateway. Drain active calls, deploy it manually, and stop the old instance before the replacement starts.
+- The October 20 recovery release has a separately [reviewed maintenance procedure](reviews/production-rollout-2026-10-20.md), including a strictly fenced, zero-work Sales exception if Render rejects deployment from suspended state. Do not use ordinary rolling deployment for active Sales calls or treat an idle-process exception as general permission to overlap call authorities.
 - Do not scale the sales gateway above one instance. Realtime monitor sockets and call locks are process-local.
 - Trial duration remains controlled by `DEFAULT_TRIAL_DAYS`; this subsystem does not change it.
 
