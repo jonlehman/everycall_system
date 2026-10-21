@@ -1,3 +1,4 @@
+import { applySalesPaidCheckout } from '../pages/api/_lib/salesCheckout.js';
 // Real PostgreSQL concurrency checks. This runner accepts loopback targets only
 // and creates/drops its own random schema; it never uses DATABASE_URL.
 import assert from 'node:assert/strict';
@@ -59,6 +60,7 @@ try {
   const provider = new Promise(resolve => { releaseProvider = resolve; });
   let effects = 0;
   const stripe = load(await read('pages/api/v1/stripe/webhook.js'), ['handler'], {
+    applySalesPaidCheckout,
     readRawBody: async req => req.event, constructWebhookEvent: event => event,
     ensureTables: async () => {}, getPool: () => pool,
     retrieveSubscription: async () => { providerStarted(); await provider; return { id: 'sub', metadata: { tenant_key: 'stripe' }, status: 'active' }; },

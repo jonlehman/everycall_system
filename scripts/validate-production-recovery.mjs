@@ -1,3 +1,4 @@
+import { applySalesPaidCheckout } from '../pages/api/_lib/salesCheckout.js';
 // Offline regressions: real SQL/migration and handlers, stubbed providers only.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -14,6 +15,7 @@ const pool = {
   async connect() { const unlock = await acquire(); return { query, release: unlock }; }
 };
 const load = (file, names, deps = {}) => {
+  if (file === 'pages/api/v1/stripe/webhook.js') deps = { applySalesPaidCheckout, ...deps };
   const source = fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
     .replace(/^import[\s\S]*?;\n/gm, '').replace(/export default /g, '').replace(/export /g, '');
   return new Function(...Object.keys(deps), `${source}\nreturn {${names.join(',')}};`)(...Object.values(deps));
