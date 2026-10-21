@@ -134,5 +134,27 @@ try {
   const slot=slots.slots[1];const reservations=await Promise.allSettled([bookSalesSetup(pool,{salesCallId:winner.salesCallId,repId:3,...slot,email:'a@example.test',env,graph,now}),bookSalesSetup(pool,{salesCallId:callB.salesCallId,repId:4,...slot,email:'b@example.test',env,graph,now})]);assert.equal(reservations.filter(r=>r.status==='fulfilled').length,1,'Concurrent booking must create one event per slot');
   console.log('PASS native PostgreSQL contention: disjoint rep claims, one active dial, one inbound take, duplicate paid webhook, one calendar reservation.');
  }
+ console.log('stage answered voicemail conversation counts');
+ await query('INSERT INTO admin_users(id) VALUES(7)');
+ const countImport=await importSalesProspects(pool,{adminUserId:7,records:[{external_ref:'conversation-count',business_name:'Conversation Fixture',phone:'+12065557676',website:'https://conversation-count.test',permission:'yes',timezone:'UTC'}]});
+ const countProspectId=countImport.imported[0].prospectId;
+ await query("UPDATE sales_prospects SET assigned_rep_user_id=7 WHERE prospect_id=$1",[countProspectId]);
+ await query("INSERT INTO sales_demo_profiles(demo_profile_id,prospect_id,status) VALUES('conversation_demo',$1,'ready')",[countProspectId]);
+ for(let attempt=0;attempt<4;attempt++) {
+  const answered=await createSalesCallSession(pool,{prospectId:countProspectId,adminUserId:7});
+  await updateSalesCallSession(pool,answered.salesCallId,{state:'ended',connectedAt:new Date().toISOString(),endedAt:new Date().toISOString()});
+  await recordSalesCallOutcome(pool,{salesCallId:answered.salesCallId,outcome:'voicemail'});
+ }
+ const voicemailQueue=await getSalesRepQueue(pool,7,{timezone:'UTC',env});
+ const voicemailProspect=voicemailQueue.queue.find(p=>p.prospectId===countProspectId);
+ assert.equal(voicemailProspect.attemptCount,4);assert.equal(voicemailProspect.conversationCount,0);
+ assert.equal(voicemailQueue.counters.dials,4);assert.equal(voicemailQueue.counters.conversations,0);
+ assert.equal(Number((await query('SELECT COUNT(*) AS n FROM sales_call_sessions WHERE prospect_id=$1 AND connected_at IS NOT NULL',[countProspectId])).rows[0].n),4,'Answered voicemail keeps actual connection history');
+ const realConversation=await createSalesCallSession(pool,{prospectId:countProspectId,adminUserId:7});
+ await updateSalesCallSession(pool,realConversation.salesCallId,{state:'ended',connectedAt:new Date().toISOString(),endedAt:new Date().toISOString()});
+ await recordSalesCallOutcome(pool,{salesCallId:realConversation.salesCallId,outcome:'connected_no_demo'});
+ const conversationQueue=await getSalesRepQueue(pool,7,{timezone:'UTC',env});
+ assert.equal(conversationQueue.queue.find(p=>p.prospectId===countProspectId).conversationCount,1);
+ assert.equal(conversationQueue.counters.conversations,1);
  console.log('PASS Sales v2 SQL: isolated ready queues, no expiry, skip, callback priority, attempt/notes history, rep ownership, permanent phone/domain DNC, reimportable removal, canonical facts, Stripe verified paid/idempotency, live Graph booking/retry, incoming take/fallback exclusion.');
 } catch(error) {console.error(error.stack);process.exitCode=1;} finally {await db.close();}
