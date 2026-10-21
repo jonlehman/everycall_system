@@ -4,7 +4,6 @@ export function salesCoreFacts(bundle = {}) {
   const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, 1000);
   const facts = [];
   const add = (category, label, value) => { const sentence = clean(value); if (sentence) facts.push({ category, label, sentence }); };
-  add('business', 'Business', bundle.summary);
   add('services', 'Services', Array.isArray(bundle.topServices) ? bundle.topServices.join(', ') : '');
   add('service_area', 'Service area', bundle.serviceArea);
   add('hours', 'Hours', bundle.hours);

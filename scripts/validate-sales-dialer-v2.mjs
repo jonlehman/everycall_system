@@ -47,7 +47,15 @@ try {
  const repeat=await importSalesProspects(pool,{records:[{...records[0],external_ref:'other-import',phone:'+12065558888',website:'https://www.business0.test/new-page'}],adminUserId:2});assert.equal((await getSalesProspect(pool,repeat.imported[0].prospectId)).doNotCall,true);
  const phoneMatch=await importSalesProspects(pool,{records:[{...records[0],external_ref:'phone-import',website:'https://different.test'}],adminUserId:2});assert.equal((await getSalesProspect(pool,phoneMatch.imported[0].prospectId)).doNotCall,true);
  await removeSalesQueueProspect(pool,queue.queue[1].prospectId,1);assert.equal((await getSalesProspect(pool,queue.queue[1].prospectId)).status,'removed');await importSalesProspects(pool,{records:[records[1]],adminUserId:1});assert.equal((await getSalesProspect(pool,queue.queue[1].prospectId)).status,'queued');
- const facts=salesCoreFacts({hours:'Open weekdays',topServices:['Repairs']});for(const f of facts)assert(buildOutboundSalesDemoRealtimeInstructions({core_facts:facts}).includes(`${f.label}: ${f.sentence}`));
+ const marketing='The finest local team, committed to excellence.';
+ assert.deepEqual(salesCoreFacts({summary:marketing}),[],'A marketing summary is not an operational core fact');
+ const explicitFacts=[{category:'hours',label:'Hours',sentence:'Monday–Friday, 8 am–5 pm.'}];
+ assert.strictEqual(salesCoreFacts({summary:marketing,core_facts:explicitFacts}),explicitFacts,'Preserve explicit canonical facts unchanged');
+ const facts=salesCoreFacts({summary:marketing,hours:'Open weekdays',serviceArea:'Seattle and Bellevue',topServices:['Repairs','Installations']});
+ assert.deepEqual(facts,[{category:'services',label:'Services',sentence:'Repairs, Installations'},{category:'service_area',label:'Service area',sentence:'Seattle and Bellevue'},{category:'hours',label:'Hours',sentence:'Open weekdays'}]);
+ const canonicalPrompt=buildOutboundSalesDemoRealtimeInstructions({core_facts:facts});
+ for(const f of facts)assert(canonicalPrompt.includes(`${f.label}: ${f.sentence}`));
+ assert(!canonicalPrompt.includes(marketing));
  console.log('stage checkout');
  const close=await createSalesCallSession(pool,{prospectId:queue.queue[2].prospectId,adminUserId:1});await updateSalesCallSession(pool,close.salesCallId,{state:'ended',endedAt:new Date().toISOString()});
  let created=0,sent=0;const checkout=await sendSalesCheckout(pool,{salesCallId:close.salesCallId,repId:1,channel:'email',env,stripe:{checkout:{sessions:{create:async()=>{created++;return{id:'cs_test',url:'https://checkout.stripe.test/example'};}}}},mail:async()=>{sent++;return{id:'mail_test'};}});
