@@ -69,7 +69,13 @@
     "smoke:production": "node scripts/smoke-production.mjs",
     "test:client-ui:v2:e2e": "node scripts/test-client-ui-v2-e2e.mjs",
     "validate:client-setup-status": "node scripts/validate-client-setup-status.mjs",
-    "validate:live-v20-1": "node scripts/validate-managed-live-runtime.mjs && node scripts/validate-live-brief-curation.mjs && node scripts/validate-live-prompt-settings.mjs && node scripts/validate-client-setup-status.mjs"
+    "validate:live-v20-1": "node scripts/validate-managed-live-runtime.mjs && node scripts/validate-live-brief-curation.mjs && node scripts/validate-live-prompt-settings.mjs && node scripts/validate-client-setup-status.mjs",
+    "validate:sales-dialer-ui": "node --no-warnings scripts/validate-sales-dialer-ui.mjs",
+    "validate:sales-dialer-v2": "node --no-warnings scripts/validate-sales-dialer-v2.mjs",
+    "validate:sales-paid-activation": "node --no-warnings scripts/validate-sales-paid-activation.mjs",
+    "test:sales-dialer-browser": "node scripts/test-sales-dialer-browser.mjs",
+    "test:sales-dialer-controller": "node scripts/test-sales-dialer-controller.mjs",
+    "test:sales-call-record-browser": "node scripts/test-sales-call-record-browser.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -97,6 +103,8 @@
     "@electric-sql/pglite-socket": "0.2.7",
     "@types/node": "^22.10.2",
     "autoprefixer": "^10.4.27",
+    "esbuild": "0.27.3",
+    "playwright": "1.60.0",
     "postcss": "^8.5.8",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3"

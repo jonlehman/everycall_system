@@ -1,0 +1,5 @@
+import { requireSalesAdmin,salesRequestBody,sendSalesApiError,runSalesAdminMutation } from '../../../../../_lib/salesApi.js';
+import { bookSalesSetup } from '../../../../../_lib/salesCalendar.js';
+import { getSalesCallSession } from '../../../../../_lib/salesRepository.js';
+import { buildSalesCallView } from '../../../../../_lib/salesCallView.js';
+export default async function handler(req,res){if(req.method!=='POST'){res.setHeader('Allow','POST');return res.status(405).json({ok:false,error:'method_not_allowed'});}try{const c=await requireSalesAdmin(req,res);if(!c)return;const body=salesRequestBody(req);const id=String(req.query.salesCallId);const result=await runSalesAdminMutation(req,c,{scope:`sales.booking:${id}`,request:body,action:'sales.setup.booked'},async()=>{const booking=await bookSalesSetup(c.pool,{salesCallId:id,repId:c.admin.id,start:body.start,end:body.end,email:body.email});return {status:200,body:{ok:true,booking,call:await buildSalesCallView(c.pool,await getSalesCallSession(c.pool,id),{operatorUserId:c.admin.id})}};});return res.status(result.status).json(result.body);}catch(e){return sendSalesApiError(res,e);}}

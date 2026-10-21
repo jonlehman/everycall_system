@@ -1,3 +1,4 @@
+import { assertSalesProspectOwner } from "../../../../_lib/salesDialer.js";
 import {
   getSalesProspectDetail,
   removeSalesProspect,
@@ -19,6 +20,7 @@ export default async function handler(req, res) {
     const context = await requireSalesAdmin(req, res);
     if (!context) return;
     const prospectId = String(req.query?.prospectId || "").trim();
+    if(context.session.role === "sales") await assertSalesProspectOwner(context.pool,prospectId,context.admin.id);
     if (req.method === "GET") {
       const prospect = await getSalesProspectDetail(context.pool, prospectId, {
         operatorUserId: context.session.role === "sales" ? context.admin.id : null

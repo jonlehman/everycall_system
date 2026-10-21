@@ -1023,7 +1023,7 @@ async function fetchInitialWebsitePageWithRetry(url) {
   });
 }
 
-async function crawlWebsiteSources(rootUrl) {
+async function crawlWebsiteSources(rootUrl, maxWebsitePages = MAX_WEBSITE_PAGES) {
   const normalizedRootUrl = normalizeWebsiteUrl(rootUrl);
   if (!normalizedRootUrl) {
     throw new Error("website_url_required");
@@ -1046,7 +1046,7 @@ async function crawlWebsiteSources(rootUrl) {
   let canonicalizedDiscoveryCount = 0;
   let retryArtifactCount = 0;
   const firstInventory = extractLinkInventory(firstPage.url, firstPage.html);
-  const queue = firstInventory.pageLinks.slice(0, MAX_WEBSITE_PAGES * 2);
+  const queue = firstInventory.pageLinks.slice(0, maxWebsitePages * 2);
   const downloadableQueue = firstInventory.fileLinks.slice(0, MAX_WEBSITE_FILES * 2);
   const downloadableSeen = new Set(downloadableQueue);
   duplicateDiscoveryCount += Number(firstInventory.duplicateCount || 0);
@@ -1061,12 +1061,12 @@ async function crawlWebsiteSources(rootUrl) {
     seedPageCount: 1,
     initialDiscoveredPageQueue: queue.length,
     initialDiscoveredFileQueue: downloadableQueue.length,
-    maxWebsitePages: MAX_WEBSITE_PAGES,
+    maxWebsitePages: maxWebsitePages,
     maxWebsiteFiles: MAX_WEBSITE_FILES,
     crawlDeadlineMs: WEBSITE_CRAWL_DEADLINE_MS
   });
 
-  while (queue.length && pages.length < MAX_WEBSITE_PAGES) {
+  while (queue.length && pages.length < maxWebsitePages) {
     if (performance.now() >= crawlDeadlineAt) {
       pushUniqueValue(truncationReasons, "crawl_deadline_reached");
       break;
@@ -1121,7 +1121,7 @@ async function crawlWebsiteSources(rootUrl) {
         downloadableSeen.add(url);
         downloadableQueue.push(url);
       }
-      if (pages.length >= MAX_WEBSITE_PAGES) break;
+      if (pages.length >= maxWebsitePages) break;
     }
     logBuildProgress("crawl_page_batch_completed", {
       pageCount: pages.length,
@@ -1179,7 +1179,7 @@ async function crawlWebsiteSources(rootUrl) {
     });
   }
 
-  if (queue.length && pages.length >= MAX_WEBSITE_PAGES) {
+  if (queue.length && pages.length >= maxWebsitePages) {
     pushUniqueValue(truncationReasons, "max_website_pages_reached");
   }
   if (downloadableQueue.length && files.length >= MAX_WEBSITE_FILES) {
@@ -2509,7 +2509,8 @@ async function loadSourceIntakeSessionSummaryJson(db, sourceIntakeSessionId) {
 }
 
 async function collectBuildSourcePayload(db, tenantKey, input = {}, websiteUrl = "", buildInfo, sourceIntakeSessionId) {
-  const websiteResult = websiteUrl ? await crawlWebsiteSources(websiteUrl) : { pages: [], files: [], crawlSummary: null };
+  const paidSales = tenantKey.startsWith("sales_") ? await db.query("SELECT 1 FROM sales_checkout_sessions WHERE tenant_key=$1 AND paid_at IS NOT NULL LIMIT 1", [tenantKey]) : {rowCount:0};
+  const websiteResult = websiteUrl ? await crawlWebsiteSources(websiteUrl, paidSales.rowCount ? 500 : MAX_WEBSITE_PAGES) : { pages: [], files: [], crawlSummary: null };
   const websiteSources = buildWebsiteSourceItems(websiteResult);
   const [uploadedDocumentSources, setupInterviewSources] = await Promise.all([
     loadUploadedDocumentSourceItems(db, tenantKey, input.uploadedDocumentIds || input.uploaded_document_ids || []),
@@ -4691,6 +4692,27 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
   };
 }
 
+// This private capability cannot be supplied by API JSON. Only a persisted,
+// verified paid checkout can initiate this service build; it grants no review rights.
+const salesPaidBuildAuthority = Symbol('sales-paid-build');
+async function paidBuildCreator(db, tenantKey, checkoutId) {
+  const row = (await db.query(`SELECT c.rep_user_id FROM sales_checkout_sessions c
+    JOIN sales_prospects p ON p.prospect_id=c.prospect_id
+    WHERE c.checkout_id=$1 AND c.tenant_key=$2 AND p.tenant_key=$2
+      AND c.paid_at IS NOT NULL AND c.stripe_event_id IS NOT NULL
+      AND c.stripe_session_id IS NOT NULL AND c.status='paid'`, [checkoutId, tenantKey])).rows[0];
+  if (!row) throw new Error('sales_verified_payment_required');
+  return `sales:${row.rep_user_id}`;
+}
+export async function enqueueSalesPaidKnowledgeBuild(db, tenantKey, input = {}) {
+  await paidBuildCreator(db, tenantKey, input.checkoutId);
+  return createKnowledgeBuild(db, tenantKey, {
+    websiteUrl: input.websiteUrl, assignments: input.assignments,
+    buildKind: 'website_base', enqueueOnly: true,
+    [salesPaidBuildAuthority]: input.checkoutId
+  });
+}
+
 export async function enqueueKnowledgeBuild(db, tenantKey, input = {}) {
   return createKnowledgeBuild(db, tenantKey, {
     ...input,
@@ -4700,6 +4722,10 @@ export async function enqueueKnowledgeBuild(db, tenantKey, input = {}) {
 
 export async function createKnowledgeBuild(db, tenantKey, input = {}) {
   await assertSliceTablesReady(db);
+  // Authenticate caller-driven builds before canonical-pack or assignment writes,
+  // including resumptions. Service calls carry a private, database-verified capability.
+  if (input.actor) await assertKnowledgeReviewer(db, tenantKey, input.actor);
+  if (input[salesPaidBuildAuthority]) await paidBuildCreator(db, tenantKey, input[salesPaidBuildAuthority]);
   await syncCanonicalKnowledgePacks(db);
 
   const enqueueOnly = input.enqueueOnly === true
@@ -4793,7 +4819,9 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
     await withTransaction(db, async (client) => {
       // The API supplies the authenticated session separately from caller input.
       // Worker resumes retain the originally recorded creator.
-      const creator = input.actor ? await assertKnowledgeReviewer(client, tenantKey, input.actor) : null;
+      const paidCheckoutId = input[salesPaidBuildAuthority];
+      const creator = paidCheckoutId ? await paidBuildCreator(client, tenantKey, paidCheckoutId) : input.actor ? await assertKnowledgeReviewer(client, tenantKey, input.actor) : null;
+      if (paidCheckoutId) await client.query('INSERT INTO audit_log (tenant_key, actor, action, details) VALUES ($1,$2,$3,$4)', [tenantKey, creator, 'sales.payment.knowledge_build_enqueued', JSON.stringify({checkoutId:paidCheckoutId,buildId})]);
       const creatorType = creator ? creator.split(':')[0] : 'system';
       const creatorId = creator ? creator.slice(creator.indexOf(':') + 1) : null;
       await assertBuildRateLimit(client, tenantKey, {
@@ -5048,7 +5076,9 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
       sourceChunkCount: rawSources.counts.sourceChunks,
       materiallyReclassifiedCount: Number(classificationSummary.materially_reclassified_count || 0)
     });
+    const salesBudget = tenantKey.startsWith('sales_') ? await db.query("SELECT 1 FROM sales_checkout_sessions WHERE tenant_key=$1 AND paid_at IS NOT NULL LIMIT 1",[tenantKey]) : {rowCount:0};
     const compiled = await compileKnowledgeBuildArtifacts({
+      maxCompileSources: salesBudget.rowCount ? 500 : undefined,
       db,
       buildInfo: rawBuildInfo,
       assertExecutionLease

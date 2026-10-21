@@ -1,3 +1,4 @@
+import { createSalesInboundService } from "./salesInbound.js";
 import http from "node:http";
 import pg from "pg";
 import { logError, logInfo } from "@everycall/observability";
@@ -39,7 +40,11 @@ const pool = new pg.Pool({
 const repository = createPostgresSalesGatewayRepository(pool);
 const telnyx = createSalesTelnyxClient();
 const openai = createSalesOpenAIRealtimeClient();
+const inbound = createSalesInboundService({pool,telnyx,openai});
+const inboundTimer=setInterval(()=>{void inbound.recover().catch(error=>logError("sales_inbound_recovery_failed",{message:String(error.message)}));},1000);
+inboundTimer.unref();
 const gateway = createSalesCallGateway({
+  inbound,
   repository,
   telnyx,
   openai,
@@ -56,6 +61,7 @@ const gateway = createSalesCallGateway({
     error: (event, fields = {}) => logError(event, fields as any)
   }
 });
+inbound.setGateway(gateway);
 const server = http.createServer(gateway.app);
 const providerRecoveryIntervalMs = Math.max(
   15_000,
@@ -118,6 +124,7 @@ async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
   clearInterval(providerRecoveryTimer);
+  clearInterval(inboundTimer);
   logInfo("sales_call_gateway_stopping", { signal });
   server.close(async () => {
     await pool.end().catch(() => {});

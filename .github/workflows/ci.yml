@@ -48,3 +48,15 @@ jobs:
         env:
           EVERYCALL_TEST_POSTGRES_URL: postgresql://everycall_test:isolated_test_only@127.0.0.1:5432/everycall_test
       - run: pnpm validate:runtime-schema
+      - run: pnpm validate:sales-dialer-ui
+      - run: pnpm validate:sales-dialer-v2
+      - run: pnpm validate:sales-dialer-v2 --postgres
+        env:
+          EVERYCALL_TEST_POSTGRES_URL: postgresql://everycall_test:isolated_test_only@127.0.0.1:5432/everycall_test
+      - run: pnpm validate:sales-paid-activation
+        env:
+          EVERYCALL_TEST_POSTGRES_URL: postgresql://everycall_test:isolated_test_only@127.0.0.1:5432/everycall_test
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:sales-dialer-browser
+      - run: pnpm test:sales-dialer-controller
+      - run: pnpm test:sales-call-record-browser

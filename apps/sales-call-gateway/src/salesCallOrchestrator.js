@@ -185,6 +185,7 @@ export function createSalesCallOrchestrator({
       correlationNonce,
       existingConference,
       existingProspect,
+      incomingProspect = false,
       existingAI,
       onCheckpoint
     }) {
@@ -277,6 +278,7 @@ export function createSalesCallOrchestrator({
       }
 
       const conferenceId = requireSalesValue(conference?.conference_id, "conference_id");
+      if(incomingProspect && existingProspect?.call_control_id) await telnyx.joinConference({conferenceId,callControlId:existingProspect.call_control_id,clientState:prospectState,commandId:commandId(selectedCorrelationId,'join_inbound_prospect',existingProspect.call_control_id)});
       const selectedOpenAISipUri = openaiSipUri || openai.buildSipUri();
       const dialAndCheckpoint = async (role, operation) => {
         const result = await operation();

@@ -21,6 +21,8 @@ async function getBillingState(url: URL, cookieHeader: string) {
 export async function proxy(req: Request) {
   const url = new URL(req.url);
   const pathname = url.pathname;
+  // Public Stripe return contains no customer or payment state. Webhooks own Paid.
+  if (pathname === '/sales/checkout-result') return NextResponse.next();
   const publicProtectedPaths = ['/admin/login'];
   const cookieHeader = req.headers.get('cookie') || '';
   const meResp = await fetch(new URL('/api/v1/auth/me', url.origin), {

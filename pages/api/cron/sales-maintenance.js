@@ -1,3 +1,4 @@
+import { processSalesPaidActivations } from "../_lib/salesActivation.js";
 import { ensureTables, getPool } from "../_lib/db.js";
 import { processSalesFollowupJobs } from "../_lib/salesFollowupJobs.js";
 import { processSalesDemoJobs } from "../_lib/salesRepository.js";
@@ -33,7 +34,7 @@ export default async function handler(req, res) {
     await ensureTables(pool);
     const workerId = `sales-cron:${process.env.VERCEL_REGION || "local"}:${process.pid}`;
     const outboundEnabled = salesOutboundEnabled();
-    const [demoJobs, followupJobs] = await Promise.all([
+    const [demoJobs, followupJobs, paidActivations] = await Promise.all([
       processSalesDemoJobs(pool, { workerId, limit: 2 }),
       outboundEnabled
         ? processSalesFollowupJobs(pool, { workerId, limit: 5 })
@@ -42,7 +43,8 @@ export default async function handler(req, res) {
           reason: "sales_outbound_disabled",
           claimedCount: 0,
           results: []
-        })
+        }),
+      processSalesPaidActivations(pool)
     ]);
     console.info(JSON.stringify({
       event: "sales_maintenance_result",
@@ -52,7 +54,7 @@ export default async function handler(req, res) {
       followupClaimedCount: Number(followupJobs?.claimedCount || 0),
       followupsSkipped: followupJobs?.skipped === true
     }));
-    return res.status(200).json({ ok: true, outboundEnabled, demoJobs, followupJobs });
+    return res.status(200).json({ ok: true, outboundEnabled, demoJobs, followupJobs, paidActivations });
   } catch (error) {
     console.error(JSON.stringify({
       event: "sales_maintenance_failed",

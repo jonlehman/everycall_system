@@ -380,6 +380,9 @@ export function createSalesTelnyxClient({
   }
 
   return {
+    async transferCall({callControlId,to,commandId}) {
+      return request(`/calls/${encodeURIComponent(requireSalesValue(callControlId,'call_control_id'))}/actions/transfer`,{operation:'transfer_call',body:{to:requireSalesValue(to,'to'),command_id:requireSalesValue(commandId,'command_id')}});
+    },
     async answerCall({
       callControlId,
       clientState,

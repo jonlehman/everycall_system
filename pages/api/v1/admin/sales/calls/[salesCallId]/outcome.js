@@ -24,7 +24,7 @@ export default async function handler(req, res) {
       context.admin.id
     );
     const body = salesRequestBody(req);
-    const request = { outcome: body.outcome, notes: body.notes || "" };
+    const request = { outcome: body.outcome, notes: body.notes || "", callbackAt: body.callbackAt || null, dncReason: body.dncReason || null };
     const result = await runSalesAdminMutation(req, context, {
       scope: `sales.call.outcome:${salesCallId}`,
       request,

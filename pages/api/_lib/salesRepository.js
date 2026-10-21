@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { salesCoreFacts, salesSuggestedAsks } from "./salesCoreFacts.js";
 import { scrapeDemoWebsite } from "./demoWebsiteScraper.js";
 import {
   buildDemoKnowledgeBundle,
@@ -6,8 +7,8 @@ import {
 } from "./demoKnowledgeBundle.js";
 import { inferKnowledgeAssignmentsForIndustry } from "./knowledgeReceptionistPacks.js";
 
-export const SALES_DEMO_TTL_DAYS = 30;
-export const SALES_WARM_QUEUE_SIZE = 11;
+export const SALES_DEMO_TTL_DAYS = null;
+export const SALES_WARM_QUEUE_SIZE = 10;
 export const SALES_OUTCOMES = Object.freeze([
   "no_answer",
   "voicemail",
@@ -18,7 +19,6 @@ export const SALES_OUTCOMES = Object.freeze([
   "connected_no_demo",
   "demo_completed",
   "signup_link_sent",
-  "signup_completed"
 ]);
 
 const ACTIVE_CALL_QUEUE_STATUSES = new Set(["queued", "ready_to_call"]);
@@ -259,7 +259,7 @@ export function normalizeSalesImportRecord(record, {
   }
 
   const phoneE164 = normalizeSalesPhone(readAlias(source, [
-    "phone_e164", "phone", "phone_number", "telephone", "business_phone"
+    "phone_e164", "phone", "phone_number", "telephone", "business_phone", "cell_phone", "shop_phone"
   ]), { defaultCountryCode });
   const permissionGranted = parseSalesPermission(readAlias(source, [
     "permission_granted", "permission", "permitted", "has_permission", "permission_yes_no"
@@ -294,7 +294,22 @@ export function normalizeSalesImportRecord(record, {
     );
   }
 
+  const numbers = [];
+  let suppliedNumbers = record.numbers || source.numbers;
+  if (typeof suppliedNumbers === 'string' && suppliedNumbers.trim()) { try { suppliedNumbers = JSON.parse(suppliedNumbers); } catch { throw salesError('invalid_numbers','Numbers must be a JSON array.'); } }
+  if (Array.isArray(suppliedNumbers)) for (const number of suppliedNumbers) {
+    const type = ['cell','shop','other'].includes(number.type) ? number.type : 'other';
+    numbers.push({phoneE164:normalizeSalesPhone(number.phoneE164 || number.phone,{defaultCountryCode}),type,label:normalizeSalesText(number.label,60)||type});
+  }
+  for (const [key,type,label] of [['cell_phone','cell','Cell'],['shop_phone','shop','Shop'],['other_phone','other','Other']]) {
+    if(source[key]) numbers.push({phoneE164:normalizeSalesPhone(source[key],{defaultCountryCode}),type,label});
+  }
+  if(!numbers.some(n=>n.phoneE164===phoneE164)) numbers.push({phoneE164,type:'shop',label:'Shop'});
+  const uniqueNumbers=[...new Map(numbers.map(n=>[n.phoneE164,n])).values()];
+  const flags=record.pitch_flags||source.pitch_flags||[];
+  const research={contactRole:normalizeSalesText(source.contact_role,100)||null,metro:normalizeSalesText(source.metro,120)||null,pitchFlags:(Array.isArray(flags)?flags:String(flags).split('|')).map(v=>normalizeSalesText(v,200)).filter(Boolean).slice(0,12)};
   return {
+    numbers:uniqueNumbers,research,
     sourceKey,
     externalRef,
     businessName,
@@ -517,9 +532,7 @@ function prospectPreparationBlock(row) {
 
 function demoStatus(row) {
   const current = normalizeSalesText(row?.demo_status, 60) || "not_prepared";
-  if (current === "ready" && row?.demo_expires_at && new Date(row.demo_expires_at).getTime() <= Date.now()) {
-    return "stale";
-  }
+
   return current;
 }
 
@@ -582,6 +595,16 @@ function serializeProspect(row) {
     smartleadStatus: normalizeSalesText(row.smartlead_status, 120) || null,
     lastEmailEventAt: row.last_email_event_at || null,
     leadDeliveryEmail: normalizeSalesText(row.lead_delivery_email, 320).toLowerCase() || null,
+    assignedRepUserId: row.assigned_rep_user_id ? Number(row.assigned_rep_user_id) : null,
+    callbackAt: row.callback_at || null,
+    inboundReturn: Boolean(row.inbound_return),
+    returnMessage: prospectMetadata.returnMessage || null,
+    numbers: asArray(row.numbers_json).length ? row.numbers_json : [{phoneE164: row.phone_e164, label: "Shop", type: "shop"}],
+    coreFacts: salesCoreFacts(demoBundle),
+    suggestedAsks: salesSuggestedAsks(salesCoreFacts(demoBundle)),
+    contactRole: prospectMetadata.contactRole || null,
+    metro: prospectMetadata.metro || null,
+    pitchFlags: asArray(prospectMetadata.pitchFlags),
     phoneE164: normalizeSalesText(row.phone_e164, 40),
     websiteUrl: normalizeSalesText(row.website_url, 1000) || null,
     businessCategory: normalizeSalesText(row.business_category, 160) || null,
@@ -800,6 +823,7 @@ export async function importSalesProspects(pool, {
            status = CASE
              WHEN sales_prospects.do_not_call OR EXCLUDED.do_not_call THEN 'do_not_call'
              WHEN sales_prospects.suppressed OR EXCLUDED.suppressed THEN 'suppressed'
+             WHEN sales_prospects.status IN ('removed','deleted') THEN 'queued'
              ELSE sales_prospects.status
            END,
            imported_by_admin_user_id = EXCLUDED.imported_by_admin_user_id,
@@ -833,6 +857,7 @@ export async function importSalesProspects(pool, {
         prospectId: result.rows[0]?.prospect_id,
         inserted: Boolean(result.rows[0]?.inserted)
       });
+      await db.query(`UPDATE sales_prospects SET numbers_json=$2::jsonb,metadata_json=metadata_json || $3::jsonb WHERE prospect_id=$1`,[result.rows[0]?.prospect_id,json(record.numbers,[]),json(record.research,{})]);
       await invalidateSalesDemoIfWebsiteChanged(db, result.rows[0]?.prospect_id);
     }
   });
@@ -854,12 +879,18 @@ export async function listSalesProspects(pool, {
   status = "",
   eligibleOnly = false,
   includeDeleted = false,
-  search = ""
+  search = "",
+  operatorUserId = null
 } = {}) {
   const safeLimit = Math.min(250, Math.max(1, Number(limit) || 100));
   const values = [Number(afterQueuePosition) || 0];
   const where = ["p.queue_position > $1"];
 
+  if (operatorUserId !== null) {
+    values.push(Number(operatorUserId));
+    where.push(`p.assigned_rep_user_id = $${values.length}`);
+    where.push("d.status = 'ready'");
+  }
   if (!includeDeleted) {
     where.push("p.status <> 'deleted'");
   }
@@ -934,7 +965,7 @@ export async function getSalesProspectDetail(pool, prospectId, { operatorUserId 
   const actorId = Number(operatorUserId);
   if (ownerScoped && (!Number.isSafeInteger(actorId) || actorId <= 0)) return null;
   const prospect = await getSalesProspect(pool, prospectId);
-  if (!prospect) return null;
+  if (!prospect || (ownerScoped && prospect.assignedRepUserId !== actorId)) return null;
   const [notes, calls, invitations, profile, followups] = await Promise.all([
     pool.query(
       `SELECT sales_prospect_note_id, sales_call_id, body, created_by_admin_user_id, created_at
@@ -1065,6 +1096,7 @@ export async function createSalesProspect(pool, record, {
     }
     throw error;
   }
+  await pool.query(`UPDATE sales_prospects SET numbers_json=$2::jsonb,metadata_json=metadata_json || $3::jsonb WHERE prospect_id=$1`,[prospectId,json(normalized.numbers,[]),json(normalized.research,{})]);
   return getSalesProspect(pool, prospectId);
 }
 
@@ -1347,9 +1379,7 @@ export async function updateSalesProspectEmailState(pool, email, changes = {}) {
 function serializeDemoProfile(row) {
   if (!row) return null;
   const status = normalizeSalesText(row.status, 60) || "not_prepared";
-  const expired = status === "ready"
-    && row.expires_at
-    && new Date(row.expires_at).getTime() <= Date.now();
+  const expired = false;
   const usable = status === "ready" && !expired;
   return {
     demoProfileId: row.demo_profile_id,
@@ -1408,7 +1438,7 @@ export async function getReadySalesDemoProfile(pool, prospectId) {
      FROM sales_demo_profiles
      WHERE prospect_id = $1
        AND status = 'ready'
-       AND expires_at > NOW()
+
      LIMIT 1`,
     [normalizeSalesText(prospectId, 200)]
   );
@@ -1416,25 +1446,8 @@ export async function getReadySalesDemoProfile(pool, prospectId) {
 }
 
 export async function markExpiredSalesDemoProfiles(pool) {
-  const result = await pool.query(
-    `UPDATE sales_demo_profiles
-     SET status = 'stale',
-         normalized_website_url = NULL,
-         website_origin = NULL,
-         website_hostname = NULL,
-         business_name = NULL,
-         preview_summary = NULL,
-         demo_bundle_json = '{}'::jsonb,
-         scrape_page_count = 0,
-         scrape_pages_json = '[]'::jsonb,
-         extraction_version = NULL,
-         updated_at = NOW()
-     WHERE status = 'ready'
-       AND expires_at IS NOT NULL
-       AND expires_at <= NOW()
-     RETURNING demo_profile_id`
-  );
-  return { expiredCount: Number(result.rowCount || 0) };
+  // Retained API compatibility: v2 profiles live for the prospect lifecycle.
+  return { expiredCount: 0 };
 }
 
 async function markSalesDemoProfileQueued(pool, prospect) {
@@ -1447,7 +1460,7 @@ async function markSalesDemoProfileQueued(pool, prospect) {
      DO UPDATE SET
        status = CASE
          WHEN sales_demo_profiles.status = 'ready'
-          AND sales_demo_profiles.expires_at > NOW()
+
            THEN sales_demo_profiles.status
          ELSE 'queued'
        END,
@@ -1700,6 +1713,8 @@ export async function prepareSalesDemoProfile(pool, prospectId) {
     throw salesError("website_required", "A website is required to prepare a demo.", 409);
   }
 
+  const { ensureSalesDemoTenant } = await import("./salesActivation.js");
+  await ensureSalesDemoTenant(pool,prospect.prospectId);
   const profileId = prospect.demo.demoProfileId || createId("sales_demo");
   await pool.query(
     `INSERT INTO sales_demo_profiles (
@@ -1740,6 +1755,7 @@ export async function prepareSalesDemoProfile(pool, prospectId) {
     }
     const built = await buildDemoKnowledgeBundle(scrape);
     const bundle = asObject(built?.demoBundle);
+    bundle.core_facts = salesCoreFacts(bundle);
     const result = await pool.query(
       `UPDATE sales_demo_profiles
        SET status = 'ready',
@@ -1755,7 +1771,7 @@ export async function prepareSalesDemoProfile(pool, prospectId) {
            failure_code = NULL,
            failure_message = NULL,
            build_completed_at = NOW(),
-           expires_at = NOW() + INTERVAL '30 days',
+           expires_at = NULL,
            updated_at = NOW()
        WHERE prospect_id = $1
        RETURNING *`,
@@ -1948,45 +1964,10 @@ export async function addSalesProspectNote(pool, {
   };
 }
 
-export async function skipSalesProspect(pool, {
-  prospectId,
-  reason = "",
-  adminUserId
-}) {
-  const prospect = await getSalesProspect(pool, prospectId);
-  if (!prospect) throw salesError("prospect_not_found", "Prospect not found.", 404);
-  if (prospect.status === "skipped") return prospect;
-  const demoUnusable = prospect.demo.status === "failed" || !prospect.websiteUrl;
-  if (!demoUnusable) {
-    throw salesError(
-      "sales_demo_not_skippable",
-      "Only a prospect with a failed or unusable demo can be skipped.",
-      409
-    );
-  }
-  const normalizedReason = normalizeSalesText(reason, 500)
-    || normalizeSalesText(prospect.demo.failureMessage, 500)
-    || (prospect.websiteUrl ? "Demo preparation failed." : "No usable website was supplied.");
-  const skippedAt = new Date().toISOString();
-  await pool.query(
-    `UPDATE sales_prospects
-     SET status = 'skipped',
-         metadata_json = COALESCE(metadata_json, '{}'::jsonb) || $2::jsonb,
-         row_version = row_version + 1,
-         updated_at = NOW()
-     WHERE prospect_id = $1`,
-    [
-      prospect.prospectId,
-      json({
-        salesSkip: {
-          reason: normalizedReason,
-          skippedAt,
-          skippedByAdminUserId: Number(adminUserId) || null
-        }
-      }, {})
-    ]
-  );
-  return getSalesProspect(pool, prospect.prospectId);
+export async function skipSalesProspect(pool, { prospectId, adminUserId }) {
+  const result = await pool.query(`UPDATE sales_prospects SET queue_position=nextval(pg_get_serial_sequence('sales_prospects','queue_position')), updated_at=NOW() WHERE prospect_id=$1 AND assigned_rep_user_id=$2 RETURNING prospect_id`,[prospectId,adminUserId]);
+  if (!result.rowCount) throw salesError('prospect_forbidden','Prospect is not assigned to this rep.',403);
+  return getSalesProspect(pool,prospectId);
 }
 
 function serializeSalesOperatorSettings(row) {
@@ -2092,10 +2073,13 @@ export async function createSalesCallSession(pool, input = {}) {
     throw salesError("sales_demo_not_ready", "The prospect demo must be ready before calling.", 409);
   }
   const adminUserId = Number(input.adminUserId || input.admin_user_id || 0) || null;
+  if (prospect.assignedRepUserId && prospect.assignedRepUserId !== adminUserId) throw salesError('prospect_forbidden', 'This prospect belongs to another rep.', 403);
   const idempotencyKey = normalizeSalesText(input.idempotencyKey || input.idempotency_key, 240) || null;
   const salesCallId = normalizeSalesText(input.salesCallId || input.sales_call_id, 200)
     || createId("sales_call");
 
+  const claim = await pool.query(`UPDATE sales_prospects SET assigned_rep_user_id=$2 WHERE prospect_id=$1 AND (assigned_rep_user_id IS NULL OR assigned_rep_user_id=$2) RETURNING prospect_id`,[prospectId,adminUserId]);
+  if (!claim.rowCount) throw salesError('prospect_forbidden', 'Prospect was assigned to another rep.',403);
   let result;
   try {
     result = await pool.query(
@@ -2151,6 +2135,9 @@ export async function createSalesCallSession(pool, input = {}) {
     ]
   );
   } catch (error) {
+    if (error?.code === 'P5601') throw salesError('rep_call_active','End your current call before starting another.',409);
+    if (error?.code === 'P5602') throw salesError('prospect_forbidden','This prospect belongs to another rep.',403);
+    if (error?.code === 'P5603') throw salesError('prospect_do_not_call','This phone or business is permanently suppressed.',409);
     if (error?.code === "23505" && error?.constraint === "sales_call_sessions_active_prospect_idx") {
       const reserved = await getSalesProspect(pool, prospectId);
       throw salesError("prospect_reserved", "This prospect was reserved by another call. Its operator or an administrator must use end_call before retrying.", 409,
@@ -2192,6 +2179,15 @@ export function serializeSalesCallSession(row) {
     providerErrorMessage: row.provider_error_message || null,
     outcome: row.outcome || null,
     outcomeNotes: row.outcome_notes || null,
+    liveNotes: row.live_notes || '',
+    dialedNumber: row.dialed_number || row.metadata_json?.prospect_number || null,
+    callbackAt: row.callback_at || null,
+    linkSentAt: row.link_sent_at || null,
+    bookedAt: row.booked_at || null,
+    paidAt: row.paid_at || null,
+    transcript: row.transcript_json || null,
+    transcriptStatus: row.transcript_json ? 'ready' : (row.ended_at ? 'processing' : 'pending'),
+    recordingUrl: row.recording_url || null,
     outcomeRecordedAt: row.outcome_recorded_at || null,
     startedAt: row.started_at || null,
     connectedAt: row.connected_at || null,
@@ -2329,64 +2325,20 @@ export async function recordSalesCallEvent(pool, {
   return { inserted: false, event: existing.rows[0] || null };
 }
 
-export async function recordSalesCallOutcome(pool, {
-  salesCallId,
-  outcome,
-  notes = ""
-}) {
-  const normalizedOutcome = normalizeSalesText(outcome, 80).toLowerCase();
-  if (!SALES_OUTCOMES.includes(normalizedOutcome)) {
-    throw salesError("invalid_call_outcome", "Call outcome is not supported.");
-  }
-  const normalizedNotes = normalizeSalesText(notes, MAX_NOTE_LENGTH) || null;
-  return withTransaction(pool, async (db) => {
-    const normalizedSalesCallId = normalizeSalesText(salesCallId, 200);
-    const existing = await db.query(
-      `SELECT sales_call_id, prospect_id, outcome, state, operator_call_control_id,
-              prospect_call_control_id, ai_telnyx_call_control_id, openai_call_id, conference_id
-       FROM sales_call_sessions
-       WHERE sales_call_id = $1
-       FOR UPDATE`,
-      [normalizedSalesCallId]
-    );
-    if (!existing.rowCount) {
-      throw salesError("sales_call_not_found", "Sales call not found.", 404);
-    }
-    const active = existing.rows[0];
-    if (!["closed", "ended", "completed", "failed", "no_answer", "voicemail", "wrong_number", "not_interested", "do_not_call", "canceled", "cancelled"].includes(active.state)
-      && (active.operator_call_control_id || active.prospect_call_control_id || active.ai_telnyx_call_control_id || active.openai_call_id || active.conference_id)) {
-      throw salesError("sales_call_end_required", "End the provider call before recording its outcome.", 409);
-    }
-    const updated = await db.query(
-      `UPDATE sales_call_sessions
-       SET outcome = $2,
-           outcome_notes = $3,
-           outcome_recorded_at = NOW(),
-           state = CASE WHEN state = 'ended' THEN state ELSE 'closed' END,
-           ended_at = COALESCE(ended_at, NOW()),
-           updated_at = NOW()
-       WHERE sales_call_id = $1
-       RETURNING *`,
-      [normalizedSalesCallId, normalizedOutcome, normalizedNotes]
-    );
-    const row = updated.rows[0];
-    await db.query(
-      `UPDATE sales_prospects
-       SET last_outcome = $2,
-           last_outcome_at = NOW(),
-           status = $2,
-           do_not_call = CASE WHEN $2 = 'do_not_call' THEN TRUE ELSE do_not_call END,
-           do_not_call_at = CASE WHEN $2 = 'do_not_call' THEN COALESCE(do_not_call_at, NOW()) ELSE do_not_call_at END,
-           suppressed = CASE WHEN $2 = 'do_not_call' THEN TRUE ELSE suppressed END,
-           suppressed_at = CASE WHEN $2 = 'do_not_call' THEN COALESCE(suppressed_at, NOW()) ELSE suppressed_at END,
-           suppression_reason = CASE WHEN $2 = 'do_not_call' THEN COALESCE(suppression_reason, 'do_not_call') ELSE suppression_reason END,
-           email_suppressed_at = CASE WHEN $2 = 'do_not_call' THEN COALESCE(email_suppressed_at, NOW()) ELSE email_suppressed_at END,
-           email_suppression_reason = CASE WHEN $2 = 'do_not_call' THEN COALESCE(email_suppression_reason, 'do_not_call') ELSE email_suppression_reason END,
-           row_version = row_version + 1,
-           updated_at = NOW()
-       WHERE prospect_id = $1`,
-      [row.prospect_id, normalizedOutcome]
-    );
+export async function recordSalesCallOutcome(pool, {salesCallId, outcome, notes = '', callbackAt = null, dncReason = null}) {
+  const normalizedOutcome = normalizeSalesText(outcome,80).toLowerCase();
+  if (!SALES_OUTCOMES.includes(normalizedOutcome)) throw salesError('invalid_call_outcome','Call outcome is not supported. Paid is set only by Stripe.');
+  if (normalizedOutcome==='callback_requested' && (!callbackAt || !Number.isFinite(Date.parse(callbackAt)))) throw salesError('callback_time_required','Choose a callback date and time.');
+  const reason = normalizedOutcome==='not_interested' ? 'not_interested' : (dncReason || 'asked_not_to_be_called');
+  if (normalizedOutcome==='do_not_call' && !['bad_number','asked_not_to_be_called','out_of_business'].includes(reason)) throw salesError('invalid_dnc_reason','Choose a do-not-call reason.');
+  return withTransaction(pool,async db => {
+    const existing=await db.query('SELECT * FROM sales_call_sessions WHERE sales_call_id=$1 FOR UPDATE',[salesCallId]);
+    const active=existing.rows[0];
+    if (!active) throw salesError('sales_call_not_found','Sales call not found.',404);
+    if (!['closed','ended','completed','failed','no_answer','voicemail','wrong_number','not_interested','do_not_call','canceled','cancelled'].includes(active.state)) throw salesError('sales_call_end_required','End the call before saving its outcome.',409);
+    const result=await db.query(`UPDATE sales_call_sessions SET outcome=CASE WHEN paid_at IS NOT NULL THEN 'paid' ELSE $2 END,outcome_notes=$3,live_notes=$3,outcome_recorded_at=NOW(),callback_at=$4,updated_at=NOW() WHERE sales_call_id=$1 RETURNING *`,[salesCallId,normalizedOutcome,String(notes||active.live_notes||'').slice(0,5000),normalizedOutcome==='callback_requested'?callbackAt:null]);
+    const dnc=['not_interested','do_not_call','wrong_number'].includes(normalizedOutcome);
+    await db.query(`UPDATE sales_prospects SET last_outcome=$2,last_outcome_at=NOW(),status=CASE WHEN $3 THEN 'do_not_call' WHEN status IN ('do_not_call','removed','paid') THEN status ELSE 'ready_to_call' END,do_not_call=do_not_call OR $3,dnc_reason=CASE WHEN $3 THEN $4 ELSE dnc_reason END,callback_at=$5,inbound_return=FALSE,queue_position=nextval(pg_get_serial_sequence('sales_prospects','queue_position')),updated_at=NOW() WHERE prospect_id=$1`,[active.prospect_id,normalizedOutcome,dnc,normalizedOutcome==='wrong_number'?'bad_number':reason,normalizedOutcome==='callback_requested'?callbackAt:null]);
     await db.query(
       `INSERT INTO sales_followup_jobs (
          sales_followup_job_id, prospect_id, sales_call_id, outcome
@@ -2402,9 +2354,9 @@ export async function recordSalesCallOutcome(pool, {
        ON CONFLICT (prospect_id, sales_call_id, outcome)
          WHERE status IN ('queued', 'leased')
        DO NOTHING`,
-      [createId("sales_followup"), row.prospect_id, row.sales_call_id, normalizedOutcome]
+      [createId("sales_followup"), active.prospect_id, active.sales_call_id, normalizedOutcome]
     );
-    return serializeSalesCallSession(row);
+    return serializeSalesCallSession(result.rows[0]);
   });
 }
 
@@ -2840,14 +2792,9 @@ export async function validateSalesSignupInvitationForOnboarding(client, {
       410
     );
   }
-  const row = result.rows[0];
-  return {
-    invitationId: row.invitation_id,
-    prospectId: row.prospect_id,
-    salesCallId: row.sales_call_id || null,
-    prefill: asObject(row.safe_prefill_json),
-    expiresAt: row.expires_at || null
-  };
+  // Sales v2 promotes the paid provisional tenant; the old signup path creates
+  // a second active tenant and must not bypass payment/publication gates.
+  throw salesError('sales_checkout_required','This Sales invitation has been replaced by checkout and assisted setup.',410);
 }
 
 export async function completeSalesSignupInvitation(client, {

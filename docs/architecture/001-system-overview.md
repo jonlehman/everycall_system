@@ -59,7 +59,7 @@ rollback path.
 - A dedicated Telnyx sales connection and credential park the browser operator leg before the sales gateway creates a conference.
 - The sales gateway uses only `SALES_TELNYX_*` and `SALES_OPENAI_*` credentials and verifies both providers' webhook signatures.
 - OpenAI Realtime monitor sockets and per-call locks are process-local, so the sales gateway runs as exactly one service instance until shared session coordination is introduced.
-- The only production handoff is a single-use invitation into the existing intake and onboarding transaction.
+- The owner-approved [Sales rep dialer v2](../SPECS/sales-rep-dialer-v2.md) supersedes the earlier invitation-only handoff: verified Stripe checkout authorizes real-tenant conversion and a full website build. Production voice remains gated by payment and existing knowledge publication/readiness; prepared Sales demos never grant unpaid production service.
 
 ## Security Requirements
 - Verify Telnyx signatures on all inbound callbacks.

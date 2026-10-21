@@ -571,12 +571,12 @@ function compileSourceRecordScore(record, index = 0) {
     - (index * 0.001);
 }
 
-function selectSourceCompileRecords(sourceRecords, warnings) {
+function selectSourceCompileRecords(sourceRecords, warnings, maxCompileSources = MAX_COMPILE_SOURCE_RECORDS) {
   const records = Array.isArray(sourceRecords) ? sourceRecords : [];
   if (!records.length) return [];
 
   const compileEnabledRecords = records.filter((record) => record?.sourceItem?.compileEnabled !== false);
-  if (compileEnabledRecords.length <= MAX_COMPILE_SOURCE_RECORDS) {
+  if (compileEnabledRecords.length <= maxCompileSources) {
     if (compileEnabledRecords.length !== records.length) {
       warnings.push(`compile_disabled_sources_skipped:${compileEnabledRecords.length}_of_${records.length}`);
     }
@@ -607,12 +607,12 @@ function selectSourceCompileRecords(sourceRecords, warnings) {
   const websitePages = ranked.filter((entry) => entry.sourceChannel === "website_page");
 
   for (const entry of prioritized) {
-    if (selected.length >= MAX_COMPILE_SOURCE_RECORDS) break;
+    if (selected.length >= maxCompileSources) break;
     selected.push(entry);
   }
 
   for (const entry of websitePages) {
-    if (selected.length >= MAX_COMPILE_SOURCE_RECORDS) break;
+    if (selected.length >= maxCompileSources) break;
     const cap = pageTypeCaps[entry.pageType];
     const currentCount = Number(pageTypeCounts.get(entry.pageType) || 0);
     if (cap && currentCount >= cap) {
@@ -623,9 +623,9 @@ function selectSourceCompileRecords(sourceRecords, warnings) {
     selected.push(entry);
   }
 
-  if (selected.length < MAX_COMPILE_SOURCE_RECORDS) {
+  if (selected.length < maxCompileSources) {
     for (const entry of deferred) {
-      if (selected.length >= MAX_COMPILE_SOURCE_RECORDS) break;
+      if (selected.length >= maxCompileSources) break;
       selected.push(entry);
     }
   }
@@ -3064,7 +3064,7 @@ async function embedArtifacts(cards, facts, buildInfo) {
   };
 }
 
-export async function compileKnowledgeBuildArtifacts({ db, buildInfo, assertExecutionLease = null }) {
+export async function compileKnowledgeBuildArtifacts({ db, buildInfo, assertExecutionLease = null, maxCompileSources = MAX_COMPILE_SOURCE_RECORDS }) {
   const assertLease = async () => {
     if (typeof assertExecutionLease === "function") await assertExecutionLease();
   };
@@ -3078,7 +3078,7 @@ export async function compileKnowledgeBuildArtifacts({ db, buildInfo, assertExec
   const reusableCoreFactRatings = await loadReusableCoreFactRatings(db, buildInfo.tenant_key, {
     companyDescription
   });
-  const sourceRecords = selectSourceCompileRecords(sourceCompileRecords, warnings);
+  const sourceRecords = selectSourceCompileRecords(sourceCompileRecords, warnings, maxCompileSources);
   const sourceChunks = sourceRecords.flatMap((record) => record.sourceChunks);
   logCompilerProgress("compiler_started", {
     buildId: buildInfo.build_id,

@@ -10,8 +10,8 @@ export function governanceActorId(actor) {
 function knownBuildCreator(build) {
   const kind = text(build?.created_by_type);
   const id = text(build?.created_by_id);
-  if (!['tenant', 'admin', 'super_admin'].includes(kind) || !id) return null;
-  return `${kind === 'super_admin' ? 'admin' : kind}:${id}`;
+  if (!['tenant', 'admin', 'super_admin', 'sales'].includes(kind) || !id) return null;
+  return `${['super_admin', 'sales'].includes(kind) ? 'admin' : kind}:${id}`;
 }
 function assertDistinctBuildReviewer(build, reviewer) {
   const creator = knownBuildCreator(build);

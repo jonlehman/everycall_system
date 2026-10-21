@@ -1,3 +1,4 @@
+import { salesCoreFacts } from "./salesCoreFacts.js";
 import {
   getDefaultPromptBlueprintSeed,
   normalizeTenantPromptProfile,
@@ -177,7 +178,7 @@ There are no live tools in this demonstration.
     "- Answer direct questions before continuing and ask only one question at a time.",
     "- Do not collect payment-card data or other sensitive information.",
     "- Speak in English by default and change language only if the caller clearly does so first.",
-    buildDemoFactPack(bundle)
+    "# core_facts\n" + salesCoreFacts(bundle).map(f => `${f.label}: ${f.sentence}`).join("\n")
   ].filter(Boolean).join("\n\n");
 }
 

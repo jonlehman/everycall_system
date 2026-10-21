@@ -16,8 +16,7 @@ function safeBundle(value: unknown): Record<string, unknown> {
 
 export function isPreparedSalesDemo(call: SalesCallContext, nowMs = Date.now()): boolean {
   if (call.demoStatus !== "ready") return false;
-  if (!call.demoExpiresAt) return false;
-  return new Date(call.demoExpiresAt).getTime() > nowMs;
+  return true;
 }
 
 export function resolveSalesDemoBusinessName(call: SalesCallContext): string {

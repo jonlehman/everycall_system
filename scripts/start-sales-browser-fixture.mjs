@@ -1,4 +1,6 @@
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
+import pg from "pg";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { bootstrapFixtureSchema } from "./lib/schema-migrations.mjs";
@@ -31,14 +33,29 @@ function createPool(db) {
   };
 }
 
-const db = new PGlite();
-const pool = createPool(db);
+const externalDatabaseUrl = process.env.SALES_BROWSER_DATABASE_URL;
+let nativeAdmin;
+let nativeSchema;
+let pool;
+let db;
+let databaseUrl;
+if (externalDatabaseUrl) {
+  const target = new URL(externalDatabaseUrl);
+  if (!["127.0.0.1", "localhost", "[::1]"].includes(target.hostname)) throw new Error("browser_fixture_requires_loopback_database");
+  nativeAdmin = new pg.Pool({ connectionString: externalDatabaseUrl });
+  nativeSchema = `sales_browser_${crypto.randomBytes(6).toString("hex")}`;
+  await nativeAdmin.query(`CREATE SCHEMA ${nativeSchema}`);
+  target.searchParams.set("options", `-csearch_path=${nativeSchema},public`);
+  databaseUrl = target.toString();
+  pool = new pg.Pool({ connectionString: databaseUrl, max: 5 });
+  db = { exec: sql => pool.query(sql), close: () => pool.end() };
+} else {
+  db = new PGlite();
+  pool = createPool(db);
+}
 
 await bootstrapFixtureSchema(pool, { executeSql: sql => db.exec(sql) });
-await db.exec(await fs.readFile(
-  new URL("../migrations/0032_outbound_sales_demo.sql", import.meta.url),
-  "utf8"
-));
+
 
 const admin = await pool.query(
   `INSERT INTO admin_users (username, email, role)
@@ -126,6 +143,7 @@ for (const item of imported.imported.slice(0, 2)) {
         businessName,
         summary: `${businessName} provides appliance repair and callback service.`,
         topServices: ["Refrigerator repair", "Appliance diagnostics"],
+        core_facts: [{category:"services",label:"Services",sentence:"We repair refrigerators and diagnose appliances."},{category:"service_area",label:"Service area",sentence:"We serve the Seattle area."}],
         serviceArea: "Seattle area"
       })
     ]
@@ -166,7 +184,8 @@ if (activityProspectId) {
     `UPDATE sales_prospects
      SET last_outcome = 'callback_requested',
          last_outcome_at = NOW(),
-         status = 'callback_requested'
+         status = 'ready_to_call',
+         callback_at = NOW() - INTERVAL '1 minute'
      WHERE prospect_id = $1`,
     [activityProspectId]
   );
@@ -185,16 +204,24 @@ await pool.query(`INSERT INTO sales_call_sessions (sales_call_id, prospect_id, a
   ('fixture-report-old', $1, $3, 'failed', NOW() - INTERVAL '60 days', NULL, NULL, NOW() - INTERVAL '60 days', NULL, NULL)`,
   [imported.imported[0].prospectId, salesOperatorId, secondRep.id]);
 
-const server = new PGLiteSocketServer({
+// Each rep receives a separate ready record. The suppressed third record stays excluded.
+await pool.query("UPDATE sales_prospects SET assigned_rep_user_id=$1 WHERE prospect_id=$2", [salesOperatorId, imported.imported[0]?.prospectId]);
+await pool.query("UPDATE sales_prospects SET assigned_rep_user_id=$1 WHERE prospect_id=$2", [adminUserId, imported.imported[1]?.prospectId]);
+
+const server = externalDatabaseUrl ? null : new PGLiteSocketServer({
   db,
   host: "127.0.0.1",
-  port: PORT,
+  port: externalDatabaseUrl ? Number(new URL(externalDatabaseUrl).port) : PORT,
+  databaseUrl,
+  schema: nativeSchema,
   inspect: false
 });
-await server.start();
+if (server) await server.start();
 console.log(JSON.stringify({
   ready: true,
-  port: PORT,
+  port: externalDatabaseUrl ? Number(new URL(externalDatabaseUrl).port) : PORT,
+  databaseUrl,
+  schema: nativeSchema,
   sessionId: SESSION_ID,
   adminUserId,
   salesSessionId: SALES_SESSION_ID,
@@ -202,8 +229,12 @@ console.log(JSON.stringify({
 }));
 
 async function shutdown() {
-  await server.stop().catch(() => {});
+  if (server) await server.stop().catch(() => {});
   await db.close().catch(() => {});
+  if (nativeAdmin) {
+    await nativeAdmin.query(`DROP SCHEMA ${nativeSchema} CASCADE`).catch(() => {});
+    await nativeAdmin.end().catch(() => {});
+  }
   process.exit(0);
 }
 

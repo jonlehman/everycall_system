@@ -43,6 +43,7 @@ type Logger = {
 
 type GatewayOptions = {
   repository: SalesGatewayRepository;
+  inbound?: any;
   telnyx: any;
   openai: any;
   internalAuthEnv?: Record<string, unknown>;
@@ -252,6 +253,7 @@ function callIsEligible(
   now: () => number | Date,
   salesCallingWindowEnv: Record<string, string | undefined>
 ): boolean {
+  if (call.metadata.direction === "inbound") return !TERMINAL_STATES.has(call.state);
   return call.permissionGranted
     && !call.suppressed
     && !call.doNotCall
@@ -475,6 +477,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
     };
     return {
       onEvent(event: any) {
+        if(options.inbound) void options.inbound.attachRealtime(salesCallId,event).catch((error: Error)=>log('error','sales_transcript_persist_failed',{sales_call_id:salesCallId,message:error.message}));
         if (event?.type !== "error") return;
         const message = text(event?.error?.message || "OpenAI Realtime reported an error.");
         void noteRuntimeProblem(
@@ -505,7 +508,14 @@ export function createSalesCallGateway(options: GatewayOptions) {
     const salesCallId = call.salesCallId;
     let preparationPatch: SalesCallPatch = {};
     try {
+      if(call.metadata.direction === 'inbound' && !isPreparedSalesDemo(call)) {
+        const conference=await telnyx.createConference({anchorCallControlId:call.operatorCallControlId,name:`sales-${salesCallId}`,commandId:deriveSalesCommandId({correlationId:salesCallId,operation:'inbound_conference',target:salesCallId})});
+        await repository.patchCall(salesCallId,{conference_id:conference.conference_id,conference_name:conference.conference_name});
+        await telnyx.joinConference({conferenceId:conference.conference_id,callControlId:call.prospectCallControlId,commandId:deriveSalesCommandId({correlationId:salesCallId,operation:'inbound_join',target:call.prospectCallControlId||undefined})});
+        return repository.patchCall(salesCallId,{state:'prospect_connected',connected_at:nowIso(now),ai_state:'not_prepared'});
+      }
       const result = await orchestrator.beginCall({
+        incomingProspect:call.metadata.direction === 'inbound',
         salesCallId,
         correlationId: text(call.metadata.correlation_id) || salesCallId,
         operator: {
@@ -545,7 +555,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
       const latest = await loadRequiredCall(salesCallId);
       return await repository.patchCall(salesCallId, {
         ...result.patch,
-        ...(latest.connectedAt ? { state: "prospect_connected" } : {}),
+        ...(latest.connectedAt || call.metadata.direction==='inbound' ? { state: "prospect_connected",connected_at:latest.connectedAt||nowIso(now) } : {}),
         provider_error_code: null,
         provider_error_message: null
       });
@@ -1194,6 +1204,10 @@ export function createSalesCallGateway(options: GatewayOptions) {
       }
 
       if (action === "start_demo") {
+        if(call.metadata.direction==='inbound' && call.aiState==='not_prepared' && isPreparedSalesDemo(call)) {
+          await runCallPreparation(call);
+          return {call:await loadRequiredCall(salesCallId),replayed:false,pending:true};
+        }
         if (["live", "paused"].includes(call.aiState || "")) {
           return { call, replayed: true };
         }
@@ -1488,6 +1502,10 @@ export function createSalesCallGateway(options: GatewayOptions) {
       } catch {
         return res.status(400).json({ ok: false, error: "invalid_telnyx_event" });
       }
+      if(options.inbound) {
+        await options.inbound.attachArtifacts(event);
+        if(await options.inbound.handleEvent(event)) return res.status(200).json({ok:true,incoming:true});
+      }
       const salesCallId = await correlateProviderEvent(event);
       if (!salesCallId) {
         log("warn", "sales_telnyx_event_uncorrelated", {
@@ -1604,6 +1622,11 @@ export function createSalesCallGateway(options: GatewayOptions) {
     })
   );
 
+  app.post('/internal/incoming/:incomingId/receptionist', requireInternalAuth, asyncRoute(async(req,res)=>{
+    if(!options.inbound) return res.status(503).json({ok:false,error:'sales_inbound_not_configured'});
+    const routed=await options.inbound.fallback(req.params.incomingId,Number(req.body.repId));
+    return res.status(routed?200:409).json({ok:routed});
+  }));
   app.post(
     "/internal/calls/:salesCallId/actions",
     requireInternalAuth,

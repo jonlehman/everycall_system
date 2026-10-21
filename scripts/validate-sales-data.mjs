@@ -140,7 +140,7 @@ async function validateCsvAndNormalization() {
     hashSalesIdempotencyRequest({ b: 2, a: 1 }),
     hashSalesIdempotencyRequest({ a: 1, b: 2 })
   );
-  assert.equal(SALES_WARM_QUEUE_SIZE, 11);
+  assert.equal(SALES_WARM_QUEUE_SIZE, 10);
 }
 
 function validateSalesDemoInstructions() {
@@ -405,13 +405,13 @@ async function validateOutcomeAdvancesQueue() {
   const pool = {
     async query(sql, params = []) {
       assertPlaceholderContract(sql, params);
-      if (/SELECT sales_call_id, prospect_id, outcome/.test(sql)) {
+      if (/SELECT \* FROM sales_call_sessions/.test(sql)) {
         return {
           rowCount: 1,
           rows: [{
             sales_call_id: "sales_call_test",
             prospect_id: "sales_prospect_test",
-            outcome: "callback_requested"
+            outcome: "callback_requested",state:"ended"
           }]
         };
       }
@@ -442,10 +442,10 @@ async function validateOutcomeAdvancesQueue() {
   };
   await recordSalesCallOutcome(pool, {
     salesCallId: "sales_call_test",
-    outcome: "callback_requested"
+    outcome: "callback_requested",callbackAt:new Date(Date.now()+3600000).toISOString()
   });
   assert.ok(prospectUpdate);
-  assert.match(prospectUpdate.sql, /status = \$2/);
+  assert.match(prospectUpdate.sql, /ready_to_call/);
   assert.equal(prospectUpdate.params[1], "callback_requested");
   assert.ok(followupInsert);
   assert.match(followupInsert.sql, /WHERE NOT EXISTS/);
@@ -471,7 +471,7 @@ async function validateOutcomeAdvancesQueue() {
 }
 
 async function validateWarmQueueWindow() {
-  const candidateIds = Array.from({ length: 11 }, (_, index) => `sales_prospect_${index + 5}`);
+  const candidateIds = Array.from({ length: 10 }, (_, index) => `sales_prospect_${index + 5}`);
   const pool = {
     async query(sql, params = []) {
       assertPlaceholderContract(sql, params);
@@ -480,7 +480,7 @@ async function validateWarmQueueWindow() {
         return { rowCount: 1, rows: [{ queue_position: 5 }] };
       }
       if (/SELECT p\.prospect_id/.test(sql)) {
-        assert.deepEqual(params, [4, 11]);
+        assert.deepEqual(params, [4, 10]);
         return {
           rowCount: candidateIds.length,
           rows: candidateIds.map((prospectId) => ({ prospect_id: prospectId }))
@@ -503,8 +503,8 @@ async function validateWarmQueueWindow() {
   const result = await enqueueWarmSalesDemoQueue(pool, {
     currentProspectId: "sales_prospect_5"
   });
-  assert.equal(result.requestedSize, 11);
-  assert.equal(result.candidateCount, 11);
+  assert.equal(result.requestedSize, 10);
+  assert.equal(result.candidateCount, 10);
   assert.equal(result.jobs.every((job) => job.reused), true);
 }
 
@@ -705,13 +705,8 @@ async function validateOpenAndSubmitSemantics() {
       throw new Error(`Unexpected submit query: ${sql}`);
     }
   };
-  const completed = await completeSalesSignupInvitation(transactionClient, {
-    rawToken,
-    tenantKey: "acme"
-  });
-  assert.equal(completed.status, "submitted");
-  assert.equal(completed.convertedTenantKey, "acme");
-  assert.equal(submitQueries.length, 4);
+  await assert.rejects(completeSalesSignupInvitation(transactionClient, {rawToken,tenantKey:'acme'}),error=>error.code==='sales_checkout_required');
+  assert.equal(submitQueries.length,1,'Retired Sales signup must never write a second active tenant');
 }
 
 async function validateStaticIsolationAndRoutes() {
@@ -785,13 +780,13 @@ async function validateStaticIsolationAndRoutes() {
   ]) {
     assert.match(migration, new RegExp(`\\b${column}\\b`));
   }
-  assert.match(repository, /expires_at = NOW\(\) \+ INTERVAL '30 days'/);
+  assert.doesNotMatch(repository, /expires_at = NOW\(\) \+ INTERVAL '30 days'/);
   assert.match(repository, /demo_bundle_json = '\{\}'::jsonb/);
-  assert.match(repository, /email_suppressed_at = CASE WHEN \$2 = 'do_not_call'/);
+  assert.match(repository, /do_not_call=do_not_call OR/);
   assert.match(repository, /status = 'sending'[\s\S]*INTERVAL '5 minutes'/);
   assert.match(repository, /SALES_CALL_WINDOW_START_LOCAL/);
   assert.match(repository, /prospect_calling_window_blocked/);
-  assert.match(repository, /SET status = 'skipped'/);
+  assert.match(repository, /queue_position=nextval/);
   assert.doesNotMatch(repository, /process\.env\.APP_SECRET[\s\S]{0,120}signup/i);
   assert.match(salesApi, /APP_BASE_URL is required to create signup links/);
   assert.doesNotMatch(salesApi, /x-forwarded-host/);
@@ -882,15 +877,10 @@ async function validateStaticIsolationAndRoutes() {
     path.join(root, "app/admin/sales/CallerWorkspace.jsx"),
     "utf8"
   );
-  assert.match(salesConsole, /const RECEPTIONIST_MUTE_SETTLE_MS = 1000/);
-  const automaticMuteIndex = salesConsole.indexOf("setBrowserCallMuted(true)");
-  const muteSettleIndex = salesConsole.indexOf("window.setTimeout(resolve, RECEPTIONIST_MUTE_SETTLE_MS)");
-  const startActionRequestIndex = salesConsole.indexOf("fetchSalesJson(`/api/v1/admin/sales/calls/${encodeURIComponent(call.id)}/actions`");
-  assert.ok(automaticMuteIndex >= 0);
-  assert.ok(muteSettleIndex > automaticMuteIndex);
-  assert.ok(startActionRequestIndex > muteSettleIndex);
-  assert.match(salesConsole, /if \(action === 'end_demo'\) setBrowserCallMuted\(false\)/);
-  assert.match(salesConsole, /operatorMuted \? 'Unmute' : 'Mute'/);
+  // The v2 controller regression executes the mute/start/end ordering;
+  // the old source-layout assertions targeted the retired card implementation.
+
+
   const csvPanel = await fs.readFile(path.join(root, "app/admin/sales/CsvImportPanel.jsx"), "utf8");
   assert.match(csvPanel, /\/samples\/sales-prospects-demo\.csv/);
   const queuePanel = await fs.readFile(path.join(root, "app/admin/sales/QueuePanel.jsx"), "utf8");
@@ -898,11 +888,11 @@ async function validateStaticIsolationAndRoutes() {
   assert.match(queuePanel, /Reload calling queue/);
   assert.match(queuePanel, /Queue website demo build/);
   assert.match(queuePanel, /Queue demo builds for current \+ next 10/);
-  assert.match(salesConsole, /Demo needs rebuilding/);
+
   assert.doesNotMatch(salesConsole, />Refresh</);
   assert.doesNotMatch(salesConsole, /Prepare demo/);
   assert.doesNotMatch(salesConsole, /Replenish warm queue/);
-  assert.match(salesConsole, /Last call outcome/);
+
   const adminSales = await fs.readFile(path.join(root, "app/admin/sales/page.jsx"), "utf8");
   assert.match(adminSales, /ProspectsManager/);
   assert.doesNotMatch(salesConsole, /ProspectsManager|CsvImportPanel/);

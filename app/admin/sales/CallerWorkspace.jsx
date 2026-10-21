@@ -1,930 +1,671 @@
-'use client';
-
-import { useCallback, useEffect, useRef, useState } from 'react';
+"use client";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  displayStatus,
   fetchSalesJson,
   isDemoReady,
   normalizeCall,
-  normalizeInvitation,
-  normalizeWebrtc
-} from './salesApi';
-import { useSalesQueue } from './useSalesQueue';
-import { connectTelnyxBrowserClient } from './telnyxBrowserClient';
-import { Card, StatusPill, ActionButton, Field, TextInput, ErrorNotice, Detail } from './SalesUi';
+  normalizeProspect,
+  normalizeWebrtc,
+} from "./salesApi";
+import { useSalesQueue } from "./useSalesQueue";
+import { connectTelnyxBrowserClient } from "./telnyxBrowserClient";
+import { mayQuickAdvance } from "./dialerState.mjs";
+import DialerScreen from "./DialerScreen";
 
-const RECEPTIONIST_MUTE_SETTLE_MS = 1000;
-
-const OUTCOMES = [
-  ['no_answer', 'No answer'],
-  ['voicemail', 'Voicemail'],
-  ['wrong_number', 'Wrong number'],
-  ['callback_requested', 'Callback requested'],
-  ['not_interested', 'Not interested'],
-  ['do_not_call', 'Do not call'],
-  ['connected_no_demo', 'Connected, no demo'],
-  ['demo_completed', 'Demo completed'],
-  ['signup_link_sent', 'Signup link sent'],
-  ['signup_completed', 'Signup completed']
-];
-
-const SIGNUP_STEPS = [
-  { key: 'sent', label: 'Link sent' },
-  { key: 'opened', label: 'Opened' },
-  { key: 'submitted', label: 'Submitted' },
-  { key: 'provisioning', label: 'Number provisioning' },
-  { key: 'ready', label: 'Account ready' }
-];
-
-function demoStatusTone(status) {
-  if (['ready', 'demo_ready', 'ready_to_call'].includes(status)) return 'good';
-  if (['failed', 'build_failed', 'error'].includes(status)) return 'bad';
-  return 'warn';
-}
-
-function demoStatusLabel(status) {
-  return status === 'stale' ? 'Demo needs rebuilding' : status;
-}
-
-function permissionLabel(prospect) {
-  if (prospect?.permission === true) return 'Permission: Yes';
-  if (prospect?.permission === false) return 'Permission: No';
-  return 'Permission: Unknown';
-}
-
-function callDisableReason({ prospect, call, busy, softphoneState }) {
-  if (busy) return 'Another action is still in progress.';
-  if (!prospect) return 'There is no current prospect.';
-  if (!prospect.eligible) {
-    return prospect.callBlockedReason
-      || prospect.suppressionReason
-      || 'This prospect is not eligible to call.';
-  }
-  if (!isDemoReady(prospect)) return 'The company demo must be ready before calling.';
-  if (softphoneState !== 'ready') return 'The Telnyx browser softphone must be ready before calling.';
-  if (call?.id && !call.terminal) return 'A call is already active.';
-  return '';
-}
-
-function startDemoDisableReason({ call, busy }) {
-  if (busy) return 'Another action is still in progress.';
-  if (!call?.id || call.terminal) return 'Start a call first.';
-  if (!call.prospectConnected) return 'The prospect must be connected.';
-  if (!call.aiReady) return 'The AI standby leg is not ready.';
-  if (call.aiLive) return 'The AI demo is already in the conference.';
-  return '';
-}
-
-function invitationProgress(invitation) {
-  if (!invitation?.id) return -1;
-  const status = invitation.status;
-  const delivery = invitation.deliveryStatus;
-  if (['account_ready', 'ready', 'completed', 'signup_completed'].includes(status)
-    || ['account_ready', 'ready'].includes(invitation.accountStatus)) return 4;
-  if (['provisioning', 'number_provisioning'].includes(status)
-    || ['provisioning', 'running', 'pending', 'failed'].includes(invitation.provisioningStatus)
-    || invitation.attentionRequired) return 3;
-  if (['submitted', 'intake_submitted'].includes(status) || invitation.submittedAt) return 2;
-  if (['opened', 'viewed'].includes(status) || invitation.openedAt) return 1;
-  if (['sent', 'delivered'].includes(status) || ['sent', 'delivered'].includes(delivery) || invitation.sentAt) return 0;
-  return -1;
-}
-
-function ProspectPanel({ prospect }) {
-  if (!prospect) {
-    return (
-      <Card>
-        <h2 className="m-0 text-base font-semibold text-slate-950">Prospect details</h2>
-        <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-          Refresh prospects, or ask an administrator to add prospects you can call.
-        </div>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="m-0 break-words text-base font-semibold text-slate-950">Prospect details</h2>
-          <p className="mt-1 text-sm text-slate-500">{prospect.localTime || prospect.timezone || 'Local time unavailable'}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <StatusPill status={demoStatusLabel(prospect.demoStatus)} tone={demoStatusTone(prospect.demoStatus)} />
-          <StatusPill
-            status={permissionLabel(prospect)}
-            tone={prospect.permission === true ? 'good' : 'bad'}
-          />
-          {prospect.suppressed ? <StatusPill status="Suppressed" tone="bad" /> : null}
-        </div>
-      </div>
-
-
-
-      {prospect.callBlockedReason ? (
-        <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-          <span className="font-semibold">Calling blocked: </span>{prospect.callBlockedReason}
-        </div>
-      ) : null}
-
-      <div className="mt-4">
-        <h3 className="m-0 text-sm font-semibold text-slate-900">Talking points</h3>
-        {prospect.talkingPoints.length ? (
-          <ul className="mt-2 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-            {prospect.talkingPoints.map((point, index) => (
-              <li key={`${point}-${index}`} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                {point}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-sm text-slate-500">No talking points are available yet.</p>
-        )}
-      </div>
-      <details className="mt-4 text-sm text-slate-600">
-        <summary className="cursor-pointer font-semibold">Contact & call history</summary>
-      <div className="mt-4 grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
-        <Detail label="Phone" value={prospect.phone} />
-        <Detail label="Local time" value={prospect.localTime || prospect.timezone} />
-        <Detail label="Business type" value={prospect.businessCategory} />
-        <Detail
-          label="Last call outcome"
-          value={prospect.outcome
-            ? `${displayStatus(prospect.outcome)}${prospect.lastOutcomeAt
-              ? ` · ${new Date(prospect.lastOutcomeAt).toLocaleString()}`
-              : ''}`
-            : 'No prior call outcome'}
-        />
-        <Detail label="Contact email" value={prospect.email} />
-        <Detail label="Lead-delivery email" value={prospect.leadDeliveryEmail} />
-        <Detail label="Website">
-          {prospect.website ? (
-            <a
-              href={prospect.website}
-              target="_blank"
-              rel="noreferrer"
-              className="break-all text-[#004ac6] underline decoration-[#004ac6]/30 underline-offset-2"
-            >
-              {prospect.website}
-            </a>
-          ) : '—'}
-        </Detail>
-      </div>
-      </details>
-    </Card>
-  );
-}
-
-function CallPanel({
-  prospect,
-  call,
-  busyAction,
-  microphoneState,
-  operatorMuted,
-  softphoneState,
-  softphoneError,
-  browserCallState,
-  remoteAudioRef,
-  onCall,
-  onAction,
-  onToggleMute,
-  onReconnect
-}) {
-  const callBlocked = callDisableReason({
-    prospect,
-    call,
-    busy: Boolean(busyAction),
-    softphoneState
+const BASE = "/api/v1/admin/sales";
+export default function CallerWorkspace() {
+  const { queue, queueLoading, queueError, loadQueue } = useSalesQueue({
+    repMode: true,
   });
-  const callBlockedMessage = callBlocked === 'The Telnyx browser softphone must be ready before calling.'
-    ? 'Reconnect browser calling before starting a call.'
-    : callBlocked;
-  const demoBlocked = startDemoDisableReason({ call, busy: Boolean(busyAction) });
-  const providerError = call?.providerError;
-
+  const [prospect, setProspect] = useState(null),
+    [call, setCall] = useState(null),
+    [busy, setBusy] = useState(""),
+    [error, setError] = useState(""),
+    [softphoneState, setSoftphoneState] = useState("connecting"),
+    [muted, setMuted] = useState(false),
+    [microphoneState, setMicrophoneState] = useState("not_requested"),
+    [pendingWrapups, setPendingWrapups] = useState(0),
+    [note, setNote] = useState(""),
+    [outcome, setOutcome] = useState(""),
+    [callbackAt, setCallbackAt] = useState(""),
+    [dncReason, setDncReason] = useState(""),
+    [now, setNow] = useState(Date.now()),
+    [availability, setAvailability] = useState({ slots: [] }),
+    [incoming, setIncoming] = useState([]),
+    [searchResults, setSearchResults] = useState([]);
+  const remoteAudioRef = useRef(null),
+    softphone = useRef(null),
+    microphone = useRef(null),
+    generation = useRef(0),
+    callRef = useRef(null),
+    prospectRef = useRef(null),
+    noteRef = useRef(""),
+    savedNote = useRef(""),
+    createAttempt = useRef(null),
+    searchGeneration = useRef(0),
+    actionPending = useRef(null),
+    endingCallIds = useRef(new Set()),
+    wrapupDrafts = useRef([]),
+    incomingTaken = useRef("");
+  callRef.current = call;
+  prospectRef.current = prospect;
+  noteRef.current = note;
+  const releaseMic = useCallback(() => {
+    microphone.current?.getTracks?.().forEach((track) => track.stop());
+    microphone.current = null;
+    setMuted(false);
+    setMicrophoneState("released");
+  }, []);
+  const mute = useCallback((value) => {
+    const next = softphone.current?.setMuted(value);
+    if (typeof next !== "boolean")
+      throw new Error("There is no active browser call to mute.");
+    setMuted(next);
+  }, []);
+  const ensureMicrophone = async () => {
+    if (microphone.current?.active) return microphone.current;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMicrophoneState("unavailable");
+      throw new Error("This browser does not provide microphone access.");
+    }
+    setMicrophoneState("requesting");
+    try {
+      microphone.current = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      const stream = microphone.current;
+      const tracks = stream.getAudioTracks?.() || stream.getTracks?.() || [];
+      if (
+        !stream.active ||
+        !tracks.some((track) => track.readyState !== "ended")
+      )
+        throw new Error("Microphone is not live.");
+      setMicrophoneState("live");
+      for (const track of tracks)
+        track.addEventListener?.("ended", () => {
+          if (microphone.current === stream) setMicrophoneState("ended");
+        });
+      return stream;
+    } catch {
+      setMicrophoneState("denied");
+      throw new Error("Microphone permission is required for browser calling.");
+    }
+  };
+  const initializeSoftphone = useCallback(async () => {
+    const current = ++generation.current;
+    setSoftphoneState("connecting");
+    setError("");
+    const previous = softphone.current;
+    softphone.current = null;
+    await previous?.disconnect();
+    try {
+      const config = normalizeWebrtc(
+        await fetchSalesJson(`${BASE}/webrtc-token`),
+      );
+      if (current !== generation.current) return;
+      const client = await connectTelnyxBrowserClient({
+        token: config.token,
+        remoteElement: remoteAudioRef.current,
+        onState: (state) => {
+          if (current === generation.current) setSoftphoneState(state);
+        },
+        onError: (message) => {
+          if (current === generation.current) setError(message);
+        },
+        onCallUpdate: (update) => {
+          if (current !== generation.current) return;
+          if (["destroy", "hangup", "purge", "ended"].includes(update.state)) {
+            releaseMic();
+            const currentCall = callRef.current;
+            if (currentCall?.id && !currentCall.terminal)
+              void fetchSalesJson(
+                `${BASE}/calls/${encodeURIComponent(currentCall.id)}`,
+              )
+                .then((payload) => {
+                  const next = normalizeCall(payload);
+                  if (next.terminal) endingCallIds.current.add(next.id);
+                  if (
+                    callRef.current?.id === next.id &&
+                    (next.terminal || !endingCallIds.current.has(next.id))
+                  )
+                    setCall(next);
+                })
+                .catch(() => {});
+          }
+        },
+      });
+      if (current !== generation.current) {
+        await client.disconnect();
+        return;
+      }
+      softphone.current = client;
+      setSoftphoneState("ready");
+    } catch (err) {
+      if (current === generation.current) {
+        setSoftphoneState("error");
+        setError(err.message || "Browser calling could not connect.");
+      }
+    }
+  }, [releaseMic]);
+  useEffect(() => {
+    void initializeSoftphone();
+    return () => {
+      generation.current++;
+      void softphone.current?.disconnect();
+      releaseMic();
+    };
+  }, [initializeSoftphone, releaseMic]);
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+  useEffect(() => {
+    // Queue polling must never replace the record under a live call or its unsaved wrap-up.
+    if (callRef.current?.id) return;
+    const next = queue.current;
+    if (next?.id === prospectRef.current?.id) return;
+    setProspect(next);
+    setNote("");
+    savedNote.current = "";
+    setOutcome("");
+    setCallbackAt("");
+    setDncReason("");
+    setAvailability({ slots: [] });
+  }, [queue.current]);
+  useEffect(() => {
+    const live = queue.incoming || [];
+    setIncoming((previous) => {
+      const taken = previous.find(
+        (item) => item.incomingId === incomingTaken.current && !item.prospectId,
+      );
+      return taken && !live.some((item) => item.incomingId === taken.incomingId)
+        ? [taken, ...live]
+        : live;
+    });
+  }, [queue.incoming]);
+  useEffect(() => {
+    if (!call?.id) return;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const payload = await fetchSalesJson(
+          `${BASE}/calls/${encodeURIComponent(call.id)}`,
+        );
+        if (!active) return;
+        const next = normalizeCall(payload);
+        if (endingCallIds.current.has(next.id) && !next.terminal) return;
+        if (next.terminal) endingCallIds.current.add(next.id);
+        setCall(next);
+        if (next.paidAt) setOutcome("paid");
+        if (next.terminal) await loadQueue({ quiet: true });
+      } catch (err) {
+        if (active)
+          setError(err.message || "Call status could not be refreshed.");
+      }
+    };
+    const interval = setInterval(refresh, call.terminal ? 4000 : 1500);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [call?.id, call?.terminal, loadQueue]);
+  useEffect(() => {
+    if (!call?.terminal) return;
+    void softphone.current?.hangup();
+    releaseMic();
+  }, [call?.terminal, releaseMic]);
+  useEffect(() => {
+    if (!call?.id || note === savedNote.current) return;
+    const timer = setTimeout(() => {
+      void fetchSalesJson(`${BASE}/calls/${encodeURIComponent(call.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ liveNotes: note }),
+      })
+        .then(() => {
+          savedNote.current = note;
+        })
+        .catch((err) => setError(err.message || "Notes have not synced yet."));
+    }, 650);
+    return () => clearTimeout(timer);
+  }, [note, call?.id]);
+  const run = async (name, action) => {
+    if (actionPending.current && name !== "end_call") return;
+    const operation = {};
+    actionPending.current = operation;
+    setBusy(name);
+    setError("");
+    try {
+      return await action();
+    } catch (err) {
+      if (actionPending.current === operation)
+        setError(err.message || "The action could not be completed.");
+      return null;
+    } finally {
+      if (actionPending.current === operation) {
+        actionPending.current = null;
+        setBusy("");
+      }
+    }
+  };
+  const loadSlots = useCallback(async (after = "") => {
+    try {
+      const response = await fetchSalesJson(
+        `${BASE}/availability${after ? `?after=${encodeURIComponent(after)}` : ""}`,
+      );
+      setAvailability(response);
+    } catch (err) {
+      setAvailability({
+        slots: [],
+        error: err.message || "Calendar is unavailable.",
+      });
+    }
+  }, []);
+  useEffect(() => {
+    if (call?.terminal) void loadSlots();
+  }, [call?.id, call?.terminal, loadSlots]);
+  const startCall = (number) =>
+    run("call", async () => {
+      if (!prospect?.id || call?.id) return;
+      if (!isDemoReady(prospect) || !prospect.eligible)
+        throw new Error(
+          prospect.callBlockedReason || "This prospect is not ready to call.",
+        );
+      if (!softphone.current?.isReady())
+        throw new Error("Reconnect browser calling before starting a call.");
+      await ensureMicrophone();
+      if (
+        !createAttempt.current ||
+        createAttempt.current.prospectId !== prospect.id ||
+        createAttempt.current.number !== number
+      )
+        createAttempt.current = {
+          prospectId: prospect.id,
+          number,
+          key: crypto.randomUUID(),
+        };
+      let created = null;
+      try {
+        created = normalizeCall(
+          await fetchSalesJson(`${BASE}/calls`, {
+            method: "POST",
+            idempotencyKey: createAttempt.current.key,
+            body: JSON.stringify({
+              prospectId: prospect.id,
+              phoneE164: number,
+            }),
+          }),
+        );
+        if (!created.id)
+          throw new Error("The server did not return a call ID.");
+        setCall(created);
+        setOutcome("");
+        setNote("");
+        savedNote.current = "";
+        setMuted(false);
+        softphone.current.placeCall(
+          created.webrtc?.callOptions || {},
+          microphone.current,
+        );
+        createAttempt.current = null;
+        await loadQueue({ quiet: true });
+      } catch (err) {
+        if (created?.id) {
+          try {
+            setCall(
+              normalizeCall(
+                await fetchSalesJson(
+                  `${BASE}/calls/${encodeURIComponent(created.id)}/actions`,
+                  {
+                    method: "POST",
+                    body: JSON.stringify({ action: "end_call" }),
+                  },
+                ),
+              ),
+            );
+          } catch {}
+        } else releaseMic();
+        throw err;
+      }
+    });
+  const callAction = (action) => {
+    const activeCall = callRef.current;
+    if (!activeCall?.id) return;
+    if (action === "end_call") {
+      if (endingCallIds.current.has(activeCall.id)) return;
+      endingCallIds.current.add(activeCall.id);
+      void softphone.current?.hangup();
+      releaseMic();
+    }
+    return run(action, async () => {
+      const callId = activeCall.id;
+      const wasMuted = muted;
+      try {
+        if (action === "start_demo") {
+          mute(true);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          if (endingCallIds.current.has(callId)) return;
+        }
+        const next = normalizeCall(
+          await fetchSalesJson(
+            `${BASE}/calls/${encodeURIComponent(callId)}/actions`,
+            { method: "POST", body: JSON.stringify({ action }) },
+          ),
+        );
+        if (action !== "end_call" && endingCallIds.current.has(callId)) {
+          // An already submitted demo action may finish after the first hangup.
+          // Reassert hangup, and never display its stale live state.
+          if (!next.terminal)
+            await fetchSalesJson(
+              `${BASE}/calls/${encodeURIComponent(callId)}/actions`,
+              { method: "POST", body: JSON.stringify({ action: "end_call" }) },
+            );
+          return;
+        }
+        if (callRef.current?.id !== callId) return;
+        setCall(next);
+        if (action === "end_demo") mute(false);
+        if (action === "end_call" || next.terminal) {
+          await softphone.current?.hangup();
+          releaseMic();
+          await loadQueue({ quiet: true });
+        }
+      } catch (err) {
+        if (action === "end_call") endingCallIds.current.delete(callId);
+        if (
+          action === "start_demo" &&
+          !wasMuted &&
+          !endingCallIds.current.has(callId)
+        ) {
+          try {
+            mute(false);
+          } catch {}
+        }
+        throw err;
+      }
+    });
+  };
+  const save = (selected) =>
+    run("outcome", async () => {
+      if (!call?.terminal)
+        throw new Error("End the call before saving its outcome.");
+      const choice =
+        (selected || outcome) === "paid"
+          ? "signup_link_sent"
+          : selected || outcome;
+      if (!choice) throw new Error("Select an outcome.");
+      await fetchSalesJson(
+        `${BASE}/calls/${encodeURIComponent(call.id)}/outcome`,
+        {
+          method: "POST",
+          idempotencyKey: `sales-outcome-${call.id}`,
+          body: JSON.stringify({
+            outcome: choice,
+            notes: noteRef.current,
+            liveNotes: noteRef.current,
+            callbackAt:
+              choice === "callback_requested" ? callbackAt : undefined,
+            dncReason: choice === "do_not_call" ? dncReason : undefined,
+          }),
+        },
+      );
+      const next = await loadQueue({ quiet: true });
+      const draft = wrapupDrafts.current.pop();
+      setPendingWrapups(wrapupDrafts.current.length);
+      setCall(draft?.call || null);
+      callRef.current = draft?.call || null;
+      setProspect(draft?.prospect || next?.current || null);
+      setOutcome(draft?.outcome || "");
+      setNote(draft?.note || "");
+      savedNote.current = draft?.savedNote || "";
+      setCallbackAt(draft?.callbackAt || "");
+      setDncReason(draft?.dncReason || "");
+      incomingTaken.current = draft?.incomingId || "";
+      setIncoming((current) => current.filter((i) => i.state !== "taken"));
+    });
+  const chooseOutcome = (value) => {
+    setOutcome(value);
+    if (mayQuickAdvance({ call, outcome: value, note: noteRef.current }))
+      void save(value);
+  };
+  const queueAction = (action) =>
+    run(action, async () => {
+      if (call?.id && !call.terminal) return;
+      await fetchSalesJson(
+        `${BASE}/prospects/${encodeURIComponent(prospect.id)}/${action}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            reason: action === "skip" ? "Skip for now" : undefined,
+          }),
+        },
+      );
+      setCall(null);
+      callRef.current = null;
+      const next = await loadQueue({ quiet: true });
+      setProspect(next?.current || null);
+      setNote("");
+      setOutcome("");
+    });
+  const checkout = (details) =>
+    run("checkout", async () => {
+      const result = await fetchSalesJson(
+        `${BASE}/calls/${encodeURIComponent(call.id)}/checkout`,
+        {
+          method: "POST",
+          idempotencyKey: `sales-checkout-${call.id}-${details.channel}`,
+          body: JSON.stringify(details),
+        },
+      );
+      if (!result.call) throw new Error("Checkout delivery was not confirmed.");
+      setCall(normalizeCall(result));
+      setOutcome("signup_link_sent");
+      await loadQueue({ quiet: true });
+    });
+  const book = (details) =>
+    run("booking", async () => {
+      const result = await fetchSalesJson(
+        `${BASE}/calls/${encodeURIComponent(call.id)}/booking`,
+        {
+          method: "POST",
+          idempotencyKey: `sales-booking-${call.id}-${details.start}`,
+          body: JSON.stringify(details),
+        },
+      );
+      if (!result.booking)
+        throw new Error("The calendar did not confirm a booking.");
+      if (result.call) setCall(normalizeCall(result));
+      await loadSlots();
+    });
+  const incomingAction = (item, action, details = {}) =>
+    run("incoming", async () => {
+      if (
+        ["match", "create"].includes(action) &&
+        (!incomingTaken.current || item.incomingId !== incomingTaken.current)
+      )
+        throw new Error("Take this incoming call before finding or adding its prospect.");
+      if (action === "take") {
+        if (call?.id && !call.terminal)
+          throw new Error("Finish the current call first.");
+        if (!softphone.current?.isReady())
+          throw new Error("Reconnect browser calling before taking a call.");
+        await ensureMicrophone();
+      }
+      const result = await fetchSalesJson(`${BASE}/incoming`, {
+        method: "POST",
+        body: JSON.stringify({
+          ...details,
+          incomingId: item.incomingId,
+          action,
+          interruptedProspectId: prospect?.id,
+        }),
+      });
+      if (action === "take" && !result.call)
+        throw new Error(
+          "The incoming call was not confirmed. Your wrap-up is unchanged.",
+        );
+      if (action === "take" && callRef.current?.terminal) {
+        wrapupDrafts.current.push({
+          prospect: prospectRef.current,
+          call: callRef.current,
+          note: noteRef.current,
+          outcome,
+          callbackAt,
+          dncReason,
+          savedNote: savedNote.current,
+          incomingId: incomingTaken.current,
+        });
+        setPendingWrapups(wrapupDrafts.current.length);
+      }
+      if (Object.prototype.hasOwnProperty.call(result, "prospect")) {
+        setProspect(
+          result.prospect
+            ? normalizeProspect(result.prospect)
+            : normalizeProspect({
+                businessName: "Unknown caller",
+                phone: item.phoneE164,
+                numbers: [
+                  { phoneE164: item.phoneE164, label: "Caller", type: "other" },
+                ],
+                eligible: false,
+                coreFacts: [],
+              }),
+        );
+      }
+      if (result.call) {
+        const next = normalizeCall(result);
+        setCall(next);
+        if (action === "take") {
+          setNote(next.liveNotes || "");
+          setOutcome("");
+          setCallbackAt("");
+          setDncReason("");
+          savedNote.current = next.liveNotes || "";
+          incomingTaken.current = item.incomingId;
+          if (softphone.current.hasIncomingCall?.())
+            await softphone.current.answerIncoming(microphone.current);
+          else if (next.webrtc?.callOptions?.destinationNumber)
+            softphone.current.placeCall(
+              next.webrtc.callOptions,
+              microphone.current,
+            );
+          else
+            throw new Error(
+              "The incoming browser audio leg is not available yet.",
+            );
+        }
+      }
+      if (action === "take" && !item.prospectId)
+        setIncoming((current) =>
+          current.map((i) =>
+            i.incomingId === item.incomingId ? { ...i, state: "taken" } : i,
+          ),
+        );
+      else
+        setIncoming((current) =>
+          current.filter((i) => i.incomingId !== item.incomingId),
+        );
+      if (["create", "match"].includes(action)) incomingTaken.current = "";
+      await loadQueue({ quiet: true });
+    });
+  const prepareReturn = (item, websiteUrl) =>
+    run("prepare-return", async () => {
+      await fetchSalesJson(`${BASE}/incoming`, {
+        method: "POST",
+        body: JSON.stringify({ incomingId: item.incomingId, action: "create", websiteUrl }),
+      });
+      await loadQueue({ quiet: true });
+    });
+  const search = async (query) => {
+    const current = ++searchGeneration.current;
+    if (query.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    try {
+      const result = await fetchSalesJson(
+        `${BASE}/prospects?search=${encodeURIComponent(query)}`,
+      );
+      if (current === searchGeneration.current)
+        setSearchResults(
+          (result.prospects || []).map(normalizeProspect).slice(0, 5),
+        );
+    } catch {
+      if (current === searchGeneration.current) setSearchResults([]);
+    }
+  };
+  const signOut = async () => {
+    await Promise.allSettled([
+      fetch("/api/v1/sales/auth/logout", { method: "POST" }),
+      fetch("/api/v1/auth/logout", { method: "POST" }),
+    ]);
+    window.location.assign("/sales/login");
+  };
   return (
-    <Card>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="m-0 text-base font-semibold text-slate-950">Call & demo</h2>
-          <p className="mt-1 text-sm text-slate-500">You stay connected while the receptionist demonstrates the call.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <StatusPill status={call?.state || 'Not started'} tone={call?.prospectConnected ? 'blue' : undefined} />
-          <StatusPill status={`Receptionist: ${displayStatus(call?.aiState || 'Not started')}`} tone={call?.aiReady ? 'good' : 'warn'} />
-        </div>
-      </div>
-
+    <>
       <audio
         id="sales-console-remote-audio"
         ref={remoteAudioRef}
         autoPlay
         playsInline
-        className="hidden"
+        hidden
         aria-label="Remote call audio"
       />
-
-
-
-      <ErrorNotice title="Calling unavailable" message={softphoneError ? (/credential|not_configured|configuration|api_key|caller_id|operator_inactive/i.test(softphoneError) ? 'Calling is not set up for your account. Ask an administrator to finish phone setup.' : 'Browser calling needs attention. Reconnect, check microphone access, or open Calling status below.') : ''} />
-      <ErrorNotice title="Call error" message={providerError} />
-
-      {softphoneState === 'error' || softphoneState === 'disconnected' ? (
-        <div className="mt-3">
-          <ActionButton tone="secondary" onClick={onReconnect} disabled={Boolean(busyAction)}>
-            Reconnect browser calling
-          </ActionButton>
-        </div>
-      ) : null}
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        <ActionButton
-          onClick={onCall}
-          disabled={Boolean(callBlocked)}
-          title={callBlockedMessage}
-        >
-          {busyAction === 'call' ? 'Calling…' : 'Call'}
-        </ActionButton>
-        <ActionButton
-          onClick={onToggleMute}
-          disabled={Boolean(busyAction) || !call?.id || call?.terminal}
-          title={!call?.id || call?.terminal ? 'There is no active call to mute.' : ''}
-          tone={operatorMuted ? 'amber' : 'secondary'}
-          ariaPressed={operatorMuted}
-        >
-          {operatorMuted ? 'Unmute' : 'Mute'}
-        </ActionButton>
-        <ActionButton
-          onClick={() => onAction('start_demo')}
-          disabled={Boolean(demoBlocked)}
-          title={demoBlocked}
-          tone="amber"
-        >
-          {busyAction === 'start_demo' ? 'Starting receptionist…' : 'Start Receptionist'}
-        </ActionButton>
-        <ActionButton
-          onClick={() => onAction('end_demo')}
-          disabled={Boolean(busyAction) || !call?.aiLive || call?.terminal}
-          title={!call?.aiLive ? 'The AI has not joined this call.' : ''}
-          tone="secondary"
-        >
-          {busyAction === 'end_demo' ? 'Ending receptionist…' : 'End Receptionist'}
-        </ActionButton>
-        <ActionButton
-          onClick={() => onAction('end_call')}
-          disabled={Boolean(busyAction) || !call?.id || call?.terminal}
-          title={!call?.id || call?.terminal ? 'There is no active call to end.' : ''}
-          tone="danger"
-        >
-          {busyAction === 'end_call' ? 'Ending call…' : 'End Call'}
-        </ActionButton>
-      </div>
-
-      {callBlocked && prospect ? (
-        <p className="mt-3 text-xs text-slate-500">Call unavailable: {callBlockedMessage}</p>
-      ) : null}
-      {demoBlocked && call?.id && !call?.aiLive ? (
-        <p className="mt-1 text-xs text-slate-500">Start Receptionist unavailable: {demoBlocked}</p>
-      ) : null}
-
-      <details className="mt-4 text-sm text-slate-600">
-        <summary className="cursor-pointer font-semibold">Calling status</summary>
-        {callBlocked !== callBlockedMessage ? <p className="mt-2 text-xs">{callBlocked}</p> : null}
-        {softphoneError ? <p className="mt-2 break-words text-xs text-red-700">{softphoneError}</p> : null}
-      <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
-        <Detail label="Browser calling" value={displayStatus(softphoneState)} />
-        <Detail label="Microphone" value={displayStatus(microphoneState)} />
-        <Detail label="Browser call" value={displayStatus(browserCallState)} />
-        <Detail label="Prospect" value={call?.prospectConnected ? 'Connected' : displayStatus(call?.state || 'Not started')} />
-        <Detail label="Receptionist" value={call?.aiReady ? 'Ready' : displayStatus(call?.aiState || 'Not started')} />
-      </div>
-      </details>
-
-      <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-        <span className="font-semibold">Your microphone mutes automatically.</span> Starting the receptionist mutes your microphone; ending the demo restores it. Use Mute or Unmute to override.
-      </div>
-    </Card>
-  );
-}
-
-function ConversionPanel({
-  prospect,
-  call,
-  invitation,
-  busyAction,
-  setupOpen,
-  setSetupOpen,
-  contactFields,
-  setContactFields,
-  outcome,
-  setOutcome,
-  note,
-  setNote,
-  onSendInvitation,
-  onSaveOutcome
-}) {
-  const progress = invitationProgress(invitation);
-  const signupStatus = invitation?.attentionRequired
-    ? 'attention_required'
-    : invitation?.accountStatus === 'account_ready'
-      ? 'account_ready'
-      : invitation?.provisioningStatus || invitation?.status;
-  const canStartSetup = Boolean(prospect?.id && call?.id && call.prospectConnected && !call.terminal);
-  const canSend = canStartSetup
-    && Boolean(contactFields.email.trim())
-    && Boolean(contactFields.leadDeliveryEmail.trim());
-  const outcomeBlocked = Boolean(outcome) && (!call?.id || !call.terminal);
-
-  return (
-    <Card className="h-fit">
-      <h2 className="m-0 text-base font-semibold text-slate-950">Wrap up</h2>
-      <p className="mt-1 text-sm text-slate-500">End the call, save the outcome, and move to the next prospect.</p>
-
-      <div className="mt-4">
-        <ActionButton
-          className="w-full"
-          tone="secondary"
-          onClick={() => setSetupOpen((current) => !current)}
-          disabled={!canStartSetup && !setupOpen}
-          title={!canStartSetup ? 'Connect the prospect before starting assisted setup.' : ''}
-        >
-          {setupOpen ? 'Hide signup' : 'Help prospect sign up'}
-        </ActionButton>
-      </div>
-
-      {setupOpen ? (
-        <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4">
-          <Field label="Confirmed contact name">
-            <TextInput
-              value={contactFields.contactName}
-              onChange={(event) => setContactFields((current) => ({ ...current, contactName: event.target.value }))}
-              autoComplete="name"
-            />
-          </Field>
-          <Field label="Confirmed login email">
-            <TextInput
-              type="email"
-              value={contactFields.email}
-              onChange={(event) => setContactFields((current) => ({ ...current, email: event.target.value }))}
-              autoComplete="email"
-              required
-            />
-          </Field>
-          <Field label="Confirmed lead-delivery email">
-            <TextInput
-              type="email"
-              value={contactFields.leadDeliveryEmail}
-              onChange={(event) => setContactFields((current) => ({ ...current, leadDeliveryEmail: event.target.value }))}
-              autoComplete="email"
-              required
-            />
-          </Field>
-          <ActionButton
-            className="w-full"
-            onClick={onSendInvitation}
-            disabled={Boolean(busyAction) || !canSend}
-            title={!canSend ? 'Confirm both email addresses while the prospect is connected.' : ''}
-          >
-            {busyAction === 'invitation' ? 'Sending…' : 'Send Signup Link'}
-          </ActionButton>
-          <p className="m-0 text-xs text-slate-500">
-            The prospect reviews the prefilled intake, creates their own password, and accepts the required terms.
-          </p>
-        </div>
-      ) : null}
-
-      {invitation?.id ? (
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3" aria-live="polite">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-semibold text-slate-900">Signup status</div>
-            <StatusPill
-              status={signupStatus}
-              tone={invitation.attentionRequired ? 'bad' : progress >= 0 ? 'blue' : 'warn'}
-            />
-          </div>
-          <ol className="mt-3 grid gap-2">
-            {SIGNUP_STEPS.map((step, index) => {
-              const reached = index <= progress;
-              const current = index === progress;
-              return (
-                <li key={step.key} className="flex items-center gap-2 text-sm">
-                  <span
-                    aria-hidden="true"
-                    className={`h-2.5 w-2.5 rounded-full ${reached ? 'bg-[#004ac6]' : 'bg-slate-300'} ${current ? 'ring-4 ring-blue-100' : ''}`}
-                  />
-                  <span className={reached ? 'font-semibold text-slate-900' : 'text-slate-500'}>{step.label}</span>
-                </li>
-              );
-            })}
-          </ol>
-          <div className="mt-3 text-xs text-slate-500">
-            Delivery: {displayStatus(invitation.deliveryStatus)}
-            {invitation.expiresAt ? ` · Expires ${new Date(invitation.expiresAt).toLocaleString()}` : ''}
-            {invitation.provisionedNumber ? ` · Number ${invitation.provisionedNumber}` : ''}
-          </div>
-          {invitation.attentionRequired ? (
-            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-800">
-              {invitation.provisioningErrorMessage
-                || invitation.provisioningStatusDetail
-                || 'Number setup needs attention.'}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="mt-5 grid gap-3 border-t border-slate-100 pt-4">
-        <Field label="Call outcome">
-          <select
-            value={outcome}
-            onChange={(event) => setOutcome(event.target.value)}
-            className="min-h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#004ac6] focus:ring-2 focus:ring-[#004ac6]/15"
-          >
-            <option value="">Select an outcome</option>
-            {OUTCOMES.map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Call notes">
-          <textarea
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            rows={4}
-            maxLength={4000}
-            placeholder="What should you know before the next call?"
-            className="w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#004ac6] focus:ring-2 focus:ring-[#004ac6]/15"
-          />
-        </Field>
-        <ActionButton
-          className="w-full"
-          tone="secondary"
-          onClick={onSaveOutcome}
-          disabled={Boolean(busyAction) || !prospect?.id || (!outcome && !note.trim()) || outcomeBlocked}
-          title={outcomeBlocked ? 'End the live call before recording its outcome.' : ''}
-        >
-          {busyAction === 'outcome' ? 'Saving…' : outcome ? 'Save & next prospect' : 'Save notes'}
-        </ActionButton>
-      </div>
-    </Card>
-  );
-}
-
-export default function CallerWorkspace() {
-  const { queue, queueLoading, queueError, loadQueue, warmQueue } = useSalesQueue({ autoWarm: true });
-  const [call, setCall] = useState(null);
-  const [invitation, setInvitation] = useState(null);
-  const [busyAction, setBusyAction] = useState('');
-  const [operationError, setOperationError] = useState('');
-  const [callRefreshError, setCallRefreshError] = useState('');
-  const [microphoneState, setMicrophoneState] = useState('Not requested');
-  const [operatorMuted, setOperatorMuted] = useState(false);
-  const [softphoneState, setSoftphoneState] = useState('Loading token');
-  const [softphoneError, setSoftphoneError] = useState('');
-  const [browserCallState, setBrowserCallState] = useState('Not started');
-  const [setupOpen, setSetupOpen] = useState(false);
-  const [contactFields, setContactFields] = useState({
-    contactName: '',
-    email: '',
-    leadDeliveryEmail: ''
-  });
-  const [outcome, setOutcome] = useState('');
-  const [note, setNote] = useState('');
-  const remoteAudioRef = useRef(null);
-  const microphoneStreamRef = useRef(null);
-  const softphoneRef = useRef(null);
-  const browserCallRef = useRef(null);
-  const softphoneGenerationRef = useRef(0);
-  const lastTerminalCallRef = useRef('');
-  const callCreateAttemptRef = useRef({ prospectId: '', idempotencyKey: '' });
-  const noteCreateAttemptRef = useRef({
-    prospectId: '',
-    salesCallId: '',
-    body: '',
-    idempotencyKey: ''
-  });
-
-  const releaseMicrophone = useCallback(() => {
-    microphoneStreamRef.current?.getTracks?.().forEach((track) => track.stop());
-    microphoneStreamRef.current = null;
-    setMicrophoneState('Released');
-    setOperatorMuted(false);
-  }, []);
-
-  const setBrowserCallMuted = useCallback((muted) => {
-    const nextMuted = softphoneRef.current?.setMuted(Boolean(muted));
-    if (typeof nextMuted !== 'boolean') {
-      throw new Error('There is no active browser call to mute.');
-    }
-    setOperatorMuted(nextMuted);
-    setMicrophoneState(nextMuted ? 'Muted' : 'Live');
-    return nextMuted;
-  }, []);
-
-  useEffect(() => {
-    const prospect = queue.current;
-    setContactFields({
-      contactName: prospect?.contactName || '',
-      email: prospect?.email || '',
-      leadDeliveryEmail: prospect?.leadDeliveryEmail || prospect?.email || ''
-    });
-    setOutcome(prospect?.outcome || '');
-    setNote(prospect?.note || '');
-    setSetupOpen(false);
-    setInvitation(null);
-    noteCreateAttemptRef.current = {
-      prospectId: '',
-      salesCallId: '',
-      body: '',
-      idempotencyKey: ''
-    };
-    setCall((current) => (
-      current?.prospectId && current.prospectId !== prospect?.id ? null : current
-    ));
-  }, [queue.current?.id]);
-
-  const initializeSoftphone = useCallback(async () => {
-    const generation = softphoneGenerationRef.current + 1;
-    softphoneGenerationRef.current = generation;
-    setSoftphoneState('Loading token');
-    setSoftphoneError('');
-    const previous = softphoneRef.current;
-    softphoneRef.current = null;
-    browserCallRef.current = null;
-    if (previous) await previous.disconnect();
-
-    try {
-      const payload = await fetchSalesJson('/api/v1/admin/sales/webrtc-token');
-      const config = normalizeWebrtc(payload);
-      if (!config.token) throw new Error('The server did not provide a Telnyx WebRTC token.');
-      if (generation !== softphoneGenerationRef.current) return;
-      const client = await connectTelnyxBrowserClient({
-        token: config.token,
-        remoteElement: remoteAudioRef.current,
-        onState: (state) => {
-          if (generation === softphoneGenerationRef.current) setSoftphoneState(state);
-        },
-        onError: (message) => {
-          if (generation !== softphoneGenerationRef.current) return;
-          setSoftphoneError(message);
-          if (browserCallRef.current) setBrowserCallState('Error');
-        },
-        onCallUpdate: (update) => {
-          if (generation !== softphoneGenerationRef.current) return;
-          browserCallRef.current = update.call || browserCallRef.current;
-          setBrowserCallState(update.state || 'unknown');
-          if (update.cause && !['normal_clearing', 'originator_cancel'].includes(update.cause.toLowerCase())) {
-            setSoftphoneError(`${update.cause}${update.causeCode ? ` (${update.causeCode})` : ''}`);
-          }
-          if (['destroy', 'hangup', 'purge', 'ended'].includes(update.state)) {
-            releaseMicrophone();
-          }
-        }
-      });
-      if (generation !== softphoneGenerationRef.current) {
-        await client.disconnect();
-        return;
-      }
-      softphoneRef.current = client;
-      setSoftphoneState('ready');
-    } catch (error) {
-      if (generation !== softphoneGenerationRef.current) return;
-      setSoftphoneState('error');
-      setSoftphoneError(error?.message || 'Telnyx browser calling could not connect.');
-    }
-  }, [releaseMicrophone]);
-
-  useEffect(() => {
-    void initializeSoftphone();
-    return () => {
-      softphoneGenerationRef.current += 1;
-      const client = softphoneRef.current;
-      softphoneRef.current = null;
-      if (client) void client.disconnect();
-    };
-  }, [initializeSoftphone]);
-
-  const pollCall = useCallback(async () => {
-    if (!call?.id) return;
-    try {
-      const payload = await fetchSalesJson(`/api/v1/admin/sales/calls/${encodeURIComponent(call.id)}`);
-      const nextCall = normalizeCall(payload);
-      setCallRefreshError('');
-      setCall(nextCall);
-      if (nextCall.signup) setInvitation(normalizeInvitation(nextCall.signup));
-      if (nextCall.terminal && lastTerminalCallRef.current !== nextCall.id) {
-        lastTerminalCallRef.current = nextCall.id;
-        await loadQueue({ quiet: true });
-      }
-    } catch (error) {
-      setCallRefreshError(error?.message || 'Could not refresh the call state.');
-    }
-  }, [call?.id, loadQueue]);
-
-  useEffect(() => {
-    if (!call?.id) return undefined;
-    const invitationComplete = invitation && (
-      ['account_ready', 'ready', 'completed', 'expired', 'failed', 'revoked'].includes(invitation.status)
-      || ['account_ready', 'ready', 'attention_required'].includes(invitation.accountStatus)
-    );
-    if (call.terminal && (!invitation || invitationComplete)) return undefined;
-    const interval = window.setInterval(() => { void pollCall(); }, call.terminal ? 3000 : 1500);
-    return () => window.clearInterval(interval);
-  }, [call?.id, call?.terminal, invitation?.id, invitation?.status, invitation?.accountStatus, pollCall]);
-
-  useEffect(() => () => {
-    microphoneStreamRef.current?.getTracks?.().forEach((track) => track.stop());
-  }, []);
-
-  useEffect(() => {
-    if (!call?.terminal) return;
-    if (softphoneRef.current) void softphoneRef.current.hangup();
-    browserCallRef.current = null;
-    releaseMicrophone();
-  }, [call?.terminal, releaseMicrophone]);
-
-  const ensureMicrophone = async () => {
-    if (microphoneStreamRef.current?.active) return;
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error('This browser does not provide microphone access.');
-    }
-    setMicrophoneState('Requesting permission');
-    try {
-      microphoneStreamRef.current = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-      setMicrophoneState('Permission granted');
-    } catch (error) {
-      setMicrophoneState('Permission denied');
-      throw new Error(error?.name === 'NotAllowedError'
-        ? 'Microphone permission is required for browser calling.'
-        : 'The browser microphone could not be opened.');
-    }
-  };
-
-  const startCall = async () => {
-    const prospect = queue.current;
-    if (!prospect?.id) return;
-    setBusyAction('call');
-    setOperationError('');
-    setCallRefreshError('');
-    setSoftphoneError('');
-    setBrowserCallState('Starting');
-    let createdCall = null;
-    if (callCreateAttemptRef.current.prospectId !== prospect.id
-      || !callCreateAttemptRef.current.idempotencyKey) {
-      callCreateAttemptRef.current = {
-        prospectId: prospect.id,
-        idempotencyKey: globalThis.crypto?.randomUUID?.()
-          || `sales-call-${prospect.id}-${Date.now()}`
-      };
-    }
-    try {
-      if (!softphoneRef.current?.isReady()) {
-        throw new Error('Telnyx browser calling is not ready.');
-      }
-      await ensureMicrophone();
-      const payload = await fetchSalesJson('/api/v1/admin/sales/calls', {
-        method: 'POST',
-        idempotencyKey: callCreateAttemptRef.current.idempotencyKey,
-        body: JSON.stringify({ prospectId: prospect.id })
-      });
-      const nextCall = normalizeCall(payload);
-      if (!nextCall.id) throw new Error('The server did not return a sales call ID.');
-      createdCall = nextCall;
-      setCall(nextCall);
-      setInvitation(nextCall.signup ? normalizeInvitation(nextCall.signup) : null);
-      setSetupOpen(false);
-      setOutcome('');
-      setNote('');
-      callCreateAttemptRef.current = { prospectId: '', idempotencyKey: '' };
-      const callOptions = nextCall.webrtc?.callOptions || {};
-      browserCallRef.current = softphoneRef.current.placeCall(
-        callOptions,
-        microphoneStreamRef.current
-      );
-      setOperatorMuted(false);
-      setMicrophoneState('Live');
-    } catch (error) {
-      setOperationError(error?.message || 'The call could not be started.');
-      setBrowserCallState('Failed');
-      if (createdCall?.id) {
-        try {
-          const cleanupPayload = await fetchSalesJson(`/api/v1/admin/sales/calls/${encodeURIComponent(createdCall.id)}/actions`, {
-            method: 'POST',
-            body: JSON.stringify({ action: 'end_call' })
-          });
-          setCall(normalizeCall(cleanupPayload));
-          callCreateAttemptRef.current = { prospectId: '', idempotencyKey: '' };
-        } catch {
-          // The original browser-call error remains primary; polling can still reconcile this call.
-        }
-      }
-    } finally {
-      setBusyAction('');
-    }
-  };
-
-  const performCallAction = async (action) => {
-    if (!call?.id) return;
-    setBusyAction(action);
-    setOperationError('');
-    const wasOperatorMuted = operatorMuted;
-    try {
-      if (action === 'start_demo') {
-        setBrowserCallMuted(true);
-        await new Promise((resolve) => window.setTimeout(resolve, RECEPTIONIST_MUTE_SETTLE_MS));
-      }
-      const payload = await fetchSalesJson(`/api/v1/admin/sales/calls/${encodeURIComponent(call.id)}/actions`, {
-        method: 'POST',
-        body: JSON.stringify({ action })
-      });
-      const nextCall = normalizeCall(payload);
-      if (!nextCall.id) throw new Error('The server did not return the updated call state.');
-      setCall(nextCall);
-      if (nextCall.signup) setInvitation(normalizeInvitation(nextCall.signup));
-      if (action === 'end_demo') setBrowserCallMuted(false);
-      if (nextCall.terminal || action === 'end_call') {
-        await softphoneRef.current?.hangup();
-        browserCallRef.current = null;
-        releaseMicrophone();
-        await loadQueue({ quiet: true });
-      }
-    } catch (error) {
-      if (action === 'start_demo' && !wasOperatorMuted) {
-        try {
-          setBrowserCallMuted(false);
-        } catch {
-          // Keep the original receptionist-start failure as the actionable error.
-        }
-      }
-      setOperationError(error?.message || `${displayStatus(action)} failed.`);
-    } finally {
-      setBusyAction('');
-    }
-  };
-
-  const toggleOperatorMute = () => {
-    setSoftphoneError('');
-    try {
-      setBrowserCallMuted(!operatorMuted);
-    } catch (error) {
-      setSoftphoneError(error?.message || 'The browser microphone could not be muted.');
-    }
-  };
-
-  const sendInvitation = async () => {
-    const prospect = queue.current;
-    if (!prospect?.id || !call?.id) return;
-    setBusyAction('invitation');
-    setOperationError('');
-    try {
-      const payload = await fetchSalesJson(`/api/v1/admin/sales/prospects/${encodeURIComponent(prospect.id)}/signup-invitations`, {
-        method: 'POST',
-        idempotencyKey: `sales-signup-${call.id}`,
-        body: JSON.stringify({
-          salesCallId: call.id,
-          contactEmail: contactFields.email.trim(),
-          leadDeliveryEmail: contactFields.leadDeliveryEmail.trim(),
-        })
-      });
-      const nextInvitation = normalizeInvitation(payload);
-      if (!nextInvitation.id) throw new Error('The server did not return a signup invitation ID.');
-      setInvitation(nextInvitation);
-      await pollCall();
-    } catch (error) {
-      setOperationError(error?.message || 'The signup link could not be sent.');
-    } finally {
-      setBusyAction('');
-    }
-  };
-
-  const saveOutcome = async () => {
-    const prospect = queue.current;
-    if (!prospect?.id) return;
-    setBusyAction('outcome');
-    setOperationError('');
-    try {
-      await fetchSalesJson(`/api/v1/admin/sales/prospects/${encodeURIComponent(prospect.id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          contactName: contactFields.contactName.trim(),
-          contactEmail: contactFields.email.trim(),
-          leadDeliveryEmail: contactFields.leadDeliveryEmail.trim()
-        })
-      });
-      if (outcome) {
-        if (!call?.id) throw new Error('A sales call is required before recording an outcome.');
-        const outcomePayload = await fetchSalesJson(`/api/v1/admin/sales/calls/${encodeURIComponent(call.id)}/outcome`, {
-          method: 'POST',
-          idempotencyKey: `sales-outcome-${call.id}`,
-          body: JSON.stringify({ outcome, notes: note.trim() })
-        });
-        setCall(normalizeCall(outcomePayload));
-      } else if (note.trim()) {
-        const noteRequest = {
-          prospectId: prospect.id,
-          salesCallId: call?.id || '',
-          body: note.trim()
-        };
-        const previousAttempt = noteCreateAttemptRef.current;
-        if (
-          previousAttempt.prospectId !== noteRequest.prospectId
-          || previousAttempt.salesCallId !== noteRequest.salesCallId
-          || previousAttempt.body !== noteRequest.body
-          || !previousAttempt.idempotencyKey
-        ) {
-          noteCreateAttemptRef.current = {
-            ...noteRequest,
-            idempotencyKey: globalThis.crypto?.randomUUID?.()
-              || `sales-note-${prospect.id}-${Date.now()}`
-          };
-        }
-        await fetchSalesJson(`/api/v1/admin/sales/prospects/${encodeURIComponent(prospect.id)}/notes`, {
-          method: 'POST',
-          idempotencyKey: noteCreateAttemptRef.current.idempotencyKey,
-          body: JSON.stringify({
-            salesCallId: call?.id || null,
-            body: note.trim()
-          })
-        });
-        noteCreateAttemptRef.current = {
-          prospectId: '',
-          salesCallId: '',
-          body: '',
-          idempotencyKey: ''
-        };
-      }
-      const loadedQueue = await loadQueue({ quiet: true });
-      await warmQueue({
-        quiet: true,
-        currentProspectId: loadedQueue?.currentProspectId || ''
-      });
-    } catch (error) {
-      setOperationError(error?.message || 'The outcome and note could not be saved.');
-    } finally {
-      setBusyAction('');
-    }
-  };
-
-  return (
-    <div className="grid gap-4 pb-8">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="m-0 text-2xl font-semibold tracking-tight text-slate-950">Sales calls</h1>
-          <p className="mt-1 text-sm text-slate-500">Call your prospect, introduce the receptionist, then save the outcome to move on.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-semibold text-slate-600" aria-live="polite">{queue.prospects.length} in your queue</span>
-          <ActionButton tone="secondary" onClick={() => { void loadQueue(); }} disabled={queueLoading}>
-            {queueLoading ? 'Refreshing…' : 'Refresh prospects'}
-          </ActionButton>
-        </div>
-      </header>
-      <ErrorNotice title="Action failed" message={operationError} />
-      <ErrorNotice title="Call status unavailable" message={callRefreshError} />
-      <ErrorNotice title="Prospects unavailable" message={queueError} />
-
-      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-        <p className="m-0 text-xs font-semibold uppercase tracking-wider text-blue-700">Current prospect</p>
-        <h2 className="mt-1 text-xl font-semibold text-slate-950">{queue.current?.businessName || (queueLoading ? 'Loading prospects…' : 'No prospects to call')}</h2>
-        <p className="mt-1 text-sm text-slate-700">{queue.current ? [queue.current.contactName, queue.current.phone].filter(Boolean).join(' · ') : 'An administrator can add prospects and prepare them for calling.'}</p>
-      </div>
-      <ProspectPanel prospect={queue.current} />
-      <CallPanel
-        prospect={queue.current}
+      <DialerScreen
+        key={`${prospect?.id || "empty"}:${incomingTaken.current || ""}`}
+        queue={queue}
+        prospect={prospect}
         call={call}
-        busyAction={busyAction}
+        busy={busy}
+        error={[error, call?.providerError, queueError]
+          .filter(Boolean)
+          .join(" · ")}
         microphoneState={microphoneState}
-        operatorMuted={operatorMuted}
+        pendingWrapups={pendingWrapups}
         softphoneState={softphoneState}
-        softphoneError={softphoneError}
-        browserCallState={browserCallState}
-        remoteAudioRef={remoteAudioRef}
-        onCall={() => { void startCall(); }}
-        onAction={(action) => { void performCallAction(action); }}
-        onToggleMute={toggleOperatorMute}
-        onReconnect={() => { void initializeSoftphone(); }}
-      />
-      <ConversionPanel
-        prospect={queue.current}
-        call={call}
-        invitation={invitation}
-        busyAction={busyAction}
-        setupOpen={setupOpen}
-        setSetupOpen={setSetupOpen}
-        contactFields={contactFields}
-        setContactFields={setContactFields}
-        outcome={outcome}
-        setOutcome={setOutcome}
+        muted={muted}
         note={note}
-        setNote={setNote}
-        onSendInvitation={() => { void sendInvitation(); }}
-        onSaveOutcome={() => { void saveOutcome(); }}
+        outcome={outcome}
+        callbackAt={callbackAt}
+        dncReason={dncReason}
+        now={now}
+        onNote={setNote}
+        onOutcome={chooseOutcome}
+        onCallback={(value) => {
+          setCallbackAt(value);
+          setOutcome("callback_requested");
+        }}
+        onDncReason={(value) => {
+          setDncReason(value);
+          setOutcome("do_not_call");
+        }}
+        onCall={startCall}
+        onAction={callAction}
+        onMute={() => {
+          try {
+            mute(!muted);
+          } catch (err) {
+            setError(err.message);
+          }
+        }}
+        onReconnect={initializeSoftphone}
+        onSkip={() => queueAction("skip")}
+        onRemove={() => queueAction("remove")}
+        onSave={() => save()}
+        onCheckout={checkout}
+        onBook={book}
+        availability={availability}
+        onMoreSlots={() => loadSlots(availability.nextAfter || "")}
+        incoming={incoming}
+        onIncoming={incomingAction}
+        onPrepareReturn={prepareReturn}
+        searchResults={searchResults}
+        onSearch={search}
+        onSignOut={signOut}
       />
-    </div>
+    </>
   );
 }

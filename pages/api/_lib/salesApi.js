@@ -31,6 +31,10 @@ export async function requireSalesAdmin(req, res) {
       res.status(401).json({ ok: false, error: "unauthorized" });
       return null;
     }
+    if (req.query?.prospectId) {
+      const { assertSalesProspectOwner } = await import('./salesDialer.js');
+      await assertSalesProspectOwner(pool,String(req.query.prospectId),session.user.id);
+    }
     return { pool, session, admin: session.user };
   }
   const session = await requireSession(req, res, { role: "admin" });

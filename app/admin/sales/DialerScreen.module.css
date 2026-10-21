@@ -1,0 +1,894 @@
+.dialer {
+  --border: #e3e6eb;
+  --muted: #6b7280;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: #f4f5f8;
+  color: #111318;
+  font:
+    13px/1.4 Inter,
+    system-ui,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.dialer * {
+  box-sizing: border-box;
+}
+.dialer label {
+  margin-bottom: 0;
+}
+.dialer textarea {
+  min-height: 0;
+}
+.dialer input {
+  width: auto;
+}
+.dialer h1,
+.dialer h2,
+.dialer h3,
+.dialer p {
+  margin: 0;
+}
+.dialer h1 {
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 600;
+}
+.dialer h2 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.dialer h3,
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--muted);
+}
+.dialer a,
+.rep button {
+  color: #1f4fd8;
+  text-decoration: none;
+}
+.dialer a:hover {
+  text-decoration: underline;
+}
+.header {
+  height: 56px;
+  min-height: 56px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: white;
+  border-bottom: 1px solid var(--border);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.brand > span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  background: #1f4fd8;
+  color: #fff;
+  border-radius: 8px;
+}
+.counters {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: #5b6270;
+  font-size: 12px;
+}
+.counters strong {
+  color: #111318;
+}
+.readyCount {
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+}
+.rep {
+  display: flex;
+  gap: 14px;
+  white-space: nowrap;
+  color: #5b6270;
+}
+.rep button {
+  border: 0;
+  background: none;
+  font-size: 12px;
+  cursor: pointer;
+}
+.body {
+  display: grid;
+  grid-template-columns: minmax(320px, 350px) minmax(0, 1fr);
+  gap: 20px;
+  padding: 18px 24px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.prospect,
+.callPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 17px 19px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.prospectEyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.prospectEyebrow > .eyebrow {
+  color: #1f4fd8;
+  font-size: 10px;
+}
+.prospectEyebrow .button {
+  font-size: 10px;
+  min-height: 28px;
+  padding: 3px 7px;
+  white-space: nowrap;
+}
+.contact {
+  font-size: 14px;
+  color: #5b6270;
+}
+.numbers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.numbers > div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.numbers > div > span {
+  font-size: 10px;
+  text-transform: uppercase;
+  min-width: 32px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.numbers button {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 19px;
+  font-weight: 600;
+  color: #111318;
+  text-align: left;
+  cursor: pointer;
+  letter-spacing: -0.03em;
+}
+.numbers button:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.numbers small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.numbers .onLine {
+  color: #15803d;
+  font-weight: 600;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.chips > span,
+.chips > a {
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: #f1f3f6;
+  font-size: 11px;
+}
+.chips .pitch,
+.pitch {
+  background: #fff4e5;
+  color: #9a3412;
+}
+.chips .ask {
+  background: #eef2ff;
+  color: #1f4fd8;
+}
+.detail {
+  display: grid;
+  grid-template-columns: 77px minmax(0, 1fr);
+  gap: 9px;
+  align-items: baseline;
+  font-size: 12px;
+}
+.detail > span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.detail > div {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.factsTitle {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.factsTitle small {
+  font-size: 10px;
+  color: var(--muted);
+  min-width: 55px;
+}
+.caption {
+  font-size: 11px !important;
+  line-height: 1.4 !important;
+  color: #5b6270;
+}
+.callHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 7px;
+}
+.stepper {
+  display: flex;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  align-items: center;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.stepper li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.stepper li + li:before {
+  content: "";
+  height: 1px;
+  width: 18px;
+  background: var(--border);
+  margin-right: 3px;
+}
+.stepper li > span {
+  width: 22px;
+  height: 22px;
+  border: 1px solid #cfd4dc;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+}
+.stepper .current {
+  color: #111318;
+  font-weight: 600;
+}
+.stepper .current > span {
+  background: #1f4fd8;
+  color: #fff;
+  border-color: #1f4fd8;
+}
+.stepper .done > span {
+  background: #15803d;
+  border-color: #15803d;
+  color: white;
+}
+.pill {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #ecfdf3;
+  color: #166534;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pill:before {
+  content: "●";
+  margin-right: 7px;
+  font-size: 9px;
+}
+.amberPill {
+  background: #fff4e5;
+  color: #9a3412;
+}
+.endedPill {
+  background: #f1f3f6;
+  color: #475569;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 35px;
+  padding: 6px 12px;
+  border: 1px solid #cfd4dc;
+  border-radius: 8px;
+  background: white;
+  color: #111318;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.button:hover {
+  background: #f8f9fb;
+}
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  background: #f8f9fb;
+  color: #7b8495;
+}
+.button:focus-visible,
+.dialer input:focus-visible,
+.dialer textarea:focus-visible {
+  outline: 2px solid #1f4fd8;
+  outline-offset: 2px;
+}
+.button[aria-pressed="true"] {
+  background: #1f4fd8;
+  color: white;
+  border-color: #1f4fd8;
+}
+.button.large {
+  min-height: 49px;
+  padding: 11px 20px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.green {
+  background: #15803d;
+  color: #fff;
+  border-color: #15803d;
+}
+.green:hover {
+  background: #166534;
+}
+.greenOutline {
+  border-color: #15803d;
+  color: #15803d;
+}
+.amber {
+  background: #b45309;
+  color: white;
+  border-color: #b45309;
+}
+.amber:hover {
+  background: #92400e;
+}
+.blue {
+  background: #1f4fd8;
+  border-color: #1f4fd8;
+  color: white;
+}
+.blue:hover {
+  background: #1740b8;
+}
+.dangerOutline {
+  border-color: #fecaca;
+  color: #dc2626;
+  margin-left: auto;
+}
+.scriptTitle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.scriptTitle a,
+.scriptTitle small {
+  font-size: 11px;
+}
+.scriptLead {
+  font-size: 15px;
+  line-height: 1.55;
+}
+.scriptPart {
+  border-top: 1px solid #eef0f3;
+  padding-top: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.scriptPart p {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.twoColumns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.twoColumns .scriptPart p {
+  font-size: 12px;
+}
+.notes {
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.notes textarea {
+  width: 100%;
+  height: 65px;
+  resize: vertical;
+  max-height: 150px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  padding: 10px 12px;
+  border: 1px solid #cfd4dc;
+  border-radius: 8px;
+}
+.callPanel > section:has(.notes):last-child {
+  flex-shrink: 0;
+}
+.callPanel > section:has(.notes):only-child textarea {
+  height: 100px;
+}
+.footer {
+  background: white;
+  border-top: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  flex-shrink: 0;
+}
+.footerControls {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.footer .button {
+  font-size: 11px;
+  padding: 6px 9px;
+  min-height: 34px;
+}
+.footerControls > input {
+  flex: 1;
+  min-width: 150px;
+  max-width: 100%;
+  height: 34px;
+}
+.footerControls > .blue {
+  font-size: 12px;
+  min-height: 36px;
+  padding: 7px 13px;
+}
+.paid {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: #8b93a0;
+  font-size: 10px;
+  padding: 9px 8px;
+  white-space: nowrap;
+}
+.paidActive {
+  color: #15803d;
+  border-color: #15803d;
+}
+.footer > small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.dialer input {
+  min-width: 0;
+  border: 1px solid #cfd4dc;
+  border-radius: 7px;
+  padding: 8px 11px;
+  font: inherit;
+  background: white;
+  color: #111318;
+}
+.dialer input:disabled {
+  background: #f8f9fb;
+}
+.picker {
+  position: absolute;
+  bottom: 100%;
+  left: 24px;
+  right: 24px;
+  max-width: 620px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  box-shadow: 0 6px 24px #0002;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  z-index: 5;
+}
+.picker label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.closeCards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.closeCards .card {
+  padding: 15px;
+  gap: 8px;
+}
+.closeCards .card h2 {
+  font-size: 16px;
+}
+.closeCards p {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #475569;
+}
+.closeCards small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.closeCards label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.closeCards input {
+  font-size: 13px;
+}
+.checkout {
+  background: #f8faff;
+  border-color: #1f4fd8;
+}
+.slotGrid {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.slotGrid .button {
+  min-height: 29px;
+  font-size: 10px;
+  padding: 5px 8px;
+}
+.incoming {
+  background: #ecfdf3;
+  border-bottom: 1px solid #86efac;
+  padding: 10px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.incomingTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.incoming .eyebrow {
+  color: #047857;
+}
+.incoming p,
+.incoming small {
+  font-size: 11px;
+  color: #3f6260;
+}
+.incomingSearch {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.incomingSearch input {
+  flex: 1;
+  min-width: 200px;
+  height: 34px;
+  font-size: 11px;
+  border-color: #86efac;
+}
+.error {
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+  background: #fef2f2;
+  color: #991b1b;
+  padding: 8px 24px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.error .button {
+  min-height: 27px;
+}
+.pushRight {
+  margin-left: auto;
+}
+@media (min-width: 1200px) and (max-height: 850px) {
+  .body {
+    gap: 18px;
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+  .card {
+    padding: 14px 17px;
+    gap: 8px;
+  }
+  .prospect,
+  .callPanel {
+    gap: 10px;
+  }
+  .detail {
+    font-size: 11px;
+    gap: 7px;
+  }
+  .scriptLead {
+    font-size: 14px;
+  }
+  .scriptPart {
+    padding-top: 9px;
+    gap: 6px;
+  }
+  .scriptPart p {
+    font-size: 12px;
+  }
+  .twoColumns .scriptPart p {
+    font-size: 11px;
+  }
+  .notes textarea {
+    height: 58px;
+  }
+  .numbers button {
+    font-size: 18px;
+  }
+  .dialer h1 {
+    font-size: 21px;
+  }
+  .closeCards .card {
+    padding: 13px;
+  }
+  .footer {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .footerControls > input {
+    min-width: 100px;
+  }
+  .footer .button {
+    font-size: 10px;
+    padding: 6px 8px;
+  }
+  .paid {
+    font-size: 9px;
+  }
+  .counters {
+    gap: 13px;
+  }
+}
+@media (max-width: 1100px) {
+  .header {
+    padding: 0 18px;
+  }
+  .counters {
+    gap: 9px;
+    font-size: 11px;
+  }
+  .body {
+    grid-template-columns: 320px minmax(0, 1fr);
+    gap: 14px;
+    padding: 14px 18px;
+  }
+  .stepper {
+    gap: 7px;
+  }
+  .stepper li + li:before {
+    width: 8px;
+  }
+  .button.large {
+    font-size: 13px;
+    padding: 10px 14px;
+  }
+  .pill {
+    font-size: 10px;
+  }
+  .footer {
+    padding: 10px 18px;
+  }
+  .closeCards {
+    grid-template-columns: 1fr;
+  }
+  .twoColumns {
+    gap: 12px;
+  }
+}
+@media (max-width: 900px) {
+  .dialer {
+    height: auto;
+    min-height: 100dvh;
+    padding-bottom: 180px;
+  }
+  .header {
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+  .counters {
+    order: 3;
+    flex-basis: 100%;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .body {
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+    padding: 16px;
+    gap: 16px;
+  }
+  .prospect,
+  .callPanel {
+    overflow: visible;
+    width: 100%;
+  }
+  .footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 40dvh;
+    overflow: visible;
+    padding: 10px 12px;
+    z-index: 10;
+    box-shadow: 0 -4px 12px #00000008;
+  }
+  .footerControls {
+    gap: 5px;
+  }
+  .footer .button {
+    font-size: 10px;
+    min-height: 30px;
+    padding: 5px 7px;
+  }
+  .footerControls > input {
+    min-width: 160px;
+    height: 32px;
+  }
+  .footer > small {
+    font-size: 9px;
+  }
+  .closeCards {
+    grid-template-columns: 1fr 1fr;
+  }
+  .incoming {
+    padding: 12px 16px;
+  }
+  .incomingTop {
+    flex-wrap: wrap;
+  }
+  .incomingSearch input {
+    min-width: 160px;
+  }
+  .callHeader {
+    gap: 12px;
+  }
+  .stepper {
+    gap: 10px;
+  }
+  .stepper li + li:before {
+    width: 16px;
+  }
+  .rep {
+    font-size: 12px;
+  }
+  .picker {
+    left: 12px;
+    right: 12px;
+  }
+  .brand {
+    font-size: 14px;
+  }
+}
+@media (max-width: 560px) {
+  .closeCards,
+  .twoColumns {
+    grid-template-columns: 1fr;
+  }
+  .button.large {
+    width: 100%;
+    font-size: 14px;
+  }
+  .actions {
+    gap: 8px;
+  }
+  .header {
+    padding: 10px 14px;
+  }
+  .counters {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px 12px;
+  }
+  .readyCount {
+    padding-left: 10px;
+  }
+  .stepper {
+    gap: 7px;
+    font-size: 11px;
+  }
+  .stepper li + li:before {
+    width: 9px;
+  }
+  .card {
+    padding: 15px;
+  }
+  .dialer {
+    padding-bottom: 220px;
+  }
+  .numbers button {
+    font-size: 20px;
+  }
+  .callHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .incomingSearch {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .incomingSearch input {
+    flex: auto;
+  }
+}
+
+.draftNotice {
+  padding: 8px 24px;
+  background: #fff4e5;
+  color: #92400e;
+  border-bottom: 1px solid #fed7aa;
+  font-size: 12px;
+}

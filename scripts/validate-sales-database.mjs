@@ -91,6 +91,8 @@ async function main() {
       new URL("../migrations/0032_outbound_sales_demo.sql", import.meta.url),
       "utf8"
     ));
+    await db.exec("ALTER TABLE tenants ADD COLUMN service_access_status TEXT; ALTER TABLE tenants ADD COLUMN billing_lock_reason TEXT; CREATE TABLE tenant_active_knowledge_builds(tenant_key TEXT,active_build_id TEXT); CREATE TABLE knowledge_builds(build_id TEXT,tenant_key TEXT,status TEXT);");
+    await db.exec(await fs.readFile(new URL('../migrations/0056_sales_dialer_v2.sql',import.meta.url),'utf8'));
     const admin = await pool.query(
       `INSERT INTO admin_users (username, email, role)
        VALUES ('sales-validator', 'sales-validator@example.com', 'admin')
@@ -167,13 +169,14 @@ async function main() {
        )`,
       [skipId]
     );
+    await pool.query("UPDATE sales_prospects SET assigned_rep_user_id=$2 WHERE prospect_id=$1",[skipId,adminUserId]);
     const skippedProspect = await skipSalesProspect(pool, {
       prospectId: skipId,
       reason: "Website could not be used.",
       adminUserId
     });
-    assert.equal(skippedProspect.status, "skipped");
-    assert.equal(skippedProspect.skippedReason, "Website could not be used.");
+    assert.equal(skippedProspect.status, "queued");
+    assert.equal(skippedProspect.skippedReason, null);
     assert.equal(skippedProspect.suppressed, false);
     assert.equal(skippedProspect.doNotCall, false);
     await pool.query(
@@ -185,6 +188,7 @@ async function main() {
        WHERE prospect_id = $1`,
       [skipId]
     );
+    await pool.query("UPDATE sales_prospects SET status='removed' WHERE prospect_id=$1",[skipId]);
     await assert.rejects(
       createSalesCallSession(pool, {
         prospectId: skipId,
@@ -263,7 +267,7 @@ async function main() {
     assert.equal(prospectDetail.calls[0].salesCallId, call.salesCallId);
     await pool.query(
       `UPDATE sales_call_sessions
-       SET outcome = 'no_answer',
+       SET outcome = 'no_answer',state='ended',ended_at=NOW(),
            outcome_recorded_at = NOW()
        WHERE sales_call_id = $1`,
       [call.salesCallId]
@@ -273,7 +277,7 @@ async function main() {
       outcome: "no_answer"
     });
     queue = await listSalesProspects(pool, { eligibleOnly: true, limit: 11 });
-    assert.deepEqual(queue.prospects.map((prospect) => prospect.prospectId), [secondId]);
+    assert.deepEqual(queue.prospects.map((prospect) => prospect.prospectId), [secondId,firstId]);
     const followupCount = await pool.query(
       `SELECT COUNT(*)::int AS count
        FROM sales_followup_jobs
@@ -430,8 +434,7 @@ async function main() {
     const ownedDetail = await getSalesProspectDetail(pool, firstId, { operatorUserId: adminUserId });
     assert.equal(ownedDetail.signupInvitations.some((item) => item.invitationId === ownedInvitationId), true);
     const otherDetail = await getSalesProspectDetail(pool, firstId, { operatorUserId: otherOperatorId });
-    assert.equal(otherDetail.signupInvitations.length, 0);
-    assert.equal(otherDetail.calls.length, 0);
+    assert.equal(otherDetail,null);
     assert.equal((await buildSalesCallView(pool, call, { operatorUserId: adminUserId })).signup.invitationId,
       ownedInvitationId);
     assert.equal((await buildSalesCallView(pool, call, { operatorUserId: otherOperatorId })).signup, null);
@@ -497,24 +500,10 @@ async function main() {
     assert.equal(firstOpen.prefill.businessName, "Second Service");
     assert.equal(firstOpen.prefill.loginEmail, "sam@example.com");
 
-    const validated = await validateSalesSignupInvitationForOnboarding(pool, {
-      rawToken: invitation.token,
-      forUpdate: false
-    });
-    assert.equal(validated.prospectId, secondId);
-    await completeSalesSignupInvitation(pool, {
-      rawToken: invitation.token,
-      tenantKey: "second_service"
-    });
-    await assert.rejects(
-      () => validateSalesSignupInvitationForOnboarding(pool, {
-        rawToken: invitation.token,
-        forUpdate: false
-      }),
-      (error) => error?.code === "signup_invitation_unavailable"
-    );
-    const convertedProspect = await getSalesProspect(pool, secondId);
-    assert.equal(convertedProspect.status, "signup_completed");
+    await assert.rejects(validateSalesSignupInvitationForOnboarding(pool,{rawToken:invitation.token,forUpdate:false}),error=>error.code==='sales_checkout_required');
+    await assert.rejects(completeSalesSignupInvitation(pool,{rawToken:invitation.token,tenantKey:'second_service'}),error=>error.code==='sales_checkout_required');
+    // Historical converted invitations remain readable; new conversions are retired.
+    await pool.query("UPDATE sales_signup_invitations SET status='submitted',consumed_at=NOW(),submitted_at=NOW(),converted_tenant_key='second_service' WHERE invitation_id=$1",[invitation.invitation.invitationId]);
     await pool.query(
       `INSERT INTO tenants (
          tenant_key, status, telnyx_voice_number, telnyx_voice_status
@@ -593,7 +582,7 @@ async function main() {
        WHERE prospect_id = $1 AND outcome = 'signup_completed'`,
       [secondId]
     );
-    assert.equal(signupFollowup.rows[0].count, 1);
+    assert.equal(signupFollowup.rows[0].count, 0);
 
     await pool.query(
       `UPDATE sales_demo_profiles
@@ -609,7 +598,7 @@ async function main() {
       [secondId]
     );
     const expiry = await markExpiredSalesDemoProfiles(pool);
-    assert.equal(expiry.expiredCount, 1);
+    assert.equal(expiry.expiredCount, 0);
     const expiredProfile = await pool.query(
       `SELECT status, business_name, preview_summary, demo_bundle_json,
               scrape_page_count, scrape_pages_json, extraction_version
@@ -617,13 +606,13 @@ async function main() {
        WHERE prospect_id = $1`,
       [secondId]
     );
-    assert.equal(expiredProfile.rows[0].status, "stale");
-    assert.equal(expiredProfile.rows[0].business_name, null);
-    assert.equal(expiredProfile.rows[0].preview_summary, null);
-    assert.deepEqual(expiredProfile.rows[0].demo_bundle_json, {});
-    assert.equal(expiredProfile.rows[0].scrape_page_count, 0);
-    assert.deepEqual(expiredProfile.rows[0].scrape_pages_json, []);
-    assert.equal(expiredProfile.rows[0].extraction_version, null);
+    assert.equal(expiredProfile.rows[0].status, "ready");
+    assert.equal(expiredProfile.rows[0].business_name, "Expired private demo data");
+    assert.equal(expiredProfile.rows[0].preview_summary, "Must be cleared");
+    assert.deepEqual(expiredProfile.rows[0].demo_bundle_json, {private:"stale"});
+    assert.equal(expiredProfile.rows[0].scrape_page_count, 1);
+    assert.deepEqual(expiredProfile.rows[0].scrape_pages_json, [{text:"stale"}]);
+    assert.equal(expiredProfile.rows[0].extraction_version, "expired");
 
     const managedProspect = await createSalesProspect(pool, {
       external_ref: "prospect-management-validation",
@@ -709,7 +698,7 @@ async function main() {
     }
 
     console.log("sales database validation passed");
-  } finally {
+  } catch(error) { console.error(error.stack); process.exit(1); } finally {
     await db.close();
   }
 }

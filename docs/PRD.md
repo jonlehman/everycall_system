@@ -33,7 +33,11 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 - Tenant-configured blind transfer by person name or extension
 - Admin and client portals for configuration
 
-## Out of Scope (Current)
+## Sales rep workflow
+
+The separate Sales workspace follows the owner-approved [rep dialer v2](SPECS/sales-rep-dialer-v2.md). It adds state-driven human-led outbound demos, rep-owned queues and return calls, Stripe checkout and Outlook setup booking. Sales payment and booking actions are outside the inbound receptionist's private tool surface. Real-tenant voice requires verified payment and the existing knowledge publication/readiness gates.
+
+## Out of Scope (Inbound Receptionist)
 - Automated dispatch orchestration
 - Calendar booking integration
 - Payments or quotes

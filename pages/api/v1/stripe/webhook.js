@@ -1,3 +1,4 @@
+import { applySalesPaidCheckout } from "../../_lib/salesCheckout.js";
 import { readRawBody } from "../../_lib/telnyx.js";
 import { constructWebhookEvent, retrieveSubscription, retrieveSubscriptionSchedule } from "../../_lib/stripe.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
@@ -173,7 +174,8 @@ export default async function handler(req, res) {
     const object = event.data?.object || {};
     const metadataTenantKey = String(object.metadata?.tenant_key || object.subscription_details?.metadata?.tenant_key || "").trim() || null;
 
-    if (event.type === "checkout.session.completed") {
+    await applySalesPaidCheckout(pool,event);
+    if (event.type === "checkout.session.completed" && !object.metadata?.sales_checkout_id) {
       const tenantRow = await getTenantBillingRow(pool, {
         tenantKey: metadataTenantKey,
         customerId: object.customer ? String(object.customer) : null,

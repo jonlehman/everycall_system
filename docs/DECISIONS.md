@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-10-20 — Sales rep dialer v2
+- Implement the [approved state-driven rep design](SPECS/sales-rep-dialer-v2.md): READY, TALK, DEMO, WRAPUP; a persistent outcome bar; rep-owned ready-only queues and local-day counters; permanent phone/domain DNC suppression; separate re-importable removal; and incoming return calls. Keep `/admin/sales` management separate from the rep workspace.
+- Supersede the July 28 30-day Sales demo expiry, 11-record warm queue, and invitation-only conversion boundary. Keep a prepared demo while a prospect remains eligible; prepare 10 ahead and refill at 9. Verified Stripe completion for the $100 setup including the first month authorizes full-build initiation and real-tenant conversion. Booking is independent of payment. Production voice still requires paid state and the existing validated knowledge-publication/readiness gates.
+- Preserve the frozen knowledge requirement text and source-capture, provenance, tenant-correction, monetary-authority and publication rules. The rep's facts and demo suggestion chips read the same stored `core_facts` as the demo receptionist; marketing text is not a substitute.
+- Use the stated defaults: Remove and DNC remain separate; an incoming call replaces the current prospect and restores the interrupted record to the queue; Demo done stays eligible without an invented callback. Measure and record the full-build booking lead, configure Jon's calendar owner, and expose actual integration readiness.
+
 ## 2026-10-19
 - Separate Sales administration (`/admin/sales`, Operations → Sales) from the standalone cold-calling workspace (`/sales`). Keep one calling controller and shared queue logic; administration must not initialize WebRTC. Add admin-only reporting over existing call-session timestamps and recorded outcomes, with UTC creation-date cohorts and no inferred conversion/revenue semantics. Preserve Sales cookies, API ownership, provider gates, and inbound isolation. Operator configuration uses the existing audited settings mutation; deployment secrets and rollout switches stay deployment-managed.
 

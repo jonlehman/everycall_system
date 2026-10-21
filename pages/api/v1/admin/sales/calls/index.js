@@ -1,3 +1,4 @@
+import { assertSalesProspectOwner } from "../../../../_lib/salesDialer.js";
 import crypto from "node:crypto";
 import { buildOutboundSalesDemoRealtimeInstructions } from "../../../../_lib/demoRealtimeSession.js";
 import {
@@ -31,7 +32,7 @@ export default async function handler(req, res) {
     const context = await requireSalesAdmin(req, res);
     if (!context) return;
     const body = salesRequestBody(req);
-    const request = { prospectId: String(body.prospectId || "").trim() };
+    const request = { prospectId: String(body.prospectId || "").trim(), phoneE164: String(body.phoneE164 || "").trim() };
     const result = await runSalesAdminMutation(req, context, {
       scope: "sales.call.create",
       request,
@@ -49,6 +50,9 @@ export default async function handler(req, res) {
       if (!prospect) {
         throw salesError("prospect_not_found", "Prospect not found.", 404);
       }
+      await assertSalesProspectOwner(context.pool,request.prospectId,context.admin.id,{allowUnassigned:context.session.role==='admin'});
+      const dialedNumber = request.phoneE164 || prospect.phoneE164;
+      if (!prospect.numbers.some(n=>n.phoneE164===dialedNumber)) throw salesError('invalid_dialed_number','Choose a number on this prospect.',400);
       if (!demoProfile) {
         throw salesError("sales_demo_not_ready", "The prospect demo must be ready before calling.", 409);
       }
@@ -62,7 +66,7 @@ export default async function handler(req, res) {
         || process.env.SALES_TELNYX_CALLER_ID;
       // Validate browser startup options before taking the durable reservation.
       buildSalesWebrtcCallOptions({
-        salesCallId: id, prospectPhone: prospect.phoneE164, callerIdNumber,
+        salesCallId: id, prospectPhone: dialedNumber, callerIdNumber,
         callerName: operatorSettings?.displayName || "EveryCall"
       });
       const call = await createSalesCallSession(context.pool, {
@@ -76,7 +80,7 @@ export default async function handler(req, res) {
           correlation_id: id,
           source: "outbound_sales",
           business_name: businessName,
-          prospect_number: prospect.phoneE164,
+          prospect_number: dialedNumber,
           demo_profile_id: demoProfile.demoProfileId,
           realtime_instructions: buildOutboundSalesDemoRealtimeInstructions({
             ...demoProfile.demoBundle,
@@ -87,7 +91,7 @@ export default async function handler(req, res) {
 
       const callOptions = buildSalesWebrtcCallOptions({
         salesCallId: call.salesCallId,
-        prospectPhone: prospect.phoneE164,
+        prospectPhone: dialedNumber,
         callerIdNumber,
         callerName: operatorSettings?.displayName || "EveryCall"
       });

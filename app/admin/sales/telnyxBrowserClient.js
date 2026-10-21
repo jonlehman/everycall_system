@@ -1,26 +1,30 @@
-function messageFromError(value, fallback = 'Telnyx browser calling failed.') {
-  if (typeof value === 'string' && value.trim()) return value.trim();
+function messageFromError(value, fallback = "Telnyx browser calling failed.") {
+  if (typeof value === "string" && value.trim()) return value.trim();
   const source = value?.error || value;
   return String(
-    source?.message
-    || source?.errorMessage
-    || source?.description
-    || source?.code
-    || fallback
+    source?.message ||
+      source?.errorMessage ||
+      source?.description ||
+      source?.code ||
+      fallback,
   ).trim();
 }
 
 function callStateFromNotification(notification) {
-  return String(notification?.call?.state || '').trim().toLowerCase();
+  return String(notification?.call?.state || "")
+    .trim()
+    .toLowerCase();
 }
 
-const TERMINAL_CALL_STATES = new Set(['destroy', 'hangup', 'purge', 'ended']);
+const TERMINAL_CALL_STATES = new Set(["destroy", "hangup", "purge", "ended"]);
 
 export function setTelnyxCallMuted(call, muted) {
-  if (!call) throw new Error('There is no active browser call to mute.');
-  const method = muted ? 'muteAudio' : 'unmuteAudio';
-  if (typeof call[method] !== 'function') {
-    throw new Error(`The Telnyx browser call cannot ${muted ? 'mute' : 'unmute'} the microphone.`);
+  if (!call) throw new Error("There is no active browser call to mute.");
+  const method = muted ? "muteAudio" : "unmuteAudio";
+  if (typeof call[method] !== "function") {
+    throw new Error(
+      `The Telnyx browser call cannot ${muted ? "mute" : "unmute"} the microphone.`,
+    );
   }
   call[method]();
   return Boolean(muted);
@@ -32,29 +36,32 @@ export async function connectTelnyxBrowserClient({
   onState,
   onError,
   onCallUpdate,
-  timeoutMs = 15000
+  timeoutMs = 15000,
 }) {
-  const loginToken = String(token || '').trim();
-  if (!loginToken) throw new Error('The server did not provide a Telnyx WebRTC token.');
-  if (!remoteElement) throw new Error('The browser audio element is unavailable.');
+  const loginToken = String(token || "").trim();
+  if (!loginToken)
+    throw new Error("The server did not provide a Telnyx WebRTC token.");
+  if (!remoteElement)
+    throw new Error("The browser audio element is unavailable.");
 
-  onState?.('loading_sdk');
-  const { TelnyxRTC } = await import('@telnyx/webrtc');
-  if (typeof TelnyxRTC !== 'function') {
-    throw new Error('The Telnyx WebRTC client could not be loaded.');
+  onState?.("loading_sdk");
+  const { TelnyxRTC } = await import("@telnyx/webrtc");
+  if (typeof TelnyxRTC !== "function") {
+    throw new Error("The Telnyx WebRTC client could not be loaded.");
   }
 
   const client = new TelnyxRTC({
     login_token: loginToken,
     autoReconnect: true,
-    mutedMicOnStart: false
+    mutedMicOnStart: false,
   });
   client.remoteElement = remoteElement;
   remoteElement.muted = false;
   remoteElement.volume = 1;
 
+  let incomingCall = null;
   let activeCall = null;
-  let activeCallId = '';
+  let activeCallId = "";
   let disposed = false;
   let ready = false;
   let connectionError = null;
@@ -63,7 +70,7 @@ export async function connectTelnyxBrowserClient({
     if (disposed) return;
     ready = true;
     connectionError = null;
-    onState?.('ready');
+    onState?.("ready");
   };
   const errorHandler = (event) => {
     if (disposed) return;
@@ -74,39 +81,54 @@ export async function connectTelnyxBrowserClient({
     if (!ready || connectionFatal) {
       ready = false;
       connectionError = new Error(message);
-      onState?.('error');
+      onState?.("error");
     }
   };
   const notificationHandler = (notification) => {
-    if (disposed || notification?.type !== 'callUpdate' || !notification.call) return;
+    if (disposed || notification?.type !== "callUpdate" || !notification.call)
+      return;
+    const notificationState = callStateFromNotification(notification);
+    if (
+      incomingCall?.id === notification.call.id &&
+      TERMINAL_CALL_STATES.has(notificationState)
+    )
+      incomingCall = null;
+    if (
+      ["ringing", "new"].includes(notificationState) &&
+      notification.call.direction === "inbound" &&
+      notification.call.id !== activeCallId
+    ) {
+      incomingCall = notification.call;
+      return;
+    }
     if (!activeCallId || notification.call.id === activeCallId) {
-      const state = callStateFromNotification(notification) || 'unknown';
+      const state = callStateFromNotification(notification) || "unknown";
       activeCallId = notification.call.id;
       activeCall = TERMINAL_CALL_STATES.has(state) ? null : notification.call;
       onCallUpdate?.({
         id: notification.call.id,
         state,
-        cause: String(notification.call.cause || '').trim(),
+        cause: String(notification.call.cause || "").trim(),
         causeCode: notification.call.causeCode ?? null,
-        call: notification.call
+        call: notification.call,
       });
     }
   };
 
   client
-    .on('telnyx.ready', readyHandler)
-    .on('telnyx.error', errorHandler)
-    .on('telnyx.rtc.mediaError', errorHandler)
-    .on('telnyx.notification', notificationHandler);
+    .on("telnyx.ready", readyHandler)
+    .on("telnyx.error", errorHandler)
+    .on("telnyx.rtc.mediaError", errorHandler)
+    .on("telnyx.notification", notificationHandler);
 
-  onState?.('connecting');
+  onState?.("connecting");
   void client.connect().catch(errorHandler);
 
   await new Promise((resolve, reject) => {
     const startedAt = Date.now();
     const check = () => {
       if (disposed) {
-        reject(new Error('The Telnyx browser client was disconnected.'));
+        reject(new Error("The Telnyx browser client was disconnected."));
         return;
       }
       if (ready) {
@@ -118,17 +140,19 @@ export async function connectTelnyxBrowserClient({
         return;
       }
       if (Date.now() - startedAt >= timeoutMs) {
-        reject(new Error('Telnyx browser calling did not become ready in time.'));
+        reject(
+          new Error("Telnyx browser calling did not become ready in time."),
+        );
         return;
       }
       window.setTimeout(check, 100);
     };
     check();
   }).catch(async (error) => {
-    client.off('telnyx.ready', readyHandler);
-    client.off('telnyx.error', errorHandler);
-    client.off('telnyx.rtc.mediaError', errorHandler);
-    client.off('telnyx.notification', notificationHandler);
+    client.off("telnyx.ready", readyHandler);
+    client.off("telnyx.error", errorHandler);
+    client.off("telnyx.rtc.mediaError", errorHandler);
+    client.off("telnyx.notification", notificationHandler);
     await client.disconnect().catch(() => {});
     throw error;
   });
@@ -138,9 +162,12 @@ export async function connectTelnyxBrowserClient({
       return ready && !disposed;
     },
     placeCall(callOptions = {}, localStream) {
-      if (!ready || disposed) throw new Error('Telnyx browser calling is not ready.');
-      if (!String(callOptions.destinationNumber || '').trim()) {
-        throw new Error('The server did not provide a Telnyx destination for the operator leg.');
+      if (!ready || disposed)
+        throw new Error("Telnyx browser calling is not ready.");
+      if (!String(callOptions.destinationNumber || "").trim()) {
+        throw new Error(
+          "The server did not provide a Telnyx destination for the operator leg.",
+        );
       }
       remoteElement.muted = false;
       remoteElement.volume = 1;
@@ -149,17 +176,36 @@ export async function connectTelnyxBrowserClient({
         audio: callOptions.audio === false ? true : (callOptions.audio ?? true),
         localStream: localStream || callOptions.localStream,
         remoteElement,
-        mutedMicOnStart: false
+        mutedMicOnStart: false,
       });
       activeCallId = activeCall.id;
       onCallUpdate?.({
         id: activeCall.id,
-        state: String(activeCall.state || 'new').toLowerCase(),
-        cause: '',
+        state: String(activeCall.state || "new").toLowerCase(),
+        cause: "",
         causeCode: null,
-        call: activeCall
+        call: activeCall,
       });
       return activeCall;
+    },
+    hasIncomingCall() {
+      return Boolean(incomingCall);
+    },
+    async answerIncoming(localStream) {
+      if (!incomingCall)
+        throw new Error("There is no incoming browser call to answer.");
+      if (activeCall) throw new Error("A browser call is already active.");
+      const call = incomingCall;
+      incomingCall = null;
+      activeCall = call;
+      activeCallId = call.id;
+      await call.answer({
+        audio: true,
+        video: false,
+        localStream,
+        remoteElement,
+      });
+      return call;
     },
     async hangup() {
       if (!activeCall) return;
@@ -178,14 +224,14 @@ export async function connectTelnyxBrowserClient({
         await activeCall.hangup().catch(() => {});
         activeCall = null;
       }
-      activeCallId = '';
-      client.off('telnyx.ready', readyHandler);
-      client.off('telnyx.error', errorHandler);
-      client.off('telnyx.rtc.mediaError', errorHandler);
-      client.off('telnyx.notification', notificationHandler);
+      activeCallId = "";
+      client.off("telnyx.ready", readyHandler);
+      client.off("telnyx.error", errorHandler);
+      client.off("telnyx.rtc.mediaError", errorHandler);
+      client.off("telnyx.notification", notificationHandler);
       await client.disconnect().catch(() => {});
-      onState?.('disconnected');
-    }
+      onState?.("disconnected");
+    },
   };
 }
 

@@ -46,7 +46,7 @@ export default function AdminSalesPage() {
       {section === 'import' ? policy ? <CsvImportPanel missingTimezonePolicy={policy.missingTimezonePolicy} onImported={() => setVersion((value) => value + 1)} /> : <p className="text-sm text-slate-500">{error ? 'Import is unavailable until the calling policy can be loaded.' : 'Loading import requirements…'}</p> : null}
       {section === 'queue' ? <AdminQueue /> : null}
       {section === 'reports' ? <SalesReports /> : null}
-      {section === 'settings' ? <OperatorSettings /> : null}
+      {section === 'settings' ? <><div className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Call scripts</h2><p className="mt-1 text-sm text-slate-600">Edit the shared opener, hand-off, demo, and close scripts.</p><Link className="mt-3 inline-block text-sm font-semibold text-blue-700" href="/sales/scripts">Edit scripts →</Link></div><OperatorSettings /></> : null}
     </div>
   );
 }

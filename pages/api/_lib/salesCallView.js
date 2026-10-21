@@ -40,6 +40,13 @@ export function assertSalesCallAdmin(call, adminUserId) {
   return call;
 }
 
+// Administrative read-only audit access never grants call controls or mutation.
+export function assertSalesCallRead(call, context) {
+  if (!call) return assertSalesCallAdmin(call, context.admin.id);
+  if (context.session.role !== 'sales' && ['admin','super_admin'].includes(context.admin.role)) return call;
+  return assertSalesCallAdmin(call, context.admin.id);
+}
+
 async function loadLatestSignupProgress(pool, call, operatorUserId) {
   const ownerScoped = operatorUserId !== null;
   const invitationResult = await pool.query(
@@ -66,10 +73,12 @@ export async function buildSalesCallView(pool, call, {
   if (!call) return null;
   const state = normalizeSalesText(call.state, 80).toLowerCase();
   const aiState = normalizeSalesText(call.aiState, 80).toLowerCase();
+  const prospect = (await pool.query('SELECT business_name, contact_name FROM sales_prospects WHERE prospect_id=$1', [call.prospectId])).rows[0];
   const signup = await loadLatestSignupProgress(pool, call, operatorUserId);
   return {
     salesCallId: call.salesCallId,
     prospectId: call.prospectId,
+    businessName: prospect?.business_name || null, contactName: prospect?.contact_name || null,
     state: call.state,
     aiState: call.aiState || "not_started",
     prospectConnected: Boolean(call.connectedAt) || PROSPECT_CONNECTED_STATES.has(state),
@@ -78,6 +87,10 @@ export async function buildSalesCallView(pool, call, {
     terminal: TERMINAL_CALL_STATES.has(state),
     providerError: call.providerErrorMessage || call.providerErrorCode || null,
     outcome: call.outcome || null,
+    liveNotes: call.liveNotes || '', outcomeNotes: call.outcomeNotes || '',
+    dialedNumber: call.dialedNumber || null, callbackAt: call.callbackAt || null,
+    linkSentAt: call.linkSentAt || null, bookedAt: call.bookedAt || null, paidAt: call.paidAt || null,
+    transcript: call.transcript || null, transcriptStatus: call.transcriptStatus || 'pending',recordingUrl:call.recordingUrl||null,
     startedAt: call.startedAt || null,
     connectedAt: call.connectedAt || null,
     demoStartedAt: call.demoStartedAt || null,
