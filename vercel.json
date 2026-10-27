@@ -25,6 +25,14 @@
       "schedule": "*/1 * * * *"
     }
   ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "everycallsystem.vercel.app" }],
+      "destination": "https://app.everycall.io/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/v1/(.*)",
