@@ -1,5 +1,9 @@
 import AdminShell from './_components/AdminShell';
 
+export const metadata = {
+  title: { default: 'EveryCall - admin', template: '%s - admin' }
+};
+
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
