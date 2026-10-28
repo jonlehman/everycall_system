@@ -8,11 +8,12 @@ import {
   orderNumbers,
   renderScript,
   suggestedAsks,
-  callbackTime,
   safeExternalUrl,
   formatPhone,
 } from "./dialerState.mjs";
 import styles from "./DialerScreen.module.css";
+import CallbackPicker from "./CallbackPicker";
+import ContactsScreen, { contactStatus } from "./ContactsScreen";
 
 function Button({
   children,
@@ -178,6 +179,11 @@ export default function DialerScreen({
   searchResults,
   onSearch,
   onSignOut,
+  view = "dial",
+  onNavigate,
+  onSelectContact,
+  browsingContact = false,
+  onPrepareContact,
 }) {
   const phase = dialerPhase(call),
     active = Boolean(call?.id && !call.terminal),
@@ -215,7 +221,7 @@ export default function DialerScreen({
     currentStep =
       phase === "WRAPUP" ? 3 : phase === "DEMO" ? 2 : phase === "TALK" ? 1 : 0;
   const canDial =
-      !busy && !call?.id && softphoneState === "ready" && prospect?.eligible,
+      !busy && !call?.id && softphoneState === "ready" && prospect?.eligible && prospect?.demoStatus === "ready" && !["Paid", "Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})),
     editUrl = "/sales/scripts";
   const micLabel =
     microphoneState === "live"
@@ -232,7 +238,9 @@ export default function DialerScreen({
         }[microphoneState] || "microphone unavailable";
   const pill =
     phase === "READY"
-      ? softphoneState === "ready"
+      ? browsingContact && (!prospect?.eligible || prospect?.demoStatus !== "ready" || ["Paid", "Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})))
+        ? `${contactStatus(prospect || {})}${prospect?.callBlockedReason ? ` · ${prospect.callBlockedReason}` : ""}`
+        : softphoneState === "ready"
         ? `Ready · ${micLabel} · browser connected`
         : `Calling ${String(softphoneState).replaceAll("_", " ")}`
       : phase === "DIALING"
@@ -247,6 +255,10 @@ export default function DialerScreen({
       <header className={styles.header}>
         <div className={styles.brand}>
           <span>E</span>EveryCall Sales
+          <nav className={styles.navigation} aria-label="Main">
+            <button type="button" aria-current={view === "dial" && !browsingContact ? "page" : undefined} onClick={() => onNavigate?.("dial")}>Dial</button>
+            <button type="button" aria-current={view === "contacts" || browsingContact ? "page" : undefined} disabled={Boolean(call?.id) || Boolean(busy)} onClick={() => onNavigate?.("contacts")}>Contacts</button>
+          </nav>
         </div>
         <div className={styles.counters}>
           <span className={styles.eyebrow}>Today</span>
@@ -371,7 +383,7 @@ export default function DialerScreen({
           )}
         </div>
       )}
-      <div className={styles.body}>
+      {view === "contacts" ? <ContactsScreen onSelect={onSelectContact} busy={Boolean(busy)} /> : <div className={styles.body}>
         <aside className={styles.prospect}>
           {(queue.returnItems || []).map((item) => (
             <ReturnWorkItem key={item.incomingId} item={item} busy={busy} onPrepare={onPrepareReturn} />
@@ -386,7 +398,7 @@ export default function DialerScreen({
                   : `Current prospect · attempt ${(prospect?.attemptCount || 0) + 1}`}
               </span>
               <Button
-                disabled={busy || Boolean(call?.id) || !prospect?.id}
+                disabled={busy || Boolean(call?.id) || !prospect?.id || ["Paid", "Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {}))}
                 onClick={onRemove}
               >
                 Remove from list
@@ -485,6 +497,9 @@ export default function DialerScreen({
           {phase === "READY" || phase === "DIALING" ? (
             <History prospect={prospect} ready />
           ) : null}
+          {phase === "READY" && prospect && <Section>
+            <CallbackPicker prospect={prospect} value={prospect.callbackAt} onSet={onCallback} disabled={Boolean(busy)} canSchedule={false} now={now} />
+          </Section>}
           {phase !== "WRAPUP" && (
             <Section>
               <div className={styles.factsTitle}>
@@ -544,7 +559,11 @@ export default function DialerScreen({
                 {pill}
               </span>
             </div>
-            {["READY", "DIALING"].includes(phase) ? (
+            {phase === "READY" && browsingContact && contactStatus(prospect || {}) === "Not prepped" ? <div className={styles.actions}>
+              <Button tone="blue" disabled={Boolean(busy) || !prospect?.preparationEligible || !safeExternalUrl(prospect?.website) || ["queued", "preparing", "building"].includes(prospect?.demoStatus)} onClick={onPrepareContact}>{["queued", "preparing", "building"].includes(prospect?.demoStatus) ? "Preparing…" : "Prep now"}</Button>
+              <p className={styles.caption}>{prospect?.demoFailure || (!prospect?.website ? "A website is needed before this prospect can be prepared." : "Prepare the AI Receptionist before dialing this prospect.")}</p>
+              <Button className={styles.pushRight} disabled={Boolean(busy)} onClick={onSkip}>Back to queue</Button>
+            </div> : ["READY", "DIALING"].includes(phase) ? (
               <div className={styles.actions}>
                 {numbers.slice(0, 2).map((number, index) => (
                   <Button
@@ -571,7 +590,7 @@ export default function DialerScreen({
                     disabled={busy || !prospect?.id}
                     onClick={onSkip}
                   >
-                    Skip for now
+                    {browsingContact ? "Back to queue" : "Skip for now"}
                   </Button>
                 )}
               </div>
@@ -838,8 +857,8 @@ export default function DialerScreen({
             </Section>
           ) : null}
         </main>
-      </div>
-      <footer className={styles.footer}>
+      </div>}
+      {view !== "contacts" && <footer className={styles.footer}>
         <div className={styles.footerControls}>
           {OUTCOMES.map(([value, label]) => (
             <Button
@@ -887,34 +906,7 @@ export default function DialerScreen({
         </div>
         {picker === "callback_requested" && (
           <div className={styles.picker}>
-            <strong>Call back</strong>
-            {[
-              ["today", "Later today"],
-              ["tomorrow_am", "Tomorrow AM"],
-              ["tomorrow_pm", "Tomorrow PM"],
-            ].map(([kind, label]) => (
-              <Button
-                key={kind}
-                onClick={() => {
-                  onCallback(callbackTime(kind));
-                  setPicker("");
-                }}
-              >
-                {label}
-              </Button>
-            ))}
-            <label>
-              Specific date and time
-              <input
-                aria-label="Callback date and time"
-                type="datetime-local"
-                onChange={(e) => {
-                  if (e.target.value)
-                    onCallback(new Date(e.target.value).toISOString());
-                }}
-              />
-            </label>
-            <Button onClick={() => setPicker("")}>Done</Button>
+            <CallbackPicker prospect={prospect} value={callbackAt || prospect?.callbackAt} onSet={onCallback} disabled={Boolean(busy)} canSchedule={Boolean(call?.id)} now={now} onClose={() => setPicker("")} />
           </div>
         )}
         {picker === "do_not_call" && (
@@ -947,7 +939,7 @@ export default function DialerScreen({
             ? ` Callback: ${new Date(callbackAt).toLocaleString()}`
             : ""}
         </small>
-      </footer>
+      </footer>}
     </div>
   );
 }

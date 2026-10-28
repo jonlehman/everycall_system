@@ -907,6 +907,7 @@ export async function listSalesProspects(pool, {
   status = "",
   eligibleOnly = false,
   includeDeleted = false,
+  includeUnprepared = false,
   search = "",
   operatorUserId = null
 } = {}) {
@@ -917,7 +918,7 @@ export async function listSalesProspects(pool, {
   if (operatorUserId !== null) {
     values.push(Number(operatorUserId));
     where.push(`p.assigned_rep_user_id = $${values.length}`);
-    where.push("d.status = 'ready'");
+    if (!includeUnprepared || eligibleOnly) where.push("d.status = 'ready'");
   }
   if (!includeDeleted) {
     where.push("p.status <> 'deleted'");

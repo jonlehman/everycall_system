@@ -16,8 +16,14 @@ import { getSalesReport, salesReportFilters } from '../pages/api/_lib/salesRepor
 import salesReports from '../pages/api/v1/admin/sales/reports.js';
 import phoneTestMode from '../pages/api/v1/admin/sales/phone-test-mode.js';
 import operatorSettings from '../pages/api/v1/admin/sales/operator-settings/index.js';
+import salesProspects from '../pages/api/v1/admin/sales/prospects/index.js';
+import salesProspectDetail from '../pages/api/v1/admin/sales/prospects/[prospectId].js';
+import salesQueue from '../pages/api/v1/admin/sales/queue/index.js';
+import { listSalesProspects } from '../pages/api/_lib/salesRepository.js';
 
 process.env.DATABASE_URL = 'postgres://sales-auth-fixture';
+process.env.SALES_CALL_WINDOW_START_LOCAL = '08:00';
+process.env.SALES_CALL_WINDOW_END_LOCAL = '20:00';
 delete process.env.ADMIN_BOOTSTRAP_EMAIL;
 delete process.env.ADMIN_BOOTSTRAP_PASSWORD;
 
@@ -225,6 +231,50 @@ try {
   const invalidResponse = response();
   assert.equal(await requireSalesAdmin(request(invalidSalesCookie), invalidResponse), null);
   assert.equal(invalidResponse.statusCode, 401);
+
+  // Contacts includes all preparation states, while every read remains rep-scoped.
+  const ownContactIds = ['contact-missing', 'contact-queued', 'contact-failed', 'contact-ready'];
+  const otherContactIds = ['other-contact-missing', 'other-contact-ready'];
+  // Keep fixtures near local noon while exercising the normal calling-window guard.
+  const noonOffset = new Date().getUTCHours() - 12;
+  const contactTimezone = `Etc/GMT${noonOffset >= 0 ? '+' : ''}${noonOffset}`;
+  for (const [index, id] of [...ownContactIds, ...otherContactIds, 'unassigned-contact'].entries()) {
+    const owner = ownContactIds.includes(id) ? sales.id : otherContactIds.includes(id) ? created.id : null;
+    await query(`INSERT INTO sales_prospects
+      (prospect_id, source_key, business_name, phone_e164, website_url, timezone, permission_granted, assigned_rep_user_id)
+      VALUES ($1, $1, $1, $2, $3, $6, $4, $5)`,
+    [id, `+1206555020${index}`, `https://${id}.example.test`, owner !== null, owner, contactTimezone]);
+    if (!id.endsWith('missing') && owner !== null) {
+      await query(`INSERT INTO sales_demo_profiles (demo_profile_id, prospect_id, status)
+        VALUES ($1, $1, $2)`, [id, id.split('-').at(-1)]);
+    }
+  }
+  await query(`INSERT INTO sessions (id, user_id, role, expires_at)
+    VALUES ('other-sales-token', $1, 'sales', NOW() + INTERVAL '1 day')`, [created.id]);
+  const contactRequest = (cookie, query = {}) => ({ ...request(cookie), query });
+  const contactIds = result => result.body.prospects.map(prospect => prospect.prospectId).sort();
+  const contacts = await call(salesProspects, contactRequest(salesCookie));
+  assert.equal(contacts.statusCode, 200);
+  assert.deepEqual(contactIds(contacts), [...ownContactIds].sort());
+  assert.deepEqual(contactIds(await call(salesProspects, contactRequest('everycall_sales_session=other-sales-token'))),
+    [...otherContactIds].sort());
+  assert.deepEqual(contactIds(await call(salesProspects, contactRequest(salesCookie, {
+    operatorUserId: created.id, assignedRepUserId: created.id, includeDeleted: 'true'
+  }))), [...ownContactIds].sort(), 'Query parameters cannot widen the authenticated rep boundary');
+  assert.equal((await call(salesProspects, contactRequest(''))).statusCode, 401);
+  assert.equal((await call(salesProspects, contactRequest(copiedCookie))).statusCode, 401);
+  assert.equal((await call(salesProspectDetail, contactRequest(salesCookie, { prospectId: 'contact-missing' }))).statusCode, 200);
+  assert.equal((await call(salesProspectDetail, contactRequest(salesCookie, { prospectId: 'other-contact-missing' }))).statusCode, 403);
+  assert.deepEqual((await listSalesProspects(pool, { operatorUserId: sales.id })).prospects.map(p => p.prospectId),
+    ['contact-ready'], 'Other repository consumers retain the existing ready-only default');
+  const eligibleContacts = await call(salesProspects, contactRequest(salesCookie, { eligibleOnly: 'true' }));
+  assert.equal(eligibleContacts.statusCode, 200);
+  assert.deepEqual(contactIds(eligibleContacts), ['contact-ready'],
+    'Eligible-only listing includes the ready contact and excludes unprepared contacts');
+  const dialQueue = await call(salesQueue, contactRequest(salesCookie, { timezone: 'UTC' }));
+  assert.equal(dialQueue.statusCode, 200);
+  assert.deepEqual(dialQueue.body.queue.map(prospect => prospect.prospectId), ['contact-ready'],
+    'Dial queue still excludes all unprepared contacts and other reps');
 
   assert.equal((await call(adminLogin, request('', 'POST', {
     email: 'seller@example.com', password: 'correct-horse-battery', role: 'admin'

@@ -66,6 +66,10 @@ const matched = {
     },
   ],
 };
+const notPrepped = { ...prospect, id: "not-prepped", businessName: "Awaiting Prep", demoStatus: "not_prepared", eligible: false, preparationEligible: true, website: "https://example.com" };
+const paidContact = { ...prospect, id: "paid-contact", businessName: "Paid Business", status: "paid" };
+const dncContact = { ...prospect, id: "dnc-contact", businessName: "Do Not Call Business", doNotCall: true };
+const removedContact = { ...prospect, id: "removed-contact", businessName: "Removed Business", status: "removed" };
 let requests = [],
   calls = {},
   currentId = "",
@@ -168,7 +172,10 @@ const server = createServer(async (req, res) => {
     });
   if (path.pathname.endsWith("/availability")) return send({ slots: [] });
   if (path.pathname.endsWith("/prospects"))
-    return send({ prospects: [matched] });
+    return send({ prospects: [matched, notPrepped, paidContact, dncContact, removedContact] });
+  const selectedContact = [matched, notPrepped, paidContact, dncContact, removedContact].find((item) => path.pathname.endsWith(`/prospects/${item.id}`));
+  if (selectedContact) return send({ prospect: { ...selectedContact, calls: [] } });
+  if (path.pathname.endsWith("/prospects/not-prepped/demo")) return send({ ok: true });
   if (path.pathname.endsWith("/incoming")) {
     if (data.action === "create" && data.incomingId === "return-1") {
       returnNeedsWebsite = false;
@@ -323,6 +330,33 @@ const incoming = async () => {
   await page.locator('[data-phase="TALK"]').waitFor();
 };
 try {
+  console.log("controller: contacts browsing preserves the dial queue and readiness gates");
+  await reset();
+  await page.getByRole("button", { name: "Contacts", exact: true }).click();
+  await page.getByRole("button", { name: "Matched Business", exact: true }).click();
+  await page.getByRole("heading", { name: "Matched Business", exact: true }).waitFor();
+  await page.waitForTimeout(5200);
+  assert.equal(await page.getByRole("heading", { name: "Matched Business", exact: true }).count(), 1, "Queue polling must preserve browsed contact");
+  await page.getByRole("button", { name: "Back to queue", exact: true }).click();
+  await page.getByRole("heading", { name: "Original Business", exact: true }).waitFor();
+  assert.equal(requests.filter((request) => /\/(skip|remove)$/.test(request.path)).length, 0, "Browsing leaves queue order untouched");
+  for (const name of ["Paid Business", "Do Not Call Business", "Removed Business"]) {
+    await page.getByRole("button", { name: "Contacts", exact: true }).click();
+    await page.getByRole("button", { name, exact: true }).click();
+    await page.getByRole("heading", { name, exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: /^Call cell/ }).isDisabled(), true);
+    await page.getByRole("button", { name: "Dial", exact: true }).click();
+    await page.getByRole("heading", { name: "Original Business", exact: true }).waitFor();
+  }
+  await page.getByRole("button", { name: "Contacts", exact: true }).click();
+  await page.getByRole("button", { name: "Awaiting Prep", exact: true }).click();
+  await page.getByRole("heading", { name: "Awaiting Prep", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: /^Call cell/ }).count(), 0);
+  await page.getByRole("button", { name: "Prep now", exact: true }).click();
+  await page.getByRole("button", { name: "Preparing…", exact: true }).waitFor();
+  assert.ok(requests.some((request) => request.path.endsWith("/prospects/not-prepped/demo") && request.method === "POST"));
+  await page.getByRole("button", { name: "Dial", exact: true }).click();
+  await page.getByRole("heading", { name: "Original Business", exact: true }).waitFor();
   console.log("controller: end during settle");
   // Start-demo settle delay: End call must not be silently dropped by run().
   await reset();
@@ -586,6 +620,9 @@ try {
         "returned caller message and website preparation stay separate from ready queue",
         "asynchronous provider failure visible",
         "mic not requested/denied/live/ended truthfully reported",
+        "Contacts browsing and queue polling preserve queue position",
+        "paid, do-not-call, removed and not-prepped contact dial gates",
+        "Prep now uses existing demo endpoint",
       ],
       fixture: dir,
     }),

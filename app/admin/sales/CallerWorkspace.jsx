@@ -18,6 +18,8 @@ export default function CallerWorkspace() {
     repMode: true,
   });
   const [prospect, setProspect] = useState(null),
+    [view, setView] = useState("dial"),
+    [browsingContact, setBrowsingContact] = useState(false),
     [briefGeneratingId, setBriefGeneratingId] = useState(""),
     [call, setCall] = useState(null),
     [busy, setBusy] = useState(""),
@@ -48,6 +50,7 @@ export default function CallerWorkspace() {
     endingCallIds = useRef(new Set()),
     wrapupDrafts = useRef([]),
     incomingTaken = useRef("");
+  const browsingContactRef = useRef(false);
   callRef.current = call;
   prospectRef.current = prospect;
   noteRef.current = note;
@@ -166,7 +169,7 @@ export default function CallerWorkspace() {
   }, []);
   useEffect(() => {
     // Queue polling must never replace the record under a live call or its unsaved wrap-up.
-    if (callRef.current?.id) return;
+    if (callRef.current?.id || browsingContactRef.current) return;
     const next = queue.current;
     if (next?.id === prospectRef.current?.id) return;
     setProspect(next);
@@ -415,6 +418,8 @@ export default function CallerWorkspace() {
       );
       const next = await loadQueue({ quiet: true });
       const draft = wrapupDrafts.current.pop();
+      browsingContactRef.current = false;
+      setBrowsingContact(false);
       setPendingWrapups(wrapupDrafts.current.length);
       setCall(draft?.call || null);
       callRef.current = draft?.call || null;
@@ -446,11 +451,75 @@ export default function CallerWorkspace() {
       );
       setCall(null);
       callRef.current = null;
+      browsingContactRef.current = false;
+      setBrowsingContact(false);
       const next = await loadQueue({ quiet: true });
       setProspect(next?.current || null);
       setNote("");
       setOutcome("");
+      savedNote.current = "";
+      setCallbackAt("");
+      setDncReason("");
+      setAvailability({ slots: [] });
     });
+  const navigate = (destination) => {
+    if (callRef.current?.id || actionPending.current) return;
+    setView(destination);
+    if (destination === "dial") {
+      browsingContactRef.current = false;
+      setBrowsingContact(false);
+      setProspect(queue.current || null);
+      setNote("");
+      savedNote.current = "";
+      setOutcome("");
+      setCallbackAt("");
+      setDncReason("");
+    }
+  };
+  const selectContact = (selected) => run("contact", async () => {
+    if (callRef.current?.id) return;
+    const result = await fetchSalesJson(`${BASE}/prospects/${encodeURIComponent(selected.id)}`);
+    // A ringing caller can become active while the detail request is in flight.
+    if (callRef.current?.id) return;
+    const detail = normalizeProspect(result.prospect || selected.raw || selected);
+    if (Array.isArray(result.prospect?.calls)) detail.history = result.prospect.calls.map(normalizeCall);
+    if (Array.isArray(result.prospect?.notes)) detail.note = result.prospect.notes[0]?.body || "";
+    browsingContactRef.current = true;
+    setBrowsingContact(true);
+    setProspect(detail);
+    setView("dial");
+    setNote("");
+    savedNote.current = "";
+    setOutcome("");
+    setCallbackAt("");
+    setDncReason("");
+    setAvailability({ slots: [] });
+  });
+  const prepareContact = () => run("prepare-contact", async () => {
+    const selected = prospectRef.current;
+    if (!selected?.id || callRef.current?.id) return;
+    await fetchSalesJson(`${BASE}/prospects/${encodeURIComponent(selected.id)}/demo`, {
+      method: "POST", body: JSON.stringify({ force: Boolean(selected.demoFailure) }),
+    });
+    setProspect((current) => current?.id === selected.id ? { ...current, demoStatus: "queued" } : current);
+    await loadQueue({ quiet: true });
+  });
+  useEffect(() => {
+    if (!browsingContact || !prospect?.id || !["queued", "preparing", "building"].includes(prospect.demoStatus)) return;
+    let current = true;
+    const id = prospect.id;
+    const interval = window.setInterval(async () => {
+      try {
+        const result = await fetchSalesJson(`${BASE}/prospects/${encodeURIComponent(id)}`);
+        if (!current || callRef.current?.id || !browsingContactRef.current) return;
+        const updated = normalizeProspect(result.prospect);
+        if (Array.isArray(result.prospect?.calls)) updated.history = result.prospect.calls.map(normalizeCall);
+        if (Array.isArray(result.prospect?.notes)) updated.note = result.prospect.notes[0]?.body || "";
+        setProspect((selected) => selected?.id === id ? updated : selected);
+      } catch { /* A refresh failure leaves the existing detail available. */ }
+    }, 5000);
+    return () => { current = false; window.clearInterval(interval); };
+  }, [browsingContact, prospect?.id, prospect?.demoStatus]);
   const checkout = (details) =>
     run("checkout", async () => {
       const result = await fetchSalesJson(
@@ -570,6 +639,11 @@ export default function CallerWorkspace() {
           current.filter((i) => i.incomingId !== item.incomingId),
         );
       if (["create", "match"].includes(action)) incomingTaken.current = "";
+      if (action === "take") {
+        setView("dial");
+        browsingContactRef.current = false;
+        setBrowsingContact(false);
+      }
       await loadQueue({ quiet: true });
     });
   const prepareReturn = (item, websiteUrl) =>
@@ -634,6 +708,11 @@ export default function CallerWorkspace() {
       <DialerScreen
         key={`${prospect?.id || "empty"}:${incomingTaken.current || ""}`}
         queue={queue}
+        view={view}
+        browsingContact={browsingContact}
+        onNavigate={navigate}
+        onSelectContact={selectContact}
+        onPrepareContact={prepareContact}
         prospect={prospect}
         call={call}
         busy={busy}
@@ -669,7 +748,7 @@ export default function CallerWorkspace() {
           }
         }}
         onReconnect={initializeSoftphone}
-        onSkip={() => queueAction("skip")}
+        onSkip={() => browsingContact ? navigate("dial") : queueAction("skip")}
         onRemove={() => queueAction("remove")}
         onSave={() => save()}
         onCheckout={checkout}

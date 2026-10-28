@@ -24,6 +24,7 @@ export default async function handler(req, res) {
         status: req.query?.status,
         eligibleOnly: String(req.query?.eligibleOnly || "").toLowerCase() === "true",
         includeDeleted: String(req.query?.includeDeleted || "").toLowerCase() === "true",
+        includeUnprepared: true,
         search: req.query?.search,
         operatorUserId: context.session.role === "sales" ? context.admin.id : null
       });

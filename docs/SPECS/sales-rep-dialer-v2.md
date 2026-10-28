@@ -4,6 +4,15 @@
 
 ---
 
+## October 28 presentation update
+
+The updated HTML package in `docs/Sales Design/` adds Contacts navigation and the shared callback-picker presentation. Apply it over the existing workspace and backend behavior with these owner-approved clarifications:
+
+- Keep **Company at a glance** and its existing generation flow; the package's receptionist-facts panel is superseded by the company-brief decision below.
+- Outcomes unlock at dialing, including unanswered calls. Saving still follows the existing completed-call outcome contract.
+- Not-prepped contacts belong in Contacts, with calling disabled, and remain excluded from the dial queue. The owner approved the narrow API visibility change to include all of the authenticated rep's assigned prospects; assignment and queue-readiness boundaries remain enforced.
+- Callback scheduling before any call, standalone callback clearing, whole-list filter totals, newest-activity sorting, and richer phone search are not authorized backend changes in this presentation refresh. Expose the current contracts accurately and raise separate changes when needed.
+
 ## What this replaces
 
 - The current "Sales calls" page: a vertical stack of equal-weight cards (Prospect details / Call & demo / Wrap up), five peer call buttons (Call · Mute · Start Receptionist · End Receptionist · End Call), status badges in three places, a "Help prospect sign up" button, an outcome dropdown, a notes textarea with a separate Save.

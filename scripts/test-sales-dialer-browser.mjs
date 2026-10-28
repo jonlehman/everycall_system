@@ -134,6 +134,14 @@ try {
             .isDisabled(),
           true,
         );
+      if (state === "READY") {
+        assert.equal(await page.getByRole("button", { name: "Set call back", exact: true }).isDisabled(), true);
+        await page.getByRole("button", { name: "1 week", exact: true }).click();
+        assert.equal(await page.getByLabel("Callback date", { exact: true }).inputValue(), "2026-10-27");
+        assert.equal(await page.getByLabel("Callback time", { exact: true }).inputValue(), "13:00");
+        await page.getByLabel("Callback date", { exact: true }).fill("2026-10-24");
+        assert.equal(await page.getByText(/Mon, Oct 26/).count(), 1, "Weekend callback rolls to Monday");
+      }
       if (state === "INCOMING_MIDCALL")
         assert.equal(
           await page
@@ -182,8 +190,12 @@ try {
     "Owner wants after-hours coverage.",
   );
   await page.getByRole("button", { name: "Call back ▾", exact: true }).click();
-  await page.getByLabel("Callback date and time").fill("2026-10-23T14:30");
-  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await page.getByLabel("Callback interval", { exact: true }).fill("3");
+  await page.getByLabel("Callback interval unit").selectOption("days");
+  assert.equal(await page.getByLabel("Callback date", { exact: true }).inputValue(), "2026-10-23");
+  await page.getByLabel("Callback date", { exact: true }).fill("2026-10-23");
+  await page.getByLabel("Callback time", { exact: true }).fill("14:30");
+  await page.getByRole("button", { name: "Set call back", exact: true }).click();
   await page
     .getByRole("button", { name: "Save & next →", exact: true })
     .click();
@@ -195,6 +207,8 @@ try {
     (await page.evaluate(() => window.fixtureSaved)).outcome,
     "callback_requested",
   );
+  assert.equal(new Date((await page.evaluate(() => window.fixtureSaved)).callbackAt).getHours(), 14);
+  assert.equal(new Date((await page.evaluate(() => window.fixtureSaved)).callbackAt).getMinutes(), 30);
   await page.goto(
     "http://127.0.0.1:" + server.address().port + "/?state=WRAPUP",
   );

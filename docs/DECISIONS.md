@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-28 — Sales rep design refresh scope
+- Apply the updated reference package in `docs/Sales Design/` as a presentation update to the existing Sales workspace. Preserve existing backend contracts, call control, payment, booking, queue, and knowledge behavior; raise material mismatches separately.
+- Keep the newer **Company at a glance** brief instead of the reference package’s receptionist-facts panel. Outcomes remain available once dialing starts, including unanswered attempts.
+- The not-prepped exclusion applies to the dial queue, not the intended Contacts list. Owner separately approved removing the ready-demo filter from the assigned-rep Contacts listing. Preserve rep assignment boundaries and keep dial-queue readiness filtering unchanged.
+
 ## 2026-10-28 — Reversible Sales phone testing
 - Add an admin-only phone test control under Sales Settings. Enabling saves each original primary phone and entire structured phone list in private database columns, then substitutes the owner desk and cell. Restoring returns those values exactly; repeated enable never replaces a backup. Source keys and other metadata are unchanged.
 - Serialize mode changes with call reservation and phone writes. Require no active Sales calls or unresolved incoming/delivery/booking work, and reject stale destinations. Block additions/imports/phone edits/removals during testing; increment prospect row versions on both transitions.
