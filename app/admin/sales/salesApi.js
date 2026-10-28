@@ -183,6 +183,8 @@ export function normalizeProspect(source = {}) {
     ])),
     numbers: Array.isArray(source.numbers) ? source.numbers : [],
     coreFacts: Array.isArray(source.coreFacts) ? source.coreFacts : [],
+    companyBrief: source.companyBrief && typeof source.companyBrief === "object"
+      ? source.companyBrief : { status: "missing" },
     suggestedAsks: Array.isArray(source.suggestedAsks)
       ? source.suggestedAsks
       : [],

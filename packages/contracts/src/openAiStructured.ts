@@ -147,6 +147,20 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   }
 }
 
+async function fetchStructuredJsonWithTimeout(init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", { ...init, signal: controller.signal });
+    if (!response.ok) {
+      const bodyText = await response.text();
+      throw new Error(`openai_json_model_failed:${response.status}:${bodyText.slice(0, 400)}`);
+    }
+    // Keep cancellation active until the body has arrived, not only headers.
+    return await response.json();
+  } finally { clearTimeout(timer); }
+}
+
 async function mapWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>) {
   const results = new Array<R>(items.length);
   let cursor = 0;
@@ -176,6 +190,8 @@ export async function callOpenAiJsonModel<T>(input: {
   jsonSchema?: JsonSchema;
   promptCacheKey?: string;
   promptCacheRetention?: string;
+  timeoutMs?: number;
+  maxAttempts?: number;
 }): Promise<{
   parsed: T;
   usage: Record<string, unknown>;
@@ -188,8 +204,12 @@ export async function callOpenAiJsonModel<T>(input: {
     throw new Error("openai_api_key_missing");
   }
 
+  const timeoutMs = input.timeoutMs && Number.isFinite(input.timeoutMs) && input.timeoutMs > 0
+    ? input.timeoutMs : OPENAI_JSON_TIMEOUT_MS;
+  const maxAttempts = input.maxAttempts && Number.isInteger(input.maxAttempts) && input.maxAttempts > 0
+    ? input.maxAttempts : OPENAI_JSON_MAX_ATTEMPTS;
   let lastError: unknown = null;
-  for (let attempt = 1; attempt <= OPENAI_JSON_MAX_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const system = attempt === 1
       ? input.system
       : `${input.system}\nReturn syntactically valid JSON only. Double-check commas, brackets, and quotes before responding.`;
@@ -205,21 +225,15 @@ export async function callOpenAiJsonModel<T>(input: {
         ...(input.promptCacheKey === undefined ? {} : { promptCacheKey: input.promptCacheKey }),
         ...(input.promptCacheRetention === undefined ? {} : { promptCacheRetention: input.promptCacheRetention })
       });
-      const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
+      const json = await fetchStructuredJsonWithTimeout({
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify(requestBody)
-      }, OPENAI_JSON_TIMEOUT_MS);
+      }, timeoutMs);
 
-      if (!response.ok) {
-        const bodyText = await response.text();
-        throw new Error(`openai_json_model_failed:${response.status}:${bodyText.slice(0, 400)}`);
-      }
-
-      const json = await response.json();
       const rawText = resolveResponseText(json);
       const extracted = extractJsonText(rawText);
       const parsed = JSON.parse(extracted);
@@ -232,7 +246,7 @@ export async function callOpenAiJsonModel<T>(input: {
       };
     } catch (err) {
       lastError = err;
-      if (attempt >= OPENAI_JSON_MAX_ATTEMPTS) {
+      if (attempt >= maxAttempts) {
         throw err;
       }
     }

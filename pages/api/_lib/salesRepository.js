@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { SALES_RESEARCH_FIELDS } from "../../../lib/salesProspectResearch.js";
 import { salesCoreFacts, salesSuggestedAsks } from "./salesCoreFacts.js";
+import { generateSalesCompanyBrief, serializeCompanyBrief, SALES_COMPANY_BRIEF_VERSION } from "./salesCompanyBrief.js";
 import { scrapeDemoWebsite } from "./demoWebsiteScraper.js";
 import {
   buildDemoKnowledgeBundle,
@@ -614,6 +615,7 @@ function serializeProspect(row) {
     returnMessage: prospectMetadata.returnMessage || null,
     numbers: asArray(row.numbers_json).length ? row.numbers_json : [{phoneE164: row.phone_e164, label: "Shop", type: "shop"}],
     coreFacts: salesCoreFacts(demoBundle),
+    companyBrief: serializeCompanyBrief(demoBundle.company_brief),
     suggestedAsks: salesSuggestedAsks(salesCoreFacts(demoBundle)),
     contactRole: prospectMetadata.contactRole || null,
     metro: prospectMetadata.metro || null,
@@ -1755,7 +1757,52 @@ export async function claimSalesDemoJobs(pool, {
   });
 }
 
+// Enrich a ready Sales profile from its saved download without rebuilding its tenant or demo.
+export async function prepareSalesCompanyBrief(pool, prospectId, { generate = generateSalesCompanyBrief } = {}) {
+  const id = normalizeSalesText(prospectId, 200);
+  const read = () => pool.query(`SELECT d.* FROM sales_demo_profiles d
+    JOIN sales_prospects p ON p.prospect_id = d.prospect_id
+    WHERE d.prospect_id = $1 AND d.status = 'ready'
+      AND d.source_website_url IS NOT DISTINCT FROM p.website_url`, [id]);
+  const row = (await read()).rows[0];
+  if (!row) throw salesError("demo_not_ready", "Prepare the website demo before generating a company brief.", 409);
+  const oldBrief = asObject(row.demo_bundle_json).company_brief;
+  const current = serializeCompanyBrief(oldBrief);
+  if (["ready", "pending"].includes(current.status)) return current;
+  const token = createId("company_brief");
+  const pending = { version: SALES_COMPANY_BRIEF_VERSION, status: "pending", startedAt: new Date().toISOString(), token };
+  const claimed = await pool.query(`UPDATE sales_demo_profiles d
+    SET demo_bundle_json = jsonb_set(demo_bundle_json, '{company_brief}', $2::jsonb), updated_at = NOW()
+    FROM sales_prospects p
+    WHERE d.prospect_id = $1 AND p.prospect_id = d.prospect_id AND d.status = 'ready'
+      AND d.source_website_url IS NOT DISTINCT FROM p.website_url
+      AND d.demo_bundle_json = $3::jsonb AND d.scrape_pages_json = $4::jsonb
+    RETURNING d.*`, [id, json(pending, {}), json(row.demo_bundle_json, {}), json(row.scrape_pages_json, [])]);
+  if (!claimed.rows.length) return serializeCompanyBrief((await read()).rows[0]?.demo_bundle_json?.company_brief);
+  let brief;
+  try { brief = await generate(asArray(row.scrape_pages_json)); }
+  catch { brief = { version: SALES_COMPANY_BRIEF_VERSION, status: "unavailable", reason: "generation_failed" }; }
+  await pool.query(`UPDATE sales_demo_profiles d
+    SET demo_bundle_json = jsonb_set(demo_bundle_json, '{company_brief}', $3::jsonb), updated_at = NOW()
+    FROM sales_prospects p
+    WHERE d.prospect_id = $1 AND p.prospect_id = d.prospect_id AND d.status = 'ready'
+      AND d.source_website_url IS NOT DISTINCT FROM p.website_url
+      AND d.demo_bundle_json->'company_brief'->>'token' = $2
+      AND d.scrape_pages_json = $4::jsonb`, [id, token, json(brief, {}), json(row.scrape_pages_json, [])]);
+  return serializeCompanyBrief((await read()).rows[0]?.demo_bundle_json?.company_brief);
+}
+
 export async function prepareSalesDemoProfile(pool, prospectId) {
+  const profile = await prepareSalesDemoProfileSource(pool, prospectId);
+  // Commit demo readiness and the download before optional AI enrichment. A
+  // provider failure or server termination must never discard a working demo.
+  try {
+    await prepareSalesCompanyBrief(pool, prospectId);
+    return await getReadySalesDemoProfile(pool, prospectId) || profile;
+  } catch { return profile; }
+}
+
+async function prepareSalesDemoProfileSource(pool, prospectId) {
   const prospect = await getSalesProspect(pool, prospectId);
   if (!prospect) throw salesError("prospect_not_found", "Prospect not found.", 404);
   if (!prospect.preparationEligible) {
@@ -1836,7 +1883,8 @@ export async function prepareSalesDemoProfile(pool, prospectId) {
         normalizeSalesText(built?.previewSummary, 2000) || normalizeSalesText(bundle.summary, 2000),
         json(bundle, {}),
         Number(scrape.pageCount || 0),
-        json(scrape.scrapePages, []),
+        json((scrape.pages || []).map((page, index) => ({ ...scrape.scrapePages?.[index],
+          url: page.url, title: page.title, meta: page.meta, headings: page.headings, lines: page.lines })), []),
         normalizeSalesText(bundle.extractionVersion, 120) || DEMO_BUNDLE_EXTRACTION_VERSION
       ]
     );

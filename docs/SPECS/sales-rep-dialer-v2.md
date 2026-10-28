@@ -49,7 +49,20 @@
 - Caller workspace shows city/region and the suggested opener, with a collapsed **List research** section for after-hours classification, posted hours, and research notes. Treat all as rep preparation, never as verified receptionist facts or calling-window configuration. Keep the existing `core_facts` source unchanged. Import continues to require an explicit permission mapping and timezone under the blocking policy; these research columns never imply call/email permission.
 - **Before you dial** (READY) / **History** (TALK, DEMO): last attempt (date, time, outcome), best time (from notes), last note.
 - **This call** (WRAPUP): length, demo length, your notes, transcript status, recording link. History moves below it.
-- **What the AI Receptionist knows about them:** the temp tenant's pinned by-heart facts, rendered `Label: spoken sentence`, from the same `core_facts` block the receptionist prompt uses. One source — never a second copy. Caption per state as in the mockups.
+- **Company at a glance** (owner-approved 2026-10-28 replacement of the rep-only facts panel): an AI-generated brief from the website download already used to prepare the Sales demo. Show **What makes them stand out** (1–2 factual sentences; omit when unsupported), **Main services** (3–5 plain-language services), and **Why customers call** (one sentence of typical needs). Aim for 75–100 words total. Receptionist `core_facts`, suggested demo questions, prompts and call behavior remain unchanged.
+- Persist the brief separately as `demo_bundle_json.company_brief`; render saved content without inference. Generation uses the existing structured Responses helper, with page URLs and literal supporting quotes, and no heuristic or template summary fallback. New Sales preparations retain downloaded page lines separately from bounded AI evidence in `scrape_pages_json`.
+- Existing ready demos expose **Generate brief**, which reuses their saved website evidence without recrawling, modifying the tenant, or replacing the demo. Older Sales captures retain only title/description/headings/excerpts; if they cannot support the required services and summary, show unavailable. Pending generation has an exclusive, recoverable lease; retries cannot overwrite a newer capture or changed website. Ready briefs are reused. Brief failures do not change demo readiness.
+
+### Company brief requirement mapping
+
+This is a Sales presentation artifact, not a receptionist knowledge card or published tenant build. It changes no frozen requirement text, source authority, tenant override, or publication contract.
+
+| Preserved requirement | Implementation boundary | Regression |
+|---|---|---|
+| REQ-PIPE-005, REQ-PIPE-006 | `prepareSalesDemoProfile` retains Sales download page lines/headings; `companyBriefEvidence` budgets a copy only. | `validate-sales-company-brief.mjs`: unchanged stored evidence, legacy capture support, input immutability. |
+| REQ-KNOW-007, REQ-PIPE-009 | Separate brief has a source hash and AI-written claims with page URLs and supporting quotations. It does not substitute for canonical source refs. | AI helper invocation and quote-grounding rejection regressions. |
+| REQ-RULE-001, REQ-RULE-012 | Sales website brief never enters receptionist facts/prompts, overrides, or authority evaluation; prompt excludes unsupported marketing superiority. | Original `core_facts` and remaining demo bundle stay byte-equivalent across enrichment. |
+| REQ-PIPE-016 | Generating a brief touches only the Sales profile JSON field; tenant build publication and demo readiness remain unchanged. | Failure/retry, exclusive lease, stale capture, changed website and ready-reuse regressions. |
 
 ## Part 3 — Call panel by state
 

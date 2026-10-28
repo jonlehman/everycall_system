@@ -18,6 +18,7 @@ export default function CallerWorkspace() {
     repMode: true,
   });
   const [prospect, setProspect] = useState(null),
+    [briefGeneratingId, setBriefGeneratingId] = useState(""),
     [call, setCall] = useState(null),
     [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
@@ -579,6 +580,21 @@ export default function CallerWorkspace() {
       });
       await loadQueue({ quiet: true });
     });
+  const prepareCompanyBrief = async () => {
+    const id = prospectRef.current?.id;
+    if (!id || briefGeneratingId) return;
+    setBriefGeneratingId(id);
+    try {
+      const result = await fetchSalesJson(`${BASE}/prospects/${encodeURIComponent(id)}/company-brief`, {
+        method: "POST", body: "{}",
+      });
+      setProspect((current) => current?.id === id
+        ? { ...current, companyBrief: result.companyBrief } : current);
+    } catch {
+      setProspect((current) => current?.id === id
+        ? { ...current, companyBrief: { status: "unavailable", reason: "request_failed" } } : current);
+    } finally { setBriefGeneratingId(""); }
+  };
   const search = async (query) => {
     const current = ++searchGeneration.current;
     if (query.trim().length < 2) {
@@ -662,6 +678,8 @@ export default function CallerWorkspace() {
         incoming={incoming}
         onIncoming={incomingAction}
         onPrepareReturn={prepareReturn}
+        onPrepareCompanyBrief={prepareCompanyBrief}
+        briefGenerating={briefGeneratingId === prospect?.id}
         searchResults={searchResults}
         onSearch={search}
         onSignOut={signOut}

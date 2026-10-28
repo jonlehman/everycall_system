@@ -173,6 +173,8 @@ export default function DialerScreen({
   incoming,
   onIncoming,
   onPrepareReturn,
+  onPrepareCompanyBrief,
+  briefGenerating = false,
   searchResults,
   onSearch,
   onSignOut,
@@ -486,34 +488,28 @@ export default function DialerScreen({
           {phase !== "WRAPUP" && (
             <Section>
               <div className={styles.factsTitle}>
-                <h2>What the AI Receptionist knows about them</h2>
-                <small>
-                  {phase === "READY"
-                    ? "from their website"
-                    : "built from their site"}
-                </small>
+                <h2>Company at a glance</h2>
+                <small>from their website</small>
               </div>
-              {(prospect?.coreFacts || []).map((fact, index) => (
-                <Row key={index} label={fact.label || fact.category}>
-                  {fact.sentence}
-                </Row>
-              ))}
-              {!prospect?.coreFacts?.length && (
-                <p className={styles.caption}>
-                  No pinned by-heart facts are available yet.
+              {prospect?.companyBrief?.status === "ready" ? <>
+                {prospect.companyBrief.standOut && <Row label="What makes them stand out">{prospect.companyBrief.standOut}</Row>}
+                <Row label="Main services"><ul>{prospect.companyBrief.services.map((service, index) => <li key={index}>{service}</li>)}</ul></Row>
+                <Row label="Why customers call">{prospect.companyBrief.whyCustomersCall}</Row>
+              </> : <>
+                <p className={styles.caption} role="status">
+                  {briefGenerating || prospect?.companyBrief?.status === "pending"
+                    ? "Preparing company brief…"
+                    : prospect?.companyBrief?.status === "unavailable"
+                      ? ["insufficient_website_evidence", "website_evidence_missing"].includes(prospect.companyBrief.reason)
+                        ? "The saved website content does not provide enough detail for a company brief."
+                        : "Company brief unavailable. You can try again."
+                      : "Company brief has not been generated yet."}
                 </p>
-              )}
-              {phase === "READY" && (
-                <p className={styles.caption}>
-                  During the demo, suggest he ask her one of these.
-                </p>
-              )}
-              {phase === "TALK" && (
-                <p className={styles.caption}>
-                  Have one ready if he stalls during the demo: “Ask her what
-                  your hours are.”
-                </p>
-              )}
+                {prospect?.demoStatus === "ready" && onPrepareCompanyBrief && <Button
+                  onClick={onPrepareCompanyBrief} disabled={briefGenerating}>
+                  {briefGenerating ? "Generating…" : prospect.companyBrief?.status === "pending" ? "Check brief" : "Generate brief"}
+                </Button>}
+              </>}
             </Section>
           )}
           {["TALK", "DEMO", "WRAPUP"].includes(phase) && (
