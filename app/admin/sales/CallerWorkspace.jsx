@@ -622,6 +622,7 @@ export default function CallerWorkspace() {
   };
   return (
     <>
+      {queue.config?.phoneTestMode ? <div role="status" className="mx-4 mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><strong>Phone test mode is on.</strong> Calls use the owner’s desk or cell. Original numbers are saved. Outcomes stay on test calls; checkout, bookings, follow-ups, and incoming Sales calls are unavailable.</div> : null}
       <audio
         id="sales-console-remote-audio"
         ref={remoteAudioRef}

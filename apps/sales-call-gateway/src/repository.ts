@@ -154,7 +154,7 @@ const CALL_CONTEXT_SELECT = `
     COALESCE(s.dialed_number, s.metadata_json->>'prospect_number', p.phone_e164) AS prospect_number,
     p.permission_granted,
     (p.suppressed OR EXISTS(SELECT 1 FROM sales_dnc_registry r WHERE
-      (r.identity_type='phone' AND (r.identity_value=p.phone_e164 OR EXISTS(SELECT 1 FROM jsonb_array_elements(p.numbers_json) n WHERE n->>'phoneE164'=r.identity_value)))
+      (r.identity_type='phone' AND (r.identity_value=COALESCE(p.test_original_phone_e164,p.phone_e164) OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(p.test_original_numbers_json,p.numbers_json)) n WHERE n->>'phoneE164'=r.identity_value)))
       OR (r.identity_type='domain' AND r.identity_value=sales_website_domain(p.website_url)))) AS suppressed,
     p.do_not_call,
     p.status AS prospect_status,

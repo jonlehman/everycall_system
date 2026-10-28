@@ -15,7 +15,7 @@ export const SALES_PHASE_SCRIPTS = Object.freeze({
   close_decline: 'Jon can take it at the start of your setup call.'
 });
 export const SALES_TERMINAL_SQL = "'closed','ended','completed','failed','no_answer','voicemail','wrong_number','not_interested','do_not_call','canceled','cancelled'";
-export const SALES_UNSUPPRESSED_SQL = `NOT EXISTS (SELECT 1 FROM sales_dnc_registry r WHERE (r.identity_type='phone' AND (r.identity_value=p.phone_e164 OR EXISTS(SELECT 1 FROM jsonb_array_elements(p.numbers_json) n WHERE n->>'phoneE164'=r.identity_value))) OR (r.identity_type='domain' AND r.identity_value=sales_website_domain(p.website_url)))`;
+export const SALES_UNSUPPRESSED_SQL = `NOT EXISTS (SELECT 1 FROM sales_dnc_registry r WHERE (r.identity_type='phone' AND (r.identity_value=COALESCE(p.test_original_phone_e164,p.phone_e164) OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(p.test_original_numbers_json,p.numbers_json)) n WHERE n->>'phoneE164'=r.identity_value))) OR (r.identity_type='domain' AND r.identity_value=sales_website_domain(p.website_url)))`;
 
 export async function salesTransaction(pool, operation) {
   const db = typeof pool.connect === 'function' ? await pool.connect() : pool;
@@ -29,11 +29,11 @@ export async function assertSalesProspectOwner(pool, prospectId, repId, {allowUn
   if (Number(result.rows[0].assigned_rep_user_id)!==Number(repId) && !(allowUnassigned && result.rows[0].assigned_rep_user_id===null)) throw salesError('prospect_forbidden','This prospect belongs to another rep.',403);
 }
 export async function getSalesDialerSettings(pool, actor, env=process.env) {
-  const stored=await pool.query('SELECT scripts_json FROM sales_dialer_config WHERE id=TRUE');
+  const stored=await pool.query('SELECT scripts_json,phone_test_mode FROM sales_dialer_config WHERE id=TRUE');
   const ownSettings=await getSalesOperatorSettings(pool,actor.id);
   const phone=String(ownSettings?.callerIdNumber||'').trim()||String(env.SALES_TELNYX_CALLER_ID||'').trim();
   const lead=Number(env.FULL_BUILD_LEAD_MINUTES);
-  return {scripts:{...SALES_PHASE_SCRIPTS,...stored.rows[0]?.scripts_json},config:{removePromptAt:Math.max(1,Number(env.REMOVE_PROMPT_AT)||4),fullBuildLeadMinutes:Number.isFinite(lead)&&lead>0?lead:null,setupCallOwner:env.SETUP_CALL_OWNER||null,scriptsEditUrl:'/sales/scripts',inboundConfigured:Boolean(env.SALES_INBOUND_RECEPTIONIST_NUMBER || (env.SALES_CALL_GATEWAY_BASE_URL && env.SALES_OPENAI_API_KEY))},operator:{id:Number(actor.id),phone,name:actor.name||actor.display_name||actor.username||actor.email||'Rep',role:actor.role,canEditScripts:['admin','super_admin'].includes(actor.role)}};
+  return {scripts:{...SALES_PHASE_SCRIPTS,...stored.rows[0]?.scripts_json},config:{phoneTestMode:Boolean(stored.rows[0]?.phone_test_mode),removePromptAt:Math.max(1,Number(env.REMOVE_PROMPT_AT)||4),fullBuildLeadMinutes:Number.isFinite(lead)&&lead>0?lead:null,setupCallOwner:env.SETUP_CALL_OWNER||null,scriptsEditUrl:'/sales/scripts',inboundConfigured:Boolean(env.SALES_INBOUND_RECEPTIONIST_NUMBER || (env.SALES_CALL_GATEWAY_BASE_URL && env.SALES_OPENAI_API_KEY))},operator:{id:Number(actor.id),phone,name:actor.name||actor.display_name||actor.username||actor.email||'Rep',role:actor.role,canEditScripts:['admin','super_admin'].includes(actor.role)}};
 }
 export async function saveSalesScripts(pool,scripts) {
   if(!scripts||typeof scripts!=='object'||Array.isArray(scripts)) throw salesError('invalid_scripts','Scripts must be an object.');
@@ -50,10 +50,10 @@ export async function saveSalesScripts(pool,scripts) {
 export async function enrichSalesProspect(pool,prospectId,repId) {
   const prospect=await getSalesProspectDetail(pool,prospectId,{operatorUserId:repId});
   if(!prospect) return null;
-  const counts=await pool.query(`SELECT COUNT(*) FILTER (WHERE metadata_json->>'direction' IS DISTINCT FROM 'inbound') AS attempts,COUNT(*) FILTER (WHERE connected_at IS NOT NULL AND COALESCE(outcome,'') NOT IN ('voicemail','no_answer','wrong_number')) AS conversations FROM sales_call_sessions WHERE prospect_id=$1`,[prospectId]);
+  const counts=await pool.query(`SELECT COUNT(*) FILTER (WHERE metadata_json->>'direction' IS DISTINCT FROM 'inbound') AS attempts,COUNT(*) FILTER (WHERE connected_at IS NOT NULL AND COALESCE(outcome,'') NOT IN ('voicemail','no_answer','wrong_number')) AS conversations FROM sales_call_sessions WHERE prospect_id=$1 AND metadata_json->>'phone_test_mode' IS DISTINCT FROM 'true'`,[prospectId]);
   prospect.attemptCount=Number(counts.rows[0]?.attempts||0); prospect.conversationCount=Number(counts.rows[0]?.conversations||0);
   prospect.history=prospect.calls;
-  prospect.numbers=prospect.numbers.map(number=>{const history=prospect.calls.filter(c=>c.dialedNumber===number.phoneE164);return {...number,lastConnectedAt:history.find(c=>c.connectedAt)?.connectedAt||null,lastNote:history.find(c=>c.outcomeNotes||c.liveNotes)?.outcomeNotes||history.find(c=>c.liveNotes)?.liveNotes||null};}).sort((a,b)=>Number(Boolean(b.lastConnectedAt))-Number(Boolean(a.lastConnectedAt))||(a.type==='cell'?-1:b.type==='cell'?1:0));
+  prospect.numbers=prospect.numbers.map(number=>{const history=prospect.calls.filter(c=>c.dialedNumber===number.phoneE164 && !c.metadata?.phone_test_mode);return {...number,lastConnectedAt:history.find(c=>c.connectedAt)?.connectedAt||null,lastNote:history.find(c=>c.outcomeNotes||c.liveNotes)?.outcomeNotes||history.find(c=>c.liveNotes)?.liveNotes||null};}).sort((a,b)=>Number(Boolean(b.lastConnectedAt))-Number(Boolean(a.lastConnectedAt))||(a.type==='cell'?-1:b.type==='cell'?1:0));
   return prospect;
 }
 export async function listSalesIncoming(pool,repId) {
@@ -79,7 +79,7 @@ export async function getSalesRepQueue(pool,repId,{timezone='UTC',actor={id:repI
   const ready=candidates.rows.filter(r=>r.demo_status==='ready');
   if(ready.length<=9) for(const row of candidates.rows.filter(r=>!['ready','failed','preparing'].includes(r.demo_status)).slice(0,10-ready.length)) await enqueueSalesDemoJob(pool,{prospectId:row.prospect_id,adminUserId:repId});
   const queue=(await Promise.all(ready.map(r=>enrichSalesProspect(pool,r.prospect_id,repId)))).filter(p=>p && !p.activeSalesCallId && (!p.callbackAt||Date.parse(p.callbackAt)<=Date.now()));
-  const counters=await pool.query(`SELECT COUNT(*) FILTER(WHERE (COALESCE(started_at,created_at) AT TIME ZONE $2)::date=(NOW() AT TIME ZONE $2)::date AND metadata_json->>'direction' IS DISTINCT FROM 'inbound') AS dials,COUNT(*) FILTER(WHERE (connected_at AT TIME ZONE $2)::date=(NOW() AT TIME ZONE $2)::date AND COALESCE(outcome,'') NOT IN ('voicemail','no_answer','wrong_number')) AS conversations,COUNT(*) FILTER(WHERE (demo_started_at AT TIME ZONE $2)::date=(NOW() AT TIME ZONE $2)::date) AS demos,COUNT(*) FILTER(WHERE (paid_at AT TIME ZONE $2)::date=(NOW() AT TIME ZONE $2)::date) AS paid FROM sales_call_sessions WHERE admin_user_id=$1`,[repId,timezone]);
+  const counters=await pool.query(`SELECT COUNT(*) FILTER(WHERE (COALESCE(started_at,created_at) AT TIME ZONE $2)::date=(NOW() AT TIME ZONE $2)::date AND metadata_json->>'direction' IS DISTINCT FROM 'inbound') AS dials,COUNT(*) FILTER(WHERE (connected_at AT TIME ZONE $2)::date=(NOW() AT TIME ZONE $2)::date AND COALESCE(outcome,'') NOT IN ('voicemail','no_answer','wrong_number')) AS conversations,COUNT(*) FILTER(WHERE (demo_started_at AT TIME ZONE $2)::date=(NOW() AT TIME ZONE $2)::date) AS demos,COUNT(*) FILTER(WHERE (paid_at AT TIME ZONE $2)::date=(NOW() AT TIME ZONE $2)::date) AS paid FROM sales_call_sessions WHERE admin_user_id=$1 AND metadata_json->>'phone_test_mode' IS DISTINCT FROM 'true'`,[repId,timezone]);
   return {queue,readyCount:queue.length,counters:Object.fromEntries(Object.entries(counters.rows[0]).map(([k,v])=>[k,Number(v)])),...await getSalesDialerSettings(pool,actor,env),incoming:await listSalesIncoming(pool,repId),returnItems:await listSalesReturnItems(pool,repId)};
 }
 export async function saveSalesLiveNotes(pool,id,repId,notes) {

@@ -620,6 +620,7 @@ function serializeProspect(row) {
     contactRole: prospectMetadata.contactRole || null,
     metro: prospectMetadata.metro || null,
     pitchFlags: asArray(prospectMetadata.pitchFlags),
+    phoneTestMode: row.test_original_phone_e164 != null,
     phoneE164: normalizeSalesText(row.phone_e164, 40),
     websiteUrl: normalizeSalesText(row.website_url, 1000) || null,
     businessCategory: normalizeSalesText(row.business_category, 160) || null,
@@ -2437,6 +2438,8 @@ export async function recordSalesCallOutcome(pool, {salesCallId, outcome, notes 
     if (!active) throw salesError('sales_call_not_found','Sales call not found.',404);
     if (!['closed','ended','completed','failed','no_answer','voicemail','wrong_number','not_interested','do_not_call','canceled','cancelled'].includes(active.state)) throw salesError('sales_call_end_required','End the call before saving its outcome.',409);
     const result=await db.query(`UPDATE sales_call_sessions SET outcome=CASE WHEN paid_at IS NOT NULL THEN 'paid' ELSE $2 END,outcome_notes=$3,live_notes=$3,outcome_recorded_at=NOW(),callback_at=$4,updated_at=NOW() WHERE sales_call_id=$1 RETURNING *`,[salesCallId,normalizedOutcome,String(notes||active.live_notes||'').slice(0,5000),normalizedOutcome==='callback_requested'?callbackAt:null]);
+    // Test dispositions remain reviewable on the call, without changing real contact eligibility or sending followups.
+    if (active.metadata_json?.phone_test_mode) return serializeSalesCallSession(result.rows[0]);
     const dnc=['not_interested','do_not_call','wrong_number'].includes(normalizedOutcome);
     await db.query(`UPDATE sales_prospects SET last_outcome=$2,last_outcome_at=NOW(),status=CASE WHEN $3 THEN 'do_not_call' WHEN status IN ('do_not_call','removed','paid') THEN status ELSE 'ready_to_call' END,do_not_call=do_not_call OR $3,dnc_reason=CASE WHEN $3 THEN $4 ELSE dnc_reason END,callback_at=$5,inbound_return=FALSE,queue_position=nextval(pg_get_serial_sequence('sales_prospects','queue_position')),updated_at=NOW() WHERE prospect_id=$1`,[active.prospect_id,normalizedOutcome,dnc,normalizedOutcome==='wrong_number'?'bad_number':reason,normalizedOutcome==='callback_requested'?callbackAt:null]);
     await db.query(

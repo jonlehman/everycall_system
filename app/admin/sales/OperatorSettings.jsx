@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import PhoneTestSettings from './PhoneTestSettings';
 import { useEffect, useState } from 'react';
 import { fetchSalesJson, displayStatus } from './salesApi';
 import { Card, Field, TextInput, ActionButton, ErrorNotice, Detail } from './SalesUi';
@@ -37,6 +38,7 @@ export default function OperatorSettings() {
     finally { setBusy(false); }
   };
   return <div className="grid gap-4">
+    <PhoneTestSettings />
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="m-0 text-lg font-semibold">Operator settings</h2><p className="mt-1 text-sm text-slate-500">Manage calling access and dedicated sales phone settings for each rep.</p></div><Link className="text-sm font-semibold text-blue-700 underline" href="/admin/users">Create or reset a Sales account</Link></div>
       <ErrorNotice message={error} />

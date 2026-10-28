@@ -36,6 +36,7 @@ try {
  await pool.query(await read('migrations/0032_outbound_sales_demo.sql'));
  await pool.query(await read('migrations/0054_call_processing_recovery.sql'));
  await pool.query(await read('migrations/0056_sales_dialer_v2.sql'));
+ await pool.query(await read('migrations/0057_sales_phone_test_mode.sql'));
  await pool.query(`INSERT INTO sales_prospects(prospect_id,source_key,business_name,phone_e164)
  VALUES('prospect','test','Fixture','+12065550100');
  INSERT INTO sales_call_sessions(sales_call_id,prospect_id,state,operator_call_control_id)

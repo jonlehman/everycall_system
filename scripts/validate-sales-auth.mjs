@@ -14,6 +14,7 @@ import adminOverview from '../pages/api/v1/admin/overview.js';
 import adminUsers from '../pages/api/v1/admin/users.js';
 import { getSalesReport, salesReportFilters } from '../pages/api/_lib/salesReporting.js';
 import salesReports from '../pages/api/v1/admin/sales/reports.js';
+import phoneTestMode from '../pages/api/v1/admin/sales/phone-test-mode.js';
 import operatorSettings from '../pages/api/v1/admin/sales/operator-settings/index.js';
 
 process.env.DATABASE_URL = 'postgres://sales-auth-fixture';
@@ -99,6 +100,16 @@ try {
   assert.equal(operators.body.operators.length, 2);
   assert.equal((await call(operatorSettings, request(salesCookie))).body.settings.active, true);
   assert.equal((await call(salesReports, request(salesCookie))).statusCode, 403);
+  for (const method of ['GET','PATCH']) {
+    assert.equal((await call(phoneTestMode, request(salesCookie,method,{enabled:true}))).statusCode,403);
+    assert.equal((await call(phoneTestMode, request('',method,{enabled:true}))).statusCode,401);
+  }
+  assert.equal((await call(phoneTestMode, request(adminCookie))).body.phoneTestMode.enabled,false);
+  assert.equal((await call(phoneTestMode, request(adminCookie,'PATCH',{enabled:true}))).body.phoneTestMode.enabled,true);
+  assert.equal((await call(phoneTestMode, request(adminCookie,'PATCH',{enabled:false}))).body.phoneTestMode.enabled,false);
+  const phoneModeAudits=await query("SELECT details FROM audit_log WHERE action='sales.phone_test_mode.updated'");
+  assert.equal(phoneModeAudits.rowCount,2,'Each toggle has exactly one transactional audit');
+
   assert.equal((await call(salesReports, request(copiedCookie))).statusCode, 401);
   assert.equal((await call(salesReports, request(''))).statusCode, 401);
   assert.equal((await call(salesReports, request(adminCookie))).body.totals.sessions, 0);

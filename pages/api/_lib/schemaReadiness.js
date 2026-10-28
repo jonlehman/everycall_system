@@ -1,11 +1,11 @@
 // Physical schema for the explicit-schema release (REQ-PIPE-017). No DDL.
 export const REQUIRED_SCHEMA_COLUMNS = {
   sales_dnc_registry:['identity_type','identity_value','reason'],
-  sales_dialer_config:['id','scripts_json'],
+  sales_dialer_config:['id','scripts_json','phone_test_mode'],
   sales_checkout_sessions:['checkout_id','paid_at','activation_status','tenant_key'],
   sales_setup_bookings:['booking_id','starts_at','status'],
   sales_incoming_calls:['incoming_id','rep_user_id','state','ring_expires_at'],
-  sales_prospects:['assigned_rep_user_id','numbers_json','callback_at','tenant_key','dnc_reason'],
+  sales_prospects:['test_original_phone_e164','test_original_numbers_json','assigned_rep_user_id','numbers_json','callback_at','tenant_key','dnc_reason'],
   sales_call_sessions:['live_notes','dialed_number','paid_at','transcript_json','recording_url'],
   "admin_users": ["created_at", "email", "id", "last_active_at", "password_hash", "role", "username"],
   "async_jobs": ["attempts", "available_at", "claim_token", "completed_at", "created_at", "dedupe_key", "id", "job_type", "last_error", "lease_expires_at", "locked_at", "locked_by", "max_attempts", "payload_json", "status", "tenant_key", "updated_at"],
@@ -145,7 +145,7 @@ export const REQUIRED_SCHEMA_INDEXES = [
   "tenant_users_transfer_extension_unique"
 ];
 export const REQUIRED_SCHEMA_TRIGGERS = [
-  "sales_dnc_guard", "sales_v2_call_guard_trigger", "sales_tenant_activation_guard_trigger",
+  "sales_aaa_test_prospect_guard", "sales_aaa_test_call_guard", "sales_test_incoming_guard_trigger", "sales_dnc_guard", "sales_v2_call_guard_trigger", "sales_tenant_activation_guard_trigger",
   "tenant_user_invitation_revocation",
   "async_job_legacy_fence",
   "tenant_voice_release_activation_guard"
@@ -156,5 +156,6 @@ export const REQUIRED_SCHEMA_MIGRATIONS = [
   "0053_knowledge_governance.sql",
   "0054_call_processing_recovery.sql",
   "0055_explicit_schema_baseline.sql",
-  "0056_sales_dialer_v2.sql"
+  "0056_sales_dialer_v2.sql",
+  "0057_sales_phone_test_mode.sql"
 ];

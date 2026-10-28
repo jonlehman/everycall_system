@@ -71,6 +71,7 @@
     "validate:client-setup-status": "node scripts/validate-client-setup-status.mjs",
     "validate:live-v20-1": "node scripts/validate-managed-live-runtime.mjs && node scripts/validate-live-brief-curation.mjs && node scripts/validate-live-prompt-settings.mjs && node scripts/validate-client-setup-status.mjs",
     "validate:sales-dialer-ui": "node --no-warnings scripts/validate-sales-dialer-ui.mjs",
+    "validate:sales-phone-test-mode": "node --no-warnings scripts/validate-sales-phone-test-mode.mjs",
     "validate:sales-dialer-v2": "node --no-warnings scripts/validate-sales-dialer-v2.mjs",
     "validate:sales-paid-activation": "node --no-warnings scripts/validate-sales-paid-activation.mjs",
     "test:sales-dialer-browser": "node scripts/test-sales-dialer-browser.mjs",

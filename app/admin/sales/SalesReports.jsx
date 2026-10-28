@@ -27,7 +27,7 @@ export default function SalesReports() {
     <div className="grid min-w-0 grid-cols-1 gap-4">
       <Card>
         <h2 className="m-0 text-lg font-semibold">Rep reporting</h2>
-        <p className="mt-1 text-sm text-slate-500">Activity for call sessions created in the selected UTC dates, inclusive. Defaults to the last 30 days.</p>
+        <p className="mt-1 text-sm text-slate-500">Activity for call sessions created in the selected UTC dates, inclusive. Defaults to the last 30 days. Phone test calls are excluded.</p>
         <form onSubmit={(event) => { event.preventDefault(); setApplied({ ...filters }); }} className="mt-4 grid items-end gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_2fr_auto]">
           <Field label="From (UTC)"><TextInput type="date" required value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} /></Field>
           <Field label="Through (UTC)"><TextInput type="date" required min={filters.from} value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} /></Field>

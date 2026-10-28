@@ -54,6 +54,7 @@ This document captures operating guidelines for voice + SMS agents and the suppo
 - Monitor error rates and alert on spikes.
 
 ## Session Bootstrap
+- After completing requested code changes and appropriate checks, commit and push them to the current remote branch unless the user says otherwise. Keep unrelated user files out of commits.
 - At the start of each session, load and summarize these core app docs before making edits:
   - `docs/PRD.md`
   - `docs/architecture/001-system-overview.md`

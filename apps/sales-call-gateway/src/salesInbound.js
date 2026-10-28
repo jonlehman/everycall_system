@@ -59,6 +59,8 @@ export function createSalesInboundService({pool,telnyx,openai=null,env=process.e
   const reps=await pool.query('SELECT admin_user_id FROM sales_operator_settings WHERE caller_id_number=$1 AND active=TRUE ORDER BY admin_user_id',[payload.to]);
   const globalNumber=payload.to===env.SALES_TELNYX_CALLER_ID;
   if(!reps.rowCount&&!globalNumber)return false;
+  const mode=await pool.query('SELECT phone_test_mode FROM sales_dialer_config WHERE id=TRUE');
+  if(mode.rows[0]?.phone_test_mode){await telnyx.hangupCall({callControlId:providerId,commandId:command(providerId,'phone_test_mode_inbound_paused')});return true;}
   const match=await pool.query(`SELECT p.*,s.admin_user_id AS recent_rep FROM sales_prospects p LEFT JOIN LATERAL(SELECT admin_user_id FROM sales_call_sessions WHERE prospect_id=p.prospect_id ORDER BY created_at DESC LIMIT 1)s ON TRUE WHERE p.phone_e164=$1 OR EXISTS(SELECT 1 FROM jsonb_array_elements(p.numbers_json) n WHERE n->>'phoneE164'=$1) ORDER BY p.updated_at DESC LIMIT 1`,[phone]);
   const prospect=match.rows[0];const repId=prospect?.assigned_rep_user_id||prospect?.recent_rep||reps.rows[0]?.admin_user_id||Number(env.SALES_INBOUND_DEFAULT_REP_ID)||null;
   const incomingId=id('sales_incoming');

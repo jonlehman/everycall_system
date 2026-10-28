@@ -1,3 +1,4 @@
+import { assertSalesNotTestCall } from './salesPhoneTestMode.js';
 import crypto from 'node:crypto';
 import { salesError, getSalesCallSession, getSalesProspect } from './salesRepository.js';
 import { assertSalesCallAdmin } from './salesCallView.js';
@@ -43,9 +44,11 @@ export async function bookSalesSetup(pool,{salesCallId,repId,start,end,email,env
  if(!Number.isFinite(timestamp)||timestamp%900000!==0||Date.parse(end)!==timestamp+900000||timestamp<now+config.leadMinutes*60000)throw salesError('invalid_booking_slot','Choose an offered 15-minute slot after the build lead time.');
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email||''))throw salesError('invalid_email','Enter the owner email.');
  const call=assertSalesCallAdmin(await getSalesCallSession(pool,salesCallId),repId);const prospect=await getSalesProspect(pool,call.prospectId);
+ assertSalesNotTestCall(call,prospect);
  const request=graph||await salesGraphClient({env});
  const booking=await salesTransaction(pool,async db=>{
-  await db.query('SELECT id FROM sales_dialer_config WHERE id=TRUE FOR UPDATE');
+  const mode=await db.query('SELECT phone_test_mode FROM sales_dialer_config WHERE id=TRUE FOR UPDATE');
+  assertSalesNotTestCall(call,{phoneTestMode:mode.rows[0]?.phone_test_mode});
   const previous=await db.query("SELECT * FROM sales_setup_bookings WHERE sales_call_id=$1 AND status IN ('reserving','booked') FOR UPDATE",[salesCallId]);
   if(previous.rowCount){const prior=previous.rows[0];if(Date.parse(prior.starts_at)!==timestamp||prior.attendee_email!==email)throw salesError('sales_booking_exists','This call already has a booking. Contact the calendar owner to change it.',409);return prior;}
   const collision=await db.query("SELECT 1 FROM sales_setup_bookings WHERE calendar_owner=$1 AND status IN ('reserving','booked') AND starts_at<$3 AND ends_at>$2",[config.owner,start,end]);

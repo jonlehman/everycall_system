@@ -22,7 +22,7 @@ export function salesReportFilters(query = {}, now = new Date()) {
 export async function getSalesReport(pool, query = {}) {
   const filters = salesReportFilters(query);
   const params = [filters.from, filters.to];
-  let where = `c.created_at >= $1::date::timestamp AT TIME ZONE 'UTC'
+  let where = `c.metadata_json->>'phone_test_mode' IS DISTINCT FROM 'true' AND c.created_at >= $1::date::timestamp AT TIME ZONE 'UTC'
     AND c.created_at < ($2::date + 1)::timestamp AT TIME ZONE 'UTC'`;
   if (filters.operator === 'unassigned') where += ' AND c.admin_user_id IS NULL';
   else if (filters.operator) {

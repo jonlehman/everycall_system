@@ -7,6 +7,8 @@ import { buildOutboundSalesDemoRealtimeInstructions } from './demoRealtimeSessio
 import { requestSalesCallGateway } from './salesGatewayClient.js';
 
 export async function salesIncomingAction(pool,{incomingId,repId,action,prospectId,websiteUrl,businessName,interruptedProspectId,env=process.env}) {
+ const mode=await pool.query('SELECT phone_test_mode FROM sales_dialer_config WHERE id=TRUE');
+ if(mode.rows[0]?.phone_test_mode)throw salesError('sales_test_inbound_paused','Sales inbound calls are paused during phone test mode.',409);
  const incoming=await pool.query('SELECT * FROM sales_incoming_calls WHERE incoming_id=$1 AND rep_user_id=$2',[incomingId,repId]);
  if(!incoming.rowCount)throw salesError('incoming_not_found','Incoming call not found for this rep.',404);
  if(action==='receptionist'){await requestSalesCallGateway(`/internal/incoming/${encodeURIComponent(incomingId)}/receptionist`,{method:'POST',body:{repId}});return {routed:true};}

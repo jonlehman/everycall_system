@@ -93,6 +93,7 @@ async function main() {
     ));
     await db.exec("ALTER TABLE tenants ADD COLUMN service_access_status TEXT; ALTER TABLE tenants ADD COLUMN billing_lock_reason TEXT; CREATE TABLE tenant_active_knowledge_builds(tenant_key TEXT,active_build_id TEXT); CREATE TABLE knowledge_builds(build_id TEXT,tenant_key TEXT,status TEXT);");
     await db.exec(await fs.readFile(new URL('../migrations/0056_sales_dialer_v2.sql',import.meta.url),'utf8'));
+    await db.exec(await fs.readFile(new URL('../migrations/0057_sales_phone_test_mode.sql',import.meta.url),'utf8'));
     const admin = await pool.query(
       `INSERT INTO admin_users (username, email, role)
        VALUES ('sales-validator', 'sales-validator@example.com', 'admin')

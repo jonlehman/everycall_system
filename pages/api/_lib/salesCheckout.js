@@ -1,3 +1,4 @@
+import { assertSalesNotTestCall } from './salesPhoneTestMode.js';
 import crypto from 'node:crypto';
 import { getStripe } from './stripe.js';
 import { getSharedSmsNumber } from './alerts.js';
@@ -9,6 +10,7 @@ import { salesTransaction } from './salesDialer.js';
 
 export async function sendSalesCheckout(pool,{salesCallId,repId,channel,email,env=process.env,stripe=null,sms=sendTelnyxSms,mail=sendTransactionalEmail}) {
  const call=assertSalesCallAdmin(await getSalesCallSession(pool,salesCallId),repId);const prospect=await getSalesProspect(pool,call.prospectId);
+ assertSalesNotTestCall(call,prospect);
  if(prospect.doNotCall||prospect.suppressed)throw salesError('prospect_suppressed','This prospect must not be contacted.',409);
  const cell=prospect.numbers.find(n=>n.type==='cell');
  const delivery=channel==='sms'&&cell?'sms':'email';const recipient=delivery==='sms'?cell.phoneE164:String(email||prospect.contactEmail||'').trim().toLowerCase();
@@ -18,6 +20,8 @@ export async function sendSalesCheckout(pool,{salesCallId,repId,channel,email,en
  if(delivery==='sms'&&!evaluateSalesCallingWindow(prospect.timezone).allowed)throw salesError('sms_quiet_hours','Text delivery is unavailable during the prospect’s quiet hours.',409);
  const origin=new URL(env.APP_BASE_URL||'');if(!['https:','http:'].includes(origin.protocol))throw salesError('sales_app_url_required','Application URL is not configured.',503);
  const row=await salesTransaction(pool,async db=>{
+  const mode=await db.query('SELECT phone_test_mode FROM sales_dialer_config WHERE id=TRUE FOR SHARE');
+  assertSalesNotTestCall(call,{phoneTestMode:mode.rows[0]?.phone_test_mode});
   await db.query('SELECT sales_call_id FROM sales_call_sessions WHERE sales_call_id=$1 FOR UPDATE',[salesCallId]);
   const existing=await db.query('SELECT * FROM sales_checkout_sessions WHERE sales_call_id=$1 FOR UPDATE',[salesCallId]);
   if(existing.rowCount)return existing.rows[0];

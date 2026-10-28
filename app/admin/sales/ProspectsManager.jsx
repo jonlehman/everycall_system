@@ -645,6 +645,7 @@ function ProspectRows({
       <tr className={expanded ? 'bg-blue-50/30' : 'bg-white'}>
         <td className="px-4 py-3 align-top">
           <div className="font-semibold text-slate-950">{prospect.businessName || 'Unnamed prospect'}</div>
+          {prospect.phoneTestMode ? <div className="mt-1 text-xs font-semibold text-amber-800">Owner test numbers · originals saved</div> : null}
           <div className="mt-1 text-xs text-slate-500">{prospect.businessCategory || 'No category'} · {prospect.timezone || 'No timezone'}</div>
         </td>
         <td className="px-4 py-3 align-top">

@@ -34,6 +34,7 @@ try {
   await pool.query(await read('migrations/0054_call_processing_recovery.sql'));
   await pool.query(await read('migrations/0054_call_processing_recovery.sql'));
   await pool.query(await read('migrations/0056_sales_dialer_v2.sql'));
+  await pool.query(await read('migrations/0057_sales_phone_test_mode.sql'));
 
   let attempts=0;
   await assert.rejects(processInboundVoiceWebhook(pool,event('failed'),async () => { attempts++; throw Error('database fault'); }),/database fault/);

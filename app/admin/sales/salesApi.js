@@ -181,6 +181,7 @@ export function normalizeProspect(source = {}) {
     ...Object.fromEntries(SALES_RESEARCH_FIELDS.map((field) => [
       field.key, normalizeText(firstValue(source, [field.key, field.column]))
     ])),
+    phoneTestMode: Boolean(source.phoneTestMode),
     numbers: Array.isArray(source.numbers) ? source.numbers : [],
     coreFacts: Array.isArray(source.coreFacts) ? source.coreFacts : [],
     companyBrief: source.companyBrief && typeof source.companyBrief === "object"
