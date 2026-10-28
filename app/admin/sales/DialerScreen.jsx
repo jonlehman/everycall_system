@@ -13,6 +13,7 @@ import {
 } from "./dialerState.mjs";
 import styles from "./DialerScreen.module.css";
 import CallbackPicker from "./CallbackPicker";
+import AddContactForm from "./AddContactForm";
 import ContactsScreen, { contactStatus } from "./ContactsScreen";
 
 function Button({
@@ -85,40 +86,24 @@ function History({ prospect, ready = false }) {
   );
 }
 function ReturnWorkItem({ item, busy, onPrepare }) {
-  const [website, setWebsite] = useState("");
+  const [adding, setAdding] = useState(false);
   return (
     <Section>
       <h2>Returned your call</h2>
       <strong>{item.businessName || formatPhone(item.phoneE164)}</strong>
       <Row label="Caller">{formatPhone(item.phoneE164)}</Row>
       <Row label="Message">{item.message || "Message not available yet."}</Row>
-      {item.needsWebsite || item.demoStatus === "failed" ? (
-        <form onSubmit={(event) => {
-          event.preventDefault();
-          if (safeExternalUrl(website)) onPrepare?.(item, website);
-        }}>
-          <label className={styles.notes}>
-            Website
-            <input
-              aria-label={`Website for return call ${item.phoneE164}`}
-              type="url"
-              required
-              maxLength={1000}
-              placeholder="https://their-business.com"
-              value={website}
-              onChange={(event) => setWebsite(event.target.value)}
-            />
-          </label>
-          <Button type="submit" disabled={busy || !safeExternalUrl(website)}>
-            Add website & prepare
-          </Button>
-        </form>
-      ) : (
-        <p>The demo is preparing. This return call moves to the top when ready.</p>
-      )}
+      {item.needsWebsite || item.demoStatus === "failed" || (!["queued", "preparing", "building"].includes(item.demoStatus) && ((item.permission ?? item.permissionGranted) !== true || !item.timezone)) ? <>
+        <Button disabled={Boolean(busy)} onClick={() => setAdding(true)}>Add website & prepare</Button>
+        {adding && <AddContactForm initialPhone={item.phoneE164} initialValues={item} requireWebsite busy={Boolean(busy)} onCancel={() => setAdding(false)} onSave={async (details) => {
+          const result = await onPrepare(item, details);
+          if (result !== true) throw new Error("Could not prepare this return call. Check the details and try again.");
+        }} />}
+      </> : <p>The demo is preparing. This return call moves to the top when ready.</p>}
     </Section>
   );
 }
+
 function Notes({ note, onNote }) {
   return (
     <label className={styles.notes}>
@@ -184,6 +169,8 @@ export default function DialerScreen({
   onSelectContact,
   browsingContact = false,
   onPrepareContact,
+  onRestoreContact,
+  onAddContact,
 }) {
   const phase = dialerPhase(call),
     active = Boolean(call?.id && !call.terminal),
@@ -199,7 +186,7 @@ export default function DialerScreen({
     [channel, setChannel] = useState(cell ? "sms" : "email"),
     [email, setEmail] = useState(prospect?.email || ""),
     [slot, setSlot] = useState(null),
-    [website, setWebsite] = useState("");
+    [addingIncoming, setAddingIncoming] = useState("");
   const scripts = queue.scripts || {},
     vars = {
       first_name: prospect?.contactName?.split(" ")[0] || "there",
@@ -340,21 +327,11 @@ export default function DialerScreen({
                 onChange={(e) => onSearch(e.target.value)}
               />
               <span>or</span>
-              <input
-                aria-label="Website"
-                type="url"
-                placeholder="Website — the AI Receptionist starts building as soon as you save"
-                value={website}
-                onChange={(e) => setWebsite(e.target.value)}
-              />
-              <Button
-                disabled={busy || !safeExternalUrl(website)}
-                onClick={() =>
-                  onIncoming(item, "create", { websiteUrl: website })
-                }
-              >
-                Add as new prospect
-              </Button>
+              <Button disabled={busy || queue.config?.phoneTestMode} onClick={() => setAddingIncoming(item.incomingId)}>Add as new prospect</Button>
+              {addingIncoming === item.incomingId && <AddContactForm initialPhone={item.phoneE164} busy={Boolean(busy)} onCancel={() => setAddingIncoming("")} onSave={async (details) => {
+                const result = await onIncoming(item, "create", { ...details, businessName: details.business_name, contactName: details.contact_name, websiteUrl: details.website });
+                if (result === false || result === null) throw new Error("Could not add this prospect. Check the details and try again.");
+              }} />}
               {searchResults?.map((result) => (
                 <Button
                   key={result.id}
@@ -383,7 +360,7 @@ export default function DialerScreen({
           )}
         </div>
       )}
-      {view === "contacts" ? <ContactsScreen onSelect={onSelectContact} busy={Boolean(busy)} /> : <div className={styles.body}>
+      {view === "contacts" ? <ContactsScreen onSelect={onSelectContact} onAdd={onAddContact} busy={Boolean(busy)} phoneTestMode={Boolean(queue.config?.phoneTestMode)} /> : <div className={styles.body}>
         <aside className={styles.prospect}>
           {(queue.returnItems || []).map((item) => (
             <ReturnWorkItem key={item.incomingId} item={item} busy={busy} onPrepare={onPrepareReturn} />
@@ -498,7 +475,7 @@ export default function DialerScreen({
             <History prospect={prospect} ready />
           ) : null}
           {phase === "READY" && prospect && <Section>
-            <CallbackPicker prospect={prospect} value={prospect.callbackAt} onSet={onCallback} disabled={Boolean(busy)} canSchedule={false} now={now} />
+            <CallbackPicker prospect={prospect} value={prospect.callbackAt} onSet={onCallback} disabled={Boolean(busy)} canSchedule={!queue.config?.phoneTestMode && !["Paid", "Removed", "Not interested", "Do not call"].includes(contactStatus(prospect))} saveImmediately now={now} />
           </Section>}
           {phase !== "WRAPUP" && (
             <Section>
@@ -559,7 +536,7 @@ export default function DialerScreen({
                 {pill}
               </span>
             </div>
-            {phase === "READY" && browsingContact && contactStatus(prospect || {}) === "Not prepped" ? <div className={styles.actions}>
+            {phase === "READY" && browsingContact && prospect?.demoStatus !== "ready" && !["Paid", "Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})) ? <div className={styles.actions}>
               <Button tone="blue" disabled={Boolean(busy) || !prospect?.preparationEligible || !safeExternalUrl(prospect?.website) || ["queued", "preparing", "building"].includes(prospect?.demoStatus)} onClick={onPrepareContact}>{["queued", "preparing", "building"].includes(prospect?.demoStatus) ? "Preparing…" : "Prep now"}</Button>
               <p className={styles.caption}>{prospect?.demoFailure || (!prospect?.website ? "A website is needed before this prospect can be prepared." : "Prepare the AI Receptionist before dialing this prospect.")}</p>
               <Button className={styles.pushRight} disabled={Boolean(busy)} onClick={onSkip}>Back to queue</Button>
@@ -577,6 +554,7 @@ export default function DialerScreen({
                     {formatPhone(number.phoneE164)}
                   </Button>
                 ))}
+                {phase === "READY" && browsingContact && contactStatus(prospect || {}) === "Removed" && <Button tone="blue" disabled={Boolean(busy) || queue.config?.phoneTestMode} onClick={onRestoreContact}>Put back in list</Button>}
                 {phase === "DIALING" ? (
                   <Button
                     tone="dangerOutline"
@@ -906,7 +884,7 @@ export default function DialerScreen({
         </div>
         {picker === "callback_requested" && (
           <div className={styles.picker}>
-            <CallbackPicker prospect={prospect} value={callbackAt || prospect?.callbackAt} onSet={onCallback} disabled={Boolean(busy)} canSchedule={Boolean(call?.id)} now={now} onClose={() => setPicker("")} />
+            <CallbackPicker prospect={prospect} value={callbackAt} onSet={onCallback} disabled={Boolean(busy)} canSchedule={Boolean(call?.id)} now={now} onClose={() => setPicker("")} />
           </div>
         )}
         {picker === "do_not_call" && (

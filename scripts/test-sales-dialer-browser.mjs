@@ -137,6 +137,7 @@ try {
       if (state === "READY") {
         assert.equal(await page.getByRole("button", { name: "Set call back", exact: true }).isDisabled(), true);
         await page.getByRole("button", { name: "1 week", exact: true }).click();
+        assert.equal(await page.getByRole("button", { name: "Set call back", exact: true }).isDisabled(), false);
         assert.equal(await page.getByLabel("Callback date", { exact: true }).inputValue(), "2026-10-27");
         assert.equal(await page.getByLabel("Callback time", { exact: true }).inputValue(), "13:00");
         await page.getByLabel("Callback date", { exact: true }).fill("2026-10-24");

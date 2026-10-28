@@ -76,7 +76,8 @@
     "validate:sales-paid-activation": "node --no-warnings scripts/validate-sales-paid-activation.mjs",
     "test:sales-dialer-browser": "node scripts/test-sales-dialer-browser.mjs",
     "test:sales-dialer-controller": "node scripts/test-sales-dialer-controller.mjs",
-    "test:sales-call-record-browser": "node scripts/test-sales-call-record-browser.mjs"
+    "test:sales-call-record-browser": "node scripts/test-sales-call-record-browser.mjs",
+    "validate:sales-contacts": "node --no-warnings scripts/validate-sales-contacts.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

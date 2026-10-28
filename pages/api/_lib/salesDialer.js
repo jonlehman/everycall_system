@@ -57,14 +57,14 @@ export async function enrichSalesProspect(pool,prospectId,repId) {
   return prospect;
 }
 export async function listSalesIncoming(pool,repId) {
-  const result=await pool.query(`SELECT i.*,p.business_name,p.contact_name,p.last_outcome,p.last_outcome_at,
+  const result=await pool.query(`SELECT i.*,p.business_name,p.contact_name,p.row_version,p.last_outcome,p.last_outcome_at,
     NOT EXISTS(SELECT 1 FROM sales_call_sessions c WHERE c.admin_user_id=$1 AND c.state NOT IN (${SALES_TERMINAL_SQL})) AS can_take
     FROM sales_incoming_calls i LEFT JOIN sales_prospects p ON p.prospect_id=i.prospect_id WHERE i.rep_user_id=$1 AND i.state IN ('ringing','receptionist') AND i.ring_expires_at>NOW() ORDER BY i.created_at LIMIT 5`,[repId]);
-  return result.rows.map(r=>({incomingId:r.incoming_id,phoneE164:r.phone_e164,prospectId:r.prospect_id,businessName:r.business_name,contactName:r.contact_name,state:r.state,canTake:r.can_take && r.state==='ringing',ringExpiresAt:r.ring_expires_at,context:r.last_outcome?`Returning your call — last outcome: ${r.last_outcome.replaceAll('_',' ')}`:'Returned your call'}));
+  return result.rows.map(r=>({incomingId:r.incoming_id,phoneE164:r.phone_e164,prospectId:r.prospect_id,rowVersion:r.row_version?Number(r.row_version):null,businessName:r.business_name,contactName:r.contact_name,state:r.state,canTake:r.can_take && r.state==='ringing',ringExpiresAt:r.ring_expires_at,context:r.last_outcome?`Returning your call — last outcome: ${r.last_outcome.replaceAll('_',' ')}`:'Returned your call'}));
 }
 export async function listSalesReturnItems(pool,repId) {
-  const result=await pool.query(`SELECT i.*,p.business_name,p.contact_name,p.website_url,d.status AS demo_status FROM sales_incoming_calls i JOIN sales_prospects p USING(prospect_id) LEFT JOIN sales_demo_profiles d USING(prospect_id) WHERE i.rep_user_id=$1 AND i.state='receptionist' AND p.inbound_return=TRUE AND NOT p.do_not_call AND NOT p.suppressed AND COALESCE(d.status,'not_prepared')<>'ready' ORDER BY i.created_at DESC LIMIT 20`,[repId]);
-  return result.rows.map(r=>({incomingId:r.incoming_id,prospectId:r.prospect_id,phoneE164:r.phone_e164,businessName:r.business_name,contactName:r.contact_name,message:r.message||'',needsWebsite:!r.website_url,state:'return_pending',demoStatus:r.demo_status||'not_prepared',canTake:false}));
+  const result=await pool.query(`SELECT i.*,p.business_name,p.contact_name,p.website_url,p.row_version,p.permission_granted,p.timezone,p.numbers_json,d.status AS demo_status FROM sales_incoming_calls i JOIN sales_prospects p USING(prospect_id) LEFT JOIN sales_demo_profiles d USING(prospect_id) WHERE i.rep_user_id=$1 AND p.assigned_rep_user_id=$1 AND i.state='receptionist' AND p.inbound_return=TRUE AND NOT p.do_not_call AND NOT p.suppressed AND COALESCE(d.status,'not_prepared')<>'ready' ORDER BY i.created_at DESC LIMIT 20`,[repId]);
+  return result.rows.map(r=>({incomingId:r.incoming_id,prospectId:r.prospect_id,phoneE164:r.phone_e164,businessName:r.business_name,contactName:r.contact_name,message:r.message||'',needsWebsite:!r.website_url,rowVersion:Number(r.row_version),permissionGranted:r.permission_granted,timezone:r.timezone,numbers:r.numbers_json,websiteUrl:r.website_url,state:'return_pending',demoStatus:r.demo_status||'not_prepared',canTake:false}));
 }
 export async function getSalesRepQueue(pool,repId,{timezone='UTC',actor={id:repId},env=process.env}={}) {
   try { new Intl.DateTimeFormat('en-US',{timeZone:timezone}).format(); } catch {throw salesError('invalid_timezone','Provide an IANA timezone.');}
@@ -87,10 +87,7 @@ export async function saveSalesLiveNotes(pool,id,repId,notes) {
   if(!result.rowCount) throw salesError('sales_call_forbidden','Call not found for this rep.',403);
   return serializeSalesCallSession(result.rows[0]);
 }
-export async function removeSalesQueueProspect(pool,id,repId) {
-  await assertSalesProspectOwner(pool,id,repId);
-  const active=await pool.query(`SELECT 1 FROM sales_call_sessions WHERE prospect_id=$1 AND state NOT IN (${SALES_TERMINAL_SQL})`,[id]);
-  if(active.rowCount) throw salesError('sales_call_end_required','End the call before removing this prospect.',409);
-  await pool.query("UPDATE sales_prospects SET status='removed',removed_reason='attempts_exhausted',callback_at=NULL,assigned_rep_user_id=NULL,updated_at=NOW() WHERE prospect_id=$1",[id]);
-  return getSalesProspect(pool,id);
+export async function removeSalesQueueProspect(pool,id,repId,{expectedRowVersion}={}) {
+  const { mutateSalesContact } = await import('./salesContacts.js');
+  return mutateSalesContact(pool,{prospectId:id,repId,action:'remove',expectedRowVersion,requireVersion:false});
 }

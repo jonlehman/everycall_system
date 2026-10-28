@@ -79,7 +79,7 @@ let requests = [],
   showSecondIncoming = false,
   showReturnItem = false,
   returnNeedsWebsite = true,
-  deferredDemo = null;
+  deferredDemo = null, rejectAdd = false, rejectCallback = false, rejectRestore = false;
 const activeCall = (id, prospectId) => ({
   id,
   prospectId,
@@ -120,7 +120,7 @@ const server = createServer(async (req, res) => {
   let body = "";
   for await (const chunk of req) body += chunk;
   const data = body ? JSON.parse(body) : {};
-  requests.push({ path: path.pathname, method: req.method, data });
+  requests.push({ path: path.pathname, method: req.method, data, query: Object.fromEntries(path.searchParams) });
   res.setHeader("Content-Type", "application/json");
   const send = (value) => res.end(JSON.stringify(value));
   if (path.pathname.endsWith("/webrtc-token"))
@@ -137,6 +137,9 @@ const server = createServer(async (req, res) => {
               businessName: "Unknown return",
               message: "Please call Sam about coverage.",
               needsWebsite: returnNeedsWebsite,
+              rowVersion: 4,
+              permissionGranted: !returnNeedsWebsite,
+              timezone: returnNeedsWebsite ? null : "America/Los_Angeles",
               demoStatus: returnNeedsWebsite ? "not_prepared" : "preparing",
               state: "return_pending",
               canTake: false,
@@ -171,8 +174,28 @@ const server = createServer(async (req, res) => {
       ],
     });
   if (path.pathname.endsWith("/availability")) return send({ slots: [] });
-  if (path.pathname.endsWith("/prospects"))
-    return send({ prospects: [matched, notPrepped, paidContact, dncContact, removedContact] });
+  if (path.pathname.endsWith("/prospects")) {
+    if (req.method === "POST") {
+      if (rejectAdd) { res.statusCode = 409; return send({ error: "This phone is already in your list." }); }
+      return send({ prospect: { ...notPrepped, id: "added", businessName: data.business_name }, preparation: { status: "queued" } });
+    }
+    let rows = [matched, notPrepped, paidContact, dncContact, removedContact];
+    if (path.searchParams.get("contactStatus") === "not_prepped") rows = [notPrepped];
+    if (path.searchParams.get("search") === "0142") rows = [matched];
+    if (path.searchParams.get("cursor")) rows = [{ ...matched, id: "older", businessName: "Older Business" }];
+    return send({ prospects: rows, total: path.searchParams.get("contactStatus") === "not_prepped" || path.searchParams.get("search") ? rows.length : 42, counts: { all: 42, in_queue: 31, not_prepped: 7, removed: 1 }, metros: ["Portland", "Seattle"], nextCursor: path.searchParams.get("cursor") || path.searchParams.get("contactStatus") === "not_prepped" || path.searchParams.get("search") ? null : "activity-next-page" });
+  }
+  if (path.pathname.endsWith("/callback")) {
+    if (rejectCallback) { prospect.rowVersion = 2; res.statusCode = 409; return send({ error: "Contact changed. Review and try again." }); }
+    const item = path.pathname.includes(matched.id) ? matched : prospect;
+    item.callbackAt = data.callbackAt; item.rowVersion = (item.rowVersion || 1) + 1;
+    return send({ prospect: item });
+  }
+  if (path.pathname.endsWith("/restore")) {
+    if (rejectRestore) { res.statusCode = 409; return send({ error: "Contact changed. Review and try again." }); }
+    return send({ prospect: { ...removedContact, status: "queued", demoStatus: "not_prepared", eligible: false, preparationEligible: true, website: "https://example.com", rowVersion: 2 } });
+  }
+  if (path.pathname.endsWith(`/prospects/${prospect.id}`)) return send({ prospect });
   const selectedContact = [matched, notPrepped, paidContact, dncContact, removedContact].find((item) => path.pathname.endsWith(`/prospects/${item.id}`));
   if (selectedContact) return send({ prospect: { ...selectedContact, calls: [] } });
   if (path.pathname.endsWith("/prospects/not-prepped/demo")) return send({ ok: true });
@@ -191,7 +214,7 @@ const server = createServer(async (req, res) => {
       );
       return send({
         call: calls[currentId],
-        prospect: incomingUnknown ? null : matched,
+        prospect: incomingUnknown ? (includeSecondIncoming ? { id: "unknown-stub", businessName: "Unknown caller", phone: "+15035550199", rowVersion: 7, permission: false, timezone: null, eligible: false } : null) : matched,
       });
     }
     if (["match", "create"].includes(data.action)) {
@@ -267,6 +290,8 @@ const reset = async ({
   includeSecondIncoming = second;
   showSecondIncoming = false;
   deferredDemo = null;
+  rejectAdd = false; rejectCallback = false; rejectRestore = false;
+  prospect.callbackAt = null; prospect.rowVersion = 1; matched.callbackAt = null; matched.rowVersion = 1;
   showReturnItem = false;
   returnNeedsWebsite = true;
   context = await browser.newContext({
@@ -357,6 +382,103 @@ try {
   assert.ok(requests.some((request) => request.path.endsWith("/prospects/not-prepped/demo") && request.method === "POST"));
   await page.getByRole("button", { name: "Dial", exact: true }).click();
   await page.getByRole("heading", { name: "Original Business", exact: true }).waitFor();
+  console.log("controller: contacts global filters, cursor pagination, all-phone search and Add");
+  await reset();
+  await page.getByRole("button", { name: "Contacts", exact: true }).click();
+  await page.getByRole("button", { name: "All 42", exact: true }).waitFor();
+  assert.equal(await page.getByText("1–5 of 42", { exact: true }).isVisible(), true);
+  assert.equal(await page.getByLabel("Metro", { exact: true }).locator("option").allTextContents().then((items) => items.includes("Seattle")), true);
+  await page.getByRole("button", { name: "Next →", exact: true }).click();
+  await page.getByRole("button", { name: "Older Business", exact: true }).waitFor();
+  assert.ok(requests.some((request) => request.query.cursor === "activity-next-page"));
+  assert.equal(await page.getByText("26–26 of 42", { exact: true }).isVisible(), true);
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await page.getByRole("button", { name: "Matched Business", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Not prepped 7", exact: true }).click();
+  await page.getByText("1–1 of 1", { exact: true }).waitFor();
+  assert.ok(requests.some((request) => request.query.contactStatus === "not_prepped"));
+  assert.equal(await page.getByRole("button", { name: "Matched Business", exact: true }).count(), 0);
+  await page.getByRole("button", { name: "All 42", exact: true }).click();
+  await page.getByLabel("Metro", { exact: true }).selectOption("Seattle");
+  await waitUntil(() => requests.some((request) => request.query.metro === "Seattle"));
+  await page.getByLabel("Search contacts", { exact: true }).fill("0142");
+  await page.getByText("1–1 of 1", { exact: true }).waitFor();
+  assert.ok(requests.some((request) => request.query.contactsView === "true" && request.query.search === "0142" && request.query.metro === "Seattle" && !request.query.cursor));
+  await page.getByRole("button", { name: "Add prospect", exact: true }).first().click();
+  const addForm = page.getByRole("form", { name: "Add prospect", exact: true });
+  await addForm.getByLabel("Business", { exact: true }).fill("Shop-only business");
+  await addForm.getByLabel("Contact", { exact: true }).fill("Shop Owner");
+  await addForm.getByLabel("Phone", { exact: true }).fill("+15035550142");
+  await addForm.getByLabel("Phone type", { exact: true }).selectOption("shop");
+  await addForm.getByLabel("Website", { exact: true }).fill("https://shop.example.com");
+  await addForm.getByLabel("Calling permission", { exact: true }).selectOption("no");
+  await addForm.getByLabel("Prospect timezone", { exact: true }).fill("America/Los_Angeles");
+  rejectAdd = true;
+  await addForm.getByRole("button", { name: "Save prospect", exact: true }).click();
+  await addForm.getByRole("alert").waitFor();
+  assert.equal(await addForm.getByLabel("Business", { exact: true }).inputValue(), "Shop-only business");
+  rejectAdd = false;
+  await addForm.getByRole("button", { name: "Save prospect", exact: true }).click();
+  await addForm.waitFor({ state: "detached" });
+  const added = requests.find((request) => request.path.endsWith("/prospects") && request.method === "POST");
+  assert.equal(added.data.contactsView, true);
+  assert.equal(added.data.permission, false);
+  assert.equal(added.data.numbers[0].type, "shop");
+  assert.equal(added.data.timezone, "America/Los_Angeles");
+  console.log("controller: READY callback save, Clear and stale conflict refresh");
+  await reset();
+  await page.getByRole("button", { name: "1 week", exact: true }).click();
+  rejectCallback = true;
+  await page.getByRole("button", { name: "Set call back", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "Contact changed" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Clear", exact: true }).count(), 0);
+  rejectCallback = false;
+  await page.getByRole("button", { name: "Set call back", exact: true }).click();
+  await page.getByRole("button", { name: "Clear", exact: true }).waitFor();
+  const callbackSaves = requests.filter((request) => request.path.endsWith("/callback"));
+  assert.equal(callbackSaves.at(-1).data.expectedRowVersion, 2);
+  assert.ok(callbackSaves.at(-1).data.callbackAt);
+  assert.equal(requests.filter((request) => request.path.endsWith("/outcome")).length, 0);
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await page.getByText("Not set", { exact: true }).waitFor();
+  assert.equal(requests.filter((request) => request.path.endsWith("/callback")).at(-1).data.callbackAt, null);
+  console.log("controller: restoration failure preserves Removed and success respects prep readiness");
+  await reset();
+  await page.getByRole("button", { name: "Contacts", exact: true }).click();
+  await page.getByRole("button", { name: "Removed Business", exact: true }).click();
+  rejectRestore = true;
+  await page.getByRole("button", { name: "Put back in list", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "Contact changed" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: /^Call cell/ }).isDisabled(), true);
+  rejectRestore = false;
+  await page.getByRole("button", { name: "Put back in list", exact: true }).click();
+  await page.getByRole("button", { name: "Prep now", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: /^Call cell/ }).count(), 0);
+  assert.equal(requests.filter((request) => request.path.endsWith("/restore")).at(-1).data.expectedRowVersion, 1);
+  console.log("controller: unprepared callback contact still exposes prep");
+  await reset();
+  notPrepped.callbackAt = new Date(Date.now() + 86400000).toISOString();
+  notPrepped.contactStatus = "callback";
+  await page.getByRole("button", { name: "Contacts", exact: true }).click();
+  await page.getByRole("button", { name: "Awaiting Prep", exact: true }).click();
+  await page.getByRole("button", { name: "Prep now", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: /^Call cell/ }).count(), 0);
+  await page.getByRole("button", { name: "Prep now", exact: true }).click();
+  await page.getByRole("button", { name: "Preparing…", exact: true }).waitFor();
+  notPrepped.callbackAt = null; notPrepped.contactStatus = "";
+  console.log("controller: active-call callback remains draft until outcome");
+  await reset();
+  await dial();
+  await page.getByRole("button", { name: "Call back ▾", exact: true }).click();
+  await page.getByRole("button", { name: "1 week", exact: true }).click();
+  await page.getByRole("button", { name: "Set call back", exact: true }).click();
+  assert.equal(requests.filter((request) => request.path.endsWith("/callback")).length, 0);
+  await end();
+  await page.getByRole("button", { name: "Save & next →", exact: true }).click();
+  await waitUntil(() => requests.some((request) => request.path.endsWith("/outcome")));
+  const callbackOutcome = requests.find((request) => request.path.endsWith("/outcome"));
+  assert.equal(callbackOutcome.data.outcome, "callback_requested");
+  assert.ok(callbackOutcome.data.callbackAt);
   console.log("controller: end during settle");
   // Start-demo settle delay: End call must not be silently dropped by run().
   await reset();
@@ -465,18 +587,27 @@ try {
     0,
   );
   const acceptedRow = page.locator('[data-incoming-id="ring-1"]');
-  await acceptedRow
-    .getByLabel("Website", { exact: true })
-    .fill("https://caller-one.example.com");
-  await acceptedRow
-    .getByRole("button", { name: "Add as new prospect" })
-    .click();
+  await acceptedRow.getByRole("button", { name: "Add as new prospect" }).click();
+  const incomingForm = acceptedRow.getByRole("form", { name: "Add prospect", exact: true });
+  assert.equal(await incomingForm.getByLabel("Phone", { exact: true }).inputValue(), "+15035550199");
+  assert.equal(await incomingForm.getByLabel("Phone type", { exact: true }).inputValue(), "other");
+  await incomingForm.getByLabel("Business", { exact: true }).fill("Caller business");
+  await incomingForm.getByLabel("Contact", { exact: true }).fill("Caller One");
+  await incomingForm.getByLabel("Calling permission", { exact: true }).selectOption("no");
+  await incomingForm.getByLabel("Prospect timezone", { exact: true }).fill("America/Los_Angeles");
+  await incomingForm.getByLabel("Website", { exact: true }).fill("https://caller-one.example.com");
+  await incomingForm.getByRole("button", { name: "Save prospect", exact: true }).click();
   await page
     .getByRole("heading", { name: "Matched Business", exact: true })
     .waitFor();
   const createRequest = requests.find((r) => r.data.action === "create");
   assert.equal(createRequest.data.incomingId, "ring-1");
   assert.equal(createRequest.data.websiteUrl, "https://caller-one.example.com");
+  assert.equal(createRequest.data.business_name, "Caller business");
+  assert.equal(createRequest.data.permission, false);
+  assert.equal(createRequest.data.timezone, "America/Los_Angeles");
+  assert.equal(createRequest.data.numbers[0].type, "other");
+  assert.equal(createRequest.data.expectedRowVersion, 7, "Taken caller creation uses the current stub version");
   console.log("controller: unknown incoming identity");
   // Explicit null prospect must clear prior identity/facts; match stays bound to
   // the accepted incoming id and preserves notes typed before the match.
@@ -582,12 +713,15 @@ try {
     await page.getByRole("button", { name: "Take call", exact: true }).count(),
     0,
   );
-  await page
-    .getByLabel("Website for return call +15035550177", { exact: true })
-    .fill("https://returned.example");
-  await page
-    .getByRole("button", { name: "Add website & prepare", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Add website & prepare", exact: true }).click();
+  const returnForm = page.getByRole("form", { name: "Add prospect", exact: true });
+  assert.equal(await returnForm.getByLabel("Phone", { exact: true }).inputValue(), "+15035550177");
+  assert.equal(await returnForm.getByLabel("Business", { exact: true }).inputValue(), "Unknown return");
+  assert.equal(await returnForm.getByLabel("Calling permission", { exact: true }).inputValue(), "no");
+  await returnForm.getByLabel("Website", { exact: true }).fill("https://returned.example");
+  await returnForm.getByLabel("Calling permission", { exact: true }).selectOption("yes");
+  await returnForm.getByLabel("Prospect timezone", { exact: true }).fill("America/Los_Angeles");
+  await returnForm.getByRole("button", { name: "Save prospect", exact: true }).click();
   await page
     .getByText(
       "The demo is preparing. This return call moves to the top when ready.",
@@ -599,6 +733,11 @@ try {
   );
   assert.equal(returnRequest.data.action, "create");
   assert.equal(returnRequest.data.websiteUrl, "https://returned.example");
+  assert.equal(returnRequest.data.businessName, "Unknown return");
+  assert.equal(returnRequest.data.permission, true);
+  assert.equal(returnRequest.data.timezone, "America/Los_Angeles");
+  assert.equal(returnRequest.data.numbers[0].type, "other");
+  assert.equal(returnRequest.data.expectedRowVersion, 4);
   assert.equal(
     await page
       .getByRole("heading", { name: "Original Business", exact: true })

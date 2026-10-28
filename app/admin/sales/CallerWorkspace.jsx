@@ -51,6 +51,8 @@ export default function CallerWorkspace() {
     wrapupDrafts = useRef([]),
     incomingTaken = useRef("");
   const browsingContactRef = useRef(false);
+  const viewRef = useRef(view);
+  viewRef.current = view;
   callRef.current = call;
   prospectRef.current = prospect;
   noteRef.current = note;
@@ -169,7 +171,7 @@ export default function CallerWorkspace() {
   }, []);
   useEffect(() => {
     // Queue polling must never replace the record under a live call or its unsaved wrap-up.
-    if (callRef.current?.id || browsingContactRef.current) return;
+    if (callRef.current?.id || browsingContactRef.current || viewRef.current === "contacts") return;
     const next = queue.current;
     if (next?.id === prospectRef.current?.id) return;
     setProspect(next);
@@ -446,6 +448,7 @@ export default function CallerWorkspace() {
           method: "POST",
           body: JSON.stringify({
             reason: action === "skip" ? "Skip for now" : undefined,
+            expectedRowVersion: prospect.rowVersion,
           }),
         },
       );
@@ -495,6 +498,60 @@ export default function CallerWorkspace() {
     setDncReason("");
     setAvailability({ slots: [] });
   });
+  const mutateContact = async (selected, action, body) => {
+    try {
+      return await fetchSalesJson(`${BASE}/prospects/${encodeURIComponent(selected.id)}/${action}`, {
+        method: "POST", body: JSON.stringify({ ...body, expectedRowVersion: selected.rowVersion }),
+      });
+    } catch (err) {
+      if (err.status === 409 && !callRef.current?.id) {
+        const latest = await fetchSalesJson(`${BASE}/prospects/${encodeURIComponent(selected.id)}`).catch(() => null);
+        if (latest?.prospect && prospectRef.current?.id === selected.id && !callRef.current?.id) {
+          const updated = normalizeProspect(latest.prospect);
+          if (Array.isArray(latest.prospect.calls)) updated.history = latest.prospect.calls.map(normalizeCall);
+          setProspect(updated);
+        }
+      }
+      throw err;
+    }
+  };
+  const updateCallback = async (value) => {
+    if (callRef.current?.id) {
+      setCallbackAt(value || "");
+      setOutcome((current) => value ? "callback_requested" : current === "callback_requested" ? "" : current);
+      return true;
+    }
+    const result = await run("callback", async () => {
+      const selected = prospectRef.current;
+      if (!selected?.id || callRef.current?.id) return false;
+      const response = await mutateContact(selected, "callback", { callbackAt: value });
+      if (prospectRef.current?.id === selected.id && !callRef.current?.id) {
+        browsingContactRef.current = true;
+        setBrowsingContact(true);
+        setProspect({ ...selected, ...normalizeProspect(response.prospect), history: selected.history, note: selected.note });
+      }
+      await loadQueue({ quiet: true });
+      return true;
+    });
+    return result === true;
+  };
+  const restoreContact = () => run("restore-contact", async () => {
+    const selected = prospectRef.current;
+    if (!selected?.id || callRef.current?.id) return;
+    const response = await mutateContact(selected, "restore", {});
+    if (prospectRef.current?.id === selected.id && !callRef.current?.id) setProspect({ ...selected, ...normalizeProspect(response.prospect), history: selected.history, note: selected.note });
+    await loadQueue({ quiet: true });
+  });
+  const addContact = async (details) => {
+    const response = await run("add-contact", async () => {
+      if (callRef.current?.id) throw new Error("Finish the call before adding a contact here.");
+      const result = await fetchSalesJson(`${BASE}/prospects`, { method: "POST", body: JSON.stringify({ ...details, contactsView: true }) });
+      await loadQueue({ quiet: true });
+      return result;
+    });
+    if (!response) throw new Error("Could not add this prospect. Check the details and try again.");
+    return response;
+  };
   const prepareContact = () => run("prepare-contact", async () => {
     const selected = prospectRef.current;
     if (!selected?.id || callRef.current?.id) return;
@@ -568,6 +625,7 @@ export default function CallerWorkspace() {
         method: "POST",
         body: JSON.stringify({
           ...details,
+          ...(action === "create" && prospectRef.current?.id ? { expectedRowVersion: prospectRef.current.rowVersion } : {}),
           incomingId: item.incomingId,
           action,
           interruptedProspectId: prospect?.id,
@@ -645,14 +703,16 @@ export default function CallerWorkspace() {
         setBrowsingContact(false);
       }
       await loadQueue({ quiet: true });
+      return true;
     });
-  const prepareReturn = (item, websiteUrl) =>
+  const prepareReturn = (item, details) =>
     run("prepare-return", async () => {
       await fetchSalesJson(`${BASE}/incoming`, {
         method: "POST",
-        body: JSON.stringify({ incomingId: item.incomingId, action: "create", websiteUrl }),
+        body: JSON.stringify({ ...details, incomingId: item.incomingId, action: "create", businessName: details.business_name, contactName: details.contact_name, websiteUrl: details.website, expectedRowVersion: item.rowVersion }),
       });
       await loadQueue({ quiet: true });
+      return true;
     });
   const prepareCompanyBrief = async () => {
     const id = prospectRef.current?.id;
@@ -677,7 +737,7 @@ export default function CallerWorkspace() {
     }
     try {
       const result = await fetchSalesJson(
-        `${BASE}/prospects?search=${encodeURIComponent(query)}`,
+        `${BASE}/prospects?contactsView=true&limit=5&search=${encodeURIComponent(query)}`,
       );
       if (current === searchGeneration.current)
         setSearchResults(
@@ -713,6 +773,8 @@ export default function CallerWorkspace() {
         onNavigate={navigate}
         onSelectContact={selectContact}
         onPrepareContact={prepareContact}
+        onRestoreContact={restoreContact}
+        onAddContact={addContact}
         prospect={prospect}
         call={call}
         busy={busy}
@@ -730,10 +792,7 @@ export default function CallerWorkspace() {
         now={now}
         onNote={setNote}
         onOutcome={chooseOutcome}
-        onCallback={(value) => {
-          setCallbackAt(value);
-          setOutcome("callback_requested");
-        }}
+        onCallback={updateCallback}
         onDncReason={(value) => {
           setDncReason(value);
           setOutcome("do_not_call");

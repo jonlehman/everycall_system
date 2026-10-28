@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-10-28 — Complete Sales Contacts workflows
+- Owner authorized the deferred Contacts backend work: pre-call callback save/clear, Add prospect, restore removed contacts, server-side status/metro filters and global counts, newest-activity pagination, and normalized partial search across every stored phone. Keep the newer Company at a glance and existing calling/payment/booking boundaries.
+- Use explicit Contacts API mode so existing admin listing consumers keep their contracts. Scope Sales users to their assigned contacts, and preserve assignment when removing a contact so the same rep can find and restore it. Historical removed records with no verifiable owner remain an administrator task.
+- Restoring removes only the list-removal state; permanent DNC/suppression, permission, calling windows, readiness, active-call reservations, phone-test restrictions, and concurrency checks remain authoritative. Add assigns the authenticated rep and starts existing demo preparation only when the prospect is eligible for preparation; missing permission or timezone never implies consent or eligibility.
+- Call-free callback edits update the prospect directly without inventing a call attempt or outcome. During a call the picker remains part of the existing completed-call outcome flow. Audited mutations use idempotency and version checks.
+
 ## 2026-10-28 — Sales rep design refresh scope
 - Apply the updated reference package in `docs/Sales Design/` as a presentation update to the existing Sales workspace. Preserve existing backend contracts, call control, payment, booking, queue, and knowledge behavior; raise material mismatches separately.
 - Keep the newer **Company at a glance** brief instead of the reference package’s receptionist-facts panel. Outcomes remain available once dialing starts, including unanswered attempts.

@@ -8,6 +8,7 @@ import {
   salesRequestBody,
   sendSalesApiError
 } from "../../../../_lib/salesApi.js";
+import { createSalesContact, listSalesContacts } from '../../../../_lib/salesContacts.js';
 
 export default async function handler(req, res) {
   if (!["GET", "POST"].includes(req.method)) {
@@ -18,6 +19,10 @@ export default async function handler(req, res) {
     const context = await requireSalesAdmin(req, res);
     if (!context) return;
     if (req.method === "GET") {
+      if (req.query?.contactsView === 'true') {
+        const result = await listSalesContacts(context.pool, { ...req.query, repId: context.admin.id });
+        return res.status(200).json({ ok: true, ...result });
+      }
       const result = await listSalesProspects(context.pool, {
         limit: req.query?.limit,
         afterQueuePosition: req.query?.afterQueuePosition,
@@ -31,6 +36,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, ...result });
     }
     const body = salesRequestBody(req);
+    if (body.contactsView === true || context.session.role === 'sales') {
+      const result = await runSalesAdminMutation(req, context, {
+        scope: 'sales.contacts.create', request: body, action: 'sales.prospect.created',
+        auditDetails: response => ({ prospectId: response.body?.prospect?.prospectId })
+      }, async () => ({ status: 201, body: { ok: true, ...await createSalesContact(context.pool, body, { repId: context.admin.id }) } }));
+      return res.status(result.status).json(result.body);
+    }
     const result = await runSalesAdminMutation(req, context, {
       scope: "sales.prospects.create",
       request: body,

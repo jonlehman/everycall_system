@@ -196,6 +196,8 @@ export function normalizeProspect(source = {}) {
     metro: source.metro || "",
     pitchFlags: source.pitchFlags || [],
     callbackAt: source.callbackAt || null,
+    contactStatus: source.contactStatus || "",
+    lastActivityAt: source.lastActivityAt || null,
     inboundReturn: Boolean(source.inboundReturn),
     returnMessage: source.returnMessage || "",
     bestTime: source.bestTime || "",

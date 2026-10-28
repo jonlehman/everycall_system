@@ -18,6 +18,10 @@ import phoneTestMode from '../pages/api/v1/admin/sales/phone-test-mode.js';
 import operatorSettings from '../pages/api/v1/admin/sales/operator-settings/index.js';
 import salesProspects from '../pages/api/v1/admin/sales/prospects/index.js';
 import salesProspectDetail from '../pages/api/v1/admin/sales/prospects/[prospectId].js';
+import salesCallback from '../pages/api/v1/admin/sales/prospects/[prospectId]/callback.js';
+import salesRestore from '../pages/api/v1/admin/sales/prospects/[prospectId]/restore.js';
+import salesRemove from '../pages/api/v1/admin/sales/prospects/[prospectId]/remove.js';
+import salesIncoming from '../pages/api/v1/admin/sales/incoming.js';
 import salesQueue from '../pages/api/v1/admin/sales/queue/index.js';
 import { listSalesProspects } from '../pages/api/_lib/salesRepository.js';
 
@@ -275,6 +279,27 @@ try {
   assert.equal(dialQueue.statusCode, 200);
   assert.deepEqual(dialQueue.body.queue.map(prospect => prospect.prospectId), ['contact-ready'],
     'Dial queue still excludes all unprepared contacts and other reps');
+
+  const contactsPage=await call(salesProspects,contactRequest(salesCookie,{contactsView:'true',limit:'2',repId:created.id}));
+  assert.equal(contactsPage.statusCode,200);assert.equal(contactsPage.body.total,4);assert.equal(contactsPage.body.prospects.length,2);assert(contactsPage.body.nextCursor);
+  const addRequest=request(salesCookie,'POST',{contactsView:true,business_name:'Added contact',contact_name:'Jordan',phone:'+12065550771',website:'https://added-contact.test',permission:false,assigned_rep_user_id:created.id});
+  const added=await call(salesProspects,addRequest);assert.equal(added.statusCode,201,JSON.stringify(added.body));assert.equal(added.body.prospect.assignedRepUserId,Number(sales.id));assert.equal(added.body.preparation.status,'blocked');
+  assert.equal((await call(salesProspects,addRequest)).body.prospect.prospectId,added.body.prospect.prospectId,'Create retries reuse one contact');
+  let version=added.body.prospect.rowVersion;const addedId=added.body.prospect.prospectId;
+  const mutation=(cookie,body)=>({...request(cookie,'POST',body),query:{prospectId:addedId}});
+  assert.equal((await call(salesCallback,mutation('',{callbackAt:null,expectedRowVersion:version}))).statusCode,401);
+  assert.equal((await call(salesCallback,mutation('everycall_sales_session=other-sales-token',{callbackAt:null,expectedRowVersion:version}))).statusCode,403);
+  const setRequest=mutation(salesCookie,{callbackAt:new Date(Date.now()+86400000).toISOString(),expectedRowVersion:version});
+  const set=await call(salesCallback,setRequest);assert.equal(set.statusCode,200,JSON.stringify(set.body));version=set.body.prospect.rowVersion;
+  assert.equal((await call(salesCallback,setRequest)).body.prospect.rowVersion,version,'Callback replay does not mutate twice');
+  assert.equal((await query("SELECT count(*) AS n FROM audit_log WHERE action='sales.prospect.callback' AND details::jsonb->>'prospectId'=$1",[addedId])).rows[0].n,1);
+  const removed=await call(salesRemove,mutation(salesCookie,{expectedRowVersion:version}));assert.equal(removed.statusCode,200);version=removed.body.prospect.rowVersion;
+  assert.equal(removed.body.prospect.assignedRepUserId,Number(sales.id));
+  assert.equal((await call(salesRestore,mutation('everycall_sales_session=other-sales-token',{expectedRowVersion:version}))).statusCode,403);
+  const restored=await call(salesRestore,mutation(salesCookie,{expectedRowVersion:version}));assert.equal(restored.statusCode,200);assert.equal(restored.body.prospect.status,'queued');
+  await query("INSERT INTO sales_incoming_calls(incoming_id,provider_call_control_id,phone_e164,rep_user_id,state,ring_expires_at) VALUES('contact_form_incoming','contact_form_cc','+12065550772',$1,'ringing',NOW()+interval '1 hour')",[sales.id]);
+  const incomingAdded=await call(salesIncoming,request(salesCookie,'POST',{action:'create',incomingId:'contact_form_incoming',business_name:'Incoming form company',contact_name:'Casey',numbers:[{phoneE164:'+14255550773',type:'cell'}],website:'https://incoming-form.test',permission:false}));
+  assert.equal(incomingAdded.statusCode,200,JSON.stringify(incomingAdded.body));assert.equal(incomingAdded.body.prospect.businessName,'Incoming form company');assert.equal(incomingAdded.body.prospect.contactName,'Casey');assert.equal(incomingAdded.body.prospect.numbers.length,2);
 
   assert.equal((await call(adminLogin, request('', 'POST', {
     email: 'seller@example.com', password: 'correct-horse-battery', role: 'admin'

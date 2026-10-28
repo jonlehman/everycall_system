@@ -11,7 +11,15 @@ The updated HTML package in `docs/Sales Design/` adds Contacts navigation and th
 - Keep **Company at a glance** and its existing generation flow; the package's receptionist-facts panel is superseded by the company-brief decision below.
 - Outcomes unlock at dialing, including unanswered calls. Saving still follows the existing completed-call outcome contract.
 - Not-prepped contacts belong in Contacts, with calling disabled, and remain excluded from the dial queue. The owner approved the narrow API visibility change to include all of the authenticated rep's assigned prospects; assignment and queue-readiness boundaries remain enforced.
-- Callback scheduling before any call, standalone callback clearing, whole-list filter totals, newest-activity sorting, and richer phone search are not authorized backend changes in this presentation refresh. Expose the current contracts accurately and raise separate changes when needed.
+- The initial presentation refresh deferred callback saving/clearing before a call, Add/restore contacts, global counts/sorting, and all-phone search. The owner subsequently authorized these workflows on October 28; the completion contract below supersedes that initial scope restriction.
+
+## October 28 Contacts workflow completion
+
+- Contacts supports server-side search, metro/status filtering, whole-result status counts, and newest-activity ordering with deterministic pagination. Phone search compares normalized partial digits against primary and every additional number. The incoming-unknown search uses the same Contacts search contract.
+- Add prospect collects business/contact, labeled phone numbers, website, explicit permission, and timezone. It assigns the authenticated rep and queues the existing demo-preparation process when eligible. Creating an unprepared record does not authorize dialing.
+- A removed prospect stays assigned to its rep and appears under Removed. Put back in list restores its list state while preserving all consent, DNC/suppression, readiness, phone-test, and active-call protections. Legacy removed records whose owner was cleared require administrator handling.
+- The shared callback picker saves or clears the prospect callback directly before a call, with version checks and no fabricated call history. During a call, selections remain a draft saved by the existing outcome action. The existing callback-priority queue rules apply.
+- Existing admin list consumers retain their listing contract. Every new read and mutation preserves authenticated rep ownership, audit/idempotency behavior, and server validation.
 
 ## What this replaces
 

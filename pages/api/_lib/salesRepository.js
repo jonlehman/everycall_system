@@ -561,7 +561,7 @@ function localTimeForZone(timezone) {
   }
 }
 
-function serializeProspect(row) {
+export function serializeProspect(row) {
   if (!row) return null;
   const prospectMetadata = asObject(row.metadata_json);
   const salesSkip = asObject(prospectMetadata.salesSkip);
@@ -671,7 +671,7 @@ function serializeProspect(row) {
   };
 }
 
-const PROSPECT_WITH_DEMO_SELECT = `
+export const PROSPECT_WITH_DEMO_SELECT = `
   SELECT p.*,
          (SELECT sales_call_id FROM sales_call_sessions s WHERE s.prospect_id=p.prospect_id
            AND s.state NOT IN ('closed', 'ended', 'completed', 'failed', 'no_answer', 'voicemail', 'wrong_number', 'not_interested', 'do_not_call', 'canceled', 'cancelled') LIMIT 1) AS active_sales_call_id,
@@ -935,13 +935,8 @@ export async function listSalesProspects(pool, {
     where.push("p.status IN ('queued', 'ready_to_call')");
   }
   if (normalizeSalesText(search, 200)) {
-    values.push(`%${normalizeSalesText(search, 200)}%`);
-    where.push(`(
-      p.business_name ILIKE $${values.length}
-      OR p.contact_name ILIKE $${values.length}
-      OR p.phone_e164 ILIKE $${values.length}
-      OR p.website_url ILIKE $${values.length}
-    )`);
+    const { salesContactSearchSql } = await import('./salesContacts.js');
+    where.push(salesContactSearchSql(search, values));
   }
   values.push(eligibleOnly ? 250 : safeLimit);
 
@@ -2144,8 +2139,19 @@ export async function expireUnstartedSalesCalls(pool, prospectId = null) {
 
 export async function createSalesCallSession(pool, input = {}) {
   const prospectId = normalizeSalesText(input.prospectId || input.prospect_id, 200);
-  if (!prospectId) throw salesError("prospect_id_required", "Prospect ID is required.");
+  if (!prospectId) throw salesError('prospect_id_required','Prospect ID is required.');
   await expireUnstartedSalesCalls(pool, prospectId);
+  return withTransaction(pool,async db=>{
+    await db.query('SELECT id FROM sales_dialer_config WHERE id=TRUE FOR SHARE');
+    await db.query('SELECT id FROM admin_users WHERE id=$1 FOR UPDATE',[Number(input.adminUserId || input.admin_user_id || 0)||null]);
+    await db.query('SELECT prospect_id FROM sales_prospects WHERE prospect_id=$1 FOR UPDATE',[prospectId]);
+    return createLockedSalesCallSession(db,input);
+  });
+}
+
+async function createLockedSalesCallSession(pool, input = {}) {
+  const prospectId = normalizeSalesText(input.prospectId || input.prospect_id, 200);
+  if (!prospectId) throw salesError("prospect_id_required", "Prospect ID is required.");
   const requestKey = normalizeSalesText(input.idempotencyKey || input.idempotency_key, 240);
   if (requestKey) {
     const replay = await pool.query(`SELECT * FROM sales_call_sessions WHERE admin_user_id=$1 AND idempotency_key=$2`,
@@ -2241,9 +2247,7 @@ export async function createSalesCallSession(pool, input = {}) {
     if (error?.code === 'P5602') throw salesError('prospect_forbidden','This prospect belongs to another rep.',403);
     if (error?.code === 'P5603') throw salesError('prospect_do_not_call','This phone or business is permanently suppressed.',409);
     if (error?.code === "23505" && error?.constraint === "sales_call_sessions_active_prospect_idx") {
-      const reserved = await getSalesProspect(pool, prospectId);
-      throw salesError("prospect_reserved", "This prospect was reserved by another call. Its operator or an administrator must use end_call before retrying.", 409,
-        { salesCallId: reserved?.activeSalesCallId, state: reserved?.activeCallState, recoveryAction: "end_call" });
+      throw salesError("prospect_reserved", "This prospect was reserved by another call. Refresh and end that call before retrying.", 409);
     }
     throw error;
   }
@@ -2442,7 +2446,7 @@ export async function recordSalesCallOutcome(pool, {salesCallId, outcome, notes 
     // Test dispositions remain reviewable on the call, without changing real contact eligibility or sending followups.
     if (active.metadata_json?.phone_test_mode) return serializeSalesCallSession(result.rows[0]);
     const dnc=['not_interested','do_not_call','wrong_number'].includes(normalizedOutcome);
-    await db.query(`UPDATE sales_prospects SET last_outcome=$2,last_outcome_at=NOW(),status=CASE WHEN $3 THEN 'do_not_call' WHEN status IN ('do_not_call','removed','paid') THEN status ELSE 'ready_to_call' END,do_not_call=do_not_call OR $3,dnc_reason=CASE WHEN $3 THEN $4 ELSE dnc_reason END,callback_at=$5,inbound_return=FALSE,queue_position=nextval(pg_get_serial_sequence('sales_prospects','queue_position')),updated_at=NOW() WHERE prospect_id=$1`,[active.prospect_id,normalizedOutcome,dnc,normalizedOutcome==='wrong_number'?'bad_number':reason,normalizedOutcome==='callback_requested'?callbackAt:null]);
+    await db.query(`UPDATE sales_prospects SET last_outcome=$2,last_outcome_at=NOW(),status=CASE WHEN $3 THEN 'do_not_call' WHEN status IN ('do_not_call','removed','paid') THEN status ELSE 'ready_to_call' END,do_not_call=do_not_call OR $3,dnc_reason=CASE WHEN $3 THEN $4 ELSE dnc_reason END,callback_at=$5,inbound_return=FALSE,row_version=row_version+1,queue_position=nextval(pg_get_serial_sequence('sales_prospects','queue_position')),updated_at=NOW() WHERE prospect_id=$1`,[active.prospect_id,normalizedOutcome,dnc,normalizedOutcome==='wrong_number'?'bad_number':reason,normalizedOutcome==='callback_requested'?callbackAt:null]);
     await db.query(
       `INSERT INTO sales_followup_jobs (
          sales_followup_job_id, prospect_id, sales_call_id, outcome
