@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SALES_RESEARCH_FIELDS } from '../../../lib/salesProspectResearch.js';
 import {
   displayStatus,
   fetchSalesJson,
@@ -10,6 +11,8 @@ import {
 } from './salesApi';
 
 const EMPTY_FORM = Object.freeze({
+  externalRef: '',
+  ...Object.fromEntries(SALES_RESEARCH_FIELDS.map((field) => [field.key, ''])),
   businessName: '',
   contactName: '',
   phone: '',
@@ -98,6 +101,8 @@ function yesNo(value) {
 
 function formFromProspect(prospect) {
   return {
+    externalRef: prospect.externalRef || '',
+    ...Object.fromEntries(SALES_RESEARCH_FIELDS.map((field) => [field.key, prospect[field.key] || ''])),
     businessName: prospect.businessName || '',
     contactName: prospect.contactName || '',
     phone: prospect.phone || '',
@@ -144,6 +149,9 @@ function Editor({ mode, form, setForm, busy, error, onCancel, onSave }) {
           <Field label="Business name">
             <input required value={form.businessName} onChange={update('businessName')} className={fieldClass()} />
           </Field>
+          <Field label="Source ID" hint="Original list ID used to match re-imports.">
+            <input maxLength={240} value={form.externalRef} onChange={update('externalRef')} className={fieldClass()} />
+          </Field>
           <Field label="Contact name">
             <input value={form.contactName} onChange={update('contactName')} className={fieldClass()} />
           </Field>
@@ -181,6 +189,20 @@ function Editor({ mode, form, setForm, busy, error, onCancel, onSave }) {
             </Field>
           ) : null}
         </div>
+
+        <fieldset className="grid gap-4 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-2">
+          <legend className="px-1 text-sm font-semibold text-slate-700">List research</legend>
+          <p className="text-xs text-slate-500 sm:col-span-2">For the sales rep’s preparation. These notes do not change what the AI receptionist knows.</p>
+          {SALES_RESEARCH_FIELDS.map((field) => (
+            <Field key={field.key} label={field.label}>
+              {field.maxLength > 240 ? (
+                <textarea rows={3} maxLength={field.maxLength} value={form[field.key]} onChange={update(field.key)} className={fieldClass()} />
+              ) : (
+                <input maxLength={field.maxLength} value={form[field.key]} onChange={update(field.key)} className={fieldClass()} />
+              )}
+            </Field>
+          ))}
+        </fieldset>
 
         <div className="grid gap-4 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-2 xl:grid-cols-4">
           <Field label="Permission to call">
@@ -237,6 +259,17 @@ function Activity({ prospectId, detail, loading, error, onRetry }) {
   const notes = Array.isArray(detail?.notes) ? detail.notes : [];
   return (
     <div className="grid gap-4 bg-slate-50 p-4 lg:grid-cols-2">
+      <section className="lg:col-span-2">
+        <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-slate-600">List research</h3>
+        <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+          {[{ key: 'externalRef', label: 'Source ID' }, ...SALES_RESEARCH_FIELDS].map((field) => (
+            <div key={field.key} className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
+              <dt className="font-semibold text-slate-600">{field.label}</dt>
+              <dd className="m-0 whitespace-pre-wrap break-words text-slate-900">{detail?.[field.key] || '—'}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
       <section>
         <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-slate-600">Call outcomes</h3>
         <div className="mt-2 grid gap-2">
@@ -380,6 +413,8 @@ export default function ProspectsManager({ onProspectsChanged }) {
         await fetchSalesJson('/api/v1/admin/sales/prospects', {
           method: 'POST',
           body: JSON.stringify({
+            external_ref: form.externalRef.trim(),
+            ...Object.fromEntries(SALES_RESEARCH_FIELDS.map((field) => [field.column, form[field.key].trim()])),
             business_name: form.businessName.trim(),
             contact_name: form.contactName.trim(),
             phone: form.phone.trim(),
@@ -399,6 +434,8 @@ export default function ProspectsManager({ onProspectsChanged }) {
         await fetchSalesJson(`/api/v1/admin/sales/prospects/${encodeURIComponent(editingProspect.id)}`, {
           method: 'PATCH',
           body: JSON.stringify({
+            externalRef: form.externalRef.trim(),
+            ...Object.fromEntries(SALES_RESEARCH_FIELDS.map((field) => [field.key, form[field.key].trim()])),
             businessName: form.businessName.trim(),
             contactName: form.contactName.trim(),
             phoneE164: form.phone.trim(),

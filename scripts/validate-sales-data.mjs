@@ -8,7 +8,8 @@ import {
   parseCsv as parseSalesConsoleCsv,
   validateMappedRows
 } from "../app/admin/sales/csvImport.js";
-import { normalizeImportResult } from "../app/admin/sales/salesApi.js";
+import { normalizeImportResult, normalizeProspect } from "../app/admin/sales/salesApi.js";
+import { CSV_HEADERS, prospectRow as exportProspectRow } from "../pages/api/v1/admin/sales/prospects/export.js";
 import {
   completeSalesSignupInvitation,
   createSalesCallSession,
@@ -167,6 +168,51 @@ function validateSignupTokenAttributionIsolation() {
 }
 
 function validateSalesConsoleCsvMapping() {
+  const researchCsv = [
+    'ID,Company,Phone,Website,City,Region,AfterHoursClass,PostedHours,CallOpenerHook,Notes',
+    '007,Research Fixture,503-555-0197,https://research.example,Salem,Willamette Valley,Unknown,"Mon-Fri, 9-5",Ask about evenings,"Owner said ""call later"""'
+  ].join('\n');
+  const researchParsed = parseSalesConsoleCsv(researchCsv);
+  const researchMappings = guessMappings(researchParsed.headers);
+  assert.equal(researchMappings.externalRef, 'ID');
+  assert.equal(researchMappings.city, 'City');
+  assert.equal(researchMappings.metro, '');
+  assert.equal(researchMappings.researchNotes, 'Notes');
+  const missingConsent = validateMappedRows(researchParsed.rows, researchMappings);
+  assert.equal(missingConsent.validRecords.length, 0);
+  assert.deepEqual(missingConsent.errors.map(({ message }) => message), ['Timezone is not mapped.', 'Permission is not mapped.']);
+  assert.equal(normalizeSalesImportRecords(parseSalesProspectCsv(researchCsv)).errors[0].code, 'permission_required');
+  const directResearch = normalizeSalesImportRecords(parseSalesProspectCsv(researchCsv).map((row) => ({ ...row, permission: 'no' })), {
+    env: { SALES_CALL_MISSING_TIMEZONE_POLICY: 'allow' }
+  });
+  assert.equal(directResearch.valid[0].externalRef, '007');
+  assert.equal(directResearch.valid[0].permissionGranted, false);
+  assert.equal(directResearch.valid[0].emailPermission, false);
+  researchParsed.rows[0].record.Permission = 'no';
+  researchParsed.rows[0].record.Timezone = 'America/Los_Angeles';
+  const mappedResearch = validateMappedRows(researchParsed.rows, {
+    ...researchMappings, permission: 'Permission', timezone: 'Timezone'
+  });
+  assert.equal(mappedResearch.errors.length, 0);
+  const normalizedResearch = normalizeSalesImportRecords(mappedResearch.validRecords).valid[0];
+  assert.deepEqual(normalizedResearch.research, directResearch.valid[0].research);
+  assert.equal(normalizedResearch.research.afterHoursClass, 'Unknown');
+  assert.equal(normalizedResearch.research.postedHours, 'Mon-Fri, 9-5');
+  const exported = parseSalesConsoleCsv([
+    CSV_HEADERS.join(','),
+    exportProspectRow({ ...normalizedResearch, ...normalizedResearch.research })
+  ].join('\n'));
+  const reimported = normalizeSalesImportRecords(validateMappedRows(exported.rows, guessMappings(exported.headers)).validRecords);
+  assert.equal(reimported.errors.length, 0);
+  assert.equal(reimported.valid[0].externalRef, '007');
+  assert.deepEqual(reimported.valid[0].research, normalizedResearch.research);
+  const callerResearch = normalizeProspect({ ...normalizedResearch, ...normalizedResearch.research, notes: [{ body: 'Call note' }] });
+  assert.equal(callerResearch.researchNotes, 'Owner said "call later"');
+  assert.equal(callerResearch.city, 'Salem');
+  assert.deepEqual(callerResearch.coreFacts, []);
+  const formulaExport = parseSalesConsoleCsv([CSV_HEADERS.join(','), exportProspectRow({ researchNotes: '=HYPERLINK("https://example.com")' })].join('\n'));
+  assert.ok(formulaExport.rows[0].record.research_notes.startsWith("'="));
+
   const parsed = parseSalesConsoleCsv([
     "business_name,phone,permission,email_permission,timezone",
     "Acme Appliance,2065550100,yes,no,America/Los_Angeles"

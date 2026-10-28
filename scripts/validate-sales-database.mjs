@@ -697,6 +697,58 @@ async function main() {
       assert.equal(tableNames.has(required), true, `missing ${required}`);
     }
 
+    const researchRecord = {
+      external_ref: 'research-fixture', business_name: 'Research Fixture',
+      phone: '503-555-0197', website: 'https://research.example',
+      timezone: 'America/Los_Angeles', permission: 'no',
+      City: 'Salem', Region: 'Willamette Valley', AfterHoursClass: 'Unknown',
+      PostedHours: 'Mon-Fri, 9-5', CallOpenerHook: 'Ask about evenings', Notes: 'Original list note'
+    };
+    const research = await createSalesProspect(pool, researchRecord, { adminUserId });
+    assert.equal(research.externalRef, 'research-fixture');
+    assert.equal(research.city, 'Salem');
+    assert.equal(research.metro, null);
+    assert.equal(research.region, 'Willamette Valley');
+    assert.equal(research.afterHoursClass, 'Unknown');
+    assert.equal(research.postedHours, 'Mon-Fri, 9-5');
+    assert.equal(research.callOpenerHook, 'Ask about evenings');
+    assert.equal(research.researchNotes, 'Original list note');
+    assert.equal(research.permissionGranted, false);
+    assert.deepEqual(research.coreFacts, []);
+    await pool.query(`UPDATE sales_prospects SET metadata_json = metadata_json || '{"unrelated":"keep"}'::jsonb WHERE prospect_id=$1`, [research.prospectId]);
+    await addSalesProspectNote(pool, { prospectId: research.prospectId, body: 'Actual call note', adminUserId });
+    const updatedResearch = await updateSalesProspect(pool, research.prospectId, {
+      city: 'Keizer', postedHours: '', researchNotes: 'Corrected list note', externalRef: 'research-new-id', expectedRowVersion: research.rowVersion
+    });
+    assert.equal(updatedResearch.city, 'Keizer');
+    assert.equal(updatedResearch.postedHours, null);
+    assert.equal(updatedResearch.callOpenerHook, 'Ask about evenings');
+    assert.equal(updatedResearch.externalRef, 'research-new-id');
+    const metadata = await pool.query('SELECT metadata_json FROM sales_prospects WHERE prospect_id=$1', [research.prospectId]);
+    assert.equal(metadata.rows[0].metadata_json.unrelated, 'keep');
+    const sparseRecord = { external_ref: 'research-new-id', business_name: 'Research Reimport', phone: researchRecord.phone, website: researchRecord.website, timezone: researchRecord.timezone, permission: 'no' };
+    const researchImport = await importSalesProspects(pool, { adminUserId, records: [sparseRecord] });
+    assert.equal(researchImport.updatedCount, 1);
+    assert.equal(researchImport.imported[0].prospectId, research.prospectId);
+    const researchDetail = await getSalesProspectDetail(pool, research.prospectId);
+    assert.equal(researchDetail.researchNotes, 'Corrected list note');
+    assert.equal(researchDetail.city, 'Keizer');
+    assert.equal(researchDetail.notes[0].body, 'Actual call note');
+    for (const changedIdentity of [{ phone: '503-555-0199' }, { website: 'https://unrelated.example' }]) {
+      const collision = await importSalesProspects(pool, { adminUserId, records: [{ ...sparseRecord, ...changedIdentity, business_name: 'Unrelated Business', research_notes: 'Must not overwrite' }] });
+      assert.equal(collision.importedCount, 0);
+      assert.equal(collision.rejectedCount, 1);
+      assert.equal(collision.errors[0].code, 'source_identity_conflict');
+      const unchanged = await getSalesProspectDetail(pool, research.prospectId);
+      assert.equal(unchanged.businessName, 'Research Reimport');
+      assert.equal(unchanged.researchNotes, 'Corrected list note');
+      assert.equal(unchanged.notes[0].body, 'Actual call note');
+    }
+    await importSalesProspects(pool, { adminUserId, records: [{ ...sparseRecord, research_notes: '' }] });
+    assert.equal((await getSalesProspect(pool, research.prospectId)).researchNotes, null);
+    await assert.rejects(updateSalesProspect(pool, research.prospectId, { externalRef: 'validation-1' }), error => error.code === 'prospect_already_exists');
+    assert.equal((await getSalesProspect(pool, research.prospectId)).externalRef, 'research-new-id');
+
     console.log("sales database validation passed");
   } catch(error) { console.error(error.stack); process.exit(1); } finally {
     await db.close();

@@ -1,5 +1,9 @@
 # Decisions
 
+## 2026-10-28 — Sales list research fields
+- Preserve source-list `ID` in the existing `external_ref` and keep its import matching semantics. Reject a repeated source ID when the normalized phone or supplied website conflicts, so list-local IDs cannot overwrite unrelated prospects. Add city, region, after-hours classification, posted hours, opener hook, and research notes to existing prospect metadata without a migration. City and metro remain distinct; research notes remain separate from call-note history.
+- Expose the fields in CSV mapping, admin editing/detail/export, and rep preparation. They do not become `core_facts`, change calling hours, or grant permission. See [rep dialer specification](SPECS/sales-rep-dialer-v2.md).
+
 ## 2026-10-20 — Sales rep dialer v2
 - Implement the [approved state-driven rep design](SPECS/sales-rep-dialer-v2.md): READY, TALK, DEMO, WRAPUP; a persistent outcome bar; rep-owned ready-only queues and local-day counters; permanent phone/domain DNC suppression; separate re-importable removal; and incoming return calls. Keep `/admin/sales` management separate from the rep workspace.
 - Supersede the July 28 30-day Sales demo expiry, 11-record warm queue, and invitation-only conversion boundary. Keep a prepared demo while a prospect remains eligible; prepare 10 ahead and refill at 9. Verified Stripe completion for the $100 setup including the first month authorizes full-build initiation and real-tenant conversion. Booking is independent of payment. Production voice still requires paid state and the existing validated knowledge-publication/readiness gates.

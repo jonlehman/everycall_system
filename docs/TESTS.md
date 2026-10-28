@@ -1,5 +1,7 @@
 # Manual Call Test Scripts
 
+- Sales list research: `node scripts/validate-sales-data.mjs` checks source ID and Oregon-style headers, distinct city/metro, unchanged missing permission/timezone blocks, export/import preservation, and spreadsheet formula protection. `node scripts/validate-sales-database.mjs` checks persistence, partial update/re-import preservation, explicit clearing, call-note separation, source-ID matching/collisions, and unchanged permission/core-facts state using a disposable database.
+
 ## Production recovery and knowledge design regression gates
 
 - `pnpm validate:knowledge-design` checks that the Markdown matrix, CSV and manifest contain the same 163 original requirements without altering their text.

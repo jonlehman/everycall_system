@@ -1,4 +1,8 @@
+import { SALES_RESEARCH_FIELDS } from '../../../lib/salesProspectResearch.js';
+
 const FIELD_DEFINITIONS = [
+  { key: "externalRef", label: "Source ID", aliases: ["id", "external_ref", "external id", "record id", "source id"] },
+  ...SALES_RESEARCH_FIELDS,
   {
     key: "businessName",
     label: "Business name",
@@ -71,7 +75,7 @@ const FIELD_DEFINITIONS = [
     label: "Contact role",
     aliases: ["contact role", "contact_role", "role", "title"],
   },
-  { key: "metro", label: "Metro", aliases: ["metro", "market", "city"] },
+  { key: "metro", label: "Metro", aliases: ["metro", "market"] },
   {
     key: "pitchFlags",
     label: "Pitch flags",
@@ -391,6 +395,10 @@ export function validateMappedRows(
     if (isSuppressed) suppressed += 1;
 
     validRecords.push({
+      ...(mappings.externalRef ? { external_ref: valueFor("externalRef") } : {}),
+      ...Object.fromEntries(SALES_RESEARCH_FIELDS
+        .filter((field) => mappings[field.key])
+        .map((field) => [field.column, valueFor(field.key)])),
       business_name: businessName,
       contact_name: valueFor("contactName"),
       phone,

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { SALES_RESEARCH_FIELDS } from "../../../lib/salesProspectResearch.js";
 import { salesCoreFacts, salesSuggestedAsks } from "./salesCoreFacts.js";
 import { scrapeDemoWebsite } from "./demoWebsiteScraper.js";
 import {
@@ -245,6 +246,13 @@ function normalizeRecordKeys(record) {
   return output;
 }
 
+function salesProspectSourceKey(externalRef, phoneE164, websiteUrl) {
+  const input = externalRef
+    ? `external:${externalRef.toLowerCase()}`
+    : `prospect:${phoneE164}|${websiteUrl || ""}`;
+  return crypto.createHash("sha256").update(input, "utf8").digest("hex");
+}
+
 export function normalizeSalesImportRecord(record, {
   defaultCountryCode = "1",
   rowNumber = null,
@@ -270,10 +278,7 @@ export function normalizeSalesImportRecord(record, {
   const externalRef = normalizeSalesText(readAlias(source, [
     "external_ref", "external_id", "record_id", "id"
   ]), 240) || null;
-  const sourceKeyInput = externalRef
-    ? `external:${externalRef.toLowerCase()}`
-    : `prospect:${phoneE164}|${websiteUrl || ""}`;
-  const sourceKey = crypto.createHash("sha256").update(sourceKeyInput, "utf8").digest("hex");
+  const sourceKey = salesProspectSourceKey(externalRef, phoneE164, websiteUrl);
   const emailPermissionInput = readAlias(source, [
     "email_permission", "email_permitted", "permission_to_email", "email_permission_yes_no"
   ]);
@@ -308,6 +313,11 @@ export function normalizeSalesImportRecord(record, {
   const uniqueNumbers=[...new Map(numbers.map(n=>[n.phoneE164,n])).values()];
   const flags=record.pitch_flags||source.pitch_flags||[];
   const research={contactRole:normalizeSalesText(source.contact_role,100)||null,metro:normalizeSalesText(source.metro,120)||null,pitchFlags:(Array.isArray(flags)?flags:String(flags).split('|')).map(v=>normalizeSalesText(v,200)).filter(Boolean).slice(0,12)};
+  for (const field of SALES_RESEARCH_FIELDS) {
+    const alias = [field.key, field.column, ...field.aliases]
+      .map(normalizeHeaderName).find((key) => source[key] !== undefined);
+    if (alias !== undefined) research[field.key] = normalizeSalesText(source[alias], field.maxLength) || null;
+  }
   return {
     numbers:uniqueNumbers,research,
     sourceKey,
@@ -583,6 +593,9 @@ function serializeProspect(row) {
   return {
     prospectId: normalizeSalesText(row.prospect_id, 200),
     externalRef: normalizeSalesText(row.external_ref, 240) || null,
+    ...Object.fromEntries(SALES_RESEARCH_FIELDS.map((field) => [
+      field.key, normalizeSalesText(prospectMetadata[field.key], field.maxLength) || null
+    ])),
     businessName: normalizeSalesText(row.business_name, 300),
     ownerFirstName: normalizeSalesText(row.owner_first_name, 120) || null,
     contactName: normalizeSalesText(row.contact_name, 240) || null,
@@ -829,6 +842,10 @@ export async function importSalesProspects(pool, {
            imported_by_admin_user_id = EXCLUDED.imported_by_admin_user_id,
            row_version = sales_prospects.row_version + 1,
            updated_at = NOW()
+         WHERE EXCLUDED.external_ref IS NULL
+            OR (sales_prospects.phone_e164 = EXCLUDED.phone_e164
+                AND (EXCLUDED.website_url IS NULL
+                     OR sales_prospects.website_url IS NOT DISTINCT FROM EXCLUDED.website_url))
          RETURNING prospect_id, (xmax = 0) AS inserted`,
         [
           prospectId,
@@ -852,6 +869,14 @@ export async function importSalesProspects(pool, {
           Number(adminUserId)
         ]
       );
+      if (!result.rows.length) {
+        normalized.errors.push({
+          rowNumber: record.rowNumber,
+          code: "source_identity_conflict",
+          message: "This source ID belongs to a different phone or website. Use a unique source ID or review the existing prospect before importing."
+        });
+        continue;
+      }
       imported.push({
         rowNumber: record.rowNumber,
         prospectId: result.rows[0]?.prospect_id,
@@ -1207,6 +1232,25 @@ export async function updateSalesProspect(pool, prospectId, changes = {}) {
     assign("business_name", value);
   }
   if (changes.ownerFirstName !== undefined) assign("owner_first_name", normalizeSalesText(changes.ownerFirstName, 120) || null);
+  if (changes.externalRef !== undefined) {
+    const externalRef = normalizeSalesText(changes.externalRef, 240) || null;
+    if (externalRef !== existing.externalRef) {
+      assign("external_ref", externalRef);
+      assign("source_key", salesProspectSourceKey(
+        externalRef,
+        changes.phoneE164 === undefined ? existing.phoneE164 : normalizeSalesPhone(changes.phoneE164),
+        changes.websiteUrl === undefined ? existing.websiteUrl : normalizeWebsite(changes.websiteUrl)
+      ));
+    }
+  }
+  const research = {};
+  for (const field of SALES_RESEARCH_FIELDS) {
+    if (changes[field.key] !== undefined) research[field.key] = normalizeSalesText(changes[field.key], field.maxLength) || null;
+  }
+  if (Object.keys(research).length) {
+    values.push(json(research, {}));
+    assignments.push(`metadata_json = metadata_json || $${values.length}::jsonb`);
+  }
   if (changes.contactName !== undefined) assign("contact_name", normalizeSalesText(changes.contactName, 240) || null);
   if (changes.contactEmail !== undefined) assign("contact_email", normalizeOptionalEmail(changes.contactEmail));
   if (changes.emailPermission !== undefined) {
@@ -1289,13 +1333,21 @@ export async function updateSalesProspect(pool, prospectId, changes = {}) {
     throw salesError("invalid_row_version", "Prospect row version must be an integer.");
   }
   if (expectedRowVersion !== null) values.push(expectedRowVersion);
-  const updated = await pool.query(
+  let updated;
+  try {
+    updated = await pool.query(
     `UPDATE sales_prospects
      SET ${assignments.join(", ")}
      WHERE prospect_id = $${prospectIdParameter}
        ${expectedRowVersion === null ? "" : `AND row_version = $${values.length}`}`,
     values
-  );
+    );
+  } catch (error) {
+    if (error?.code === "23505") {
+      throw salesError("prospect_already_exists", "A prospect with this source ID or phone and website already exists.", 409);
+    }
+    throw error;
+  }
   if (expectedRowVersion !== null && !updated.rowCount) {
     throw salesError(
       "prospect_version_conflict",

@@ -12,6 +12,19 @@
     sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+.research {
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+.research summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.research > p {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 6px 0;
+}
 .dialer * {
   box-sizing: border-box;
 }

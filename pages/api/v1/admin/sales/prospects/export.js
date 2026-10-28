@@ -1,11 +1,14 @@
 import { listSalesProspects } from "../../../../_lib/salesRepository.js";
+import { SALES_RESEARCH_FIELDS } from "../../../../../../lib/salesProspectResearch.js";
 import {
   requireSalesAdmin,
   sendSalesApiError,
   writeSalesAdminAudit
 } from "../../../../_lib/salesApi.js";
 
-const CSV_HEADERS = Object.freeze([
+export const CSV_HEADERS = Object.freeze([
+  "external_ref",
+  ...SALES_RESEARCH_FIELDS.map((field) => field.column),
   "business_name",
   "contact_name",
   "phone",
@@ -48,8 +51,10 @@ function exportPhone(value) {
   return us ? `${us[1]}-${us[2]}-${us[3]}` : normalized;
 }
 
-function prospectRow(prospect) {
+export function prospectRow(prospect) {
   return [
+    prospect.externalRef,
+    ...SALES_RESEARCH_FIELDS.map((field) => prospect[field.key]),
     prospect.businessName,
     prospect.contactName,
     exportPhone(prospect.phoneE164),

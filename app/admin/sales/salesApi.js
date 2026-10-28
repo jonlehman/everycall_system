@@ -1,3 +1,5 @@
+import { SALES_RESEARCH_FIELDS } from '../../../lib/salesProspectResearch.js';
+
 const TERMINAL_CALL_STATES = new Set([
   "closed",
   "completed",
@@ -175,6 +177,10 @@ export function normalizeProspect(source = {}) {
 
   return {
     raw: source,
+    externalRef: normalizeText(firstValue(source, ["externalRef", "external_ref"])),
+    ...Object.fromEntries(SALES_RESEARCH_FIELDS.map((field) => [
+      field.key, normalizeText(firstValue(source, [field.key, field.column]))
+    ])),
     numbers: Array.isArray(source.numbers) ? source.numbers : [],
     coreFacts: Array.isArray(source.coreFacts) ? source.coreFacts : [],
     suggestedAsks: Array.isArray(source.suggestedAsks)
