@@ -1276,6 +1276,29 @@ try {
   assert.equal(repository.calls.get(reservationFailure.salesCallId).state, "closed",
     "Successful teardown recovery releases the prospect reservation");
 
+  const paidCall = baseCall("sales-call-paid", { prospectStatus: "paid" });
+  repository.calls.set(paidCall.salesCallId, paidCall);
+  assert.equal((await postTelnyx(operatorEvent(paidCall.salesCallId, "operator-paid"))).status, 200);
+  assert.equal((await postTelnyx(operatorAnsweredEvent(paidCall.salesCallId, "operator-paid-answered"))).status, 200);
+  assert.ok(providerEvents.includes("telnyx:create_conference:operator-control-sales-call-paid"),
+    "A paid contact must pass provider eligibility revalidation");
+  await action(paidCall.salesCallId, "end_call");
+  for (const [name, overrides] of [
+    ["dnc", { doNotCall: true }],
+    ["suppressed", { suppressed: true }],
+    ["permission", { permissionGranted: false }],
+    ["timezone", { prospectTimezone: null }],
+    ["unprepared", { demoStatus: "not_prepared" }],
+    ["removed", { prospectStatus: "removed" }],
+    ["not-interested", { prospectStatus: "not_interested" }]
+  ]) {
+    const blockedPaid = baseCall(`sales-call-paid-${name}`, { prospectStatus: "paid", ...overrides });
+    repository.calls.set(blockedPaid.salesCallId, blockedPaid);
+    assert.equal((await postTelnyx(operatorEvent(blockedPaid.salesCallId, `operator-paid-${name}`))).status, 200);
+    assert.equal(repository.calls.get(blockedPaid.salesCallId).providerErrorCode, "sales:eligibility:changed");
+    assert.ok(!providerEvents.includes(`telnyx:create_conference:operator-control-${blockedPaid.salesCallId}`));
+  }
+
   const invalidOpenAI = {
     ...incomingEvent,
     id: "openai-invalid-signature",

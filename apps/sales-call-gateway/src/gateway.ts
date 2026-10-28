@@ -82,7 +82,7 @@ const TERMINAL_STATES = new Set([
   "canceled",
   "cancelled"
 ]);
-const ACTIVE_PROSPECT_STATUSES = new Set(["queued", "ready_to_call"]);
+const ACTIVE_PROSPECT_STATUSES = new Set(["queued", "ready_to_call", "paid"]);
 const ACTIONS = new Set<GatewayAction>([
   "start_demo",
   "pause_ai",

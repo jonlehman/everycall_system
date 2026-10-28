@@ -13,6 +13,10 @@ The updated HTML package in `docs/Sales Design/` adds Contacts navigation and th
 - Not-prepped contacts belong in Contacts, with calling disabled, and remain excluded from the dial queue. The owner approved the narrow API visibility change to include all of the authenticated rep's assigned prospects; assignment and queue-readiness boundaries remain enforced.
 - The initial presentation refresh deferred callback saving/clearing before a call, Add/restore contacts, global counts/sorting, and all-phone search. The owner subsequently authorized these workflows on October 28; the completion contract below supersedes that initial scope restriction.
 
+## October 28 paid-customer clarification
+
+Paid customers may be called manually and scheduled for follow-up callbacks. Payment status remains intact; all other calling and scheduling safeguards still apply. Paid customers do not enter fresh prospect rotation, but an explicit due callback may place them in the rep queue. Later call outcomes remain truthful and a new do-not-call request still blocks future calls. This supersedes the reference mockup’s Paid call-button restriction.
+
 ## October 28 Contacts workflow completion
 
 - Contacts supports server-side search, metro/status filtering, whole-result status counts, and newest-activity ordering with deterministic pagination. Phone search compares normalized partial digits against primary and every additional number. The incoming-unknown search uses the same Contacts search contract.

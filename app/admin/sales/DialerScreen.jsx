@@ -207,8 +207,9 @@ export default function DialerScreen({
       : elapsed(call?.demoStartedAt, call?.demoEndedAt || call?.endedAt || now),
     currentStep =
       phase === "WRAPUP" ? 3 : phase === "DEMO" ? 2 : phase === "TALK" ? 1 : 0;
+  const customerPaid = Boolean(call?.paidAt) || prospect?.status === "paid";
   const canDial =
-      !busy && !call?.id && softphoneState === "ready" && prospect?.eligible && prospect?.demoStatus === "ready" && !["Paid", "Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})),
+      !busy && !call?.id && softphoneState === "ready" && prospect?.eligible && prospect?.demoStatus === "ready" && !["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})),
     editUrl = "/sales/scripts";
   const micLabel =
     microphoneState === "live"
@@ -225,7 +226,7 @@ export default function DialerScreen({
         }[microphoneState] || "microphone unavailable";
   const pill =
     phase === "READY"
-      ? browsingContact && (!prospect?.eligible || prospect?.demoStatus !== "ready" || ["Paid", "Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})))
+      ? browsingContact && (!prospect?.eligible || prospect?.demoStatus !== "ready" || ["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})))
         ? `${contactStatus(prospect || {})}${prospect?.callBlockedReason ? ` · ${prospect.callBlockedReason}` : ""}`
         : softphoneState === "ready"
         ? `Ready · ${micLabel} · browser connected`
@@ -475,7 +476,7 @@ export default function DialerScreen({
             <History prospect={prospect} ready />
           ) : null}
           {phase === "READY" && prospect && <Section>
-            <CallbackPicker prospect={prospect} value={prospect.callbackAt} onSet={onCallback} disabled={Boolean(busy)} canSchedule={!queue.config?.phoneTestMode && !["Paid", "Removed", "Not interested", "Do not call"].includes(contactStatus(prospect))} saveImmediately now={now} />
+            <CallbackPicker prospect={prospect} value={prospect.callbackAt} onSet={onCallback} disabled={Boolean(busy)} canSchedule={!queue.config?.phoneTestMode && !prospect.doNotCall && !prospect.suppressed && !["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect))} saveImmediately now={now} />
           </Section>}
           {phase !== "WRAPUP" && (
             <Section>
@@ -629,8 +630,7 @@ export default function DialerScreen({
                       the checkout link
                     </h2>
                     <p>
-                      Stripe checkout: $100 setup, first month included. Nothing
-                      activates until it’s paid. Stripe marks this call Paid.
+                      {customerPaid ? "This customer has already paid for setup." : "Stripe checkout: $100 setup, first month included. Nothing activates until it’s paid. Stripe marks this call Paid."}
                     </p>
                     <div className={styles.actions}>
                       <Button
@@ -670,7 +670,7 @@ export default function DialerScreen({
                       tone="blue"
                       disabled={
                         busy ||
-                        Boolean(call.paidAt) ||
+                        customerPaid ||
                         (!(channel === "sms" && cell) && !email.trim())
                       }
                       onClick={() =>
@@ -680,7 +680,7 @@ export default function DialerScreen({
                         })
                       }
                     >
-                      {call.paidAt
+                      {customerPaid
                         ? "Paid"
                         : call.linkSentAt
                           ? "Send link again"
@@ -696,8 +696,7 @@ export default function DialerScreen({
                         "Jon"}
                     </h2>
                     <p>
-                      Not paid by then? Jon takes the card at the start of the
-                      call. Open slots come live from the calendar.
+                      {customerPaid ? "Setup is paid. Open slots come live from the calendar." : "Not paid by then? Jon takes the card at the start of the call. Open slots come live from the calendar."}
                     </p>
                     <div className={styles.slotGrid}>
                       {(availability?.slots || []).map((item) => (

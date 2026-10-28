@@ -44,6 +44,7 @@ function isSuppressed(prospect = {}) {
     || prospect.doNotCall
     || prospect.email_suppressed_at
     || prospect.emailSuppressedAt
+    || prospectStatus === "paid"
     || TERMINAL_OUTCOMES.has(prospectStatus)
   );
 }

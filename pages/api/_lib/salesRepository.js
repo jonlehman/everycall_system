@@ -512,7 +512,7 @@ export function evaluateSalesCallingWindow(timezone, {
   };
 }
 
-function prospectPreparationBlock(row) {
+function prospectPreparationBlock(row, { allowPaidCall = false } = {}) {
   if (!row?.permission_granted) {
     return {
       code: "permission_not_granted",
@@ -532,10 +532,11 @@ function prospectPreparationBlock(row) {
         || "This prospect is suppressed."
     };
   }
-  if (!ACTIVE_CALL_QUEUE_STATUSES.has(normalizeSalesText(row?.status, 60).toLowerCase())) {
+  const status = normalizeSalesText(row?.status, 60).toLowerCase();
+  if (!ACTIVE_CALL_QUEUE_STATUSES.has(status) && !(allowPaidCall && status === "paid")) {
     return {
       code: "prospect_not_in_calling_queue",
-      reason: "This prospect is not in an active calling-queue state."
+      reason: "This contact is not in a callable state."
     };
   }
   return null;
@@ -566,8 +567,10 @@ export function serializeProspect(row) {
   const prospectMetadata = asObject(row.metadata_json);
   const salesSkip = asObject(prospectMetadata.salesSkip);
   const preparationBlock = prospectPreparationBlock(row);
+  // Calling a paid customer does not grant permission to rebuild their demo.
+  const contactCallBlock = prospectPreparationBlock(row, { allowPaidCall: true });
   const callingWindow = evaluateSalesCallingWindow(row.timezone);
-  const callBlock = (row.active_sales_call_id ? { code: "prospect_reserved", reason: "Another sales call reserves this prospect. End that call before retrying." } : null) || preparationBlock || (!callingWindow.allowed
+  const callBlock = (row.active_sales_call_id ? { code: "prospect_reserved", reason: "Another sales call reserves this prospect. End that call before retrying." } : null) || contactCallBlock || (!callingWindow.allowed
     ? { code: callingWindow.reasonCode, reason: callingWindow.reason }
     : null);
   const effectiveDemoStatus = demoStatus(row);

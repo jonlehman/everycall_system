@@ -187,7 +187,7 @@ const server = createServer(async (req, res) => {
   }
   if (path.pathname.endsWith("/callback")) {
     if (rejectCallback) { prospect.rowVersion = 2; res.statusCode = 409; return send({ error: "Contact changed. Review and try again." }); }
-    const item = path.pathname.includes(matched.id) ? matched : prospect;
+    const item = [matched, paidContact].find((contact) => path.pathname.includes(contact.id)) || prospect;
     item.callbackAt = data.callbackAt; item.rowVersion = (item.rowVersion || 1) + 1;
     return send({ prospect: item });
   }
@@ -225,7 +225,7 @@ const server = createServer(async (req, res) => {
   }
   if (path.pathname.endsWith("/calls") && req.method === "POST") {
     currentId = "outgoing-call";
-    calls[currentId] = activeCall(currentId, prospect.id);
+    calls[currentId] = activeCall(currentId, data.prospectId || prospect.id);
     return send({ call: calls[currentId] });
   }
   const match = path.pathname.match(
@@ -365,7 +365,7 @@ try {
   await page.getByRole("button", { name: "Back to queue", exact: true }).click();
   await page.getByRole("heading", { name: "Original Business", exact: true }).waitFor();
   assert.equal(requests.filter((request) => /\/(skip|remove)$/.test(request.path)).length, 0, "Browsing leaves queue order untouched");
-  for (const name of ["Paid Business", "Do Not Call Business", "Removed Business"]) {
+  for (const name of ["Do Not Call Business", "Removed Business"]) {
     await page.getByRole("button", { name: "Contacts", exact: true }).click();
     await page.getByRole("button", { name, exact: true }).click();
     await page.getByRole("heading", { name, exact: true }).waitFor();
@@ -373,6 +373,31 @@ try {
     await page.getByRole("button", { name: "Dial", exact: true }).click();
     await page.getByRole("heading", { name: "Original Business", exact: true }).waitFor();
   }
+  console.log("controller: paid contact calling and callbacks retain suppression gates");
+  await page.getByRole("button", { name: "Contacts", exact: true }).click();
+  await page.getByRole("button", { name: "Paid Business", exact: true }).click();
+  await page.getByRole("heading", { name: "Paid Business", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: /^Call cell/ }).isDisabled(), false);
+  assert.equal(await page.getByRole("button", { name: "Remove from list", exact: true }).isDisabled(), true);
+  await page.getByRole("button", { name: "1 week", exact: true }).click();
+  await page.getByRole("button", { name: "Set call back", exact: true }).click();
+  await page.getByRole("button", { name: "Clear", exact: true }).waitFor();
+  assert.ok(requests.some(request => request.path.endsWith(`/prospects/${paidContact.id}/callback`) && request.data.callbackAt));
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await page.getByText("Not set", { exact: true }).waitFor();
+  assert.equal(paidContact.status, "paid");
+  for (const flag of ["doNotCall", "suppressed"]) {
+    paidContact[flag] = true; paidContact.eligible = false;
+    await page.getByRole("button", { name: "Contacts", exact: true }).click();
+    await page.getByRole("button", { name: "Paid Business", exact: true }).click();
+    await page.getByRole("heading", { name: "Paid Business", exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: /^Call cell/ }).isDisabled(), true);
+    await page.getByRole("button", { name: "1 week", exact: true }).click();
+    assert.equal(await page.getByRole("button", { name: "Set call back", exact: true }).isDisabled(), true);
+    paidContact[flag] = false; paidContact.eligible = true;
+  }
+  await page.getByRole("button", { name: "Dial", exact: true }).click();
+  await page.getByRole("heading", { name: "Original Business", exact: true }).waitFor();
   await page.getByRole("button", { name: "Contacts", exact: true }).click();
   await page.getByRole("button", { name: "Awaiting Prep", exact: true }).click();
   await page.getByRole("heading", { name: "Awaiting Prep", exact: true }).waitFor();
@@ -760,7 +785,7 @@ try {
         "asynchronous provider failure visible",
         "mic not requested/denied/live/ended truthfully reported",
         "Contacts browsing and queue polling preserve queue position",
-        "paid, do-not-call, removed and not-prepped contact dial gates",
+        "paid calls and callbacks; do-not-call, suppressed, removed and not-prepped contact dial gates",
         "Prep now uses existing demo endpoint",
       ],
       fixture: dir,

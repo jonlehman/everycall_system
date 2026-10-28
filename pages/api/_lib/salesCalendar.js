@@ -45,6 +45,7 @@ export async function bookSalesSetup(pool,{salesCallId,repId,start,end,email,env
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email||''))throw salesError('invalid_email','Enter the owner email.');
  const call=assertSalesCallAdmin(await getSalesCallSession(pool,salesCallId),repId);const prospect=await getSalesProspect(pool,call.prospectId);
  assertSalesNotTestCall(call,prospect);
+ const alreadyPaid=Boolean(call.paidAt)||prospect.status==='paid'||Boolean((await pool.query('SELECT 1 FROM sales_checkout_sessions WHERE prospect_id=$1 AND paid_at IS NOT NULL LIMIT 1',[call.prospectId])).rowCount);
  const request=graph||await salesGraphClient({env});
  const booking=await salesTransaction(pool,async db=>{
   const mode=await db.query('SELECT phone_test_mode FROM sales_dialer_config WHERE id=TRUE FOR UPDATE');
@@ -55,7 +56,7 @@ export async function bookSalesSetup(pool,{salesCallId,repId,start,end,email,env
   if(collision.rowCount)throw salesError('slot_unavailable','That slot was just booked. Choose another.',409);
   const available=await salesAvailability(db,{after:start,env,graph:request,now,count:1});
   if(available.slots[0]?.start!==new Date(timestamp).toISOString())throw salesError('slot_unavailable','That slot is no longer available.',409);
-  const row=await db.query(`INSERT INTO sales_setup_bookings(booking_id,sales_call_id,rep_user_id,calendar_owner,starts_at,ends_at,attendee_email,paid_at_booking) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[`sales_booking_${crypto.randomUUID()}`,salesCallId,repId,config.owner,start,end,email,Boolean(call.paidAt)]);return row.rows[0];
+  const row=await db.query(`INSERT INTO sales_setup_bookings(booking_id,sales_call_id,rep_user_id,calendar_owner,starts_at,ends_at,attendee_email,paid_at_booking) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[`sales_booking_${crypto.randomUUID()}`,salesCallId,repId,config.owner,start,end,email,alreadyPaid]);return row.rows[0];
  });
  if(booking.status==='booked')return booking;
  // Keep uncertain provider writes reserved. transactionId makes a retry the same event.

@@ -11,6 +11,8 @@ import { salesTransaction } from './salesDialer.js';
 export async function sendSalesCheckout(pool,{salesCallId,repId,channel,email,env=process.env,stripe=null,sms=sendTelnyxSms,mail=sendTransactionalEmail}) {
  const call=assertSalesCallAdmin(await getSalesCallSession(pool,salesCallId),repId);const prospect=await getSalesProspect(pool,call.prospectId);
  assertSalesNotTestCall(call,prospect);
+ // Payment belongs to the customer; a followup call must not create another setup charge.
+ if(call.paidAt||prospect.status==='paid'||(await pool.query('SELECT 1 FROM sales_checkout_sessions WHERE prospect_id=$1 AND paid_at IS NOT NULL LIMIT 1',[call.prospectId])).rowCount)throw salesError('sales_prospect_already_paid','This customer has already paid for setup.',409);
  if(prospect.doNotCall||prospect.suppressed)throw salesError('prospect_suppressed','This prospect must not be contacted.',409);
  const cell=prospect.numbers.find(n=>n.type==='cell');
  const delivery=channel==='sms'&&cell?'sms':'email';const recipient=delivery==='sms'?cell.phoneE164:String(email||prospect.contactEmail||'').trim().toLowerCase();

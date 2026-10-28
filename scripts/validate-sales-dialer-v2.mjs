@@ -86,6 +86,23 @@ try {
  await bookSalesSetup(pool,{salesCallId:close.salesCallId,repId:1,...slots.slots[0],email:'owner@example.test',env,graph,now});assert.equal(graphCalls.filter(c=>c.path.endsWith('/events')).length,1);
  await assert.rejects(salesAvailability(pool,{env:{},graph}),e=>e.code==='sales_calendar_not_configured');
 
+ console.log('stage paid customer followup');
+ const originalPayment=(await query('SELECT paid_at,outcome FROM sales_call_sessions WHERE sales_call_id=$1',[close.salesCallId])).rows[0];
+ const paidFollowup=await createSalesCallSession(pool,{prospectId:close.prospectId,adminUserId:1});
+ assert.equal(paidFollowup.paidAt,null);
+ let repeatPaymentEffects=0;
+ await assert.rejects(sendSalesCheckout(pool,{salesCallId:paidFollowup.salesCallId,repId:1,channel:'email',env,stripe:{checkout:{sessions:{create:async()=>{repeatPaymentEffects++;throw Error('Must not create duplicate checkout');}}}},mail:async()=>{repeatPaymentEffects++;},sms:async()=>{repeatPaymentEffects++;}}),e=>e.code==='sales_prospect_already_paid');
+ assert.equal(repeatPaymentEffects,0);
+ assert.equal((await query('SELECT count(*) AS n FROM sales_checkout_sessions WHERE sales_call_id=$1',[paidFollowup.salesCallId])).rows[0].n,0);
+ const paidBooking=await bookSalesSetup(pool,{salesCallId:paidFollowup.salesCallId,repId:1,...slots.slots[2],email:'owner@example.test',env,graph,now});
+ assert.equal(paidBooking.paid_at_booking,true);
+ assert(graphCalls.filter(c=>c.path.endsWith('/events')).at(-1).body.body.content.includes('Payment at booking: PAID'));
+ await updateSalesCallSession(pool,paidFollowup.salesCallId,{state:'ended',endedAt:new Date().toISOString()});
+ await recordSalesCallOutcome(pool,{salesCallId:paidFollowup.salesCallId,outcome:'connected_no_demo'});
+ assert.equal((await getSalesProspect(pool,close.prospectId)).status,'paid');
+ assert.deepEqual((await query('SELECT paid_at,outcome FROM sales_call_sessions WHERE sales_call_id=$1',[close.salesCallId])).rows[0],originalPayment);
+ assert.equal((await getSalesRepQueue(pool,1,{env})).counters.paid,1,'Followup does not count as a new sale');
+
  console.log('stage sparse returns and unprepared replacements');
  const unassignedIds=(await query('SELECT prospect_id FROM sales_prospects WHERE assigned_rep_user_id IS NULL')).rows.map(r=>r.prospect_id);
  await query('UPDATE sales_prospects SET assigned_rep_user_id=2 WHERE assigned_rep_user_id IS NULL');

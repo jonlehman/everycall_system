@@ -133,7 +133,8 @@ export async function mutateSalesContact(pool, {prospectId,repId,action,callback
     if(expectedRowVersion!=null && Number(expectedRowVersion)!==Number(row.row_version)) throw salesError('prospect_version_conflict','This contact changed. Refresh and try again.',409);
     const active=await db.query(`SELECT 1 FROM sales_call_sessions WHERE prospect_id=$1 AND state NOT IN (${SALES_TERMINAL_SQL}) LIMIT 1`,[prospectId]);
     if(active.rowCount) throw salesError('sales_call_end_required','End the call before changing this contact.',409);
-    const blocked=row.do_not_call||row.suppressed||!row.unsuppressed||['paid','not_interested','do_not_call','deleted'].includes(row.status)||row.last_outcome==='paid';
+    const suppressed=row.do_not_call||row.suppressed||!row.unsuppressed||['not_interested','do_not_call','deleted'].includes(row.status);
+    const blocked=suppressed||row.status==='paid'||row.last_outcome==='paid';
     if(action==='restore') {
       if(row.status!=='removed'||blocked) throw salesError('contact_restore_blocked','Only removed contacts without permanent suppression can be restored.',409);
       await db.query("UPDATE sales_prospects SET status='queued',removed_reason=NULL,callback_at=NULL,row_version=row_version+1,updated_at=NOW() WHERE prospect_id=$1",[prospectId]);
@@ -141,7 +142,7 @@ export async function mutateSalesContact(pool, {prospectId,repId,action,callback
       if(blocked) throw salesError('contact_remove_blocked','This contact has a permanent status and cannot be removed.',409);
       await db.query("UPDATE sales_prospects SET status='removed',removed_reason='attempts_exhausted',callback_at=NULL,row_version=row_version+1,updated_at=NOW() WHERE prospect_id=$1",[prospectId]);
     } else if(action==='callback') {
-      if(callbackAt!==null&&(blocked||!['queued','ready_to_call'].includes(row.status))) throw salesError('contact_callback_blocked','This contact cannot be scheduled for a call.',409);
+      if(callbackAt!==null&&(suppressed||!['queued','ready_to_call','paid'].includes(row.status))) throw salesError('contact_callback_blocked','This contact cannot be scheduled for a call.',409);
       await db.query('UPDATE sales_prospects SET callback_at=$2,row_version=row_version+1,updated_at=NOW() WHERE prospect_id=$1',[prospectId,callbackAt]);
     } else throw salesError('invalid_contact_action','Unsupported contact action.');
     return getSalesProspect(db,prospectId);

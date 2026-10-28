@@ -139,4 +139,14 @@ const paused = await routeSalesOutcomeToSmartlead({
 assert.equal(paused.paused, true);
 assert.match(pausedRequests[0].url, /\/campaigns\/321\/leads\/456\/pause\?/);
 
+const paidProspect = { contactEmail: "paid@example.com", permissionGranted: true, status: "paid" };
+const paidRequests = [];
+const paidFetch = async (url, options) => { paidRequests.push({ url: String(url), options }); return response(200, { ok: true }); };
+const paidFollowup = await routeSalesOutcomeToSmartlead({ prospect: paidProspect, outcome: "demo_completed", fetchImpl: paidFetch, env });
+assert.equal(paidFollowup.routed, false, "Paid followups must not start a sales campaign");
+assert.equal(paidRequests.length, 0);
+const paidDnc = await routeSalesOutcomeToSmartlead({ prospect: paidProspect, outcome: "do_not_call", fetchImpl: paidFetch, env });
+assert.equal(paidDnc.suppressed, true, "Paid customers' DNC requests still sync");
+assert.match(paidRequests[0].url, /\/leads\/block-list\?/);
+
 console.log("sales Smartlead validation passed");

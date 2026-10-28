@@ -1,5 +1,9 @@
 # Decisions
 
+## 2026-10-28 — Paid customer follow-up calls
+- Owner clarified that Paid is a commercial status, not a calling or callback prohibition. Allow manual Sales calls and explicit callbacks for assigned paid customers while retaining permission, timezone/calling-window, demo-readiness, DNC/suppression, ownership, reservation, and phone-test safeguards.
+- Paid customers stay out of fresh prospect rotation; an explicitly scheduled callback may return them to the rep’s queue when due. Preserve paid status and payment history across follow-up outcomes; still record the actual new call disposition and honor any subsequent opt-out. Paid does not authorize removing or restoring a permanently restricted contact.
+
 ## 2026-10-28 — Complete Sales Contacts workflows
 - Owner authorized the deferred Contacts backend work: pre-call callback save/clear, Add prospect, restore removed contacts, server-side status/metro filters and global counts, newest-activity pagination, and normalized partial search across every stored phone. Keep the newer Company at a glance and existing calling/payment/booking boundaries.
 - Use explicit Contacts API mode so existing admin listing consumers keep their contracts. Scope Sales users to their assigned contacts, and preserve assignment when removing a contact so the same rep can find and restore it. Historical removed records with no verifiable owner remain an administrator task.
