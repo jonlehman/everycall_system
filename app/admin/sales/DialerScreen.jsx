@@ -50,7 +50,7 @@ function History({ prospect, ready = false }) {
   const history = prospect?.history || [];
   return (
     <Section>
-      <h2>{ready ? "Before you dial" : "History"}</h2>
+      <h2>{ready ? "Notes" : "History"}</h2>
       {prospect?.inboundReturn && prospect.returnMessage && (
         <Row label="Return message">{prospect.returnMessage}</Row>
       )}
