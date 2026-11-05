@@ -911,6 +911,7 @@ export async function listSalesProspects(pool, {
   eligibleOnly = false,
   includeDeleted = false,
   includeUnprepared = false,
+  includeTotal = false,
   search = "",
   operatorUserId = null
 } = {}) {
@@ -941,6 +942,20 @@ export async function listSalesProspects(pool, {
     const { salesContactSearchSql } = await import('./salesContacts.js');
     where.push(salesContactSearchSql(search, values));
   }
+  // Management totals cover the filtered list before pagination, not runtime call eligibility.
+  let total;
+  if (includeTotal && !eligibleOnly) {
+    const countValues = [...values];
+    countValues[0] = 0;
+    const result = await pool.query(
+      `SELECT COUNT(*) AS total FROM (
+        ${PROSPECT_WITH_DEMO_SELECT}
+        WHERE ${where.join(" AND ")}
+      ) AS matching_prospects`,
+      countValues
+    );
+    total = Number(result.rows[0]?.total || 0);
+  }
   values.push(eligibleOnly ? 250 : safeLimit);
 
   const query = `${PROSPECT_WITH_DEMO_SELECT}
@@ -969,6 +984,7 @@ export async function listSalesProspects(pool, {
   prospects.splice(safeLimit);
   return {
     prospects,
+    ...(total === undefined ? {} : { total }),
     nextQueuePosition: prospects.length === safeLimit
       ? prospects[prospects.length - 1]?.queuePosition || null
       : null

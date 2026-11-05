@@ -673,10 +673,30 @@ async function main() {
       `SELECT status FROM sales_followup_jobs WHERE sales_followup_job_id = 'management-followup'`
     );
     assert.equal(canceledFollowup.rows[0].status, "canceled");
-    const activeManagementList = await listSalesProspects(pool, { limit: 250 });
+    const activeManagementList = await listSalesProspects(pool, { limit: 250, includeTotal: true });
     assert.equal(activeManagementList.prospects.some((item) => item.prospectId === managedProspect.prospectId), false);
-    const listIncludingRemoved = await listSalesProspects(pool, { limit: 250, includeDeleted: true });
+    assert.equal(activeManagementList.total, activeManagementList.prospects.length);
+    const firstManagementPage = await listSalesProspects(pool, { limit: 1, includeTotal: true });
+    const secondManagementPage = await listSalesProspects(pool, {
+      limit: 1,
+      afterQueuePosition: firstManagementPage.nextQueuePosition,
+      includeTotal: true
+    });
+    assert.equal(firstManagementPage.prospects.length, 1);
+    assert.ok(firstManagementPage.total > firstManagementPage.prospects.length);
+    assert.equal(secondManagementPage.total, firstManagementPage.total);
+    assert.notEqual(secondManagementPage.prospects[0].prospectId, firstManagementPage.prospects[0].prospectId);
+    const listIncludingRemoved = await listSalesProspects(pool, { limit: 250, includeDeleted: true, includeTotal: true });
     assert.equal(listIncludingRemoved.prospects.some((item) => item.prospectId === managedProspect.prospectId), true);
+    assert.equal(listIncludingRemoved.total, listIncludingRemoved.prospects.length);
+    const removedSearch = await listSalesProspects(pool, {
+      search: 'Managed Prospect Updated', status: 'deleted', includeDeleted: true, includeTotal: true
+    });
+    assert.equal(removedSearch.total, 1);
+    assert.deepEqual(removedSearch.prospects.map((item) => item.prospectId), [managedProspect.prospectId]);
+    const emptySearch = await listSalesProspects(pool, { search: 'no matching prospect exists', includeTotal: true });
+    assert.equal(emptySearch.total, 0);
+    assert.deepEqual(emptySearch.prospects, []);
 
     const tables = await pool.query(
       `SELECT tablename

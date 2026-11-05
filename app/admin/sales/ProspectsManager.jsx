@@ -324,6 +324,7 @@ function Activity({ prospectId, detail, loading, error, onRetry }) {
 
 export default function ProspectsManager({ onProspectsChanged }) {
   const [prospects, setProspects] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
@@ -369,6 +370,7 @@ export default function ProspectsManager({ onProspectsChanged }) {
       const payload = await fetchSalesJson(`/api/v1/admin/sales/prospects?${queryString(cursor)}`);
       const next = Array.isArray(payload.prospects) ? payload.prospects.map(normalizeProspect) : [];
       setProspects((current) => append ? [...current, ...next] : next);
+      setTotal(Number(payload.total || 0));
       setNextQueuePosition(payload.nextQueuePosition || null);
     } catch (loadError) {
       setError(loadError?.message || 'Could not load prospects.');
@@ -576,7 +578,7 @@ export default function ProspectsManager({ onProspectsChanged }) {
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <p className="m-0 text-sm font-medium text-slate-700" aria-live="polite">
-            {loading ? 'Loading prospects…' : `${prospects.length} prospect${prospects.length === 1 ? '' : 's'} loaded`}
+            {loading ? 'Loading prospects…' : `${prospects.length} of ${total} total prospect${total === 1 ? '' : 's'} loaded`}
           </p>
           <Button onClick={() => { void loadProspects(); }} disabled={loading}>Refresh</Button>
         </div>

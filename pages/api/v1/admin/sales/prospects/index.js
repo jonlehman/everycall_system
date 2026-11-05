@@ -30,6 +30,7 @@ export default async function handler(req, res) {
         eligibleOnly: String(req.query?.eligibleOnly || "").toLowerCase() === "true",
         includeDeleted: String(req.query?.includeDeleted || "").toLowerCase() === "true",
         includeUnprepared: true,
+        includeTotal: true,
         search: req.query?.search,
         operatorUserId: context.session.role === "sales" ? context.admin.id : null
       });
