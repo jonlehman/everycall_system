@@ -1,5 +1,5 @@
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { issueAuthToken, revokeAuthTokens } from "../../_lib/authTokens.js";
+import { issueAuthToken, issuePlatformPasswordReset, revokeAuthTokens } from "../../_lib/authTokens.js";
 import { writeAuditLog } from "../../_lib/auditLog.js";
 import { enforceRateLimit, getClientIp } from "../../_lib/rateLimit.js";
 import { sendTransactionalEmail } from "../../_lib/mail.js";
@@ -49,7 +49,7 @@ export default async function handler(req, res) {
     let user = null;
     if (role === "admin") {
       const row = await pool.query(
-        `SELECT id, email FROM admin_users WHERE email = $1 AND role IN ('admin', 'super_admin') LIMIT 1`,
+        `SELECT id, email, role, password_hash FROM admin_users WHERE email = $1 AND role IN ('admin', 'super_admin') LIMIT 1`,
         [email]
       );
       user = row.rows[0] || null;
@@ -68,21 +68,23 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    await revokeAuthTokens(pool, {
-      tokenType: "password_reset",
-      userId: user.id,
-      email: user.email,
-      tenantKey: user.tenant_key || null
-    });
-
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-    const token = await issueAuthToken(pool, {
-      tokenType: "password_reset",
-      userId: user.id,
-      email: user.email,
-      tenantKey: user.tenant_key || null,
-      expiresAt
-    });
+    let token;
+    if (role === "admin") {
+      token = await issuePlatformPasswordReset(pool, user, expiresAt);
+      if (!token) {
+        await writeAuditLog(pool, { actor: "anonymous", action: "auth.password_reset.requested", details: { email, role, delivered: false, reason: "account_changed_or_ambiguous", ip: clientIp } });
+        return res.status(200).json({ ok: true, message: "If an account exists for that email, a reset link will be sent." });
+      }
+    } else {
+      await revokeAuthTokens(pool, {
+        tokenType: "password_reset", userId: user.id, email: user.email, tenantKey: user.tenant_key || null
+      });
+      token = await issueAuthToken(pool, {
+        tokenType: "password_reset", userId: user.id, email: user.email,
+        tenantKey: user.tenant_key || null, expiresAt
+      });
+    }
 
     let delivered = false;
     let deliveryError = null;

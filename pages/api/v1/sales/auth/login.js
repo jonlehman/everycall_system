@@ -58,8 +58,11 @@ export default async function handler(req, res) {
     }
     await deleteSalesSession(req);
     await deleteSession(req);
-    const sessionId = await createSession({ userId: user.id, tenantKey: null, role: "sales" });
-    if (!sessionId) return res.status(500).json({ error: "database_unavailable" });
+    const sessionId = await createSession({ userId: user.id, tenantKey: null, role: "sales", expectedUser: user });
+    if (!sessionId) {
+      await writeAuditLog(pool, { actor: "anonymous", action: "auth.login.failed", details: { role: "sales", email, reason: "account_changed", ip } });
+      return res.status(401).json({ error: "invalid_credentials" });
+    }
     await pool.query(`UPDATE admin_users SET last_active_at = NOW() WHERE id = $1`, [user.id]);
     await writeAuditLog(pool, {
       actor: `sales:${user.id}`, action: "auth.login.success",

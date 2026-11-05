@@ -166,3 +166,9 @@
 - Use Render rollback to previous deploy.
 - For a model/API-shape rollback without code rollback, deliberately pin or migrate the affected tenant/runtime profile to `session_config.model=gpt-realtime-1.5`, set `OPENAI_REALTIME_API_SHAPE=legacy`, then restart `everycall-call-gateway`.
 - Changing `OPENAI_REALTIME_MODEL` alone has no effect on call-gateway sessions.
+
+## Edit platform users
+- Open `/admin/users`, locate the user and choose **Edit**. Check the read-only User ID, change Name, Email or Role, and use **Save Changes**. Leave New password blank to keep the existing password. **Cancel** discards the draft; **Create / Reset User** retains its existing email-based creation/reset behavior.
+- Editing keeps the same database ID, prospect assignments, call history and operator credentials. Sales display name remains independently configured under Sales Settings, including any old default name. Converting to Sales creates operator settings only if missing and does not reactivate a disabled operator.
+- Email, role and password changes sign the affected user out of Admin and Sales. After changing your own account, use **Sign in again**; Sales accounts use `/sales/login`. Name-only edits keep sessions. At least one login-capable Admin or Super Admin must remain; create another administrator before demoting the last one.
+- Duplicate email/name errors preserve the draft; choose an unused value and retry. A failed save rolls back account, settings, revocation and audit together. Audit events `admin.user.updated` and `admin.user.saved` include the immutable account ID, changed-field names and revocation flag, without passwords or credential values. No database migration is required.

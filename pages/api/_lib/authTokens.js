@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { lockPlatformUserMutations } from "./platformUsers.js";
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -141,4 +142,29 @@ export async function consumeAuthToken(pool, rawToken, { tokenType = null } = {}
   if (!tokenRow) return null;
   await pool.query(`DELETE FROM auth_tokens WHERE id = $1`, [tokenRow.id]);
   return tokenRow;
+}
+
+// The caller read the account before hashing/queueing. Validate that snapshot
+// under the same lock as platform edits before issuing a new reset credential.
+export async function issuePlatformPasswordReset(pool, user, expiresAt) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await lockPlatformUserMutations(client);
+    const result = await client.query(`SELECT id, email, role, password_hash FROM admin_users WHERE id = $1 FOR UPDATE`, [user.id]);
+    const current = result.rows[0];
+    const ambiguous = await client.query(`SELECT id FROM tenant_users WHERE id = $1 AND email = $2`, [user.id, user.email]);
+    if (!current || current.email !== user.email || current.role !== user.role || current.password_hash !== user.password_hash
+      || !["admin", "super_admin"].includes(current.role) || ambiguous.rowCount) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    await client.query(`DELETE FROM auth_tokens WHERE token_type = 'password_reset' AND user_id = $1 AND email = $2 AND tenant_key IS NULL`, [user.id, user.email]);
+    const token = await issueAuthToken(client, { tokenType: "password_reset", userId: user.id, email: user.email, expiresAt });
+    await client.query("COMMIT");
+    return token;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally { client.release(); }
 }

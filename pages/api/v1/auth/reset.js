@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { lockPlatformUserMutations } from "../../_lib/platformUsers.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { deleteSessionsForPrincipal } from "../../_lib/auth.js";
 import { consumeAuthToken, findAuthToken, revokeAuthTokens } from "../../_lib/authTokens.js";
@@ -74,20 +75,45 @@ export default async function handler(req, res) {
         [hash, tokenRow.user_id, tokenRow.email, tokenRow.tenant_key]
       );
     } else {
-      updated = await pool.query(
-        `UPDATE tenant_users
-         SET password_hash = $1
-         WHERE id = $2 AND email = $3`,
-        [hash, tokenRow.user_id, tokenRow.email]
-      );
-      if (!updated.rowCount) {
-        updated = await pool.query(
-          `UPDATE admin_users
-           SET password_hash = $1
-           WHERE id = $2 AND email = $3 AND role IN ('admin', 'super_admin')`,
-          [hash, tokenRow.user_id, tokenRow.email]
-        );
-      }
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await lockPlatformUserMutations(client);
+        const currentToken = await findAuthToken(client, token, { tokenType: "password_reset" });
+        if (!currentToken || currentToken.used_at || new Date(currentToken.expires_at).getTime() <= Date.now()
+          || String(currentToken.user_id) !== String(tokenRow.user_id) || currentToken.email !== tokenRow.email || currentToken.tenant_key) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ error: "invalid_token" });
+        }
+        const platform = await client.query(`SELECT id, role FROM admin_users WHERE id = $1 AND email = $2 FOR UPDATE`, [tokenRow.user_id, tokenRow.email]);
+        const tenant = await client.query(`SELECT id, tenant_key FROM tenant_users WHERE id = $1 AND email = $2 FOR UPDATE`, [tokenRow.user_id, tokenRow.email]);
+        // Historical unscoped tokens lack a principal kind. Never guess when
+        // independently numbered tenant and platform accounts share an identity.
+        if (platform.rowCount && tenant.rowCount) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ error: "invalid_token" });
+        }
+        const tenantUser = tenant.rows[0];
+        const adminUser = platform.rows[0];
+        if (!tenantUser && !["admin", "super_admin"].includes(adminUser?.role)) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ error: "user_not_found" });
+        }
+        if (tenantUser) {
+          await client.query(`UPDATE tenant_users SET password_hash = $1 WHERE id = $2`, [hash, tenantUser.id]);
+          await client.query(`DELETE FROM sessions WHERE user_id = $1 AND role = 'tenant' AND tenant_key = $2`, [tenantUser.id, tenantUser.tenant_key]);
+        } else {
+          await client.query(`UPDATE admin_users SET password_hash = $1 WHERE id = $2`, [hash, adminUser.id]);
+          await client.query(`DELETE FROM sessions WHERE user_id = $1 AND role IN ('admin', 'sales')`, [adminUser.id]);
+        }
+        await client.query(`DELETE FROM auth_tokens WHERE user_id = $1 AND email = $2 AND tenant_key IS NULL`, [tokenRow.user_id, tokenRow.email]);
+        await writeAuditLog(client, { tenantKey: tenantUser?.tenant_key || null, actor: `${tenantUser ? "tenant" : "admin"}:${tokenRow.user_id}`, action: "auth.password_reset.completed", details: { userId: tokenRow.user_id } });
+        await client.query("COMMIT");
+        return res.status(200).json({ ok: true });
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally { client.release(); }
     }
 
     if (!updated?.rowCount) {
@@ -95,33 +121,11 @@ export default async function handler(req, res) {
     }
 
     await consumeAuthToken(pool, token, { tokenType: "password_reset" });
-    if (tokenRow.tenant_key) {
-      await deleteSessionsForPrincipal({
-        userId: tokenRow.user_id,
-        role: "tenant",
-        tenantKey: tokenRow.tenant_key
-      });
-    } else {
-      const tenantUser = await pool.query(
-        `SELECT tenant_key
-         FROM tenant_users
-         WHERE id = $1 AND email = $2
-         LIMIT 1`,
-        [tokenRow.user_id, tokenRow.email]
-      );
-      if (tenantUser.rowCount) {
-        await deleteSessionsForPrincipal({
-          userId: tokenRow.user_id,
-          role: "tenant",
-          tenantKey: tenantUser.rows[0].tenant_key
-        });
-      } else {
-        await deleteSessionsForPrincipal({
-          userId: tokenRow.user_id,
-          role: "admin"
-        });
-      }
-    }
+    await deleteSessionsForPrincipal({
+      userId: tokenRow.user_id,
+      role: "tenant",
+      tenantKey: tokenRow.tenant_key
+    });
     await writeAuditLog(pool, {
       tenantKey: tokenRow.tenant_key || null,
       actor: tokenRow.tenant_key ? `tenant:${tokenRow.user_id}` : `admin:${tokenRow.user_id || "password_reset"}`,

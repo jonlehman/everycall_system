@@ -60,16 +60,42 @@ export function clearSalesSessionCookie(res) {
   writeSessionCookie(res, SALES_SESSION_COOKIE, "", 0);
 }
 
-export async function createSession({ userId, tenantKey, role }) {
+export async function createSession({ userId, tenantKey, role, expectedUser = null }) {
   const pool = getPool();
   if (!pool) return null;
   const sessionId = crypto.randomBytes(24).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
-  await pool.query(
+  const insert = client => client.query(
     `INSERT INTO sessions (id, user_id, tenant_key, role, expires_at)
      VALUES ($1, $2, $3, $4, $5)`,
     [sessionId, userId, tenantKey || null, role, expiresAt.toISOString()]
   );
+  if (role === "admin" || role === "sales") {
+    // A password was checked before this transaction. Lock and compare that exact
+    // credential snapshot so an intervening edit cannot resurrect stale access.
+    if (!expectedUser) return null;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(`SELECT email, password_hash, role FROM admin_users WHERE id = $1 FOR UPDATE`, [userId]);
+      const current = result.rows[0];
+      let valid = current && current.email === expectedUser.email
+        && current.password_hash === expectedUser.password_hash && current.role === expectedUser.role
+        && (role === "admin" ? isAdminRole(current.role) : current.role === "sales");
+      if (valid && role === "sales") {
+        const settings = await client.query(`SELECT active FROM sales_operator_settings WHERE admin_user_id = $1`, [userId]);
+        valid = settings.rows[0]?.active === true;
+      }
+      if (!valid) { await client.query("ROLLBACK"); return null; }
+      await insert(client);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally { client.release(); }
+  } else {
+    await insert(pool);
+  }
   return sessionId;
 }
 

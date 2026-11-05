@@ -82,12 +82,15 @@ export default async function handler(req, res) {
           const inserted = await pool.query(
             `INSERT INTO admin_users (username, email, password_hash, role)
              VALUES ($1, $2, $3, 'admin')
-             RETURNING id, email, role`,
+             RETURNING id, email, role, password_hash`,
             [email.split("@")[0] || "admin", email, hash]
           );
           const user = inserted.rows[0];
-          const sessionId = await createSession({ userId: user.id, tenantKey: null, role: "admin" });
-          if (!sessionId) return res.status(500).json({ error: "database_unavailable" });
+          const sessionId = await createSession({ userId: user.id, tenantKey: null, role: "admin", expectedUser: user });
+          if (!sessionId) {
+            await writeAuditLog(pool, { actor: "anonymous", action: "auth.login.failed", details: { role: "admin", email, reason: "account_changed", ip: clientIp } });
+            return res.status(401).json({ error: "invalid_credentials" });
+          }
           await deleteSalesSession(req);
           clearSalesSessionCookie(res);
           setSessionCookie(res, sessionId);
@@ -137,8 +140,11 @@ export default async function handler(req, res) {
         });
         return res.status(401).json({ error: "invalid_credentials" });
       }
-      const sessionId = await createSession({ userId: user.id, tenantKey: null, role: "admin" });
-      if (!sessionId) return res.status(500).json({ error: "database_unavailable" });
+      const sessionId = await createSession({ userId: user.id, tenantKey: null, role: "admin", expectedUser: user });
+      if (!sessionId) {
+        await writeAuditLog(pool, { actor: "anonymous", action: "auth.login.failed", details: { role: "admin", email, reason: "account_changed", ip: clientIp } });
+        return res.status(401).json({ error: "invalid_credentials" });
+      }
       await deleteSalesSession(req);
       clearSalesSessionCookie(res);
       setSessionCookie(res, sessionId);

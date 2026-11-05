@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-11-05 — Edit existing platform users by ID
+- Owner requested name, email, role and password edits without changing database identity. Add explicit row editing with an immutable ID; keep existing Create / Reset callers and their email-based reset semantics separate. See [platform user editing](SPECS/platform-user-editing.md).
+- Preserve every existing Sales operator setting, including custom or old default display names and disabled status. Changing the platform name does not rename the independently configured operator display name. Provision settings only when missing on Sales conversion.
+- Serialize platform mutations, revalidate the actor and session within the transaction, preserve the last login-capable administrator, and revoke sessions/reset tokens for credential or role changes. Fence login issuance and platform password reset issuance/redemption against concurrent edits. Preserve unrelated legacy tenant tokens sharing a numeric ID; reject unscoped reset tokens whose ID/email matches both principal tables. Audit only account ID, changed-field names and revocation status; all mutation effects roll back if audit fails.
+
 ## 2026-11-05 — Admin bulk prospect reassignment
 - Owner approved selecting individual or all currently loaded prospects in `/admin/sales`, filtering All/Assigned/Unassigned, sorting the complete filtered list, and assigning or reassigning the selection to an active Sales operator (including configured admin callers). Unloaded matches are excluded.
 - Preserve automatic queue assignment and all consent, DNC, callback, status, history, readiness, provider, payment, phone-test originals, and source fields. Reassignment changes only owner, row version, and update time, with atomic audit/idempotency receipts.
