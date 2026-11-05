@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import { SALES_RESEARCH_FIELDS } from "../../../lib/salesProspectResearch.js";
 import { salesCoreFacts, salesSuggestedAsks } from "./salesCoreFacts.js";
-import { generateSalesCompanyBrief, serializeCompanyBrief, SALES_COMPANY_BRIEF_VERSION } from "./salesCompanyBrief.js";
+import { generateSalesCompanyBrief, serializeCompanyBrief, SALES_COMPANY_BRIEF_VERSION, createCompanyBriefAttempt, companyBriefFailure, logCompanyBriefFailure } from "./salesCompanyBrief.js";
+import { sanitizeCompanyBriefDiagnostic } from "../../../lib/salesCompanyBriefDiagnostics.js";
 import { scrapeDemoWebsite } from "./demoWebsiteScraper.js";
 import {
   buildDemoKnowledgeBundle,
@@ -1786,7 +1787,8 @@ export async function prepareSalesCompanyBrief(pool, prospectId, { generate = ge
   const current = serializeCompanyBrief(oldBrief);
   if (["ready", "pending"].includes(current.status)) return current;
   const token = createId("company_brief");
-  const pending = { version: SALES_COMPANY_BRIEF_VERSION, status: "pending", startedAt: new Date().toISOString(), token };
+  const attempt = createCompanyBriefAttempt();
+  const pending = { version: SALES_COMPANY_BRIEF_VERSION, status: "pending", ...attempt, startedAt: attempt.generatedAt, token };
   const claimed = await pool.query(`UPDATE sales_demo_profiles d
     SET demo_bundle_json = jsonb_set(demo_bundle_json, '{company_brief}', $2::jsonb), updated_at = NOW()
     FROM sales_prospects p
@@ -1796,15 +1798,22 @@ export async function prepareSalesCompanyBrief(pool, prospectId, { generate = ge
     RETURNING d.*`, [id, json(pending, {}), json(row.demo_bundle_json, {}), json(row.scrape_pages_json, [])]);
   if (!claimed.rows.length) return serializeCompanyBrief((await read()).rows[0]?.demo_bundle_json?.company_brief);
   let brief;
-  try { brief = await generate(asArray(row.scrape_pages_json)); }
-  catch { brief = { version: SALES_COMPANY_BRIEF_VERSION, status: "unavailable", reason: "generation_failed" }; }
-  await pool.query(`UPDATE sales_demo_profiles d
+  try { brief = await generate(asArray(row.scrape_pages_json), { attempt }); }
+  catch { brief = companyBriefFailure(attempt, "unexpected_error", undefined, "generation_failed", "runner"); }
+  if (brief?.status === "ready") brief = { ...brief, ...attempt };
+  else {
+    const safe = serializeCompanyBrief(brief);
+    const diagnostic = sanitizeCompanyBriefDiagnostic(safe.diagnostic, safe.reason);
+    brief = companyBriefFailure({ ...brief, ...attempt }, diagnostic.code, diagnostic.details, safe.reason || "generation_failed", diagnostic.stage);
+  }
+  const saved = await pool.query(`UPDATE sales_demo_profiles d
     SET demo_bundle_json = jsonb_set(demo_bundle_json, '{company_brief}', $3::jsonb), updated_at = NOW()
     FROM sales_prospects p
     WHERE d.prospect_id = $1 AND p.prospect_id = d.prospect_id AND d.status = 'ready'
       AND d.source_website_url IS NOT DISTINCT FROM p.website_url
       AND d.demo_bundle_json->'company_brief'->>'token' = $2
-      AND d.scrape_pages_json = $4::jsonb`, [id, token, json(brief, {}), json(row.scrape_pages_json, [])]);
+      AND d.scrape_pages_json = $4::jsonb RETURNING d.prospect_id`, [id, token, json(brief, {}), json(row.scrape_pages_json, [])]);
+  if (saved.rows.length && brief.status === "unavailable") logCompanyBriefFailure(id, brief);
   return serializeCompanyBrief((await read()).rows[0]?.demo_bundle_json?.company_brief);
 }
 

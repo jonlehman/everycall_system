@@ -1,5 +1,7 @@
 import { prepareSalesCompanyBrief } from "../../../../../_lib/salesRepository.js";
-import { requireSalesAdmin, runSalesAdminMutation, sendSalesApiError } from "../../../../../_lib/salesApi.js";
+import { requireSalesAdmin, runSalesAdminMutation } from "../../../../../_lib/salesApi.js";
+import { createCompanyBriefAttempt, companyBriefFailure, logCompanyBriefFailure, serializeCompanyBrief } from "../../../../../_lib/salesCompanyBrief.js";
+import { companyBriefFailureMessage } from "../../../../../../../lib/salesCompanyBriefDiagnostics.js";
 
 export const config = { maxDuration: 300 };
 
@@ -19,6 +21,12 @@ export default async function handler(req, res) {
       companyBrief: await prepareSalesCompanyBrief(context.pool, prospectId) } }));
     return res.status(result.status).json(result.body);
   } catch (error) {
-    return sendSalesApiError(res, error, "sales_company_brief_failed");
+    const status = ["P5701", "P5702", "P5704"].includes(error?.code) ? 409
+      : Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode <= 599 ? error.statusCode : 500;
+    const code = error?.code === "demo_not_ready" ? "demo_not_ready" : status === 401 ? "request_unauthorized" : status === 403 ? "request_forbidden" : "request_failed";
+    const brief = companyBriefFailure(createCompanyBriefAttempt(), code, { httpStatus: status });
+    logCompanyBriefFailure(req.query?.prospectId, brief);
+    const errorCode = ["demo_not_ready", "prospect_forbidden", "idempotency_key_required", "idempotency_key_conflict"].includes(error?.code) ? error.code : "sales_company_brief_failed";
+    return res.status(status).json({ ok: false, error: errorCode, message: companyBriefFailureMessage(brief), companyBrief: serializeCompanyBrief(brief) });
   }
 }

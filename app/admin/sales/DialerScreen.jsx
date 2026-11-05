@@ -15,6 +15,7 @@ import styles from "./DialerScreen.module.css";
 import CallbackPicker from "./CallbackPicker";
 import AddContactForm from "./AddContactForm";
 import ContactsScreen, { contactStatus } from "./ContactsScreen";
+import { companyBriefFailureMessage, companyBriefAttemptMetadata } from "../../../lib/salesCompanyBriefDiagnostics.js";
 
 function Button({
   children,
@@ -238,6 +239,7 @@ export default function DialerScreen({
           : phase === "DEMO"
             ? `On call ${duration} · demo ${demoDuration} · ${micLabel}`
             : `On call ${duration} · ${micLabel} · ${numbers.find((n) => n.phoneE164 === call?.dialedNumber)?.label || "phone"}`;
+  const briefMetadata = companyBriefAttemptMetadata(prospect?.companyBrief);
   return (
     <div className={styles.dialer} data-phase={phase}>
       <header className={styles.header}>
@@ -493,11 +495,13 @@ export default function DialerScreen({
                   {briefGenerating || prospect?.companyBrief?.status === "pending"
                     ? "Preparing company brief…"
                     : prospect?.companyBrief?.status === "unavailable"
-                      ? ["insufficient_website_evidence", "website_evidence_missing"].includes(prospect.companyBrief.reason)
-                        ? "The saved website content does not provide enough detail for a company brief."
-                        : "Company brief unavailable. You can try again."
+                      ? companyBriefFailureMessage(prospect.companyBrief)
                       : "Company brief has not been generated yet."}
                 </p>
+                {!briefGenerating && prospect?.companyBrief?.status === "unavailable" && briefMetadata.attemptRef &&
+                  <p className={styles.caption}>Reference: {briefMetadata.attemptRef}
+                    {briefMetadata.generatedAt && <> · {briefMetadata.generatedAt}</>}
+                  </p>}
                 {prospect?.demoStatus === "ready" && onPrepareCompanyBrief && <Button
                   onClick={onPrepareCompanyBrief} disabled={briefGenerating}>
                   {briefGenerating ? "Generating…" : prospect.companyBrief?.status === "pending" ? "Check brief" : "Generate brief"}

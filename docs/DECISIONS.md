@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-11-05 — Actionable Sales company-brief failure diagnostics
+- Owner approved capturing the next brief failure after an existing attempt showed only a generic retry message. Give each new attempt a server-generated reference and timestamp; persist a bounded, allowlisted diagnostic in `demo_bundle_json.company_brief`, and show a curated explanation/reference in Company at a glance, including HTTP 200 unavailable results and page reloads. Historical failures cannot be reconstructed.
+- Classify failures locally from the existing structured helper's fixed prefixes, status and schema issues. Accept only known provider error codes/parameter names from complete bounded JSON; truncated or unknown provider details are omitted. Keep shared model requests, retries, timeout and cancellation behavior unchanged. Never retain exception text, provider bodies, source/claim content or secrets in diagnostics/logs.
+- Emit a structured failure event only after the existing lease/source-guarded write succeeds; logging is best effort and cannot break persistence or response delivery. Preserve AI-only generation, grounding, evidence budgets, source authority, demo readiness and tenant publication boundaries. See [rep dialer specification and requirement mapping](SPECS/sales-rep-dialer-v2.md#company-brief-requirement-mapping).
+
 ## 2026-11-05 — Edit existing platform users by ID
 - Owner requested name, email, role and password edits without changing database identity. Add explicit row editing with an immutable ID; keep existing Create / Reset callers and their email-based reset semantics separate. See [platform user editing](SPECS/platform-user-editing.md).
 - Preserve every existing Sales operator setting, including custom or old default display names and disabled status. Changing the platform name does not rename the independently configured operator display name. Provision settings only when missing on Sales conversion.

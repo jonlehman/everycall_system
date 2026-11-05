@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 const require = createRequire(import.meta.url);
-const { build } = require("esbuild");
+const { build } = require(process.env.ESBUILD_MODULE || "esbuild");
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
 const dir = await mkdtemp(join(tmpdir(), "everycall-real-dialer-controller-"));
 const fixture =
@@ -71,6 +71,7 @@ const paidContact = { ...prospect, id: "paid-contact", businessName: "Paid Busin
 const dncContact = { ...prospect, id: "dnc-contact", businessName: "Do Not Call Business", doNotCall: true };
 const removedContact = { ...prospect, id: "removed-contact", businessName: "Removed Business", status: "removed" };
 let requests = [],
+  briefStep = 0,
   calls = {},
   currentId = "",
   showIncoming = false,
@@ -123,6 +124,16 @@ const server = createServer(async (req, res) => {
   requests.push({ path: path.pathname, method: req.method, data, query: Object.fromEntries(path.searchParams) });
   res.setHeader("Content-Type", "application/json");
   const send = (value) => res.end(JSON.stringify(value));
+  if (path.pathname.endsWith("/company-brief")) {
+    briefStep++;
+    const metadata = { attemptRef: "cb_0123456789abcdef0123456789abcdef", generatedAt: "2026-11-05T22:28:01.243Z" };
+    prospect.companyBrief = briefStep === 1
+      ? { status: "unavailable", reason: "generation_failed", ...metadata,
+        diagnostic: { code: "invalid_word_count", stage: "validation", message: "sk-fixture-secret private-source", details: { wordCount: 112, response: "sk-fixture-secret" } } }
+      : briefStep === 2 ? { status: "pending", ...metadata }
+        : { status: "ready", ...metadata, standOut: "Family owned since 1985.", services: ["Leak repairs", "Water heater installation", "Drain clearing"], whyCustomersCall: "Customers call for help with household plumbing." };
+    return send({ ok: true, companyBrief: prospect.companyBrief });
+  }
   if (path.pathname.endsWith("/webrtc-token"))
     return send({ token: "fixture-token" });
   if (path.pathname.endsWith("/queue"))
@@ -355,6 +366,23 @@ const incoming = async () => {
   await page.locator('[data-phase="TALK"]').waitFor();
 };
 try {
+  console.log("controller: company brief HTTP 200 failure, reference, reload, pending and retry");
+  await reset();
+  await page.getByRole("button", { name: "Generate brief", exact: true }).click();
+  await page.getByText("The generated brief did not meet the required length.", { exact: false }).waitFor();
+  await page.getByText("Reference: cb_0123456789abcdef0123456789abcdef", { exact: false }).waitFor();
+  assert.ok(!(await page.locator("body").innerText()).includes("sk-fixture-secret"));
+  assert.ok(!(await page.locator("body").innerText()).includes("private-source"));
+  await page.screenshot({ path: "/tmp/everycall-brief-diagnostic.png", fullPage: true });
+  await page.reload();
+  await page.getByText("Reference: cb_0123456789abcdef0123456789abcdef", { exact: false }).waitFor();
+  await page.getByRole("button", { name: "Generate brief", exact: true }).click();
+  await page.getByText("Preparing company brief…", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Check brief", exact: true }).click();
+  await page.getByText("Water heater installation", { exact: true }).waitFor();
+  assert.equal(briefStep, 3);
+  assert.equal(await page.getByRole("button", { name: "Generate brief", exact: true }).count(), 0);
+  delete prospect.companyBrief;
   console.log("controller: contacts browsing preserves the dial queue and readiness gates");
   await reset();
   await page.getByRole("button", { name: "Contacts", exact: true }).click();
@@ -774,6 +802,7 @@ try {
       passed: true,
       controller: "real CallerWorkspace",
       checks: [
+        "company brief HTTP 200 diagnostic/reference, reload, pending and successful retry",
         "End call during demo settle",
         "End call during in-flight demo",
         "stale demo cannot resurrect call",

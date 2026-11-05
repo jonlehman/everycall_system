@@ -11,6 +11,7 @@ import { useSalesQueue } from "./useSalesQueue";
 import { connectTelnyxBrowserClient } from "./telnyxBrowserClient";
 import { mayQuickAdvance } from "./dialerState.mjs";
 import DialerScreen from "./DialerScreen";
+import { companyBriefRequestFailure, normalizeCompanyBrief } from "../../../lib/salesCompanyBriefDiagnostics.js";
 
 const BASE = "/api/v1/admin/sales";
 export default function CallerWorkspace() {
@@ -723,10 +724,10 @@ export default function CallerWorkspace() {
         method: "POST", body: "{}",
       });
       setProspect((current) => current?.id === id
-        ? { ...current, companyBrief: result.companyBrief } : current);
-    } catch {
+        ? { ...current, companyBrief: normalizeCompanyBrief(result.companyBrief) } : current);
+    } catch (error) {
       setProspect((current) => current?.id === id
-        ? { ...current, companyBrief: { status: "unavailable", reason: "request_failed" } } : current);
+        ? { ...current, companyBrief: companyBriefRequestFailure(error) } : current);
     } finally { setBriefGeneratingId(""); }
   };
   const search = async (query) => {

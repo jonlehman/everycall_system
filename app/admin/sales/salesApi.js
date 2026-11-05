@@ -1,4 +1,5 @@
 import { SALES_RESEARCH_FIELDS } from '../../../lib/salesProspectResearch.js';
+import { normalizeCompanyBrief } from '../../../lib/salesCompanyBriefDiagnostics.js';
 
 const TERMINAL_CALL_STATES = new Set([
   "closed",
@@ -184,8 +185,7 @@ export function normalizeProspect(source = {}) {
     phoneTestMode: Boolean(source.phoneTestMode),
     numbers: Array.isArray(source.numbers) ? source.numbers : [],
     coreFacts: Array.isArray(source.coreFacts) ? source.coreFacts : [],
-    companyBrief: source.companyBrief && typeof source.companyBrief === "object"
-      ? source.companyBrief : { status: "missing" },
+    companyBrief: normalizeCompanyBrief(source.companyBrief),
     suggestedAsks: Array.isArray(source.suggestedAsks)
       ? source.suggestedAsks
       : [],
