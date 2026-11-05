@@ -13,7 +13,7 @@ import {assertKnowledgeReviewer,saveKnowledgeReadinessReview,assertKnowledgePubl
 const url=process.env.EVERYCALL_TEST_POSTGRES_URL;
 let db,cleanup;
 if(url){assert(['127.0.0.1','localhost'].includes(new URL(url).hostname));db=new pg.Client({connectionString:url});await db.connect();const schema='sales_paid_qa_'+crypto.randomBytes(6).toString('hex');await db.query(`CREATE SCHEMA ${schema}`);await db.query(`SET search_path TO ${schema}`);cleanup=async()=>{await db.query(`DROP SCHEMA ${schema} CASCADE`);await db.end();};}else{db=new PGlite();cleanup=()=>db.close();}
-const query=async(sql,params)=>{const r=await db.query(sql,params);return {...r,rowCount:r.rowCount??r.affectedRows??r.rows?.length??0};};const pool={query,connect:async()=>({query,release(){}})};const exec=sql=>db.exec?db.exec(sql):db.query(sql);
+const query=async(sql,params)=>{const r=await db.query(sql,params);return {...r,rowCount:r.rowCount??(r.rows?.length||r.affectedRows||0)};};const pool={query,connect:async()=>({query,release(){}})};const exec=sql=>db.exec?db.exec(sql):db.query(sql);
 try{
  await bootstrapFixtureSchema(pool,{executeSql:exec});
  await exec(migrationBody(await readMigration('0049_live_prompt_settings.sql')));
@@ -45,7 +45,12 @@ try{
  assert.equal((await smsEvent('stop_1','STOP','+12065550991')).statusCode,200);
  assert.equal((await smsEvent('stop_1','STOP','+12065550991')).body.duplicate,true);
  assert.equal((await getSalesProspect(pool,'paid_prospect')).doNotCall,true);
- await assert.rejects(sendSalesCheckout(pool,{salesCallId:'paid_call',repId:11,channel:'sms'}),e=>e.code==='prospect_suppressed');
+ await assert.rejects(sendSalesCheckout(pool,{salesCallId:'paid_call',repId:11,channel:'sms'}),e=>e.code==='sales_prospect_already_paid');
+ // Exercise opt-out independently of the paid-customer checkout prohibition.
+ await query("INSERT INTO sales_prospects(prospect_id,source_key,business_name,website_url,phone_e164,status,assigned_rep_user_id,permission_granted) VALUES('unpaid_stop','unpaid_stop_source','Unpaid Opt-out Test','https://unpaid-stop.example.test/','+12065550993','queued',11,TRUE)");
+ await query("INSERT INTO sales_call_sessions(sales_call_id,prospect_id,admin_user_id,state) VALUES('unpaid_stop_call','unpaid_stop',11,'ended')");
+ assert.equal((await smsEvent('unpaid_stop_1','STOP','+12065550993')).statusCode,200);
+ await assert.rejects(sendSalesCheckout(pool,{salesCallId:'unpaid_stop_call',repId:11,channel:'sms'}),e=>e.code==='prospect_suppressed');
  await assert.rejects(createSalesCallSession(pool,{prospectId:'paid_prospect',adminUserId:11}),e=>e.code==='prospect_not_eligible'&&e.message==='This prospect is marked do not call.');
  assert.equal((await smsEvent('stop_2','UNSUBSCRIBE','+12065550992')).statusCode,200);
  assert.equal((await smsEvent('stop_2','UNSUBSCRIBE','+12065550992')).body.duplicate,true);

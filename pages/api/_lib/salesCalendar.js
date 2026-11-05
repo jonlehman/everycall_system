@@ -50,6 +50,8 @@ export async function bookSalesSetup(pool,{salesCallId,repId,start,end,email,env
  const booking=await salesTransaction(pool,async db=>{
   const mode=await db.query('SELECT phone_test_mode FROM sales_dialer_config WHERE id=TRUE FOR UPDATE');
   assertSalesNotTestCall(call,{phoneTestMode:mode.rows[0]?.phone_test_mode});
+  const owner = await db.query('SELECT assigned_rep_user_id FROM sales_prospects WHERE prospect_id=$1 FOR UPDATE', [call.prospectId]);
+  if (Number(owner.rows[0]?.assigned_rep_user_id) !== Number(repId)) throw salesError('prospect_forbidden', 'This prospect has been reassigned. Refresh your workspace.', 403);
   const previous=await db.query("SELECT * FROM sales_setup_bookings WHERE sales_call_id=$1 AND status IN ('reserving','booked') FOR UPDATE",[salesCallId]);
   if(previous.rowCount){const prior=previous.rows[0];if(Date.parse(prior.starts_at)!==timestamp||prior.attendee_email!==email)throw salesError('sales_booking_exists','This call already has a booking. Contact the calendar owner to change it.',409);return prior;}
   const collision=await db.query("SELECT 1 FROM sales_setup_bookings WHERE calendar_owner=$1 AND status IN ('reserving','booked') AND starts_at<$3 AND ends_at>$2",[config.owner,start,end]);

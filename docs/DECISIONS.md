@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-11-05 — Admin bulk prospect reassignment
+- Owner approved selecting individual or all currently loaded prospects in `/admin/sales`, filtering All/Assigned/Unassigned, sorting the complete filtered list, and assigning or reassigning the selection to an active Sales operator (including configured admin callers). Unloaded matches are excluded.
+- Preserve automatic queue assignment and all consent, DNC, callback, status, history, readiness, provider, payment, phone-test originals, and source fields. Reassignment changes only owner, row version, and update time, with atomic audit/idempotency receipts.
+- Reject stale selections and ongoing calls/wrap-up, incoming routing, deliveries, bookings, or follow-up work; do not interrupt them. Serialize ownership-sensitive rep mutations so former reps cannot complete stale writes after a transfer.
+- Keep export and assignment bounded at 5,000 records; larger exports require narrower filters and return an explicit error instead of a partial CSV.
+
 ## 2026-10-28 — Paid customer follow-up calls
 - Owner clarified that Paid is a commercial status, not a calling or callback prohibition. Allow manual Sales calls and explicit callbacks for assigned paid customers while retaining permission, timezone/calling-window, demo-readiness, DNC/suppression, ownership, reservation, and phone-test safeguards.
 - Paid customers stay out of fresh prospect rotation; an explicitly scheduled callback may return them to the rep’s queue when due. Preserve paid status and payment history across follow-up outcomes; still record the actual new call disposition and honor any subsequent opt-out. Paid does not authorize removing or restoring a permanently restricted contact.

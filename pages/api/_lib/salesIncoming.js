@@ -26,12 +26,18 @@ export async function salesIncomingAction(pool,{incomingId,repId,action,prospect
   });
  }
  if(action==='match'){
-  const selected=prospectId;
-  const claimed=await pool.query('UPDATE sales_prospects SET assigned_rep_user_id=$2 WHERE prospect_id=$1 AND assigned_rep_user_id=$2 RETURNING prospect_id',[selected,repId]);
-  if(!claimed.rowCount)throw salesError('prospect_forbidden','Choose a prospect assigned to you.',403);
-  await pool.query('UPDATE sales_incoming_calls SET prospect_id=$2,updated_at=NOW() WHERE incoming_id=$1 AND rep_user_id=$3',[incomingId,selected,repId]);
-  if(incoming.rows[0].sales_call_id) await pool.query('UPDATE sales_call_sessions SET prospect_id=$2 WHERE sales_call_id=$1 AND admin_user_id=$3',[incoming.rows[0].sales_call_id,selected,repId]);
-  return {prospect:await enrichSalesProspect(pool,selected,repId)};
+  return salesTransaction(pool,async db=>{
+   await lockSalesContactMode(db);
+   await db.query('SELECT id FROM admin_users WHERE id=$1 FOR UPDATE',[repId]);
+   const locked=await db.query('SELECT * FROM sales_incoming_calls WHERE incoming_id=$1 AND rep_user_id=$2 FOR UPDATE',[incomingId,repId]);
+   if(!locked.rowCount)throw salesError('incoming_not_found','Incoming call not found for this rep.',404);
+   const selected=prospectId;
+   const claimed=await db.query('UPDATE sales_prospects SET assigned_rep_user_id=$2 WHERE prospect_id=$1 AND assigned_rep_user_id=$2 RETURNING prospect_id',[selected,repId]);
+   if(!claimed.rowCount)throw salesError('prospect_forbidden','Choose a prospect assigned to you.',403);
+   await db.query('UPDATE sales_incoming_calls SET prospect_id=$2,updated_at=NOW() WHERE incoming_id=$1 AND rep_user_id=$3',[incomingId,selected,repId]);
+   if(locked.rows[0].sales_call_id) await db.query('UPDATE sales_call_sessions SET prospect_id=$2 WHERE sales_call_id=$1 AND admin_user_id=$3',[locked.rows[0].sales_call_id,selected,repId]);
+   return {prospect:await enrichSalesProspect(db,selected,repId)};
+  });
  }
  if(action!=='take')throw salesError('invalid_incoming_action','Unsupported incoming action.');
  const settings=await getSalesOperatorSettings(pool,repId);

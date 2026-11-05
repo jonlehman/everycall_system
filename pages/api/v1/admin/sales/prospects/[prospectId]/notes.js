@@ -1,7 +1,7 @@
 import { addSalesProspectNote } from "../../../../../_lib/salesRepository.js";
 import {
   requireSalesAdmin,
-  runSalesAdminMutation,
+  runSalesOwnedProspectMutation,
   salesRequestBody,
   sendSalesApiError
 } from "../../../../../_lib/salesApi.js";
@@ -20,16 +20,16 @@ export default async function handler(req, res) {
       salesCallId: body.salesCallId || null,
       body: body.body
     };
-    const result = await runSalesAdminMutation(req, context, {
+    const result = await runSalesOwnedProspectMutation(req, context, prospectId, {
       scope: `sales.prospect.note:${prospectId}`,
       request,
       action: "sales.prospect.note_added",
       auditDetails: { prospectId, salesCallId: request.salesCallId }
-    }, async () => ({
+    }, async (db) => ({
       status: 201,
       body: {
         ok: true,
-        note: await addSalesProspectNote(context.pool, {
+        note: await addSalesProspectNote(db, {
           prospectId,
           salesCallId: request.salesCallId,
           body: request.body,

@@ -25,6 +25,8 @@ export async function sendSalesCheckout(pool,{salesCallId,repId,channel,email,en
   const mode=await db.query('SELECT phone_test_mode FROM sales_dialer_config WHERE id=TRUE FOR SHARE');
   assertSalesNotTestCall(call,{phoneTestMode:mode.rows[0]?.phone_test_mode});
   await db.query('SELECT sales_call_id FROM sales_call_sessions WHERE sales_call_id=$1 FOR UPDATE',[salesCallId]);
+  const owner = await db.query('SELECT assigned_rep_user_id FROM sales_prospects WHERE prospect_id=$1 FOR UPDATE', [call.prospectId]);
+  if (Number(owner.rows[0]?.assigned_rep_user_id) !== Number(repId)) throw salesError('prospect_forbidden', 'This prospect has been reassigned. Refresh your workspace.', 403);
   const existing=await db.query('SELECT * FROM sales_checkout_sessions WHERE sales_call_id=$1 FOR UPDATE',[salesCallId]);
   if(existing.rowCount)return existing.rows[0];
   const result=await db.query('INSERT INTO sales_checkout_sessions(checkout_id,sales_call_id,prospect_id,rep_user_id,channel,recipient) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[`sales_checkout_${crypto.randomUUID()}`,salesCallId,call.prospectId,repId,delivery,recipient]);return result.rows[0];

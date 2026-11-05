@@ -93,7 +93,7 @@ try {
  let repeatPaymentEffects=0;
  await assert.rejects(sendSalesCheckout(pool,{salesCallId:paidFollowup.salesCallId,repId:1,channel:'email',env,stripe:{checkout:{sessions:{create:async()=>{repeatPaymentEffects++;throw Error('Must not create duplicate checkout');}}}},mail:async()=>{repeatPaymentEffects++;},sms:async()=>{repeatPaymentEffects++;}}),e=>e.code==='sales_prospect_already_paid');
  assert.equal(repeatPaymentEffects,0);
- assert.equal((await query('SELECT count(*) AS n FROM sales_checkout_sessions WHERE sales_call_id=$1',[paidFollowup.salesCallId])).rows[0].n,0);
+ assert.equal(Number((await query('SELECT count(*) AS n FROM sales_checkout_sessions WHERE sales_call_id=$1',[paidFollowup.salesCallId])).rows[0].n),0);
  const paidBooking=await bookSalesSetup(pool,{salesCallId:paidFollowup.salesCallId,repId:1,...slots.slots[2],email:'owner@example.test',env,graph,now});
  assert.equal(paidBooking.paid_at_booking,true);
  assert(graphCalls.filter(c=>c.path.endsWith('/events')).at(-1).body.body.content.includes('Payment at booking: PAID'));

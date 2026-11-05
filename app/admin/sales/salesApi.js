@@ -330,6 +330,9 @@ export function normalizeProspect(source = {}) {
       Number(
         firstValue(source, ["position", "queuePosition", "queue_position"], 0),
       ) || 0,
+    assignedRepUserId: firstValue(source, ["assignedRepUserId", "assigned_rep_user_id"]),
+    assignedRepName: normalizeText(firstValue(source, ["assignedRepName", "assigned_rep_name"])),
+    assignedRepEmail: normalizeText(firstValue(source, ["assignedRepEmail", "assigned_rep_email"])),
     rowVersion:
       Number(firstValue(source, ["rowVersion", "row_version"], 1)) || 1,
     createdAt: firstValue(source, ["createdAt", "created_at"]),

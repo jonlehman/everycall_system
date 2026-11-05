@@ -6,7 +6,7 @@ import {
 } from "../../../../_lib/salesRepository.js";
 import {
   requireSalesAdmin,
-  runSalesAdminMutation,
+  runSalesOwnedProspectMutation,
   salesRequestBody,
   sendSalesApiError
 } from "../../../../_lib/salesApi.js";
@@ -32,32 +32,32 @@ export default async function handler(req, res) {
     }
     const body = salesRequestBody(req);
     if (req.method === "DELETE") {
-      const result = await runSalesAdminMutation(req, context, {
+      const result = await runSalesOwnedProspectMutation(req, context, prospectId, {
         scope: `sales.prospects.delete:${prospectId}`,
         request: body,
         action: "sales.prospect.deleted",
         auditDetails: { prospectId }
-      }, async () => ({
+      }, async (db) => ({
         status: 200,
         body: {
           ok: true,
-          prospect: await removeSalesProspect(context.pool, prospectId, {
+          prospect: await removeSalesProspect(db, prospectId, {
             expectedRowVersion: body.expectedRowVersion
           })
         }
       }));
       return res.status(result.status).json(result.body);
     }
-    const result = await runSalesAdminMutation(req, context, {
+    const result = await runSalesOwnedProspectMutation(req, context, prospectId, {
       scope: `sales.prospects.update:${prospectId}`,
       request: body,
       action: "sales.prospect.updated",
       auditDetails: { prospectId, fields: Object.keys(body).sort() }
-    }, async () => ({
+    }, async (db) => ({
       status: 200,
       body: {
         ok: true,
-        prospect: await updateSalesProspect(context.pool, prospectId, body)
+        prospect: await updateSalesProspect(db, prospectId, body)
       }
     }));
     return res.status(result.status).json(result.body);

@@ -137,6 +137,24 @@ export async function runSalesAdminMutation(req, context, {
   return result;
 }
 
+// Sales prospect routes must recheck ownership inside the mutation transaction.
+// The config share lock fences reassignment through audit and receipt commit;
+// the query-only adapter avoids nested transactions in repository helpers.
+export async function runSalesOwnedProspectMutation(req, context, prospectId, options, callback) {
+  if (context.session.role !== 'sales') return runSalesAdminMutation(req, context, options, () => callback(context.pool));
+  const { salesTransaction } = await import('./salesDialer.js');
+  return salesTransaction(context.pool, async client => {
+    const db = { query: client.query.bind(client) };
+    await db.query('SELECT id FROM sales_dialer_config WHERE id=TRUE FOR SHARE');
+    await db.query('SELECT id FROM admin_users WHERE id=$1 FOR UPDATE', [context.admin.id]);
+    const owner = await db.query('SELECT assigned_rep_user_id FROM sales_prospects WHERE prospect_id=$1 FOR UPDATE', [prospectId]);
+    if (!owner.rowCount || Number(owner.rows[0].assigned_rep_user_id) !== Number(context.admin.id)) {
+      throw salesError('prospect_forbidden', 'This prospect has been reassigned. Refresh your workspace.', 403);
+    }
+    return runSalesAdminMutation(req, { ...context, pool: db }, options, () => callback(db));
+  });
+}
+
 export async function writeSalesAdminAudit(context, action, details = null) {
   await writeAuditLog(context.pool, {
     actor: salesAuditActor(context),

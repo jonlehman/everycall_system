@@ -25,6 +25,18 @@ Paid customers may be called manually and scheduled for follow-up callbacks. Pay
 - The shared callback picker saves or clears the prospect callback directly before a call, with version checks and no fabricated call history. During a call, selections remain a draft saved by the existing outcome action. The existing callback-priority queue rules apply.
 - Existing admin list consumers retain their listing contract. Every new read and mutation preserves authenticated rep ownership, audit/idempotency behavior, and server validation.
 
+## November 5 admin bulk assignment
+
+The owner-approved admin workflow adds All/Assigned/Unassigned filtering, whole-result sorting (queue, business, contact, status, assigned rep, update time), and stable scope-bound cursor pagination. Search, totals and CSV export use the same filters and ordering. Rep-only Contacts and automatic queue claiming retain their existing behavior.
+
+Admins may select individual rows or **all visible**, meaning every currently loaded row, then choose an active configured Sales operator and **Assign to Rep**. Existing ownership does not prohibit reassignment; configured admin callers are valid targets. Display owner names/emails, selected count and success/error feedback. Disable invalid/in-flight actions, clear selection when the dataset reloads or filters/sort change, and ignore stale list responses. Do not add a confirmation dialog. Assignment and export are limited to 5,000 records per action, with explicit errors rather than truncated output.
+
+The server authorizes actual admin sessions, validates target eligibility, and checks both prospect row version and prior owner. A single transaction writes reassignment, audit and idempotency receipt. Lock the shared Sales mode fence before deterministic operator/prospect locks; lock contention is a retryable atomic conflict. Active calls, unsaved wrap-up, incoming routing, unresolved delivery (including paid but unconfirmed delivery), booking reservations, and pending follow-ups block the entire selection. No owner changes on any conflict.
+
+Only `assigned_rep_user_id`, `row_version` and `updated_at` may change. Preserve consent, DNC, status, callbacks, history, payment, readiness, provider state, test-phone originals and source evidence. Existing suppression triggers must not silently reconcile protected fields during assignment. Prior reps lose prospect mutation access immediately; historical call reads remain available, while old-call outcome/checkout/booking writes and incoming matching recheck current ownership transactionally. PATCH/DELETE/notes/demo requests likewise cannot use a pre-transfer ownership check after reassignment commits.
+
+Regression mapping: `scripts/validate-sales-assignment.mjs` covers listing/selection scope, target and role checks, preserved state, transaction rollback, audited receipts, historical writes and conflicts. Its `--postgres` mode proves native concurrent assignment/call/match/edit/delete/note/demo serialization. `scripts/test-sales-assignment-browser.mjs` covers the admin selection, filtering, global-sort requests, submit/reload/errors and stale-response behavior with mocked APIs only.
+
 ## What this replaces
 
 - The current "Sales calls" page: a vertical stack of equal-weight cards (Prospect details / Call & demo / Wrap up), five peer call buttons (Call · Mute · Start Receptionist · End Receptionist · End Call), status badges in three places, a "Help prospect sign up" button, an outcome dropdown, a notes textarea with a separate Save.

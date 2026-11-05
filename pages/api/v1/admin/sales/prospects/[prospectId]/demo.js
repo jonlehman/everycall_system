@@ -1,7 +1,7 @@
 import { enqueueSalesDemoJob } from "../../../../../_lib/salesRepository.js";
 import {
   requireSalesAdmin,
-  runSalesAdminMutation,
+  runSalesOwnedProspectMutation,
   salesRequestBody,
   sendSalesApiError
 } from "../../../../../_lib/salesApi.js";
@@ -17,16 +17,16 @@ export default async function handler(req, res) {
     const prospectId = String(req.query?.prospectId || "").trim();
     const body = salesRequestBody(req);
     const force = body.force === true;
-    const result = await runSalesAdminMutation(req, context, {
+    const result = await runSalesOwnedProspectMutation(req, context, prospectId, {
       scope: `sales.demo.enqueue:${prospectId}`,
       request: { force },
       action: "sales.demo.enqueued",
       auditDetails: { prospectId, force }
-    }, async () => ({
+    }, async (db) => ({
       status: 202,
       body: {
         ok: true,
-        result: await enqueueSalesDemoJob(context.pool, {
+        result: await enqueueSalesDemoJob(db, {
           prospectId,
           adminUserId: context.admin.id,
           force

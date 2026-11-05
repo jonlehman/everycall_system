@@ -53,6 +53,8 @@
 - No outbound audio after the GPT-Realtime-2.1 switch: verify output audio format remains `g711_ulaw` in admin session config and maps to `audio/pcmu` in the Realtime 2 session trace.
 
 ## Outbound Sales Calling
+- In Admin → Sales → Prospects, use All/Assigned/Unassigned and search/sort to choose the list, select individual rows or all loaded rows, choose an active configured rep, then Assign to Rep. Load more first to include additional rows. Existing owners can be replaced; unconfigured/inactive operators cannot receive assignments.
+- A bulk conflict changes no owners. Finish the indicated call and wrap-up, or reconcile pending delivery, booking, incoming or follow-up work; refresh and select again. Do not clear provider states or protected prospect fields to bypass a conflict. Successful assignment refreshes the list and clears selection. Assignment/export actions are bounded at 5,000 rows; narrow filters for larger exports.
 
 - **Contacts:** search by business/contact/domain or any partial phone digits; status and metro filters run across the rep’s full assigned list, with global counts and newest-activity pages. These controls do not change dial-queue order. The unknown incoming caller search uses the same search surface.
 - **Paid customer follow-ups:** Paid customers can be called from Contacts and scheduled for callbacks under the normal consent, suppression, readiness and local-time checks. They stay out of fresh prospect rotation; explicit due callbacks can return them to the queue. Follow-up calls retain payment history and do not enroll the customer in a new sales email campaign.

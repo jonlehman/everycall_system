@@ -196,3 +196,8 @@ The second 8/19 WVG call contained one possible early VAD handoff (“Got it—a
   - `Start demo` mutes the operator, waits one second, and only then requests that the AI join; `End demo` removes only the AI and unmutes the operator, and the manual mute control works in both states
   - duplicate Telnyx/OpenAI webhooks do not repeat commands
   - ending either human leg tears down the conference and unused AI standby
+
+## Admin Sales bulk assignment
+- `node scripts/validate-sales-assignment.mjs`: disposable PGlite regression for admin/session isolation, active operator targets, stable whole-result sort/filter/keysets/totals/export, loaded selection versions/owners, atomic conflicts, audit rollback/idempotency, protected fields and old-call ownership. Provider mocks assert no calls/messages/calendar/Stripe effects.
+- `EVERYCALL_TEST_POSTGRES_URL=<isolated-loopback-database> node scripts/validate-sales-assignment.mjs --postgres`: creates and drops a random fixture schema; tests real overlapping transfers against call reservations, incoming matches and rep PATCH/DELETE/notes/demo requests. Never point this at production.
+- `node scripts/test-sales-assignment-browser.mjs`: mocked local browser fixture; uses `PLAYWRIGHT_MODULE`, `ESBUILD_MODULE` and optional `CHROMIUM_PATH` when dependencies are outside the normal resolver. Checks selection scope/reset, filters/search/sort/export, successful assignment, actionable error, in-flight disable and stale responses. Screenshot: `/tmp/everycall-admin-assignment.png`.

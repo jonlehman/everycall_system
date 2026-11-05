@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SALES_RESEARCH_FIELDS } from '../../../lib/salesProspectResearch.js';
 import {
   displayStatus,
@@ -332,6 +332,17 @@ export default function ProspectsManager({ onProspectsChanged }) {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [assignment, setAssignment] = useState('all');
+  const [sort, setSort] = useState('queue');
+  const [direction, setDirection] = useState('asc');
+  const [selected, setSelected] = useState(new Set());
+  const [operators, setOperators] = useState([]);
+  const [operatorError, setOperatorError] = useState('');
+  const [targetRep, setTargetRep] = useState('');
+  const [assigning, setAssigning] = useState(false);
+  const requestSequence = useRef(0);
+  const assignmentAttempt = useRef(null);
+
   const [includeDeleted, setIncludeDeleted] = useState(false);
   const [nextQueuePosition, setNextQueuePosition] = useState(null);
   const [editorMode, setEditorMode] = useState('');
@@ -346,43 +357,90 @@ export default function ProspectsManager({ onProspectsChanged }) {
   const [deletingId, setDeletingId] = useState('');
 
   const queryString = useCallback((cursor = 0) => {
-    const params = new URLSearchParams({ limit: '100' });
-    if (cursor) params.set('afterQueuePosition', String(cursor));
+    const params = new URLSearchParams({ limit: '100', managementView: 'true', assignment, sort, direction });
+    if (cursor) params.set('cursor', String(cursor));
     if (search) params.set('search', search);
     if (status) params.set('status', status);
     if (includeDeleted || status === 'deleted') params.set('includeDeleted', 'true');
     return params.toString();
-  }, [includeDeleted, search, status]);
+  }, [includeDeleted, search, status, assignment, sort, direction]);
 
   const exportHref = useMemo(() => {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ assignment, sort, direction });
     if (search) params.set('search', search);
     if (status) params.set('status', status);
     if (includeDeleted || status === 'deleted') params.set('includeDeleted', 'true');
     const suffix = params.toString();
     return `/api/v1/admin/sales/prospects/export${suffix ? `?${suffix}` : ''}`;
-  }, [includeDeleted, search, status]);
+  }, [includeDeleted, search, status, assignment, sort, direction]);
 
   const loadProspects = useCallback(async ({ append = false, cursor = 0 } = {}) => {
+    const sequence = ++requestSequence.current;
+    setSelected(new Set());
     append ? setLoadingMore(true) : setLoading(true);
+    if (!append) { setProspects([]); setNextQueuePosition(null); }
+
     setError('');
     try {
       const payload = await fetchSalesJson(`/api/v1/admin/sales/prospects?${queryString(cursor)}`);
+      if (sequence !== requestSequence.current) return false;
       const next = Array.isArray(payload.prospects) ? payload.prospects.map(normalizeProspect) : [];
       setProspects((current) => append ? [...current, ...next] : next);
       setTotal(Number(payload.total || 0));
-      setNextQueuePosition(payload.nextQueuePosition || null);
+      setNextQueuePosition(payload.nextCursor || null);
+      return true;
     } catch (loadError) {
-      setError(loadError?.message || 'Could not load prospects.');
+      if (sequence === requestSequence.current) setError(loadError?.message || 'Could not load prospects.');
+      return false;
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (sequence === requestSequence.current) { setLoading(false); setLoadingMore(false); }
     }
   }, [queryString]);
 
   useEffect(() => {
     void loadProspects();
+    return () => { requestSequence.current += 1; };
   }, [loadProspects]);
+
+  const loadOperators = useCallback(async () => {
+    try {
+      const payload = await fetchSalesJson('/api/v1/admin/sales/operator-settings?list=true');
+      setOperators((payload.operators || []).filter(operator => operator.active && operator.settingsUserId));
+      setOperatorError('');
+    } catch (failure) {
+      setOperators([]);
+      setOperatorError(failure.message || 'Could not load Sales reps. Refresh to retry.');
+    }
+  }, []);
+  useEffect(() => { void loadOperators(); }, [loadOperators]);
+
+  const selectionDisabled = loading || loadingMore || assigning;
+  const assignSelected = async () => {
+    if (selectionDisabled || !selected.size || selected.size > 5000 || !operators.some(operator => String(operator.id) === targetRep)) return;
+    const body = JSON.stringify({ targetRepUserId: Number(targetRep), prospects: prospects.filter(prospect => selected.has(prospect.id)).map(prospect => ({
+      prospectId: prospect.id, expectedRowVersion: prospect.rowVersion, assignedRepUserId: prospect.assignedRepUserId
+    })) });
+    // Keep the same receipt key after an uncertain network response so Retry
+    // cannot accidentally apply the same selection twice.
+    if (assignmentAttempt.current?.body !== body) assignmentAttempt.current = { body, key: crypto.randomUUID() };
+    setAssigning(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await fetchSalesJson('/api/v1/admin/sales/prospects/assign', { method: 'POST', body, idempotencyKey: assignmentAttempt.current.key });
+      setSelected(new Set());
+      setDetails({});
+      setExpandedId('');
+      assignmentAttempt.current = null;
+      setNotice(`${result.assignedCount} prospect${result.assignedCount === 1 ? '' : 's'} assigned to ${operators.find(operator => String(operator.id) === targetRep)?.displayName || operators.find(operator => String(operator.id) === targetRep)?.username || 'the selected rep'}.`);
+      await loadProspects();
+      onProspectsChanged?.();
+    } catch (failure) {
+      setError(failure.message || 'Assignment failed. Refresh the list and try again.');
+      if (failure.status === 409 || failure.status === 400) setSelected(new Set());
+    } finally { setAssigning(false); }
+  };
+
 
   const openAdd = () => {
     setEditingProspect(null);
@@ -542,20 +600,30 @@ export default function ProspectsManager({ onProspectsChanged }) {
           }}
         >
           <input
+            disabled={assigning}
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
             placeholder="Search business, contact, phone, or website"
             aria-label="Search prospects"
             className={fieldClass()}
           />
-          <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter by status" className={fieldClass()}>
+          <select disabled={assigning} value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter by status" className={fieldClass()}>
             {STATUS_OPTIONS.map(([value, label]) => <option key={value || 'all'} value={value}>{label}</option>)}
           </select>
-          <button type="submit" className="min-h-10 rounded-full border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-800 hover:bg-slate-50">Search</button>
+          <button disabled={assigning} type="submit" className="min-h-10 rounded-full border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-800 hover:bg-slate-50">Search</button>
         </form>
 
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <div role="group" aria-label="Assignment filter" className="flex gap-1">
+            {['all', 'assigned', 'unassigned'].map(value => <Button key={value} disabled={assigning} aria-pressed={assignment === value} tone={assignment === value ? 'primary' : ''} onClick={() => setAssignment(value)}>{value[0].toUpperCase() + value.slice(1)}</Button>)}
+          </div>
+          <label className="text-sm">Sort by <select aria-label="Sort prospects" disabled={assigning} value={sort} onChange={event => setSort(event.target.value)} className={fieldClass()}>
+            <option value="queue">Queue order</option><option value="business">Business</option><option value="contact">Contact</option><option value="status">Status</option><option value="rep">Assigned rep</option><option value="updated">Last updated</option>
+          </select></label>
+          <label className="text-sm">Order <select aria-label="Sort direction" disabled={assigning} value={direction} onChange={event => setDirection(event.target.value)} className={fieldClass()}><option value="asc">Ascending</option><option value="desc">Descending</option></select></label>
+        </div>
         <label className="mt-3 inline-flex items-center gap-2 text-sm text-slate-600">
-          <input type="checkbox" checked={includeDeleted} onChange={(event) => setIncludeDeleted(event.target.checked)} />
+          <input disabled={assigning} type="checkbox" checked={includeDeleted} onChange={(event) => setIncludeDeleted(event.target.checked)} />
           Show removed prospects
         </label>
       </section>
@@ -580,14 +648,26 @@ export default function ProspectsManager({ onProspectsChanged }) {
           <p className="m-0 text-sm font-medium text-slate-700" aria-live="polite">
             {loading ? 'Loading prospects…' : `${prospects.length} of ${total} total prospect${total === 1 ? '' : 's'} loaded`}
           </p>
-          <Button onClick={() => { void loadProspects(); }} disabled={loading}>Refresh</Button>
+          <Button onClick={() => { void loadProspects(); void loadOperators(); }} disabled={selectionDisabled}>Refresh</Button>
         </div>
 
+        <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <span aria-live="polite">{selected.size} selected</span>
+          <span className="text-xs text-slate-500">Select all visible includes only loaded rows. Up to 5,000 per assignment.</span>
+          <select aria-label="Assign to rep" className={fieldClass() + ' max-w-xs'} value={targetRep} disabled={selectionDisabled || !operators.length} onChange={event => setTargetRep(event.target.value)}>
+            <option value="">Choose an active rep</option>
+            {operators.map(operator => <option key={operator.id} value={operator.id}>{operator.displayName || operator.username} · {operator.email}</option>)}
+          </select>
+          <Button tone="primary" disabled={selectionDisabled || !selected.size || selected.size > 5000 || !operators.some(operator => String(operator.id) === targetRep)} onClick={() => { void assignSelected(); }}>{assigning ? 'Assigning…' : 'Assign to Rep'}</Button>
+          {operatorError ? <span role="alert" className="text-sm text-red-700">{operatorError} Refresh to retry.</span> : null}
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] border-collapse text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
+                <th className="px-4 py-3"><input aria-label="Select all visible prospects" type="checkbox" disabled={selectionDisabled || !prospects.length} checked={prospects.length > 0 && selected.size === prospects.length} ref={element => { if (element) element.indeterminate = selected.size > 0 && selected.size < prospects.length; }} onChange={event => setSelected(event.target.checked ? new Set(prospects.map(prospect => prospect.id)) : new Set())} /></th>
                 <th className="px-4 py-3 font-semibold">Business</th>
+                <th className="px-4 py-3 font-semibold">Assigned rep</th>
                 <th className="px-4 py-3 font-semibold">Contact</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
                 <th className="px-4 py-3 font-semibold">Last outcome</th>
@@ -597,12 +677,15 @@ export default function ProspectsManager({ onProspectsChanged }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {!loading && !prospects.length ? (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">No prospects match these filters.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">No prospects match these filters.</td></tr>
               ) : null}
               {prospects.map((prospect) => (
                 <ProspectRows
                   key={prospect.id}
                   prospect={prospect}
+                  selected={selected.has(prospect.id)}
+                  selectionDisabled={selectionDisabled}
+                  onSelect={checked => setSelected(current => { const next = new Set(current); checked ? next.add(prospect.id) : next.delete(prospect.id); return next; })}
                   expanded={expandedId === prospect.id}
                   detail={details[prospect.id]}
                   detailLoading={detailLoadingId === prospect.id}
@@ -620,7 +703,7 @@ export default function ProspectsManager({ onProspectsChanged }) {
 
         {nextQueuePosition ? (
           <div className="border-t border-slate-200 p-4 text-center">
-            <Button onClick={() => { void loadProspects({ append: true, cursor: nextQueuePosition }); }} disabled={loadingMore}>
+            <Button onClick={() => { void loadProspects({ append: true, cursor: nextQueuePosition }); }} disabled={selectionDisabled}>
               {loadingMore ? 'Loading…' : 'Load more'}
             </Button>
           </div>
@@ -631,7 +714,7 @@ export default function ProspectsManager({ onProspectsChanged }) {
 }
 
 function ProspectRows({
-  prospect,
+  prospect, selected, selectionDisabled, onSelect,
   expanded,
   detail,
   detailLoading,
@@ -645,10 +728,15 @@ function ProspectRows({
   return (
     <>
       <tr className={expanded ? 'bg-blue-50/30' : 'bg-white'}>
+        <td className="px-4 py-3 align-top"><input type="checkbox" aria-label={`Select ${prospect.businessName || 'unnamed prospect'}`} checked={selected} disabled={selectionDisabled} onChange={event => onSelect(event.target.checked)} /></td>
         <td className="px-4 py-3 align-top">
           <div className="font-semibold text-slate-950">{prospect.businessName || 'Unnamed prospect'}</div>
           {prospect.phoneTestMode ? <div className="mt-1 text-xs font-semibold text-amber-800">Owner test numbers · originals saved</div> : null}
           <div className="mt-1 text-xs text-slate-500">{prospect.businessCategory || 'No category'} · {prospect.timezone || 'No timezone'}</div>
+        </td>
+        <td className="px-4 py-3 align-top">
+          <div className="text-slate-800">{prospect.assignedRepName || (prospect.assignedRepUserId ? `Rep ${prospect.assignedRepUserId}` : 'Unassigned')}</div>
+          {prospect.assignedRepEmail ? <div className="mt-1 text-xs text-slate-500">{prospect.assignedRepEmail}</div> : null}
         </td>
         <td className="px-4 py-3 align-top">
           <div className="text-slate-800">{prospect.contactName || 'No contact name'}</div>
@@ -680,7 +768,7 @@ function ProspectRows({
       </tr>
       {expanded ? (
         <tr>
-          <td colSpan={6} className="p-0">
+          <td colSpan={8} className="p-0">
             <Activity
               prospectId={prospect.id}
               detail={detail}

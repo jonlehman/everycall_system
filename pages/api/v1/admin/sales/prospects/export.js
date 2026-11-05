@@ -1,4 +1,5 @@
-import { listSalesProspects } from "../../../../_lib/salesRepository.js";
+import { salesError } from '../../../../_lib/salesRepository.js';
+import { listSalesManagedProspects } from '../../../../_lib/salesAssignments.js';
 import { SALES_RESEARCH_FIELDS } from "../../../../../../lib/salesProspectResearch.js";
 import {
   requireSalesAdmin,
@@ -9,6 +10,8 @@ import {
 export const CSV_HEADERS = Object.freeze([
   "external_ref",
   ...SALES_RESEARCH_FIELDS.map((field) => field.column),
+  "assigned_rep",
+  "assigned_rep_email",
   "business_name",
   "contact_name",
   "phone",
@@ -55,6 +58,8 @@ export function prospectRow(prospect) {
   return [
     prospect.externalRef,
     ...SALES_RESEARCH_FIELDS.map((field) => prospect[field.key]),
+    prospect.assignedRepName,
+    prospect.assignedRepEmail,
     prospect.businessName,
     prospect.contactName,
     exportPhone(prospect.phoneE164),
@@ -85,18 +90,24 @@ export default async function handler(req, res) {
     const context = await requireSalesAdmin(req, res);
     if (!context) return;
     const prospects = [];
-    let afterQueuePosition = 0;
+    if (context.session.role !== 'admin') return res.status(403).json({ ok: false, error: 'forbidden' });
+    let cursor = '';
     do {
-      const page = await listSalesProspects(context.pool, {
+      const page = await listSalesManagedProspects(context.pool, {
         limit: 250,
-        afterQueuePosition,
+        cursor,
+        assignment: req.query?.assignment,
+        sort: req.query?.sort,
+        direction: req.query?.direction,
         status: req.query?.status,
         includeDeleted: String(req.query?.includeDeleted || "").toLowerCase() === "true",
         search: req.query?.search
       });
+      if (page.total > 5000 || prospects.length + page.prospects.length > 5000) throw salesError('export_limit_exceeded', 'This export matches more than 5,000 prospects. Narrow the search or filters and export again.', 400);
       prospects.push(...page.prospects);
-      afterQueuePosition = page.nextQueuePosition || 0;
-    } while (afterQueuePosition && prospects.length < 5000);
+      cursor = page.nextCursor || '';
+      if (cursor && (prospects.length >= 5000 || !page.prospects.length)) throw salesError('export_list_changed', 'The list changed during export. Refresh, narrow the filters, and try again.', 409);
+    } while (cursor);
 
     await writeSalesAdminAudit(context, "sales.prospects.exported", {
       exportedCount: prospects.length,

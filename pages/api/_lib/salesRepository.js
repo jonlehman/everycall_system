@@ -2457,9 +2457,12 @@ export async function recordSalesCallOutcome(pool, {salesCallId, outcome, notes 
   const reason = normalizedOutcome==='not_interested' ? 'not_interested' : (dncReason || 'asked_not_to_be_called');
   if (normalizedOutcome==='do_not_call' && !['bad_number','asked_not_to_be_called','out_of_business'].includes(reason)) throw salesError('invalid_dnc_reason','Choose a do-not-call reason.');
   return withTransaction(pool,async db => {
+    await db.query('SELECT id FROM sales_dialer_config WHERE id=TRUE FOR SHARE');
     const existing=await db.query('SELECT * FROM sales_call_sessions WHERE sales_call_id=$1 FOR UPDATE',[salesCallId]);
     const active=existing.rows[0];
     if (!active) throw salesError('sales_call_not_found','Sales call not found.',404);
+    const owner = await db.query('SELECT assigned_rep_user_id FROM sales_prospects WHERE prospect_id=$1 FOR UPDATE', [active.prospect_id]);
+    if (Number(owner.rows[0]?.assigned_rep_user_id) !== Number(active.admin_user_id)) throw salesError('prospect_forbidden', 'This prospect has been reassigned. Refresh your workspace.', 403);
     if (!['closed','ended','completed','failed','no_answer','voicemail','wrong_number','not_interested','do_not_call','canceled','cancelled'].includes(active.state)) throw salesError('sales_call_end_required','End the call before saving its outcome.',409);
     const result=await db.query(`UPDATE sales_call_sessions SET outcome=CASE WHEN paid_at IS NOT NULL THEN 'paid' ELSE $2 END,outcome_notes=$3,live_notes=$3,outcome_recorded_at=NOW(),callback_at=$4,updated_at=NOW() WHERE sales_call_id=$1 RETURNING *`,[salesCallId,normalizedOutcome,String(notes||active.live_notes||'').slice(0,5000),normalizedOutcome==='callback_requested'?callbackAt:null]);
     // Test dispositions remain reviewable on the call, without changing real contact eligibility or sending followups.

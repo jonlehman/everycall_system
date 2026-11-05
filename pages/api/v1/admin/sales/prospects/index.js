@@ -1,3 +1,4 @@
+import { listSalesManagedProspects } from '../../../../_lib/salesAssignments.js';
 import {
   createSalesProspect,
   listSalesProspects
@@ -21,6 +22,10 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       if (req.query?.contactsView === 'true') {
         const result = await listSalesContacts(context.pool, { ...req.query, repId: context.admin.id });
+        return res.status(200).json({ ok: true, ...result });
+      }
+      if (context.session.role === 'admin' && req.query?.managementView === 'true') {
+        const result = await listSalesManagedProspects(context.pool, { ...req.query, includeDeleted: req.query?.includeDeleted === 'true' });
         return res.status(200).json({ ok: true, ...result });
       }
       const result = await listSalesProspects(context.pool, {
