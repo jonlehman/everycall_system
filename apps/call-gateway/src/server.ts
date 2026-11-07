@@ -1,3 +1,4 @@
+import { loadTransferTargetsForTenant, lookupTransferTargets, normalizeTransferLookupText, type TransferLookupMatch, type TransferTargetRow } from "./transferLookup.js";
 import { runSessionShutdown, type ShutdownProgress } from "./sessionShutdown.js";
 import express from "express";
 import http from "node:http";
@@ -260,19 +261,6 @@ type AudioPumpTrace = {
   maxTimerLateMs: number;
   catchupBurstCount: number;
   maxBurstFrames: number;
-};
-
-type TransferLookupMatch = {
-  target_id: string;
-  name: string;
-  extension: string | null;
-};
-
-type TransferTargetRow = {
-  id: number;
-  name: string;
-  transfer_extension: string | null;
-  forward_to_number: string;
 };
 
 type TransferState = {
@@ -1477,61 +1465,6 @@ function normalizeOptionalText(value: unknown) {
   return text || null;
 }
 
-function normalizeTransferLookupText(value: unknown) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function normalizeDigitsOnly(value: unknown) {
-  return String(value || "").replace(/[^\d]/g, "");
-}
-
-function levenshteinDistance(leftInput: string, rightInput: string) {
-  const left = String(leftInput || "");
-  const right = String(rightInput || "");
-  if (left === right) return 0;
-  if (!left.length) return right.length;
-  if (!right.length) return left.length;
-
-  const previous: number[] = Array.from({ length: right.length + 1 }, (_, index) => index);
-  for (let row = 1; row <= left.length; row += 1) {
-    let diagonal = previous[0] ?? 0;
-    previous[0] = row;
-    for (let column = 1; column <= right.length; column += 1) {
-      const temp = previous[column] ?? column;
-      const current = previous[column] ?? column;
-      const leftCost = previous[column - 1] ?? (column - 1);
-      if (left[row - 1] === right[column - 1]) {
-        previous[column] = diagonal;
-      } else {
-        previous[column] = Math.min(current + 1, leftCost + 1, diagonal + 1);
-      }
-      diagonal = temp;
-    }
-  }
-  return previous[right.length] ?? right.length;
-}
-
-function isCloseTransferNameToken(queryToken: string, targetToken: string) {
-  if (!queryToken || !targetToken) return false;
-  if (queryToken === targetToken) return true;
-  if (Math.abs(queryToken.length - targetToken.length) > 1) return false;
-  if (queryToken.charAt(0) !== targetToken.charAt(0)) return false;
-  return levenshteinDistance(queryToken, targetToken) <= 1;
-}
-
-function hasFuzzyTransferTokenMatch(targetName: string, normalizedQuery: string) {
-  const queryTokens = normalizedQuery.split(" ").filter(Boolean);
-  const targetTokens = normalizeTransferLookupText(targetName).split(" ").filter(Boolean);
-  if (!queryTokens.length || !targetTokens.length) return false;
-  return queryTokens.every((queryToken) =>
-    targetTokens.some((targetToken) => isCloseTransferNameToken(queryToken, targetToken))
-  );
-}
-
 function classifyTransferConfirmation(text: string) {
   const normalized = normalizeTransferLookupText(text);
   if (!normalized) return "neutral" as const;
@@ -1553,14 +1486,6 @@ function buildTransferTargetId(id: number) {
 function parseTransferTargetId(value: unknown) {
   const match = /^tenant_user_(\d+)$/.exec(String(value || "").trim());
   return match ? Number(match[1]) : 0;
-}
-
-function serializeTransferMatch(row: TransferTargetRow): TransferLookupMatch {
-  return {
-    target_id: buildTransferTargetId(row.id),
-    name: String(row.name || "").trim(),
-    extension: normalizeOptionalText(row.transfer_extension)
-  };
 }
 
 function encodeTransferLegClientState(state: TransferLegClientState) {
@@ -1594,97 +1519,8 @@ function parseTransferLegClientState(value: unknown): TransferLegClientState | n
   }
 }
 
-async function loadTransferTargetsForTenant(tenantKey: string): Promise<TransferTargetRow[]> {
-  if (!pool) return [];
-  const result = await pool.query(
-    `SELECT id, name, transfer_extension, forward_to_number
-     FROM tenant_users
-     WHERE tenant_key = $1
-       AND status = 'active'
-       AND transfer_enabled = TRUE
-       AND forward_to_number IS NOT NULL
-       AND TRIM(forward_to_number) <> ''
-     ORDER BY name ASC, id ASC`,
-    [tenantKey]
-  );
-  return (result.rows || []).map((row: any) => ({
-    id: Number(row.id),
-    name: String(row.name || "").trim(),
-    transfer_extension: normalizeOptionalText(row.transfer_extension),
-    forward_to_number: String(row.forward_to_number || "").trim()
-  }));
-}
-
-function rankTransferMatches(targets: TransferTargetRow[], query: string) {
-  const normalizedQuery = normalizeTransferLookupText(query);
-  if (!normalizedQuery) return [];
-
-  const queryDigits = normalizeDigitsOnly(query);
-  if (queryDigits) {
-    const extensionMatches = targets.filter((target) => normalizeDigitsOnly(target.transfer_extension) === queryDigits);
-    if (extensionMatches.length) {
-      return extensionMatches;
-    }
-  }
-
-  const exactFullNameMatches = targets.filter((target) => normalizeTransferLookupText(target.name) === normalizedQuery);
-  if (exactFullNameMatches.length) {
-    return exactFullNameMatches;
-  }
-
-  const startsWithMatches = targets.filter((target) => normalizeTransferLookupText(target.name).startsWith(normalizedQuery));
-  if (startsWithMatches.length) {
-    return startsWithMatches;
-  }
-
-  const exactTokenMatches = targets.filter((target) => normalizeTransferLookupText(target.name).split(" ").includes(normalizedQuery));
-  if (exactTokenMatches.length) {
-    return exactTokenMatches;
-  }
-
-  const fuzzyTokenMatches = targets.filter((target) => hasFuzzyTransferTokenMatch(target.name, normalizedQuery));
-  if (fuzzyTokenMatches.length) {
-    return fuzzyTokenMatches;
-  }
-
-  if (normalizedQuery.length >= 3) {
-    const includesMatches = targets.filter((target) => normalizeTransferLookupText(target.name).includes(normalizedQuery));
-    if (includesMatches.length) {
-      return includesMatches;
-    }
-  }
-
-  return [];
-}
-
 async function lookupTransferTarget(tenantKey: string, query: string) {
-  const trimmedQuery = String(query || "").trim();
-  const targets = await loadTransferTargetsForTenant(tenantKey);
-  if (!targets.length) {
-    return {
-      status: "unavailable",
-      query: trimmedQuery,
-      matches: [] as TransferLookupMatch[]
-    };
-  }
-  const matches = rankTransferMatches(targets, trimmedQuery).map(serializeTransferMatch);
-  if (!matches.length) {
-    return {
-      status: "not_found",
-      query: trimmedQuery,
-      matches
-    };
-  }
-  return {
-    status: matches.length === 1 ? "match" : "ambiguous",
-    query: trimmedQuery,
-    matches,
-    ...(matches.length === 1 ? {
-      target: matches[0],
-      requires_confirmation: true,
-      next_step: "ask_for_confirmation_before_transfer"
-    } : {})
-  };
+  return lookupTransferTargets(await loadTransferTargetsForTenant(pool, tenantKey), query);
 }
 
 async function loadTransferTargetById(tenantKey: string, targetId: string) {

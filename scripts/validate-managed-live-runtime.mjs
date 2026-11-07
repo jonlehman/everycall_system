@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { ManagedLiveRuntime, buildManagedLiveStart, MANAGED_BACKEND_INSTRUCTIONS, MANAGED_BACKEND_INSTRUCTIONS_V201 } from "../apps/call-gateway/dist/apps/call-gateway/src/managedLiveRuntime.js";
 import { LIVE_CALLBACK_QUESTION } from "../apps/call-gateway/dist/apps/call-gateway/src/liveRuntime.js";
 
+import { lookupTransferTargets } from "../apps/call-gateway/dist/apps/call-gateway/src/transferLookup.js";
+
 let sequence = 0;
 const all = [];
 const pause = () => new Promise(resolve => setTimeout(resolve, 5));
@@ -335,6 +337,134 @@ for (const initiallyCaptured of [false, true]) {
   await transcript(shortCorrection, "user", "Actually, Alice.");
   assert.equal((await call(shortCorrection, "data_capture", { first_name: "Alice" })).action_status, "completed", "a new short answer can explicitly revert the name without question punctuation");
   assert.equal(shortNameValues.first_name, "Alice");
+}
+
+// Production matcher + managed protocol regression for Jon/John Layman and
+// extension 800. Live direction is separate from backend function results.
+const jonTransferRow = { id: 29, name: "Jon Lehman", transfer_extension: "800", forward_to_number: "+12025550129" };
+const jonTransferHarness = (promptVersion, overrides = {}) => harness({ promptVersion, ...overrides,
+  executeTool: async (name, _id, args, mayCommit) => {
+    if (name === "lookup_transfer_target") return lookupTransferTargets([jonTransferRow], JSON.parse(args).query);
+    assert.equal(mayCommit(), true);
+    return { status: "accepted" };
+  }
+});
+const directedTransfers = h => h.sent.filter(event => event.type === "session.instructions.append" && String(event.content).startsWith("Ask this exact transfer confirmation once"));
+for (const promptVersion of [undefined, "v20.1"]) for (const query of ["John Layman", "800"]) {
+  const h = jonTransferHarness(promptVersion);
+  await start(h, "Could I speak to John Lennon?");
+  assert.equal((await call(h, "lookup_transfer_target", { query: "John Lennon" })).result.status, "not_found");
+  await transcript(h, "user", query === "800" ? "Try extension 800." : "John Layman.");
+  assert.equal((await call(h, "lookup_transfer_target", { query })).result.target.target_id, "tenant_user_29");
+  const prepared = await call(h, "prepare_protected_question", { kind: "transfer_confirmation", target_id: "tenant_user_29" }, `prepared-${query}-${promptVersion}`);
+  const exact = "Would you like me to transfer you to Jon Lehman?";
+  assert.equal(prepared.exact_question, exact);
+  assert.equal(prepared.delivery, "application_instructions");
+  assert.equal(directedTransfers(h).length, 1);
+  const direction = directedTransfers(h)[0];
+  assert.equal(direction.delegation_id, null, "managed delegation IDs cannot be used on append");
+  assert.ok(direction.content.includes(JSON.stringify(exact)));
+  assert.ok(Buffer.byteLength(direction.content) <= 480, "one atomic instruction for this target");
+  assert.equal(h.sent.some(event => event.type === "session.commentary.append"), false, "commentary may paraphrase protected text");
+  assert.equal(JSON.stringify(h.sent).includes(jonTransferRow.forward_to_number), false);
+  // Acknowledgement and repeated prepare calls cannot substitute for speech or
+  // repeat a direction, even when the backend uses a new function-call ID.
+  await h.runtime.handle({ type: "session.instructions.appended", client_event_id: direction.event_id });
+  assert.equal((await call(h, "transfer_call", { target_id: "tenant_user_29" })).reason, "protected_action_not_authorized");
+  await call(h, "prepare_protected_question", { kind: "transfer_confirmation", target_id: "tenant_user_29" }, `prepared-${query}-${promptVersion}`);
+  assert.equal((await call(h, "prepare_protected_question", { kind: "transfer_confirmation", target_id: "tenant_user_29" })).status, "pending");
+  assert.equal(directedTransfers(h).length, 1);
+  await transcript(h, "assistant", exact);
+  await transcript(h, "user", "Yes.");
+  assert.equal((await call(h, "transfer_call", { target_id: "tenant_user_29" })).action_status, "completed");
+  assert.equal((await call(h, "transfer_call", { target_id: "tenant_user_29" })).action_status, "completed");
+  assert.equal(h.executed.filter(([name]) => name === "transfer_call").length, 1);
+  assert.equal(directedTransfers(h).length, 1);
+}
+// Transfer delivery checks must not change existing non-transfer checkpoints.
+// A quick PCM answer still binds the exact other-questions checkpoint while
+// its assistant transcript awaits the normal settlement timer.
+{
+  const h = harness({ settleMs: 800 });
+  await start(h, "That is all I needed.");
+  const exact = await prepare(h, "other_questions");
+  await h.runtime.handle({ type: "session.output_transcript.delta", delta: exact, start_ms: 1000, end_ms: 2000 });
+  h.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+  await h.runtime.handle({ type: "session.input_transcript.delta", delta: "No, thank you.", start_ms: 2100, end_ms: 2300 });
+  assert.equal((await call(h, "finish_session", {})).action_status, "completed", "non-transfer quick PCM answer retains existing checkpoint binding");
+  assert.equal(h.executed.filter(([name]) => name === "finish_session").length, 1);
+}
+// Real input PCM precedes the caller transcript. A prompt answer can arrive
+// while the exact assistant question still awaits the production 800 ms timer.
+// Use media timestamps to distinguish that normal answer from an interruption.
+for (const scenario of ["answer_legacy", "answer_v201", "answer_two_pcm_bursts", "answer_after_settlement", "audio_overlap", "audio_refusal", "audio_correction", "audio_invalid_timing", "audio_before_question"]) {
+  const h = jonTransferHarness(scenario === "answer_legacy" ? undefined : "v20.1", { settleMs: 800 });
+  await start(h, "Try extension 800.");
+  await call(h, "lookup_transfer_target", { query: "800" });
+  const exact = await prepare(h, "transfer_confirmation", { target_id: "tenant_user_29" });
+  if (scenario === "audio_before_question") h.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+  await h.runtime.handle({ type: "session.output_transcript.delta", delta: exact, start_ms: 1000, end_ms: 2000 });
+  h.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+  if (scenario === "answer_two_pcm_bursts") {
+    h.runtime.input(Buffer.alloc(160, 255).toString("base64"));
+    h.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+  }
+  if (scenario === "answer_after_settlement") await new Promise(resolve => setTimeout(resolve, 820));
+  const answer = scenario === "audio_refusal" ? "No." : scenario === "audio_correction" ? "Yes, actually transfer me to Bob." : "Yes.";
+  await h.runtime.handle({ type: "session.input_transcript.delta", delta: answer,
+    ...(scenario === "audio_invalid_timing" ? {} : { start_ms: scenario === "audio_before_question" ? 900 : scenario === "audio_overlap" ? 1900 : 2100, end_ms: 2300 }) });
+  const result = await call(h, "transfer_call", { target_id: "tenant_user_29" });
+  if (scenario.startsWith("answer_")) {
+    assert.equal(result.action_status, "completed", scenario);
+    assert.equal((await call(h, "transfer_call", { target_id: "tenant_user_29" })).action_status, "completed");
+    assert.equal(h.executed.filter(([name]) => name === "transfer_call").length, 1);
+  } else {
+    assert.equal(result.reason, "protected_action_not_authorized", scenario);
+    assert.equal(h.executed.filter(([name]) => name === "transfer_call").length, 0);
+    if (scenario === "audio_overlap") {
+      await h.runtime.handle({ type: "session.input_transcript.delta", delta: "Yes.", start_ms: 2400, end_ms: 2600 });
+      assert.equal((await call(h, "transfer_call", { target_id: "tenant_user_29" })).reason, "protected_action_not_authorized", "later yes cannot revive a real PCM interruption");
+    }
+  }
+  assert.equal(directedTransfers(h).length, 1, scenario);
+}
+for (const scenario of ["paraphrase", "refusal", "correction", "stale_speech", "interrupted_speech", "overlap", "invalid_timing", "target_switch"]) {
+  const h = jonTransferHarness("v20.1");
+  await start(h, "Can I speak to extension 800?");
+  await call(h, "lookup_transfer_target", { query: "800" });
+  const exact = await prepare(h, "transfer_confirmation", { target_id: "tenant_user_29" });
+  if (scenario === "paraphrase") await transcript(h, "assistant", "It looks like that's for Jon Lehman. Do you want me to transfer you?");
+  else if (scenario === "stale_speech") {
+    await transcript(h, "user", "Wait, I have another question.");
+    await transcript(h, "assistant", exact);
+  } else if (scenario === "interrupted_speech") {
+    const start = h.clock; h.clock += 100;
+    await h.runtime.handle({ type: "session.output_transcript.delta", delta: exact, start_ms: start, end_ms: start + 90 });
+    h.runtime.input(Buffer.alloc(160, 0).toString("base64"));
+    await new Promise(resolve => setTimeout(resolve, 25));
+  } else if (scenario === "invalid_timing") {
+    await h.runtime.handle({ type: "session.output_transcript.delta", delta: exact }); await pause();
+  } else await transcript(h, "assistant", exact);
+  const answer = scenario === "refusal" ? "No." : scenario === "correction" ? "Yes, actually transfer me to Bob." : "Yes.";
+  await transcript(h, "user", answer, ["overlap", "interrupted_speech"].includes(scenario) ? { start: h.clock - 150 } : {});
+  assert.equal((await call(h, "transfer_call", { target_id: scenario === "target_switch" ? "tenant_user_30" : "tenant_user_29" })).reason,
+    "protected_action_not_authorized", scenario);
+  assert.equal(h.executed.filter(([name]) => name === "transfer_call").length, 0, scenario);
+  assert.equal(directedTransfers(h).length, 1, "failure must not silently re-ask or execute");
+  if (scenario === "overlap") {
+    await transcript(h, "user", "Yes.");
+    assert.equal((await call(h, "transfer_call", { target_id: "tenant_user_29" })).reason, "protected_action_not_authorized", "later yes cannot revive overlapped consent");
+  }
+}
+// A delayed transcript from before preparation is not evidence of the newly
+// directed question, even when it happens to contain the exact wording.
+{
+  const h = jonTransferHarness("v20.1");
+  await start(h, "Hello."); await transcript(h, "user", "Try extension 800.");
+  await call(h, "lookup_transfer_target", { query: "800" });
+  const exact = await prepare(h, "transfer_confirmation", { target_id: "tenant_user_29" });
+  await transcript(h, "assistant", exact, { start: 0 }); await transcript(h, "user", "Yes.");
+  assert.equal((await call(h, "transfer_call", { target_id: "tenant_user_29" })).reason, "protected_action_not_authorized");
 }
 
 const transferTarget = { target_id: "alice", name: "Alice", extension: "101" };

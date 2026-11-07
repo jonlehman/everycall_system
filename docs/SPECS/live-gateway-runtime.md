@@ -31,6 +31,26 @@ result must say so; an operation with an unknown outcome is never blindly
 replayed. Telnyx raw-PCMU playback and its separate jitter-buffer investigation
 are unchanged by this migration.
 
+Managed transfer preparation additionally directs the exact question once through
+the supported application `session.instructions.append` lane with
+`delegation_id:null`; managed Responses delegation IDs are not append targets.
+The backend is told the application owns this direction and must not issue a
+second question. Repeated preparation retains the pending question without
+resending speech. Neither append acknowledgement nor tool completion constitutes
+observed speech or consent. Invalid timing, pre-preparation timestamps,
+interrupted delivery and overlapping answers fail closed; a later yes cannot
+revive an overlapped confirmation. No automatic question retry or effect replay
+is introduced. An authorized audible canary must verify actual provider delivery.
+
+Transfer lookup retains eligible tenant-user filtering and existing exact
+extension, exact-name and partial-name precedence. Its fuzzy candidate tier also
+allows conservative complete-name phonetic matches: equal ordered token counts,
+bounded spelling distance and equal full consonant sequences. This preserves
+consonant distinctions such as Lennon versus Lehman while permitting vowel and
+medial h/y variation such as John Layman versus Jon Lehman. All plausible
+candidates in that tier are returned for ambiguity resolution; matching never
+grants consent and forwarding numbers remain private.
+
 The remaining client-delegation discussion below documents the superseded
 implementation and its earlier test cases. It is retained temporarily as
 rollback context, not the active protocol contract.
