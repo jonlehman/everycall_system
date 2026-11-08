@@ -309,6 +309,26 @@
   align-items: center;
   gap: 7px;
 }
+.stepper button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.stepper button[aria-pressed="true"] {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.stepper button:focus-visible {
+  outline: 2px solid #1f4fd8;
+  outline-offset: 4px;
+  border-radius: 3px;
+}
 .stepper li + li:before {
   content: "";
   height: 1px;
@@ -316,7 +336,7 @@
   background: var(--border);
   margin-right: 3px;
 }
-.stepper li > span {
+.stepper button > span {
   width: 22px;
   height: 22px;
   border: 1px solid #cfd4dc;
@@ -329,12 +349,12 @@
   color: #111318;
   font-weight: 600;
 }
-.stepper .current > span {
+.stepper .current button > span {
   background: #1f4fd8;
   color: #fff;
   border-color: #1f4fd8;
 }
-.stepper .done > span {
+.stepper .done button > span {
   background: #15803d;
   border-color: #15803d;
   color: white;
@@ -587,6 +607,10 @@
   gap: 10px;
 }
 .closeCards {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;

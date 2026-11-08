@@ -398,7 +398,7 @@ try {
     await page.getByRole("button", { name, exact: true }).click();
     await page.getByRole("heading", { name, exact: true }).waitFor();
     assert.equal(await page.getByRole("button", { name: /^Call cell/ }).isDisabled(), true);
-    await page.getByRole("button", { name: "Dial", exact: true }).click();
+    await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Dial", exact: true }).click();
     await page.getByRole("heading", { name: "Original Business", exact: true }).waitFor();
   }
   console.log("controller: paid contact calling and callbacks retain suppression gates");
@@ -424,7 +424,7 @@ try {
     assert.equal(await page.getByRole("button", { name: "Set call back", exact: true }).isDisabled(), true);
     paidContact[flag] = false; paidContact.eligible = true;
   }
-  await page.getByRole("button", { name: "Dial", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Dial", exact: true }).click();
   await page.getByRole("heading", { name: "Original Business", exact: true }).waitFor();
   await page.getByRole("button", { name: "Contacts", exact: true }).click();
   await page.getByRole("button", { name: "Awaiting Prep", exact: true }).click();
@@ -433,7 +433,7 @@ try {
   await page.getByRole("button", { name: "Prep now", exact: true }).click();
   await page.getByRole("button", { name: "Preparing…", exact: true }).waitFor();
   assert.ok(requests.some((request) => request.path.endsWith("/prospects/not-prepped/demo") && request.method === "POST"));
-  await page.getByRole("button", { name: "Dial", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Dial", exact: true }).click();
   await page.getByRole("heading", { name: "Original Business", exact: true }).waitFor();
   console.log("controller: contacts global filters, cursor pagination, all-phone search and Add");
   await reset();

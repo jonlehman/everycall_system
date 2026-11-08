@@ -1,5 +1,8 @@
 # Decisions
 
+## 2026-11-07 — Always available Sales stage navigation
+- Owner requested that Dial, Talk, Demo and Close remain clickable at all times. Make the phase stepper navigate local panels while preserving the actual call-progress marker and state-driven controls. Signup and setup previews remain disabled until wrap-up; navigation never starts dialing, changes demo state or authorizes checkout/booking.
+
 ## 2026-11-07 — Pronunciation-aware transfer lookup and exact Live confirmation
 - Preserve tenant-user eligibility, extension/exact/partial name precedence and private forwarding numbers. Add a conservative full-name fallback using ordered tokens, bounded spelling distance and complete consonant sequences; keep all plausible fuzzy/phonetic destinations for clarification. This supports speech variants such as John Layman / Jon Lehman without person-specific aliases or merging Lennon with Lehman.
 - For each newly prepared managed Live transfer confirmation, send one application `session.instructions.append` direction with `delegation_id:null` and the exact target-bound question. Repeated preparation waits on the existing question; backend output must not issue a second direction. Delivery or acknowledgement grants no consent: the observed exact question and subsequent unqualified caller agreement remain mandatory. Reject interrupted, stale, invalid-timing and overlapping speech; preserve refusal, correction, target-switch and unknown-effect protections. No automatic effect replay or question retry is introduced. Offline protocol checks do not replace an authorized audible canary.

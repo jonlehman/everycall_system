@@ -69,7 +69,7 @@ Regression mapping: `scripts/validate-sales-assignment.mjs` covers listing/selec
 - **Body:** prospect panel (left, 320–380px) + call panel (right, fluid).
 - **Footer:** the outcome bar, fixed, identical in every state (Part 4).
 - **One status pill** in the call panel header replaces every badge and the mic paragraph. Examples: `Ready · mic live · browser audio OK` / `On call 01:12 · mic live · cell` / `On call 03:42 · demo 00:51 · your mic is muted` / `Call ended · 9:14`.
-- **Phase stepper** in the call panel header: Dial → Talk → Demo → Close. Done = green check, current = filled, pending = outline.
+- **Phase stepper** in the call panel header: Dial → Talk → Demo → Close. Done = green check, current = filled, pending = outline. All four stages are always clickable to view their scripts and panels; selection does not change call state. Keep actual call progress visually marked and expose the viewed stage separately. Call controls remain tied to live call state; signup and setup actions remain disabled until wrap-up. Actual phase changes or switching calls/prospects return the view to the current stage; ordinary polling preserves the selected view.
 - Buttons are real `<button>`s; the primary action is one big button whose label changes with state. End call is always reachable, never the big one.
 
 ## Part 2 — Prospect panel

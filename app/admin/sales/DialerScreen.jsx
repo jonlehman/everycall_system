@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   OUTCOMES,
   HANDOFF,
@@ -208,6 +208,11 @@ export default function DialerScreen({
       : elapsed(call?.demoStartedAt, call?.demoEndedAt || call?.endedAt || now),
     currentStep =
       phase === "WRAPUP" ? 3 : phase === "DEMO" ? 2 : phase === "TALK" ? 1 : 0;
+  const [selectedStage, setSelectedStage] = useState(null);
+  useEffect(() => {
+    setSelectedStage(null);
+  }, [phase, call?.id, prospect?.id]);
+  const panelStage = selectedStage ?? currentStep;
   const customerPaid = Boolean(call?.paidAt) || prospect?.status === "paid";
   const canDial =
       !busy && !call?.id && softphoneState === "ready" && prospect?.eligible && prospect?.demoStatus === "ready" && !["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})),
@@ -529,8 +534,15 @@ export default function DialerScreen({
                           : ""
                     }
                   >
-                    <span>{index < currentStep ? "✓" : index + 1}</span>
-                    {step}
+                    <button
+                      type="button"
+                      aria-label={step}
+                      aria-pressed={index === panelStage}
+                      onClick={() => setSelectedStage(index)}
+                    >
+                      <span>{index < currentStep ? "✓" : index + 1}</span>
+                      {step}
+                    </button>
                   </li>
                 ))}
               </ol>
@@ -621,9 +633,9 @@ export default function DialerScreen({
                 </p>
               </>
             ) : null}
-            {phase === "WRAPUP" && (
+            {panelStage === 3 && (
               <>
-                <div className={styles.closeCards}>
+                <fieldset className={styles.closeCards} disabled={phase !== "WRAPUP"} aria-label="Signup and setup">
                   <div className={`${styles.card} ${styles.checkout}`}>
                     <h3>1 · Signup link</h3>
                     <h2>
@@ -686,7 +698,7 @@ export default function DialerScreen({
                     >
                       {customerPaid
                         ? "Paid"
-                        : call.linkSentAt
+                        : call?.linkSentAt
                           ? "Send link again"
                           : "Send link"}
                     </Button>
@@ -734,14 +746,15 @@ export default function DialerScreen({
                       disabled={busy || !slot || !email.trim()}
                       onClick={() => onBook({ ...slot, email })}
                     >
-                      {call.bookedAt
+                      {call?.bookedAt
                         ? "Book another time"
                         : slot
                           ? `Book ${slot.label || new Date(slot.start).toLocaleString()}`
                           : "Choose a slot"}
                     </Button>
                   </div>
-                </div>
+                </fieldset>
+                {phase !== "WRAPUP" && <p className={styles.caption}>Signup and setup actions are available after the call ends.</p>}
                 <ScriptPart label="Script · Close" text={script("close")} />
                 <p className={styles.caption}>
                   If he’d rather not do the card now: {script("close_decline")}
@@ -749,7 +762,7 @@ export default function DialerScreen({
               </>
             )}
           </Section>
-          {phase === "READY" || phase === "DIALING" ? (
+          {panelStage === 0 ? (
             <Section>
               <div className={styles.scriptTitle}>
                 <h3>Script · Opener</h3>
@@ -766,7 +779,7 @@ export default function DialerScreen({
               </p>
               <ScriptPart label="If voicemail" text={script("if_voicemail")} />
             </Section>
-          ) : phase === "TALK" ? (
+          ) : panelStage === 1 ? (
             <>
               <Section>
                 <div className={styles.scriptTitle}>
@@ -802,7 +815,7 @@ export default function DialerScreen({
                 <Notes note={note} onNote={onNote} />
               </Section>
             </>
-          ) : phase === "DEMO" ? (
+          ) : panelStage === 2 ? (
             <Section>
               <div className={styles.scriptTitle}>
                 <h3>While you listen</h3>
