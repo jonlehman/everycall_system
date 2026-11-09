@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { HintButton, busyReason, disabledReasons } from "./DisabledHint";
 import styles from "./DialerScreen.module.css";
 
 function localDate(value) {
@@ -24,7 +25,7 @@ export function resolveCallback({ date, time }) {
   return result;
 }
 
-export default function CallbackPicker({ prospect, value, onSet, disabled, canSchedule, saveImmediately = false, now = Date.now(), onClose }) {
+export default function CallbackPicker({ prospect, value, onSet, disabled, canSchedule, schedulingReason, saveImmediately = false, now = Date.now(), onClose }) {
   const [date, setDate] = useState(value ? localDate(value) : ""),
     [time, setTime] = useState(value ? new Date(value).toTimeString().slice(0, 5) : preferredCallbackTime(prospect?.bestTime)),
     [amount, setAmount] = useState(1),
@@ -42,13 +43,13 @@ export default function CallbackPicker({ prospect, value, onSet, disabled, canSc
   return <div className={styles.callbackControl}>
     <div className={styles.scriptTitle}>
       <h2>Call back</h2>
-      <span className={styles.caption}>{value ? new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Not set"}{value && <button type="button" className={styles.linkButton} disabled={disabled || !canSchedule} onClick={async () => { const result = await onSet(null); if (result !== false) { setDate(""); onClose?.(); } }}>Clear</button>}</span>
+      <span className={styles.caption}>{value ? new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Not set"}{value && <HintButton type="button" className={styles.linkButton} disabled={disabled || !canSchedule} disabledReason={disabledReasons(disabled && busyReason, !canSchedule && schedulingReason)} onClick={async () => { const result = await onSet(null); if (result !== false) { setDate(""); onClose?.(); } }}>Clear</HintButton>}</span>
     </div>
     <div className={styles.callbackChips}>
-      {[["Tomorrow AM", 1, "days"], ["Tomorrow PM", 1, "days"], ["3 days", 3, "days"], ["1 week", 1, "weeks"], ["2 weeks", 2, "weeks"], ["1 month", 1, "months"]].map(([label, count, period]) => <button type="button" className={styles.button} key={label} aria-pressed={selection === label} onClick={() => {
+      {[["Tomorrow AM", 1, "days"], ["Tomorrow PM", 1, "days"], ["3 days", 3, "days"], ["1 week", 1, "weeks"], ["2 weeks", 2, "weeks"], ["1 month", 1, "months"]].map(([label, count, period]) => <HintButton type="button" className={styles.button} key={label} aria-pressed={selection === label} onClick={() => {
         relative(count, period, label);
         if (label.startsWith("Tomorrow")) setTime(prospect?.bestTime ? preferredCallbackTime(prospect.bestTime) : label.endsWith("PM") ? "14:00" : "10:00");
-      }}>{label}</button>)}
+      }}>{label}</HintButton>)}
     </div>
     <div className={styles.callbackFields}>
       <span>or in</span>
@@ -69,8 +70,8 @@ export default function CallbackPicker({ prospect, value, onSet, disabled, canSc
       {future && canSchedule ? " · top of your list then" : ""}
     </div>
     <div className={styles.actions}>
-      <button type="button" className={`${styles.button} ${styles.blue}`} disabled={disabled || !canSchedule || !future} onClick={async () => { const result = await onSet(resolved.toISOString()); if (result !== false) onClose?.(); }}>Set call back</button>
-      {onClose && <button type="button" className={styles.button} onClick={onClose}>Cancel</button>}
+      <HintButton type="button" className={`${styles.button} ${styles.blue}`} disabled={disabled || !canSchedule || !future} disabledReason={disabledReasons(disabled && busyReason, !canSchedule && schedulingReason, !future && "Choose a callback date and time in the future.")} onClick={async () => { const result = await onSet(resolved.toISOString()); if (result !== false) onClose?.(); }}>Set call back</HintButton>
+      {onClose && <HintButton type="button" className={styles.button} onClick={onClose}>Cancel</HintButton>}
     </div>
     <p className={styles.caption}>{canSchedule ? saveImmediately ? "Saved to this contact immediately. Weekend dates roll to Monday." : "Saved with the outcome when you press Save & next. Weekend dates roll to Monday." : "Callback scheduling is unavailable for this contact."}</p>
   </div>;

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { HintButton, busyReason, disabledReasons } from "./DisabledHint";
 import styles from "./DialerScreen.module.css";
 
 // One form for Contacts and a caller who has already been taken in the browser.
@@ -36,6 +37,6 @@ export default function AddContactForm({ onSave, onCancel, initialPhone = "", in
     </div>
     <p className={styles.caption}>A website starts demo preparation when permission and timezone allow it. Calling stays unavailable until the demo is ready.</p>
     {error && <p role="alert" className={styles.error}>{error}</p>}
-    <div className={styles.actions}><button type="submit" className={`${styles.button} ${styles.blue}`} disabled={busy || saving}>{saving ? "Saving…" : "Save prospect"}</button><button type="button" className={styles.button} disabled={saving} onClick={onCancel}>Cancel</button></div>
+    <div className={styles.actions}><HintButton type="submit" className={`${styles.button} ${styles.blue}`} disabled={busy || saving} disabledReason={disabledReasons(busy && busyReason, saving && "This prospect is being saved. Wait for it to finish.")}>{saving ? "Saving…" : "Save prospect"}</HintButton><HintButton type="button" className={styles.button} disabled={saving} disabledReason="This prospect is being saved. Wait for it to finish." onClick={onCancel}>Cancel</HintButton></div>
   </form>;
 }

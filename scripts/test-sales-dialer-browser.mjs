@@ -9,10 +9,10 @@ const { build } = require("esbuild");
 const playwrightPath = process.env.PLAYWRIGHT_MODULE || "playwright";
 const { chromium } = require(playwrightPath);
 const dir = await mkdtemp(join(tmpdir(), "everycall-dialer-browser-"));
-const fixture = `import React,{useState} from 'react';import{createRoot}from'react-dom/client';import DialerScreen from './app/admin/sales/DialerScreen.jsx';
+const fixture = `import React,{useState} from 'react';import{createRoot}from'react-dom/client';import DialerScreen from './app/admin/sales/DialerScreen.jsx';import AddContactForm from './app/admin/sales/AddContactForm.jsx';
 const defaults={opener:'Hi, is this {first_name}? {rep_name} with EveryCall — I’ll be quick. When someone calls {business_name} after five and nobody picks up, what happens to that call?',if_interested:'I can show you in about two minutes. I’ll put our receptionist on the line — talk to her like a customer would.',if_voicemail:'Hi {first_name}, {rep_name} with EveryCall. I’m calling about what happens to your calls after five. Call me back at this number.',talk_discovery:'When someone calls after five and nobody picks up, what happens to that call? Let them answer. Then: Who picks up when you are on a job?',objections:[{title:'We already have an answering service',response:'Then you know what a message costs you. She answers the question instead of taking a message. Two minutes — let her show you.'},{title:'I don’t want a robot talking to my customers',response:'Fair. Talk to her for a minute and tell me if your customers would mind.'}],no_time:'When’s better — tomorrow after one? Set it with Call back while they’re still on the line.',gatekeeper:'Is {first_name} around? When are they usually in? Note the name and the time.',while_you_listen:'Listen for the questions that matter to them.',exit_line:'That’s her. Want me to hop back on? — then End demo.',close:'That’s what your callers get, nights and weekends included. Two quick things to get you going: I’ll text you a link to put a card down — a hundred dollars to start, and that covers your first month — and let’s grab fifteen minutes with Jon to get your line forwarded. What’s the best cell to text?',close_decline:'Jon can take it at the start of your setup call.'};
 const prospect={id:'fixture-1',businessName:'Cedar Home Services',contactName:'Mira Chen',contactRole:'Owner',eligible:true,demoStatus:'ready',website:'https://example.com',metro:'Portland metro',city:'Portland',region:'Northwest Oregon',afterHoursClass:'Unknown',postedHours:'Mon-Fri 9-5 (list research)',callOpenerHook:'Ask how evening calls reach the team.',researchNotes:'Imported research note, separate from call history.',pitchFlags:['No after-hours coverage listed'],attemptCount:1,conversationCount:0,numbers:[{phoneE164:'+15035550122',label:'Cell',type:'cell'},{phoneE164:'+15035550121',label:'Shop',type:'shop',lastNote:'Lee screens'}],companyBrief:{status:'ready',standOut:'Family owned since 1985, Cedar specializes in plumbing repairs for older homes.',services:['Household leak repairs','Water heater installation','Blocked drain clearing'],whyCustomersCall:'Customers call for help with leaks, blocked drains and replacement water heaters.'},coreFacts:[{category:'hours',label:'Hours',sentence:'Monday through Friday, 7 AM to 5 PM.'},{category:'service_area',label:'Service area',sentence:'Portland metro and Vancouver, Washington.'},{category:'services',label:'Services',sentence:'Repairs, water heaters, drain cleaning and repipes.'},{category:'after_hours',label:'After hours',sentence:'After-hours callers can leave a message.'}],history:[{id:'prior',startedAt:'2026-10-18T14:10:00Z',outcome:'voicemail',outcomeNotes:'Lee answers the main line and screens.'}],bestTime:'After 1 PM — owner is in the field mornings',email:'mira@example.com'};
-function App(){const initial=new URLSearchParams(location.search).get('state')||'READY';const [phase,setPhase]=useState(initial),[note,setNote]=useState(''),[muted,setMuted]=useState(initial==='DEMO'),[outcome,setOutcome]=useState(''),[callbackAt,setCallbackAt]=useState(''),[dncReason,setDnc]=useState('');const call=phase==='READY'?null:{id:'fixture-call',terminal:phase==='WRAPUP',prospectConnected:phase!=='DIALING',aiReady:true,aiLive:phase==='DEMO',startedAt:'2026-10-20T12:00:00Z',connectedAt:'2026-10-20T12:00:00Z',endedAt:phase==='WRAPUP'?'2026-10-20T12:09:14Z':null,demoStartedAt:'2026-10-20T12:02:51Z',demoDurationSeconds:232,dialedNumber:'+15035550122',transcriptStatus:'processing'};let incoming=initial.startsWith('INCOMING')?[{incomingId:'fixture-inbound',phoneE164:'+15035550199',businessName:initial==='INCOMING_MATCHED'?'Pine Drain Services':'',contactName:initial==='INCOMING_MATCHED'?'Tara, owner':'',prospectId:initial==='INCOMING_MATCHED'?'fixture-other':null,canTake:initial!=='INCOMING_MIDCALL',context:'Returning your call — you left a voicemail Oct 16.'}]:[];const actualCall=initial==='INCOMING_MIDCALL'?{...call,id:'midcall',terminal:false,prospectConnected:true}:initial.startsWith('INCOMING')?null:call;return <DialerScreen queue={{readyCount:10,counters:{dials:23,conversations:5,demos:2,paid:1},operator:{name:'Jon L.'},config:{setupCallOwner:'Jon'},scripts:defaults,upcoming:[{businessName:'Next Business'}]}} prospect={{...prospect,status:new URLSearchParams(location.search).get('paid')?'paid':'new',numbers:new URLSearchParams(location.search).has('noCell')?prospect.numbers.filter(n=>n.type!=='cell'):prospect.numbers,email:new URLSearchParams(location.search).has('noEmail')?'':prospect.email}} call={actualCall} busy={new URLSearchParams(location.search).get('busy') || ''} softphoneState='ready' microphoneState='live' muted={muted} note={note} outcome={outcome} callbackAt={callbackAt} dncReason={dncReason} now={Date.parse('2026-10-20T12:03:42Z')} onNote={setNote} onOutcome={setOutcome} onCallback={v=>{setCallbackAt(v);setOutcome('callback_requested')}} onDncReason={v=>{setDnc(v);setOutcome('do_not_call')}} onCall={()=>setPhase('TALK')} onAction={action=>{setPhase(action==='start_demo'?'DEMO':action==='end_demo'?'TALK':'WRAPUP');setMuted(action==='start_demo')}} onMute={()=>setMuted(!muted)} onSkip={()=>{window.fixtureSkipped=true}} onRemove={()=>{window.fixtureRemoved=true}} onSave={()=>{window.fixtureSaved={outcome,note,callbackAt,dncReason};setPhase('READY')}} onCheckout={details=>{window.fixtureCheckout=details;setOutcome('signup_link_sent')}} onBook={details=>{window.fixtureBooking=details}} availability={{slots:[{start:'2026-10-21T17:00:00Z',end:'2026-10-21T17:15:00Z',label:'Tomorrow 10:00'},{start:'2026-10-21T20:30:00Z',end:'2026-10-21T20:45:00Z',label:'Tomorrow 1:30'}]}} onMoreSlots={()=>{window.fixtureMore=true}} incoming={incoming} onIncoming={(item,action)=>{window.fixtureIncoming=action}} onSearch={()=>{}} searchResults={[]} onSignOut={()=>{}}/>};createRoot(document.getElementById('root')).render(<App/>);`;
+const params=new URLSearchParams(location.search);function App(){const initial=new URLSearchParams(location.search).get('state')||'READY';const [phase,setPhase]=useState(initial),[note,setNote]=useState(''),[muted,setMuted]=useState(initial==='DEMO'),[outcome,setOutcome]=useState(''),[callbackAt,setCallbackAt]=useState(''),[dncReason,setDnc]=useState('');const call=phase==='READY'?null:{id:'fixture-call',terminal:phase==='WRAPUP',prospectConnected:phase!=='DIALING',aiReady:!params.has("aiNotReady"),aiLive:phase==='DEMO',startedAt:'2026-10-20T12:00:00Z',connectedAt:'2026-10-20T12:00:00Z',endedAt:phase==='WRAPUP'?'2026-10-20T12:09:14Z':null,demoStartedAt:'2026-10-20T12:02:51Z',demoDurationSeconds:232,dialedNumber:'+15035550122',transcriptStatus:'processing'};let incoming=initial.startsWith('INCOMING')?[{incomingId:'fixture-inbound',phoneE164:'+15035550199',businessName:initial==='INCOMING_MATCHED'?'Pine Drain Services':'',contactName:initial==='INCOMING_MATCHED'?'Tara, owner':'',prospectId:initial==='INCOMING_MATCHED'?'fixture-other':null,canTake:initial!=='INCOMING_MIDCALL',context:'Returning your call — you left a voicemail Oct 16.'}]:[];const actualCall=initial==='INCOMING_MIDCALL'?{...call,id:'midcall',terminal:false,prospectConnected:true}:initial.startsWith('INCOMING')?null:call;return <DialerScreen queue={{readyCount:10,counters:{dials:23,conversations:5,demos:2,paid:1},operator:{name:'Jon L.'},config:{setupCallOwner:'Jon',phoneTestMode:params.has('phoneTest'),checkoutTestPhone:'+14256154640',checkoutTestEmail:params.has('noEmail')?'':'rep@example.com'},scripts:defaults,upcoming:[{businessName:'Next Business'}]}} prospect={params.has("noProspect")?null:{...prospect,companyBrief:params.has("briefGenerating")?{status:"pending"}:prospect.companyBrief,eligible:!params.has("blocked"),callBlockedReason:params.get("blocked"),demoStatus:params.get("demoStatus")||"ready",preparationEligible:!params.has("prepBlocked"),doNotCall:params.has("dnc"),suppressed:params.has("suppressed"),contactStatus:params.get("contactStatus")||undefined,status:new URLSearchParams(location.search).get('paid')?'paid':'new',numbers:new URLSearchParams(location.search).has('noCell')?prospect.numbers.filter(n=>n.type!=='cell'):prospect.numbers,email:new URLSearchParams(location.search).has('noEmail')?'':prospect.email}} call={actualCall} busy={new URLSearchParams(location.search).get('busy') || ''} softphoneState={params.get('softphone')||'ready'} microphoneState='live' muted={muted} note={note} outcome={outcome} callbackAt={callbackAt} dncReason={dncReason} now={Date.parse('2026-10-20T12:03:42Z')} onNote={setNote} onOutcome={setOutcome} onCallback={v=>{setCallbackAt(v);setOutcome('callback_requested')}} onDncReason={v=>{setDnc(v);setOutcome('do_not_call')}} onCall={()=>setPhase('TALK')} onAction={action=>{setPhase(action==='start_demo'?'DEMO':action==='end_demo'?'TALK':'WRAPUP');setMuted(action==='start_demo')}} onMute={()=>setMuted(!muted)} onSkip={()=>{window.fixtureSkipped=true}} onRemove={()=>{window.fixtureRemoved=true}} onSave={()=>{window.fixtureSaved={outcome,note,callbackAt,dncReason};setPhase('READY')}} onCheckout={details=>{window.fixtureCheckout=details;setOutcome('signup_link_sent')}} onBook={details=>{window.fixtureBooking=details}} availability={{slots:[{start:'2026-10-21T17:00:00Z',end:'2026-10-21T17:15:00Z',label:'Tomorrow 10:00'},{start:'2026-10-21T20:30:00Z',end:'2026-10-21T20:45:00Z',label:'Tomorrow 1:30'}]}} onMoreSlots={()=>{window.fixtureMore=true}} incoming={incoming} onIncoming={(item,action)=>{window.fixtureIncoming=action}} onSearch={()=>{}} searchResults={[]} onSignOut={()=>{}} view={params.has("contacts")?"contacts":"dial"} browsingContact={params.has("browsing")} onSelectContact={()=>{window.fixtureSelected=true}} onAddContact={()=>{window.fixtureAdded=true}} onPrepareContact={()=>{window.fixturePrepared=true}} onRestoreContact={()=>{window.fixtureRestored=true}} onPrepareCompanyBrief={()=>{window.fixtureBrief=true}} briefGenerating={params.has("briefGenerating")}/>};createRoot(document.getElementById('root')).render(params.has("addForm")?<AddContactForm busy={params.has("busy")} onCancel={()=>{window.fixtureCancelled=true}} onSave={()=>{window.fixtureFormSaved=true;return new Promise(()=>{})}}/>:<App/>);`;
 await build({
   stdin: { contents: fixture, loader: "jsx", resolveDir: resolve(".") },
   bundle: true,
@@ -60,6 +60,7 @@ const page = await browser.newPage();
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
 try {
+  if (!process.env.SALES_TOOLTIP_ONLY) {
   for (const width of [1280, 1440, 900, 390])
     for (const state of [
       "READY",
@@ -305,14 +306,138 @@ try {
     (await page.evaluate(() => window.fixtureSaved)).dncReason,
     "bad_number",
   );
+  }
+  // Presentational disabled explanations: every gate retains its native semantics.
+  const base = "http://127.0.0.1:" + server.address().port + "/?";
+  const visit = async (query) => { await page.goto(base + query); await page.waitForSelector("[data-phase], form[aria-label='Add prospect']"); };
+  const hintFor = (control) => control.locator("xpath=..");
+  const expectHint = async (control, expected, { inherited = false } = {}) => {
+    assert.equal(await control.isDisabled(), true);
+    const wrapper = hintFor(control);
+    assert.equal(await wrapper.getAttribute("data-disabled-hint"), "");
+    await page.keyboard.press("Escape");
+    await wrapper.hover();
+    await page.getByRole("tooltip").filter({ hasText: expected }).waitFor();
+    assert.match(await page.getByRole("tooltip").innerText(), expected);
+    const box = await page.getByRole("tooltip").boundingBox();
+    const viewport = page.viewportSize();
+    assert.ok(box.x >= 7 && box.y >= 7 && box.x + box.width <= viewport.width - 7 && box.y + box.height <= viewport.height - 7, JSON.stringify(box));
+    await wrapper.focus();
+    assert.equal(await wrapper.getAttribute("aria-describedby"), await page.getByRole("tooltip").getAttribute("id"));
+    await page.keyboard.press("Escape");
+    assert.equal(await page.getByRole("tooltip").count(), 0);
+    assert.equal(await wrapper.evaluate(el => el === document.activeElement), true);
+    if (inherited) assert.equal(await control.getAttribute("disabled"), null, "fieldset remains the native source of disabled state");
+    return wrapper;
+  };
+  await page.setViewportSize({ width: 390, height: 800 });
+  const outsideHours = "outside_calling_window: 08:00–20:00 America/Los_Angeles, now 20:14";
+  await visit("blocked=" + encodeURIComponent(outsideHours));
+  const blockedCall = page.getByRole("button", { name: /Call cell/ });
+  const blockedWrapper = await expectHint(blockedCall, /outside_calling_window: 08:00–20:00 America\/Los_Angeles, now 20:14/);
+  await blockedWrapper.focus(); await page.keyboard.press("Enter"); await page.keyboard.press("Space");
+  assert.equal(await page.locator("[data-phase]").getAttribute("data-phase"), "READY", "disabled call never fires");
+  // Pointer may move onto the tooltip to read it without dismissing it.
+  await blockedWrapper.hover();
+  const hoverTip = page.locator("[role=tooltip]").filter({ hasText: outsideHours });
+  await hoverTip.hover();
+  await blockedWrapper.evaluate(el => el.blur());
+  await page.waitForTimeout(160);
+  assert.equal(await hoverTip.isVisible(), true, "tooltip stays while hovered after trigger loses focus");
+  await page.screenshot({ path: join(dir, "tooltip-calling-window-mobile.png") });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await blockedWrapper.hover();
+  await page.screenshot({ path: join(dir, "tooltip-calling-window-desktop.png") });
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.keyboard.press("Escape");
+  await visit("softphone=reconnecting");
+  await expectHint(page.getByRole("button", { name: /Call cell/ }), /Browser calling is reconnecting/);
+  await visit("state=DIALING");
+  await expectHint(page.getByRole("button", { name: /Call cell/ }), /Finish the current call and save its outcome/);
+  await expectHint(page.getByRole("button", { name: "Contacts", exact: true }), /before opening Contacts/);
+  await visit("demoStatus=building");
+  await expectHint(page.getByRole("button", { name: /Call cell/ }), /AI Receptionist must be ready/);
+  await visit("demoStatus=building&browsing=1&prepBlocked=1&blocked=permission_required");
+  await expectHint(page.getByRole("button", { name: "Preparing…", exact: true }), /permission_required.*already preparing/);
+  await visit("state=TALK&aiNotReady=1");
+  await expectHint(page.getByRole("button", { name: "Start demo — hand to the AI Receptionist", exact: true }), /standby connection/);
+  await visit("phoneTest=1");
+  await page.getByRole("button", { name: "1 week", exact: true }).click();
+  await expectHint(page.getByRole("button", { name: "Set call back", exact: true }), /during phone test mode/);
+  await visit("phoneTest=1&browsing=1&contactStatus=removed");
+  await expectHint(page.getByRole("button", { name: "Put back in list", exact: true }), /Restoring contacts is disabled during phone test mode/);
+  await visit("state=INCOMING_UNKNOWN&softphone=disconnected&busy=incoming");
+  await expectHint(page.getByRole("button", { name: "Take call", exact: true }), /current action.*Browser calling is disconnected/);
+  await expectHint(page.getByRole("button", { name: "Send to AI Receptionist", exact: true }), /current action/);
+  await visit("busy=prepare&briefGenerating=1");
+  await expectHint(page.getByRole("button", { name: /Generating/ }), /company brief is being generated/);
+  await visit("state=READY&noCell&noEmail");
+  await page.getByRole("list", { name: "Call phases" }).getByRole("button", { name: "Close", exact: true }).click();
+  await expectHint(page.getByRole("button", { name: "Text", exact: true }), /No cell number is on file/);
+  await expectHint(page.getByRole("button", { name: "Send link", exact: true }), /Enter a recipient email address/);
+  await expectHint(page.getByRole("button", { name: "Tomorrow 10:00", exact: true }), /after the call ends/, { inherited: true });
+  await expectHint(page.getByLabel("Invite to", { exact: true }), /after the call ends/, { inherited: true });
+  await expectHint(page.getByRole("button", { name: "Choose a slot", exact: true }), /after the call ends.*Choose an open setup slot.*Enter an email address/);
+  await page.getByLabel("Email to", { exact: true }).fill("new@example.com");
+  const enabledSend = page.getByRole("button", { name: "Send link", exact: true });
+  assert.equal(await enabledSend.isEnabled(), true);
+  assert.equal(await hintFor(enabledSend).getAttribute("data-disabled-hint"), null, "enabled controls lose the disabled wrapper and reason");
+  assert.equal(await page.getByRole("tooltip").count(), 0);
+  await visit("paid=1");
+  await page.getByRole("list", { name: "Call phases" }).getByRole("button", { name: "Close", exact: true }).click();
+  await expectHint(page.getByRole("button", { name: "Paid", exact: true }), /already paid for setup/);
+  await visit("phoneTest=1&paid=1");
+  await page.getByRole("list", { name: "Call phases" }).getByRole("button", { name: "Close", exact: true }).click();
+  assert.equal(await page.getByRole("button", { name: "Send link", exact: true }).isEnabled(), true, "paid customers retain test checkout");
+  const readonlyRecipient = page.getByLabel("Text to", { exact: true });
+  assert.equal(await readonlyRecipient.getAttribute("readonly"), "");
+  await readonlyRecipient.focus();
+  await page.getByRole("tooltip").filter({ hasText: "Phone test mode uses only your configured test destination" }).waitFor();
+  await visit("state=WRAPUP&noEmail");
+  await expectHint(page.getByRole("button", { name: "Save & next →", exact: true }), /Choose an outcome first/);
+  await expectHint(page.getByRole("button", { name: "Choose a slot", exact: true }), /Choose an open setup slot.*Enter an email address/);
+  await page.getByRole("button", { name: "Tomorrow 10:00", exact: true }).click();
+  await expectHint(page.getByRole("button", { name: "Book Tomorrow 10:00", exact: true }), /Enter an email address/);
+  await visit("state=READY");
+  await expectHint(page.getByLabel("Note for next time"), /Dial a call before adding a wrap-up note/);
+  await expectHint(page.getByRole("button", { name: "No answer", exact: true }), /Dial a call before choosing an outcome/);
+  await expectHint(page.getByRole("button", { name: "Set call back", exact: true }), /Choose a callback date and time in the future/);
+  await page.route("**/api/v1/admin/sales/prospects?*", async route => {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    await route.fulfill({ json: { prospects: [{ prospectId: "row-1", businessName: "Fixture Contact", website: "https://example.com", phone: "+15035550122", outcome: "", demoStatus: "ready" }], total: 1, nextCursor: null } });
+  });
+  await visit("contacts=1&phoneTest=1&busy=load");
+  await expectHint(page.getByRole("button", { name: "Previous", exact: true }), /Wait for contacts to finish loading/);
+  await expectHint(page.getByRole("button", { name: "Add prospect", exact: true }).first(), /current action.*during phone test mode/);
+  await page.getByRole("button", { name: "Fixture Contact", exact: true }).waitFor();
+  await expectHint(page.getByRole("button", { name: "Fixture Contact", exact: true }), /current action/);
+  await expectHint(page.getByRole("button", { name: "Previous", exact: true }), /first page of contacts/);
+  await expectHint(page.getByRole("button", { name: "Next →", exact: true }), /no next page of contacts/);
+  await visit("addForm=1&busy=1");
+  await expectHint(page.getByRole("button", { name: "Save prospect", exact: true }), /current action/);
+  await visit("addForm=1");
+  await page.getByLabel("Business", { exact: true }).fill("Fixture Contact");
+  await page.getByLabel("Phone", { exact: true }).fill("+15035550122");
+  await page.getByLabel("Calling permission", { exact: true }).selectOption("yes");
+  await page.getByLabel("Prospect timezone", { exact: true }).fill("America/Los_Angeles");
+  await page.getByRole("button", { name: "Save prospect", exact: true }).click();
+  await expectHint(page.getByRole("button", { name: "Saving…", exact: true }), /prospect is being saved/);
+  await expectHint(page.getByRole("button", { name: "Cancel", exact: true }), /prospect is being saved/);
+  await hintFor(page.getByRole("button", { name: "Cancel", exact: true })).focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await page.evaluate(() => window.fixtureCancelled), undefined);
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({
       passed: true,
-      states: 8,
-      viewports: 4,
+      states: process.env.SALES_TOOLTIP_ONLY ? 0 : 8,
+      viewports: process.env.SALES_TOOLTIP_ONLY ? 1 : 4,
       screenshots: dir,
       checks: [
+        "native disabled hover and keyboard reasons, Escape, hover persistence and mobile positioning",
+        "authoritative calling-window reason, readiness, active call and test-mode gates",
+        "fieldset inherited booking reasons, checkout paid/recipient gates and no disabled activation",
+        "Contacts pagination and busy state; Add prospect saving state",
         "always available stage navigation and busy keyboard access",
         "navigation preserves call phase and action gates",
         "viewport scroll",

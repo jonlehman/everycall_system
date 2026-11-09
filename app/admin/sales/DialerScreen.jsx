@@ -11,6 +11,7 @@ import {
   safeExternalUrl,
   formatPhone,
 } from "./dialerState.mjs";
+import { HintButton, HintInput, DisabledReasonContext, busyReason, disabledReasons } from "./DisabledHint";
 import styles from "./DialerScreen.module.css";
 import CallbackPicker from "./CallbackPicker";
 import AddContactForm from "./AddContactForm";
@@ -25,13 +26,14 @@ function Button({
   ...props
 }) {
   return (
-    <button
+    <HintButton
+      wrapperClassName={className}
       type="button"
       className={`${styles.button} ${tone ? styles[tone] : ""} ${large ? styles.large : ""} ${className}`}
       {...props}
     >
       {children}
-    </button>
+    </HintButton>
   );
 }
 function Section({ children, className = "" }) {
@@ -95,7 +97,7 @@ function ReturnWorkItem({ item, busy, onPrepare }) {
       <Row label="Caller">{formatPhone(item.phoneE164)}</Row>
       <Row label="Message">{item.message || "Message not available yet."}</Row>
       {item.needsWebsite || item.demoStatus === "failed" || (!["queued", "preparing", "building"].includes(item.demoStatus) && ((item.permission ?? item.permissionGranted) !== true || !item.timezone)) ? <>
-        <Button disabled={Boolean(busy)} onClick={() => setAdding(true)}>Add website & prepare</Button>
+        <Button disabled={Boolean(busy)} disabledReason={busyReason} onClick={() => setAdding(true)}>Add website & prepare</Button>
         {adding && <AddContactForm initialPhone={item.phoneE164} initialValues={item} requireWebsite busy={Boolean(busy)} onCancel={() => setAdding(false)} onSave={async (details) => {
           const result = await onPrepare(item, details);
           if (result !== true) throw new Error("Could not prepare this return call. Check the details and try again.");
@@ -220,6 +222,20 @@ export default function DialerScreen({
   const canDial =
       !busy && !call?.id && softphoneState === "ready" && prospect?.eligible && prospect?.demoStatus === "ready" && !["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})),
     editUrl = "/sales/scripts";
+  const dialReason = disabledReasons(
+    busy && busyReason,
+    call?.id && "Finish the current call and save its outcome before dialing again.",
+    softphoneState !== "ready" && `Browser calling is ${String(softphoneState).replaceAll("_", " ")}. Reconnect and wait until ready.`,
+    !prospect?.eligible && (prospect?.callBlockedReason || "This prospect is not eligible to call. Check calling permission, timezone, and contact status."),
+    prospect?.demoStatus !== "ready" && "The AI Receptionist must be ready before dialing.",
+    ["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})) && `This contact is marked ${contactStatus(prospect || {})}.`,
+  );
+  const callbackReason = disabledReasons(
+    queue.config?.phoneTestMode && "Contact callbacks cannot be changed during phone test mode.",
+    prospect?.doNotCall && "This contact is on the Do not call list. Callbacks cannot be scheduled.",
+    prospect?.suppressed && "This contact is suppressed. Callbacks cannot be scheduled.",
+    ["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})) && `Callbacks cannot be scheduled for a contact marked ${contactStatus(prospect || {})}.`,
+  );
   const micLabel =
     microphoneState === "live"
       ? muted
@@ -254,8 +270,8 @@ export default function DialerScreen({
         <div className={styles.brand}>
           <span>E</span>EveryCall Sales
           <nav className={styles.navigation} aria-label="Main">
-            <button type="button" aria-current={view === "dial" && !browsingContact ? "page" : undefined} onClick={() => onNavigate?.("dial")}>Dial</button>
-            <button type="button" aria-current={view === "contacts" || browsingContact ? "page" : undefined} disabled={Boolean(call?.id) || Boolean(busy)} onClick={() => onNavigate?.("contacts")}>Contacts</button>
+            <HintButton type="button" aria-current={view === "dial" && !browsingContact ? "page" : undefined} onClick={() => onNavigate?.("dial")}>Dial</HintButton>
+            <HintButton type="button" aria-current={view === "contacts" || browsingContact ? "page" : undefined} disabled={Boolean(call?.id) || Boolean(busy)} disabledReason={disabledReasons(call?.id && "Finish the current call and save its outcome before opening Contacts.", busy && busyReason)} onClick={() => onNavigate?.("contacts")}>Contacts</HintButton>
           </nav>
         </div>
         <div className={styles.counters}>
@@ -271,9 +287,9 @@ export default function DialerScreen({
         </div>
         <div className={styles.rep}>
           {queue.operator?.name || queue.operator?.displayName || "Sales"}
-          <button onClick={onSignOut} type="button">
+          <HintButton onClick={onSignOut} type="button">
             Sign out
-          </button>
+          </HintButton>
         </div>
       </header>
       {pendingWrapups > 0 && (
@@ -316,6 +332,7 @@ export default function DialerScreen({
                   tone="green"
                   onClick={() => onIncoming(item, "take")}
                   disabled={busy || softphoneState !== "ready"}
+                  disabledReason={disabledReasons(busy && busyReason, softphoneState !== "ready" && `Browser calling is ${String(softphoneState).replaceAll("_", " ")}. Reconnect and wait until ready.`)}
                 >
                   Take call
                 </Button>
@@ -324,6 +341,7 @@ export default function DialerScreen({
                 <Button
                   onClick={() => onIncoming(item, "receptionist")}
                   disabled={busy || item.state === "receptionist"}
+                  disabledReason={disabledReasons(busy && busyReason, item.state === "receptionist" && "The AI Receptionist is already handling this caller.")}
                 >
                   Send to AI Receptionist
                 </Button>
@@ -338,7 +356,7 @@ export default function DialerScreen({
                 onChange={(e) => onSearch(e.target.value)}
               />
               <span>or</span>
-              <Button disabled={busy || queue.config?.phoneTestMode} onClick={() => setAddingIncoming(item.incomingId)}>Add as new prospect</Button>
+              <Button disabled={busy || queue.config?.phoneTestMode} disabledReason={disabledReasons(busy && busyReason, queue.config?.phoneTestMode && "Adding prospects is disabled during phone test mode.")} onClick={() => setAddingIncoming(item.incomingId)}>Add as new prospect</Button>
               {addingIncoming === item.incomingId && <AddContactForm initialPhone={item.phoneE164} busy={Boolean(busy)} onCancel={() => setAddingIncoming("")} onSave={async (details) => {
                 const result = await onIncoming(item, "create", { ...details, businessName: details.business_name, contactName: details.contact_name, websiteUrl: details.website });
                 if (result === false || result === null) throw new Error("Could not add this prospect. Check the details and try again.");
@@ -387,6 +405,7 @@ export default function DialerScreen({
               </span>
               <Button
                 disabled={busy || Boolean(call?.id) || !prospect?.id || ["Paid", "Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {}))}
+                disabledReason={disabledReasons(busy && busyReason, call?.id && "Finish the current call and save its outcome first.", !prospect?.id && "Select a prospect first.", ["Paid", "Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})) && `This contact is marked ${contactStatus(prospect || {})}.`)}
                 onClick={onRemove}
               >
                 Remove from list
@@ -405,13 +424,14 @@ export default function DialerScreen({
               {numbers.map((number) => (
                 <div key={number.phoneE164}>
                   <span>{number.label || number.type}</span>
-                  <button
+                  <HintButton
                     type="button"
                     disabled={!canDial}
+                    disabledReason={dialReason}
                     onClick={() => onCall(number.phoneE164)}
                   >
                     {formatPhone(number.phoneE164)}
-                  </button>
+                  </HintButton>
                   {active && call.dialedNumber === number.phoneE164 ? (
                     <small className={styles.onLine}>on this line</small>
                   ) : number.lastNote ? (
@@ -486,7 +506,7 @@ export default function DialerScreen({
             <History prospect={prospect} ready />
           ) : null}
           {phase === "READY" && prospect && <Section>
-            <CallbackPicker prospect={prospect} value={prospect.callbackAt} onSet={onCallback} disabled={Boolean(busy)} canSchedule={!queue.config?.phoneTestMode && !prospect.doNotCall && !prospect.suppressed && !["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect))} saveImmediately now={now} />
+            <CallbackPicker prospect={prospect} value={prospect.callbackAt} onSet={onCallback} disabled={Boolean(busy)} schedulingReason={callbackReason} canSchedule={!queue.config?.phoneTestMode && !prospect.doNotCall && !prospect.suppressed && !["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect))} saveImmediately now={now} />
           </Section>}
           {phase !== "WRAPUP" && (
             <Section>
@@ -511,7 +531,7 @@ export default function DialerScreen({
                     {briefMetadata.generatedAt && <> · {briefMetadata.generatedAt}</>}
                   </p>}
                 {prospect?.demoStatus === "ready" && onPrepareCompanyBrief && <Button
-                  onClick={onPrepareCompanyBrief} disabled={briefGenerating}>
+                  onClick={onPrepareCompanyBrief} disabled={briefGenerating} disabledReason="The company brief is being generated. Wait for it to finish.">
                   {briefGenerating ? "Generating…" : prospect.companyBrief?.status === "pending" ? "Check brief" : "Generate brief"}
                 </Button>}
               </>}
@@ -537,7 +557,7 @@ export default function DialerScreen({
                           : ""
                     }
                   >
-                    <button
+                    <HintButton
                       type="button"
                       aria-label={step}
                       aria-pressed={index === panelStage}
@@ -545,7 +565,7 @@ export default function DialerScreen({
                     >
                       <span>{index < currentStep ? "✓" : index + 1}</span>
                       {step}
-                    </button>
+                    </HintButton>
                   </li>
                 ))}
               </ol>
@@ -557,9 +577,9 @@ export default function DialerScreen({
               </span>
             </div>
             {phase === "READY" && browsingContact && prospect?.demoStatus !== "ready" && !["Paid", "Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})) ? <div className={styles.actions}>
-              <Button tone="blue" disabled={Boolean(busy) || !prospect?.preparationEligible || !safeExternalUrl(prospect?.website) || ["queued", "preparing", "building"].includes(prospect?.demoStatus)} onClick={onPrepareContact}>{["queued", "preparing", "building"].includes(prospect?.demoStatus) ? "Preparing…" : "Prep now"}</Button>
+              <Button tone="blue" disabled={Boolean(busy) || !prospect?.preparationEligible || !safeExternalUrl(prospect?.website) || ["queued", "preparing", "building"].includes(prospect?.demoStatus)} disabledReason={disabledReasons(busy && busyReason, !prospect?.preparationEligible && (prospect?.preparationBlockedReason || prospect?.callBlockedReason || "This prospect is not eligible for preparation. Check calling permission, timezone, and contact status."), !safeExternalUrl(prospect?.website) && "Add a valid website before preparing this prospect.", ["queued", "preparing", "building"].includes(prospect?.demoStatus) && "The AI Receptionist is already preparing. Wait for it to finish.")} onClick={onPrepareContact}>{["queued", "preparing", "building"].includes(prospect?.demoStatus) ? "Preparing…" : "Prep now"}</Button>
               <p className={styles.caption}>{prospect?.demoFailure || (!prospect?.website ? "A website is needed before this prospect can be prepared." : "Prepare the AI Receptionist before dialing this prospect.")}</p>
-              <Button className={styles.pushRight} disabled={Boolean(busy)} onClick={onSkip}>Back to queue</Button>
+              <Button className={styles.pushRight} disabled={Boolean(busy)} disabledReason={busyReason} onClick={onSkip}>Back to queue</Button>
             </div> : ["READY", "DIALING"].includes(phase) ? (
               <div className={styles.actions}>
                 {numbers.slice(0, 2).map((number, index) => (
@@ -568,13 +588,14 @@ export default function DialerScreen({
                     tone={index ? "greenOutline" : "green"}
                     large={!index}
                     disabled={!canDial}
+                    disabledReason={dialReason}
                     onClick={() => onCall(number.phoneE164)}
                   >
                     Call {number.label?.toLowerCase() || number.type} ·{" "}
                     {formatPhone(number.phoneE164)}
                   </Button>
                 ))}
-                {phase === "READY" && browsingContact && contactStatus(prospect || {}) === "Removed" && <Button tone="blue" disabled={Boolean(busy) || queue.config?.phoneTestMode} onClick={onRestoreContact}>Put back in list</Button>}
+                {phase === "READY" && browsingContact && contactStatus(prospect || {}) === "Removed" && <Button tone="blue" disabled={Boolean(busy) || queue.config?.phoneTestMode} disabledReason={disabledReasons(busy && busyReason, queue.config?.phoneTestMode && "Restoring contacts is disabled during phone test mode.")} onClick={onRestoreContact}>Put back in list</Button>}
                 {phase === "DIALING" ? (
                   <Button
                     tone="dangerOutline"
@@ -586,6 +607,7 @@ export default function DialerScreen({
                   <Button
                     className={styles.pushRight}
                     disabled={busy || !prospect?.id}
+                    disabledReason={disabledReasons(busy && busyReason, !prospect?.id && "Select a prospect first.")}
                     onClick={onSkip}
                   >
                     {browsingContact ? "Back to queue" : "Skip for now"}
@@ -599,6 +621,7 @@ export default function DialerScreen({
                     tone="amber"
                     large
                     disabled={busy || (phase === "TALK" && !call.aiReady)}
+                    disabledReason={disabledReasons(busy && busyReason, phase === "TALK" && !call.aiReady && "Wait for the AI Receptionist standby connection to be ready.")}
                     title={
                       phase === "TALK" && !call.aiReady
                         ? "Waiting for the AI Receptionist standby leg"
@@ -612,7 +635,7 @@ export default function DialerScreen({
                       ? "End demo — put me back on"
                       : "Start demo — hand to the AI Receptionist"}
                   </Button>
-                  <Button disabled={busy} onClick={onMute}>
+                  <Button disabled={busy} disabledReason={busyReason} onClick={onMute}>
                     {phase === "DEMO"
                       ? muted
                         ? "Unmute me"
@@ -624,6 +647,7 @@ export default function DialerScreen({
                   <Button
                     tone="dangerOutline"
                     disabled={busy === "end_call"}
+                    disabledReason="The call is already ending. Wait for it to finish."
                     onClick={() => onAction("end_call")}
                   >
                     End call
@@ -654,6 +678,7 @@ export default function DialerScreen({
                     <div className={styles.actions}>
                       <Button
                         disabled={!checkoutCell || busy}
+                        disabledReason={disabledReasons(!checkoutCell && "No cell number is on file. Use Email to send the link.", busy && busyReason)}
                         aria-pressed={channel === "sms" && Boolean(checkoutCell)}
                         onClick={() => setChannel("sms")}
                       >
@@ -668,7 +693,8 @@ export default function DialerScreen({
                     </div>
                     <label>
                       {channel === "sms" && checkoutCell ? "Text to" : "Email to"}
-                      <input
+                      <HintInput
+                        disabledReason={testCheckout ? "Phone test mode uses only your configured test destination. Switch delivery channel to use your other test destination." : "Text uses the cell number on record. Switch to Email to enter a different recipient."}
                         aria-label={
                           channel === "sms" && checkoutCell ? "Text to" : "Email to"
                         }
@@ -693,6 +719,7 @@ export default function DialerScreen({
                         (customerPaid && !testCheckout) ||
                         (!(channel === "sms" && checkoutCell) && !checkoutEmail.trim())
                       }
+                      disabledReason={disabledReasons(busy && busyReason, !prospect?.id && "Select a prospect first.", customerPaid && !testCheckout && "This customer has already paid for setup.", !(channel === "sms" && checkoutCell) && !checkoutEmail.trim() && (testCheckout ? "No test email destination is configured for this account. Use Text." : "Enter a recipient email address first."))}
                       onClick={() =>
                         onCheckout({
                           channel: channel === "sms" && checkoutCell ? "sms" : "email",
@@ -708,7 +735,7 @@ export default function DialerScreen({
                     </Button>
                     {!call?.id && <small>Confirm the recipient before sending without a call.</small>}
                   </div>
-                  <fieldset className={`${styles.card} ${styles.setupCard}`} disabled={phase !== "WRAPUP"} aria-label="Setup call">
+                  <DisabledReasonContext.Provider value={phase !== "WRAPUP" ? "Setup booking is available after the call ends." : ""}><fieldset className={`${styles.card} ${styles.setupCard}`} disabled={phase !== "WRAPUP"} aria-label="Setup call">
                     <h3>2 · Setup call</h3>
                     <h2>
                       Book 15 minutes with{" "}
@@ -729,7 +756,7 @@ export default function DialerScreen({
                           {item.label || new Date(item.start).toLocaleString()}
                         </Button>
                       ))}
-                      <Button disabled={busy} onClick={onMoreSlots}>
+                      <Button disabled={busy} disabledReason={busyReason} onClick={onMoreSlots}>
                         More…
                       </Button>
                     </div>
@@ -740,7 +767,7 @@ export default function DialerScreen({
                     ) : null}
                     <label>
                       Invite to
-                      <input
+                      <HintInput
                         type="email"
                         aria-label="Invite to"
                         value={email}
@@ -749,6 +776,7 @@ export default function DialerScreen({
                     </label>
                     <Button
                       disabled={busy || !slot || !email.trim()}
+                      disabledReason={disabledReasons(busy && busyReason, !slot && "Choose an open setup slot first.", !email.trim() && "Enter an email address for the setup invitation.")}
                       onClick={() => onBook({ ...slot, email })}
                     >
                       {call?.bookedAt
@@ -757,7 +785,7 @@ export default function DialerScreen({
                           ? `Book ${slot.label || new Date(slot.start).toLocaleString()}`
                           : "Choose a slot"}
                     </Button>
-                  </fieldset>
+                  </fieldset></DisabledReasonContext.Provider>
                 </div>
                 {phase !== "WRAPUP" && <p className={styles.caption}>Setup booking is available after the call ends.</p>}
                 <ScriptPart label="Script · Close" text={script("close")} />
@@ -863,6 +891,7 @@ export default function DialerScreen({
             <Button
               key={value}
               disabled={!call?.id || Boolean(busy)}
+              disabledReason={disabledReasons(!call?.id && "Dial a call before choosing an outcome.", busy && busyReason)}
               aria-pressed={outcome === value}
               onClick={() => {
                 if (["callback_requested", "do_not_call"].includes(value))
@@ -881,8 +910,9 @@ export default function DialerScreen({
           >
             {call?.paidAt ? "✓ Paid — set by Stripe" : "Paid — set by Stripe"}
           </span>
-          <input
+          <HintInput
             aria-label="Note for next time"
+            disabledReason="Dial a call before adding a wrap-up note."
             disabled={!call?.id}
             maxLength={4000}
             placeholder="Note for next time (optional)"
@@ -898,6 +928,7 @@ export default function DialerScreen({
               (outcome === "callback_requested" && !callbackAt) ||
               (outcome === "do_not_call" && !dncReason)
             }
+            disabledReason={disabledReasons(!call?.terminal && "End the call before saving its outcome.", !outcome && !call?.paidAt && "Choose an outcome first.", busy && busyReason, outcome === "callback_requested" && !callbackAt && "Set a callback date and time first.", outcome === "do_not_call" && !dncReason && "Choose a Do not call reason first.")}
             onClick={onSave}
           >
             {busy === "outcome" ? "Saving…" : "Save & next →"}
@@ -905,7 +936,7 @@ export default function DialerScreen({
         </div>
         {picker === "callback_requested" && (
           <div className={styles.picker}>
-            <CallbackPicker prospect={prospect} value={callbackAt} onSet={onCallback} disabled={Boolean(busy)} canSchedule={Boolean(call?.id)} now={now} onClose={() => setPicker("")} />
+            <CallbackPicker prospect={prospect} value={callbackAt} onSet={onCallback} disabled={Boolean(busy)} schedulingReason="Dial a call before scheduling a callback outcome." canSchedule={Boolean(call?.id)} now={now} onClose={() => setPicker("")} />
           </div>
         )}
         {picker === "do_not_call" && (

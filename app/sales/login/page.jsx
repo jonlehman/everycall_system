@@ -1,5 +1,6 @@
 'use client';
 
+import { HintButton } from "../../admin/sales/DisabledHint";
 import { useState } from 'react';
 
 export default function SalesLoginPage() {
@@ -58,13 +59,14 @@ export default function SalesLoginPage() {
           />
         </label>
         {error ? <p className="m-0 text-sm text-red-700" role="alert">{error}</p> : null}
-        <button
+        <HintButton
           type="submit"
+          disabledReason="Signing in is in progress. Wait for it to finish."
           disabled={submitting}
           className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-50"
         >
           {submitting ? 'Signing in…' : 'Sign in to Sales Console'}
-        </button>
+        </HintButton>
       </form>
     </section>
   );

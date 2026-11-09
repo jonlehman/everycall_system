@@ -1,4 +1,5 @@
 "use client";
+import { HintButton } from "../../admin/sales/DisabledHint";
 import { useEffect, useState } from "react";
 import { fetchSalesJson } from "../../admin/sales/salesApi";
 const PHASES = [
@@ -118,14 +119,15 @@ export default function SalesScriptsPage() {
         </section>
       ))}
       {operator.canEditScripts && (
-        <button
+        <HintButton
           type="button"
+          disabledReason="Your script changes are being saved. Wait for them to finish."
           disabled={busy}
           onClick={save}
           className="rounded-lg bg-blue-700 px-5 py-3 font-semibold text-white disabled:opacity-50"
         >
           {busy ? "Saving…" : "Save scripts"}
-        </button>
+        </HintButton>
       )}
     </div>
   );

@@ -242,3 +242,15 @@ The owner explicitly authorized sending signup links before the first call, with
 | SALES-CHECKOUT-006 | A dedicated test-signature endpoint validates strict test identity and records test completion only. Test rows cannot acquire paid_at, tenant_key or activation state. No real paid status, real call outcome, Paid counter, conversion or build changes. Paid customers may exercise test checkout safely. | Signed test webhook tamper/wrong key/mode/identity/replay; database isolation and counters |
 
 `0058_sales_prospect_checkout.sql` permits nullable call context, adds immutable `is_test`, and permits one standalone checkout per prospect/mode while retaining existing per-call uniqueness. Old call-bound rows backfill as live. Apply the reviewed migration before application deployment; runtime readiness never applies it. Production rollout uses the maintenance/drain/suspend procedure in the Runbook. The activation/build/publication pipeline is unchanged.
+
+## November 8 disabled-control explanations
+
+This owner-requested UI addition explains existing Sales workspace restrictions. It does not change calling, consent, contact ownership, phone test, checkout/payment, setup booking, or provider authorization rules.
+
+| Requirement | Behavior and implementation | Regression |
+| --- | --- | --- |
+| SALES-UI-DISABLED-001 | Every rendered disabled control in the `/sales` caller, Contacts, Add prospect, callback picker, script editor, login and sign-out has a specific explanation on hover and keyboard focus. Multiple applicable blockers may be shown. Dialing uses the server's exact `callBlockedReason`, including calling-window details, without inferring local policy. | `test-sales-dialer-browser.mjs`: calling window, browser readiness, active call, demo readiness, busy and phone test restrictions; contact loading/pagination and form saving |
+| SALES-UI-DISABLED-002 | Native disabled attributes, fieldset inheritance and existing predicates/handlers remain authoritative. Setup children explain the inherited call-phase restriction alongside missing slot/email requirements. Read-only checkout destinations explain their fixed recipient while retaining native focus and text selection. | Native disabled assertions, disabled keyboard activation has no effect, inherited fieldset slot/input checks, live paid/test checkout and recipient checks |
+| SALES-UI-DISABLED-003 | Disabled wrappers are keyboard-focusable and linked to descriptions. Tooltips support Escape, persistent hover/focus and movement onto the tooltip; portals stay within the viewport above scrolling cards and the mobile footer. Enabled controls remove disabled explanations. | Hover/focus, description linkage, Escape without focus movement, hover after blur, reason removal, mobile bounds and existing 8-state × 4-viewport layout checks |
+
+Implementation is scoped to `DisabledHint`, the caller's local `Button`, and explicit controls in the listed screens; unrelated admin management controls are unchanged. No provider-backed actions are exercised by these local browser fixtures.

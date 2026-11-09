@@ -204,7 +204,7 @@
   gap: 10px;
   flex-wrap: wrap;
 }
-.numbers > div > span {
+.numbers > div > span:not([data-disabled-hint]) {
   font-size: 10px;
   text-transform: uppercase;
   min-width: 32px;
@@ -545,13 +545,15 @@
   padding: 6px 9px;
   min-height: 34px;
 }
-.footerControls > input {
+.footerControls > input,
+.footerControls > [data-disabled-hint]:has(> input) {
   flex: 1;
   min-width: 150px;
   max-width: 100%;
   height: 34px;
 }
-.footerControls > .blue {
+.footerControls > .blue,
+.footerControls > [data-disabled-hint] > .blue {
   font-size: 12px;
   min-height: 36px;
   padding: 7px 13px;
@@ -894,7 +896,8 @@
     padding-top: 10px;
     padding-bottom: 10px;
   }
-  .footerControls > input {
+  .footerControls > input,
+.footerControls > [data-disabled-hint]:has(> input) {
     min-width: 100px;
   }
   .footer .button {
@@ -994,7 +997,8 @@
     min-height: 30px;
     padding: 5px 7px;
   }
-  .footerControls > input {
+  .footerControls > input,
+.footerControls > [data-disabled-hint]:has(> input) {
     min-width: 160px;
     height: 32px;
   }
@@ -1104,3 +1108,8 @@
 .linkButton { border: 0; background: none; margin-left: 8px; color: #1f4fd8; text-decoration: underline; cursor: pointer; }
 .linkButton:disabled { opacity: .45; cursor: default; }
 @media (max-width: 600px) { .addContactFields { grid-template-columns: 1fr; } .contactsHeading { align-items: flex-start; } }
+
+/* Keep disabled hint wrappers in the same flex/grid position as their controls. */
+.footerControls > [data-disabled-hint]:has(> input) { width: auto; }
+.slotGrid > [data-disabled-hint] { display: flex; }
+.slotGrid > [data-disabled-hint] > button { width: 100%; }
