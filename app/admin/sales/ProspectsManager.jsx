@@ -21,8 +21,8 @@ const EMPTY_FORM = Object.freeze({
   leadDeliveryEmail: '',
   businessCategory: '',
   timezone: '',
-  permission: 'no',
-  emailPermission: 'no',
+  permission: 'yes',
+  emailPermission: 'yes',
   suppressed: 'no',
   doNotCall: 'no',
   status: 'queued'
