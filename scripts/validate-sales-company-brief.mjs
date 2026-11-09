@@ -204,8 +204,41 @@ try {
 } finally { console.warn = originalWarn; await db.close(); }
 // Exercise actual helper cancellation at both fetch and body-read stages.
 const originalFetch = globalThis.fetch;
+const originalModelEnv = Object.fromEntries(["OPENAI_DEMO_EXTRACTION_MODEL", "OPENAI_BUILD_JSON_MODEL"].map((name) => [name, process.env[name]]));
 const request = { apiKey: "fixture-only", model: "fixture-model", system: "test", user: "test", schema: z.object({ ok: z.boolean() }) };
 try {
+  // Exercise the brief through the real structured helper; the provider fixture
+  // reproduces the production 400 for unsupported reasoning.effort values.
+  const legacyModels = ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5-mini-2025-08-07"];
+  let posted;
+  globalThis.fetch = async (_url, { body }) => {
+    posted = JSON.parse(body);
+    if (legacyModels.includes(posted.model) && posted.reasoning?.effort === "none") {
+      return { ok: false, status: 400, text: async () => JSON.stringify({ error: { code: "unsupported_value", param: "reasoning.effort" } }) };
+    }
+    return { ok: true, json: async () => ({ output_text: JSON.stringify(content) }) };
+  };
+  delete process.env.OPENAI_DEMO_EXTRACTION_MODEL;
+  delete process.env.OPENAI_BUILD_JSON_MODEL;
+  const realHelper = (input) => callOpenAiJsonModel({ ...input, apiKey: "fixture-only" });
+  for (const model of [undefined, ...legacyModels, "gpt-5.1", "gpt-5.2", "gpt-5.4", "gpt-4.1-mini"]) {
+    if (model) process.env.OPENAI_DEMO_EXTRACTION_MODEL = model;
+    const brief = await generateSalesCompanyBrief(pages, { callModel: realHelper });
+    assert.equal(brief.status, "ready", `brief request compatibility: ${model || "default"}`);
+    assert.equal(posted.model, model || "gpt-5-mini");
+    assert.equal(posted.reasoning?.effort, legacyModels.includes(posted.model) ? "minimal" : model?.startsWith("gpt-5.") ? "none" : undefined);
+    assert.equal(posted.max_output_tokens, 2200);
+    assert.equal(posted.text.format.strict, true);
+    assert.equal(posted.text.format.name, "sales_company_brief");
+    if (posted.model.startsWith("gpt-5")) assert.equal(Object.hasOwn(posted, "temperature"), false);
+  }
+  delete process.env.OPENAI_DEMO_EXTRACTION_MODEL;
+  process.env.OPENAI_BUILD_JSON_MODEL = "gpt-5-mini";
+  assert.equal((await generateSalesCompanyBrief(pages, { callModel: realHelper })).status, "ready");
+  assert.equal(posted.reasoning.effort, "minimal");
+  // Opt-in correction must not silently change other structured-helper callers.
+  await assert.rejects(() => callOpenAiJsonModel({ ...request, model: "gpt-5-mini", maxAttempts: 1 }), /openai_json_model_failed:400:/);
+  assert.equal(posted.reasoning.effort, "none");
   for (const stage of ["headers", "body"]) {
     let calls = 0;
     globalThis.fetch = async (_url, { signal }) => {
@@ -224,5 +257,11 @@ try {
   };
   assert.equal((await callOpenAiJsonModel(request)).parsed.ok, true);
   assert.equal(calls, 2, "existing callers retain default retry behavior");
-} finally { globalThis.fetch = originalFetch; }
+} finally {
+  globalThis.fetch = originalFetch;
+  for (const [name, value] of Object.entries(originalModelEnv)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
 console.log("Sales company brief AI, grounding, diagnostics/redaction, persistence, logger failure, leases, retries and source-isolation regressions passed.");

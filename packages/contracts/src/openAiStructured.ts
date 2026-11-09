@@ -184,6 +184,7 @@ export async function callOpenAiJsonModel<T>(input: {
   system: string;
   user: string;
   schema: z.ZodSchema<T>;
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high";
   temperature?: number;
   maxOutputTokens?: number;
   jsonSchemaName?: string;
@@ -218,6 +219,7 @@ export async function callOpenAiJsonModel<T>(input: {
         model: input.model,
         system,
         user: input.user,
+        ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }),
         ...(input.temperature === undefined ? {} : { temperature: input.temperature }),
         ...(input.maxOutputTokens === undefined ? {} : { maxOutputTokens: input.maxOutputTokens }),
         ...(input.jsonSchemaName === undefined ? {} : { jsonSchemaName: input.jsonSchemaName }),
@@ -343,6 +345,7 @@ export function buildOpenAiJsonResponseRequestBody(input: {
   model: string;
   system: string;
   user: string;
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high";
   temperature?: number;
   maxOutputTokens?: number;
   jsonSchemaName?: string;
@@ -358,8 +361,8 @@ export function buildOpenAiJsonResponseRequestBody(input: {
       ? {}
       : { temperature }),
     max_output_tokens: input.maxOutputTokens ?? 1400,
-    ...(shouldUseResponsesReasoningNone(model)
-      ? { reasoning: { effort: "none" } }
+    ...(input.reasoningEffort !== undefined || shouldUseResponsesReasoningNone(model)
+      ? { reasoning: { effort: input.reasoningEffort ?? "none" } }
       : {}),
     ...(normalizeText(input.promptCacheKey) ? { prompt_cache_key: normalizeText(input.promptCacheKey) } : {}),
     ...(normalizeText(input.promptCacheRetention || OPENAI_BUILD_PROMPT_CACHE_RETENTION)
