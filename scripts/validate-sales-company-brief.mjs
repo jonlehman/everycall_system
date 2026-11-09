@@ -88,6 +88,43 @@ assert.deepEqual(invalidSchema.diagnostic.details.issues, [{ code: "invalid_type
 const unsupported = await generatedContentFailure({ ...content, standOut: [claim(secret, secret)] });
 assert.deepEqual(unsupported.diagnostic, { code: "unsupported_quote", stage: "grounding", details: { claimIndex: 0 } });
 assertPrivate(unsupported);
+// The prompt explains the existing grounding contract; it does not relax it.
+// Valid text on another page cannot support a citation to the requested page.
+const otherUrl = "https://fixture.example/about/";
+for (const [label, sourceUrl, quote] of [
+  ["URL trailing slash", `${url}/`, lines[0]],
+  ["URL for a different supplied page", otherUrl, lines[0]],
+  ["paraphrased quote", url, lines[0].replace("Family owned", "Family operated")],
+  ["capitalization changed", url, lines[0].toLowerCase()],
+  ["punctuation changed", url, lines[0].replace(",", ";")],
+  ["ellipsized quote", url, "Family owned since 1985 ... the water heaters and fixtures it installs."],
+  ["noncontiguous passages", url, "Family owned since 1985, the water heaters and fixtures it installs."],
+]) {
+  const result = await generateSalesCompanyBrief([...pages, { url: otherUrl, lines: ["About this business."] }], {
+    callModel: async () => ({ parsed: { ...content, standOut: [{ ...content.standOut[0], sourceUrl, quote }] } }),
+  });
+  assert.equal(result.status, "unavailable", label);
+  assert.deepEqual(result.diagnostic, { code: "unsupported_quote", stage: "grounding", details: { claimIndex: 0 } }, label);
+}
+const whitespaceQuote = await generatedContentFailure({ ...content,
+  standOut: [{ ...content.standOut[0], quote: lines[0].replaceAll(" ", "\n\t ") }],
+});
+assert.equal(whitespaceQuote.status, "ready", "existing whitespace-only normalization remains allowed");
+// Saved website text can contain HTML entities and typographic punctuation.
+// Ground against the supplied representation, not a browser-decoded version.
+const encodedQuote = lines[0].replace("Cedar", "Cedar’s team").replace(" and ", " &#038; ");
+const encodedPages = [{ ...pages[0], lines: [encodedQuote, ...lines.slice(1)] }];
+for (const [quote, expected] of [
+  [encodedQuote, "ready"],
+  [encodedQuote.replace("&#038;", "&"), "unavailable"],
+  [encodedQuote.replace("’", "'"), "unavailable"],
+]) {
+  const result = await generateSalesCompanyBrief(encodedPages, { callModel: async () => ({
+    parsed: { ...content, standOut: [{ ...content.standOut[0], quote }] },
+  }) });
+  assert.equal(result.status, expected);
+  if (expected === "unavailable") assert.equal(result.diagnostic.code, "unsupported_quote");
+}
 const tooLong = await generatedContentFailure({ ...content, standOut: [claim("word ".repeat(101).trim(), lines[0])] });
 assert.equal(tooLong.diagnostic.code, "invalid_word_count");
 assert.ok(tooLong.diagnostic.details.wordCount > 100);
