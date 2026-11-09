@@ -200,6 +200,13 @@ assert.deepEqual(companyBriefPassages(bounded, companyBriefSourceHash(longPages)
 const editedPages = structuredClone(longPages); editedPages[0].title = "Changed capture";
 const editedIds = companyBriefPassages(companyBriefEvidence(editedPages), companyBriefSourceHash(editedPages)).flatMap((page) => page.passages.map((passage) => passage.id));
 assert.ok(ids.every((id) => !editedIds.includes(id)), "changed snapshot cannot reuse stale IDs");
+const concise = await generatedContentFailure({
+  standOut: [],
+  services: [claim("Leak repairs", lines[1]), claim("Water heater installation", lines[1]), claim("Drain cleaning", lines[1])],
+  whyCustomersCall: claim("Help with leaks, blocked drains and replacement water heaters.", lines[2]),
+});
+assert.equal(concise.status, "ready", "short grounded briefs have no minimum word count");
+assert.equal(serializeCompanyBrief(concise).services.length, 3);
 const tooLong = await generatedContentFailure({ ...content, standOut: [claim("word ".repeat(101).trim(), lines[0])] });
 assert.equal(tooLong.diagnostic.code, "invalid_word_count");
 assert.ok(tooLong.diagnostic.details.wordCount > 100);
