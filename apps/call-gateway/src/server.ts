@@ -1,5 +1,6 @@
 import { loadTransferTargetsForTenant, lookupTransferTargets, normalizeTransferLookupText, type TransferLookupMatch, type TransferTargetRow } from "./transferLookup.js";
 import { runSessionShutdown, type ShutdownProgress } from "./sessionShutdown.js";
+import { installProcessLifecycleObservability } from "./processLifecycle.js";
 import express from "express";
 import http from "node:http";
 import crypto from "node:crypto";
@@ -94,6 +95,8 @@ import {
   shouldRetryOpeningStatementAfterPlayback,
   shouldIgnoreCallerDuringOpening
 } from "./openingStatementControl.js";
+
+installProcessLifecycleObservability();
 
 const env = readCallGatewayEnv(process.env);
 const app = express();

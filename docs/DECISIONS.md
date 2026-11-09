@@ -1,5 +1,9 @@
 # Decisions
 
+## 2026-11-09 — Inbound process retirement evidence
+- Add content-free synchronous lifecycle markers to the inbound gateway before schema-changing maintenance. With no other SIGTERM handler, preserve immediate termination using explicit numeric exit status 143 instead of OS-signaled death so Node's terminal `exit` phase is observable. Existing and later SIGTERM handlers retain shutdown ownership and receive no new forced deadline.
+- Require correlated instance/PID/revision startup, SIGTERM, and terminal-exit evidence before treating default-path recovery polling as retired. The exit marker proves no further asynchronous application work, not an independently observed OS reap; future synchronous exit hooks require reassessment. Signal receipt, provider suspension, and zero instance counts alone are insufficient. See [verification protocol and compatibility details](reviews/inbound-process-retirement.md).
+
 ## 2026-11-09 — Explicit tenant System User password changes
 - Add a separate Set Password action to Account Settings → System Users using existing owner/admin and platform-manager authorization. Keep activation, identity, role and membership unchanged; active users without a password can receive their first one. Inactive users follow the existing Enable Access/invitation path.
 - Preserve exact password input, existing bcrypt cost 10/minimum eight characters, and enforce the 72-byte bcrypt bound. Commit tenant credential replacement, session/token revocation and secret-free audit atomically. Recheck manager authority and credential/token snapshots under user locks to prevent stale login/reset work from undoing a password change. Keep platform/Sales principal namespaces and legacy ambiguous-token fail-closed behavior. No schema migration or provider messages. See [specification](SPECS/tenant-user-passwords.md).
