@@ -1,3 +1,4 @@
+import { resolveSalesContactTarget, mergeLegacySalesContacts } from './salesCompanyContacts.js';
 import crypto from 'node:crypto';
 import { normalizeSalesPhone, parseSalesPermission, normalizeSalesImportRecord, createSalesProspect, enqueueSalesDemoJob, getSalesProspect, normalizeSalesText, salesError, serializeProspect, PROSPECT_WITH_DEMO_SELECT } from './salesRepository.js';
 import { salesTransaction, SALES_TERMINAL_SQL, SALES_UNSUPPRESSED_SQL } from './salesDialer.js';
@@ -25,6 +26,7 @@ export function salesContactSearchSql(search, values) {
   values.push(phoneDigits ? `%${phoneDigits}%` : null);
   const digits = `$${values.length}`;
   return `(p.business_name ILIKE ${literal} OR p.contact_name ILIKE ${literal} OR p.website_url ILIKE ${literal}
+    OR EXISTS(SELECT 1 FROM sales_prospect_contacts c WHERE c.prospect_id=p.prospect_id AND c.archived_at IS NULL AND (concat_ws(' ',c.first_name,c.last_name) ILIKE ${literal} OR c.email ILIKE ${literal} OR c.title ILIKE ${literal}))
     OR (${digits}::text IS NOT NULL AND (regexp_replace(p.phone_e164,'[^0-9]','','g') LIKE ${digits}
       OR EXISTS (SELECT 1 FROM jsonb_array_elements(p.numbers_json) n WHERE regexp_replace(n->>'phoneE164','[^0-9]','','g') LIKE ${digits}))))`;
 }
@@ -107,6 +109,7 @@ export async function createSalesContact(pool, record, {repId,env=process.env,ex
       const normalized=normalizeSalesImportRecord(input,{env:parseSalesPermission(input.permission)?env:{...env,SALES_CALL_MISSING_TIMEZONE_POLICY:'allow'}});
       if(existing.website_url && normalized.websiteUrl!==existing.website_url) throw salesError('contact_website_change_requires_edit','This contact already has a website. Change it in prospect administration before preparing a new demo.',409);
       await db.query(`UPDATE sales_prospects SET business_name=$2,contact_name=$3,phone_e164=$4,numbers_json=$5::jsonb,website_url=$6,permission_granted=$7,permission_recorded_at=NOW(),timezone=$8,row_version=row_version+1,updated_at=NOW() WHERE prospect_id=$1`,[existingProspectId,normalized.businessName,normalized.contactName,normalized.phoneE164,JSON.stringify(normalized.numbers),normalized.websiteUrl,normalized.permissionGranted,normalized.timezone]);
+      await mergeLegacySalesContacts(db,existingProspectId,normalized);
       prospect=await getSalesProspect(db,existingProspectId);
     } else prospect=await createSalesProspect(db,input,{adminUserId:repId,env:parseSalesPermission(input.permission)?env:{...env,SALES_CALL_MISSING_TIMEZONE_POLICY:'allow'}});
     await db.query('UPDATE sales_prospects SET assigned_rep_user_id=$2 WHERE prospect_id=$1',[prospect.prospectId,repId]);
@@ -119,10 +122,11 @@ export async function createSalesContact(pool, record, {repId,env=process.env,ex
   });
 }
 
-export async function mutateSalesContact(pool, {prospectId,repId,action,callbackAt,expectedRowVersion,requireVersion=true}) {
+export async function mutateSalesContact(pool, {prospectId,repId,action,callbackAt,expectedRowVersion,requireVersion=true,contactId,numberId,inTransaction=false}) {
   if (requireVersion && (!Number.isInteger(expectedRowVersion)||expectedRowVersion<1)) throw salesError('invalid_row_version','Reload the contact before changing it.');
   if (action==='callback' && callbackAt!==null && (typeof callbackAt!=='string'||!/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(callbackAt)||!Number.isFinite(Date.parse(callbackAt))||Date.parse(callbackAt)<=Date.now())) throw salesError('invalid_callback_at','Choose a future callback date and time with a timezone.');
-  return salesTransaction(pool,async db=>{
+  const transact=inTransaction?operation=>operation(pool):operation=>salesTransaction(pool,operation);
+  return transact(async db=>{
     await lockSalesContactMode(db);
     // Call reservation takes the same rep lock before its active-call check.
     await db.query('SELECT id FROM admin_users WHERE id=$1 FOR UPDATE',[repId]);
@@ -143,7 +147,8 @@ export async function mutateSalesContact(pool, {prospectId,repId,action,callback
       await db.query("UPDATE sales_prospects SET status='removed',removed_reason='attempts_exhausted',callback_at=NULL,row_version=row_version+1,updated_at=NOW() WHERE prospect_id=$1",[prospectId]);
     } else if(action==='callback') {
       if(callbackAt!==null&&(suppressed||!['queued','ready_to_call','paid'].includes(row.status))) throw salesError('contact_callback_blocked','This contact cannot be scheduled for a call.',409);
-      await db.query('UPDATE sales_prospects SET callback_at=$2,row_version=row_version+1,updated_at=NOW() WHERE prospect_id=$1',[prospectId,callbackAt]);
+      const target=callbackAt===null?null:await resolveSalesContactTarget(db,prospectId,{contactId,numberId,allowNoNumber:true});
+      await db.query('UPDATE sales_prospects SET callback_at=$2,callback_contact_id=$3,callback_number_id=$4,callback_contact_snapshot=$5::jsonb,row_version=row_version+1,updated_at=NOW() WHERE prospect_id=$1',[prospectId,callbackAt,target?.contactId||null,target?.numberId||null,target?JSON.stringify(target.contactSnapshot):null]);
     } else throw salesError('invalid_contact_action','Unsupported contact action.');
     return getSalesProspect(db,prospectId);
   });

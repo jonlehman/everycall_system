@@ -450,10 +450,7 @@ export default function ProspectsManager({ onProspectsChanged }) {
   };
 
   const openEdit = (prospect) => {
-    setEditingProspect(prospect);
-    setForm(formFromProspect(prospect));
-    setEditorError('');
-    setEditorMode('edit');
+    window.location.assign(`/sales/prospects/${encodeURIComponent(prospect.id)}/edit?returnTo=admin`);
   };
 
   const closeEditor = () => {

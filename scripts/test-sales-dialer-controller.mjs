@@ -45,6 +45,8 @@ const prospect = {
   eligible: true,
   phone: "+15035550101",
   numbers: [{ phoneE164: "+15035550101", label: "Cell", type: "cell" }],
+  defaultContactId: "owner", rowVersion: 1,
+  contacts: [{ id: "owner", firstName: "Original", displayName: "Original Owner", email: "owner@example.test", numbers: [{ id: "owner-cell", phoneE164: "+15035550101", type: "cell", label: "Cell" }] }, { id: "second", firstName: "Second", displayName: "Second Person", email: "second@example.test", numbers: [{ id: "second-cell", phoneE164: "+15035550102", type: "cell", label: "Personal cell" }] }], sharedNumbers: [{ id: "shared-office", phoneE164: "+15035550103", type: "shop", label: "Office" }],
   coreFacts: [
     {
       label: "Hours",
@@ -70,6 +72,7 @@ const notPrepped = { ...prospect, id: "not-prepped", businessName: "Awaiting Pre
 const paidContact = { ...prospect, id: "paid-contact", businessName: "Paid Business", status: "paid" };
 const dncContact = { ...prospect, id: "dnc-contact", businessName: "Do Not Call Business", doNotCall: true };
 const removedContact = { ...prospect, id: "removed-contact", businessName: "Removed Business", status: "removed" };
+let fixtureCheckoutContext = null;
 let testMode = false, holdCheckout = false, checkoutReply = null;
 let requests = [],
   briefStep = 0,
@@ -85,6 +88,7 @@ let requests = [],
 const activeCall = (id, prospectId) => ({
   id,
   prospectId,
+  contactId: "owner", contactSnapshot: { contactId: "owner", displayName: "Original Owner", firstName: "Original", email: "owner@example.test" },
   state: "ai_standby_ready",
   phoneTestMode: testMode,
   prospectConnected: true,
@@ -126,6 +130,7 @@ const server = createServer(async (req, res) => {
   requests.push({ path: path.pathname, method: req.method, data, query: Object.fromEntries(path.searchParams) });
   res.setHeader("Content-Type", "application/json");
   const send = (value) => res.end(JSON.stringify(value));
+  if (path.pathname.endsWith("/checkout") && req.method === "GET") return send({ checkout: fixtureCheckoutContext });
   if (path.pathname.endsWith("/checkout")) {
     const callId = path.pathname.match(/\/calls\/([^/]+)\/checkout$/)?.[1];
     const reply = () => send({ checkout: { status: "sent", isTest: data.expectedIsTest }, ...(callId ? { call: calls[callId] } : {}) });
@@ -245,7 +250,7 @@ const server = createServer(async (req, res) => {
   }
   if (path.pathname.endsWith("/calls") && req.method === "POST") {
     currentId = "outgoing-call";
-    calls[currentId] = activeCall(currentId, data.prospectId || prospect.id);
+    calls[currentId] = { ...activeCall(currentId, data.prospectId || prospect.id), contactId: data.contactId, numberId: data.numberId, contactSnapshot: { ...prospect.contacts.find(c => c.id === data.contactId), contactId: data.contactId, numberId: data.numberId } };
     return send({ call: calls[currentId] });
   }
   const match = path.pathname.match(
@@ -304,6 +309,7 @@ const reset = async ({
 } = {}) => {
   await context?.close();
   requests = [];
+  fixtureCheckoutContext = null;
   testMode = phoneTest; holdCheckout = false; checkoutReply = null;
   calls = {};
   currentId = "";
@@ -377,6 +383,50 @@ const incoming = async () => {
   await page.locator('[data-phase="TALK"]').waitFor();
 };
 try {
+  console.log("controller: editor return restores company without dialing; stale callback requires explicit replacement");
+  await reset();
+  await page.goto(`http://127.0.0.1:${server.address().port}/?prospectId=${matched.id}`);
+  await page.getByRole('heading',{name:matched.businessName,exact:true}).waitFor();
+  assert.equal(requests.filter(r=>r.path.endsWith('/calls')&&r.method==='POST').length,0);
+  await page.getByRole('navigation',{name:'Main'}).getByRole('button',{name:'Dial',exact:true}).click();
+  await page.getByRole('heading',{name:prospect.businessName,exact:true}).waitFor();
+  prospect.callbackTarget={contactId:'second',numberId:'removed-number',requiresSelection:true};
+  await page.goto(`http://127.0.0.1:${server.address().port}/`);
+  await page.getByRole('heading',{name:prospect.businessName,exact:true}).waitFor();
+  assert.equal(await page.getByLabel('Company contact').inputValue(),'');
+  assert.equal(await page.getByRole('button',{name:'(503) 555-0102',exact:true}).count(),0);
+  await page.getByLabel('Company contact').selectOption('second');
+  assert.equal(await page.getByRole('button',{name:'(503) 555-0102',exact:true}).isEnabled(),true);
+  delete prospect.callbackTarget;
+  console.log("controller: selected company contact, visible personal/shared numbers, poll stability and frozen call target");
+  await reset();
+  assert.equal(await page.getByLabel("Company contact").inputValue(), "owner");
+  await page.getByLabel("Company contact").selectOption("second");
+  assert.equal(await page.getByRole("button", {name:"(503) 555-0101",exact:true}).count(), 0);
+  await page.getByRole("button", {name:"(503) 555-0102",exact:true}).waitFor();
+  await page.getByRole("button", {name:"(503) 555-0103",exact:true}).waitFor();
+  await page.waitForTimeout(5200);
+  assert.equal(await page.getByLabel("Company contact").inputValue(), "second");
+  await page.screenshot({path:"/tmp/sales-selected-contact.png",fullPage:true});
+  await page.getByRole("button", {name:"(503) 555-0102",exact:true}).click();
+  await page.locator('[data-phase="TALK"]').waitFor();
+  const chosen=requests.find(r=>r.path.endsWith('/calls')&&r.method==='POST');
+  assert.equal(chosen.data.contactId,'second');assert.equal(chosen.data.numberId,'second-cell');assert.equal(chosen.data.expectedRowVersion,1);
+  assert.equal(await page.getByLabel("Company contact").isDisabled(),true);
+  assert.equal(await page.getByLabel("Company contact").inputValue(),'second');
+  await page.getByRole("list", {name:"Call phases"}).getByRole("button", {name:"Close",exact:true}).click();
+  assert.equal(await page.getByLabel("Text to",{exact:true}).inputValue(),'+15035550102');
+  await reset();
+  fixtureCheckoutContext={status:'creating',channel:'email',recipient:'second@example.test',contactSnapshot:{contactId:'second',email:'second@example.test'}};
+  await page.reload();
+  await page.getByRole("list", {name:"Call phases"}).getByRole("button", {name:"Close",exact:true}).click();
+  await page.getByRole('button',{name:'Retry original delivery',exact:true}).waitFor();
+  assert.equal(await page.getByLabel('Email to',{exact:true}).inputValue(),'second@example.test');
+  assert.equal(await page.getByRole('button',{name:'Retry original delivery',exact:true}).isDisabled(),false);
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Retry original delivery',exact:true}).click();
+  await waitUntil(()=>requests.some(r=>r.path.endsWith('/checkout')&&r.method==='POST'));
+  const retried=requests.find(r=>r.path.endsWith('/checkout')&&r.method==='POST');assert.equal(retried.data.contactId,'second');assert.equal(retried.data.email,'second@example.test');
   console.log("controller: confirmed prospect checkout, busy dedupe, call and test contexts");
   for (const phoneTest of [false, true]) {
     await reset({ phoneTest });
@@ -385,7 +435,7 @@ try {
     assert.equal(await page.getByLabel("Text to", { exact: true }).inputValue(), recipient);
     page.once("dialog", async dialog => { assert.match(dialog.message(), new RegExp(recipient.replace("+", "\\+"))); await dialog.dismiss(); });
     await page.getByRole("button", { name: "Send link", exact: true }).click();
-    assert.equal(requests.filter(r => r.path.endsWith("/checkout")).length, 0);
+    assert.equal(requests.filter(r => r.path.endsWith("/checkout") && r.method === "POST").length, 0);
     holdCheckout = true;
     page.once("dialog", async dialog => { assert.match(dialog.message(), /without an associated call/); if (phoneTest) assert.match(dialog.message(), /no real charge/); await dialog.accept(); });
     const sendLink = page.getByRole("button", { name: "Send link", exact: true });
@@ -393,27 +443,25 @@ try {
     await waitUntil(() => checkoutReply);
     assert.equal(await sendLink.isDisabled(), true);
     await sendLink.evaluate(button => button.click());
-    const sent = requests.filter(r => r.path.endsWith("/checkout"));
+    const sent = requests.filter(r => r.path.endsWith("/checkout") && r.method === "POST");
     assert.equal(sent.length, 1);
     assert.equal(sent[0].path, "/api/v1/admin/sales/prospects/" + prospect.id + "/checkout");
     assert.equal(sent[0].data.confirmedWithoutCall, true);
     assert.equal(sent[0].data.confirmedRecipient, recipient);
     assert.equal(sent[0].data.expectedIsTest, phoneTest);
     checkoutReply(); checkoutReply = null; holdCheckout = false;
-    await page.getByRole("button", { name: "Send link again", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Checkout already created", exact: true }).waitFor();
     assert.equal(await page.locator("[data-phase]").getAttribute("data-phase"), "READY");
     assert.equal(requests.filter(r => r.path.endsWith("/calls") && r.method === "POST").length, 0);
     if (phoneTest) {
-      await page.getByRole("button", { name: "Email", exact: true }).click();
-      assert.equal(await page.getByLabel("Email to", { exact: true }).inputValue(), "rep@example.test");
-      assert.equal(await page.getByLabel("Email to", { exact: true }).getAttribute("readonly"), "");
+      assert.equal(await page.getByRole("button", { name: "Email", exact: true }).isDisabled(), true);
     }
     await reset({ phoneTest });
     await dial();
     await page.getByRole("list", { name: "Call phases" }).getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("button", { name: "Send link", exact: true }).click();
     await waitUntil(() => requests.some(r => r.path === "/api/v1/admin/sales/calls/outgoing-call/checkout"));
-    const callSend = requests.find(r => r.path.endsWith("/checkout"));
+    const callSend = requests.find(r => r.path.endsWith("/checkout") && r.method === "POST");
     assert.equal(callSend.data.confirmedWithoutCall, undefined);
     assert.equal(callSend.data.expectedIsTest, phoneTest);
     assert.equal(await page.locator("[data-phase]").getAttribute("data-phase"), "TALK");

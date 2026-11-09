@@ -61,7 +61,7 @@ export default function ContactsScreen({ onSelect, onAdd, busy, phoneTestMode = 
     <p className={styles.caption}>Newest activity first. Search matches business, contact, website, and every phone number.</p>
     {error && <p className={styles.error} role="alert">{error}</p>}
     <div className={styles.contactsTable} aria-busy={loading}>
-      <table><thead><tr>{["Business", "Contact", "Phone", "Metro", "Status", "Attempts", "Last call", "Next"].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
+      <table><thead><tr>{["Business", "Contact", "Phone", "Metro", "Status", "Attempts", "Last call", "Next", "Actions"].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
         <tbody>{!loading && rows.map((row) => <tr key={row.id} onClick={() => !busy && onSelect(row)}>
           <td><HintButton type="button" className={styles.contactName} disabled={busy} disabledReason={busyReason} onClick={(event) => { event.stopPropagation(); onSelect(row); }}>{row.businessName}</HintButton><small>{row.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}</small></td>
           <td>{row.contactName || "—"}<small>{row.contactRole}</small></td>
@@ -71,6 +71,7 @@ export default function ContactsScreen({ onSelect, onAdd, busy, phoneTestMode = 
           <td>{row.attemptCount}</td>
           <td>{dateLabel(row.lastOutcomeAt)}<small>{row.outcome.replaceAll("_", " ")}</small></td>
           <td>{row.callbackAt ? dateLabel(row.callbackAt) : row.inboundReturn ? "Top of your list" : "—"}</td>
+          <td><HintButton type="button" className={styles.button} disabled={busy} disabledReason={busyReason} onClick={(event) => { event.stopPropagation(); window.location.assign(`/sales/prospects/${encodeURIComponent(row.id)}/edit?returnTo=contacts`); }}>Edit</HintButton></td>
         </tr>)}</tbody>
       </table>
       {loading ? <p className={styles.contactsEmpty} role="status">Loading contacts…</p> : !rows.length && <div className={styles.contactsEmpty}><h2>{query.trim().length === 1 ? "Enter at least two characters" : "No contacts found"}</h2><p>Try another search or filter, or add a prospect.</p><HintButton type="button" className={styles.button} disabled={busy || phoneTestMode} disabledReason={disabledReasons(busy && busyReason, phoneTestMode && "Adding prospects is disabled during phone test mode.")} onClick={() => setAdding(true)}>Add prospect</HintButton></div>}

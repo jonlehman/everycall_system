@@ -19,6 +19,8 @@ try {
  await db.exec(await fs.readFile(new URL('../migrations/0032_outbound_sales_demo.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../migrations/0056_sales_dialer_v2.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../migrations/0057_sales_phone_test_mode.sql',import.meta.url),'utf8'));
+ await db.exec(await fs.readFile(new URL('../migrations/0058_sales_prospect_checkout.sql',import.meta.url),'utf8'));
+ await db.exec(await fs.readFile(new URL('../migrations/0059_sales_company_contacts.sql',import.meta.url),'utf8'));
 
   const input={business_name:'Contacts fixture',contact_name:'Sam',phone:'+12065550101',numbers:[{phoneE164:'+14255550142',type:'cell',label:'Cell'}],website:'https://contacts.test',permission:true,timezone:'America/Los_Angeles',metro:'Seattle'};
   const created=await createSalesContact(pool,input,{repId:1,env});

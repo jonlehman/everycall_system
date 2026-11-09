@@ -97,3 +97,16 @@ export function formatPhone(value) {
     ? `(${digits.slice(-10, -7)}) ${digits.slice(-7, -4)}-${digits.slice(-4)}`
     : String(value || "");
 }
+
+// Selection is scoped to a company; a removed manual/callback target never falls back.
+export function initialCompanyContactId(prospect) {
+  if (prospect?.callbackTarget?.requiresSelection) return "";
+  return prospect?.callbackTarget?.contactId || prospect?.defaultContactId || "";
+}
+export function companyContactTarget(prospect, contactId) {
+  const contact = prospect?.contacts?.find(item => item.id === contactId) || null;
+  return { contact, numbers: contact ? [
+    ...(contact.numbers || []).map(number => ({ ...number, shared: false })),
+    ...(prospect.sharedNumbers || []).map(number => ({ ...number, shared: true })),
+  ] : [] };
+}

@@ -183,7 +183,15 @@ export function normalizeProspect(source = {}) {
       field.key, normalizeText(firstValue(source, [field.key, field.column]))
     ])),
     phoneTestMode: Boolean(source.phoneTestMode),
+    contactSnapshot: source.contactSnapshot || source.metadata?.contact_snapshot || null,
+    contactId: source.contactId || source.metadata?.contact_id || null,
+    numberId: source.numberId || source.metadata?.number_id || null,
     numbers: Array.isArray(source.numbers) ? source.numbers : [],
+    contacts: Array.isArray(source.contacts) ? source.contacts : [],
+    sharedNumbers: Array.isArray(source.sharedNumbers) ? source.sharedNumbers : [],
+    defaultContactId: source.defaultContactId || null,
+    callbackTarget: source.callbackTarget || null,
+    editCapabilities: source.editCapabilities || null,
     coreFacts: Array.isArray(source.coreFacts) ? source.coreFacts : [],
     companyBrief: normalizeCompanyBrief(source.companyBrief),
     suggestedAsks: Array.isArray(source.suggestedAsks)
@@ -479,6 +487,9 @@ export function normalizeCall(payload = {}) {
     paidAt: source.paidAt || null,
     customerPaid: Boolean(source.customerPaid),
     phoneTestMode: Boolean(source.phoneTestMode),
+    contactSnapshot: source.contactSnapshot || source.metadata?.contact_snapshot || null,
+    contactId: source.contactId || source.metadata?.contact_id || null,
+    numberId: source.numberId || source.metadata?.number_id || null,
     demoStartedAt: source.demoStartedAt || source.demo_started_at || null,
     demoEndedAt: source.demoEndedAt || source.demo_ended_at || null,
     demoDurationSeconds:

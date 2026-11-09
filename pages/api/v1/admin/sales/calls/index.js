@@ -6,11 +6,12 @@ import {
   getReadySalesDemoProfile,
   getSalesOperatorSettings,
   getSalesProspect,
+  getSalesCallSession,
   salesError
 } from "../../../../_lib/salesRepository.js";
 import {
   requireSalesAdmin,
-  runSalesAdminMutation,
+  runSalesOwnedProspectMutation,
   salesIdempotencyKey,
   salesRequestBody,
   sendSalesApiError
@@ -32,8 +33,9 @@ export default async function handler(req, res) {
     const context = await requireSalesAdmin(req, res);
     if (!context) return;
     const body = salesRequestBody(req);
-    const request = { prospectId: String(body.prospectId || "").trim(), phoneE164: String(body.phoneE164 || "").trim() };
-    const result = await runSalesAdminMutation(req, context, {
+    const request = { prospectId: String(body.prospectId || "").trim(), phoneE164: String(body.phoneE164 || "").trim(), contactId: body.contactId, numberId: body.numberId, expectedRowVersion: body.expectedRowVersion };
+    const result = await runSalesOwnedProspectMutation(req, context, request.prospectId, {
+      callReservation: true,
       scope: "sales.call.create",
       request,
       action: "sales.call.created",
@@ -41,18 +43,17 @@ export default async function handler(req, res) {
         prospectId: request.prospectId,
         salesCallId: response.body?.call?.salesCallId || null
       })
-    }, async () => {
+    }, async (db) => {
       const [prospect, demoProfile, operatorSettings] = await Promise.all([
-        getSalesProspect(context.pool, request.prospectId),
-        getReadySalesDemoProfile(context.pool, request.prospectId),
-        getSalesOperatorSettings(context.pool, context.admin.id)
+        getSalesProspect(db, request.prospectId),
+        getReadySalesDemoProfile(db, request.prospectId),
+        getSalesOperatorSettings(db, context.admin.id)
       ]);
       if (!prospect) {
         throw salesError("prospect_not_found", "Prospect not found.", 404);
       }
-      await assertSalesProspectOwner(context.pool,request.prospectId,context.admin.id,{allowUnassigned:context.session.role==='admin'});
-      const dialedNumber = request.phoneE164 || prospect.phoneE164;
-      if (!prospect.numbers.some(n=>n.phoneE164===dialedNumber)) throw salesError('invalid_dialed_number','Choose a number on this prospect.',400);
+      await assertSalesProspectOwner(db,request.prospectId,context.admin.id,{allowUnassigned:context.session.role==='admin'});
+      const dialedNumber = request.phoneE164;
       if (!demoProfile) {
         throw salesError("sales_demo_not_ready", "The prospect demo must be ready before calling.", 409);
       }
@@ -64,14 +65,13 @@ export default async function handler(req, res) {
       const businessName = demoProfile.businessName || prospect.businessName;
       const callerIdNumber = operatorSettings?.callerIdNumber
         || process.env.SALES_TELNYX_CALLER_ID;
-      // Validate browser startup options before taking the durable reservation.
-      buildSalesWebrtcCallOptions({
-        salesCallId: id, prospectPhone: dialedNumber, callerIdNumber,
-        callerName: operatorSettings?.displayName || "EveryCall"
-      });
-      const call = await createSalesCallSession(context.pool, {
+      // This owned transaction commits only after startup options are valid.
+      // The reservation resolves legacy requests under the company lock too.
+      if (!String(callerIdNumber || "").trim()) throw new Error("telnyx_sales_caller_id_missing");
+      const call = await createSalesCallSession(db, {
         salesCallId: id,
         prospectId: prospect.prospectId,
+        contactId: request.contactId, numberId: request.numberId, expectedRowVersion: request.expectedRowVersion,
         adminUserId: context.admin.id,
         state: "connecting_browser",
         aiState: "not_started",
@@ -91,11 +91,11 @@ export default async function handler(req, res) {
 
       const callOptions = buildSalesWebrtcCallOptions({
         salesCallId: call.salesCallId,
-        prospectPhone: dialedNumber,
+        prospectPhone: call.metadata?.prospect_number,
         callerIdNumber,
         callerName: operatorSettings?.displayName || "EveryCall"
       });
-      const view = await buildSalesCallView(context.pool, call, {
+      const view = await buildSalesCallView(db, call, {
         webrtc: { callOptions },
         operatorUserId: context.session.role === "sales" ? context.admin.id : null
       });
@@ -104,6 +104,12 @@ export default async function handler(req, res) {
         body: { ok: true, call: view }
       };
     });
+    if (result.replayed && result.body?.call?.salesCallId) {
+      const latest = await getSalesCallSession(context.pool, result.body.call.salesCallId);
+      await assertSalesProspectOwner(context.pool, request.prospectId, context.admin.id, {allowUnassigned: context.session.role === 'admin'});
+      const canStart = latest?.state === 'connecting_browser' && !latest.operatorCallControlId && !latest.prospectCallControlId;
+      result.body.call = await buildSalesCallView(context.pool, latest, {operatorUserId: context.session.role === 'sales' ? context.admin.id : null, ...(canStart ? {webrtc: result.body.call.webrtc} : {})});
+    }
     return res.status(result.replayed ? 200 : result.status).json(result.body);
   } catch (error) {
     return sendSalesApiError(res, error, "sales_call_create_failed");

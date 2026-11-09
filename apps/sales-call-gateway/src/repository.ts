@@ -151,7 +151,7 @@ const CALL_CONTEXT_SELECT = `
   SELECT
     s.*,
     p.business_name AS prospect_business_name,
-    COALESCE(s.dialed_number, s.metadata_json->>'prospect_number', p.phone_e164) AS prospect_number,
+    COALESCE(s.metadata_json->>'prospect_number', s.dialed_number) AS prospect_number,
     p.permission_granted,
     (p.suppressed OR EXISTS(SELECT 1 FROM sales_dnc_registry r WHERE
       (r.identity_type='phone' AND (r.identity_value=COALESCE(p.test_original_phone_e164,p.phone_e164) OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(p.test_original_numbers_json,p.numbers_json)) n WHERE n->>'phoneE164'=r.identity_value)))

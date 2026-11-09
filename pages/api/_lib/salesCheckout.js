@@ -1,3 +1,4 @@
+import { resolveSalesContactTarget } from './salesCompanyContacts.js';
 import { SALES_TEST_NUMBERS } from './salesPhoneTestMode.js';
 import Stripe from 'stripe';
 import crypto from 'node:crypto';
@@ -17,25 +18,27 @@ export function getSalesTestStripe(env=process.env) {
 
 // Recheck before idempotency receipt lookup too: a stale confirmed UI must not
 // replay another mode's receipt or authorize a newly restored customer number.
-export async function validateSalesCheckoutRequest(pool,{salesCallId=null,prospectId=null,repId,channel,email,expectedIsTest,confirmedRecipient,confirmedWithoutCall,env=process.env}) {
+export async function validateSalesCheckoutRequest(pool,{salesCallId=null,prospectId=null,repId,channel,email,contactId,numberId,expectedRowVersion,expectedIsTest,confirmedRecipient,confirmedWithoutCall,env=process.env}) {
  const call=salesCallId?assertSalesCallAdmin(await getSalesCallSession(pool,salesCallId),repId):null;
  const id=call?.prospectId||prospectId;
  await assertSalesProspectOwner(pool,id,repId);
  const prospect=await getSalesProspect(pool,id);
+ const target=await resolveSalesContactTarget(pool,id,{contactId:contactId||call?.metadata?.contact_id,numberId,expectedRowVersion,allowNoNumber:channel!=='sms'});
+ if(call?.metadata?.contact_id&&target.contactId!==call.metadata.contact_id)throw salesError('checkout_contact_changed','Use the contact recorded on this call.',409);
  const mode=await pool.query('SELECT phone_test_mode FROM sales_dialer_config WHERE id=TRUE');
  const isTest=call?Boolean(call.metadata?.phone_test_mode):Boolean(mode.rows[0]?.phone_test_mode);
  if(!call&&confirmedWithoutCall!==true)throw salesError('checkout_confirmation_required','Confirm the signup link recipient.',409);
  if((!call||expectedIsTest!==undefined)&&expectedIsTest!==isTest)throw salesError('checkout_context_changed','Checkout mode changed. Refresh and confirm the recipient again.',409);
  if(!call){
   const recipient=channel==='sms'
-   ?isTest?SALES_TEST_NUMBERS.find(number=>number.type==='cell').phoneE164:prospect.numbers.find(number=>number.type==='cell')?.phoneE164
+   ?isTest?SALES_TEST_NUMBERS.find(number=>number.type==='cell').phoneE164:target.contactSnapshot.numberType==='cell'?target.phoneE164:null
    :String(email||'').trim().toLowerCase();
   if(!recipient||String(confirmedRecipient||'').trim().toLowerCase()!==recipient)throw salesError('checkout_recipient_changed','Checkout recipient changed. Refresh and confirm again.',409);
  }
  return isTest;
 }
 
-export async function sendSalesCheckout(pool,{salesCallId=null,prospectId=null,confirmedWithoutCall=false,expectedIsTest,confirmedRecipient,repId,channel,email,env=process.env,stripe=null,sms=sendTelnyxSms,mail=sendTransactionalEmail}) {
+export async function sendSalesCheckout(pool,{salesCallId=null,prospectId=null,confirmedWithoutCall=false,expectedIsTest,confirmedRecipient,repId,channel,email,contactId,numberId,expectedRowVersion,env=process.env,stripe=null,sms=sendTelnyxSms,mail=sendTransactionalEmail}) {
  if(!salesCallId&&confirmedWithoutCall!==true)throw salesError('checkout_confirmation_required','Confirm the recipient before sending a signup link without a call.',409);
  if(!salesCallId&&!prospectId)throw salesError('prospect_required','Choose a prospect.');
  const call=salesCallId?assertSalesCallAdmin(await getSalesCallSession(pool,salesCallId),repId):null;
@@ -58,12 +61,15 @@ export async function sendSalesCheckout(pool,{salesCallId=null,prospectId=null,c
   if(!isTest&&(call?.paidAt||prospect.status==='paid'||(await db.query('SELECT 1 FROM sales_checkout_sessions WHERE prospect_id=$1 AND paid_at IS NOT NULL LIMIT 1',[targetId])).rowCount))throw salesError('sales_prospect_already_paid','This customer has already paid for setup.',409);
   if(prospect.doNotCall||prospect.suppressed||!owner.rows[0].unsuppressed)throw salesError('prospect_suppressed','This prospect must not be contacted.',409);
   if(!call&&(!prospect.permissionGranted||['removed','not_interested'].includes(prospect.status)))throw salesError('prospect_not_contactable','This prospect is not available for signup delivery.',409);
-  const cell=prospect.numbers.find(n=>n.type==='cell');
-  const delivery=channel==='sms'&&(cell||isTest)?'sms':'email';
+  const target=await resolveSalesContactTarget(db,targetId,{contactId:contactId||call?.metadata?.contact_id,numberId,expectedRowVersion,allowNoNumber:channel!=='sms'});
+  if(call?.metadata?.contact_id&&target.contactId!==call.metadata.contact_id)throw salesError('checkout_contact_changed','Use the contact recorded on this call.',409);
+  const cell=target.contactSnapshot.numberType==='cell'?{phoneE164:target.phoneE164}:null;
+  if(channel==='sms'&&!cell&&!isTest)throw salesError('checkout_mobile_required','Choose a mobile number for this contact.',409);
+  const delivery=channel;
   const testEmail=isTest&&delivery==='email'?String(env.SALES_CHECKOUT_TEST_EMAIL||(await db.query('SELECT email FROM admin_users WHERE id=$1',[repId])).rows[0]?.email||'').trim().toLowerCase():'';
   const recipient=isTest
    ?(delivery==='sms'?SALES_TEST_NUMBERS.find(number=>number.type==='cell').phoneE164:testEmail)
-   :(delivery==='sms'?cell.phoneE164:String(email||prospect.contactEmail||'').trim().toLowerCase());
+   :(delivery==='sms'?cell.phoneE164:String(email||target.contactSnapshot.email||'').trim().toLowerCase());
   if(isTest&&delivery==='email'&&(!recipient||(email&&String(email).trim().toLowerCase()!==recipient)))throw salesError('sales_test_email_required','Use your account email or configured Sales test email for test checkout.',409);
   if(!call&&String(confirmedRecipient||'').trim().toLowerCase()!==recipient)throw salesError('checkout_recipient_changed','Checkout recipient changed. Refresh and confirm again.',409);
   if(!['sms','email'].includes(channel))throw salesError('invalid_delivery_channel','Choose text or email.');
@@ -73,16 +79,16 @@ export async function sendSalesCheckout(pool,{salesCallId=null,prospectId=null,c
   // Preserve a call's existing checkout identity; otherwise reuse the standalone
   // link. Prospect sends reuse an existing link instead of creating another charge.
   const existing=await db.query('SELECT * FROM sales_checkout_sessions WHERE prospect_id=$1 AND is_test=$2 ORDER BY (sales_call_id=$3) DESC NULLS LAST,created_at DESC LIMIT 1 FOR UPDATE',[targetId,isTest,salesCallId]);
-  const row=existing.rows[0]||(await db.query('INSERT INTO sales_checkout_sessions(checkout_id,sales_call_id,prospect_id,rep_user_id,channel,recipient,is_test,activation_status) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[`sales_checkout_${crypto.randomUUID()}`,salesCallId,targetId,repId,delivery,recipient,isTest,isTest?'test_only':'unpaid'])).rows[0];
-  if(row.channel!==delivery||row.recipient!==recipient)throw salesError('checkout_delivery_exists','A checkout link already exists for a different delivery address. Use the existing link.',409);
+  const row=existing.rows[0]||(await db.query('INSERT INTO sales_checkout_sessions(checkout_id,sales_call_id,prospect_id,rep_user_id,channel,recipient,is_test,activation_status,contact_snapshot) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) RETURNING *',[`sales_checkout_${crypto.randomUUID()}`,salesCallId,targetId,repId,delivery,recipient,isTest,isTest?'test_only':'unpaid',JSON.stringify({...target.contactSnapshot,email:delivery==='email'?recipient:target.contactSnapshot.email})])).rows[0];
+  if(row.channel!==delivery||row.recipient!==recipient)throw salesError('checkout_delivery_exists',`This company's checkout is reserved for ${row.channel} to ${row.recipient}. Use the existing recipient; changing contacts cannot create another checkout.`,409);
   if(call&&!row.is_test&&['sent','paid','delivered'].includes(row.status))await db.query("UPDATE sales_call_sessions SET link_sent_at=COALESCE(link_sent_at,NOW()),updated_at=NOW() WHERE sales_call_id=$1",[salesCallId]);
   return {row,prospect,delivery,recipient};
  });
  const {row,prospect,delivery,recipient}=reservation;
- if(row.channel!==delivery||row.recipient!==recipient)throw salesError('checkout_delivery_exists','A checkout link already exists for a different delivery address. Use the existing link.',409);
+ if(row.channel!==delivery||row.recipient!==recipient)throw salesError('checkout_delivery_exists',`This company's checkout is reserved for ${row.channel} to ${row.recipient}. Use the existing recipient; changing contacts cannot create another checkout.`,409);
  if(!row.stripe_session_id){
   const client=stripe||(row.is_test?getSalesTestStripe(env):getStripe());
-  const session=await client.checkout.sessions.create({mode:'payment',payment_method_types:['card'],line_items:[{price_data:{currency:'usd',unit_amount:10000,product_data:{name:row.is_test?'EveryCall TEST setup — no real charge':'EveryCall setup — first month included'}},quantity:1}],client_reference_id:row.checkout_id,metadata:{sales_checkout_id:row.checkout_id,...(row.sales_call_id?{sales_call_id:row.sales_call_id}:{}),sales_prospect_id:row.prospect_id,sales_checkout_test:String(row.is_test)},success_url:`${origin.origin}/sales/checkout-result?status=success`,cancel_url:`${origin.origin}/sales/checkout-result?status=cancelled`,...(!row.is_test&&prospect.contactEmail?{customer_email:prospect.contactEmail}:row.is_test&&delivery==='email'?{customer_email:recipient}:{})},{idempotencyKey:row.checkout_id});
+  const session=await client.checkout.sessions.create({mode:'payment',payment_method_types:['card'],line_items:[{price_data:{currency:'usd',unit_amount:10000,product_data:{name:row.is_test?'EveryCall TEST setup — no real charge':'EveryCall setup — first month included'}},quantity:1}],client_reference_id:row.checkout_id,metadata:{sales_checkout_id:row.checkout_id,...(row.sales_call_id?{sales_call_id:row.sales_call_id}:{}),sales_prospect_id:row.prospect_id,sales_checkout_test:String(row.is_test)},success_url:`${origin.origin}/sales/checkout-result?status=success`,cancel_url:`${origin.origin}/sales/checkout-result?status=cancelled`,...(delivery==='email'?{customer_email:row.recipient}:{})},{idempotencyKey:row.checkout_id});
   if(row.is_test&&session.livemode!==false)throw salesError('sales_test_checkout_mode_mismatch','Stripe did not return a test checkout. No link was sent.',502);
   if(!row.is_test&&session.livemode!==true)throw salesError('sales_live_checkout_mode_mismatch','Stripe did not return a live checkout. No link was sent.',502);
   if(!session.id||!session.url)throw salesError('checkout_creation_failed','Stripe did not return a checkout link.',502);
@@ -93,7 +99,7 @@ export async function sendSalesCheckout(pool,{salesCallId=null,prospectId=null,c
   Object.assign(row,refreshed.rows[0]);
  }
  if(['sent','paid','delivered','test_complete'].includes(row.status)){
-  return {url:row.checkout_url,channel:row.channel,status:row.status,isTest:row.is_test};
+  return {url:row.checkout_url,channel:row.channel,status:row.status,isTest:row.is_test,recipient:row.recipient,contactSnapshot:row.contact_snapshot,reused:true};
  }
  // Never blindly repeat an uncertain provider send (Mailtrap/Telnyx do not guarantee idempotent sends).
  const claim=await pool.query("UPDATE sales_checkout_sessions SET status='sending',updated_at=NOW() WHERE checkout_id=$1 AND status='created' RETURNING checkout_id",[row.checkout_id]);
@@ -108,7 +114,7 @@ export async function sendSalesCheckout(pool,{salesCallId=null,prospectId=null,c
  } catch(error){await pool.query("UPDATE sales_checkout_sessions SET status='delivery_uncertain',updated_at=NOW() WHERE checkout_id=$1",[row.checkout_id]);throw error;}
  const messageId=message?.data?.id||message?.id||null;
  await salesTransaction(pool,async db=>{await db.query("UPDATE sales_checkout_sessions SET status=CASE WHEN status='test_complete' THEN status WHEN paid_at IS NULL THEN 'sent' ELSE 'paid' END,provider_message_id=$2,updated_at=NOW() WHERE checkout_id=$1",[row.checkout_id,messageId]);if(!row.is_test)await db.query("UPDATE sales_call_sessions SET link_sent_at=COALESCE(link_sent_at,NOW()),outcome=CASE WHEN paid_at IS NULL THEN 'signup_link_sent' ELSE 'paid' END,updated_at=NOW() WHERE sales_call_id=$1",[salesCallId]);});
- return {url:row.checkout_url,channel:delivery,status:'sent',isTest:row.is_test};
+ return {url:row.checkout_url,channel:delivery,status:'sent',isTest:row.is_test,recipient:row.recipient,contactSnapshot:row.contact_snapshot};
 }
 // Called only after the existing Stripe handler verifies the signature, inside its transaction.
 export async function applySalesPaidCheckout(db,event,{testWebhook=false}={}) {
@@ -130,4 +136,19 @@ export async function applySalesPaidCheckout(db,event,{testWebhook=false}={}) {
  if(row.sales_call_id)await db.query("UPDATE sales_call_sessions SET paid_at=COALESCE(paid_at,NOW()),outcome='paid',updated_at=NOW() WHERE sales_call_id=$1",[row.sales_call_id]);
  await db.query("UPDATE sales_prospects SET status='paid',last_outcome='paid',last_outcome_at=NOW(),updated_at=NOW() WHERE prospect_id=$1",[row.prospect_id]);
  return true;
+}
+
+export async function getSalesCheckoutContext(pool,{prospectId,salesCallId,repId}) {
+ return salesTransaction(pool,async db=>{
+ await db.query('SELECT id FROM sales_dialer_config WHERE id=TRUE FOR SHARE');
+ await db.query('SELECT prospect_id FROM sales_prospects WHERE prospect_id=$1 FOR SHARE',[prospectId]);
+ const call=salesCallId?assertSalesCallAdmin(await getSalesCallSession(db,salesCallId),repId):null;
+ if(call&&call.prospectId!==prospectId)throw salesError('checkout_context_mismatch','Call does not belong to this company.',409);
+ await assertSalesProspectOwner(db,prospectId,repId);
+ const mode=await db.query('SELECT phone_test_mode FROM sales_dialer_config WHERE id=TRUE');
+ const isTest=call?Boolean(call.metadata?.phone_test_mode):Boolean(mode.rows[0]?.phone_test_mode);
+ const result=await db.query('SELECT channel,recipient,status,checkout_url,is_test,contact_snapshot FROM sales_checkout_sessions WHERE prospect_id=$1 AND is_test=$2 ORDER BY created_at DESC LIMIT 1',[prospectId,isTest]);
+ const row=result.rows[0];
+ return row?{channel:row.channel,recipient:row.recipient,status:row.status,url:row.checkout_url,isTest:row.is_test,contactSnapshot:row.contact_snapshot}:null;
+ });
 }

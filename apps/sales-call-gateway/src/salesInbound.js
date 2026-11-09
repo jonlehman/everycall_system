@@ -61,10 +61,21 @@ export function createSalesInboundService({pool,telnyx,openai=null,env=process.e
   if(!reps.rowCount&&!globalNumber)return false;
   const mode=await pool.query('SELECT phone_test_mode FROM sales_dialer_config WHERE id=TRUE');
   if(mode.rows[0]?.phone_test_mode){await telnyx.hangupCall({callControlId:providerId,commandId:command(providerId,'phone_test_mode_inbound_paused')});return true;}
-  const match=await pool.query(`SELECT p.*,s.admin_user_id AS recent_rep FROM sales_prospects p LEFT JOIN LATERAL(SELECT admin_user_id FROM sales_call_sessions WHERE prospect_id=p.prospect_id ORDER BY created_at DESC LIMIT 1)s ON TRUE WHERE p.phone_e164=$1 OR EXISTS(SELECT 1 FROM jsonb_array_elements(p.numbers_json) n WHERE n->>'phoneE164'=$1) ORDER BY p.updated_at DESC LIMIT 1`,[phone]);
-  const prospect=match.rows[0];const repId=prospect?.assigned_rep_user_id||prospect?.recent_rep||reps.rows[0]?.admin_user_id||Number(env.SALES_INBOUND_DEFAULT_REP_ID)||null;
+  // Match companies without choosing one by recency. Shared numbers identify a
+  // company only; a person is known only for one uniquely associated contact.
+  const match=await pool.query(`SELECT p.*,n.contact_id,n.number_id,n.type AS number_type,n.label AS number_label,c.first_name,c.last_name,c.legacy_name,c.title,c.email,c.decision_maker,c.influencer
+   FROM sales_prospects p JOIN sales_prospect_contact_numbers n ON n.prospect_id=p.prospect_id AND n.archived_at IS NULL
+   LEFT JOIN sales_prospect_contacts c ON c.contact_id=n.contact_id AND c.archived_at IS NULL
+   WHERE n.phone_e164=$1 AND (n.contact_id IS NULL OR c.contact_id IS NOT NULL)`,[phone]);
+  const companyIds=[...new Set(match.rows.map(row=>row.prospect_id))];
+  const uniqueCompany=companyIds.length===1?match.rows[0]:null;
+  const repId=uniqueCompany?.assigned_rep_user_id||reps.rows[0]?.admin_user_id||Number(env.SALES_INBOUND_DEFAULT_REP_ID)||null;
+  const prospect=uniqueCompany&&(!uniqueCompany.assigned_rep_user_id||Number(uniqueCompany.assigned_rep_user_id)===Number(repId))?uniqueCompany:null;
+  const contactIds=[...new Set(match.rows.map(row=>row.contact_id).filter(Boolean))];
+  const person=prospect&&!match.rows.some(row=>!row.contact_id)&&contactIds.length===1?match.rows[0]:null;
+  const contactSnapshot=person?{contactId:person.contact_id,numberId:person.number_id,firstName:person.first_name,lastName:person.last_name,displayName:[person.first_name,person.last_name].filter(Boolean).join(' ')||person.legacy_name||'',title:person.title,email:person.email,decisionMaker:person.decision_maker,influencer:person.influencer,phoneE164:phone,numberType:person.number_type,numberLabel:person.number_label}:null;
   const incomingId=id('sales_incoming');
-  const created=await pool.query(`INSERT INTO sales_incoming_calls(incoming_id,provider_call_control_id,phone_e164,rep_user_id,prospect_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(provider_call_control_id) DO UPDATE SET provider_call_control_id=EXCLUDED.provider_call_control_id RETURNING *`,[incomingId,providerId,phone,repId,prospect?.prospect_id||null]);
+  const created=await pool.query(`INSERT INTO sales_incoming_calls(incoming_id,provider_call_control_id,phone_e164,rep_user_id,prospect_id,contact_snapshot) VALUES($1,$2,$3,$4,$5,$6::jsonb) ON CONFLICT(provider_call_control_id) DO UPDATE SET provider_call_control_id=EXCLUDED.provider_call_control_id RETURNING *`,[incomingId,providerId,phone,repId,prospect?.prospect_id||null,JSON.stringify(contactSnapshot)]);
   const incoming=created.rows[0];
   await telnyx.answerCall({callControlId:providerId,commandId:command(incoming.incoming_id,'answer')});
   const busy=repId?await pool.query(`SELECT 1 FROM sales_call_sessions WHERE admin_user_id=$1 AND state NOT IN (${terminal}) LIMIT 1`,[repId]):{rowCount:1};

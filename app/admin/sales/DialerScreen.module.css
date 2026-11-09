@@ -1113,3 +1113,25 @@
 .footerControls > [data-disabled-hint]:has(> input) { width: auto; }
 .slotGrid > [data-disabled-hint] { display: flex; }
 .slotGrid > [data-disabled-hint] > button { width: 100%; }
+.contactPicker {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  margin: 10px 0;
+  font-size: 12px;
+}
+.contactPicker select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+.contactPicker select:disabled { pointer-events: none; }
+

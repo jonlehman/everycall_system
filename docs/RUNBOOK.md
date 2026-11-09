@@ -1,5 +1,27 @@
 # Runbook
 
+## Sales company contacts release (0059)
+
+Apply `0059_sales_company_contacts.sql` with the reviewed migration runner before deploying the new editor/call consumers. The release inventory includes 0059 as a Sales-only migration; unrelated runtime readiness does not require a new global receipt. Drain active Sales calls and reconcile pending incoming/delivery/booking work first. Migration holds the Sales mode lock, rejects active calls and fails closed when original phone backups or substituted test destinations are inconsistent. Never restore, disable testing, or overwrite a backup merely to bypass a failed preflight.
+
+Read-only backup inventory (returns counts, not original identities):
+
+```sql
+SELECT c.phone_test_mode,
+       count(*) AS prospects,
+       count(*) FILTER (WHERE p.test_original_phone_e164 IS NOT NULL) AS backed_up,
+       count(*) FILTER (WHERE c.phone_test_mode AND
+         (p.test_original_phone_e164 IS NULL OR p.test_original_numbers_json IS NULL
+          OR jsonb_typeof(p.test_original_numbers_json) IS DISTINCT FROM 'array')) AS incomplete_backups
+FROM sales_dialer_config c CROSS JOIN sales_prospects p
+WHERE c.id=TRUE GROUP BY c.phone_test_mode;
+```
+
+A deployment while phone testing is active must backfill from private original columns. Verify the migration receipt, one active default per company, preserved company/phone/contact counts, and no test-destination substitution in canonical contact identities. Do not print those identities in routine logs. Test-mode company exports contain effective test phones and are intentionally rejected on reimport; obtain a fresh export after an authorized restore. Existing checkout recipients remain immutable; a changed selection does not authorize a new checkout or a repeat uncertain delivery.
+
+Use the disposable native PostgreSQL contacts suite plus Sales auth/phone-test and editor/controller fixtures before release. Roll back application code only through a reviewed compatible release; retain additive tables, original backups, identities and audit/history rather than dropping them. No production migration or live provider canary is authorized merely by running the fixtures.
+
+
 ## System User password changes
 
 - In Account Settings → System Users, choose **Set Password** for the intended person, enter and confirm the new password, then save. Existing account owners/admins and platform managers can do this. For disabled/invited users, complete the existing Enable Access or invitation workflow first; setting a password does not change access or bypass the ten-active-user limit.

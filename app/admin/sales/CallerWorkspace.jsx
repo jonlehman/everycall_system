@@ -9,7 +9,7 @@ import {
 } from "./salesApi";
 import { useSalesQueue } from "./useSalesQueue";
 import { connectTelnyxBrowserClient } from "./telnyxBrowserClient";
-import { mayQuickAdvance } from "./dialerState.mjs";
+import { mayQuickAdvance, initialCompanyContactId, companyContactTarget } from "./dialerState.mjs";
 import DialerScreen from "./DialerScreen";
 import { companyBriefRequestFailure, normalizeCompanyBrief } from "../../../lib/salesCompanyBriefDiagnostics.js";
 
@@ -18,6 +18,8 @@ export default function CallerWorkspace() {
   const { queue, queueLoading, queueError, loadQueue } = useSalesQueue({
     repMode: true,
   });
+  const [contactSelection, setContactSelection] = useState({ companyId: null, contactId: "" });
+  const [checkoutContext, setCheckoutContext] = useState(null);
   const [prospect, setProspect] = useState(null),
     [view, setView] = useState("dial"),
     [browsingContact, setBrowsingContact] = useState(false),
@@ -52,11 +54,36 @@ export default function CallerWorkspace() {
     wrapupDrafts = useRef([]),
     incomingTaken = useRef("");
   const browsingContactRef = useRef(false);
+  const selectedContactId = call?.id ? call.contactId || call.contactSnapshot?.contactId || "" : contactSelection.companyId === prospect?.id ? (prospect?.callbackTarget?.requiresSelection && !contactSelection.explicit ? "" : contactSelection.contactId) : initialCompanyContactId(prospect);
+  const selectedTarget = companyContactTarget(prospect, selectedContactId);
+  const returnHandled = useRef(false);
+  useEffect(() => {
+    if (returnHandled.current) return;
+    returnHandled.current = true;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "contacts") setView("contacts");
+    const id = params.get("prospectId");
+    if (!id) return;
+    browsingContactRef.current = true;
+    setBrowsingContact(true);
+    void fetchSalesJson(`${BASE}/prospects/${encodeURIComponent(id)}`).then(result => {
+      if (!callRef.current?.id) setProspect(normalizeProspect(result.prospect));
+    }).catch(err => setError(err.message));
+  }, []);
+  useEffect(() => {
+    setContactSelection(previous => previous.companyId === prospect?.id ? previous : { companyId: prospect?.id, contactId: initialCompanyContactId(prospect) });
+  }, [prospect?.id]);
   const viewRef = useRef(view);
   viewRef.current = view;
   callRef.current = call;
   prospectRef.current = prospect;
   noteRef.current = note;
+  useEffect(() => {
+    let active = true;
+    setCheckoutContext(null);
+    if (prospect?.id) void fetchSalesJson(`${BASE}/prospects/${encodeURIComponent(prospect.id)}/checkout${call?.id ? `?salesCallId=${encodeURIComponent(call.id)}` : ""}`).then(result => { if (active) setCheckoutContext(result.checkout || null); }).catch(() => {});
+    return () => { active = false; };
+  }, [prospect?.id, call?.id, selectedContactId, queue.config?.phoneTestMode]);
   const releaseMic = useCallback(() => {
     microphone.current?.getTracks?.().forEach((track) => track.stop());
     microphone.current = null;
@@ -174,7 +201,7 @@ export default function CallerWorkspace() {
     // Queue polling must never replace the record under a live call or its unsaved wrap-up.
     if (callRef.current?.id || browsingContactRef.current || viewRef.current === "contacts") return;
     const next = queue.current;
-    if (next?.id === prospectRef.current?.id) return;
+    if (next?.id === prospectRef.current?.id) { setProspect(next); return; }
     setProspect(next);
     setNote("");
     savedNote.current = "";
@@ -277,6 +304,7 @@ export default function CallerWorkspace() {
   const startCall = (number) =>
     run("call", async () => {
       if (!prospect?.id || call?.id) return;
+      if (!selectedTarget.contact || !selectedTarget.numbers.some(item => item.id === number.id)) throw new Error("Choose an active contact and one of their numbers.");
       if (!isDemoReady(prospect) || !prospect.eligible)
         throw new Error(
           prospect.callBlockedReason || "This prospect is not ready to call.",
@@ -287,11 +315,13 @@ export default function CallerWorkspace() {
       if (
         !createAttempt.current ||
         createAttempt.current.prospectId !== prospect.id ||
-        createAttempt.current.number !== number
+        createAttempt.current.numberId !== number.id ||
+        createAttempt.current.contactId !== selectedContactId
       )
         createAttempt.current = {
           prospectId: prospect.id,
-          number,
+          numberId: number.id,
+          contactId: selectedContactId,
           key: crypto.randomUUID(),
         };
       let created = null;
@@ -302,7 +332,10 @@ export default function CallerWorkspace() {
             idempotencyKey: createAttempt.current.key,
             body: JSON.stringify({
               prospectId: prospect.id,
-              phoneE164: number,
+              phoneE164: number.phoneE164,
+              contactId: selectedContactId,
+              numberId: number.id,
+              expectedRowVersion: prospect.rowVersion,
             }),
           }),
         );
@@ -313,8 +346,14 @@ export default function CallerWorkspace() {
         setNote("");
         savedNote.current = "";
         setMuted(false);
+        if (created.terminal || !created.webrtc?.callOptions?.destinationNumber) {
+          releaseMic();
+          createAttempt.current = null;
+          await loadQueue({ quiet: true });
+          return;
+        }
         softphone.current.placeCall(
-          created.webrtc?.callOptions || {},
+          created.webrtc.callOptions,
           microphone.current,
         );
         createAttempt.current = null;
@@ -525,7 +564,7 @@ export default function CallerWorkspace() {
     const result = await run("callback", async () => {
       const selected = prospectRef.current;
       if (!selected?.id || callRef.current?.id) return false;
-      const response = await mutateContact(selected, "callback", { callbackAt: value });
+      const response = await mutateContact(selected, "callback", { callbackAt: value, contactId: selectedContactId, numberId: selectedTarget.numbers.find(item => item.id === selected.callbackTarget?.numberId)?.id || selectedTarget.numbers[0]?.id });
       if (prospectRef.current?.id === selected.id && !callRef.current?.id) {
         browsingContactRef.current = true;
         setBrowsingContact(true);
@@ -585,11 +624,13 @@ export default function CallerWorkspace() {
       if (!selected?.id) throw new Error("Choose a prospect before sending a signup link.");
       const withoutCall = !currentCall?.id;
       const testCheckout = withoutCall ? Boolean(queue.config?.phoneTestMode) : Boolean(currentCall.phoneTestMode);
+      const deliveryContactId = checkoutContext?.contactSnapshot?.contactId || currentCall?.contactId || selectedContactId;
+      const deliveryNumberId = checkoutContext?.contactSnapshot?.numberId || selectedTarget.numbers.find(number => number.type === "cell")?.id;
       let confirmedRecipient;
       if (withoutCall) {
-        const recipient = details.channel === "sms"
-          ? testCheckout ? queue.config?.checkoutTestPhone || "+14256154640" : selected.numbers?.find((number) => number.type === "cell")?.phoneE164
-          : details.email?.trim();
+        const recipient = checkoutContext?.recipient || (details.channel === "sms"
+          ? testCheckout ? queue.config?.checkoutTestPhone || "+14256154640" : selectedTarget.numbers.find((number) => number.type === "cell")?.phoneE164
+          : details.email?.trim());
         confirmedRecipient = recipient;
         if (!recipient) throw new Error("Choose a signup link recipient.");
         if (!window.confirm(`Send the ${testCheckout ? "TEST signup link (no real charge)" : "signup link"} by ${details.channel === "sms" ? "text" : "email"} to ${recipient} without an associated call?`)) return;
@@ -600,8 +641,9 @@ export default function CallerWorkspace() {
       const result = await fetchSalesJson(`${BASE}/${context}/checkout`, {
         method: "POST",
         idempotencyKey: `sales-checkout-${withoutCall ? `prospect-${selected.id}` : currentCall.id}-${details.channel}-${testCheckout ? "test" : "live"}`,
-        body: JSON.stringify({ ...details, expectedIsTest: testCheckout, ...(withoutCall ? { confirmedWithoutCall: true, confirmedRecipient } : {}) }),
+        body: JSON.stringify({ ...details, contactId: deliveryContactId, numberId: deliveryNumberId, expectedRowVersion: selected.rowVersion, expectedIsTest: testCheckout, ...(withoutCall ? { confirmedWithoutCall: true, confirmedRecipient } : {}) }),
       });
+      setCheckoutContext(result.checkout || null);
       if (!result.checkout || !["sent", "delivered", "paid", "test_complete"].includes(result.checkout.status))
         throw new Error("Checkout delivery was not confirmed.");
       if (!withoutCall && callRef.current?.id === currentCall.id) {
@@ -620,7 +662,7 @@ export default function CallerWorkspace() {
         {
           method: "POST",
           idempotencyKey: `sales-booking-${call.id}-${details.start}`,
-          body: JSON.stringify(details),
+          body: JSON.stringify({ ...details, contactId: call.contactId || selectedContactId, expectedRowVersion: prospect.rowVersion }),
         },
       );
       if (!result.booking)
@@ -797,6 +839,9 @@ export default function CallerWorkspace() {
         onRestoreContact={restoreContact}
         onAddContact={addContact}
         prospect={prospect}
+        checkoutContext={checkoutContext}
+        selectedContactId={selectedContactId}
+        onCompanyContact={(contactId) => { if (!callRef.current?.id && !actionPending.current) setContactSelection({ companyId: prospect.id, contactId, explicit: true }); }}
         call={call}
         busy={busy}
         error={[error, call?.providerError, queueError]

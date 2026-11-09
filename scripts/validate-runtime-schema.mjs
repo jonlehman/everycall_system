@@ -131,7 +131,7 @@ try {
   // Upgrade an existing Sales schema with real call-linked checkout history.
   // The Sales-only receipt must not become a global runtime readiness gate.
   const prospectCheckoutMigration = '0058_sales_prospect_checkout.sql';
-  assert.deepEqual(REMEDIATION_MIGRATIONS, [...REQUIRED_SCHEMA_MIGRATIONS, prospectCheckoutMigration]);
+  assert.deepEqual(REMEDIATION_MIGRATIONS, [...REQUIRED_SCHEMA_MIGRATIONS, prospectCheckoutMigration, '0059_sales_company_contacts.sql']);
   await query('DROP INDEX sales_checkout_prospect_only_idx');
   await query('DROP TRIGGER sales_checkout_mode_immutable_trigger ON sales_checkout_sessions');
   await query('DROP FUNCTION sales_checkout_mode_immutable()');

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { SALES_CONTACT_COLUMNS_SQL, serializeSalesCompanyContacts, resolveSalesContactTarget, assertSalesCompanyEditable, validateCompanyEditorFields, saveSalesCompanyContacts, mergeLegacySalesContacts } from "./salesCompanyContacts.js";
 import { SALES_RESEARCH_FIELDS } from "../../../lib/salesProspectResearch.js";
 import { salesCoreFacts, salesSuggestedAsks } from "./salesCoreFacts.js";
 import { generateSalesCompanyBrief, serializeCompanyBrief, SALES_COMPANY_BRIEF_VERSION, createCompanyBriefAttempt, companyBriefFailure, logCompanyBriefFailure } from "./salesCompanyBrief.js";
@@ -261,6 +262,7 @@ export function normalizeSalesImportRecord(record, {
   env = process.env
 } = {}) {
   const source = normalizeRecordKeys(record);
+  if (source.phone_test_mode===true || ['true','yes','1'].includes(String(source.phone_test_mode||'').toLowerCase())) throw salesError('sales_test_export_not_importable','Exports made during phone testing cannot replace real company identities. Export again after restoring originals.');
   const businessName = normalizeSalesText(readAlias(source, [
     "business_name", "business", "company_name", "company", "shop_name"
   ]), 300);
@@ -320,7 +322,20 @@ export function normalizeSalesImportRecord(record, {
       .map(normalizeHeaderName).find((key) => source[key] !== undefined);
     if (alias !== undefined) research[field.key] = normalizeSalesText(source[alias], field.maxLength) || null;
   }
+  let contactsInput = record.contacts ?? source.contacts_json;
+  let sharedNumbersInput = record.sharedNumbers ?? source.shared_numbers_json;
+  for (const [key,value] of [['contacts',contactsInput],['sharedNumbers',sharedNumbersInput]]) {
+    if (typeof value === 'string' && value.trim()) {
+      let parsed; try { parsed=JSON.parse(value); } catch { throw salesError('invalid_contacts_json',`${key} must be a JSON array.`); }
+      if(key==='contacts')contactsInput=parsed;else sharedNumbersInput=parsed;
+    }
+  }
+  if(contactsInput!==undefined && contactsInput!=='' && !Array.isArray(contactsInput))throw salesError('invalid_contacts_json','Contacts must be a JSON array.');
+  if(sharedNumbersInput!==undefined && sharedNumbersInput!=='' && !Array.isArray(sharedNumbersInput))throw salesError('invalid_contacts_json','Shared numbers must be a JSON array.');
   return {
+    contactsInput: Array.isArray(contactsInput)?contactsInput:null,
+    sharedNumbersInput: Array.isArray(sharedNumbersInput)?sharedNumbersInput:null,
+    importedDefaultContactId: record.defaultContactId ?? source.default_contact_id ?? null,
     numbers:uniqueNumbers,research,
     sourceKey,
     externalRef,
@@ -597,6 +612,7 @@ export function serializeProspect(row) {
   ].filter(Boolean);
   return {
     prospectId: normalizeSalesText(row.prospect_id, 200),
+    ...serializeSalesCompanyContacts(row),
     externalRef: normalizeSalesText(row.external_ref, 240) || null,
     ...Object.fromEntries(SALES_RESEARCH_FIELDS.map((field) => [
       field.key, normalizeSalesText(prospectMetadata[field.key], field.maxLength) || null
@@ -676,7 +692,7 @@ export function serializeProspect(row) {
 }
 
 export const PROSPECT_WITH_DEMO_SELECT = `
-  SELECT p.*,
+  SELECT p.*, ${SALES_CONTACT_COLUMNS_SQL},
          (SELECT sales_call_id FROM sales_call_sessions s WHERE s.prospect_id=p.prospect_id
            AND s.state NOT IN ('closed', 'ended', 'completed', 'failed', 'no_answer', 'voicemail', 'wrong_number', 'not_interested', 'do_not_call', 'canceled', 'cancelled') LIMIT 1) AS active_sales_call_id,
          (SELECT state FROM sales_call_sessions s WHERE s.prospect_id=p.prospect_id
@@ -771,7 +787,10 @@ export async function importSalesProspects(pool, {
   const imported = [];
 
   await withTransaction(pool, async (db) => {
+    await db.query('SELECT id FROM sales_dialer_config WHERE id=TRUE FOR SHARE');
     for (const record of normalized.valid) {
+      const prior = (await db.query('SELECT prospect_id,default_contact_id,contact_email,email_permission FROM sales_prospects WHERE source_key=$1 FOR UPDATE',[record.sourceKey])).rows[0];
+      if (prior) await assertSalesCompanyEditable(db, prior.prospect_id);
       const prospectId = createId("sales_prospect");
       const result = await db.query(
         `INSERT INTO sales_prospects (
@@ -800,7 +819,7 @@ export async function importSalesProspects(pool, {
            owner_first_name = COALESCE(EXCLUDED.owner_first_name, sales_prospects.owner_first_name),
            contact_name = COALESCE(EXCLUDED.contact_name, sales_prospects.contact_name),
            contact_email = COALESCE(EXCLUDED.contact_email, sales_prospects.contact_email),
-           email_permission = EXCLUDED.email_permission,
+           email_permission = CASE WHEN sales_prospects.default_contact_id='contact_legacy_'||sales_prospects.prospect_id THEN EXCLUDED.email_permission ELSE sales_prospects.email_permission END,
            email_suppressed_at = CASE
              WHEN sales_prospects.suppressed OR EXCLUDED.suppressed
                THEN COALESCE(
@@ -890,6 +909,16 @@ export async function importSalesProspects(pool, {
         inserted: Boolean(result.rows[0]?.inserted)
       });
       await db.query(`UPDATE sales_prospects SET numbers_json=$2::jsonb,metadata_json=metadata_json || $3::jsonb WHERE prospect_id=$1`,[result.rows[0]?.prospect_id,json(record.numbers,[]),json(record.research,{})]);
+      await mergeLegacySalesContacts(db, result.rows[0]?.prospect_id, record);
+      if(record.contactsInput) {
+        const row=(await db.query(`SELECT p.*,${SALES_CONTACT_COLUMNS_SQL} FROM sales_prospects p WHERE prospect_id=$1`,[result.rows[0].prospect_id])).rows[0];
+        await saveSalesCompanyContacts(db,row,{contacts:record.contactsInput,sharedNumbers:record.sharedNumbersInput??[],defaultContactId:record.importedDefaultContactId});
+      }
+      if(prior) {
+        const final=(await db.query('SELECT contact_email FROM sales_prospects WHERE prospect_id=$1',[prior.prospect_id])).rows[0];
+        const emailChanged=(prior.contact_email||'').toLowerCase()!==(final.contact_email||'').toLowerCase();
+        if(emailChanged||prior.default_contact_id!==`contact_legacy_${prior.prospect_id}`)await db.query('UPDATE sales_prospects SET email_permission=$2 WHERE prospect_id=$1',[prior.prospect_id,emailChanged?false:prior.email_permission]);
+      }
       await invalidateSalesDemoIfWebsiteChanged(db, result.rows[0]?.prospect_id);
     }
   });
@@ -1141,6 +1170,7 @@ export async function createSalesProspect(pool, record, {
     throw error;
   }
   await pool.query(`UPDATE sales_prospects SET numbers_json=$2::jsonb,metadata_json=metadata_json || $3::jsonb WHERE prospect_id=$1`,[prospectId,json(normalized.numbers,[]),json(normalized.research,{})]);
+  await mergeLegacySalesContacts(pool, prospectId, normalized);
   return getSalesProspect(pool, prospectId);
 }
 
@@ -1230,6 +1260,32 @@ export async function removeSalesProspect(pool, prospectId, {
 }
 
 export async function updateSalesProspect(pool, prospectId, changes = {}) {
+  if (changes.editorMode === 'company_contacts') return withTransaction(pool, async db => {
+    validateCompanyEditorFields(changes);
+    await db.query('SELECT id FROM sales_dialer_config WHERE id=TRUE FOR SHARE');
+    const row = await assertSalesCompanyEditable(db, prospectId);
+    if (Number(row.row_version) !== changes.expectedRowVersion) throw salesError('prospect_version_conflict','This company changed. Reload before saving.',409);
+    await saveSalesCompanyContacts(db, row, changes);
+    const fields = { ...changes };
+    delete fields.editorMode; delete fields.contacts; delete fields.sharedNumbers; delete fields.defaultContactId; delete fields.emailPermissionConfirmation;
+    // Force one version increment even when only contacts changed.
+    fields.businessName = fields.businessName ?? row.business_name;
+    return updateSalesProspectFields(db, prospectId, fields);
+  });
+  return withTransaction(pool, async db => {
+    if (changes.status === 'paid') throw salesError('company_field_not_editable','Payment status is managed by verified checkout.',400);
+    await db.query('SELECT id FROM sales_dialer_config WHERE id=TRUE FOR SHARE');
+    const row = await assertSalesCompanyEditable(db, prospectId);
+    await updateSalesProspectFields(db, prospectId, changes);
+    if (['contactName','contactEmail','ownerFirstName'].some(key=>changes[key]!==undefined)) {
+      const name=changes.contactName===undefined?null:normalizeSalesText(changes.contactName,240);
+      await db.query(`UPDATE sales_prospect_contacts SET first_name=COALESCE($3,first_name),last_name=COALESCE($4,last_name),email=CASE WHEN $5 THEN $6 ELSE email END WHERE prospect_id=$1 AND contact_id=$2`,[prospectId,row.default_contact_id,name!==null?name.split(/\s+/)[0]||'':changes.ownerFirstName??null,name!==null?name.split(/\s+/).slice(1).join(' '):null,changes.contactEmail!==undefined,changes.contactEmail===undefined?null:normalizeOptionalEmail(changes.contactEmail)]);
+    }
+    if(changes.phoneE164!==undefined)await db.query('UPDATE sales_prospect_contact_numbers SET phone_e164=$3 WHERE prospect_id=$1 AND phone_e164=$2 AND archived_at IS NULL',[prospectId,row.phone_e164,normalizeSalesPhone(changes.phoneE164)]);
+    return getSalesProspect(db,prospectId);
+  });
+}
+async function updateSalesProspectFields(pool, prospectId, changes = {}) {
   const id = normalizeSalesText(prospectId, 200);
   const existing = await getSalesProspect(pool, id);
   if (!existing) throw salesError("prospect_not_found", "Prospect not found.", 404);
@@ -1257,12 +1313,17 @@ export async function updateSalesProspect(pool, prospectId, changes = {}) {
       assign("external_ref", externalRef);
       assign("source_key", salesProspectSourceKey(
         externalRef,
-        changes.phoneE164 === undefined ? existing.phoneE164 : normalizeSalesPhone(changes.phoneE164),
+        changes.phoneE164 === undefined ? (await pool.query('SELECT COALESCE(test_original_phone_e164,phone_e164) AS phone FROM sales_prospects WHERE prospect_id=$1',[id])).rows[0].phone : normalizeSalesPhone(changes.phoneE164),
         changes.websiteUrl === undefined ? existing.websiteUrl : normalizeWebsite(changes.websiteUrl)
       ));
     }
   }
   const research = {};
+  if (changes.metro !== undefined) research.metro = normalizeSalesText(changes.metro,120)||null;
+  if (changes.pitchFlags !== undefined) {
+    if (!Array.isArray(changes.pitchFlags)||changes.pitchFlags.length>12) throw salesError('invalid_pitch_flags','Provide at most 12 pitch flags.');
+    research.pitchFlags=changes.pitchFlags.map(value=>normalizeSalesText(value,200)).filter(Boolean);
+  }
   for (const field of SALES_RESEARCH_FIELDS) {
     if (changes[field.key] !== undefined) research[field.key] = normalizeSalesText(changes[field.key], field.maxLength) || null;
   }
@@ -1385,7 +1446,7 @@ export async function getSalesProspectByNormalizedEmail(pool, email) {
   if (!normalizedEmail) return null;
   const result = await pool.query(
     `${PROSPECT_WITH_DEMO_SELECT}
-     WHERE LOWER(p.contact_email) = $1
+     WHERE LOWER(p.contact_email) = $1 OR EXISTS(SELECT 1 FROM sales_prospect_contacts c WHERE c.prospect_id=p.prospect_id AND (LOWER(c.email)=$1 OR c.email_history_json ? $1))
      ORDER BY p.updated_at DESC
      LIMIT 1`,
     [normalizedEmail]
@@ -1437,7 +1498,7 @@ export async function updateSalesProspectEmailState(pool, email, changes = {}) {
   const result = await pool.query(
     `UPDATE sales_prospects
      SET ${assignments.join(", ")}
-     WHERE LOWER(contact_email) = $${values.length}
+     WHERE LOWER(contact_email) = $${values.length} OR EXISTS(SELECT 1 FROM sales_prospect_contacts c WHERE c.prospect_id=sales_prospects.prospect_id AND (LOWER(c.email)=$${values.length} OR c.email_history_json ? $${values.length}))
      RETURNING prospect_id`,
     values
   );
@@ -2168,11 +2229,13 @@ export async function expireUnstartedSalesCalls(pool, prospectId = null) {
 export async function createSalesCallSession(pool, input = {}) {
   const prospectId = normalizeSalesText(input.prospectId || input.prospect_id, 200);
   if (!prospectId) throw salesError('prospect_id_required','Prospect ID is required.');
-  await expireUnstartedSalesCalls(pool, prospectId);
   return withTransaction(pool,async db=>{
     await db.query('SELECT id FROM sales_dialer_config WHERE id=TRUE FOR SHARE');
     await db.query('SELECT id FROM admin_users WHERE id=$1 FOR UPDATE',[Number(input.adminUserId || input.admin_user_id || 0)||null]);
-    await db.query('SELECT prospect_id FROM sales_prospects WHERE prospect_id=$1 FOR UPDATE',[prospectId]);
+    const owner=await db.query('SELECT assigned_rep_user_id FROM sales_prospects WHERE prospect_id=$1 FOR UPDATE',[prospectId]);
+    if(!owner.rowCount)throw salesError('prospect_not_found','Prospect not found.',404);
+    if(owner.rows[0].assigned_rep_user_id && Number(owner.rows[0].assigned_rep_user_id)!==Number(input.adminUserId||input.admin_user_id))throw salesError('prospect_forbidden','This prospect has been reassigned. Refresh your workspace.',403);
+    await expireUnstartedSalesCalls(db, prospectId);
     return createLockedSalesCallSession(db,input);
   });
 }
@@ -2186,6 +2249,10 @@ async function createLockedSalesCallSession(pool, input = {}) {
       [Number(input.adminUserId || input.admin_user_id || 0) || null, requestKey]);
     if (replay.rowCount) {
       if (replay.rows[0].prospect_id !== prospectId) throw salesError("idempotency_key_conflict", "This idempotency key was already used for a different sales call.", 409);
+      if ((input.contactId && replay.rows[0].metadata_json?.contact_id !== input.contactId)
+          || (input.numberId && replay.rows[0].metadata_json?.number_id !== input.numberId)
+          || (input.metadata?.prospect_number && replay.rows[0].metadata_json?.prospect_number !== input.metadata.prospect_number))
+        throw salesError('idempotency_key_conflict','This call key was already used for a different contact or phone.',409);
       return serializeSalesCallSession(replay.rows[0]);
     }
   }
@@ -2210,6 +2277,8 @@ async function createLockedSalesCallSession(pool, input = {}) {
   }
   const adminUserId = Number(input.adminUserId || input.admin_user_id || 0) || null;
   if (prospect.assignedRepUserId && prospect.assignedRepUserId !== adminUserId) throw salesError('prospect_forbidden', 'This prospect belongs to another rep.', 403);
+  const target = await resolveSalesContactTarget(pool, prospectId, {contactId:input.contactId,numberId:input.numberId,expectedRowVersion:input.expectedRowVersion,phoneE164:input.metadata?.prospect_number});
+  const callMetadata = {...asObject(input.metadata || input.metadata_json),contact_id:target.contactId,number_id:target.numberId,contact_snapshot:target.contactSnapshot,prospect_number:target.phoneE164,phone_test_mode:target.isTest};
   const idempotencyKey = normalizeSalesText(input.idempotencyKey || input.idempotency_key, 240) || null;
   const salesCallId = normalizeSalesText(input.salesCallId || input.sales_call_id, 200)
     || createId("sales_call");
@@ -2226,7 +2295,7 @@ async function createLockedSalesCallSession(pool, input = {}) {
        ai_telnyx_call_control_id, ai_telnyx_leg_id, ai_telnyx_session_id,
        openai_call_id, ai_state, provider_error_code, provider_error_message,
        started_at, connected_at, demo_started_at, demo_ended_at, ended_at,
-       idempotency_key, metadata_json
+       idempotency_key, metadata_json, selected_number_original
      )
      VALUES (
        $1, $2, $3, $4, $5, $6,
@@ -2235,7 +2304,7 @@ async function createLockedSalesCallSession(pool, input = {}) {
        $13, $14, $15,
        $16, $17, $18, $19,
        $20, $21, $22, $23, $24,
-       $25, $26::jsonb
+       $25, $26::jsonb, $27
      )
      ON CONFLICT (admin_user_id, idempotency_key)
        WHERE admin_user_id IS NOT NULL AND idempotency_key IS NOT NULL AND idempotency_key <> ''
@@ -2267,7 +2336,8 @@ async function createLockedSalesCallSession(pool, input = {}) {
       input.demoEndedAt || input.demo_ended_at || null,
       input.endedAt || input.ended_at || null,
       idempotencyKey,
-      json(asObject(input.metadata || input.metadata_json), {})
+      json(callMetadata, {}),
+      target.originalPhoneE164
     ]
   );
   } catch (error) {
@@ -2477,7 +2547,7 @@ export async function recordSalesCallOutcome(pool, {salesCallId, outcome, notes 
     // Test dispositions remain reviewable on the call, without changing real contact eligibility or sending followups.
     if (active.metadata_json?.phone_test_mode) return serializeSalesCallSession(result.rows[0]);
     const dnc=['not_interested','do_not_call','wrong_number'].includes(normalizedOutcome);
-    await db.query(`UPDATE sales_prospects SET last_outcome=$2,last_outcome_at=NOW(),status=CASE WHEN $3 THEN 'do_not_call' WHEN status IN ('do_not_call','removed','paid') THEN status ELSE 'ready_to_call' END,do_not_call=do_not_call OR $3,dnc_reason=CASE WHEN $3 THEN $4 ELSE dnc_reason END,callback_at=$5,inbound_return=FALSE,row_version=row_version+1,queue_position=nextval(pg_get_serial_sequence('sales_prospects','queue_position')),updated_at=NOW() WHERE prospect_id=$1`,[active.prospect_id,normalizedOutcome,dnc,normalizedOutcome==='wrong_number'?'bad_number':reason,normalizedOutcome==='callback_requested'?callbackAt:null]);
+    await db.query(`UPDATE sales_prospects SET last_outcome=$2,last_outcome_at=NOW(),status=CASE WHEN $3 THEN 'do_not_call' WHEN status IN ('do_not_call','removed','paid') THEN status ELSE 'ready_to_call' END,do_not_call=do_not_call OR $3,dnc_reason=CASE WHEN $3 THEN $4 ELSE dnc_reason END,callback_at=$5,callback_contact_id=$6,callback_number_id=$7,callback_contact_snapshot=$8::jsonb,inbound_return=FALSE,row_version=row_version+1,queue_position=nextval(pg_get_serial_sequence('sales_prospects','queue_position')),updated_at=NOW() WHERE prospect_id=$1`,[active.prospect_id,normalizedOutcome,dnc,normalizedOutcome==='wrong_number'?'bad_number':reason,normalizedOutcome==='callback_requested'?callbackAt:null,normalizedOutcome==='callback_requested'?active.metadata_json?.contact_id||null:null,normalizedOutcome==='callback_requested'?active.metadata_json?.number_id||null:null,normalizedOutcome==='callback_requested'?JSON.stringify(active.metadata_json?.contact_snapshot||null):null]);
     await db.query(
       `INSERT INTO sales_followup_jobs (
          sales_followup_job_id, prospect_id, sales_call_id, outcome

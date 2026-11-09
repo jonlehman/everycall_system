@@ -23,6 +23,7 @@ import salesCallback from '../pages/api/v1/admin/sales/prospects/[prospectId]/ca
 import salesRestore from '../pages/api/v1/admin/sales/prospects/[prospectId]/restore.js';
 import salesRemove from '../pages/api/v1/admin/sales/prospects/[prospectId]/remove.js';
 import salesIncoming from '../pages/api/v1/admin/sales/incoming.js';
+import salesCalls from '../pages/api/v1/admin/sales/calls/index.js';
 import salesQueue from '../pages/api/v1/admin/sales/queue/index.js';
 import { listSalesProspects } from '../pages/api/_lib/salesRepository.js';
 
@@ -326,6 +327,30 @@ try {
   assert.equal(switchedToSales.statusCode, 200);
   assert.equal(switchedToSales.headers['set-cookie'].length, 2);
   assert.match(switchedToSales.headers['set-cookie'][0], /everycall_session=;.*Max-Age=0/);
+
+  // Full company PATCH has no legacy escape hatch for status or hidden fields.
+  const editGet=await call(salesProspectDetail,contactRequest(salesCookie,{prospectId:addedId}));
+  const editBody={editorMode:'company_contacts',expectedRowVersion:editGet.body.prospect.rowVersion,businessName:'Edited company'};
+  const editReq={...request(salesCookie,'PATCH',editBody),query:{prospectId:addedId}};
+  const editResult=await call(salesProspectDetail,editReq);assert.equal(editResult.statusCode,200,JSON.stringify(editResult.body));
+  assert.equal((await call(salesProspectDetail,editReq)).body.prospect.rowVersion,editResult.body.prospect.rowVersion);
+  const forbiddenPatch={...request(salesCookie,'PATCH',{expectedRowVersion:editResult.body.prospect.rowVersion,status:'paid'}),query:{prospectId:addedId}};
+  assert.equal((await call(salesProspectDetail,forbiddenPatch)).statusCode,400);
+  await query('UPDATE sales_prospects SET assigned_rep_user_id=$2 WHERE prospect_id=$1',[addedId,created.id]);
+  assert.equal((await call(salesProspectDetail,editReq)).statusCode,403,'Edit receipt cannot replay after reassignment');
+  assert.equal((await call(salesCallback,setRequest)).statusCode,403,'Callback target receipt cannot replay after reassignment');
+  // Real call POST receipt must also check current owner before replay.
+  process.env.SALES_CALL_WINDOW_START_LOCAL='00:00';process.env.SALES_CALL_WINDOW_END_LOCAL='00:00';
+  process.env.SALES_TELNYX_CALLER_ID='+12065559999';
+  await query("INSERT INTO sales_prospects(prospect_id,source_key,business_name,phone_e164,assigned_rep_user_id,permission_granted,timezone,status) VALUES('receipt-call-company','receipt-call-company','Call receipt company','+12065550987',$1,TRUE,'UTC','ready_to_call')",[sales.id]);
+  await query("INSERT INTO sales_demo_profiles(demo_profile_id,prospect_id,status,business_name) VALUES('receipt-call-demo','receipt-call-company','ready','Call receipt company')");
+  const callProspect=(await call(salesProspectDetail,contactRequest(salesCookie,{prospectId:'receipt-call-company'}))).body.prospect;
+  const callReq=request(salesCookie,'POST',{prospectId:callProspect.prospectId,contactId:callProspect.defaultContactId,numberId:callProspect.sharedNumbers[0].id,phoneE164:callProspect.sharedNumbers[0].phoneE164,expectedRowVersion:callProspect.rowVersion});
+  const firstCall=await call(salesCalls,callReq);assert.equal(firstCall.statusCode,201,JSON.stringify(firstCall.body));
+  assert.equal((await call(salesCalls,callReq)).statusCode,200);
+  await query("UPDATE sales_call_sessions SET state='ended',ended_at=NOW() WHERE prospect_id='receipt-call-company'");
+  await query("UPDATE sales_prospects SET assigned_rep_user_id=$1 WHERE prospect_id='receipt-call-company'",[created.id]);
+  assert.equal((await call(salesCalls,callReq)).statusCode,403,'Call receipt cannot replay another rep company');
 
   await query(`UPDATE sales_operator_settings SET active = FALSE WHERE admin_user_id = $1`, [sales.id]);
   assert.equal(await getSalesSession(request(salesCookie)), null);

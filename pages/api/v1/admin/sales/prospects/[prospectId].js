@@ -57,7 +57,7 @@ export default async function handler(req, res) {
       status: 200,
       body: {
         ok: true,
-        prospect: await updateSalesProspect(db, prospectId, body)
+        prospect: await updateSalesProspect(db, prospectId, { ...body, editorMode: 'company_contacts' })
       }
     }));
     return res.status(result.status).json(result.body);

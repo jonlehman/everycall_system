@@ -1,0 +1,41 @@
+.page { max-width: 1100px; margin: 0 auto; color: #172033; font: 14px/1.5 system-ui, sans-serif; }
+.header, .sectionHeading, .actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.header { margin-bottom: 24px; }
+.header h1 { margin: 6px 0; font-size: 28px; line-height: 1.2; letter-spacing: -.5px; }
+.page h2 { margin: 0; font-size: 19px; }
+.page h3 { margin: 0; font-size: 16px; }
+.muted { color: #64748b; margin: 6px 0 0; }
+.eyebrow { color: #476078; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+.section { background: white; border: 1px solid #dbe2eb; border-radius: 14px; padding: 24px; margin: 18px 0; box-shadow: 0 2px 4px #17203303; }
+.sectionHeading { margin-bottom: 20px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.field { display: flex; min-width: 0; flex-direction: column; gap: 6px; font-weight: 600; }
+.field input, .field select, .field textarea, .phoneRow input, .phoneRow select { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; background: #fff; color: #172033; font: inherit; font-weight: 400; }
+.field textarea { resize: vertical; min-height: 94px; }
+.page input:focus-visible, .page textarea:focus-visible, .page select:focus-visible, .button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.page :disabled { color: #64748b; background: #f1f5f9; cursor: not-allowed; }
+.lockedControl { pointer-events: none; }
+.wide { grid-column: 1 / -1; }
+.button { border: 1px solid #cbd5e1; border-radius: 8px; padding: 9px 14px; background: white; color: #172033; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+.primary { background: #175bd8; border-color: #175bd8; color: white; }
+.danger { color: #a22a37; }
+.checks { display: flex; flex-wrap: wrap; gap: 16px 24px; margin-top: 18px; }
+.check { display: flex; align-items: center; gap: 9px; font-weight: 500; }
+.check input { width: 17px; height: 17px; accent-color: #175bd8; }
+.check > [data-disabled-hint] { width: 17px; flex: 0 0 17px; }
+.contact { border: 1px solid #dbe2eb; border-radius: 12px; padding: 20px; margin-top: 18px; }
+.contact .sectionHeading { margin-bottom: 16px; }
+.badge { background: #e9f1ff; color: #1753b7; font-size: 12px; padding: 4px 9px; border-radius: 20px; }
+.phones { margin-top: 20px; }
+.phoneRow { display: grid; grid-template-columns: minmax(150px, 1.6fr) minmax(120px, 1fr) minmax(110px, 1fr) auto; gap: 10px; margin: 12px 0; align-items: end; }
+.phoneRow .field { font-size: 12px; }
+.phoneRow .button { min-height: 43px; }
+.notice, .error, .success { border-radius: 9px; padding: 12px 15px; margin: 14px 0; }
+.notice { background: #fff8e5; border: 1px solid #f0d592; color: #76561b; }
+.error { background: #fff0f1; border: 1px solid #efbdc3; color: #9b2332; }
+.success { background: #eaf7ef; border: 1px solid #b8dfc6; color: #236b3c; }
+.footer { position: sticky; bottom: 0; z-index: 5; padding: 16px 20px; background: #ffffffed; backdrop-filter: blur(8px); border: 1px solid #dbe2eb; border-radius: 12px; margin-top: 24px; }
+.statusGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0; }
+.statusGrid dt { color: #64748b; font-size: 12px; }
+.statusGrid dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+@media (max-width: 650px) { .section { padding: 18px; } .grid, .statusGrid { grid-template-columns: 1fr; } .phoneRow { grid-template-columns: 1fr 1fr; } .phoneRow > :first-child { grid-column: 1 / -1; } .contact { padding: 15px; } .header h1 { font-size: 24px; } .footer { padding: 14px; } }

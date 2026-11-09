@@ -1,3 +1,4 @@
+import { resolveSalesContactTarget, loadSalesCompanyContacts } from './salesCompanyContacts.js';
 import { assertSalesNotTestCall } from './salesPhoneTestMode.js';
 import crypto from 'node:crypto';
 import { salesError, getSalesCallSession, getSalesProspect } from './salesRepository.js';
@@ -39,7 +40,7 @@ export async function salesAvailability(pool,{after=null,env=process.env,graph=n
  }
  return {slots,nextAfter:slots.length?slots.at(-1).end:new Date(end).toISOString(),owner:config.owner,leadMinutes:config.leadMinutes,timezone:config.timezone};
 }
-export async function bookSalesSetup(pool,{salesCallId,repId,start,end,email,env=process.env,graph=null,now=Date.now()}) {
+export async function bookSalesSetup(pool,{salesCallId,repId,start,end,email,contactId,expectedRowVersion,env=process.env,graph=null,now=Date.now()}) {
  const config=salesCalendarConfig(env);const timestamp=Date.parse(start);
  if(!Number.isFinite(timestamp)||timestamp%900000!==0||Date.parse(end)!==timestamp+900000||timestamp<now+config.leadMinutes*60000)throw salesError('invalid_booking_slot','Choose an offered 15-minute slot after the build lead time.');
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email||''))throw salesError('invalid_email','Enter the owner email.');
@@ -53,16 +54,24 @@ export async function bookSalesSetup(pool,{salesCallId,repId,start,end,email,env
   const owner = await db.query('SELECT assigned_rep_user_id FROM sales_prospects WHERE prospect_id=$1 FOR UPDATE', [call.prospectId]);
   if (Number(owner.rows[0]?.assigned_rep_user_id) !== Number(repId)) throw salesError('prospect_forbidden', 'This prospect has been reassigned. Refresh your workspace.', 403);
   const previous=await db.query("SELECT * FROM sales_setup_bookings WHERE sales_call_id=$1 AND status IN ('reserving','booked') FOR UPDATE",[salesCallId]);
-  if(previous.rowCount){const prior=previous.rows[0];if(Date.parse(prior.starts_at)!==timestamp||prior.attendee_email!==email)throw salesError('sales_booking_exists','This call already has a booking. Contact the calendar owner to change it.',409);return prior;}
+  if(previous.rowCount){const prior=previous.rows[0];if(Date.parse(prior.starts_at)!==timestamp||prior.attendee_email!==email||(contactId&&prior.attendee_snapshot?.contactId!==contactId))throw salesError('sales_booking_exists','This call already has a booking. Contact the calendar owner to change it.',409);return prior;}
+  const target=await resolveSalesContactTarget(db,call.prospectId,{contactId:contactId||call.metadata?.contact_id,expectedRowVersion,allowNoNumber:true});
+  if(call.metadata?.contact_id&&target.contactId!==call.metadata.contact_id)throw salesError('booking_contact_changed','Use the contact recorded on this call.',409);
+  const company=await loadSalesCompanyContacts(db,call.prospectId);
+  const currentProspect=await getSalesProspect(db,call.prospectId);
+  const attendee={...target.contactSnapshot,email,numbers:[...(company.contacts.find(c=>c.id===target.contactId)?.numbers||[]),...company.sharedNumbers],businessName:currentProspect.businessName};
+  const bookingId=`sales_booking_${crypto.randomUUID()}`;
+  const providerPayload={subject:`EveryCall setup — ${attendee.businessName}`,start:graphDate(start),end:graphDate(end),attendees:[{emailAddress:{address:email,name:attendee.displayName||email},type:'required'}],transactionId:bookingId,body:{contentType:'text',content:[`Business: ${attendee.businessName}`,`Contact: ${attendee.displayName||''}`,`Numbers: ${attendee.numbers.map(n=>`${n.label}: ${n.phoneE164}`).join(', ')}`,`Payment at booking: ${alreadyPaid?'PAID':'UNPAID'}`,`Call: ${String(env.APP_BASE_URL||'').replace(/\/$/,'')}/sales/calls/${encodeURIComponent(salesCallId)}`].join('\n')}};
   const collision=await db.query("SELECT 1 FROM sales_setup_bookings WHERE calendar_owner=$1 AND status IN ('reserving','booked') AND starts_at<$3 AND ends_at>$2",[config.owner,start,end]);
   if(collision.rowCount)throw salesError('slot_unavailable','That slot was just booked. Choose another.',409);
   const available=await salesAvailability(db,{after:start,env,graph:request,now,count:1});
   if(available.slots[0]?.start!==new Date(timestamp).toISOString())throw salesError('slot_unavailable','That slot is no longer available.',409);
-  const row=await db.query(`INSERT INTO sales_setup_bookings(booking_id,sales_call_id,rep_user_id,calendar_owner,starts_at,ends_at,attendee_email,paid_at_booking) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[`sales_booking_${crypto.randomUUID()}`,salesCallId,repId,config.owner,start,end,email,alreadyPaid]);return row.rows[0];
+  const row=await db.query(`INSERT INTO sales_setup_bookings(booking_id,sales_call_id,rep_user_id,calendar_owner,starts_at,ends_at,attendee_email,paid_at_booking,attendee_snapshot,provider_payload) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb) RETURNING *`,[bookingId,salesCallId,repId,config.owner,start,end,email,alreadyPaid,JSON.stringify(attendee),JSON.stringify(providerPayload)]);return row.rows[0];
  });
  if(booking.status==='booked')return booking;
  // Keep uncertain provider writes reserved. transactionId makes a retry the same event.
- const event=await request(`/users/${encodeURIComponent(config.owner)}/events`,{subject:`EveryCall setup — ${prospect.businessName}`,start:graphDate(start),end:graphDate(end),attendees:[{emailAddress:{address:email,name:prospect.contactName||email},type:'required'}],transactionId:booking.booking_id,body:{contentType:'text',content:[`Business: ${prospect.businessName}`,`Contact: ${prospect.contactName||''}`,`Numbers: ${prospect.numbers.map(n=>`${n.label}: ${n.phoneE164}`).join(', ')}`,`Payment at booking: ${booking.paid_at_booking?'PAID':'UNPAID'}`,`Call: ${String(env.APP_BASE_URL||'').replace(/\/$/,'')}/sales/calls/${encodeURIComponent(salesCallId)}`].join('\n')}});
+ if(!booking.provider_payload)throw salesError('booking_snapshot_missing','This legacy reservation needs calendar-owner review before retrying.',409);
+ const event=await request(`/users/${encodeURIComponent(booking.calendar_owner)}/events`,booking.provider_payload);
  if(!event.id)throw salesError('sales_calendar_provider_failed','Outlook did not confirm the calendar event.',502);
  await salesTransaction(pool,async db=>{await db.query("UPDATE sales_setup_bookings SET status='booked',provider_event_id=$2,updated_at=NOW() WHERE booking_id=$1",[booking.booking_id,event.id]);await db.query('UPDATE sales_call_sessions SET booked_at=COALESCE(booked_at,NOW()),updated_at=NOW() WHERE sales_call_id=$1',[salesCallId]);});
  return {...booking,status:'booked',provider_event_id:event.id};

@@ -29,7 +29,11 @@ export const CSV_HEADERS = Object.freeze([
   "last_outcome_at",
   "followup_status",
   "followup_outcome",
-  "updated_at"
+  "updated_at",
+  "contacts_json",
+  "shared_numbers_json",
+  "default_contact_id",
+  "phone_test_mode"
 ]);
 
 function csvCell(value) {
@@ -77,7 +81,11 @@ export function prospectRow(prospect) {
     csvDate(prospect.lastOutcomeAt),
     prospect.latestFollowup?.status,
     prospect.latestFollowup?.outcome,
-    csvDate(prospect.updatedAt)
+    csvDate(prospect.updatedAt),
+    JSON.stringify(prospect.contacts||[]),
+    JSON.stringify(prospect.sharedNumbers||[]),
+    prospect.defaultContactId,
+    yesNo(prospect.phoneTestMode)
   ].map(csvCell).join(",");
 }
 
