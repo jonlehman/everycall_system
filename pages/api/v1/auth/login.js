@@ -208,8 +208,8 @@ export default async function handler(req, res) {
       });
       return res.status(401).json({ error: "invalid_credentials" });
     }
-    const sessionId = await createSession({ userId: user.id, tenantKey: user.tenant_key, role: "tenant" });
-    if (!sessionId) return res.status(500).json({ error: "database_unavailable" });
+    const sessionId = await createSession({ userId: user.id, tenantKey: user.tenant_key, role: "tenant", expectedUser: user });
+    if (!sessionId) return res.status(401).json({ error: "invalid_credentials" });
     await deleteSalesSession(req);
     clearSalesSessionCookie(res);
     setSessionCookie(res, sessionId);

@@ -1,5 +1,5 @@
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { issueAuthToken, issuePlatformPasswordReset, revokeAuthTokens } from "../../_lib/authTokens.js";
+import { issueTenantPasswordReset, issuePlatformPasswordReset } from "../../_lib/authTokens.js";
 import { writeAuditLog } from "../../_lib/auditLog.js";
 import { enforceRateLimit, getClientIp } from "../../_lib/rateLimit.js";
 import { sendTransactionalEmail } from "../../_lib/mail.js";
@@ -54,7 +54,7 @@ export default async function handler(req, res) {
       );
       user = row.rows[0] || null;
     } else {
-      const row = await pool.query(`SELECT id, email, tenant_key FROM tenant_users WHERE email = $1 LIMIT 1`, [email]);
+      const row = await pool.query(`SELECT id, email, tenant_key, password_hash FROM tenant_users WHERE email = $1 LIMIT 1`, [email]);
       user = row.rows[0] || null;
     }
 
@@ -77,13 +77,8 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, message: "If an account exists for that email, a reset link will be sent." });
       }
     } else {
-      await revokeAuthTokens(pool, {
-        tokenType: "password_reset", userId: user.id, email: user.email, tenantKey: user.tenant_key || null
-      });
-      token = await issueAuthToken(pool, {
-        tokenType: "password_reset", userId: user.id, email: user.email,
-        tenantKey: user.tenant_key || null, expiresAt
-      });
+      token = await issueTenantPasswordReset(pool, user, expiresAt);
+      if (!token) return res.status(200).json({ ok: true, message: "If an account exists for that email, a reset link will be sent." });
     }
 
     let delivered = false;

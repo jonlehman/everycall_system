@@ -1,8 +1,8 @@
 import bcrypt from "bcryptjs";
 import { lockPlatformUserMutations } from "../../_lib/platformUsers.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
-import { deleteSessionsForPrincipal } from "../../_lib/auth.js";
-import { consumeAuthToken, findAuthToken, revokeAuthTokens } from "../../_lib/authTokens.js";
+import { revokeTenantCredentials } from "../../_lib/tenantPasswords.js";
+import { findAuthToken, revokeAuthTokens } from "../../_lib/authTokens.js";
 import { writeAuditLog } from "../../_lib/auditLog.js";
 import { enforceRateLimit, getClientIp } from "../../_lib/rateLimit.js";
 
@@ -66,14 +66,20 @@ export default async function handler(req, res) {
     }
 
     const hash = await bcrypt.hash(password, 10);
-    let updated = null;
     if (tokenRow.tenant_key) {
-      updated = await pool.query(
-        `UPDATE tenant_users
-         SET password_hash = $1
-         WHERE id = $2 AND email = $3 AND tenant_key = $4`,
-        [hash, tokenRow.user_id, tokenRow.email, tokenRow.tenant_key]
-      );
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const user = (await client.query(`SELECT id, email, tenant_key FROM tenant_users WHERE id = $1 AND email = $2 AND tenant_key = $3 FOR UPDATE`, [tokenRow.user_id, tokenRow.email, tokenRow.tenant_key])).rows[0];
+        const consumed = user && await client.query(`DELETE FROM auth_tokens WHERE id = $1 AND user_id = $2 AND tenant_key = $3 AND email = $4 AND token_type = 'password_reset' AND used_at IS NULL AND expires_at > NOW() RETURNING id`, [tokenRow.id, user.id, user.tenant_key, user.email]);
+        if (!consumed?.rowCount) { await client.query("ROLLBACK"); return res.status(400).json({ error: "invalid_token" }); }
+        await client.query(`UPDATE tenant_users SET password_hash = $1, updated_at = NOW() WHERE id = $2`, [hash, user.id]);
+        await revokeTenantCredentials(client, user);
+        await writeAuditLog(client, { tenantKey: user.tenant_key, actor: `tenant:${user.id}`, action: "auth.password_reset.completed", details: { userId: user.id } });
+        await client.query("COMMIT");
+        return res.status(200).json({ ok: true });
+      } catch (error) { await client.query("ROLLBACK"); throw error; }
+      finally { client.release(); }
     } else {
       const client = await pool.connect();
       try {
@@ -92,6 +98,10 @@ export default async function handler(req, res) {
         if (platform.rowCount && tenant.rowCount) {
           await client.query("ROLLBACK");
           return res.status(400).json({ error: "invalid_token" });
+        }
+        const liveToken = await findAuthToken(client, token, { tokenType: "password_reset" });
+        if (!liveToken || liveToken.used_at || new Date(liveToken.expires_at).getTime() <= Date.now()) {
+          await client.query("ROLLBACK"); return res.status(400).json({ error: "invalid_token" });
         }
         const tenantUser = tenant.rows[0];
         const adminUser = platform.rows[0];
@@ -116,26 +126,6 @@ export default async function handler(req, res) {
       } finally { client.release(); }
     }
 
-    if (!updated?.rowCount) {
-      return res.status(400).json({ error: "user_not_found" });
-    }
-
-    await consumeAuthToken(pool, token, { tokenType: "password_reset" });
-    await deleteSessionsForPrincipal({
-      userId: tokenRow.user_id,
-      role: "tenant",
-      tenantKey: tokenRow.tenant_key
-    });
-    await writeAuditLog(pool, {
-      tenantKey: tokenRow.tenant_key || null,
-      actor: tokenRow.tenant_key ? `tenant:${tokenRow.user_id}` : `admin:${tokenRow.user_id || "password_reset"}`,
-      action: "auth.password_reset.completed",
-      details: {
-        email: tokenRow.email || null,
-        ip: clientIp
-      }
-    });
-    return res.status(200).json({ ok: true });
   } catch (err) {
     return res.status(500).json({ error: "reset_error", message: err?.message || "unknown" });
   }

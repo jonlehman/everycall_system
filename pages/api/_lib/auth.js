@@ -93,6 +93,19 @@ export async function createSession({ userId, tenantKey, role, expectedUser = nu
       await client.query("ROLLBACK");
       throw error;
     } finally { client.release(); }
+  } else if (role === "tenant" && expectedUser) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(`SELECT email, password_hash, status FROM tenant_users WHERE id = $1 AND tenant_key = $2 FOR UPDATE`, [userId, tenantKey]);
+      const current = result.rows[0];
+      if (!current || current.status !== "active" || current.email !== expectedUser.email || current.password_hash !== expectedUser.password_hash) {
+        await client.query("ROLLBACK"); return null;
+      }
+      await insert(client);
+      await client.query("COMMIT");
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
   } else {
     await insert(pool);
   }

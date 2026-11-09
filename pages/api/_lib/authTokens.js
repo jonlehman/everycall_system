@@ -168,3 +168,21 @@ export async function issuePlatformPasswordReset(pool, user, expiresAt) {
     throw error;
   } finally { client.release(); }
 }
+
+// Fence reset requests that started before a manager changed the password.
+export async function issueTenantPasswordReset(pool, user, expiresAt) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(`SELECT id, email, tenant_key, password_hash FROM tenant_users WHERE id = $1 AND tenant_key = $2 FOR UPDATE`, [user.id, user.tenant_key]);
+    const current = result.rows[0];
+    if (!current || current.email !== user.email || current.password_hash !== user.password_hash) {
+      await client.query("ROLLBACK"); return null;
+    }
+    await revokeAuthTokens(client, { tokenType: "password_reset", userId: user.id, tenantKey: user.tenant_key });
+    const token = await issueAuthToken(client, { tokenType: "password_reset", userId: user.id, email: user.email, tenantKey: user.tenant_key, expiresAt });
+    await client.query("COMMIT");
+    return token;
+  } catch (error) { await client.query("ROLLBACK"); throw error; }
+  finally { client.release(); }
+}
