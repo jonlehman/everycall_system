@@ -1,3 +1,5 @@
+import { setTenantUserPassword } from "../../_lib/tenantPasswords.js";
+import { clearSessionCookie } from "../../_lib/auth.js";
 import crypto from "crypto";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import { deleteSessionsForPrincipal, requireSession, resolveTenantKey } from "../../_lib/auth.js";
@@ -196,13 +198,26 @@ export default async function handler(req, res) {
          ORDER BY id ASC`,
         [tenantKey]
       );
-      return res.status(200).json({ ok: true, users: rows.rows });
+      const tenantUser = session.role === "tenant"
+        ? (await pool.query("SELECT role FROM tenant_users WHERE id = $1 AND tenant_key = $2 AND status = 'active'", [session.user_id, tenantKey])).rows[0]
+        : null;
+      return res.status(200).json({ ok: true, users: rows.rows, canManagePasswords: session.role === "admin" || ["owner", "admin"].includes(tenantUser?.role) });
     }
 
     if (req.method === "POST") {
       const manager = await requireTeamManager();
       if (!manager) return;
       const body = typeof req.body === "object" && req.body ? req.body : {};
+      if (body.action === "password") {
+        try {
+          const result = await setTenantUserPassword(pool, session, tenantKey, body);
+          if (result.reauthenticate) clearSessionCookie(res);
+          return res.status(200).json(result);
+        } catch (error) {
+          return fail(error.status || 500, error.publicError || "password_update_failed",
+            error.publicError ? error.message : "Could not update the password. Please try again.");
+        }
+      }
       if (body.action === "status") {
         const id = Number(body.id || 0);
         const status = String(body.status || "");

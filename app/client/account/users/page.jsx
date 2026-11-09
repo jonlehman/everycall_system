@@ -90,6 +90,13 @@ function statusSelectLabel(status) {
 
 export default function AccountUsersPage() {
   const [users, setUsers] = useState([]);
+  const [canManagePasswords, setCanManagePasswords] = useState(false);
+  const [passwordUser, setPasswordUser] = useState(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordFeedback, setPasswordFeedback] = useState(null);
+  const [reauthenticate, setReauthenticate] = useState(false);
   const [formMode, setFormMode] = useState(null);
   const [editingUserId, setEditingUserId] = useState(null);
   const [formState, setFormState] = useState(createEmptyForm);
@@ -110,6 +117,7 @@ export default function AccountUsersPage() {
           return;
         }
         setUsers(data.users || []);
+        setCanManagePasswords(data.canManagePasswords === true);
         setLoading(false);
       })
       .catch(() => {
@@ -122,6 +130,65 @@ export default function AccountUsersPage() {
     loadUsers();
   }, []);
 
+  const closePasswordForm = () => {
+    if (savingPassword) return;
+    setPasswordUser(null);
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordFeedback(null);
+  };
+
+  const openPasswordForm = (user) => {
+    if (savingPassword || reauthenticate) return;
+    closeForm();
+    setPasswordUser(user);
+    setStatus(null);
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordFeedback(null);
+  };
+
+  const savePassword = async (event) => {
+    event.preventDefault();
+    if (savingPassword || !passwordUser || reauthenticate) return;
+    if (newPassword.length < 8) {
+      setPasswordFeedback('Use at least 8 characters.');
+      return;
+    }
+    if (new TextEncoder().encode(newPassword).length > 72) {
+      setPasswordFeedback('This password is too long. Please use a shorter password.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordFeedback('The passwords do not match.');
+      return;
+    }
+    setSavingPassword(true);
+    setPasswordFeedback(null);
+    try {
+      const response = await fetch('/api/v1/tenant/users', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'password', id: passwordUser.id, password: newPassword })
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        setPasswordFeedback(data?.message || 'Could not update the password. Please try again.');
+        return;
+      }
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordUser(null);
+      if (data?.reauthenticate) {
+        setReauthenticate(true);
+        setStatus({ message: 'Your password was updated. Sign in again with your new password.', tone: 'ok' });
+      } else {
+        setStatus({ message: `Password updated for ${passwordUser.name || passwordUser.email}. They can sign in with their new password.`, tone: 'ok' });
+      }
+    } catch {
+      setPasswordFeedback('Could not update the password. Please try again.');
+    } finally { setSavingPassword(false); }
+  };
+
   const closeForm = () => {
     setFormMode(null);
     setEditingUserId(null);
@@ -130,6 +197,8 @@ export default function AccountUsersPage() {
   };
 
   const openCreateForm = () => {
+    if (savingPassword || reauthenticate) return;
+    closePasswordForm();
     setFormMode('create');
     setEditingUserId(null);
     setSmsOptInFeedback(null);
@@ -140,6 +209,8 @@ export default function AccountUsersPage() {
   };
 
   const openEditForm = (row) => {
+    if (savingPassword || reauthenticate) return;
+    closePasswordForm();
     setFormMode('edit');
     setEditingUserId(row.id);
     setSmsOptInFeedback(null);
@@ -586,7 +657,7 @@ export default function AccountUsersPage() {
       align: 'right',
       headerAlign: 'right',
       flex: 1.25,
-      minWidth: 220,
+      minWidth: 315,
       renderCell: (params) => (
         <div className="flex w-full justify-end gap-1.5">
           <button
@@ -606,6 +677,17 @@ export default function AccountUsersPage() {
           >
             {params.row.status === 'active' ? 'Disable Access' : 'Enable Access'}
           </button>
+          {canManagePasswords ? (
+            <button
+              type="button"
+              className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted disabled:opacity-50"
+              aria-label={`Set password for ${params.row.name || params.row.email}`}
+              disabled={savingPassword || savingForm || reauthenticate}
+              onClick={() => openPasswordForm(params.row)}
+            >
+              Set Password
+            </button>
+          ) : null}
           {params.row.status === 'invited' ? (
             <button
               className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs hover:bg-muted"
@@ -637,8 +719,44 @@ export default function AccountUsersPage() {
         onClick: () => (formMode ? closeForm() : openCreateForm())
       }}
     >
-      <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+      {reauthenticate ? (
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-6" role="status">
+          <p>Your password was updated. Your previous sessions are signed out.</p>
+          <a href="/login" className="font-semibold text-sky-700 underline">Sign in with your new password</a>
+        </section>
+      ) : <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
         <div className="grid min-w-0 gap-3">
+          {passwordUser ? (
+            <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm" aria-labelledby="password-heading">
+              <h2 id="password-heading" className="text-lg font-bold">Set Password</h2>
+              <p className="mt-2 text-sm text-slate-600">{passwordUser.name} · {passwordUser.email}</p>
+              {passwordUser.status !== 'active' ? (
+                <>
+                  <p className="mt-4 text-sm text-amber-800">Enable this user's access using Enable Access, or have them complete their invitation, before setting a password. Existing access limits still apply.</p>
+                  <Button type="button" variant="outline" onClick={closePasswordForm} className="mt-4">Close</Button>
+                </>
+              ) : (
+                <form onSubmit={savePassword} className="mt-4 space-y-4">
+                  <p className="text-sm text-slate-600">Use at least 8 characters. Saving signs this user out of existing sessions and invalidates their previous reset links. If this is your account, you will need to sign in again.</p>
+                  <fieldset disabled={savingPassword} className="space-y-4">
+                    <div>
+                      <label className={fieldLabelClass} htmlFor="user-new-password">New password</label>
+                      <input id="user-new-password" type="password" autoComplete="new-password" className={fieldControlClass} value={newPassword} onChange={event => setNewPassword(event.target.value)} required />
+                    </div>
+                    <div>
+                      <label className={fieldLabelClass} htmlFor="user-confirm-password">Confirm new password</label>
+                      <input id="user-confirm-password" type="password" autoComplete="new-password" className={fieldControlClass} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} required />
+                    </div>
+                    {passwordFeedback ? <p role="alert" className="text-sm text-red-700">{passwordFeedback}</p> : null}
+                    <div className="flex justify-end gap-3">
+                      <Button variant="outline" type="button" onClick={closePasswordForm}>Cancel</Button>
+                      <Button type="submit">{savingPassword ? 'Saving Password…' : 'Save Password'}</Button>
+                    </div>
+                  </fieldset>
+                </form>
+              )}
+            </section>
+          ) : null}
           {formMode ? (
             <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(18,28,42,0.04)]">
               <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-8 py-6">
@@ -965,7 +1083,7 @@ export default function AccountUsersPage() {
             <div className="mt-1 text-sm text-slate-600">People added from Send Leads To appear here as Standard Users.</div>
           </div>
         </GuidePanel>
-      </div>
+      </div>}
     </SectionPage>
   );
 }

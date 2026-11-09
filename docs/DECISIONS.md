@@ -1,5 +1,9 @@
 # Decisions
 
+## 2026-11-09 — Explicit tenant System User password changes
+- Add a separate Set Password action to Account Settings → System Users using existing owner/admin and platform-manager authorization. Keep activation, identity, role and membership unchanged; active users without a password can receive their first one. Inactive users follow the existing Enable Access/invitation path.
+- Preserve exact password input, existing bcrypt cost 10/minimum eight characters, and enforce the 72-byte bcrypt bound. Commit tenant credential replacement, session/token revocation and secret-free audit atomically. Recheck manager authority and credential/token snapshots under user locks to prevent stale login/reset work from undoing a password change. Keep platform/Sales principal namespaces and legacy ambiguous-token fail-closed behavior. No schema migration or provider messages. See [specification](SPECS/tenant-user-passwords.md).
+
 ## 2026-11-08 — Signup links before, during and after calls; safe test links
 - Owner requested that Close's Text and Email controls remain active in every phase, explicitly approved sending before the first call, and required the Sales rep to confirm before sending without an associated call. Show the exact channel/recipient; cancel makes no delivery request. Bind the confirmed recipient and live/test mode on the server. This supersedes only the November 7 signup restriction; setup booking still waits for wrap-up.
 - Add genuine prospect checkout context with nullable call association; never synthesize a call. Reuse an existing same-prospect, same-mode checkout across subsequent calls and standalone requests. Preserve ownership, permission, all original-identity DNC/suppression, quiet hours, immutable delivery destination, uncertain-delivery fences and idempotency. Only verified live Stripe payment marks the prospect Paid or queues the existing activation pipeline.

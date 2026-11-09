@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+const require = createRequire(import.meta.url);
+const { build } = require(process.env.ESBUILD_MODULE || 'esbuild');
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const postcss = require('postcss'), tailwind = require('tailwindcss');
+const dir = await mkdtemp(join(tmpdir(), 'everycall-tenant-password-browser-'));
+await build({ stdin:{contents:"import React from 'react';import{createRoot}from'react-dom/client';import Page from './app/client/account/users/page.jsx';createRoot(document.getElementById('root')).render(<Page/>);",loader:'jsx',resolveDir:resolve('.')}, bundle:true,outdir:dir,entryNames:'fixture',jsx:'automatic',define:{'process.env.NODE_ENV':'"production"','process.env':'{}'},plugins:[{name:'router-fixture',setup(api){api.onResolve({filter:/^next\/navigation$/},()=>({path:'navigation',namespace:'fixture'}));api.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:"export const usePathname=()=>'/client/account/users';",loader:'js'}));}}]});
+const css=await postcss([tailwind({...require('../tailwind.config.js'),content:[resolve('app/client/account/users/page.jsx'),resolve('app/client/_components/*.jsx'),resolve('components/ui/button.jsx')]})]).process(await readFile('app/globals.css','utf8'),{from:resolve('app/globals.css')});
+await writeFile(join(dir,'fixture.css'),css.css+'\nbody{padding:24px;}');
+await writeFile(join(dir,'index.html'),'<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body><div id="root"></div><script src="/fixture.js"></script></body></html>');
+const server=createServer(async(req,res)=>{try{const name=req.url.split('?')[0];const file=name==='/'?'index.html':name.slice(1);if(!['index.html','fixture.js','fixture.css'].includes(file)){res.writeHead(404);res.end();return;}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(await readFile(join(dir,file)));}catch{res.writeHead(500);res.end();}});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
+const page=await browser.newPage({viewport:{width:1600,height:1100}});page.setDefaultTimeout(8000);
+const errors=[];page.on('pageerror',e=>errors.push(e.message));
+const users=[{id:'101',name:'Jamie Owner',email:'jamie@example.test',role:'owner',status:'active'}, {id:'105',name:'Alex Staff',email:'alex@example.test',role:'member',status:'active'}, {id:'108',name:'Pending User',email:'pending@example.test',role:'member',status:'invited'}];
+let requests=[],failure=false,self=false,canManage=true,hold=false,releaseSave=null;
+await page.route('**/api/**',async route=>{
+ const r=route.request();if(new URL(r.url()).pathname!=='/api/v1/tenant/users')throw Error('Unexpected API');
+ if(r.method()==='GET')return route.fulfill({json:{ok:true,users,canManagePasswords:canManage}});
+ requests.push(r.postDataJSON());
+ if(failure)return route.fulfill({status:409,json:{message:'Fixture update failed. Please try again.'}});
+ if(hold)await new Promise(resolve=>{releaseSave=resolve;});
+ return route.fulfill({json:{ok:true,reauthenticate:self}});
+});
+const open=async name=>{
+ // The real grid virtualizes the far-right actions column; scroll that column into view.
+ await page.locator('.MuiDataGrid-virtualScroller').evaluate(el=>{el.scrollLeft=el.scrollWidth;});
+ await page.getByRole('button',{name:`Set password for ${name}`,exact:true}).click();
+};
+const fill=async(value,confirmation=value)=>{await page.getByLabel('New password',{exact:true}).fill(value);await page.getByLabel('Confirm new password',{exact:true}).fill(confirmation);};
+try {
+ await page.goto(`http://127.0.0.1:${server.address().port}`);
+ await page.getByText('Alex Staff',{exact:true}).waitFor();
+ await open('Alex Staff'); await page.getByText('Alex Staff · alex@example.test',{exact:true}).waitFor();
+ assert.equal(await page.getByLabel('New password',{exact:true}).getAttribute('type'),'password');
+ await fill('short'); await page.getByRole('button',{name:'Save Password',exact:true}).click(); await page.getByRole('alert').filter({hasText:'at least 8'}).waitFor(); assert.equal(requests.length,0);
+ await fill('😀'.repeat(19)); await page.getByRole('button',{name:'Save Password',exact:true}).click(); await page.getByText('This password is too long. Please use a shorter password.',{exact:true}).waitFor(); assert.equal(requests.length,0);
+ await fill('Fixture-password','different-password'); await page.getByRole('button',{name:'Save Password',exact:true}).click(); await page.getByText('The passwords do not match.',{exact:true}).waitFor(); assert.equal(requests.length,0);
+ failure=true;await fill(' Draft-password ');await page.getByRole('button',{name:'Save Password',exact:true}).click();await page.getByRole('alert').filter({hasText:'Fixture update failed'}).waitFor();
+ assert.equal(await page.getByLabel('New password',{exact:true}).inputValue(),' Draft-password ');
+ assert.equal(await page.getByLabel('Confirm new password',{exact:true}).inputValue(),' Draft-password ');
+ await page.getByRole('button',{name:'Cancel',exact:true}).click();await open('Alex Staff');assert.equal(await page.getByLabel('New password',{exact:true}).inputValue(),'');
+ failure=false;await fill(' Saved-password ');hold=true;await page.getByRole('button',{name:'Save Password',exact:true}).click();await page.getByRole('button',{name:'Saving Password…',exact:true}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'Cancel',exact:true}).isDisabled(),true);assert.equal(await page.getByLabel('New password',{exact:true}).isDisabled(),true);
+ for(let n=0;n<50&&!releaseSave;n++)await new Promise(resolve=>setTimeout(resolve,10));releaseSave();hold=false;
+ await page.getByText('Password updated for Alex Staff. They can sign in with their new password.',{exact:true}).waitFor();
+ assert.deepEqual(requests.at(-1),{action:'password',id:'105',password:' Saved-password '});assert.equal(await page.locator('input[type=password]').count(),0);
+ await open('Pending User');await page.getByText(/Enable this user's access using Enable Access/).waitFor();assert.equal(await page.locator('input[type=password]').count(),0);await page.getByRole('button',{name:'Close',exact:true}).click();
+ await open('Alex Staff');assert.equal(await page.getByText('Password updated for Alex Staff. They can sign in with their new password.',{exact:true}).count(),0);assert.equal(await page.getByText(/UTF-8/).count(),0);assert.equal(await page.getByLabel('New password',{exact:true}).inputValue(),'');await fill('preview-password');await page.screenshot({path:'/tmp/everycall-tenant-password-desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:'/tmp/everycall-tenant-password-mobile.png',fullPage:true});await page.getByRole('button',{name:'Cancel',exact:true}).click();await page.setViewportSize({width:1600,height:1100});
+ await open('Jamie Owner');await fill('Self-new-password');self=true;await page.getByRole('button',{name:'Save Password',exact:true}).click();await page.getByRole('link',{name:'Sign in with your new password',exact:true}).waitFor();assert.equal(await page.getByRole('link',{name:'Sign in with your new password',exact:true}).getAttribute('href'),'/login');assert.equal(await page.locator('input[type=password]').count(),0);assert.equal(await page.getByRole('button',{name:/Set password for/}).count(),0);
+ canManage=false;await page.reload();await page.getByText('Alex Staff',{exact:true}).waitFor();await page.locator('.MuiDataGrid-virtualScroller').evaluate(el=>{el.scrollLeft=el.scrollWidth;});assert.equal(await page.getByRole('button',{name:/Set password for/}).count(),0);
+ assert.deepEqual(errors,[]);console.log('Tenant password browser fixture passed; screenshots /tmp/everycall-tenant-password-{desktop,mobile}.png');
+} catch (error) { console.error('Browser errors:',errors); console.error((await page.locator('body').innerText()).slice(0,1500)); throw error; } finally { await browser.close();await new Promise(resolve=>server.close(resolve)); }

@@ -1,5 +1,12 @@
 # Runbook
 
+## System User password changes
+
+- In Account Settings → System Users, choose **Set Password** for the intended person, enter and confirm the new password, then save. Existing account owners/admins and platform managers can do this. For disabled/invited users, complete the existing Enable Access or invitation workflow first; setting a password does not change access or bypass the ten-active-user limit.
+- Successful saves sign the affected tenant user out and invalidate old tenant reset/setup credentials. The person signs in at `/login` with the new password. A manager resetting their own password receives a sign-in link. The application sends no password email/SMS and never displays the saved password.
+- Investigate `tenant.team_user.password_updated` audit events by tenant and user ID; records contain no credential values. This feature requires no migration. See [specification](SPECS/tenant-user-passwords.md) and the disposable auth/browser tests in [TESTS](TESTS.md).
+- First rollout requires two deployments: deploy the tenant credential fences (`pages/api/_lib/auth.js`, `authTokens.js`, `tenantPasswords.js` and `pages/api/v1/auth/login.js`, `request-reset.js`, `reset.js`) with the previous tenant-users API/UI still in place. Wait for this version to serve production and ensure older deployment URLs cannot accept relevant authenticated traffic, including pinned clients. Determine the effective old deployment's authentication-function timeout from deployed/project configuration; `vercel.json` and these auth routes have no explicit duration, so unrelated 300-second route overrides are not sufficient evidence. Drain at least that verified maximum duration after the old version stops accepting traffic before deploying the Set Password API action/UI. This prevents an already-running old login or reset request from bypassing the new fences. No Render or schema maintenance is needed.
+
 ## Production recovery and knowledge governance release
 
 - Review the [remediation ledger](plan/production-remediation-2026-10-20.md), additive migrations `0051`–`0056`, and independent review before release. Verify the database host/database fingerprint separately; never print credentials. Run `scripts/apply-production-remediation-migrations.mjs` with `EVERYCALL_APPLY_PRODUCTION_REMEDIATION=1`, `DATABASE_URL` and the verified `EVERYCALL_DATABASE_TARGET_SHA256`. This runner applies only the reviewed release migrations and commits their receipts atomically; it does not sweep historical migration files.
