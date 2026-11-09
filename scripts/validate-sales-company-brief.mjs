@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
-import { generateSalesCompanyBrief, companyBriefEvidence, serializeCompanyBrief, SALES_COMPANY_BRIEF_VERSION } from "../pages/api/_lib/salesCompanyBrief.js";
+import { generateSalesCompanyBrief, companyBriefEvidence, companyBriefPassages, companyBriefSourceHash, serializeCompanyBrief, SALES_COMPANY_BRIEF_VERSION } from "../pages/api/_lib/salesCompanyBrief.js";
 import { prepareSalesCompanyBrief } from "../pages/api/_lib/salesRepository.js";
 import { salesCoreFacts } from "../pages/api/_lib/salesCoreFacts.js";
 import { callOpenAiJsonModel } from "@everycall/contracts";
@@ -24,14 +24,30 @@ const content = {
   ],
   whyCustomersCall: claim(lines[2], lines[2]),
 };
+// Stub the generation contract, not the persisted v1 shape.
+const modelContent = (request, saved = content) => {
+  const evidence = JSON.parse(request.user).websiteEvidence;
+  const convert = (item) => {
+    if (!item) return null;
+    const passage = evidence.find((page) => page.url === item.sourceUrl)?.passages.find((part) => part.text.includes(item.quote));
+    assert.ok(passage, "fixture citation must exist in supplied passages");
+    return { text: item.text, evidenceId: passage.id };
+  };
+  return { standOut: saved.standOut.map(convert), services: saved.services.map(convert), whyCustomersCall: convert(saved.whyCustomersCall) };
+};
 let invocations = 0;
 const ready = await generateSalesCompanyBrief(pages, { callModel: async (request) => {
   invocations++;
   assert.equal(request.timeoutMs, 30000);
   assert.equal(request.maxAttempts, 1);
   assert.match(request.system, /untrusted data/);
-  assert.deepEqual(JSON.parse(request.user).websiteEvidence, companyBriefEvidence(pages));
-  return { parsed: content, model: "fixture-model", responseId: "fixture-response" };
+  const supplied = JSON.parse(request.user).websiteEvidence;
+  assert.deepEqual(supplied, companyBriefPassages(companyBriefEvidence(pages), companyBriefSourceHash(pages)));
+  assert.deepEqual(request.jsonSchema.$defs.claim.properties.evidenceId.enum, supplied.flatMap((page) => page.passages.map((passage) => passage.id)));
+  assert.deepEqual(request.jsonSchema.$defs.claim.required, ["text", "evidenceId"]);
+  assert.equal(request.jsonSchema.properties.services.items.$ref, "#/$defs/claim");
+  assert.equal(request.maxOutputTokens, 2200);
+  return { parsed: modelContent(request), model: "fixture-model", responseId: "fixture-response" };
 } });
 assert.equal(ready.status, "ready");
 assert.equal(invocations, 1);
@@ -39,16 +55,16 @@ assert.equal(serializeCompanyBrief(ready).services.length, 3);
 assert.equal(serializeCompanyBrief({ ...ready, content: { ...content, standOut: [] } }).standOut, "");
 assert.equal((await generateSalesCompanyBrief([], { callModel: () => { throw Error("must not call"); } })).reason, "website_evidence_missing");
 assert.equal((await generateSalesCompanyBrief(pages, { callModel: async () => { throw Error("provider failed"); } })).status, "unavailable");
-assert.equal((await generateSalesCompanyBrief(pages, { callModel: async () => ({ parsed: { ...content, services: content.services.slice(0, 2) } }) })).reason, "insufficient_website_evidence");
+assert.equal((await generateSalesCompanyBrief(pages, { callModel: async (request) => ({ parsed: modelContent(request, { ...content, services: content.services.slice(0, 2) }) }) })).reason, "insufficient_website_evidence");
 assert.equal((await generateSalesCompanyBrief(pages, { callModel: async () => ({ parsed: { ...content, standOut: [claim("Unsupported claim", "not found in source")] } }) })).status, "unavailable");
-assert.equal((await generateSalesCompanyBrief(pages, { callModel: async () => ({ parsed: { ...content, services: [content.services[0], content.services[0], content.services[0]] } }) })).status, "unavailable");
+assert.equal((await generateSalesCompanyBrief(pages, { callModel: async (request) => ({ parsed: modelContent(request, { ...content, services: [content.services[0], content.services[0], content.services[0]] }) }) })).status, "unavailable");
 assert.equal(serializeCompanyBrief({ version: SALES_COMPANY_BRIEF_VERSION, status: "pending", startedAt: "2000-01-01" }).reason, "generation_interrupted");
 assert.equal(serializeCompanyBrief({ version: "old", status: "ready" }).status, "missing");
 const original = structuredClone(pages);
 companyBriefEvidence(pages);
 assert.deepEqual(pages, original);
 const legacy = [{ url, title: "Cedar", description: lines[0], headings: [lines[1]], excerpt: lines[2] }];
-assert.equal((await generateSalesCompanyBrief(legacy, { callModel: async () => ({ parsed: content }) })).status, "ready");
+assert.equal((await generateSalesCompanyBrief(legacy, { callModel: async (request) => ({ parsed: modelContent(request) }) })).status, "ready");
 
 const secret = "sk-fixture-secret private-source private-claim user-password";
 const assertPrivate = (value) => {
@@ -81,50 +97,109 @@ assert.deepEqual(httpFailure.diagnostic.details, { httpStatus: 400, providerCode
 assertPrivate(httpFailure);
 const arbitraryProvider = await failed(new Error(`openai_json_model_failed:400:${JSON.stringify({ error: { code: secret, param: secret } })}`));
 assert.deepEqual(arbitraryProvider.diagnostic.details, { httpStatus: 400 });
-const generatedContentFailure = async (parsed) => generateSalesCompanyBrief(pages, { callModel: async () => ({ parsed }) });
+const generatedContentFailure = async (saved) => generateSalesCompanyBrief(pages, { callModel: async (request) => ({ parsed: modelContent(request, saved) }) });
 const invalidSchema = await generatedContentFailure({ ...content, services: [{ ...content.services[0], text: null }] });
 assert.equal(invalidSchema.diagnostic.code, "schema_invalid");
 assert.deepEqual(invalidSchema.diagnostic.details.issues, [{ code: "invalid_type", path: "services.0.text" }]);
-const unsupported = await generatedContentFailure({ ...content, standOut: [claim(secret, secret)] });
-assert.deepEqual(unsupported.diagnostic, { code: "unsupported_quote", stage: "grounding", details: { claimIndex: 0 } });
-assertPrivate(unsupported);
-// The prompt explains the existing grounding contract; it does not relax it.
-// Valid text on another page cannot support a citation to the requested page.
+// Arbitrary, altered, stale, prototype-like and absent IDs fail closed locally,
+// even when a stub/provider bypasses structured output enforcement.
+for (const evidenceId of [secret, "constructor", "__proto__", "", "ev_unknown"]) {
+  const result = await generateSalesCompanyBrief(pages, { callModel: async (request) => ({ parsed: {
+    ...modelContent(request), standOut: [{ text: secret, evidenceId }],
+  } }) });
+  assert.equal(result.status, "unavailable");
+  assert.equal(result.diagnostic.code, "schema_invalid");
+  assert.equal(result.diagnostic.details.issues[0].path, "standOut.0.evidenceId");
+  assertPrivate(result);
+}
+const suppliedPages = companyBriefPassages(companyBriefEvidence(pages), companyBriefSourceHash(pages));
+const priorId = suppliedPages[0].passages[0].id;
 const otherUrl = "https://fixture.example/about/";
-for (const [label, sourceUrl, quote] of [
-  ["URL trailing slash", `${url}/`, lines[0]],
-  ["URL for a different supplied page", otherUrl, lines[0]],
-  ["paraphrased quote", url, lines[0].replace("Family owned", "Family operated")],
-  ["capitalization changed", url, lines[0].toLowerCase()],
-  ["punctuation changed", url, lines[0].replace(",", ";")],
-  ["ellipsized quote", url, "Family owned since 1985 ... the water heaters and fixtures it installs."],
-  ["noncontiguous passages", url, "Family owned since 1985, the water heaters and fixtures it installs."],
-]) {
-  const result = await generateSalesCompanyBrief([...pages, { url: otherUrl, lines: ["About this business."] }], {
-    callModel: async () => ({ parsed: { ...content, standOut: [{ ...content.standOut[0], sourceUrl, quote }] } }),
-  });
-  assert.equal(result.status, "unavailable", label);
-  assert.deepEqual(result.diagnostic, { code: "unsupported_quote", stage: "grounding", details: { claimIndex: 0 } }, label);
+const changedPages = [{ ...pages[0], url: otherUrl }];
+const staleId = await generateSalesCompanyBrief(changedPages, { callModel: async (request) => ({ parsed: {
+  ...modelContent(request, { ...content, standOut: [], services: content.services.map((claim) => ({ ...claim, sourceUrl: otherUrl })), whyCustomersCall: { ...content.whyCustomersCall, sourceUrl: otherUrl } }),
+  standOut: [{ text: lines[0], evidenceId: priorId }],
+} }) });
+assert.equal(staleId.diagnostic.code, "schema_invalid");
+const alteredId = await generateSalesCompanyBrief(pages, { callModel: async (request) => ({ parsed: {
+  ...modelContent(request), standOut: [{ text: lines[0], evidenceId: `${priorId}x` }],
+} }) });
+assert.equal(alteredId.diagnostic.code, "schema_invalid");
+// The old free-form generation shape is rejected, while saved ready v1 briefs
+// remain readable. Additional fields cannot override the server's citation.
+const oldGeneration = await generateSalesCompanyBrief(pages, { callModel: async () => ({ parsed: content }) });
+assert.equal(oldGeneration.diagnostic.code, "schema_invalid");
+for (const fields of [{ sourceUrl: otherUrl }, { quote: secret }]) {
+  const result = await generateSalesCompanyBrief(pages, { callModel: async (request) => {
+    const parsed = modelContent(request);
+    Object.assign(parsed.standOut[0], fields);
+    return { parsed };
+  } });
+  assert.equal(result.diagnostic.code, "schema_invalid");
+  assertPrivate(result);
 }
-const whitespaceQuote = await generatedContentFailure({ ...content,
-  standOut: [{ ...content.standOut[0], quote: lines[0].replaceAll(" ", "\n\t ") }],
-});
-assert.equal(whitespaceQuote.status, "ready", "existing whitespace-only normalization remains allowed");
-// Saved website text can contain HTML entities and typographic punctuation.
-// Ground against the supplied representation, not a browser-decoded version.
+assert.equal(serializeCompanyBrief({ version: SALES_COMPANY_BRIEF_VERSION, status: "ready", content }).status, "ready");
+// IDs bind exact punctuation/entities to their own page; the model never copies
+// these bytes into its output. Stored quotations equal the selected passage.
 const encodedQuote = lines[0].replace("Cedar", "Cedar’s team").replace(" and ", " &#038; ");
-const encodedPages = [{ ...pages[0], lines: [encodedQuote, ...lines.slice(1)] }];
-for (const [quote, expected] of [
-  [encodedQuote, "ready"],
-  [encodedQuote.replace("&#038;", "&"), "unavailable"],
-  [encodedQuote.replace("’", "'"), "unavailable"],
-]) {
-  const result = await generateSalesCompanyBrief(encodedPages, { callModel: async () => ({
-    parsed: { ...content, standOut: [{ ...content.standOut[0], quote }] },
-  }) });
-  assert.equal(result.status, expected);
-  if (expected === "unavailable") assert.equal(result.diagnostic.code, "unsupported_quote");
+const encodedPages = [{ ...pages[0], lines: [encodedQuote, ...lines.slice(1)] }, { url: otherUrl, lines: ["Other page only."] }];
+const encoded = await generateSalesCompanyBrief(encodedPages, { callModel: async (request) => {
+  const parsed = modelContent(request, { ...content, standOut: [claim(encodedQuote, encodedQuote)] });
+  const passage = JSON.parse(request.user).websiteEvidence[0].passages[0];
+  assert.equal(parsed.standOut[0].evidenceId, passage.id);
+  return { parsed };
+} });
+assert.equal(encoded.status, "ready");
+assert.equal(encoded.content.standOut[0].sourceUrl, url);
+assert.equal(encoded.content.standOut[0].quote, companyBriefPassages(companyBriefEvidence(encodedPages), companyBriefSourceHash(encodedPages))[0].passages[0].text);
+assert.ok(encoded.content.standOut[0].quote.includes("&#038;"));
+assert.ok(encoded.content.standOut[0].quote.includes("’"));
+// Deliberately document the validation boundary: valid citation membership is
+// not semantic entailment. AI remains responsible for faithful claim wording.
+const semanticLimit = await generatedContentFailure({ ...content, standOut: [claim("Cedar was founded in 1900 and guarantees same day service with certified specialists working throughout every city in the country for all residential clients.", lines[0])] });
+assert.equal(semanticLimit.status, "ready");
+const longPages = Array.from({ length: 21 }, (_, i) => ({ url: `https://fixture.example/${i}`, lines: [
+  "A complete sentence about a service. ".repeat(600) + " UNAVAILABLE MIDDLE " + "X".repeat(18000) + " Final complete statement. ".repeat(200),
+] }));
+const longOriginal = JSON.stringify(longPages);
+const bounded = companyBriefEvidence(longPages);
+const partitions = companyBriefPassages(bounded, companyBriefSourceHash(longPages));
+let characters = 0;
+const ids = [];
+for (const [index, page] of partitions.entries()) {
+  assert.equal(page.passages.map((part) => part.text).join("").replace(/\s/g, ""), bounded[index].text.replace(/\s/g, ""), "partition preserves all nonwhitespace budgeted evidence");
+  let previousEnd = 0;
+  for (const passage of page.passages) {
+    const start = bounded[index].text.indexOf(passage.text, previousEnd);
+    assert.ok(start >= previousEnd, "passages retain source order without overlap");
+    previousEnd = start + passage.text.length;
+    assert.ok(passage.text.length > 0 && passage.text.length <= 1000);
+    assert.ok(!passage.text.includes("\n"), "no crossing omitted head/tail content");
+    characters += passage.text.length;
+    ids.push(passage.id);
+  }
 }
+assert.equal(partitions[0].passages[0].clippedBefore, false);
+assert.equal(partitions[0].passages[0].clippedAfter, true);
+assert.equal(partitions[0].passages.at(-1).clippedBefore, true);
+assert.equal(partitions[0].passages.at(-1).clippedAfter, false);
+const identicalSources = [{ url, text: "Literal page evidence." }, { url: otherUrl, text: "Literal page evidence." }];
+const distinctPages = companyBriefPassages(identicalSources, "snapshot");
+assert.notEqual(distinctPages[0].passages[0].id, distinctPages[1].passages[0].id);
+assert.notEqual(companyBriefPassages([identicalSources[0], identicalSources[0]], "snapshot")[0].passages[0].id,
+  companyBriefPassages([identicalSources[0], identicalSources[0]], "snapshot")[1].passages[0].id, "even repeated page URLs remain distinct");
+const unbroken = "X".repeat(999) + "😀" + "Y".repeat(1100);
+const forced = companyBriefPassages([{ url, text: unbroken }], "snapshot")[0].passages;
+assert.equal(forced.map((part) => part.text).join(""), unbroken);
+assert.ok(forced.every((part) => part.text.length <= 1000 && !/[\uD800-\uDBFF]$/.test(part.text) && !/^[\uDC00-\uDFFF]/.test(part.text)));
+assert.equal(new Set(ids).size, ids.length);
+assert.ok(ids.length <= 160, "bounded 60k evidence and >=500-character cuts bound enum overhead");
+assert.ok(characters <= bounded.reduce((sum, page) => sum + page.text.length, 0));
+assert.equal(JSON.stringify(longPages), longOriginal);
+assert.deepEqual(companyBriefPassages(bounded, companyBriefSourceHash(longPages)), partitions, "stable IDs within snapshot");
+const editedPages = structuredClone(longPages); editedPages[0].title = "Changed capture";
+const editedIds = companyBriefPassages(companyBriefEvidence(editedPages), companyBriefSourceHash(editedPages)).flatMap((page) => page.passages.map((passage) => passage.id));
+assert.ok(ids.every((id) => !editedIds.includes(id)), "changed snapshot cannot reuse stale IDs");
 const tooLong = await generatedContentFailure({ ...content, standOut: [claim("word ".repeat(101).trim(), lines[0])] });
 assert.equal(tooLong.diagnostic.code, "invalid_word_count");
 assert.ok(tooLong.diagnostic.details.wordCount > 100);
@@ -253,7 +328,7 @@ try {
     if (legacyModels.includes(posted.model) && posted.reasoning?.effort === "none") {
       return { ok: false, status: 400, text: async () => JSON.stringify({ error: { code: "unsupported_value", param: "reasoning.effort" } }) };
     }
-    return { ok: true, json: async () => ({ output_text: JSON.stringify(content) }) };
+    return { ok: true, json: async () => ({ output_text: JSON.stringify(modelContent({ user: posted.input[1].content })) }) };
   };
   delete process.env.OPENAI_DEMO_EXTRACTION_MODEL;
   delete process.env.OPENAI_BUILD_JSON_MODEL;
@@ -267,6 +342,9 @@ try {
     assert.equal(posted.max_output_tokens, 2200);
     assert.equal(posted.text.format.strict, true);
     assert.equal(posted.text.format.name, "sales_company_brief");
+    assert.deepEqual(posted.text.format.schema.$defs.claim.required, ["text", "evidenceId"]);
+    assert.deepEqual(posted.text.format.schema.$defs.claim.properties.evidenceId.enum,
+      JSON.parse(posted.input[1].content).websiteEvidence.flatMap((page) => page.passages.map((passage) => passage.id)));
     if (posted.model.startsWith("gpt-5")) assert.equal(Object.hasOwn(posted, "temperature"), false);
   }
   delete process.env.OPENAI_DEMO_EXTRACTION_MODEL;

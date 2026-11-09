@@ -12,9 +12,6 @@ const briefSchema = z.object({
   services: z.array(claimSchema).max(5),
   whyCustomersCall: claimSchema.nullable(),
 });
-const claimJson = { type: "object", additionalProperties: false, properties: {
-  text: { type: "string" }, sourceUrl: { type: "string" }, quote: { type: "string" },
-}, required: ["text", "sourceUrl", "quote"] };
 
 export function createCompanyBriefAttempt() {
   return { attemptRef: `cb_${crypto.randomUUID().replace(/-/g, "")}`, generatedAt: new Date().toISOString() };
@@ -82,6 +79,59 @@ export function companyBriefEvidence(pages = []) {
   }).filter((page) => page.url && page.text);
 }
 
+// Citation transport only: partition the already-budgeted text without repeating
+// evidence or changing raw captures. The budgeter's newline marks omitted middle
+// content, so no passage can bridge that gap. Mechanical boundaries are not facts.
+export function companyBriefPassages(evidence, sourceHash) {
+  return evidence.map((page, pageIndex) => {
+    const passages = [];
+    let offset = 0;
+    for (const excerpt of page.text.split("\n")) {
+      let start = 0;
+      while (start < excerpt.length) {
+        let end = Math.min(start + 1000, excerpt.length);
+        if (end < excerpt.length) {
+          const window = excerpt.slice(start, end);
+          // Prefer sentence/word boundaries, but never shorten a full window
+          // below 500 characters: the existing input budget also bounds IDs.
+          const sentenceEnds = [...window.matchAll(/[.!?][”’"']?\s+/g)];
+          const sentenceEnd = sentenceEnds.at(-1);
+          const boundary = sentenceEnd ? sentenceEnd.index + sentenceEnd[0].length : 0;
+          const wordBoundary = window.lastIndexOf(" ") + 1;
+          if (boundary >= 500) end = start + boundary;
+          else if (wordBoundary >= 500) end = start + wordBoundary;
+          // Never split a UTF-16 surrogate pair at a forced boundary.
+          else if (/[\uD800-\uDBFF]/.test(excerpt[end - 1])) end--;
+        }
+        const text = excerpt.slice(start, end).trim();
+        const id = `ev_${crypto.createHash("sha256").update(JSON.stringify([sourceHash, pageIndex, page.url, offset + start, text])).digest("hex").slice(0, 24)}`;
+        if (text) passages.push({ id, text,
+          clippedBefore: offset + start > 0, clippedAfter: offset + end < page.text.length });
+        start = end;
+      }
+      offset += excerpt.length + 1;
+    }
+    return { url: page.url, passages };
+  });
+}
+
+function generationContract(ids) {
+  const claim = z.object({ text: claimSchema.shape.text, evidenceId: z.enum(ids) }).strict();
+  const claimRef = { $ref: "#/$defs/claim" };
+  return {
+    schema: z.object({ standOut: z.array(claim).max(2), services: z.array(claim).max(5), whyCustomersCall: claim.nullable() }).strict(),
+    jsonSchema: { type: "object", additionalProperties: false, properties: {
+      standOut: { type: "array", items: claimRef, maxItems: 2 },
+      services: { type: "array", items: claimRef, maxItems: 5 },
+      whyCustomersCall: { anyOf: [claimRef, { type: "null" }] },
+    }, required: ["standOut", "services", "whyCustomersCall"], $defs: {
+      claim: { type: "object", additionalProperties: false, properties: {
+        text: { type: "string" }, evidenceId: { type: "string", enum: ids },
+      }, required: ["text", "evidenceId"] },
+    } },
+  };
+}
+
 export function companyBriefSourceHash(pages) {
   return crypto.createHash("sha256").update(JSON.stringify(pages)).digest("hex");
 }
@@ -114,6 +164,10 @@ export async function generateSalesCompanyBrief(pages, { callModel = callOpenAiJ
     base.sourceHash = companyBriefSourceHash(pages);
     const evidence = companyBriefEvidence(pages);
     if (!evidence.length) return companyBriefFailure(base, "website_evidence_missing", { evidencePageCount: 0 }, "website_evidence_missing");
+    const passagePages = companyBriefPassages(evidence, base.sourceHash);
+    const citations = new Map(passagePages.flatMap((page) => page.passages.map((passage) =>
+      [passage.id, { sourceUrl: page.url, quote: passage.text }])));
+    const contract = generationContract([...citations.keys()]);
     stage = "model";
     const model = String(process.env.OPENAI_DEMO_EXTRACTION_MODEL || process.env.OPENAI_BUILD_JSON_MODEL || "gpt-5-mini").trim();
     const result = await callModel({
@@ -127,26 +181,30 @@ export async function generateSalesCompanyBrief(pages, { callModel = callOpenAiJ
         "standOut: 1-2 factual sentences about supported differentiators (such as specialization, experience or ownership). Omit this section with [] if unsupported. Never invent superiority or repeat marketing claims as fact.",
         "services: 3-5 distinct main services, phrased simply. If fewer are supported, return fewer; never invent or split a service just to reach the count.",
         "whyCustomersCall: one sentence describing typical needs directly supported by the listed services; do not invent observed call history, availability or business policies. Return null if unsupported.",
-        "For EVERY entry supply sourceUrl and a verbatim supporting quote from that page. A quote must substantiate the whole entry; do not infer credentials, guarantees or coverage.",
-        "Copy sourceUrl exactly from one websiteEvidence item's url, including its path and trailing slash. Copy quote as one continuous passage of at most 1000 characters from that same item's text.",
-        "Preserve the quote's words, spelling, capitalization, punctuation and encoded HTML entities exactly as supplied; do not decode entities or replace curly punctuation. Do not paraphrase it, insert ellipses, or join passages from different places or pages. The text field may paraphrase; the quote field may not.",
-        "Choose the supporting passage before writing each text field. If one passage cannot support the whole entry, narrow the entry to what it supports or omit it using the section rules above.",
+        "For EVERY entry choose one supplied passage id as evidenceId. The server supplies its exact source URL and quotation; do not generate sourceUrl or quote fields.",
+        "Choose the supporting passage before writing the text. Its text must substantiate the WHOLE entry; do not infer credentials, guarantees, coverage or omitted context. Narrow the entry or omit it using the section rules if one passage cannot support it.",
+        "Passages are mechanical excerpts, not independent facts or complete sentences. clippedBefore/clippedAfter mean neighboring context is absent from that passage. Never treat a fragment as a complete assertion, join passages, or bridge omitted source content. Prefer explicit complete statements within the chosen passage.",
       ].join("\n"),
-      user: JSON.stringify({ websiteEvidence: evidence }),
-      schema: briefSchema,
+      user: JSON.stringify({ websiteEvidence: passagePages }),
+      schema: contract.schema,
       jsonSchemaName: "sales_company_brief",
-      jsonSchema: { type: "object", additionalProperties: false, properties: {
-        standOut: { type: "array", items: claimJson, maxItems: 2 },
-        services: { type: "array", items: claimJson, maxItems: 5 },
-        whyCustomersCall: { anyOf: [claimJson, { type: "null" }] },
-      }, required: ["standOut", "services", "whyCustomersCall"] },
+      jsonSchema: contract.jsonSchema,
       maxOutputTokens: 2200,
       timeoutMs: 30000,
       maxAttempts: 1,
       promptCacheKey: `sales:${SALES_COMPANY_BRIEF_VERSION}`,
     });
     stage = "schema";
-    const content = briefSchema.parse(result.parsed);
+    const generated = contract.schema.parse(result.parsed);
+    // Resolve only IDs admitted by this request's schema and local map. The
+    // persisted/UI contract stays v1; model prose is never rewritten or filtered.
+    const resolve = ({ text, evidenceId }) => {
+      const citation = citations.get(evidenceId);
+      if (!citation) throw new Error("company_brief_unknown_evidence_id");
+      return { text, ...citation };
+    };
+    const content = briefSchema.parse({ standOut: generated.standOut.map(resolve), services: generated.services.map(resolve),
+      whyCustomersCall: generated.whyCustomersCall ? resolve(generated.whyCustomersCall) : null });
     if (content.services.length < 3 || !content.whyCustomersCall)
       return companyBriefFailure(base, "insufficient_website_evidence", { serviceCount: content.services.length, evidencePageCount: evidence.length }, "insufficient_website_evidence");
     stage = "grounding";
