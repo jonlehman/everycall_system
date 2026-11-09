@@ -2,7 +2,12 @@ import fs from 'node:fs/promises';
 import { ensureTables } from '../../pages/api/_lib/db.js';
 import { REQUIRED_SCHEMA_MIGRATIONS } from '../../pages/api/_lib/schemaReadiness.js';
 
-export const REMEDIATION_MIGRATIONS = REQUIRED_SCHEMA_MIGRATIONS;
+// Sales-only releases extend the reviewed deployment inventory without making
+// unrelated runtime requests depend on an additional global readiness receipt.
+export const REMEDIATION_MIGRATIONS = [
+  ...REQUIRED_SCHEMA_MIGRATIONS,
+  '0058_sales_prospect_checkout.sql'
+];
 export const BASELINE_MIGRATION = '0055_explicit_schema_baseline.sql';
 export const readMigration = name => fs.readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8');
 

@@ -9,11 +9,12 @@ import { createSalesInboundService } from '../apps/sales-call-gateway/src/salesI
 const db = new PGlite();
 const query = async (sql, values=[]) => { const r=await db.query(sql,values); return {...r,rowCount:r.rows?.length||r.affectedRows||0}; };
 const pool = {query,connect:async()=>({query,release(){}})};
+process.env.APP_BASE_URL='https://example.test';
 process.env.SALES_CALL_WINDOW_START_LOCAL='00:00';process.env.SALES_CALL_WINDOW_END_LOCAL='00:00';process.env.SALES_CALL_MISSING_TIMEZONE_POLICY='allow';
 const rejectsCode = (operation, code) => assert.rejects(operation, error=>error.code===code);
 try {
  await db.exec(`CREATE TABLE admin_users(id BIGSERIAL PRIMARY KEY);CREATE TABLE tenants(tenant_key TEXT PRIMARY KEY,name TEXT,industry TEXT,app_access_status TEXT,billing_status TEXT,live_prompt_mode TEXT,updated_at TIMESTAMPTZ,status TEXT,telnyx_voice_number TEXT,telnyx_voice_status TEXT,service_access_status TEXT,billing_lock_reason TEXT);CREATE TABLE tenant_bootstrap_profiles(tenant_key TEXT PRIMARY KEY,website_url TEXT,company_description TEXT,business_category TEXT,source_mode TEXT,marketing_attribution_json JSONB DEFAULT '{}'::jsonb,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());CREATE TABLE tenant_active_knowledge_builds(tenant_key TEXT,active_build_id TEXT);CREATE TABLE knowledge_builds(build_id TEXT,tenant_key TEXT,status TEXT);CREATE TABLE provisioning_jobs(id BIGSERIAL PRIMARY KEY,tenant_key TEXT,status TEXT,provider TEXT,stage TEXT,status_detail TEXT,provider_reference TEXT,error_code TEXT,error_message TEXT,updated_at TIMESTAMPTZ,completed_at TIMESTAMPTZ);INSERT INTO admin_users(id) VALUES(1),(2);`);
-  for (const name of ['0032_outbound_sales_demo.sql','0056_sales_dialer_v2.sql','0057_sales_phone_test_mode.sql']) await db.exec(await fs.readFile(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
+  for (const name of ['0032_outbound_sales_demo.sql','0056_sales_dialer_v2.sql','0057_sales_phone_test_mode.sql','0058_sales_prospect_checkout.sql']) await db.exec(await fs.readFile(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
   const originalNumbers=[{phoneE164:'+12065550101',type:'shop',label:'Front desk',extension:'27',verified:true},{phoneE164:'+12065550102',type:'cell',label:'Owner'}];
   await query(`INSERT INTO sales_prospects(prospect_id,source_key,business_name,phone_e164,numbers_json,permission_granted,status,website_url,metadata_json) VALUES('p1','stable-source','First business','+12065550101',$1,TRUE,'ready_to_call','https://first.example','{"custom":"keep me"}'),('p2','second-source','Second business','+12065550103','[]',FALSE,'queued','https://second.example','{}'),('p3','dnc-source','DNC business','+12065550104','[]',TRUE,'do_not_call','https://dnc.example','{}')`,[JSON.stringify(originalNumbers)]);
   await query("UPDATE sales_prospects SET do_not_call=TRUE WHERE prospect_id='p3'");
@@ -44,7 +45,7 @@ try {
   await recordSalesCallOutcome(pool,{salesCallId:'test',outcome:'do_not_call',notes:'Testing disposition'});
   assert.equal((await query("SELECT outcome FROM sales_call_sessions WHERE sales_call_id='test'")).rows[0].outcome,'do_not_call');
   assert.equal((await getSalesProspect(pool,'p1')).doNotCall,false);assert.equal((await query("SELECT 1 FROM sales_followup_jobs WHERE sales_call_id='test'")).rowCount,0);
-  await rejectsCode(()=>sendSalesCheckout(pool,{salesCallId:'test',repId:1,channel:'sms',sms:()=>{throw Error('Must never send');}}),'sales_phone_test_external_action_blocked');
+  await rejectsCode(()=>sendSalesCheckout(pool,{salesCallId:'test',repId:1,channel:'sms',sms:()=>{throw Error('Must never send');}}),'sales_test_checkout_not_configured');
   let hungUp=false;
   const inbound=createSalesInboundService({pool,telnyx:{hangupCall:async()=>{hungUp=true;}},env:{SALES_TELNYX_CALL_CONTROL_APP_ID:'sales',SALES_TELNYX_CALLER_ID:'+12065559999'}});
   await inbound.handleEvent({type:'call.initiated',payload:{call_control_id:'incoming',direction:'incoming',connection_id:'sales',from:SALES_TEST_NUMBERS[1].phoneE164,to:'+12065559999'}});
@@ -59,11 +60,12 @@ try {
   await setSalesPhoneTestMode(pool,false);
   for(const original of before){const restored=(await query('SELECT * FROM sales_prospects WHERE prospect_id=$1',[original.prospect_id])).rows[0];assert.equal(restored.phone_e164,original.phone_e164);assert.deepEqual(restored.numbers_json,original.numbers_json);assert.equal(restored.test_original_phone_e164,null);assert.equal(restored.test_original_numbers_json,null);assert.equal(restored.source_key,original.source_key);assert.deepEqual(restored.metadata_json,original.metadata_json);}
   await rejectsCode(()=>updateSalesProspect(pool,'p1',{phoneE164:SALES_TEST_NUMBERS[0].phoneE164,expectedRowVersion:publicProspect.rowVersion}),'prospect_version_conflict');
-  await rejectsCode(()=>sendSalesCheckout(pool,{salesCallId:'test',repId:1,channel:'sms'}),'sales_phone_test_external_action_blocked');
+  await rejectsCode(()=>sendSalesCheckout(pool,{salesCallId:'test',repId:1,channel:'sms'}),'sales_test_checkout_not_configured');
   await rejectsCode(()=>query("UPDATE sales_call_sessions SET state='preparing_call' WHERE sales_call_id='test'"),'P5702');
   await setSalesPhoneTestMode(pool,false);assert.equal((await getSalesPhoneTestMode(pool)).backedUpCount,0);
   // Deterministically enable after a normal call/prospect snapshot but before reservation.
   // This proves the second mode check; PGlite does not model native lock scheduling.
+  await query("UPDATE sales_prospects SET assigned_rep_user_id=1 WHERE prospect_id='p2'");
   await query("INSERT INTO sales_call_sessions(sales_call_id,prospect_id,admin_user_id,state,ended_at) VALUES('historical','p2',1,'ended',NOW())");
   const racePool={query,connect:async()=>{await setSalesPhoneTestMode(pool,true);return pool.connect();}};
   let externalCalls=0;

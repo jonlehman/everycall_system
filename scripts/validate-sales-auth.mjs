@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { testSalesCheckoutApi } from './lib/test-sales-checkout-api.mjs';
 import fs from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import bcrypt from 'bcryptjs';
@@ -255,6 +256,7 @@ try {
   }
   await query(`INSERT INTO sessions (id, user_id, role, expires_at)
     VALUES ('other-sales-token', $1, 'sales', NOW() + INTERVAL '1 day')`, [created.id]);
+  await testSalesCheckoutApi({pool,call,salesCookie,repId:sales.id});
   const contactRequest = (cookie, query = {}) => ({ ...request(cookie), query });
   const contactIds = result => result.body.prospects.map(prospect => prospect.prospectId).sort();
   const contacts = await call(salesProspects, contactRequest(salesCookie));

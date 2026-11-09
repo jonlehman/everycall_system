@@ -580,17 +580,37 @@ export default function CallerWorkspace() {
   }, [browsingContact, prospect?.id, prospect?.demoStatus]);
   const checkout = (details) =>
     run("checkout", async () => {
-      const result = await fetchSalesJson(
-        `${BASE}/calls/${encodeURIComponent(call.id)}/checkout`,
-        {
-          method: "POST",
-          idempotencyKey: `sales-checkout-${call.id}-${details.channel}`,
-          body: JSON.stringify(details),
-        },
-      );
-      if (!result.call) throw new Error("Checkout delivery was not confirmed.");
-      setCall(normalizeCall(result));
-      setOutcome("signup_link_sent");
+      const selected = prospectRef.current;
+      const currentCall = callRef.current;
+      if (!selected?.id) throw new Error("Choose a prospect before sending a signup link.");
+      const withoutCall = !currentCall?.id;
+      const testCheckout = withoutCall ? Boolean(queue.config?.phoneTestMode) : Boolean(currentCall.phoneTestMode);
+      let confirmedRecipient;
+      if (withoutCall) {
+        const recipient = details.channel === "sms"
+          ? testCheckout ? queue.config?.checkoutTestPhone || "+14256154640" : selected.numbers?.find((number) => number.type === "cell")?.phoneE164
+          : details.email?.trim();
+        confirmedRecipient = recipient;
+        if (!recipient) throw new Error("Choose a signup link recipient.");
+        if (!window.confirm(`Send the ${testCheckout ? "TEST signup link (no real charge)" : "signup link"} by ${details.channel === "sms" ? "text" : "email"} to ${recipient} without an associated call?`)) return;
+      }
+      const context = withoutCall
+        ? `prospects/${encodeURIComponent(selected.id)}`
+        : `calls/${encodeURIComponent(currentCall.id)}`;
+      const result = await fetchSalesJson(`${BASE}/${context}/checkout`, {
+        method: "POST",
+        idempotencyKey: `sales-checkout-${withoutCall ? `prospect-${selected.id}` : currentCall.id}-${details.channel}-${testCheckout ? "test" : "live"}`,
+        body: JSON.stringify({ ...details, expectedIsTest: testCheckout, ...(withoutCall ? { confirmedWithoutCall: true, confirmedRecipient } : {}) }),
+      });
+      if (!result.checkout || !["sent", "delivered", "paid", "test_complete"].includes(result.checkout.status))
+        throw new Error("Checkout delivery was not confirmed.");
+      if (!withoutCall && callRef.current?.id === currentCall.id) {
+        if (!result.call) throw new Error("Checkout call was not returned.");
+        setCall(normalizeCall(result));
+        if (!result.checkout.isTest) setOutcome("signup_link_sent");
+      }
+      if (withoutCall && prospectRef.current?.id === selected.id)
+        setProspect((current) => current?.id === selected.id ? { ...current, signupLinkSent: true } : current);
       await loadQueue({ quiet: true });
     });
   const book = (details) =>

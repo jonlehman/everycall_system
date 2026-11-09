@@ -9,7 +9,7 @@ import { listKnowledgeOverrides, assertConfigTablesReady } from '../pages/api/_l
 import { loadMarketingInsights } from '../pages/api/_lib/marketingInsights.js';
 import { ensureTables, SchemaNotReadyError } from '../pages/api/_lib/db.js';
 import { REQUIRED_SCHEMA_MIGRATIONS } from '../pages/api/_lib/schemaReadiness.js';
-import { bootstrapFixtureSchema, applyRemediationMigrations, migrationBody } from './lib/schema-migrations.mjs';
+import { bootstrapFixtureSchema, applyRemediationMigrations, migrationBody, REMEDIATION_MIGRATIONS } from './lib/schema-migrations.mjs';
 
 const postgresUrl = process.env.EVERYCALL_TEST_POSTGRES_URL;
 let db;
@@ -124,9 +124,76 @@ try {
   await assert.rejects(applyRemediationMigrations(injectedPool), /injected_receipt_failure/);
   assert.deepEqual((await query('SELECT name FROM schema_migrations')).rows.map(r => r.name), ['0050_live_brief_curation.sql']);
   assert.equal((await query("SELECT to_regclass('async_jobs_running_lease_idx') AS object")).rows[0].object, null);
-  assert.deepEqual(await applyRemediationMigrations(pool), REQUIRED_SCHEMA_MIGRATIONS);
+  assert.deepEqual(await applyRemediationMigrations(pool), REMEDIATION_MIGRATIONS);
   assert.deepEqual(await applyRemediationMigrations(pool), []);
   await ensureTables(fresh());
+
+  // Upgrade an existing Sales schema with real call-linked checkout history.
+  // The Sales-only receipt must not become a global runtime readiness gate.
+  const prospectCheckoutMigration = '0058_sales_prospect_checkout.sql';
+  assert.deepEqual(REMEDIATION_MIGRATIONS, [...REQUIRED_SCHEMA_MIGRATIONS, prospectCheckoutMigration]);
+  await query('DROP INDEX sales_checkout_prospect_only_idx');
+  await query('DROP TRIGGER sales_checkout_mode_immutable_trigger ON sales_checkout_sessions');
+  await query('DROP FUNCTION sales_checkout_mode_immutable()');
+  await query('ALTER TABLE sales_checkout_sessions DROP CONSTRAINT sales_checkout_test_isolation');
+  await query('ALTER TABLE sales_checkout_sessions DROP COLUMN is_test');
+  await query('ALTER TABLE sales_checkout_sessions ALTER COLUMN sales_call_id SET NOT NULL');
+  await query('DELETE FROM schema_migrations WHERE name = $1', [prospectCheckoutMigration]);
+  await ensureTables(fresh());
+  const repId = (await query("INSERT INTO admin_users(username,email,role) VALUES('migration-rep','migration-rep@example.test','sales') RETURNING id")).rows[0].id;
+  for (const prospect of ['migration-prospect-1', 'migration-prospect-2']) {
+    await query("INSERT INTO sales_prospects(prospect_id,source_key,business_name,phone_e164) VALUES($1,$1,'Migration fixture','+12025550100')", [prospect]);
+  }
+  for (const call of ['migration-call-1', 'migration-call-2']) {
+    await query("INSERT INTO sales_call_sessions(sales_call_id,prospect_id,admin_user_id,state) VALUES($1,'migration-prospect-1',$2,'closed')", [call, repId]);
+  }
+  const insertLegacyCheckout = (id, callId, prospectId = 'migration-prospect-1') => query(
+    "INSERT INTO sales_checkout_sessions(checkout_id,sales_call_id,prospect_id,rep_user_id,channel,recipient) VALUES($1,$2,$3,$4,'email','owner@example.test')",
+    [id, callId, prospectId, repId]
+  );
+  const insertCheckout = (id, callId, prospectId = 'migration-prospect-1', isTest = false) => query(
+    "INSERT INTO sales_checkout_sessions(checkout_id,sales_call_id,prospect_id,rep_user_id,channel,recipient,is_test,activation_status) VALUES($1,$2,$3,$4,'email','owner@example.test',$5,CASE WHEN $5 THEN 'test_only' ELSE 'unpaid' END)",
+    [id, callId, prospectId, repId, isTest]
+  );
+  await insertLegacyCheckout('migration-existing', 'migration-call-1');
+  const historicalCheckout = (await query("SELECT * FROM sales_checkout_sessions WHERE checkout_id='migration-existing'")).rows[0];
+  const checkoutNullable = async () => (await query("SELECT is_nullable FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='sales_checkout_sessions' AND column_name='sales_call_id'")).rows[0].is_nullable;
+  const checkoutIndex = async () => (await query("SELECT to_regclass('sales_checkout_prospect_only_idx') AS object")).rows[0].object;
+  const failedSalesReceipt = { connect: async () => ({ release() {}, query: async (sql, params) => {
+    if (/INSERT INTO schema_migrations/.test(sql) && params?.[0] === prospectCheckoutMigration) throw Error('injected_sales_receipt_failure');
+    return query(sql, params);
+  } }) };
+  await assert.rejects(applyRemediationMigrations(failedSalesReceipt), /injected_sales_receipt_failure/);
+  assert.equal(await checkoutNullable(), 'NO', 'failed receipt restores the prior NOT NULL constraint');
+  assert.equal(await checkoutIndex(), null, 'failed receipt rolls back the new index');
+  assert.equal((await query("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='sales_checkout_sessions' AND column_name='is_test'")).rows.length, 0, 'failed receipt rolls back test identity');
+  assert.equal((await query("SELECT tgname FROM pg_trigger WHERE tgrelid='sales_checkout_sessions'::regclass AND tgname='sales_checkout_mode_immutable_trigger'")).rows.length, 0, 'failed receipt rolls back mode guard');
+  assert.equal((await query('SELECT name FROM schema_migrations WHERE name=$1', [prospectCheckoutMigration])).rows.length, 0);
+  assert.deepEqual(await applyRemediationMigrations(pool), [prospectCheckoutMigration]);
+  assert.equal(await checkoutNullable(), 'YES');
+  assert.equal(await checkoutIndex(), 'sales_checkout_prospect_only_idx');
+  assert.deepEqual((await query("SELECT * FROM sales_checkout_sessions WHERE checkout_id='migration-existing'")).rows[0], { ...historicalCheckout, is_test: false });
+  await insertCheckout('migration-standalone-1', null);
+  await insertCheckout('migration-standalone-2', null, 'migration-prospect-2');
+  await insertCheckout('migration-standalone-test-1', null, 'migration-prospect-1', true);
+  await insertCheckout('migration-standalone-test-2', null, 'migration-prospect-2', true);
+  await assert.rejects(insertCheckout('migration-standalone-duplicate', null), error => error.code === '23505');
+  await assert.rejects(insertCheckout('migration-standalone-test-duplicate', null, 'migration-prospect-1', true), error => error.code === '23505');
+  await assert.rejects(insertCheckout('migration-call-duplicate', 'migration-call-1'), error => error.code === '23505');
+  await assert.rejects(insertCheckout('migration-call-mode-duplicate', 'migration-call-1', 'migration-prospect-1', true), error => error.code === '23505');
+  for (const [id, isTest] of [['migration-standalone-1', true], ['migration-standalone-test-1', false]]) {
+    await assert.rejects(query('UPDATE sales_checkout_sessions SET is_test=$2 WHERE checkout_id=$1', [id, isTest]), error => error.code === 'P5801');
+  }
+  for (const assignment of ["paid_at=NOW()", "activation_status='queued'", "tenant_key='would-be-customer'"]) {
+    await assert.rejects(query(`UPDATE sales_checkout_sessions SET ${assignment} WHERE checkout_id='migration-standalone-test-1'`), error => error.code === '23514');
+  }
+  await query("UPDATE sales_checkout_sessions SET status='test_complete' WHERE checkout_id='migration-standalone-test-1'");
+  assert.deepEqual((await query("SELECT is_test,paid_at,activation_status,tenant_key FROM sales_checkout_sessions WHERE checkout_id='migration-standalone-test-1'")).rows[0], { is_test: true, paid_at: null, activation_status: 'test_only', tenant_key: null });
+  await insertCheckout('migration-second-call', 'migration-call-2');
+  await assert.rejects(insertCheckout('migration-missing-call', 'missing-call'), error => error.code === '23503');
+  assert.equal(Number((await query('SELECT count(*) AS count FROM sales_call_sessions')).rows[0].count), 2, 'standalone checkouts create no synthetic call records');
+  assert.deepEqual(await applyRemediationMigrations(pool), []);
+  assert.equal((await query('SELECT name FROM schema_migrations WHERE name=$1', [prospectCheckoutMigration])).rows.length, 1);
   assert.equal(migrationBody('-- comment\nBEGIN;\nSELECT 1;\nCOMMIT;').trim(), '-- comment\n\nSELECT 1;');
   assert.throws(() => migrationBody('BEGIN; SELECT 1;'), /wrapper_invalid/);
   const source = await fs.readFile(new URL('../pages/api/_lib/db.js', import.meta.url), 'utf8');
@@ -145,7 +212,7 @@ try {
     }
   }
   for (const dir of ['apps', 'packages', 'lib', 'pages']) await assertNoRuntimeDdl(new URL(`../${dir}`, import.meta.url).pathname);
-  console.log('Runtime schema regressions passed: actual config and cached marketing paths, runtime-wide DDL scan, read-only probes, per-pool concurrent cache, fail-closed tables/columns/triggers/receipts, retry after repair, explicit bootstrap, atomic migration receipts, idempotent reviewed deployment.');
+  console.log('Runtime schema regressions passed: actual config and cached marketing paths, runtime-wide DDL scan, read-only probes, per-pool concurrent cache, fail-closed tables/columns/triggers/receipts, retry after repair, explicit bootstrap, atomic migration receipts, idempotent reviewed deployment, Sales prospect-only upgrade rollback, immutable test/live isolation and uniqueness with preserved call history.');
 } finally {
   await cleanup();
 }

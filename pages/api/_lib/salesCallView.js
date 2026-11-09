@@ -73,13 +73,15 @@ export async function buildSalesCallView(pool, call, {
   if (!call) return null;
   const state = normalizeSalesText(call.state, 80).toLowerCase();
   const aiState = normalizeSalesText(call.aiState, 80).toLowerCase();
-  const prospect = (await pool.query('SELECT business_name, contact_name FROM sales_prospects WHERE prospect_id=$1', [call.prospectId])).rows[0];
+  const prospect = (await pool.query('SELECT business_name, contact_name, status FROM sales_prospects WHERE prospect_id=$1', [call.prospectId])).rows[0];
   const signup = await loadLatestSignupProgress(pool, call, operatorUserId);
   return {
     salesCallId: call.salesCallId,
     prospectId: call.prospectId,
     businessName: prospect?.business_name || null, contactName: prospect?.contact_name || null,
     state: call.state,
+    phoneTestMode: Boolean(call.metadata?.phone_test_mode),
+    customerPaid: prospect?.status === 'paid',
     aiState: call.aiState || "not_started",
     prospectConnected: Boolean(call.connectedAt) || PROSPECT_CONNECTED_STATES.has(state),
     aiReady: AI_READY_STATES.has(aiState),

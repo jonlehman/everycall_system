@@ -1,3 +1,4 @@
+import { testSalesProspectCheckout } from './lib/test-sales-prospect-checkout.mjs';
 import { processSalesPaidActivations } from '../pages/api/_lib/salesActivation.js';
 import pg from 'pg';
 import crypto from 'node:crypto';
@@ -26,6 +27,7 @@ try {
  await db.exec(await fs.readFile(new URL('../migrations/0032_outbound_sales_demo.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../migrations/0056_sales_dialer_v2.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../migrations/0057_sales_phone_test_mode.sql',import.meta.url),'utf8'));
+ await db.exec(await fs.readFile(new URL('../migrations/0058_sales_prospect_checkout.sql',import.meta.url),'utf8'));
  const phoneEnv={...env,SALES_TELNYX_CALLER_ID:'  +12065559999  '};
  const fallbackSettings=await getSalesDialerSettings(pool,{id:1,name:'Alex',role:'sales'},phoneEnv);
  assert.equal(fallbackSettings.operator.phone,'+12065559999','Rep without override receives trimmed dedicated Sales caller ID');
@@ -70,10 +72,10 @@ try {
  assert(!canonicalPrompt.includes(marketing));
  console.log('stage checkout');
  const close=await createSalesCallSession(pool,{prospectId:queue.queue[2].prospectId,adminUserId:1});await updateSalesCallSession(pool,close.salesCallId,{state:'ended',endedAt:new Date().toISOString()});
- let created=0,sent=0;const checkout=await sendSalesCheckout(pool,{salesCallId:close.salesCallId,repId:1,channel:'email',env,stripe:{checkout:{sessions:{create:async()=>{created++;return{id:'cs_test',url:'https://checkout.stripe.test/example'};}}}},mail:async()=>{sent++;return{id:'mail_test'};}});
+ let created=0,sent=0;const checkout=await sendSalesCheckout(pool,{salesCallId:close.salesCallId,repId:1,channel:'email',env,stripe:{checkout:{sessions:{create:async()=>{created++;return{id:'cs_test',livemode:true,url:'https://checkout.stripe.test/example'};}}}},mail:async()=>{sent++;return{id:'mail_test'};}});
  assert.equal(checkout.status,'sent');await sendSalesCheckout(pool,{salesCallId:close.salesCallId,repId:1,channel:'email',env});assert.equal(created,1);assert.equal(sent,1);
  const checkoutRow=(await query('SELECT * FROM sales_checkout_sessions WHERE sales_call_id=$1',[close.salesCallId])).rows[0];
- const event={id:'evt_paid',type:'checkout.session.completed',data:{object:{id:'cs_test',mode:'payment',currency:'usd',amount_total:10000,payment_status:'unpaid',metadata:{sales_checkout_id:checkoutRow.checkout_id,sales_call_id:close.salesCallId,sales_prospect_id:close.prospectId}}}};
+ const event={id:'evt_paid',type:'checkout.session.completed',livemode:true,data:{object:{id:'cs_test',livemode:true,mode:'payment',currency:'usd',amount_total:10000,payment_status:'unpaid',metadata:{sales_checkout_id:checkoutRow.checkout_id,sales_call_id:close.salesCallId,sales_prospect_id:close.prospectId}}}};
  await applySalesPaidCheckout(pool,event);assert.equal((await query('SELECT paid_at FROM sales_call_sessions WHERE sales_call_id=$1',[close.salesCallId])).rows[0].paid_at,null);
  event.data.object.payment_status='paid';await applySalesPaidCheckout(pool,event);await applySalesPaidCheckout(pool,event);assert.equal((await query('SELECT outcome FROM sales_call_sessions WHERE sales_call_id=$1',[close.salesCallId])).rows[0].outcome,'paid');assert.equal((await getSalesRepQueue(pool,1,{env})).counters.paid,1);
  const activation=await processSalesPaidActivations(pool,{enqueue:async(_db,key,input)=>{assert.equal(input.websiteUrl,records[2].website+'/');return{build_id:'paid_full_build'};},savePrompt:async()=>{},resolveAssignments:async()=>[{domainId:'services'}]});assert.equal(activation.results[0].status,'awaiting_knowledge_review');
@@ -146,7 +148,7 @@ try {
   const callB=await createSalesCallSession(pool,{prospectId:b.queue[0].prospectId,adminUserId:4});await updateSalesCallSession(pool,callB.salesCallId,{state:'ended',endedAt:new Date().toISOString()});
   let stripeArrived=0,providerSends=0,releaseFirst,releaseSecond,enteredBoth;
   const firstGate=new Promise(resolve=>{releaseFirst=resolve;}),secondGate=new Promise(resolve=>{releaseSecond=resolve;}),both=new Promise(resolve=>{enteredBoth=resolve;});
-  const stripe={checkout:{sessions:{create:async()=>{const n=++stripeArrived;if(n===2)enteredBoth();await(n===1?firstGate:secondGate);return{id:'cs_race',url:'https://checkout.stripe.test/race'};}}}};
+  const stripe={checkout:{sessions:{create:async()=>{const n=++stripeArrived;if(n===2)enteredBoth();await(n===1?firstGate:secondGate);return{id:'cs_race',livemode:true,url:'https://checkout.stripe.test/race'};}}}};
   const delivery={salesCallId:callB.salesCallId,repId:4,channel:'email',email:'owner@example.test',env,stripe,mail:async()=>{providerSends++;return{id:'race_mail'};}};
   const sendOne=sendSalesCheckout(pool,delivery);const sendTwo=sendSalesCheckout(pool,delivery);await both;releaseFirst();await sendOne;releaseSecond();await sendTwo;assert.equal(providerSends,1,'Delayed Stripe response must never regress sent state or duplicate delivery');
   const slot=slots.slots[1];const reservations=await Promise.allSettled([bookSalesSetup(pool,{salesCallId:winner.salesCallId,repId:3,...slot,email:'a@example.test',env,graph,now}),bookSalesSetup(pool,{salesCallId:callB.salesCallId,repId:4,...slot,email:'b@example.test',env,graph,now})]);assert.equal(reservations.filter(r=>r.status==='fulfilled').length,1,'Concurrent booking must create one event per slot');
@@ -174,5 +176,6 @@ try {
  const conversationQueue=await getSalesRepQueue(pool,7,{timezone:'UTC',env});
  assert.equal(conversationQueue.queue.find(p=>p.prospectId===countProspectId).conversationCount,1);
  assert.equal(conversationQueue.counters.conversations,1);
+ await testSalesProspectCheckout(pool,env);
  console.log('PASS Sales v2 SQL: isolated ready queues, no expiry, skip, callback priority, attempt/notes history, rep ownership, permanent phone/domain DNC, reimportable removal, canonical facts, Stripe verified paid/idempotency, live Graph booking/retry, incoming take/fallback exclusion.');
 } catch(error) {console.error(error.stack);process.exitCode=1;} finally {await db.close();}

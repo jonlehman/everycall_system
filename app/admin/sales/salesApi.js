@@ -477,6 +477,8 @@ export function normalizeCall(payload = {}) {
     linkSentAt: source.linkSentAt || null,
     bookedAt: source.bookedAt || null,
     paidAt: source.paidAt || null,
+    customerPaid: Boolean(source.customerPaid),
+    phoneTestMode: Boolean(source.phoneTestMode),
     demoStartedAt: source.demoStartedAt || source.demo_started_at || null,
     demoEndedAt: source.demoEndedAt || source.demo_ended_at || null,
     demoDurationSeconds:

@@ -213,7 +213,10 @@ export default function DialerScreen({
     setSelectedStage(null);
   }, [phase, call?.id, prospect?.id]);
   const panelStage = selectedStage ?? currentStep;
-  const customerPaid = Boolean(call?.paidAt) || prospect?.status === "paid";
+  const customerPaid = Boolean(call?.paidAt || call?.customerPaid) || prospect?.status === "paid";
+  const testCheckout = call?.id ? Boolean(call.phoneTestMode) : Boolean(queue.config?.phoneTestMode);
+  const checkoutCell = testCheckout ? { phoneE164: queue.config?.checkoutTestPhone || "+14256154640" } : cell;
+  const checkoutEmail = testCheckout ? queue.config?.checkoutTestEmail || "" : email;
   const canDial =
       !busy && !call?.id && softphoneState === "ready" && prospect?.eligible && prospect?.demoStatus === "ready" && !["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})),
     editUrl = "/sales/scripts";
@@ -635,7 +638,7 @@ export default function DialerScreen({
             ) : null}
             {panelStage === 3 && (
               <>
-                <fieldset className={styles.closeCards} disabled={phase !== "WRAPUP"} aria-label="Signup and setup">
+                <div className={styles.closeCards}>
                   <div className={`${styles.card} ${styles.checkout}`}>
                     <h3>1 · Signup link</h3>
                     <h2>
@@ -646,39 +649,39 @@ export default function DialerScreen({
                       the checkout link
                     </h2>
                     <p>
-                      {customerPaid ? "This customer has already paid for setup." : "Stripe checkout: $100 setup, first month included. Nothing activates until it’s paid. Stripe marks this call Paid."}
+                      {testCheckout ? "Stripe TEST checkout — no real charge. Delivery goes only to your test phone or account email." : customerPaid ? "This customer has already paid for setup." : "Stripe checkout: $100 setup, first month included. Nothing activates until it’s paid. Stripe marks this call Paid."}
                     </p>
                     <div className={styles.actions}>
                       <Button
-                        disabled={!cell || busy}
-                        aria-pressed={channel === "sms" && Boolean(cell)}
+                        disabled={!checkoutCell || busy}
+                        aria-pressed={channel === "sms" && Boolean(checkoutCell)}
                         onClick={() => setChannel("sms")}
                       >
                         Text
                       </Button>
                       <Button
-                        aria-pressed={channel === "email" || !cell}
+                        aria-pressed={channel === "email" || !checkoutCell}
                         onClick={() => setChannel("email")}
                       >
                         Email
                       </Button>
                     </div>
                     <label>
-                      {channel === "sms" && cell ? "Text to" : "Email to"}
+                      {channel === "sms" && checkoutCell ? "Text to" : "Email to"}
                       <input
                         aria-label={
-                          channel === "sms" && cell ? "Text to" : "Email to"
+                          channel === "sms" && checkoutCell ? "Text to" : "Email to"
                         }
-                        type={channel === "sms" && cell ? "text" : "email"}
-                        readOnly={channel === "sms" && Boolean(cell)}
+                        type={channel === "sms" && checkoutCell ? "text" : "email"}
+                        readOnly={testCheckout || (channel === "sms" && Boolean(checkoutCell))}
                         value={
-                          channel === "sms" && cell ? cell.phoneE164 : email
+                          channel === "sms" && checkoutCell ? checkoutCell.phoneE164 : checkoutEmail
                         }
                         onChange={(e) => setEmail(e.target.value)}
                       />
                     </label>
                     <small>
-                      {cell
+                      {checkoutCell
                         ? "Shop lines usually can’t take texts. Use the cell on record, or switch to Email."
                         : "No cell on file. Text is unavailable; send by Email."}
                     </small>
@@ -686,24 +689,26 @@ export default function DialerScreen({
                       tone="blue"
                       disabled={
                         busy ||
-                        customerPaid ||
-                        (!(channel === "sms" && cell) && !email.trim())
+                        !prospect?.id ||
+                        (customerPaid && !testCheckout) ||
+                        (!(channel === "sms" && checkoutCell) && !checkoutEmail.trim())
                       }
                       onClick={() =>
                         onCheckout({
-                          channel: channel === "sms" && cell ? "sms" : "email",
-                          email,
+                          channel: channel === "sms" && checkoutCell ? "sms" : "email",
+                          email: checkoutEmail,
                         })
                       }
                     >
-                      {customerPaid
+                      {customerPaid && !testCheckout
                         ? "Paid"
-                        : call?.linkSentAt
+                        : call?.linkSentAt || prospect?.signupLinkSent
                           ? "Send link again"
                           : "Send link"}
                     </Button>
+                    {!call?.id && <small>Confirm the recipient before sending without a call.</small>}
                   </div>
-                  <div className={styles.card}>
+                  <fieldset className={`${styles.card} ${styles.setupCard}`} disabled={phase !== "WRAPUP"} aria-label="Setup call">
                     <h3>2 · Setup call</h3>
                     <h2>
                       Book 15 minutes with{" "}
@@ -752,9 +757,9 @@ export default function DialerScreen({
                           ? `Book ${slot.label || new Date(slot.start).toLocaleString()}`
                           : "Choose a slot"}
                     </Button>
-                  </div>
-                </fieldset>
-                {phase !== "WRAPUP" && <p className={styles.caption}>Signup and setup actions are available after the call ends.</p>}
+                  </fieldset>
+                </div>
+                {phase !== "WRAPUP" && <p className={styles.caption}>Setup booking is available after the call ends.</p>}
                 <ScriptPart label="Script · Close" text={script("close")} />
                 <p className={styles.caption}>
                   If he’d rather not do the card now: {script("close_decline")}

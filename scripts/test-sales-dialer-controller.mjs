@@ -70,6 +70,7 @@ const notPrepped = { ...prospect, id: "not-prepped", businessName: "Awaiting Pre
 const paidContact = { ...prospect, id: "paid-contact", businessName: "Paid Business", status: "paid" };
 const dncContact = { ...prospect, id: "dnc-contact", businessName: "Do Not Call Business", doNotCall: true };
 const removedContact = { ...prospect, id: "removed-contact", businessName: "Removed Business", status: "removed" };
+let testMode = false, holdCheckout = false, checkoutReply = null;
 let requests = [],
   briefStep = 0,
   calls = {},
@@ -85,6 +86,7 @@ const activeCall = (id, prospectId) => ({
   id,
   prospectId,
   state: "ai_standby_ready",
+  phoneTestMode: testMode,
   prospectConnected: true,
   aiReady: true,
   aiState: "ready",
@@ -124,6 +126,12 @@ const server = createServer(async (req, res) => {
   requests.push({ path: path.pathname, method: req.method, data, query: Object.fromEntries(path.searchParams) });
   res.setHeader("Content-Type", "application/json");
   const send = (value) => res.end(JSON.stringify(value));
+  if (path.pathname.endsWith("/checkout")) {
+    const callId = path.pathname.match(/\/calls\/([^/]+)\/checkout$/)?.[1];
+    const reply = () => send({ checkout: { status: "sent", isTest: data.expectedIsTest }, ...(callId ? { call: calls[callId] } : {}) });
+    if (holdCheckout) checkoutReply = reply; else reply();
+    return;
+  }
   if (path.pathname.endsWith("/company-brief")) {
     briefStep++;
     const metadata = { attemptRef: "cb_0123456789abcdef0123456789abcdef", generatedAt: "2026-11-05T22:28:01.243Z" };
@@ -157,6 +165,7 @@ const server = createServer(async (req, res) => {
             },
           ]
         : [],
+      config: { phoneTestMode: testMode, checkoutTestEmail: "rep@example.test", checkoutTestPhone: "+14256154640" },
       scripts: { opener: "Hello {first_name}" },
       operator: { name: "Rep" },
       incoming: [
@@ -291,9 +300,11 @@ const reset = async ({
   unknown = false,
   denyMic = false,
   second = false,
+  phoneTest = false,
 } = {}) => {
   await context?.close();
   requests = [];
+  testMode = phoneTest; holdCheckout = false; checkoutReply = null;
   calls = {};
   currentId = "";
   showIncoming = false;
@@ -366,6 +377,47 @@ const incoming = async () => {
   await page.locator('[data-phase="TALK"]').waitFor();
 };
 try {
+  console.log("controller: confirmed prospect checkout, busy dedupe, call and test contexts");
+  for (const phoneTest of [false, true]) {
+    await reset({ phoneTest });
+    await page.getByRole("list", { name: "Call phases" }).getByRole("button", { name: "Close", exact: true }).click();
+    const recipient = phoneTest ? "+14256154640" : "+15035550101";
+    assert.equal(await page.getByLabel("Text to", { exact: true }).inputValue(), recipient);
+    page.once("dialog", async dialog => { assert.match(dialog.message(), new RegExp(recipient.replace("+", "\\+"))); await dialog.dismiss(); });
+    await page.getByRole("button", { name: "Send link", exact: true }).click();
+    assert.equal(requests.filter(r => r.path.endsWith("/checkout")).length, 0);
+    holdCheckout = true;
+    page.once("dialog", async dialog => { assert.match(dialog.message(), /without an associated call/); if (phoneTest) assert.match(dialog.message(), /no real charge/); await dialog.accept(); });
+    const sendLink = page.getByRole("button", { name: "Send link", exact: true });
+    await sendLink.click();
+    await waitUntil(() => checkoutReply);
+    assert.equal(await sendLink.isDisabled(), true);
+    await sendLink.evaluate(button => button.click());
+    const sent = requests.filter(r => r.path.endsWith("/checkout"));
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].path, "/api/v1/admin/sales/prospects/" + prospect.id + "/checkout");
+    assert.equal(sent[0].data.confirmedWithoutCall, true);
+    assert.equal(sent[0].data.confirmedRecipient, recipient);
+    assert.equal(sent[0].data.expectedIsTest, phoneTest);
+    checkoutReply(); checkoutReply = null; holdCheckout = false;
+    await page.getByRole("button", { name: "Send link again", exact: true }).waitFor();
+    assert.equal(await page.locator("[data-phase]").getAttribute("data-phase"), "READY");
+    assert.equal(requests.filter(r => r.path.endsWith("/calls") && r.method === "POST").length, 0);
+    if (phoneTest) {
+      await page.getByRole("button", { name: "Email", exact: true }).click();
+      assert.equal(await page.getByLabel("Email to", { exact: true }).inputValue(), "rep@example.test");
+      assert.equal(await page.getByLabel("Email to", { exact: true }).getAttribute("readonly"), "");
+    }
+    await reset({ phoneTest });
+    await dial();
+    await page.getByRole("list", { name: "Call phases" }).getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "Send link", exact: true }).click();
+    await waitUntil(() => requests.some(r => r.path === "/api/v1/admin/sales/calls/outgoing-call/checkout"));
+    const callSend = requests.find(r => r.path.endsWith("/checkout"));
+    assert.equal(callSend.data.confirmedWithoutCall, undefined);
+    assert.equal(callSend.data.expectedIsTest, phoneTest);
+    assert.equal(await page.locator("[data-phase]").getAttribute("data-phase"), "TALK");
+  }
   console.log("controller: company brief HTTP 200 failure, reference, reload, pending and retry");
   await reset();
   await page.getByRole("button", { name: "Generate brief", exact: true }).click();

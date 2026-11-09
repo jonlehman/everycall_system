@@ -139,6 +139,8 @@ try {
   await query("INSERT INTO sales_checkout_sessions(checkout_id,sales_call_id,prospect_id,rep_user_id,channel,recipient,status) VALUES('checkout','history','p1',1,'email','owner@example.test','delivery_uncertain')");await assertBusy();
   await query("UPDATE sales_checkout_sessions SET status='paid',paid_at=NOW() WHERE checkout_id='checkout'");await assertBusy();
   await query("DELETE FROM sales_checkout_sessions WHERE checkout_id='checkout'");
+  await query("INSERT INTO sales_checkout_sessions(checkout_id,prospect_id,rep_user_id,channel,recipient,status) VALUES('standalone','p1',1,'email','owner@example.test','delivery_uncertain')");await assertBusy();
+  await query("DELETE FROM sales_checkout_sessions WHERE checkout_id='standalone'");
   await query("INSERT INTO sales_setup_bookings(booking_id,sales_call_id,rep_user_id,calendar_owner,starts_at,ends_at,attendee_email,paid_at_booking) VALUES('booking','history',1,'calendar@example.test',NOW(),NOW()+interval '15 minutes','owner@example.test',FALSE)");await assertBusy();
   await query("DELETE FROM sales_setup_bookings WHERE booking_id='booking'");
   await query("INSERT INTO sales_incoming_calls(incoming_id,provider_call_control_id,phone_e164,rep_user_id,prospect_id,state) VALUES('incoming','incoming-provider','+12065550101',1,'p1','routing')");await assertBusy();
