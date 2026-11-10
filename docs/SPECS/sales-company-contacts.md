@@ -26,6 +26,12 @@ Legacy company name/email/role fields project the default contact. The complete 
 
 Callbacks record their selected person/phone snapshot. Archived or changed phone identity requires a new selection; company-only historical callbacks do not invent a historical person. Incoming unique personal numbers can identify a contact, shared numbers identify only the company, and multi-company matches require clarification rather than choosing the most recently edited company.
 
+## Source-based contact enrichment
+
+Owner-authorized maintenance can add people explicitly named in saved company research or matching website captures. A privately reviewed manifest binds each name and optional title to exact source-path quotations, a source fingerprint and the expected company version. Keep first-name-only people when a surname is not explicit; exclude customers/review authors and uncertain affiliations. Titles must be supported in a name-containing passage. This preserves SALES-CONTACT-002/004/007/008 and does not grant role flags or communication permission.
+
+`scripts/backfill-sales-company-contacts.mjs` defaults to a dry run. Apply adds contacts atomically per company with a system audit receipt, preserves existing contacts/defaults/phones and all protected company fields, and increments the company version only when adding contacts. It rechecks pending work after acquiring the company lock, blocks phone testing/stale evidence or versions, and rolls back unexpected trigger changes. Repeated identical runs reuse audit receipts; partial/fuzzy identities are held for review. No source capture, tenant knowledge or publication changes are part of this operation.
+
 ## Migration and phone testing
 
 `0059_sales_company_contacts.sql` adds normalized contact/number tables, deferred same-company default constraints, a retained identity ledger, callback context, immutable call identity protection, and checkout/booking/incoming snapshots. The migration locks the existing Sales config row and rejects active calls, missing or malformed original backups, mode/backup mismatches or inconsistent substituted destinations.

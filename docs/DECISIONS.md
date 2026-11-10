@@ -1,5 +1,8 @@
 # Decisions
 
+## 2026-11-09 — Populate company contacts from saved research
+- Owner requested reviewing every Sales company's saved data and adding explicitly named people as company contacts. Use a reviewed, source-grounded additive maintenance run; preserve original captures, existing identities/defaults/phones, communication consent, role flags and source/publication boundaries. Record exact evidence privately, system audit receipts without raw names/quotes, conservative duplicate holds, source/version guards and per-company atomic results. A version increment protects stale editors; unexpected protected-field changes roll back.
+
 - 2026-11-09: Owner approved local Sales outbound ringback instead of Telnyx-generated audio. The Call gesture unlocks an isolated speaker-only Web Audio context; only server `dialing_prospect` starts a 440/480 Hz, two-seconds-on/four-seconds-off tone. Server answer/terminal state and explicit local teardown stop it; browser operator `active` never means prospect answer. Existing polling can delay observed answer by roughly 1.5 seconds plus request latency. Fetch failures, a six-second freshness limit and a 90-second audio-only cap fail quiet without changing provider state. No microphone/remote routing, gateway, API, auth, consent or entitlement changes. See Sales spec SR-RB-01–04 and focused helper/controller regressions.
 
 ## 2026-11-09 — No minimum word count for Sales company briefs

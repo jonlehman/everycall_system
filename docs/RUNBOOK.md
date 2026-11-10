@@ -22,6 +22,12 @@ A deployment while phone testing is active must backfill from private original c
 Use the disposable native PostgreSQL contacts suite plus Sales auth/phone-test and editor/controller fixtures before release. Roll back application code only through a reviewed compatible release; retain additive tables, original backups, identities and audit/history rather than dropping them. No production migration or live provider canary is authorized merely by running the fixtures.
 
 
+### Add contacts from saved company research
+
+Use `scripts/backfill-sales-company-contacts.mjs` only for an authorized, reviewed source-grounded manifest. With an existing trusted `DATABASE_URL`, run `node --no-warnings scripts/backfill-sales-company-contacts.mjs /private/manifest.json /private/new-result.jsonl` for a dry run; append `--apply` only for the reviewed additions. The result journal must be a new private file. Keep the reviewed manifest privately as name/quotation provenance; console and audit output contain IDs, hashes and fixed status codes.
+
+The script locks and checks each company, blocks phone testing and pending Sales work, validates source/version preconditions, and commits contact additions plus the system audit receipt together. A blocked company is unchanged; other companies can succeed. Reusing the same run ID and identical manifest replays receipts. Do not change source guards, defaults or protected fields to bypass a conflict. Hard deletion is forbidden: any deliberate reversal requires archiving only this run's unchanged, nondefault, unreferenced contacts after reviewing the journal and current state.
+
 ## System User password changes
 
 - In Account Settings → System Users, choose **Set Password** for the intended person, enter and confirm the new password, then save. Existing account owners/admins and platform managers can do this. For disabled/invited users, complete the existing Enable Access or invitation workflow first; setting a password does not change access or bypass the ten-active-user limit.
