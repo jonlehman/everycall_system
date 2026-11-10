@@ -17,7 +17,8 @@ export async function inspectSalesLiveCheckoutWebhook(stripe, appBaseUrl, { budg
   let appOrigin = 'invalid';
   const counts = { scanned: 0, liveEnabled: 0, canonical: 0, canonicalCompleted: 0, canonicalAsync: 0, rewriteAlias: 0, rewriteAliasCompleted: 0, rewriteAliasAsync: 0 };
   const knownRoutes = {};
-  const report = reason => ({ ready: reason === 'ready', reason, appOrigin, counts: { ...counts }, knownRoutes: structuredClone(knownRoutes) });
+  const endpointLocations = [];
+  const report = reason => ({ ready: reason === 'ready', reason, appOrigin, counts: { ...counts }, knownRoutes: structuredClone(knownRoutes), endpointLocations: structuredClone(endpointLocations) });
   try {
     const origin = new URL(appBaseUrl);
     appOrigin = KNOWN_ORIGINS.get(origin.origin) || 'other';
@@ -45,6 +46,25 @@ export async function inspectSalesLiveCheckoutWebhook(stripe, appBaseUrl, { budg
             const events = Array.isArray(endpoint.enabled_events) ? endpoint.enabled_events : [];
             const completed = events.includes('*') || events.includes(REQUIRED_EVENTS[0]);
             const asyncSucceeded = events.includes('*') || events.includes(REQUIRED_EVENTS[1]);
+            // Temporary incident metadata: hostname is enough to verify project
+            // ownership. Never emit userinfo, arbitrary paths, query or fragments.
+            if (endpointLocations.length < 5) {
+              try {
+                const location = new URL(endpoint.url);
+                const path = location.pathname.replace(/\/$/, '');
+                endpointLocations.push({
+                  hostname: location.hostname.length <= 253 && /^[a-z0-9.-]+$/i.test(location.hostname) ? location.hostname : 'unclassified',
+                  protocol: location.protocol === 'https:' ? 'https' : location.protocol === 'http:' ? 'http' : 'other',
+                  path: path === '/api/v1/stripe/webhook' ? 'canonical' : path === '/v1/stripe/webhook' ? 'rewrite' : 'other',
+                  trailingSlash: location.pathname.endsWith('/'),
+                  queryPresent: Boolean(location.search),
+                  fragmentPresent: Boolean(location.hash),
+                  credentialsPresent: Boolean(location.username || location.password),
+                  completed,
+                  asyncSucceeded,
+                });
+              } catch { endpointLocations.push({ malformed: true }); }
+            }
             for (const [knownOrigin, label] of KNOWN_ORIGINS) {
               for (const [path, routeLabel] of [['/api/v1/stripe/webhook', 'Api'], ['/v1/stripe/webhook', 'Rewrite']]) {
                 if (endpoint.url !== `${knownOrigin}${path}`) continue;

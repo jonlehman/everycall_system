@@ -59,6 +59,17 @@ diagnosis = await inspectSalesLiveCheckoutWebhook(client([
 assert.equal(diagnosis.appOrigin, 'public');
 assert.deepEqual(diagnosis.knownRoutes, { appRewrite: { count: 1, completed: 1, async: 0 }, wwwApi: { count: 1, completed: 1, async: 1 } });
 assert(!JSON.stringify(diagnosis).includes('SECRET'));
+diagnosis = await inspectSalesLiveCheckoutWebhook(client([
+  { ...enabled, url: 'https://USER_SECRET:PASSWORD_SECRET@old-project.example/api/v1/stripe/webhook/?key=QUERY_SECRET#FRAGMENT_SECRET' },
+  { ...enabled, url: 'https://old-project.example/PATH_SECRET' },
+]), app);
+assert.deepEqual(diagnosis.endpointLocations, [
+  { hostname: 'old-project.example', protocol: 'https', path: 'canonical', trailingSlash: true, queryPresent: true, fragmentPresent: true, credentialsPresent: true, completed: true, asyncSucceeded: true },
+  { hostname: 'old-project.example', protocol: 'https', path: 'other', trailingSlash: false, queryPresent: false, fragmentPresent: false, credentialsPresent: false, completed: true, asyncSucceeded: true },
+]);
+assert(!JSON.stringify(diagnosis).includes('SECRET'));
+assert.equal(diagnosis.ready, false, 'Location diagnosis does not relax acceptance');
+assert.equal((await inspectSalesLiveCheckoutWebhook(client(Array.from({length: 10}, () => ({ ...enabled, url: 'https://old-project.example/other' }))), app)).endpointLocations.length, 5);
 
 // Exercise the real SDK request path, using only an in-memory HTTP transport.
 // The request timeout reaches the actual transport; retryable failure is not retried.

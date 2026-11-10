@@ -234,6 +234,8 @@ export default function DialerScreen({
   const panelStage = selectedStage ?? currentStep;
   const customerPaid = Boolean(call?.paidAt || call?.customerPaid) || prospect?.status === "paid";
   const testCheckout = call?.id ? Boolean(call.phoneTestMode) : Boolean(queue.config?.phoneTestMode);
+  const signupChargeLocked = Boolean(checkoutContext) || testCheckout || !queue.config?.customSignupAmountEnabled || Boolean(busy);
+  const signupChargeReason = checkoutContext ? "The existing checkout amount is fixed. Use its original link." : testCheckout ? "New test signup links are fixed at $100.00." : !queue.config?.customSignupAmountEnabled ? "The signup charge is currently fixed at $100.00." : busy ? busyReason : "";
   const checkoutRetryable = checkoutContext && ["creating", "created"].includes(checkoutContext.status);
   const checkoutChannel = checkoutContext?.channel || channel;
   const checkoutPhone = checkoutContext?.channel === "sms" ? checkoutContext.recipient : testCheckout ? queue.config?.checkoutTestPhone || "+14256154640" : phone;
@@ -695,9 +697,15 @@ export default function DialerScreen({
                     </p>
                     <label className={styles.field}>
                       Signup charge (USD)
-                      <HintInput aria-label="Signup charge (USD)" type="number" inputMode="decimal" min="1" max="999999.99" step="0.01" value={checkoutContext ? ((checkoutContext.amountCents ?? 10000) / 100).toFixed(2) : signupCharge} readOnly={Boolean(checkoutContext) || testCheckout || !queue.config?.customSignupAmountEnabled} disabled={Boolean(busy)} disabledReason={checkoutContext ? "The existing checkout amount is fixed. Use its original link." : testCheckout ? "New test signup links are fixed at $100.00." : !queue.config?.customSignupAmountEnabled ? "The signup charge is currently fixed at $100.00." : busy ? busyReason : ""} onChange={event => setSignupCharge(event.target.value)} />
+                      <DisabledHint disabled={signupChargeLocked} reason={signupChargeReason}>
+                        <select className={styles.signupChargeSelect} aria-label="Signup charge (USD)" value={checkoutContext ? ((checkoutContext.amountCents ?? 10000) / 100).toFixed(2) : signupCharge} disabled={signupChargeLocked} onChange={event => setSignupCharge(event.target.value)}>
+                          <option value="100.00">$100.00 — standard signup</option>
+                          <option value="1.00">$1.00 — live test (real charge)</option>
+                          {checkoutContext && ![100, 10000].includes(checkoutContext.amountCents ?? 10000) && <option value={(checkoutContext.amountCents / 100).toFixed(2)}>{formatSalesSignupAmount(checkoutContext.amountCents)} — reserved amount</option>}
+                        </select>
+                      </DisabledHint>
                     </label>
-                    <small>{amountCents ? `${formatSalesSignupAmount(amountCents)} USD, first month included. Confirm this amount before sending.` : "Enter $1.00 to $999,999.99, with at most two decimal places."}</small>
+                    <small>{amountCents === 100 && !testCheckout ? "$1.00 live test: this is a real charge and successful payment activates signup." : `${formatSalesSignupAmount(amountCents)} USD, first month included. Confirm this amount before sending.`}</small>
                     {checkoutContext && <p role="status">This company's {checkoutContext.isTest ? "test " : ""}signup link is reserved for {checkoutContext.channel === "sms" ? "text" : "email"} to {checkoutContext.recipient}. Charge: {formatSalesSignupAmount(checkoutContext.amountCents)} USD. Status: {checkoutContext.status}.{checkoutContext.url && <> <a href={checkoutContext.url} target="_blank" rel="noreferrer">Open existing checkout</a></>}</p>}
                     <div className={styles.actions}>
                       <Button

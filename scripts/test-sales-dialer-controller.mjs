@@ -313,11 +313,12 @@ const reset = async ({
   denyMic = false,
   second = false,
   phoneTest = false,
+  reservedAmount = null,
 } = {}) => {
   await context?.close();
   requests = [];
   ringingFixture = false;
-  fixtureCheckoutContext = null;
+  fixtureCheckoutContext = reservedAmount === null ? null : { status: 'sent', channel: 'sms', recipient: '+15035550101', amountCents: reservedAmount, isTest: phoneTest };
   testMode = phoneTest; holdCheckout = false; checkoutReply = null; failNextCheckout = false;
   calls = {};
   currentId = "";
@@ -591,12 +592,19 @@ try {
   await page.getByRole('list',{name:'Call phases'}).getByRole('button',{name:'Close',exact:true}).click();
   const charge=page.getByLabel('Signup charge (USD)',{exact:true});
   assert.equal(await charge.inputValue(),'100.00');
-  await charge.fill('0.99');assert.equal(await page.getByRole('button',{name:'Send link',exact:true}).isDisabled(),true);
-  await charge.fill('12.34');
-  page.once('dialog',async dialog=>{assert.match(dialog.message(),/\$12\.34 USD/);await dialog.accept();});
+  assert.deepEqual(await charge.locator('option').evaluateAll(options => options.map(option => option.value)), ['100.00','1.00']);
+  await charge.selectOption('1.00');
+  page.once('dialog',async dialog=>{assert.match(dialog.message(),/\$1\.00 USD/);await dialog.accept();});
   await page.getByRole('button',{name:'Send link',exact:true}).click();
   await waitUntil(()=>requests.some(r=>r.path.endsWith('/checkout')&&r.method==='POST'));
-  assert.equal(requests.find(r=>r.path.endsWith('/checkout')&&r.method==='POST').data.amountCents,1234);
+  assert.equal(requests.find(r=>r.path.endsWith('/checkout')&&r.method==='POST').data.amountCents,100);
+  await reset({reservedAmount:1234});
+  await page.getByRole('list',{name:'Call phases'}).getByRole('button',{name:'Close',exact:true}).click();
+  const reservedCharge=page.getByLabel('Signup charge (USD)',{exact:true});
+  assert.equal(await reservedCharge.inputValue(),'12.34');
+  assert.equal(await reservedCharge.isDisabled(),true);
+  assert.equal(await reservedCharge.locator('option:checked').innerText(),'$12.34 — reserved amount');
+  assert.equal(requests.filter(r=>r.path.endsWith('/checkout')&&r.method==='POST').length,0);
   await reset();await dial();await end();
   const left=page.getByRole('button',{name:'Left voicemail',exact:true});
   await left.click();

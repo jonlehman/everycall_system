@@ -562,7 +562,19 @@
   background: white;
   color: #111318;
 }
-.dialer input:disabled {
+.signupChargeSelect {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #cfd4dc;
+  border-radius: 7px;
+  padding: 8px 11px;
+  font: inherit;
+  font-size: 13px;
+  background: white;
+  color: #111318;
+}
+.dialer input:disabled,
+.signupChargeSelect:disabled {
   background: #f8f9fb;
 }
 .picker {

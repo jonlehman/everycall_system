@@ -330,18 +330,18 @@ try {
   const base = "http://127.0.0.1:" + server.address().port + "/?";
   const visit = async (query) => { await page.goto(base + query); await page.waitForSelector("[data-phase], form[aria-label='Add prospect']"); };
   await visit('state=WRAPUP&fixedSignupCharge');
-  assert.equal(await page.getByLabel('Signup charge (USD)',{exact:true}).getAttribute('readonly'),'');
+  assert.equal(await page.getByLabel('Signup charge (USD)',{exact:true}).isDisabled(),true);
   assert.equal(await page.getByLabel('Signup charge (USD)',{exact:true}).inputValue(),'100.00');
   await visit('state=WRAPUP&phoneTest');
-  assert.equal(await page.getByLabel('Signup charge (USD)',{exact:true}).getAttribute('readonly'),'');
+  assert.equal(await page.getByLabel('Signup charge (USD)',{exact:true}).isDisabled(),true);
   assert.equal(await page.getByLabel('Signup charge (USD)',{exact:true}).inputValue(),'100.00');
   await visit('state=WRAPUP');
   const signup=page.getByLabel('Signup charge (USD)',{exact:true});
-  for(const value of ['0.99','1.001','1000000']) {
-    await signup.fill(value);assert.equal(await page.getByRole('button',{name:'Send link',exact:true}).isDisabled(),true);
-  }
-  await signup.fill('1.23');await page.getByRole('button',{name:'Send link',exact:true}).click();
-  assert.equal((await page.evaluate(()=>window.fixtureCheckout)).amountCents,123);
+  assert.deepEqual(await signup.locator('option').evaluateAll(options => options.map(option => option.value)), ['100.00','1.00']);
+  await signup.selectOption('1.00');
+  assert.equal(await page.getByText('$1.00 live test: this is a real charge and successful payment activates signup.',{exact:true}).count(),1);
+  await page.getByRole('button',{name:'Send link',exact:true}).click();
+  assert.equal((await page.evaluate(()=>window.fixtureCheckout)).amountCents,100);
   const hintFor = (control) => control.locator("xpath=..");
   const expectHint = async (control, expected, { inherited = false } = {}) => {
     assert.equal(await control.isDisabled(), true);
