@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { callDispositions, salesDispositionLabel } from "../../../../lib/salesDispositions.js";
 import {
   displayStatus,
   fetchSalesJson,
@@ -147,6 +148,7 @@ export default function CallRecord({ salesCallId }) {
                     ? displayStatus(call.outcome)
                     : "No outcome recorded"}
               </Detail>
+              {callDispositions(call).length > 0 && <Detail label="Dispositions">{callDispositions(call).map(salesDispositionLabel).join(" · ")}</Detail>}
               <Detail label="Started">
                 {time(call.startedAt || call.createdAt)}
               </Detail>

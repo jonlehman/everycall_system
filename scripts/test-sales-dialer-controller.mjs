@@ -176,7 +176,7 @@ const server = createServer(async (req, res) => {
             },
           ]
         : [],
-      config: { phoneTestMode: testMode, checkoutTestEmail: "rep@example.test", checkoutTestPhone: "+14256154640" },
+      config: { customSignupAmountEnabled: true, phoneTestMode: testMode, checkoutTestEmail: "rep@example.test", checkoutTestPhone: "+14256154640" },
       scripts: { opener: "Hello {first_name}" },
       operator: { name: "Rep" },
       incoming: [
@@ -578,6 +578,7 @@ try {
     await reset({ phoneTest });
     await dial();
     await page.getByRole("list", { name: "Call phases" }).getByRole("button", { name: "Close", exact: true }).click();
+    page.once("dialog", dialog => dialog.accept());
     await page.getByRole("button", { name: "Send link", exact: true }).click();
     await waitUntil(() => requests.some(r => r.path === "/api/v1/admin/sales/calls/outgoing-call/checkout"));
     const callSend = requests.find(r => r.path.endsWith("/checkout") && r.method === "POST");
@@ -585,6 +586,29 @@ try {
     assert.equal(callSend.data.expectedIsTest, phoneTest);
     assert.equal(await page.locator("[data-phase]").getAttribute("data-phase"), "TALK");
   }
+  console.log("controller: amount confirmation, toggled multi-dispositions and explicit save");
+  await reset();
+  await page.getByRole('list',{name:'Call phases'}).getByRole('button',{name:'Close',exact:true}).click();
+  const charge=page.getByLabel('Signup charge (USD)',{exact:true});
+  assert.equal(await charge.inputValue(),'100.00');
+  await charge.fill('0.99');assert.equal(await page.getByRole('button',{name:'Send link',exact:true}).isDisabled(),true);
+  await charge.fill('12.34');
+  page.once('dialog',async dialog=>{assert.match(dialog.message(),/\$12\.34 USD/);await dialog.accept();});
+  await page.getByRole('button',{name:'Send link',exact:true}).click();
+  await waitUntil(()=>requests.some(r=>r.path.endsWith('/checkout')&&r.method==='POST'));
+  assert.equal(requests.find(r=>r.path.endsWith('/checkout')&&r.method==='POST').data.amountCents,1234);
+  await reset();await dial();await end();
+  const left=page.getByRole('button',{name:'Left voicemail',exact:true});
+  await left.click();
+  await page.getByRole('button',{name:'Prospect (interested)',exact:true}).click();
+  assert.equal(await left.getAttribute('aria-pressed'),'true');
+  assert.equal(requests.filter(r=>r.path.endsWith('/outcome')).length,0,'Selecting a voicemail never auto advances');
+  await left.click();assert.equal(await left.getAttribute('aria-pressed'),'false');
+  await page.getByRole('button',{name:'Customer',exact:true}).click();
+  await page.getByRole('button',{name:'Save & next →',exact:true}).click();
+  await waitUntil(()=>requests.some(r=>r.path.endsWith('/outcome')));
+  const multiSave=requests.find(r=>r.path.endsWith('/outcome')).data;
+  assert.deepEqual(multiSave.dispositions,['prospect','customer']);assert.equal(multiSave.outcome,'connected_no_demo');
   console.log("controller: company brief HTTP 200 failure, reference, reload, pending and retry");
   await reset();
   await page.getByRole("button", { name: "Generate brief", exact: true }).click();
@@ -743,7 +767,7 @@ try {
   console.log("controller: active-call callback remains draft until outcome");
   await reset();
   await dial();
-  await page.getByRole("button", { name: "Call back ▾", exact: true }).click();
+  await page.getByRole("button", { name: "Follow up", exact: true }).click();
   await page.getByRole("button", { name: "1 week", exact: true }).click();
   await page.getByRole("button", { name: "Set call back", exact: true }).click();
   assert.equal(requests.filter((request) => request.path.endsWith("/callback")).length, 0);
@@ -803,11 +827,9 @@ try {
     .fill("Do not lose original notes.");
   await end();
   await page
-    .getByRole("button", { name: "Do not call ▾", exact: true })
+    .getByRole("button", { name: "DND", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Asked not to be called", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Customer", exact: true }).click();
   await incoming();
   await page
     .getByRole("heading", { name: "Matched Business", exact: true })
@@ -815,7 +837,7 @@ try {
   await page.getByText(/previous wrap-up draft is preserved/).waitFor();
   await end();
   await page
-    .getByRole("button", { name: "Not interested", exact: true })
+    .getByRole("button", { name: "Potential (opportunity but not now)", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Save & next →", exact: true })
@@ -829,7 +851,7 @@ try {
   );
   assert.equal(
     await page
-      .getByRole("button", { name: "Do not call ▾", exact: true })
+      .getByRole("button", { name: "DND", exact: true })
       .getAttribute("aria-pressed"),
     "true",
   );
@@ -845,6 +867,7 @@ try {
   assert.equal(oldSave.data.dncReason, "asked_not_to_be_called");
   assert.equal(oldSave.data.notes, "Do not lose original notes.");
   assert.equal(oldSave.data.outcome, "do_not_call");
+  assert.deepEqual(oldSave.data.dispositions,["do_not_call","customer"]);
   console.log("controller: concurrent unknown incoming identity binding");
   await reset({ unknown: true, second: true });
   await incoming();

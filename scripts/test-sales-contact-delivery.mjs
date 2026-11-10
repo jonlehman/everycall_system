@@ -24,6 +24,7 @@ try {
  await db.exec(await fs.readFile(new URL('../migrations/0057_sales_phone_test_mode.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../migrations/0058_sales_prospect_checkout.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../migrations/0059_sales_company_contacts.sql',import.meta.url),'utf8'));
+ await db.exec(await fs.readFile(new URL('../migrations/0061_sales_checkout_amount.sql',import.meta.url),'utf8'));
 
  await q("ALTER TABLE admin_users ADD COLUMN email TEXT");
  await q("UPDATE admin_users SET email='rep@example.test'");

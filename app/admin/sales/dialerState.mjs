@@ -1,14 +1,7 @@
+import { SALES_DISPOSITIONS } from '../../../lib/salesDispositions.js';
 export const HANDOFF =
   "I can show you in about two minutes. I'll put our AI receptionist on — she already knows everything from the main pages of your website. Ask her anything a customer would ask your receptionist.";
-export const OUTCOMES = [
-  ["no_answer", "No answer"],
-  ["voicemail", "Voicemail"],
-  ["callback_requested", "Call back ▾"],
-  ["not_interested", "Not interested"],
-  ["do_not_call", "Do not call ▾"],
-  ["demo_completed", "Demo done"],
-  ["signup_link_sent", "Link sent"],
-];
+export const OUTCOMES = SALES_DISPOSITIONS;
 export function dialerPhase(call) {
   return !call?.id
     ? "READY"
@@ -75,13 +68,6 @@ export function callbackTime(kind, now = new Date()) {
   }
   return date.toISOString();
 }
-export function mayQuickAdvance({ call, outcome, note }) {
-  return Boolean(
-    call?.terminal &&
-      ["no_answer", "voicemail"].includes(outcome) &&
-      !String(note || "").trim(),
-  );
-}
 export function safeExternalUrl(value) {
   try {
     const url = new URL(value);
@@ -110,3 +96,6 @@ export function companyContactTarget(prospect, contactId) {
     ...(prospect.sharedNumbers || []).map(number => ({ ...number, shared: true })),
   ] : [] };
 }
+
+// Multi-selection requires an explicit Save & next gesture.
+export function mayQuickAdvance() { return false; }

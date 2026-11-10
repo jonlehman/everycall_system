@@ -11,7 +11,7 @@ export async function testSalesProspectCheckout(pool,env) {
  await q("INSERT INTO admin_users(id,email) VALUES(9,'rep@example.test')");
  await q("CREATE TABLE IF NOT EXISTS system_config(id INT PRIMARY KEY,telnyx_sms_number TEXT)");
  await q("INSERT INTO system_config(id,telnyx_sms_number) VALUES(1,'+12065559999') ON CONFLICT(id) DO NOTHING");
- for(let n=0;n<9;n++) {
+ for(let n=0;n<13;n++) {
   await q("INSERT INTO sales_prospects(prospect_id,source_key,business_name,phone_e164,numbers_json,permission_granted,assigned_rep_user_id,contact_email,website_url,timezone) VALUES($1,$1,$1,$2,$3,TRUE,9,'customer@example.test','https://checkout-fixture.test','UTC')",[`standalone-${n}`,`+1206555800${n}`,JSON.stringify([{type:'cell',phoneE164:`+1206555800${n}`}])]);
   await q("INSERT INTO sales_demo_profiles(demo_profile_id,prospect_id,status) VALUES($1,$1,'ready')",[`standalone-${n}`]);
  }
@@ -20,6 +20,10 @@ export async function testSalesProspectCheckout(pool,env) {
  const mail=async message=>{lastMessage=message;sent++;return{id:`mail_${sent}`};};
  const sms=async message=>{lastMessage=message;sent++;return{data:{id:`sms_${sent}`}};};
  const options={prospectId:'standalone-0',repId:9,channel:'email',email:'customer@example.test',confirmedWithoutCall:true,confirmedRecipient:'customer@example.test',expectedIsTest:false,env,stripe,mail,sms};
+ for(const amountCents of [0,99,100.1,100000000,'100',null,NaN,Infinity]) {
+  await rejects(()=>validateSalesCheckoutRequest(pool,{...options,amountCents}),'invalid_signup_amount');
+  await rejects(()=>sendSalesCheckout(pool,{...options,amountCents}),'invalid_signup_amount');
+ }
  await rejects(()=>sendSalesCheckout(pool,{...options,confirmedWithoutCall:false}),'checkout_confirmation_required');
  await rejects(()=>sendSalesCheckout(pool,{...options,repId:1}),'prospect_forbidden');
  await rejects(()=>sendSalesCheckout(pool,{...options,confirmedRecipient:'different@example.test'}),'checkout_recipient_changed');
@@ -34,6 +38,8 @@ export async function testSalesProspectCheckout(pool,env) {
  assert.equal(created,1);assert.equal(sent,1);
  assert.equal(Number((await q('SELECT COUNT(*) AS n FROM sales_call_sessions')).rows[0].n),beforeCalls);
  assert.equal(lastParams.metadata.sales_call_id,undefined);
+ assert.equal(lastParams.line_items[0].price_data.unit_amount,10000);
+ await rejects(()=>sendSalesCheckout(pool,{...options,amountCents:100}),'checkout_amount_exists');
  const call=await createSalesCallSession(pool,{prospectId:options.prospectId,adminUserId:9});
  await sendSalesCheckout(pool,{...options,salesCallId:call.salesCallId});
  assert.equal(created,1);assert.equal(sent,1,'Later call reuses standalone link');
@@ -89,12 +95,37 @@ export async function testSalesProspectCheckout(pool,env) {
  await rejects(()=>sendSalesCheckout(pool,{...edited,prospectId:'standalone-7',phone:'+12065550198',confirmedRecipient:'+12065550198'}),'checkout_delivery_exists');
  await sendSalesCheckout(pool,{...edited,prospectId:'standalone-7'});
  assert.equal(lastMessage.to,'+12065550199');
+ // Default-off rollout gate blocks custom reservation before any provider call.
+ await rejects(()=>sendSalesCheckout(pool,{...options,prospectId:'standalone-9',amountCents:100}),'custom_signup_amount_unavailable');
+ assert.equal((await q("SELECT 1 FROM sales_checkout_sessions WHERE prospect_id='standalone-9'")).rowCount,0);
+ await q('UPDATE sales_dialer_config SET custom_signup_amount_enabled=TRUE WHERE id=TRUE');
+ // Boundary amounts, frozen retries, exact webhook amount and Customer isolation.
+ for(const [n,amountCents] of [[9,100],[10,12345],[11,99999999]]) {
+  const priced={...options,prospectId:`standalone-${n}`,amountCents};
+  const result=await sendSalesCheckout(pool,priced);
+  assert.equal(result.amountCents,amountCents);
+  assert.equal(lastParams.line_items[0].price_data.unit_amount,amountCents);
+  assert.match(lastMessage.text,new RegExp((amountCents/100).toLocaleString('en-US',{minimumFractionDigits:2}).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+  const reserved=(await q('SELECT * FROM sales_checkout_sessions WHERE prospect_id=$1',[priced.prospectId])).rows[0];
+  await assert.rejects(()=>q('UPDATE sales_checkout_sessions SET amount_cents=10000 WHERE checkout_id=$1',[reserved.checkout_id]),/sales_checkout_amount_immutable/);
+  await rejects(()=>sendSalesCheckout(pool,{...priced,amountCents:10000}),'checkout_amount_exists');
+  const paid={id:`evt_amount_${n}`,type:'checkout.session.completed',livemode:true,data:{object:{id:reserved.stripe_session_id,mode:'payment',currency:'usd',amount_total:amountCents,payment_status:'paid',livemode:true,metadata:{...lastParams.metadata}}}};
+  for(const patch of [{amount_total:10000},{amount_total:String(amountCents)},{currency:'eur'},{mode:'subscription'}])
+   await rejects(()=>applySalesPaidCheckout(pool,{...paid,data:{object:{...paid.data.object,...patch}}}),'sales_payment_mismatch');
+  await applySalesPaidCheckout(pool,paid);await applySalesPaidCheckout(pool,paid);
+  assert.equal((await q('SELECT paid_at FROM sales_checkout_sessions WHERE checkout_id=$1',[reserved.checkout_id])).rows[0].paid_at!==null,true);
+ }
+ let uncertaintyKey;
+ const retryOptions={...options,prospectId:'standalone-12',amountCents:275};
+ await assert.rejects(()=>sendSalesCheckout(pool,{...retryOptions,stripe:{checkout:{sessions:{create:async(params,request)=>{uncertaintyKey=request.idempotencyKey;throw Error('fixture stripe uncertainty');}}}}}),/fixture stripe uncertainty/);
+ await rejects(()=>sendSalesCheckout(pool,{...retryOptions,amountCents:300}),'checkout_amount_exists');
+ await sendSalesCheckout(pool,{...retryOptions,stripe:{checkout:{sessions:{create:async(params,request)=>{assert.equal(request.idempotencyKey,uncertaintyKey);assert.equal(params.line_items[0].price_data.unit_amount,275);return {id:'cs_frozen_retry',url:'https://checkout.stripe.test/retry',livemode:true};}}}}});
  // Retire unrelated fixture calls before exercising the real phone-mode fence.
  await q("UPDATE sales_call_sessions SET state='ended',ended_at=COALESCE(ended_at,NOW()) WHERE state NOT IN ('ended','closed','failed','completed')");
  await q("UPDATE sales_incoming_calls SET state='ended'");
  await setSalesPhoneTestMode(pool,true);
  const testEnv={...env,SALES_STRIPE_TEST_SECRET_KEY:'sk_test_fixture'};
- const test={...options,env:testEnv,expectedIsTest:true,email:'rep@example.test',confirmedRecipient:'rep@example.test'};
+ const test={...options,amountCents:199,env:testEnv,expectedIsTest:true,email:'rep@example.test',confirmedRecipient:'rep@example.test'};
  await rejects(()=>validateSalesCheckoutRequest(pool,options),'checkout_context_changed');
  await rejects(()=>sendSalesCheckout(pool,{...test,env}),'sales_test_checkout_not_configured');
  await rejects(()=>sendSalesCheckout(pool,{...test,env:{...testEnv,SALES_STRIPE_TEST_SECRET_KEY:'sk_live_wrong'}}),'sales_test_checkout_not_configured');
@@ -103,14 +134,14 @@ export async function testSalesProspectCheckout(pool,env) {
  assert.equal(lastMessage.to,'rep@example.test');assert.match(lastMessage.text,/TEST ONLY/);
  assert.equal(lastParams.metadata.sales_checkout_test,'true');
  const testRow=(await q('SELECT * FROM sales_checkout_sessions WHERE prospect_id=$1 AND is_test',[options.prospectId])).rows[0];
- const testEvent={...event,id:'evt_test_standalone',livemode:false,data:{object:{...event.data.object,id:testRow.stripe_session_id,livemode:false,metadata:{...lastParams.metadata}}}};
+ const testEvent={...event,id:'evt_test_standalone',livemode:false,data:{object:{...event.data.object,id:testRow.stripe_session_id,amount_total:199,livemode:false,metadata:{...lastParams.metadata}}}};
  await rejects(()=>applySalesPaidCheckout(pool,testEvent),'sales_checkout_mode_mismatch');
  await rejects(()=>applySalesPaidCheckout(pool,event,{testWebhook:true}),'sales_checkout_mode_mismatch');
  await rejects(()=>applySalesPaidCheckout(pool,{...testEvent,livemode:true},{testWebhook:true}),'sales_checkout_mode_mismatch');
  await applySalesPaidCheckout(pool,testEvent,{testWebhook:true});await applySalesPaidCheckout(pool,testEvent,{testWebhook:true});
  const completed=(await q('SELECT * FROM sales_checkout_sessions WHERE checkout_id=$1',[testRow.checkout_id])).rows[0];
  assert.equal(completed.status,'test_complete');assert.equal(completed.paid_at,null);assert.equal(completed.activation_status,'test_only');assert.equal(completed.tenant_key,null);
- assert.equal((await getSalesRepQueue(pool,9,{timezone:'UTC',env})).counters.paid,1);
+ assert.equal((await getSalesRepQueue(pool,9,{timezone:'UTC',env})).counters.paid,4);
  await rejects(()=>sendSalesCheckout(pool,{...test,prospectId:'standalone-8',channel:'sms',phone:'+12065550199',confirmedRecipient:'+12065550199'}),'checkout_recipient_changed');
  await sendSalesCheckout(pool,{...test,prospectId:'standalone-8',channel:'sms',phone:'+14256154640',confirmedRecipient:'+14256154640'});
  assert.equal(lastMessage.to,'+14256154640');

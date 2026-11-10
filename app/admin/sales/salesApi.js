@@ -1,3 +1,4 @@
+import { callDispositions } from '../../../lib/salesDispositions.js';
 import { SALES_RESEARCH_FIELDS } from '../../../lib/salesProspectResearch.js';
 import { normalizeCompanyBrief } from '../../../lib/salesCompanyBriefDiagnostics.js';
 
@@ -531,6 +532,7 @@ export function normalizeCall(payload = {}) {
     outcome: normalizeStatus(
       firstValue(source, ["outcome", "callOutcome", "call_outcome"]),
     ),
+    dispositions: callDispositions(source),
     outcomeNotes: normalizeText(
       firstValue(source, ["outcomeNotes", "outcome_notes"]),
     ),

@@ -29,6 +29,7 @@ try {
  await db.exec(await fs.readFile(new URL('../migrations/0057_sales_phone_test_mode.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../migrations/0058_sales_prospect_checkout.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../migrations/0059_sales_company_contacts.sql',import.meta.url),'utf8'));
+ await db.exec(await fs.readFile(new URL('../migrations/0061_sales_checkout_amount.sql',import.meta.url),'utf8'));
  const phoneEnv={...env,SALES_TELNYX_CALLER_ID:'  +12065559999  '};
  const fallbackSettings=await getSalesDialerSettings(pool,{id:1,name:'Alex',role:'sales'},phoneEnv);
  assert.equal(fallbackSettings.operator.phone,'+12065559999','Rep without override receives trimmed dedicated Sales caller ID');
@@ -58,6 +59,15 @@ try {
  await updateSalesCallSession(pool,call.salesCallId,{state:'ended',endedAt:new Date().toISOString()});
  await assert.rejects(recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,outcome:'paid'}),e=>e.code==='invalid_call_outcome');
  await recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,outcome:'callback_requested',callbackAt:new Date(Date.now()-1000).toISOString()});next=await getSalesRepQueue(pool,1,{env});assert.equal(next.queue[0].prospectId,p.prospectId);assert.equal(next.queue[0].attemptCount,1);assert.equal(next.queue[0].history[0].liveNotes,'Rosa screens\nCall in morning');
+ const selected=['customer','prospect','voicemail_left','callback_requested'];
+ const multi=await recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,dispositions:selected,callbackAt:new Date(Date.now()-1000).toISOString()});
+ assert.deepEqual(multi.dispositions,[...selected].sort());assert.equal(multi.outcome,'callback_requested');assert.equal(multi.paidAt,null);
+ assert.notEqual((await getSalesProspect(pool,p.prospectId)).status,'paid');
+ await assert.rejects(recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,dispositions:['paid','customer']}),e=>e.code==='invalid_call_outcome');
+ await assert.rejects(recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,dispositions:[]}),e=>e.code==='invalid_call_outcome');
+ const suppression=await recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,dispositions:['callback_requested','do_not_call','wrong_number','customer']});
+ assert.equal(suppression.outcome,'do_not_call');assert.equal(suppression.callbackAt,null);assert.equal(suppression.dispositions.length,4);
+ const suppressed=await getSalesProspect(pool,p.prospectId);assert.equal(suppressed.doNotCall,true);assert.equal(suppressed.callbackAt,null);
  await recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,outcome:'not_interested'});
  const repeat=await importSalesProspects(pool,{records:[{...records[0],external_ref:'other-import',phone:'+12065558888',website:'https://www.business0.test/new-page'}],adminUserId:2});assert.equal((await getSalesProspect(pool,repeat.imported[0].prospectId)).doNotCall,true);
  const phoneMatch=await importSalesProspects(pool,{records:[{...records[0],external_ref:'phone-import',website:'https://different.test'}],adminUserId:2});assert.equal((await getSalesProspect(pool,phoneMatch.imported[0].prospectId)).doNotCall,true);
@@ -152,6 +162,13 @@ try {
   const stripe={checkout:{sessions:{create:async()=>{const n=++stripeArrived;if(n===2)enteredBoth();await(n===1?firstGate:secondGate);return{id:'cs_race',livemode:true,url:'https://checkout.stripe.test/race'};}}}};
   const delivery={salesCallId:callB.salesCallId,repId:4,channel:'email',email:'owner@example.test',env,stripe,mail:async()=>{providerSends++;return{id:'race_mail'};}};
   const sendOne=sendSalesCheckout(pool,delivery);const sendTwo=sendSalesCheckout(pool,delivery);await both;releaseFirst();await sendOne;releaseSecond();await sendTwo;assert.equal(providerSends,1,'Delayed Stripe response must never regress sent state or duplicate delivery');
+  await query('UPDATE sales_dialer_config SET custom_signup_amount_enabled=TRUE');
+  const differentPrices=await Promise.allSettled([100,275].map(amountCents=>sendSalesCheckout(pool,{...delivery,salesCallId:null,prospectId:b.queue[1].prospectId,confirmedWithoutCall:true,confirmedRecipient:'owner@example.test',expectedIsTest:false,amountCents,stripe:{checkout:{sessions:{create:async params=>({id:'cs_amount_race',url:'https://checkout.stripe.test/amount-race',livemode:true})}}}})));
+  assert.equal(differentPrices.filter(result=>result.status==='fulfilled').length,1);
+  assert.equal(differentPrices.find(result=>result.status==='rejected').reason.code,'checkout_amount_exists');
+  const priceRows=(await query('SELECT amount_cents FROM sales_checkout_sessions WHERE prospect_id=$1',[b.queue[1].prospectId])).rows;
+  assert.equal(priceRows.length,1);assert([100,275].includes(priceRows[0].amount_cents));
+  await query('UPDATE sales_dialer_config SET custom_signup_amount_enabled=FALSE');
   const slot=slots.slots[1];const reservations=await Promise.allSettled([bookSalesSetup(pool,{salesCallId:winner.salesCallId,repId:3,...slot,email:'a@example.test',env,graph,now}),bookSalesSetup(pool,{salesCallId:callB.salesCallId,repId:4,...slot,email:'b@example.test',env,graph,now})]);assert.equal(reservations.filter(r=>r.status==='fulfilled').length,1,'Concurrent booking must create one event per slot');
   console.log('PASS native PostgreSQL contention: disjoint rep claims, one active dial, one inbound take, duplicate paid webhook, one calendar reservation.');
  }

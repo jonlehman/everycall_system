@@ -92,6 +92,7 @@ export async function buildSalesCallView(pool, call, {
     terminal: TERMINAL_CALL_STATES.has(state),
     providerError: call.providerErrorMessage || call.providerErrorCode || null,
     outcome: call.outcome || null,
+    dispositions: call.dispositions || [],
     liveNotes: call.liveNotes || '', outcomeNotes: call.outcomeNotes || '',
     dialedNumber: call.metadata?.prospect_number || call.dialedNumber || null, callbackAt: call.callbackAt || null,
     linkSentAt: call.linkSentAt || null, bookedAt: call.bookedAt || null, paidAt: call.paidAt || null,

@@ -16,8 +16,8 @@ export async function testSalesCheckoutApi({pool,call,salesCookie,repId}) {
  process.env.SALES_STRIPE_TEST_SECRET_KEY='sk_test_fixture';
  process.env.SALES_STRIPE_TEST_WEBHOOK_SECRET='whsec_sales_fixture';
  try {
-  await pool.query("INSERT INTO sales_checkout_sessions(checkout_id,prospect_id,rep_user_id,channel,recipient,status,is_test,activation_status,stripe_session_id,provider_message_id) VALUES('signed_test_checkout','contact-ready',$1,'email','rep@example.test','sent',TRUE,'test_only','cs_signed_test','mail_fixture')",[repId]);
-  const event={id:'evt_signed_test',type:'checkout.session.completed',livemode:false,data:{object:{id:'cs_signed_test',livemode:false,mode:'payment',currency:'usd',amount_total:10000,payment_status:'paid',metadata:{sales_checkout_id:'signed_test_checkout',sales_prospect_id:'contact-ready',sales_checkout_test:'true'}}}};
+  await pool.query("INSERT INTO sales_checkout_sessions(checkout_id,prospect_id,rep_user_id,channel,recipient,status,is_test,activation_status,stripe_session_id,provider_message_id,amount_cents) VALUES('signed_test_checkout','contact-ready',$1,'email','rep@example.test','sent',TRUE,'test_only','cs_signed_test','mail_fixture',375)",[repId]);
+  const event={id:'evt_signed_test',type:'checkout.session.completed',livemode:false,data:{object:{id:'cs_signed_test',livemode:false,mode:'payment',currency:'usd',amount_total:375,payment_status:'paid',metadata:{sales_checkout_id:'signed_test_checkout',sales_prospect_id:'contact-ready',sales_checkout_test:'true'}}}};
   const signedRequest=(value,{secret=process.env.SALES_STRIPE_TEST_WEBHOOK_SECRET,tamper=false}={})=>{
    const payload=JSON.stringify(value);
    const signature=getSalesTestStripe().webhooks.generateTestHeaderString({payload,secret});
@@ -28,6 +28,7 @@ export async function testSalesCheckoutApi({pool,call,salesCookie,repId}) {
   assert.equal((await call(testWebhook,signedRequest({...event,livemode:true}))).statusCode,400);
   const wrong={...event,data:{object:{...event.data.object,metadata:{...event.data.object.metadata,sales_prospect_id:'other-contact-ready'}}}};
   assert.equal((await call(testWebhook,signedRequest(wrong))).statusCode,409);
+  assert.equal((await call(testWebhook,signedRequest({...event,data:{object:{...event.data.object,amount_total:10000}}}))).statusCode,409);
   assert.equal((await call(testWebhook,signedRequest(event))).statusCode,200);
   assert.equal((await call(testWebhook,signedRequest(event))).statusCode,200);
   const row=(await pool.query("SELECT status,paid_at,activation_status,tenant_key FROM sales_checkout_sessions WHERE checkout_id='signed_test_checkout'")).rows[0];

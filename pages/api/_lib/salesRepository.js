@@ -1,3 +1,4 @@
+import { LEGACY_SALES_OUTCOMES, SALES_DISPOSITION_KEYS, canonicalSalesOutcome, callDispositions } from '../../../lib/salesDispositions.js';
 import crypto from "node:crypto";
 import { SALES_CONTACT_COLUMNS_SQL, serializeSalesCompanyContacts, resolveSalesContactTarget, assertSalesCompanyEditable, validateCompanyEditorFields, saveSalesCompanyContacts, mergeLegacySalesContacts } from "./salesCompanyContacts.js";
 import { SALES_RESEARCH_FIELDS } from "../../../lib/salesProspectResearch.js";
@@ -13,17 +14,7 @@ import { inferKnowledgeAssignmentsForIndustry } from "./knowledgeReceptionistPac
 
 export const SALES_DEMO_TTL_DAYS = null;
 export const SALES_WARM_QUEUE_SIZE = 10;
-export const SALES_OUTCOMES = Object.freeze([
-  "no_answer",
-  "voicemail",
-  "wrong_number",
-  "callback_requested",
-  "not_interested",
-  "do_not_call",
-  "connected_no_demo",
-  "demo_completed",
-  "signup_link_sent",
-]);
+export const SALES_OUTCOMES = LEGACY_SALES_OUTCOMES;
 
 const ACTIVE_CALL_QUEUE_STATUSES = new Set(["queued", "ready_to_call"]);
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -2397,6 +2388,7 @@ export function serializeSalesCallSession(row) {
     providerErrorCode: row.provider_error_code || null,
     providerErrorMessage: row.provider_error_message || null,
     outcome: row.outcome || null,
+    dispositions: callDispositions(row),
     outcomeNotes: row.outcome_notes || null,
     liveNotes: row.live_notes || '',
     dialedNumber: row.dialed_number || row.metadata_json?.prospect_number || null,
@@ -2544,9 +2536,11 @@ export async function recordSalesCallEvent(pool, {
   return { inserted: false, event: existing.rows[0] || null };
 }
 
-export async function recordSalesCallOutcome(pool, {salesCallId, outcome, notes = '', callbackAt = null, dncReason = null}) {
-  const normalizedOutcome = normalizeSalesText(outcome,80).toLowerCase();
-  if (!SALES_OUTCOMES.includes(normalizedOutcome)) throw salesError('invalid_call_outcome','Call outcome is not supported. Paid is set only by Stripe.');
+export async function recordSalesCallOutcome(pool, {salesCallId, outcome, dispositions, notes = '', callbackAt = null, dncReason = null}) {
+  const choices = dispositions === undefined ? [normalizeSalesText(outcome,80).toLowerCase()] : dispositions;
+  if (!Array.isArray(choices) || !choices.length || choices.length > SALES_DISPOSITION_KEYS.length || choices.some(key => typeof key !== 'string' || !SALES_DISPOSITION_KEYS.includes(key))) throw salesError('invalid_call_outcome','Call outcome is not supported. Paid is set only by Stripe.');
+  const selected = [...new Set(choices)].sort();
+  const normalizedOutcome = canonicalSalesOutcome(selected);
   if (normalizedOutcome==='callback_requested' && (!callbackAt || !Number.isFinite(Date.parse(callbackAt)))) throw salesError('callback_time_required','Choose a callback date and time.');
   const reason = normalizedOutcome==='not_interested' ? 'not_interested' : (dncReason || 'asked_not_to_be_called');
   if (normalizedOutcome==='do_not_call' && !['bad_number','asked_not_to_be_called','out_of_business'].includes(reason)) throw salesError('invalid_dnc_reason','Choose a do-not-call reason.');
@@ -2558,7 +2552,7 @@ export async function recordSalesCallOutcome(pool, {salesCallId, outcome, notes 
     const owner = await db.query('SELECT assigned_rep_user_id FROM sales_prospects WHERE prospect_id=$1 FOR UPDATE', [active.prospect_id]);
     if (Number(owner.rows[0]?.assigned_rep_user_id) !== Number(active.admin_user_id)) throw salesError('prospect_forbidden', 'This prospect has been reassigned. Refresh your workspace.', 403);
     if (!['closed','ended','completed','failed','no_answer','voicemail','wrong_number','not_interested','do_not_call','canceled','cancelled'].includes(active.state)) throw salesError('sales_call_end_required','End the call before saving its outcome.',409);
-    const result=await db.query(`UPDATE sales_call_sessions SET outcome=CASE WHEN paid_at IS NOT NULL THEN 'paid' ELSE $2 END,outcome_notes=$3,live_notes=$3,outcome_recorded_at=NOW(),callback_at=$4,updated_at=NOW() WHERE sales_call_id=$1 RETURNING *`,[salesCallId,normalizedOutcome,String(notes||active.live_notes||'').slice(0,5000),normalizedOutcome==='callback_requested'?callbackAt:null]);
+    const result=await db.query(`UPDATE sales_call_sessions SET outcome=CASE WHEN paid_at IS NOT NULL THEN 'paid' ELSE $2 END,outcome_notes=$3,live_notes=$3,outcome_recorded_at=NOW(),callback_at=$4,metadata_json=metadata_json || jsonb_build_object('dispositions',$5::jsonb),updated_at=NOW() WHERE sales_call_id=$1 RETURNING *`,[salesCallId,normalizedOutcome,String(notes||active.live_notes||'').slice(0,5000),normalizedOutcome==='callback_requested'?callbackAt:null,JSON.stringify(selected)]);
     // Test dispositions remain reviewable on the call, without changing real contact eligibility or sending followups.
     if (active.metadata_json?.phone_test_mode) return serializeSalesCallSession(result.rows[0]);
     const dnc=['not_interested','do_not_call','wrong_number'].includes(normalizedOutcome);

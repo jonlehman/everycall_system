@@ -11,7 +11,7 @@ export const SALES_PHASE_SCRIPTS = Object.freeze({
   gatekeeper: "Who handles your phone coverage, and when is the best time to reach them?",
   while_you_listen: 'Listen for the questions customers ask your business.',
   exit_line: "Let me come back on. How did that sound?",
-  close: 'The setup is $100 and includes your first month. I can send the secure checkout link and book 15 minutes with Jon.',
+  close: 'The setup is {signup_charge} and includes your first month. I can send the secure checkout link and book 15 minutes with Jon.',
   close_decline: 'Jon can take it at the start of your setup call.'
 });
 export const SALES_TERMINAL_SQL = "'closed','ended','completed','failed','no_answer','voicemail','wrong_number','not_interested','do_not_call','canceled','cancelled'";
@@ -29,11 +29,11 @@ export async function assertSalesProspectOwner(pool, prospectId, repId, {allowUn
   if (Number(result.rows[0].assigned_rep_user_id)!==Number(repId) && !(allowUnassigned && result.rows[0].assigned_rep_user_id===null)) throw salesError('prospect_forbidden','This prospect belongs to another rep.',403);
 }
 export async function getSalesDialerSettings(pool, actor, env=process.env) {
-  const stored=await pool.query('SELECT scripts_json,phone_test_mode FROM sales_dialer_config WHERE id=TRUE');
+  const stored=await pool.query('SELECT scripts_json,phone_test_mode,custom_signup_amount_enabled FROM sales_dialer_config WHERE id=TRUE');
   const ownSettings=await getSalesOperatorSettings(pool,actor.id);
   const phone=String(ownSettings?.callerIdNumber||'').trim()||String(env.SALES_TELNYX_CALLER_ID||'').trim();
   const lead=Number(env.FULL_BUILD_LEAD_MINUTES);
-  return {scripts:{...SALES_PHASE_SCRIPTS,...stored.rows[0]?.scripts_json},config:{phoneTestMode:Boolean(stored.rows[0]?.phone_test_mode),checkoutTestEmail:String(env.SALES_CHECKOUT_TEST_EMAIL||actor.email||'').trim().toLowerCase(),checkoutTestPhone:'+14256154640',removePromptAt:Math.max(1,Number(env.REMOVE_PROMPT_AT)||4),fullBuildLeadMinutes:Number.isFinite(lead)&&lead>0?lead:null,setupCallOwner:env.SETUP_CALL_OWNER||null,scriptsEditUrl:'/sales/scripts',inboundConfigured:Boolean(env.SALES_INBOUND_RECEPTIONIST_NUMBER || (env.SALES_CALL_GATEWAY_BASE_URL && env.SALES_OPENAI_API_KEY))},operator:{id:Number(actor.id),phone,name:actor.name||actor.display_name||actor.username||actor.email||'Rep',role:actor.role,canEditScripts:['admin','super_admin'].includes(actor.role)}};
+  return {scripts:{...SALES_PHASE_SCRIPTS,...stored.rows[0]?.scripts_json},config:{customSignupAmountEnabled:Boolean(stored.rows[0]?.custom_signup_amount_enabled),phoneTestMode:Boolean(stored.rows[0]?.phone_test_mode),checkoutTestEmail:String(env.SALES_CHECKOUT_TEST_EMAIL||actor.email||'').trim().toLowerCase(),checkoutTestPhone:'+14256154640',removePromptAt:Math.max(1,Number(env.REMOVE_PROMPT_AT)||4),fullBuildLeadMinutes:Number.isFinite(lead)&&lead>0?lead:null,setupCallOwner:env.SETUP_CALL_OWNER||null,scriptsEditUrl:'/sales/scripts',inboundConfigured:Boolean(env.SALES_INBOUND_RECEPTIONIST_NUMBER || (env.SALES_CALL_GATEWAY_BASE_URL && env.SALES_OPENAI_API_KEY))},operator:{id:Number(actor.id),phone,name:actor.name||actor.display_name||actor.username||actor.email||'Rep',role:actor.role,canEditScripts:['admin','super_admin'].includes(actor.role)}};
 }
 export async function saveSalesScripts(pool,scripts) {
   if(!scripts||typeof scripts!=='object'||Array.isArray(scripts)) throw salesError('invalid_scripts','Scripts must be an object.');

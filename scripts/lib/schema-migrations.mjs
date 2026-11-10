@@ -8,7 +8,8 @@ export const REMEDIATION_MIGRATIONS = [
   ...REQUIRED_SCHEMA_MIGRATIONS,
   '0058_sales_prospect_checkout.sql',
   '0059_sales_company_contacts.sql',
-  '0060_sales_intro_email.sql'
+  '0060_sales_intro_email.sql',
+  '0061_sales_checkout_amount.sql'
 ];
 export const BASELINE_MIGRATION = '0055_explicit_schema_baseline.sql';
 export const readMigration = name => fs.readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8');

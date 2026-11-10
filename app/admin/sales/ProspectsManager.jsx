@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { callDispositions, salesDispositionLabel } from '../../../lib/salesDispositions.js';
 import { SALES_RESEARCH_FIELDS } from '../../../lib/salesProspectResearch.js';
 import {
   displayStatus,
@@ -279,6 +280,7 @@ function Activity({ prospectId, detail, loading, error, onRetry }) {
                 <Pill value={call.outcome || call.state} />
                 <time className="text-xs text-slate-500">{formatDate(call.outcomeRecordedAt || call.endedAt || call.createdAt)}</time>
               </div>
+              {callDispositions(call).length > 0 && <p className="mb-0 mt-2 text-sm">{callDispositions(call).map(salesDispositionLabel).join(" · ")}</p>}
               {call.outcomeNotes ? <p className="mb-0 mt-2 whitespace-pre-wrap text-slate-700">{call.outcomeNotes}</p> : null}
             </article>
           )) : <p className="m-0 rounded-xl border border-dashed border-slate-300 p-3 text-sm text-slate-500">No calls recorded.</p>}

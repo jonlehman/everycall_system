@@ -10,6 +10,17 @@ import {
   safeExternalUrl,
   HANDOFF,
 } from "../app/admin/sales/dialerState.mjs";
+const { SALES_DISPOSITIONS, canonicalSalesOutcome, callDispositions } = await import('../lib/salesDispositions.js');
+const { parseSalesSignupDollars } = await import('../lib/salesSignupAmount.js');
+assert.equal(SALES_DISPOSITIONS.length,8);
+assert.equal(canonicalSalesOutcome(['customer','callback_requested','do_not_call']),'do_not_call');
+assert.equal(canonicalSalesOutcome(['callback_requested','wrong_number']),'wrong_number');
+assert.equal(canonicalSalesOutcome(['customer','prospect']),'connected_no_demo');
+assert.deepEqual(callDispositions({outcome:'voicemail'}),['voicemail']);
+assert.deepEqual(callDispositions({outcome:'paid',metadata:{dispositions:['customer','prospect']}}),['customer','prospect']);
+assert.equal(parseSalesSignupDollars('1'),100);assert.equal(parseSalesSignupDollars('12.34'),1234);
+assert.equal(parseSalesSignupDollars('999999.99'),99999999);
+for(const value of ['','0.99','1.001','1e2','-1','Infinity','1000000'])assert.equal(parseSalesSignupDollars(value),null);
 assert.equal(dialerPhase(null), "READY");
 assert.equal(dialerPhase({ id: "1" }), "DIALING");
 assert.equal(dialerPhase({ id: "1", prospectConnected: true }), "TALK");
@@ -39,7 +50,7 @@ assert.equal(elapsed(null), "0:00");
 assert.equal(elapsed("invalid"), "0:00");
 assert.equal(
   mayQuickAdvance({ call: { terminal: true }, outcome: "no_answer", note: "" }),
-  true,
+  false,
 );
 assert.equal(
   mayQuickAdvance({

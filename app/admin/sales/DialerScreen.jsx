@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
+import { callDispositions, canonicalSalesOutcome, salesDispositionLabel } from '../../../lib/salesDispositions.js';
+import { parseSalesSignupDollars, formatSalesSignupAmount } from '../../../lib/salesSignupAmount.js';
 import { normalizeSalesCheckoutPhone } from "../../../lib/salesCheckoutRecipient.js";
 import {
   OUTCOMES,
@@ -72,7 +74,7 @@ function History({ prospect, ready = false }) {
             undefined,
             { hour: "numeric", minute: "2-digit" },
           )}{" "}
-          · {String(item.outcome || item.state || "Call").replaceAll("_", " ")}
+          · {(callDispositions(item).length ? callDispositions(item).map(salesDispositionLabel).join(" · ") : String(item.outcome || item.state || "Call").replaceAll("_", " "))}
         </Row>
       ))}
       {!history.length && (
@@ -151,6 +153,7 @@ export default function DialerScreen({
   muted,
   note,
   outcome,
+  dispositions = outcome && outcome !== "paid" ? [outcome] : [],
   callbackAt,
   dncReason,
   now = Date.now(),
@@ -195,14 +198,19 @@ export default function DialerScreen({
   const [picker, setPicker] = useState(""),
     [channel, setChannel] = useState(cell ? "sms" : "email"),
     [email, setEmail] = useState(prospect?.email || ""),
+    [signupCharge, setSignupCharge] = useState("100.00"),
     [phone, setPhone] = useState(cell?.phoneE164 || ""),
     [slot, setSlot] = useState(null),
     [addingIncoming, setAddingIncoming] = useState("");
-  useEffect(() => { setEmail(displayContact?.email || ""); setChannel(cell ? "sms" : "email"); setPhone(cell?.phoneE164 || ""); }, [prospect?.id, selectedContactId, call?.id]);
+  useEffect(() => { setSignupCharge("100.00"); setEmail(displayContact?.email || ""); setChannel(cell ? "sms" : "email"); setPhone(cell?.phoneE164 || ""); }, [prospect?.id, selectedContactId, call?.id, queue.config?.phoneTestMode, queue.config?.customSignupAmountEnabled]);
+  const amountCents = checkoutContext?.amountCents ?? parseSalesSignupDollars(signupCharge);
+  const selectedOutcome = canonicalSalesOutcome(dispositions);
+  const suppressesCalls = ["do_not_call", "wrong_number", "not_interested"].includes(selectedOutcome);
   const scripts = queue.scripts || {},
     vars = {
       first_name: displayContact?.firstName || displayContact?.displayName?.split(" ")[0] || "there",
       business_name: (call?.id ? call.raw?.businessName || call.businessName : prospect?.businessName) || "your business",
+      signup_charge: amountCents ? formatSalesSignupAmount(amountCents) : "the agreed signup charge",
       rep_name: queue.operator?.name || "",
       rep_phone: queue.operator?.phone || "",
       cell: call?.id ? (displayContact?.numberType === "cell" ? displayContact.phoneE164 : "") : cell?.phoneE164 || "",
@@ -683,9 +691,14 @@ export default function DialerScreen({
                       the checkout link
                     </h2>
                     <p>
-                      {testCheckout ? "Stripe TEST checkout — no real charge. Delivery goes only to your test phone or account email." : customerPaid ? "This customer has already paid for setup." : "Stripe checkout: $100 setup, first month included. Nothing activates until it’s paid. Stripe marks this call Paid."}
+                      {testCheckout ? "Stripe TEST checkout — no real charge. Delivery goes only to your test phone or account email." : customerPaid ? "This customer has already paid for setup." : `Stripe checkout: ${amountCents ? formatSalesSignupAmount(amountCents) : "enter a valid charge"} setup, first month included. Nothing activates until it’s paid. Stripe marks this call Paid.`}
                     </p>
-                    {checkoutContext && <p role="status">This company's {checkoutContext.isTest ? "test " : ""}signup link is reserved for {checkoutContext.channel === "sms" ? "text" : "email"} to {checkoutContext.recipient}. Status: {checkoutContext.status}.{checkoutContext.url && <> <a href={checkoutContext.url} target="_blank" rel="noreferrer">Open existing checkout</a></>}</p>}
+                    <label className={styles.field}>
+                      Signup charge (USD)
+                      <HintInput aria-label="Signup charge (USD)" type="number" inputMode="decimal" min="1" max="999999.99" step="0.01" value={checkoutContext ? ((checkoutContext.amountCents ?? 10000) / 100).toFixed(2) : signupCharge} readOnly={Boolean(checkoutContext) || !queue.config?.customSignupAmountEnabled} disabled={Boolean(busy)} disabledReason={checkoutContext ? "The existing checkout amount is fixed. Use its original link." : !queue.config?.customSignupAmountEnabled ? "The signup charge is currently fixed at $100.00." : busy ? busyReason : ""} onChange={event => setSignupCharge(event.target.value)} />
+                    </label>
+                    <small>{amountCents ? `${formatSalesSignupAmount(amountCents)} USD, first month included. Confirm this amount before sending.` : "Enter $1.00 to $999,999.99, with at most two decimal places."}</small>
+                    {checkoutContext && <p role="status">This company's {checkoutContext.isTest ? "test " : ""}signup link is reserved for {checkoutContext.channel === "sms" ? "text" : "email"} to {checkoutContext.recipient}. Charge: {formatSalesSignupAmount(checkoutContext.amountCents)} USD. Status: {checkoutContext.status}.{checkoutContext.url && <> <a href={checkoutContext.url} target="_blank" rel="noreferrer">Open existing checkout</a></>}</p>}
                     <div className={styles.actions}>
                       <Button
                         disabled={busy || Boolean(checkoutContext)}
@@ -729,11 +742,12 @@ export default function DialerScreen({
                         busy ||
                         !prospect?.id ||
                         (customerPaid && !testCheckout) ||
-                        ((Boolean(checkoutContext) && !checkoutRetryable) || !selectedContact || (checkoutChannel === "sms" ? !validCheckoutPhone : !checkoutEmail.trim()))
+                        (!amountCents || (Boolean(checkoutContext) && !checkoutRetryable) || !selectedContact || (checkoutChannel === "sms" ? !validCheckoutPhone : !checkoutEmail.trim()))
                       }
-                      disabledReason={disabledReasons(checkoutContext && !checkoutRetryable && "A checkout already exists for this company and mode. Use its original link above; no second checkout will be created.", !selectedContact && "Choose an active company contact first.", busy && busyReason, !prospect?.id && "Select a prospect first.", customerPaid && !testCheckout && "This customer has already paid for setup.", checkoutChannel === "sms" && !validCheckoutPhone && "Enter a valid mobile number first.", checkoutChannel !== "sms" && !checkoutEmail.trim() && (testCheckout ? "No test email destination is configured for this account. Use Text." : "Enter a recipient email address first."))}
+                      disabledReason={disabledReasons(!amountCents && "Enter a valid signup charge of at least $1.00.", checkoutContext && !checkoutRetryable && "A checkout already exists for this company and mode. Use its original link above; no second checkout will be created.", !selectedContact && "Choose an active company contact first.", busy && busyReason, !prospect?.id && "Select a prospect first.", customerPaid && !testCheckout && "This customer has already paid for setup.", checkoutChannel === "sms" && !validCheckoutPhone && "Enter a valid mobile number first.", checkoutChannel !== "sms" && !checkoutEmail.trim() && (testCheckout ? "No test email destination is configured for this account. Use Text." : "Enter a recipient email address first."))}
                       onClick={() =>
                         onCheckout({
+                          amountCents,
                           channel: checkoutChannel,
                           email: checkoutEmail,
                           ...(checkoutChannel === "sms" ? { phone: validCheckoutPhone } : {}),
@@ -906,14 +920,10 @@ export default function DialerScreen({
                 key={value}
                 disabled={!call?.id || Boolean(busy)}
                 disabledReason={disabledReasons(!call?.id && "Dial a call before choosing an outcome.", busy && busyReason)}
-                aria-pressed={outcome === value}
+                aria-pressed={dispositions.includes(value)}
                 onClick={() => {
-                  if (["callback_requested", "do_not_call"].includes(value))
-                    setPicker(picker === value ? "" : value);
-                  else {
-                    setPicker("");
-                    onOutcome(value);
-                  }
+                  onOutcome(value);
+                  setPicker(value === "callback_requested" && !dispositions.includes(value) ? "callback_requested" : "");
                 }}
               >
                 {label}
@@ -928,12 +938,11 @@ export default function DialerScreen({
               tone="blue"
               disabled={
                 !call?.terminal ||
-                (!outcome && !call?.paidAt) ||
+                (!dispositions.length && !call?.paidAt) ||
                 Boolean(busy) ||
-                (outcome === "callback_requested" && !callbackAt) ||
-                (outcome === "do_not_call" && !dncReason)
+                (selectedOutcome === "callback_requested" && !callbackAt)
               }
-              disabledReason={disabledReasons(!call?.terminal && "End the call before saving its outcome.", !outcome && !call?.paidAt && "Choose an outcome first.", busy && busyReason, outcome === "callback_requested" && !callbackAt && "Set a callback date and time first.", outcome === "do_not_call" && !dncReason && "Choose a Do not call reason first.")}
+              disabledReason={disabledReasons(!call?.terminal && "End the call before saving its outcome.", !dispositions.length && !call?.paidAt && "Choose an outcome first.", busy && busyReason, selectedOutcome === "callback_requested" && !callbackAt && "Set a callback date and time first.")}
               onClick={onSave}
             >
               {busy === "outcome" ? "Saving…" : "Save & next →"}
@@ -944,33 +953,16 @@ export default function DialerScreen({
               <CallbackPicker prospect={prospect} value={callbackAt} onSet={onCallback} disabled={Boolean(busy)} schedulingReason="Dial a call before scheduling a callback outcome." canSchedule={Boolean(call?.id)} now={now} onClose={() => setPicker("")} />
             </div>
           )}
-          {picker === "do_not_call" && (
-            <div className={styles.picker}>
-              <strong>Do not call — reason</strong>
-              {[
-                ["bad_number", "Bad number"],
-                ["asked_not_to_be_called", "Asked not to be called"],
-                ["out_of_business", "Out of business"],
-              ].map(([reason, label]) => (
-                <Button
-                  key={reason}
-                  onClick={() => {
-                    onDncReason(reason);
-                    setPicker("");
-                  }}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-          )}
+          {dispositions.length > 0 && <p role="status">Selected: {dispositions.map(salesDispositionLabel).join(" · ")}</p>}
+          {suppressesCalls && <p role="status">DND and Bad number permanently block calls to this company and its saved phone/domain identities. This overrides Follow up; no callback will be scheduled.</p>}
+          <p>Choose one or more dispositions, then Save &amp; next. Customer is a sales label; only Stripe sets Paid.</p>
           <small>
             {phase === "READY"
-              ? "Outcomes unlock when a call is dialed. Not interested and Do not call are permanent."
+              ? "Outcomes unlock when a call is dialed. DND and Bad number are permanent."
               : phase === "WRAPUP"
                 ? `Save & next doesn’t wait for the transcript.${queue.upcoming?.[0] ? ` Next up: ${queue.upcoming[0].businessName}` : ""}`
                 : "Pick an outcome any time. Save & next activates once the call has ended."}
-            {callbackAt && outcome === "callback_requested"
+            {callbackAt && selectedOutcome === "callback_requested"
               ? ` Callback: ${new Date(callbackAt).toLocaleString()}`
               : ""}
           </small>

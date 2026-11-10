@@ -1,0 +1,13 @@
+# Sales dispositions and pricing release review — November 10, 2026
+
+Independent critical review approved the feature source, scoped migration 0061 and staged production deployment with custom pricing disabled. Activation remains conditional on confirmed canonical Stripe endpoint routing (or an explicitly absent test endpoint), verified production alias/revision, at least 810 seconds of old-checkout retirement and the reviewed read-only activation plan plus audited apply. The concrete procedure is in RUNBOOK’s Sales dispositions and signup pricing0061 section. No production migration or activation is claimed by this review record.
+
+Reviewed SQL SHA-256: `f550c314134ae959ab0dc59b12492065510de79ecc8b1fb700f9a4976cbee11a`.
+
+The independent read-only production preflight found PostgreSQL 17.11 with transaction_timeout support, one checkout row,98,304 relation bytes, neither 0061 column installed,0060 receipt present and no 0061 receipt. Current deployed predecessor was 1528bc264215946c01522cb3ffd357f1e1f47b36, whose checkout creation hardcodes 10000 USD cents. The runner must recheck all schema, size, ownership and activity conditions under locks.
+
+Native PostgreSQL 18.6 fixtures proved both config and checkout NOWAIT lock refusal, the real total 10,003 ms transaction deadline with atomic DDL/receipt rollback, object-collision and predecessor/catalog drift refusal, immutable amount bounds and legacy default, disabled initial pricing gate, 810-second activation guard, read-only plan, audited activation rollback/idempotence and no amount edits. Native migration apply took 23 ms at one 98,304-byte fixture relation. This is fixture timing, not production execution.
+
+Final feature regressions passed: native Sales v2 (including different-price reservation contention), native selected-contact delivery, Sales auth with signed 375-cent test webhook, phone testing, Contacts, UI validator, real controller, 8 states × 4 viewport browser layout and call-record browser. Root independently verified multiple toggles, explicit save, DND over callback scheduling, exact 125-cent and edited SMS payload, false-gate behavior, company/contact/call price resets and desktop/mobile layout. Providers were stubbed; no real sends, calls, Stripe sessions or charges were exercised.
+
+Local evidence logs: `/tmp/sales-{native,delivery,auth,phone,contacts,ui,controller,browser,call-record}-0061.log`. Execution evidence will be recorded separately in `/tmp/everycall-sales0061-release.json` and summarized here after completion. Once custom-price reservations exist, old fixed-$100 checkout/webhook code is not a safe rollback target.

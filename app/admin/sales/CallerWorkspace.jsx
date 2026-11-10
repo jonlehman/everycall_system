@@ -10,11 +10,13 @@ import {
 import { useSalesQueue } from "./useSalesQueue";
 import { connectTelnyxBrowserClient } from "./telnyxBrowserClient";
 import { createLocalRingback } from "./localRingback.mjs";
-import { mayQuickAdvance, initialCompanyContactId, companyContactTarget } from "./dialerState.mjs";
+import { initialCompanyContactId, companyContactTarget } from "./dialerState.mjs";
 import DialerScreen from "./DialerScreen";
 import SalesIntroEmailModal from "./SalesIntroEmailModal";
 import { companyBriefRequestFailure, normalizeCompanyBrief } from "../../../lib/salesCompanyBriefDiagnostics.js";
 
+import { canonicalSalesOutcome, callDispositions } from '../../../lib/salesDispositions.js';
+import { DEFAULT_SALES_SIGNUP_AMOUNT_CENTS, formatSalesSignupAmount, validSalesSignupAmount } from '../../../lib/salesSignupAmount.js';
 import { normalizeSalesCheckoutPhone } from "../../../lib/salesCheckoutRecipient.js";
 
 const BASE = "/api/v1/admin/sales";
@@ -38,13 +40,14 @@ export default function CallerWorkspace() {
     [microphoneState, setMicrophoneState] = useState("not_requested"),
     [pendingWrapups, setPendingWrapups] = useState(0),
     [note, setNote] = useState(""),
-    [outcome, setOutcome] = useState(""),
+    [dispositions, setDispositions] = useState([]),
     [callbackAt, setCallbackAt] = useState(""),
     [dncReason, setDncReason] = useState(""),
     [now, setNow] = useState(Date.now()),
     [availability, setAvailability] = useState({ slots: [] }),
     [incoming, setIncoming] = useState([]),
     [searchResults, setSearchResults] = useState([]);
+  const outcome = canonicalSalesOutcome(dispositions);
   const remoteAudioRef = useRef(null),
     softphone = useRef(null),
     microphone = useRef(null),
@@ -235,7 +238,7 @@ export default function CallerWorkspace() {
     setProspect(next);
     setNote("");
     savedNote.current = "";
-    setOutcome("");
+    setDispositions([]);
     setCallbackAt("");
     setDncReason("");
     setAvailability({ slots: [] });
@@ -265,7 +268,7 @@ export default function CallerWorkspace() {
         if (next.terminal) endingCallIds.current.add(next.id);
         ringback.current.update(next);
         setCall(next);
-        if (next.paidAt) setOutcome("paid");
+
         if (next.terminal) await loadQueue({ quiet: true });
       } catch (err) {
         if (active) {
@@ -382,7 +385,7 @@ export default function CallerWorkspace() {
           throw new Error("The server did not return a call ID.");
         ringback.current.bind(ringbackAttempt, created.id);
         setCall(created);
-        setOutcome("");
+        setDispositions([]);
         setNote("");
         savedNote.current = "";
         setMuted(false);
@@ -481,10 +484,8 @@ export default function CallerWorkspace() {
     run("outcome", async () => {
       if (!call?.terminal)
         throw new Error("End the call before saving its outcome.");
-      const choice =
-        (selected || outcome) === "paid"
-          ? "signup_link_sent"
-          : selected || outcome;
+      const choices = dispositions.length ? dispositions : call.paidAt ? ['signup_link_sent'] : [];
+      const choice = canonicalSalesOutcome(choices);
       if (!choice) throw new Error("Select an outcome.");
       await fetchSalesJson(
         `${BASE}/calls/${encodeURIComponent(call.id)}/outcome`,
@@ -493,6 +494,7 @@ export default function CallerWorkspace() {
           idempotencyKey: `sales-outcome-${call.id}`,
           body: JSON.stringify({
             outcome: choice,
+            dispositions: choices,
             notes: noteRef.current,
             liveNotes: noteRef.current,
             callbackAt:
@@ -509,7 +511,7 @@ export default function CallerWorkspace() {
       setCall(draft?.call || null);
       callRef.current = draft?.call || null;
       setProspect(draft?.prospect || next?.current || null);
-      setOutcome(draft?.outcome || "");
+      setDispositions(draft?.dispositions || callDispositions(draft?.call));
       setNote(draft?.note || "");
       savedNote.current = draft?.savedNote || "";
       setCallbackAt(draft?.callbackAt || "");
@@ -518,9 +520,8 @@ export default function CallerWorkspace() {
       setIncoming((current) => current.filter((i) => i.state !== "taken"));
     });
   const chooseOutcome = (value) => {
-    setOutcome(value);
-    if (mayQuickAdvance({ call, outcome: value, note: noteRef.current }))
-      void save(value);
+    if (value === "do_not_call") setDncReason("asked_not_to_be_called");
+    setDispositions(current => current.includes(value) ? current.filter(key => key !== value) : [...current, value]);
   };
   const queueAction = (action) =>
     run(action, async () => {
@@ -542,7 +543,7 @@ export default function CallerWorkspace() {
       const next = await loadQueue({ quiet: true });
       setProspect(next?.current || null);
       setNote("");
-      setOutcome("");
+      setDispositions([]);
       savedNote.current = "";
       setCallbackAt("");
       setDncReason("");
@@ -558,7 +559,7 @@ export default function CallerWorkspace() {
       setProspect(queue.current || null);
       setNote("");
       savedNote.current = "";
-      setOutcome("");
+      setDispositions([]);
       setCallbackAt("");
       setDncReason("");
     }
@@ -577,7 +578,7 @@ export default function CallerWorkspace() {
     setView("dial");
     setNote("");
     savedNote.current = "";
-    setOutcome("");
+    setDispositions([]);
     setCallbackAt("");
     setDncReason("");
     setAvailability({ slots: [] });
@@ -602,7 +603,7 @@ export default function CallerWorkspace() {
   const updateCallback = async (value) => {
     if (callRef.current?.id) {
       setCallbackAt(value || "");
-      setOutcome((current) => value ? "callback_requested" : current === "callback_requested" ? "" : current);
+      setDispositions(current => value ? [...new Set([...current, "callback_requested"])] : current.filter(key => key !== "callback_requested"));
       return true;
     }
     const result = await run("callback", async () => {
@@ -672,6 +673,8 @@ export default function CallerWorkspace() {
       const phone = details.channel === "sms" ? normalizeSalesCheckoutPhone(checkoutContext?.recipient || (testCheckout ? queue.config?.checkoutTestPhone || "+14256154640" : details.phone)) : undefined;
       if (details.channel === "sms" && !phone) throw new Error("Enter a valid mobile number first.");
       const deliveryNumberId = checkoutContext ? checkoutContext.contactSnapshot?.numberId || undefined : selectedTarget.numbers.find(number => number.phoneE164 === phone)?.id;
+      const amountCents = checkoutContext?.amountCents ?? details.amountCents ?? DEFAULT_SALES_SIGNUP_AMOUNT_CENTS;
+      if (!validSalesSignupAmount(amountCents)) throw new Error("Enter a signup charge from $1.00 to $999,999.99.");
       let confirmedRecipient;
       if (withoutCall) {
         const recipient = checkoutContext?.recipient || (details.channel === "sms"
@@ -679,8 +682,10 @@ export default function CallerWorkspace() {
           : details.email?.trim());
         confirmedRecipient = recipient;
         if (!recipient) throw new Error("Choose a signup link recipient.");
-        if (!window.confirm(`Send the ${testCheckout ? "TEST signup link (no real charge)" : "signup link"} by ${details.channel === "sms" ? "text" : "email"} to ${recipient} without an associated call?`)) return;
+
       }
+      const recipient = checkoutContext?.recipient || (details.channel === "sms" ? phone : details.email?.trim());
+      if (!window.confirm(`Send the ${testCheckout ? "TEST signup link (no real charge)" : "signup link"} for ${formatSalesSignupAmount(amountCents)} USD by ${details.channel === "sms" ? "text" : "email"} to ${recipient}${withoutCall ? " without an associated call" : ""}?`)) return;
       const context = withoutCall
         ? `prospects/${encodeURIComponent(selected.id)}`
         : `calls/${encodeURIComponent(currentCall.id)}`;
@@ -689,7 +694,7 @@ export default function CallerWorkspace() {
         result = await fetchSalesJson(`${BASE}/${context}/checkout`, {
           method: "POST",
           idempotencyKey: `sales-checkout-${withoutCall ? `prospect-${selected.id}` : currentCall.id}-${details.channel}-${testCheckout ? "test" : "live"}`,
-          body: JSON.stringify({ ...details, ...(phone ? { phone } : {}), contactId: deliveryContactId, numberId: deliveryNumberId, expectedRowVersion: selected.rowVersion, expectedIsTest: testCheckout, ...(withoutCall ? { confirmedWithoutCall: true, confirmedRecipient } : {}) }),
+          body: JSON.stringify({ ...details, amountCents, ...(phone ? { phone } : {}), contactId: deliveryContactId, numberId: deliveryNumberId, expectedRowVersion: selected.rowVersion, expectedIsTest: testCheckout, ...(withoutCall ? { confirmedWithoutCall: true, confirmedRecipient } : {}) }),
         });
       } catch (error) {
         // A failed provider operation may already have reserved the recipient.
@@ -704,7 +709,7 @@ export default function CallerWorkspace() {
       if (!withoutCall && callRef.current?.id === currentCall.id) {
         if (!result.call) throw new Error("Checkout call was not returned.");
         setCall(normalizeCall(result));
-        if (!result.checkout.isTest) setOutcome("signup_link_sent");
+        if (!result.checkout.isTest) setDispositions(current => current.length ? current : ["signup_link_sent"]);
       }
       if (withoutCall && prospectRef.current?.id === selected.id)
         setProspect((current) => current?.id === selected.id ? { ...current, signupLinkSent: true } : current);
@@ -758,7 +763,7 @@ export default function CallerWorkspace() {
           prospect: prospectRef.current,
           call: callRef.current,
           note: noteRef.current,
-          outcome,
+          dispositions,
           callbackAt,
           dncReason,
           savedNote: savedNote.current,
@@ -786,7 +791,7 @@ export default function CallerWorkspace() {
         setCall(next);
         if (action === "take") {
           setNote(next.liveNotes || "");
-          setOutcome("");
+          setDispositions([]);
           setCallbackAt("");
           setDncReason("");
           savedNote.current = next.liveNotes || "";
@@ -911,6 +916,7 @@ export default function CallerWorkspace() {
         muted={muted}
         note={note}
         outcome={outcome}
+        dispositions={dispositions}
         callbackAt={callbackAt}
         dncReason={dncReason}
         now={now}
@@ -919,7 +925,7 @@ export default function CallerWorkspace() {
         onCallback={updateCallback}
         onDncReason={(value) => {
           setDncReason(value);
-          setOutcome("do_not_call");
+          setDispositions(current => [...new Set([...current, "do_not_call"])]);
         }}
         onCall={startCall}
         onAction={callAction}
