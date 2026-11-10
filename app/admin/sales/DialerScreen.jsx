@@ -159,6 +159,7 @@ export default function DialerScreen({
   onRemove,
   onSave,
   onCheckout,
+  onIntroEmail,
   onBook,
   availability,
   onMoreSlots,
@@ -662,6 +663,9 @@ export default function DialerScreen({
             ) : null}
             {panelStage === 3 && (
               <>
+                <div className={styles.actions}>
+                  <Button onClick={onIntroEmail} disabled={!prospect?.id || !selectedContact || !displayContact?.email || Boolean(busy) || Boolean(queue.config?.phoneTestMode) || Boolean(prospect?.suppressed || prospect?.doNotCall || ["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})))} disabledReason={disabledReasons(!prospect?.id && "Select a prospect first.", !selectedContact && "Choose an active company contact first.", !displayContact?.email && "The selected contact has no email address.", busy && busyReason, queue.config?.phoneTestMode && "Introduction emails are unavailable during phone test mode.", (prospect?.suppressed || prospect?.doNotCall || ["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {}))) && "This contact is suppressed or unavailable.")}>Send email</Button>
+                </div>
                 <div className={styles.closeCards}>
                   <div className={`${styles.card} ${styles.checkout}`}>
                     <h3>1 · Signup link</h3>

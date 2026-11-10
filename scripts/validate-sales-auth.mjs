@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { testSalesCheckoutApi } from './lib/test-sales-checkout-api.mjs';
+import { testSalesIntroEmailApi } from './lib/test-sales-intro-email-api.mjs';
 import fs from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import bcrypt from 'bcryptjs';
@@ -352,6 +353,7 @@ try {
   await query("UPDATE sales_prospects SET assigned_rep_user_id=$1 WHERE prospect_id='receipt-call-company'",[created.id]);
   assert.equal((await call(salesCalls,callReq)).statusCode,403,'Call receipt cannot replay another rep company');
 
+  await testSalesIntroEmailApi({pool,call,salesCookie,adminCookie,repId:sales.id,adminId:admin.id});
   await query(`UPDATE sales_operator_settings SET active = FALSE WHERE admin_user_id = $1`, [sales.id]);
   assert.equal(await getSalesSession(request(salesCookie)), null);
   assert.equal((await call(salesLogin, request('', 'POST', {

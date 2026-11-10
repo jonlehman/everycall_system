@@ -166,7 +166,7 @@ export async function writeSalesAdminAudit(context, action, details = null) {
 }
 
 export function sendSalesApiError(res, error, fallback = "sales_request_failed") {
-  const status = ['P5701','P5702','P5704','P5901','P5902','P5903'].includes(error?.code) ? 409 : Number(error?.statusCode || 500) || 500;
+  const status = ['P5701','P5702','P5704','P5901','P5902','P5903','P6001','P6002'].includes(error?.code) ? 409 : Number(error?.statusCode || 500) || 500;
   return res.status(status).json({
     ok: false,
     error: normalizeSalesText(error?.code, 160) || fallback,

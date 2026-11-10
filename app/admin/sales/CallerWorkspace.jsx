@@ -12,6 +12,7 @@ import { connectTelnyxBrowserClient } from "./telnyxBrowserClient";
 import { createLocalRingback } from "./localRingback.mjs";
 import { mayQuickAdvance, initialCompanyContactId, companyContactTarget } from "./dialerState.mjs";
 import DialerScreen from "./DialerScreen";
+import SalesIntroEmailModal from "./SalesIntroEmailModal";
 import { companyBriefRequestFailure, normalizeCompanyBrief } from "../../../lib/salesCompanyBriefDiagnostics.js";
 
 const BASE = "/api/v1/admin/sales";
@@ -21,6 +22,8 @@ export default function CallerWorkspace() {
   });
   const [contactSelection, setContactSelection] = useState({ companyId: null, contactId: "" });
   const [checkoutContext, setCheckoutContext] = useState(null);
+  const [introEmail, setIntroEmail] = useState(null);
+  const [introEmailSent, setIntroEmailSent] = useState(false);
   const [prospect, setProspect] = useState(null),
     [view, setView] = useState("dial"),
     [browsingContact, setBrowsingContact] = useState(false),
@@ -868,6 +871,8 @@ export default function CallerWorkspace() {
         hidden
         aria-label="Remote call audio"
       />
+      {introEmailSent && <div role="status" className="mx-4 mt-3">Introduction email sent.</div>}
+      {introEmail && <SalesIntroEmailModal {...introEmail} currentIdentity={`${prospect?.id}:${selectedContactId}:${call?.id || ""}`} onClose={(sent) => { setIntroEmail(null); if (sent === true) setIntroEmailSent(true); }} />}
       <DialerScreen
         key={`${prospect?.id || "empty"}:${incomingTaken.current || ""}`}
         queue={queue}
@@ -917,6 +922,7 @@ export default function CallerWorkspace() {
         onRemove={() => queueAction("remove")}
         onSave={() => save()}
         onCheckout={checkout}
+        onIntroEmail={() => { setIntroEmailSent(false); setIntroEmail({ prospectId: prospect.id, contactId: selectedContactId, salesCallId: call?.id }); }}
         onBook={book}
         availability={availability}
         onMoreSlots={() => loadSlots(availability.nextAfter || "")}

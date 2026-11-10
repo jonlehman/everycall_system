@@ -1,0 +1,13 @@
+.dialog { width: min(42rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; border: 0; border-radius: 12px; padding: 1.5rem; box-shadow: 0 20px 60px #0005; }
+.dialog::backdrop { background: #0009; }
+.form { display: grid; gap: .8rem; }
+.form h2, .form p { margin: 0; overflow-wrap: anywhere; }
+.form label { display: grid; gap: .3rem; font-weight: 600; }
+.form input:not([type="checkbox"]), .form textarea { width: 100%; border: 1px solid #94a3b8; border-radius: 6px; padding: .6rem; font: inherit; }
+.form textarea { resize: vertical; font-weight: 400; }
+.form .check { display: flex; align-items: start; gap: .5rem; font-weight: 400; }
+.form .check input { width: 1rem; height: 1rem; flex: 0 0 1rem; margin: .15rem 0 0; padding: 0; }
+.actions { display: flex; justify-content: flex-end; gap: .6rem; }
+.actions button { border: 1px solid #64748b; border-radius: 6px; padding: .55rem 1rem; background: white; }
+.actions button[type="submit"] { color: white; background: #1d4ed8; }
+.actions button:disabled { opacity: .5; }

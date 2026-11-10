@@ -42,7 +42,7 @@ async function sendWithMailtrap(payload) {
   };
 }
 
-async function sendWithResend({ from, to, subject, text, html, idempotencyKey }) {
+async function sendWithResend({ from, to, subject, text, html, idempotencyKey, replyTo }) {
   const apiKey = normalizeText(process.env.RESEND_API_KEY);
   if (!apiKey) {
     throw new Error("mail_provider_unavailable");
@@ -58,6 +58,7 @@ async function sendWithResend({ from, to, subject, text, html, idempotencyKey })
       from: `${from.name} <${from.email}>`,
       to: Array.isArray(to) ? to : [],
       subject,
+      ...(replyTo ? { reply_to: replyTo } : {}),
       text: text || undefined,
       html: html || undefined
     })
@@ -79,8 +80,12 @@ export async function sendTransactionalEmail({
   text,
   html,
   category = null,
-  idempotencyKey = null
+  idempotencyKey = null,
+  replyTo = null
 }) {
+  if (replyTo !== null && (typeof replyTo !== 'string' || replyTo.length > 320 || !/^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(replyTo))) {
+    throw new Error('invalid_reply_to');
+  }
   const recipients = (Array.isArray(to) ? to : [to])
     .map((value) => normalizeText(value))
     .filter(Boolean);
@@ -94,12 +99,13 @@ export async function sendTransactionalEmail({
   }
 
   if (provider === "resend") {
-    return sendWithResend({ from, to: recipients, subject, text, html, category, idempotencyKey });
+    return sendWithResend({ from, to: recipients, subject, text, html, category, idempotencyKey, replyTo });
   }
 
   if (provider === "mailtrap") {
     return sendWithMailtrap({
       from,
+      ...(replyTo ? { reply_to: { email: replyTo } } : {}),
       to: recipients.map((email) => ({ email })),
       subject,
       text,
