@@ -100,7 +100,7 @@ export default function CompanyContactEditor({ prospectId, returnTo = "queue" })
       if (failure.status === 409) {
         setConflict(true);
         setError("This company changed while you were editing, or an active call or delivery is preventing this save. Your draft is still here. Review your changes, then reload the latest details before saving again.");
-      } else setError(failure.status === 403 ? "You no longer have access to save this company. Your draft is still here." : failure.message || "Could not save the company. Your draft is still here.");
+      } else setError(failure.status === 413 ? "These company details exceed the save request size limit. Your draft is still here." : failure.status === 403 ? "You no longer have access to save this company. Your draft is still here." : failure.message || "Could not save the company. Your draft is still here.");
     } finally { setSaving(false); }
   };
   return <div className={styles.page}>

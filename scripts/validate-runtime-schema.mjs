@@ -114,6 +114,14 @@ try {
 
   // Historic migrations are deliberately not replayed. Failed receipt insertion
   // rolls back prior wrapped migrations and their DDL in the same transaction.
+  // The newer Sales migrations intentionally reject unreceipted owned objects.
+  // Reset those fixture-only objects before simulating their pre-release state.
+  await query('DROP TRIGGER sales_checkout_amount_immutable_trigger ON sales_checkout_sessions');
+  await query('DROP FUNCTION sales_checkout_amount_immutable()');
+  await query('ALTER TABLE sales_checkout_sessions DROP CONSTRAINT sales_checkout_amount_range');
+  await query('ALTER TABLE sales_checkout_sessions DROP COLUMN amount_cents');
+  await query('ALTER TABLE sales_dialer_config DROP COLUMN custom_signup_amount_enabled');
+  await query('ALTER TABLE sales_prospect_contacts DROP COLUMN notes');
   await query('DELETE FROM schema_migrations');
   await query("INSERT INTO schema_migrations(name) VALUES ('0050_live_brief_curation.sql')");
   await query('DROP INDEX async_jobs_running_lease_idx');
@@ -131,7 +139,7 @@ try {
   // Upgrade an existing Sales schema with real call-linked checkout history.
   // The Sales-only receipt must not become a global runtime readiness gate.
   const prospectCheckoutMigration = '0058_sales_prospect_checkout.sql';
-  assert.deepEqual(REMEDIATION_MIGRATIONS, [...REQUIRED_SCHEMA_MIGRATIONS, prospectCheckoutMigration, '0059_sales_company_contacts.sql', '0060_sales_intro_email.sql']);
+  assert.deepEqual(REMEDIATION_MIGRATIONS, [...REQUIRED_SCHEMA_MIGRATIONS, prospectCheckoutMigration, '0059_sales_company_contacts.sql', '0060_sales_intro_email.sql', '0061_sales_checkout_amount.sql', '0062_sales_contact_notes.sql']);
   await query('DROP INDEX sales_checkout_prospect_only_idx');
   await query('DROP TRIGGER sales_checkout_mode_immutable_trigger ON sales_checkout_sessions');
   await query('DROP FUNCTION sales_checkout_mode_immutable()');

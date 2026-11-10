@@ -18,7 +18,7 @@ Changing the default email identity clears the legacy company email-permission f
 
 ## API and compatibility contract
 
-GET `/api/v1/admin/sales/prospects/:id` adds `contacts`, `sharedNumbers`, `defaultContactId`, `editCapabilities` and `callbackTarget` to the existing prospect DTO. Contacts use `{id,firstName,lastName,displayName,title,email,decisionMaker,influencer,numbers}`. Numbers use `{id,phoneE164,type,label,isTest}`; types remain `cell`, `shop`, `other`.
+GET `/api/v1/admin/sales/prospects/:id` adds `contacts`, `sharedNumbers`, `defaultContactId`, `editCapabilities` and `callbackTarget` to the existing prospect DTO. Contacts use `{id,firstName,lastName,displayName,title,email,notes,decisionMaker,influencer,numbers}`. Numbers use `{id,phoneE164,type,label,isTest}`; types remain `cell`, `shop`, `other`.
 
 PATCH on the same endpoint requires `expectedRowVersion`, allows only editor business/contact fields and always applies the company-editor allowlist even if a client omits `editorMode`. The normal request includes `editorMode:"company_contacts"`, a full active `contacts`/`sharedNumbers` snapshot and `defaultContactId`; omitted existing items are archived. New draft IDs begin `new_` and are mapped to server IDs atomically. `emailPermissionConfirmation:{contactId,email}` binds fresh permission to a changed default email. Unknown/system fields are rejected. Same-request retries use the existing idempotency key. Ownership is rechecked under locks before a receipt can replay.
 
@@ -27,6 +27,12 @@ One transaction covers validation, contact/number changes, default replacement, 
 Legacy company name/email/role fields project the default contact. The complete active phone aggregate remains in `numbers_json` for existing clients. Normalized phone writes update that aggregate in the same transaction. Legacy full name, discrepant owner first name and unknown phone JSON attributes remain stored. Old CSV imports update their designated legacy contact additively and preserve additional contacts/default choices. CSV export adds `contacts_json`, `shared_numbers_json`, `default_contact_id`, and `phone_test_mode`; test exports cannot be reimported as real identities.
 
 Callbacks record their selected person/phone snapshot. Archived or changed phone identity requires a new selection; company-only historical callbacks do not invent a historical person. Incoming unique personal numbers can identify a contact, shared numbers identify only the company, and multi-company matches require clarification rather than choosing the most recently edited company.
+
+## Contact notes memo
+
+Owner requested November 10, 2026: every contact in People at this company has a separate Notes memo. Store it as PostgreSQL `TEXT NOT NULL DEFAULT ''` on the contact. The multiline textarea can be resized vertically and has no character limit. Preserve whitespace, Unicode and newlines exactly; no trimming or truncation. The existing request transport size limit still rejects oversized requests explicitly. Existing/new contacts start empty. Explicit `notes:""` clears; omitted notes preserve the existing contact memo for older editor/import clients. Reject non-string or NUL-containing notes explicitly.
+
+Notes are private Sales operator context, independent of company research notes, role/default/phone fields and consent. Phone-test mode permits memo edits under the same metadata rules. Existing assignment, version, idempotency, pending-work, archive and email-consent guards remain authoritative. Legacy CSV/source enrichment preserves memos; full contact CSV includes them. Call, checkout and booking identity/provider snapshots exclude notes. Migration 0062 is an additive constant-default column with a separately reviewed bounded online runner; it does not inherit 0061 pricing activation/drain gates.
 
 ## Source-based contact enrichment
 
@@ -55,5 +61,6 @@ The retained phone/domain ledger includes recoverable historical non-test call d
 | SALES-CONTACT-007 | Preserve legacy/import/source identities and support full contact CSV export without promoting test destinations. | Import/export and compatibility projections | Native contacts suite; Sales database regression |
 | SALES-CONTACT-008 | Default email changes do not transfer consent; explicit reconfirmation binds the new email/contact. | Aggregate validation and editor checkbox | Native contacts suite; retained editor browser fixture |
 | SALES-CONTACT-009 | Website edits reuse Sales-only invalidation; no tenant knowledge, overrides, source authority, validated publication or paid activation changes. | Existing Sales demo invalidation/preparation path | Native contacts website-stale assertion; existing knowledge inventory validation |
+| SALES-CONTACT-010 | Per-contact expandable Notes memo, lossless long text, empty default and explicit clear; old-client/import preservation; existing guards and snapshot privacy. | Migration 0062; contact aggregate/save; shared company form and payload | Native/PGlite contacts; browser editor; delivery/backfill; scoped0062 native migration fixture |
 
 This feature preserves original `SALES-PHONE-TEST-001`–`006` and their explicit checkout supersession, `SALES-CHECKOUT-*`, and `SALES-UI-DISABLED-*`. It does not amend frozen knowledge requirements `REQ-RULE-001`, `REQ-OVR-005`, `REQ-PIPE-003`, `REQ-PIPE-016`, `REQ-OPS-004` or `REQ-OPS-009`: Sales research/contact fields are operator context, tenant overrides retain authority, tenant rebuilds remain manual, and existing validated publication/readiness gates remain authoritative. The frozen inventory is unchanged.

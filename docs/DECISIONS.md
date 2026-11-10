@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-11-10 — Per-contact Sales memo
+- Owner requested an expandable Notes memo for each person in the company editor. Use contact-owned PostgreSQL TEXT with an empty default and a resizable multiline textarea; preserve long Unicode text and whitespace without an application character cap or silent truncation. Explicit empty clears; legacy omission preserves saved notes.
+- Keep existing company/assignment/version/pending-work/phone-test/consent guards. Contact notes stay out of immutable call, checkout and booking snapshots. Full CSV exports include notes; legacy writers and source enrichment preserve them. SALES-CONTACT-010 maps implementation and regression evidence.
+- Migration 0062 is a constant-default contact-table expansion, with a separately reviewed online runner that takes NOWAIT contact/receipt locks and a five-second transaction deadline. No row rewrite, pricing activation gate, unrelated job drain or provider action is needed. See the [0062 procedure](RUNBOOK.md#sales-contact-notes-release-0062).
+
+
 ## 2026-11-10 — Sales Close cards and signup recipient
 - Owner requested chronological saved notes (oldest first; undated last), a third Introduction email card after Signup link and Setup call, and an editable live signup Text to field. SALES-UI-NOTES-005 explicitly supersedes the newest-first part of SALES-UI-NOTES-003; SALES-CLOSE-001 and SALES-CHECKOUT-007–008 record the new behavior.
 - Use the existing checkout recipient/contact snapshot fields, without a migration. Normalize and validate the explicit phone before reservation and send to that exact value; do not rewrite contact phones. A saved number ID must match the destination or be omitted for a manual number. Keep selected contact/company scopes, immutable company/mode checkout identity, fixed test destinations, DNC/quiet-hour/permission checks, provider claims and uncertain-send fences. Once reserved, the recipient remains read-only.

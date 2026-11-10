@@ -18,9 +18,10 @@ try {
     CREATE TABLE provisioning_jobs(id BIGSERIAL PRIMARY KEY,tenant_key TEXT,status TEXT,provider TEXT,stage TEXT,status_detail TEXT,provider_reference TEXT,error_code TEXT,error_message TEXT,updated_at TIMESTAMPTZ,completed_at TIMESTAMPTZ);
     CREATE TABLE audit_log(id BIGSERIAL PRIMARY KEY,tenant_key TEXT,actor TEXT,action TEXT,details TEXT);
     INSERT INTO admin_users(id,email) VALUES(1,'rep@example.test');`);
-  for (const name of ['0032_outbound_sales_demo.sql','0056_sales_dialer_v2.sql','0057_sales_phone_test_mode.sql','0058_sales_prospect_checkout.sql','0059_sales_company_contacts.sql']) await db.exec(await fs.readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8'));
+  for (const name of ['0032_outbound_sales_demo.sql','0056_sales_dialer_v2.sql','0057_sales_phone_test_mode.sql','0058_sales_prospect_checkout.sql','0059_sales_company_contacts.sql','0062_sales_contact_notes.sql']) await db.exec(await fs.readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8'));
   await query(`INSERT INTO sales_prospects(prospect_id,source_key,business_name,phone_e164,website_url,metadata_json,permission_granted,email_permission,assigned_rep_user_id)
     VALUES('company','source:company','Company','+12065550101','https://example.test',$1,TRUE,TRUE,1)`, [JSON.stringify({ researchNotes: 'The team includes Jane Smith, Service Manager. Chris also works here.' })]);
+  await query("UPDATE sales_prospect_contacts SET notes='Private memo preserved by enrichment'");
   const original = (await rows('sales_prospects'))[0];
   const originals = { contacts: await rows('sales_prospect_contacts'), numbers: await rows('sales_prospect_contact_numbers'), identities: await rows('sales_prospect_identities') };
   const candidate = { firstName: 'Jane', lastName: 'Smith', title: 'Service Manager', evidence: [{ path: ['prospect','metadata_json','researchNotes'], quote: 'The team includes Jane Smith, Service Manager.' }] };

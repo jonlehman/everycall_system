@@ -38,7 +38,7 @@ try {
     INSERT INTO admin_users(id,email,role) VALUES(1,'rep@example.test','sales'),(2,'other@example.test','sales'),(3,'admin@example.test','admin');
     INSERT INTO sessions(id,user_id,role,expires_at) VALUES('session-1',1,'sales',NOW()+INTERVAL '1 day'),('session-2',2,'sales',NOW()+INTERVAL '1 day'),('session-3',3,'admin',NOW()+INTERVAL '1 day');`);
   await assert.rejects(draft(),blocked('intro_email_schema_not_ready'));
-  for(const name of ['0032_outbound_sales_demo.sql','0056_sales_dialer_v2.sql','0057_sales_phone_test_mode.sql','0058_sales_prospect_checkout.sql','0059_sales_company_contacts.sql','0060_sales_intro_email.sql'])await migration(name);
+  for(const name of ['0032_outbound_sales_demo.sql','0056_sales_dialer_v2.sql','0057_sales_phone_test_mode.sql','0058_sales_prospect_checkout.sql','0059_sales_company_contacts.sql','0062_sales_contact_notes.sql','0060_sales_intro_email.sql'])await migration(name);
   await migration('0060_sales_intro_email.sql'); // Idempotent migration.
   await q("INSERT INTO sales_operator_settings(admin_user_id,active) VALUES(1,TRUE),(2,TRUE)");
   for(const id of ['company','foreign','uncertain','timeout','audit-failure','phone-test','race','reconcile','session-revoke']) {

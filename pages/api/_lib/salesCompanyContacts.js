@@ -18,7 +18,7 @@ function cleanPhone(value) {
  return phone;
 }
 export const SALES_CONTACT_COLUMNS_SQL = `
- (SELECT COALESCE(jsonb_agg(jsonb_build_object('id',c.contact_id,'firstName',c.first_name,'lastName',c.last_name,'legacyName',c.legacy_name,'email',COALESCE(c.email,''),'title',COALESCE(c.title,''),'decisionMaker',c.decision_maker,'influencer',c.influencer,'numbers',
+ (SELECT COALESCE(jsonb_agg(jsonb_build_object('id',c.contact_id,'firstName',c.first_name,'lastName',c.last_name,'legacyName',c.legacy_name,'email',COALESCE(c.email,''),'title',COALESCE(c.title,''),'notes',COALESCE(c.notes,''),'decisionMaker',c.decision_maker,'influencer',c.influencer,'numbers',
  (SELECT COALESCE(jsonb_agg(jsonb_build_object('id',n.number_id,'phoneE164',n.phone_e164,'type',n.type,'label',n.label) ORDER BY n.position,n.number_id),'[]'::jsonb) FROM sales_prospect_contact_numbers n WHERE n.prospect_id=p.prospect_id AND n.contact_id=c.contact_id AND n.archived_at IS NULL)) ORDER BY c.created_at,c.contact_id),'[]'::jsonb) FROM sales_prospect_contacts c WHERE c.prospect_id=p.prospect_id AND c.archived_at IS NULL) AS contacts_json,
  (SELECT COALESCE(jsonb_agg(jsonb_build_object('id',n.number_id,'phoneE164',n.phone_e164,'type',n.type,'label',n.label) ORDER BY n.position,n.number_id),'[]'::jsonb) FROM sales_prospect_contact_numbers n WHERE n.prospect_id=p.prospect_id AND n.contact_id IS NULL AND n.archived_at IS NULL) AS shared_numbers_json,
  (EXISTS(SELECT 1 FROM sales_call_sessions s WHERE s.prospect_id=p.prospect_id AND s.state NOT IN (${terminal}))
@@ -32,7 +32,7 @@ function effectiveNumber(number,isTest) {
 }
 export function serializeSalesCompanyContacts(row) {
  const isTest=row.test_original_phone_e164!=null;
- const contacts=(row.contacts_json||[]).map(c=>({...c,displayName:salesContactDisplayName(c),numbers:(c.numbers||[]).map(n=>effectiveNumber(n,isTest))}));
+ const contacts=(row.contacts_json||[]).map(c=>({...c,notes:c.notes??'',displayName:salesContactDisplayName(c),numbers:(c.numbers||[]).map(n=>effectiveNumber(n,isTest))}));
  const sharedNumbers=(row.shared_numbers_json||[]).map(n=>effectiveNumber(n,isTest));
  const blocked=Boolean(row.contact_edit_pending);
  const callbackContact=contacts.find(c=>c.id===row.callback_contact_id);
@@ -113,7 +113,10 @@ export async function saveSalesCompanyContacts(db,row,changes) {
   if(isTest&&!contactMap.has(id))throw fail('sales_phone_test_mode_active','Restore original Sales phones before adding contacts.',409);
   if(!Array.isArray(c.numbers)||c.numbers.length>20)throw fail('invalid_numbers','Provide at most 20 numbers per contact.');
   if(typeof c.decisionMaker!=='boolean'||typeof c.influencer!=='boolean')throw fail('invalid_contact_flags','Choose decision-maker and influencer independently.');
-  contacts.push({id,firstName:text(c.firstName,120),lastName:text(c.lastName,120),email:cleanEmail(c.email),title:text(c.title,100),decisionMaker:c.decisionMaker,influencer:c.influencer});
+  // Legacy clients omit notes; explicit empty strings clear them. Never trim or truncate a memo.
+  const notes=Object.hasOwn(c,'notes')?c.notes:(contactMap.get(id)?.notes??'');
+  if(typeof notes!=='string'||notes.includes('\0'))throw fail('invalid_contact_notes','Contact notes must be text without null characters.');
+  contacts.push({id,notes,firstName:text(c.firstName,120),lastName:text(c.lastName,120),email:cleanEmail(c.email),title:text(c.title,100),decisionMaker:c.decisionMaker,influencer:c.influencer});
   c.numbers.forEach((n,i)=>number(n,id,i));
  }
  shared.forEach((n,i)=>number(n,null,i));
@@ -132,7 +135,7 @@ export async function saveSalesCompanyContacts(db,row,changes) {
  // Archive numbers first, then contacts; default validation is deferred to commit.
  await db.query('UPDATE sales_prospect_contact_numbers SET archived_at=NOW(),updated_at=NOW() WHERE prospect_id=$1 AND archived_at IS NULL AND NOT(number_id=ANY($2::text[]))',[row.prospect_id,numbers.map(n=>n.id)]);
  await db.query('UPDATE sales_prospect_contacts SET archived_at=NOW(),updated_at=NOW() WHERE prospect_id=$1 AND archived_at IS NULL AND NOT(contact_id=ANY($2::text[]))',[row.prospect_id,contacts.map(c=>c.id)]);
- for(const c of contacts)await db.query(contactMap.has(c.id)?`UPDATE sales_prospect_contacts SET first_name=$3,last_name=$4,email=$5,title=$6,decision_maker=$7,influencer=$8,updated_at=NOW() WHERE contact_id=$1 AND prospect_id=$2`:`INSERT INTO sales_prospect_contacts(contact_id,prospect_id,first_name,last_name,email,title,decision_maker,influencer) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(contact_id) DO UPDATE SET first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,email=EXCLUDED.email,title=EXCLUDED.title,decision_maker=EXCLUDED.decision_maker,influencer=EXCLUDED.influencer,updated_at=NOW()`,[c.id,row.prospect_id,c.firstName,c.lastName,c.email||null,c.title||null,c.decisionMaker,c.influencer]);
+ for(const c of contacts)await db.query(contactMap.has(c.id)?`UPDATE sales_prospect_contacts SET first_name=$3,last_name=$4,email=$5,title=$6,decision_maker=$7,influencer=$8,notes=$9,updated_at=NOW() WHERE contact_id=$1 AND prospect_id=$2`:`INSERT INTO sales_prospect_contacts(contact_id,prospect_id,first_name,last_name,email,title,decision_maker,influencer,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(contact_id) DO UPDATE SET first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,email=EXCLUDED.email,title=EXCLUDED.title,decision_maker=EXCLUDED.decision_maker,influencer=EXCLUDED.influencer,notes=EXCLUDED.notes,updated_at=NOW()`,[c.id,row.prospect_id,c.firstName,c.lastName,c.email||null,c.title||null,c.decisionMaker,c.influencer,c.notes]);
  for(const n of numbers)await db.query(numberMap.has(n.id)?`UPDATE sales_prospect_contact_numbers SET contact_id=$3,phone_e164=$4,type=$5,label=$6,position=$7,updated_at=NOW() WHERE number_id=$1 AND prospect_id=$2`:`INSERT INTO sales_prospect_contact_numbers(number_id,prospect_id,contact_id,phone_e164,type,label,position) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(number_id) DO UPDATE SET contact_id=EXCLUDED.contact_id,phone_e164=EXCLUDED.phone_e164,type=EXCLUDED.type,label=EXCLUDED.label,position=EXCLUDED.position,updated_at=NOW()`,[n.id,row.prospect_id,n.contactId,n.phone,n.type,n.label,n.position]);
  await db.query('UPDATE sales_prospects SET default_contact_id=$2 WHERE prospect_id=$1',[row.prospect_id,defaultId]);
  await syncSalesContactProjection(db,row.prospect_id);

@@ -35,7 +35,7 @@ export function companyEditorDraft(prospect) {
     ...Object.fromEntries(BUSINESS_FIELDS.map(([key]) => [key, prospect[key] ?? ""])),
     pitchFlags: (prospect.pitchFlags || []).join("\n"),
     permissionGranted: Boolean(prospect.permissionGranted), emailPermission: Boolean(prospect.emailPermission),
-    contacts: (prospect.contacts || []).map((contact) => ({ ...contact, numbers: (contact.numbers || []).map((number) => ({ ...number })) })),
+    contacts: (prospect.contacts || []).map((contact) => ({ ...contact, notes: contact.notes ?? "", numbers: (contact.numbers || []).map((number) => ({ ...number })) })),
     sharedNumbers: (prospect.sharedNumbers || []).map((number) => ({ ...number })),
     defaultContactId: prospect.defaultContactId || "",
   };
@@ -43,7 +43,7 @@ export function companyEditorDraft(prospect) {
 export function companyEditorPayload(draft, rowVersion) {
   return { editorMode: "company_contacts", expectedRowVersion: rowVersion, ...draft,
     pitchFlags: draft.pitchFlags.split("\n").map((flag) => flag.trim()).filter(Boolean),
-    contacts: draft.contacts.map(({ id, firstName, lastName, displayName, title, email, decisionMaker, influencer, numbers }) => ({ id, firstName, lastName, displayName, title, email, decisionMaker, influencer, numbers: numbers.map(phonePayload) })),
+    contacts: draft.contacts.map(({ id, firstName, lastName, displayName, title, email, notes, decisionMaker, influencer, numbers }) => ({ id, firstName, lastName, displayName, title, email, notes, decisionMaker, influencer, numbers: numbers.map(phonePayload) })),
     sharedNumbers: draft.sharedNumbers.map(phonePayload),
   };
 }
@@ -84,14 +84,14 @@ export default function CompanyContactForm({ draft, onChange, prospect, saving =
   const changedEmail = defaultEmail !== companyDefaultEmail(prospect);
   return <>
     {reason && <p className={styles.notice} role="status">{reason}</p>}
-    {phoneReason && phoneReason !== reason && <p className={styles.notice}> {phoneReason} Contact names, emails, titles, and roles can still be updated.</p>}
+    {phoneReason && phoneReason !== reason && <p className={styles.notice}> {phoneReason} Contact names, emails, titles, notes, and roles can still be updated.</p>}
     <section className={styles.section} aria-labelledby="company-details-heading" {...panel("details")}><div className={styles.sectionHeading}><div><h2 id="company-details-heading">Business details</h2><p className={styles.muted}>Company information and sales research.</p></div></div>
       <div className={styles.grid}>{BUSINESS_FIELDS.map(([key, label, maxLength, type]) => <Field key={key} label={label} value={draft[key]} onChange={(value) => update(key, value)} maxLength={maxLength} type={type} required={key === "businessName"} reason={reason} />)}
       <Field label="Pitch notes — one per line" type="textarea" value={draft.pitchFlags} onChange={(value) => update("pitchFlags", value)} reason={reason} />
       </div>
     </section>
     <section className={styles.section} aria-labelledby="shared-phones-heading" {...panel("phones")}><h2 id="shared-phones-heading">Company phone numbers</h2><p className={styles.muted}>Shared business lines are available when calling any contact at this company.</p><PhoneEditor label="Shared numbers" numbers={draft.sharedNumbers} onChange={(value) => update("sharedNumbers", value)} reason={phoneReason} /></section>
-    <section className={styles.section} aria-labelledby="company-contacts-heading" {...panel("people")}><div className={styles.sectionHeading}><div><h2 id="company-contacts-heading">People at this company</h2><p className={styles.muted}>Choose a default contact. Each person can have their own phone numbers.</p></div><HintButton type="button" className={styles.button} disabled={Boolean(phoneReason)} disabledReason={phoneReason} onClick={() => { const contact = { id: newDraftId(), firstName: "", lastName: "", displayName: "", title: "", email: "", decisionMaker: false, influencer: false, numbers: [] }; onChange({ ...draft, contacts: [...draft.contacts, contact], defaultContactId: draft.defaultContactId || contact.id }); }}>Add contact</HintButton></div>
+    <section className={styles.section} aria-labelledby="company-contacts-heading" {...panel("people")}><div className={styles.sectionHeading}><div><h2 id="company-contacts-heading">People at this company</h2><p className={styles.muted}>Choose a default contact. Each person can have their own phone numbers.</p></div><HintButton type="button" className={styles.button} disabled={Boolean(phoneReason)} disabledReason={phoneReason} onClick={() => { const contact = { id: newDraftId(), firstName: "", lastName: "", displayName: "", title: "", email: "", notes: "", decisionMaker: false, influencer: false, numbers: [] }; onChange({ ...draft, contacts: [...draft.contacts, contact], defaultContactId: draft.defaultContactId || contact.id }); }}>Add contact</HintButton></div>
       <datalist id={titlesId}>{TITLES.map((title) => <option key={title} value={title} />)}</datalist>
       {draft.contacts.map((contact, index) => {
         const isDefault = contact.id === draft.defaultContactId;
@@ -102,6 +102,7 @@ export default function CompanyContactForm({ draft, onChange, prospect, saving =
             <Field label="Last name" value={contact.lastName || ""} onChange={(value) => updateContact(contact.id, "lastName", value)} reason={reason} maxLength={120} />
             <Field label="Title — choose or type your own" list={titlesId} value={contact.title || ""} onChange={(value) => updateContact(contact.id, "title", value)} reason={reason} maxLength={100} />
             <Field label="Email" type="email" value={contact.email || ""} onChange={(value) => updateContact(contact.id, "email", value)} reason={reason} maxLength={320} />
+            <Field label="Notes" type="textarea" value={contact.notes ?? ""} onChange={(value) => updateContact(contact.id, "notes", value)} reason={reason} rows={5} />
           </div>
           <div className={styles.checks}><Check label="Decision maker" checked={Boolean(contact.decisionMaker)} onChange={(value) => updateContact(contact.id, "decisionMaker", value)} reason={reason} /><Check label="Influencer" checked={Boolean(contact.influencer)} onChange={(value) => updateContact(contact.id, "influencer", value)} reason={reason} />
           <label className={styles.check}><HintInput aria-label="Default company contact" type="radio" name="defaultContact" checked={isDefault} disabled={Boolean(reason)} disabledReason={reason} onChange={() => update("defaultContactId", contact.id)} />Default company contact</label></div>

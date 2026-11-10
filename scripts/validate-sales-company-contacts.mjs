@@ -35,13 +35,22 @@ try {
   finally {await client.query('ROLLBACK');client.release();}
  }
  await migration('0059_sales_company_contacts.sql');
+ await migration('0062_sales_contact_notes.sql');
  let p=await getSalesProspect(pool,'company');
  assert.equal(p.contacts.length,1);assert.equal(p.contacts[0].firstName,'Pat');assert.equal(p.sharedNumbers[0].phoneE164,SALES_TEST_NUMBERS[0].phoneE164);
  assert(!JSON.stringify(p).includes('+12065550101'));assert(!JSON.stringify(p).includes('+12065550102'));
+ assert.equal(p.contacts[0].notes,'');
+ const memo='  Private café 📝\n第二行\n'+ 'long memo '.repeat(1200)+'\n  ';
  const raw=(await q('SELECT * FROM sales_prospect_contacts')).rows[0];assert.equal(raw.legacy_owner_first_name,'Different');assert.equal(raw.legacy_name,'Pat Legacy');
  const real=(await q('SELECT phone_e164 FROM sales_prospect_contact_numbers ORDER BY phone_e164')).rows.map(n=>n.phone_e164);assert.deepEqual(real,['+12065550101','+12065550102']);
- p=await updateSalesProspect(pool,'company',{...patch(p),contacts:p.contacts.map(c=>({...c,title:'Manager'}))});
- assert.equal(p.contacts[0].title,'Manager');
+ p=await updateSalesProspect(pool,'company',{...patch(p),contacts:p.contacts.map(c=>({...c,title:'Manager',notes:memo}))});
+ assert.equal(p.contacts[0].title,'Manager');assert.equal(p.contacts[0].notes,memo);
+ p=await updateSalesProspect(pool,'company',{...patch(p),contacts:p.contacts.map(({notes,...c})=>c),city:'Preserve memo'});
+ assert.equal(p.contacts[0].notes,memo);
+ await assert.rejects(updateSalesProspect(pool,'company',{...patch(p),contacts:p.contacts.map(c=>({...c,notes:42}))}),blocked('invalid_contact_notes'));
+ await assert.rejects(updateSalesProspect(pool,'company',{...patch(p),contacts:p.contacts.map(c=>({...c,notes:'bad\0memo'}))}),blocked('invalid_contact_notes'));
+ p=await updateSalesProspect(pool,'company',{...patch(p),contacts:p.contacts.map(c=>({...c,notes:''}))});assert.equal(p.contacts[0].notes,'');
+ p=await updateSalesProspect(pool,'company',{...patch(p),contacts:p.contacts.map(c=>({...c,notes:memo}))});
  await assert.rejects(updateSalesProspect(pool,'company',{...patch(p),sharedNumbers:p.sharedNumbers.map(n=>({...n,phoneE164:'+12065559999'}))}),blocked('sales_phone_test_mode_active'));
  await assert.rejects(updateSalesProspect(pool,'company',{...patch(p),contacts:[...p.contacts,newContact('new_alex','Alex','+12065550103')]}),blocked('sales_phone_test_mode_active'));
  await setSalesPhoneTestMode(pool,false);
@@ -49,7 +58,8 @@ try {
  p=await getSalesProspect(pool,'company');
  const oldVersion=p.rowVersion;
  await q("UPDATE sales_prospects SET email_permission=TRUE WHERE prospect_id='company'");
- p=await updateSalesProspect(pool,'company',{...patch(p),contacts:[...p.contacts,newContact('new_alex','Alex','+12065550103')],defaultContactId:'new_alex',metro:'Seattle',competitorName:'Competitor'});
+ p=await updateSalesProspect(pool,'company',{...patch(p),contacts:[...p.contacts,{...newContact('new_alex','Alex','+12065550103'),notes:'Alex private memo'}],defaultContactId:'new_alex',metro:'Seattle',competitorName:'Competitor'});
+ assert.equal(p.contacts.find(c=>c.firstName==='Pat').notes,memo);assert.equal(p.contacts.find(c=>c.firstName==='Alex').notes,'Alex private memo');
  const alex=p.contacts.find(c=>c.firstName==='Alex');const pat=p.contacts.find(c=>c.firstName==='Pat');
  assert.equal(p.defaultContactId,alex.id);assert.equal(p.contactName,'Alex Owner');assert.equal(alex.decisionMaker,true);assert.equal(alex.influencer,true);assert.equal(p.numbers.length,3);assert.equal(p.numbers.find(n=>n.phoneE164==='+12065550101').extension,'8');assert.equal(p.emailPermission,false,'Changing default email cannot inherit prior permission');
  p=await updateSalesProspect(pool,'company',{...patch(p),contacts:p.contacts.map(c=>c.id===alex.id?{...c,email:'confirmed@example.test'}:c),emailPermission:true,emailPermissionConfirmation:{contactId:alex.id,email:'confirmed@example.test'}});
@@ -62,11 +72,11 @@ try {
  const other=await getSalesProspect(pool,'foreign');
  await assert.rejects(updateSalesProspect(pool,'company',{...patch(p),contacts:[...p.contacts,other.contacts[0]]}),blocked('contact_forbidden'));
  await assert.rejects(resolveSalesContactTarget(pool,'company',{contactId:alex.id,numberId:pat.numbers[0].id}),blocked('invalid_contact_number'));
- const shared=await resolveSalesContactTarget(pool,'company',{contactId:alex.id,numberId:p.sharedNumbers[0].id});assert.equal(shared.contactSnapshot.firstName,'Alex');
+ const shared=await resolveSalesContactTarget(pool,'company',{contactId:alex.id,numberId:p.sharedNumbers[0].id});assert.equal(shared.contactSnapshot.firstName,'Alex');assert(!Object.hasOwn(shared.contactSnapshot,'notes'));
  await q("INSERT INTO sales_demo_profiles(demo_profile_id,prospect_id,status,business_name) VALUES('demo','company','ready','Company')");
  p=await getSalesProspect(pool,'company');
  const call=await createSalesCallSession(pool,{salesCallId:'call',prospectId:'company',adminUserId:1,idempotencyKey:'same',contactId:alex.id,numberId:alex.numbers[0].id,expectedRowVersion:p.rowVersion,metadata:{prospect_number:alex.numbers[0].phoneE164}});
- assert.equal(call.metadata.contact_snapshot.firstName,'Alex');
+ assert.equal(call.metadata.contact_snapshot.firstName,'Alex');assert(!Object.hasOwn(call.metadata.contact_snapshot,'notes'));
  const replay=await createSalesCallSession(pool,{prospectId:'company',adminUserId:1,idempotencyKey:'same',contactId:alex.id,numberId:alex.numbers[0].id,expectedRowVersion:p.rowVersion,metadata:{prospect_number:alex.numbers[0].phoneE164}});assert.equal(replay.salesCallId,call.salesCallId);
  await assert.rejects(createSalesCallSession(pool,{prospectId:'company',adminUserId:1,idempotencyKey:'same',contactId:pat.id}),blocked('idempotency_key_conflict'));
  await assert.rejects(updateSalesProspect(pool,'company',{...patch(p),businessName:'active'}),blocked('company_edit_pending'));
@@ -93,9 +103,11 @@ try {
  let csv=await getSalesProspect(pool,added.imported[0].prospectId);
  csv=await updateSalesProspect(pool,csv.prospectId,{...patch(csv),contacts:[...csv.contacts,newContact('new_csv','Second','+12065550301')],defaultContactId:'new_csv'});
  await importSalesProspects(pool,{records:[{id:'csv',business:'CSV',phone:'+12065550300',contact_name:'CSV Changed',permission:true,timezone:'UTC'}],adminUserId:1});
- const updated=await getSalesProspect(pool,csv.prospectId);assert.equal(updated.contacts.length,2);assert.equal(updated.defaultContactId,csv.defaultContactId);assert.equal(updated.contactName,'Second Owner');
+ csv=await updateSalesProspect(pool,csv.prospectId,{...patch(await getSalesProspect(pool,csv.prospectId)),contacts:csv.contacts.map((c,i)=>({...c,notes:i===0?memo:'Second memo'}))});
+ await importSalesProspects(pool,{records:[{id:'csv',business:'CSV',phone:'+12065550300',contact_name:'CSV Legacy',permission:true,timezone:'UTC'}],adminUserId:1});
+ const updated=await getSalesProspect(pool,csv.prospectId);assert.equal(updated.contacts[0].notes,memo);assert.equal(updated.contacts[1].notes,'Second memo');assert.equal(updated.contacts.length,2);assert.equal(updated.defaultContactId,csv.defaultContactId);assert.equal(updated.contactName,'Second Owner');
  const exported=parseSalesProspectCsv(CSV_HEADERS.join(',')+'\n'+prospectRow(updated));
- assert.equal(JSON.parse(exported[0].contacts_json).length,2);
+ assert.equal(JSON.parse(exported[0].contacts_json).length,2);assert.equal(JSON.parse(exported[0].contacts_json)[0].notes,memo);
  const roundtrip={id:'csv',business:'CSV',phone:'+12065550300',permission:true,timezone:'UTC',contacts_json:JSON.stringify(updated.contacts),shared_numbers_json:JSON.stringify(updated.sharedNumbers),default_contact_id:updated.defaultContactId};
  await importSalesProspects(pool,{records:[roundtrip],adminUserId:1});assert.deepEqual((await getSalesProspect(pool,csv.prospectId)).contacts,updated.contacts);
  // An existing checked/imported permission never transfers to a different default.

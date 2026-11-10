@@ -24,6 +24,7 @@ try {
  await db.exec(await fs.readFile(new URL('../migrations/0057_sales_phone_test_mode.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../migrations/0058_sales_prospect_checkout.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../migrations/0059_sales_company_contacts.sql',import.meta.url),'utf8'));
+ await db.exec(await fs.readFile(new URL('../migrations/0062_sales_contact_notes.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../migrations/0061_sales_checkout_amount.sql',import.meta.url),'utf8'));
 
  await q("ALTER TABLE admin_users ADD COLUMN email TEXT");
@@ -33,6 +34,7 @@ try {
   await q("INSERT INTO sales_demo_profiles(demo_profile_id,prospect_id,status) VALUES($1,$1,'ready')",[id]);
  }
  await q("INSERT INTO sales_prospect_contacts(contact_id,prospect_id,first_name,last_name,email) VALUES('second','company','Second','Person','second@example.test')");
+ await q("UPDATE sales_prospect_contacts SET notes='Private memo never copied into providers or snapshots' WHERE contact_id='second'");
  await q("INSERT INTO sales_prospect_contact_numbers(number_id,prospect_id,contact_id,phone_e164,type,label) VALUES('second-cell','company','second','+12065550101','cell','Personal cell'),('shared','company',NULL,'+12065550102','shop','Office')");
  const company=await getSalesProspect(pool,'company');
  assert.equal(initialCompanyContactId(company),company.defaultContactId);
@@ -46,11 +48,11 @@ try {
  await assert.rejects(sendSalesCheckout(pool,{...delivery,contactId:'contact_legacy_foreign'}),e=>e.code==='contact_unavailable');
  const result=await sendSalesCheckout(pool,delivery);
  assert.equal(result.recipient,'second@example.test');assert.equal(messages[0].to,'second@example.test');
- const frozen=await getSalesCheckoutContext(pool,{prospectId:'company',repId:1});assert.equal(frozen.contactSnapshot.contactId,'second');
+ const frozen=await getSalesCheckoutContext(pool,{prospectId:'company',repId:1});assert.equal(frozen.contactSnapshot.contactId,'second');assert(!Object.hasOwn(frozen.contactSnapshot,'notes'));assert(!JSON.stringify(messages).includes('Private memo'));
  await assert.rejects(sendSalesCheckout(pool,{...delivery,contactId:company.defaultContactId,email:'original@example.test',confirmedRecipient:'original@example.test'}),e=>e.code==='checkout_delivery_exists');
  assert.equal(charges,1);assert.equal(messages.length,1);
  const call=await createSalesCallSession(pool,{prospectId:'company',adminUserId:1,contactId:'second',numberId:'shared',expectedRowVersion:company.rowVersion,idempotencyKey:'reservation',metadata:{prospect_number:'+12065550102',business_name:'Frozen Business'}});
- assert.equal(call.metadata.contact_snapshot.displayName,'Second Person');
+ assert.equal(call.metadata.contact_snapshot.displayName,'Second Person');assert(!Object.hasOwn(call.metadata.contact_snapshot,'notes'));
  const replay=await createSalesCallSession(pool,{prospectId:'company',adminUserId:1,contactId:'second',numberId:'shared',expectedRowVersion:company.rowVersion,idempotencyKey:'reservation',metadata:{prospect_number:'+12065550102'}});assert.equal(replay.salesCallId,call.salesCallId);
  await assert.rejects(createSalesCallSession(pool,{prospectId:'company',adminUserId:1,contactId:company.defaultContactId,numberId:'shared',idempotencyKey:'reservation'}));
  await updateSalesCallSession(pool,call.salesCallId,{state:'ended',endedAt:new Date().toISOString()});
@@ -61,6 +63,7 @@ try {
  await q("UPDATE sales_prospects SET business_name='Changed Business' WHERE prospect_id='company'");
  await assert.rejects(bookSalesSetup(pool,{...booking,contactId:'contact_legacy_foreign'}),e=>e.code==='sales_booking_exists');
  await bookSalesSetup(pool,booking);assert.deepEqual(events[1],events[0]);assert.equal(events[0].attendees[0].emailAddress.name,'Second Person');assert.match(events[0].body.content,/12065550101/);
+ assert(!JSON.stringify(events).includes('Private memo'));assert(!Object.hasOwn((await q("SELECT attendee_snapshot FROM sales_setup_bookings LIMIT 1")).rows[0].attendee_snapshot,'notes'));
  const view=await buildSalesCallView(pool,call);assert.equal(view.contactName,'Second Person');assert.equal(view.businessName,'Frozen Business');
  const legacy=await buildSalesCallView(pool,{...call,metadata:{},dialedNumber:'+12065550103'});assert.equal(legacy.contactName,'Contact not recorded');assert.equal(legacy.dialedNumber,'+12065550103');
  await q("INSERT INTO sales_operator_settings(admin_user_id,caller_id_number,active) VALUES(2,'+12065558888',TRUE)");

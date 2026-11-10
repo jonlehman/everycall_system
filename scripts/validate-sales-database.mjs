@@ -96,6 +96,7 @@ async function main() {
     await db.exec(await fs.readFile(new URL('../migrations/0057_sales_phone_test_mode.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../migrations/0058_sales_prospect_checkout.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../migrations/0059_sales_company_contacts.sql',import.meta.url),'utf8'));
+ await db.exec(await fs.readFile(new URL('../migrations/0062_sales_contact_notes.sql',import.meta.url),'utf8'));
     const admin = await pool.query(
       `INSERT INTO admin_users (username, email, role)
        VALUES ('sales-validator', 'sales-validator@example.com', 'admin')
