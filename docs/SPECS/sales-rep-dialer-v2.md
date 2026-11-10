@@ -271,3 +271,10 @@ Implementation is scoped to `DisabledHint`, the caller's local `Button`, and exp
 | --- | --- | --- |
 | SALES-UI-NOTES-001 | One Notes textarea and all outcome/Save actions follow all stage content inside the Dial/Talk/Demo/Close column in normal scroll flow across Dial, Talk, Demo, Close and wrap-up; no viewport footer or duplicate note input. Notes default to 150px tall. Contacts remains separate. | `test-sales-dialer-browser.mjs`: 8 states × 4 viewport layout checks, stage browsing, scroll reachability and note persistence. |
 | SALES-UI-NOTES-002 | Retain the existing shared note state and save handler, including interrupted-call wrap-up drafts and live-note persistence. | `test-sales-dialer-browser.mjs`: notes through demo/wrap-up and saved payload; `test-sales-dialer-controller.mjs`: original draft restoration and outcome payload. |
+
+## 2026-11-10 — Saved note history
+
+| ID | Requirement | Validation |
+| --- | --- | --- |
+| SALES-UI-NOTES-003 | The company Notes/History card displays every nonempty saved call note and company note, newest first, with a short date label. Call notes use the outcome entry time, falling back to the call start/creation time for legacy records. Preserve line breaks; undated legacy prospect notes show “Undated”; avoid repeating a projected last note or a call-linked mirrored company note. Keep compact call attempts, best time and return message. | `test-sales-note-history.mjs`; `test-sales-dialer-browser.mjs`: complete history beyond 100 entries, date order differing from call order, multiline text, blanks, legacy dates, projected duplicates, and selected company browsing. |
+| SALES-UI-NOTES-004 | Queue and selected Contacts detail loads provide complete lightweight saved-note history under their existing company/operator scopes. Keep full call/transcript history bounded to its existing 100 rows. Contacts detail call records normalize into the same history display as queue records. | `test-sales-note-history.mjs`: repository DTO and normalizer checks for both administrator and operator queries. |

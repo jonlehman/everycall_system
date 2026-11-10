@@ -610,7 +610,7 @@ export default function CallerWorkspace() {
       if (prospectRef.current?.id === selected.id && !callRef.current?.id) {
         browsingContactRef.current = true;
         setBrowsingContact(true);
-        setProspect({ ...selected, ...normalizeProspect(response.prospect), history: selected.history, note: selected.note });
+        setProspect({ ...selected, ...normalizeProspect(response.prospect), history: selected.history, savedNotes: selected.savedNotes, savedCallNotes: selected.savedCallNotes, note: selected.note });
       }
       await loadQueue({ quiet: true });
       return true;
@@ -621,7 +621,7 @@ export default function CallerWorkspace() {
     const selected = prospectRef.current;
     if (!selected?.id || callRef.current?.id) return;
     const response = await mutateContact(selected, "restore", {});
-    if (prospectRef.current?.id === selected.id && !callRef.current?.id) setProspect({ ...selected, ...normalizeProspect(response.prospect), history: selected.history, note: selected.note });
+    if (prospectRef.current?.id === selected.id && !callRef.current?.id) setProspect({ ...selected, ...normalizeProspect(response.prospect), history: selected.history, savedNotes: selected.savedNotes, savedCallNotes: selected.savedCallNotes, note: selected.note });
     await loadQueue({ quiet: true });
   });
   const addContact = async (details) => {

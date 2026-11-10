@@ -1039,13 +1039,12 @@ export async function getSalesProspectDetail(pool, prospectId, { operatorUserId 
   if (ownerScoped && (!Number.isSafeInteger(actorId) || actorId <= 0)) return null;
   const prospect = await getSalesProspect(pool, prospectId);
   if (!prospect || (ownerScoped && prospect.assignedRepUserId !== actorId)) return null;
-  const [notes, calls, invitations, profile, followups] = await Promise.all([
+  const [notes, calls, invitations, profile, followups, noteHistory] = await Promise.all([
     pool.query(
       `SELECT sales_prospect_note_id, sales_call_id, body, created_by_admin_user_id, created_at
        FROM sales_prospect_notes
        WHERE prospect_id = $1
-       ORDER BY created_at DESC
-       LIMIT 100`,
+       ORDER BY created_at DESC`,
       [prospect.prospectId]
     ),
     pool.query(
@@ -1085,6 +1084,15 @@ export async function getSalesProspectDetail(pool, prospectId, { operatorUserId 
        ORDER BY created_at DESC
        LIMIT 100`,
       [prospect.prospectId]
+    ),
+    pool.query(
+      `SELECT sales_call_id, outcome_notes, outcome_recorded_at, started_at, created_at
+       FROM sales_call_sessions
+       WHERE prospect_id = $1
+         ${ownerScoped ? "AND admin_user_id = $2" : ""}
+         AND NULLIF(BTRIM(outcome_notes), '') IS NOT NULL
+       ORDER BY COALESCE(outcome_recorded_at, started_at, created_at) DESC`,
+      ownerScoped ? [prospect.prospectId, actorId] : [prospect.prospectId]
     )
   ]);
 
@@ -1101,6 +1109,13 @@ export async function getSalesProspectDetail(pool, prospectId, { operatorUserId 
       createdAt: row.created_at || null
     })),
     calls: calls.rows.map(serializeSalesCallSession),
+    noteHistory: noteHistory.rows.map(row => ({
+      id: row.sales_call_id,
+      outcomeNotes: row.outcome_notes,
+      outcomeRecordedAt: row.outcome_recorded_at || null,
+      startedAt: row.started_at || null,
+      createdAt: row.created_at || null
+    })),
     signupInvitations: invitations.rows.map(serializeSignupInvitation),
     followups: followups.rows.map((row) => serializeSalesFollowup(row))
   };

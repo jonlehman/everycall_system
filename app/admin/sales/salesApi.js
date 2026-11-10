@@ -197,7 +197,9 @@ export function normalizeProspect(source = {}) {
     suggestedAsks: Array.isArray(source.suggestedAsks)
       ? source.suggestedAsks
       : [],
-    history: Array.isArray(source.history) ? source.history : [],
+    history: (Array.isArray(source.history) ? source.history : Array.isArray(source.calls) ? source.calls : []).map(normalizeCall),
+    savedNotes: Array.isArray(source.notes) ? source.notes : Array.isArray(source.savedNotes) ? source.savedNotes : [],
+    savedCallNotes: Array.isArray(source.noteHistory) ? source.noteHistory : Array.isArray(source.savedCallNotes) ? source.savedCallNotes : null,
     attemptCount: Number(source.attemptCount || 0),
     conversationCount: Number(source.conversationCount || 0),
     contactRole: source.contactRole || "",
@@ -333,7 +335,7 @@ export function normalizeProspect(source = {}) {
       latestFollowupSource && typeof latestFollowupSource === "object"
         ? normalizeFollowup(latestFollowupSource)
         : null,
-    note: normalizeText(firstValue(source, ["note", "notes"])),
+    note: normalizeText(source.note ?? (typeof source.notes === "string" ? source.notes : "")),
     position:
       Number(
         firstValue(source, ["position", "queuePosition", "queue_position"], 0),

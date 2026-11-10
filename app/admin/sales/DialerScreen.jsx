@@ -16,6 +16,7 @@ import styles from "./DialerScreen.module.css";
 import CallbackPicker from "./CallbackPicker";
 import AddContactForm from "./AddContactForm";
 import ContactsScreen, { contactStatus } from "./ContactsScreen";
+import { savedNoteHistory } from "./salesNoteHistory.mjs";
 import { companyBriefFailureMessage, companyBriefAttemptMetadata } from "../../../lib/salesCompanyBriefDiagnostics.js";
 
 function Button({
@@ -51,6 +52,7 @@ function Row({ label, children }) {
 }
 function History({ prospect, ready = false }) {
   const history = prospect?.history || [];
+  const notes = savedNoteHistory(prospect || {});
   return (
     <Section>
       <h2>{ready ? "Notes" : "History"}</h2>
@@ -82,9 +84,13 @@ function History({ prospect, ready = false }) {
           {prospect?.bestTime || "No preferred time recorded"}
         </Row>
       )}
-      <Row label="Last note">
-        {history[0]?.outcomeNotes || prospect?.note || "No notes yet"}
-      </Row>
+      <div className={styles.savedNoteHistory} aria-label="Saved note history">
+        {notes.length ? notes.map(note => (
+          <Row key={note.id} label={note.enteredAt === null ? "Undated" : new Date(note.enteredAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}>
+            {note.body}
+          </Row>
+        )) : <Row label="Notes">No notes yet</Row>}
+      </div>
     </Section>
   );
 }

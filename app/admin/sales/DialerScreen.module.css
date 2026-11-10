@@ -246,6 +246,10 @@
   background: #eef2ff;
   color: #1f4fd8;
 }
+.savedNoteHistory {
+  display: grid;
+  gap: 10px;
+}
 .detail {
   display: grid;
   grid-template-columns: 77px minmax(0, 1fr);

@@ -222,7 +222,7 @@ const server = createServer(async (req, res) => {
   }
   if (path.pathname.endsWith(`/prospects/${prospect.id}`)) return send({ prospect });
   const selectedContact = [matched, notPrepped, paidContact, dncContact, removedContact].find((item) => path.pathname.endsWith(`/prospects/${item.id}`));
-  if (selectedContact) return send({ prospect: { ...selectedContact, calls: [] } });
+  if (selectedContact) return send({ prospect: { ...selectedContact, calls: [], noteHistory: [{ id: 'saved-selected-call', outcomeNotes: 'Selected company saved call note', outcomeRecordedAt: '2026-11-09T12:00:00Z' }], notes: [{ noteId: 'saved-company', body: 'Selected company standalone note', createdAt: '2026-11-08T12:00:00Z' }] } });
   if (path.pathname.endsWith("/prospects/not-prepped/demo")) return send({ ok: true });
   if (path.pathname.endsWith("/incoming")) {
     if (data.action === "create" && data.incomingId === "return-1") {
@@ -596,6 +596,7 @@ try {
   await page.getByRole("button", { name: "Clear", exact: true }).click();
   await page.getByText("Not set", { exact: true }).waitFor();
   assert.equal(paidContact.status, "paid");
+  for (const text of ['Selected company saved call note', 'Selected company standalone note']) assert.equal(await page.getByLabel('Saved note history', { exact: true }).getByText(text, { exact: true }).count(), 1, 'Callback partial response retains complete saved notes');
   for (const flag of ["doNotCall", "suppressed"]) {
     paidContact[flag] = true; paidContact.eligible = false;
     await page.getByRole("button", { name: "Contacts", exact: true }).click();
@@ -690,6 +691,7 @@ try {
   await page.getByRole("button", { name: "Prep now", exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: /^Call cell/ }).count(), 0);
   assert.equal(requests.filter((request) => request.path.endsWith("/restore")).at(-1).data.expectedRowVersion, 1);
+  for (const text of ['Selected company saved call note', 'Selected company standalone note']) assert.equal(await page.getByLabel('Saved note history', { exact: true }).getByText(text, { exact: true }).count(), 1, 'Restore partial response retains complete saved notes');
   console.log("controller: unprepared callback contact still exposes prep");
   await reset();
   notPrepped.callbackAt = new Date(Date.now() + 86400000).toISOString();
