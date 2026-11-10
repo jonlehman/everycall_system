@@ -9,6 +9,7 @@ import {
 } from "./salesApi";
 import { useSalesQueue } from "./useSalesQueue";
 import { connectTelnyxBrowserClient } from "./telnyxBrowserClient";
+import { createLocalRingback } from "./localRingback.mjs";
 import { mayQuickAdvance, initialCompanyContactId, companyContactTarget } from "./dialerState.mjs";
 import DialerScreen from "./DialerScreen";
 import { companyBriefRequestFailure, normalizeCompanyBrief } from "../../../lib/salesCompanyBriefDiagnostics.js";
@@ -54,6 +55,8 @@ export default function CallerWorkspace() {
     wrapupDrafts = useRef([]),
     incomingTaken = useRef("");
   const browsingContactRef = useRef(false);
+  const ringback = useRef(null);
+  if (!ringback.current) ringback.current = createLocalRingback();
   const selectedContactId = call?.id ? call.contactId || call.contactSnapshot?.contactId || "" : contactSelection.companyId === prospect?.id ? (prospect?.callbackTarget?.requiresSelection && !contactSelection.explicit ? "" : contactSelection.contactId) : initialCompanyContactId(prospect);
   const selectedTarget = companyContactTarget(prospect, selectedContactId);
   const returnHandled = useRef(false);
@@ -130,6 +133,7 @@ export default function CallerWorkspace() {
     }
   };
   const initializeSoftphone = useCallback(async () => {
+    ringback.current.stop();
     const current = ++generation.current;
     setSoftphoneState("connecting");
     setError("");
@@ -145,14 +149,21 @@ export default function CallerWorkspace() {
         token: config.token,
         remoteElement: remoteAudioRef.current,
         onState: (state) => {
-          if (current === generation.current) setSoftphoneState(state);
+          if (current === generation.current) {
+            if (state !== "ready") ringback.current.stop();
+            setSoftphoneState(state);
+          }
         },
         onError: (message) => {
-          if (current === generation.current) setError(message);
+          if (current === generation.current) {
+            ringback.current.stop();
+            setError(message);
+          }
         },
         onCallUpdate: (update) => {
           if (current !== generation.current) return;
           if (["destroy", "hangup", "purge", "ended"].includes(update.state)) {
+            ringback.current.stop();
             releaseMic();
             const currentCall = callRef.current;
             if (currentCall?.id && !currentCall.terminal)
@@ -188,11 +199,25 @@ export default function CallerWorkspace() {
   useEffect(() => {
     void initializeSoftphone();
     return () => {
+      ringback.current.stop();
       generation.current++;
       void softphone.current?.disconnect();
       releaseMic();
     };
   }, [initializeSoftphone, releaseMic]);
+  useEffect(() => {
+    const silence = () => ringback.current.stop();
+    window.addEventListener("pagehide", silence);
+    window.addEventListener("offline", silence);
+    return () => {
+      window.removeEventListener("pagehide", silence);
+      window.removeEventListener("offline", silence);
+      silence();
+    };
+  }, []);
+  useEffect(() => {
+    ringback.current.update(call);
+  }, [call]);
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
@@ -233,12 +258,15 @@ export default function CallerWorkspace() {
         const next = normalizeCall(payload);
         if (endingCallIds.current.has(next.id) && !next.terminal) return;
         if (next.terminal) endingCallIds.current.add(next.id);
+        ringback.current.update(next);
         setCall(next);
         if (next.paidAt) setOutcome("paid");
         if (next.terminal) await loadQueue({ quiet: true });
       } catch (err) {
-        if (active)
+        if (active) {
+          ringback.current.stop();
           setError(err.message || "Call status could not be refreshed.");
+        }
       }
     };
     const interval = setInterval(refresh, call.terminal ? 4000 : 1500);
@@ -311,7 +339,13 @@ export default function CallerWorkspace() {
         );
       if (!softphone.current?.isReady())
         throw new Error("Reconnect browser calling before starting a call.");
-      await ensureMicrophone();
+      const ringbackAttempt = ringback.current.prepare();
+      try {
+        await ensureMicrophone();
+      } catch (err) {
+        ringback.current.stop();
+        throw err;
+      }
       if (
         !createAttempt.current ||
         createAttempt.current.prospectId !== prospect.id ||
@@ -341,12 +375,14 @@ export default function CallerWorkspace() {
         );
         if (!created.id)
           throw new Error("The server did not return a call ID.");
+        ringback.current.bind(ringbackAttempt, created.id);
         setCall(created);
         setOutcome("");
         setNote("");
         savedNote.current = "";
         setMuted(false);
         if (created.terminal || !created.webrtc?.callOptions?.destinationNumber) {
+          ringback.current.stop();
           releaseMic();
           createAttempt.current = null;
           await loadQueue({ quiet: true });
@@ -359,6 +395,7 @@ export default function CallerWorkspace() {
         createAttempt.current = null;
         await loadQueue({ quiet: true });
       } catch (err) {
+        ringback.current.stop();
         if (created?.id) {
           try {
             setCall(
@@ -381,6 +418,7 @@ export default function CallerWorkspace() {
     const activeCall = callRef.current;
     if (!activeCall?.id) return;
     if (action === "end_call") {
+      ringback.current.stop();
       if (endingCallIds.current.has(activeCall.id)) return;
       endingCallIds.current.add(activeCall.id);
       void softphone.current?.hangup();
@@ -507,6 +545,7 @@ export default function CallerWorkspace() {
     });
   const navigate = (destination) => {
     if (callRef.current?.id || actionPending.current) return;
+    ringback.current.stop();
     setView(destination);
     if (destination === "dial") {
       browsingContactRef.current = false;
@@ -811,6 +850,7 @@ export default function CallerWorkspace() {
     }
   };
   const signOut = async () => {
+    ringback.current.stop();
     await Promise.allSettled([
       fetch("/api/v1/sales/auth/logout", { method: "POST" }),
       fetch("/api/v1/auth/logout", { method: "POST" }),

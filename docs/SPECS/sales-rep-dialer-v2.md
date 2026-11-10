@@ -2,6 +2,13 @@
 
 **Status:** design approved 10/20. Reference mockups attached under `screens/`. Implement in the existing dialer app (Telnyx WebRTC in the browser, demo conferenced as a leg, inbound via Telnyx Call Control). Multi-user from the start: this task is the rep-facing side; admin screens are a separate task except where noted in Part 7.
 
+## Local outbound ringback (owner-approved November 9, 2026)
+
+- **SR-RB-01:** The Call-button gesture may unlock local speaker audio, but only the server's `dialing_prospect` state starts ringback. Creating a reservation, preparing the operator leg, or receiving its browser `active` event is not proof the prospect was dialed or answered. Incoming and restored connected calls stay silent.
+- **SR-RB-02:** Play a moderate-volume 440/480 Hz local tone for two seconds followed by four seconds of silence. Connect only to the browser audio output; never mix it into the microphone, conference, or remote audio element. Preserve existing Telnyx call control and audio routing.
+- **SR-RB-03:** Silence on observed prospect answer, terminal/failure state, explicit cancellation, provider error/disconnect, offline/navigation/page teardown, or status-fetch failure. Stops invalidate delayed audio resumes and subsequent stale polls. Existing 1.5-second polling determines answer observation latency; local ringback is progress feedback, not proof of carrier ringing. Six seconds without a fresh accepted-dial status or 90 seconds of ringing silences audio without changing the actual call.
+- **SR-RB-04:** Browser autoplay denial or missing audio support must not prevent calling. Repeated status updates must not duplicate tones. Implementation: `CallerWorkspace.jsx` and `localRingback.mjs`; regressions: `scripts/test-sales-local-ringback.mjs` and `scripts/test-sales-dialer-controller.mjs`. Audible provider-call acceptance remains a separate live check.
+
 ---
 
 ## October 28 presentation update

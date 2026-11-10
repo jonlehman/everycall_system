@@ -1,5 +1,7 @@
 # Decisions
 
+- 2026-11-09: Owner approved local Sales outbound ringback instead of Telnyx-generated audio. The Call gesture unlocks an isolated speaker-only Web Audio context; only server `dialing_prospect` starts a 440/480 Hz, two-seconds-on/four-seconds-off tone. Server answer/terminal state and explicit local teardown stop it; browser operator `active` never means prospect answer. Existing polling can delay observed answer by roughly 1.5 seconds plus request latency. Fetch failures, a six-second freshness limit and a 90-second audio-only cap fail quiet without changing provider state. No microphone/remote routing, gateway, API, auth, consent or entitlement changes. See Sales spec SR-RB-01–04 and focused helper/controller regressions.
+
 ## 2026-11-09 — No minimum word count for Sales company briefs
 - Owner requested removing the minimum after a grounded 57-word brief failed validation. Remove the 60-word floor and supersede the prior 75–100-word generation target with concise prose of at most 100 words total. Preserve nonempty claim text, required sections/service counts, exact evidence binding, duplicate checks and all source/publication boundaries. The company-brief regression accepts a shorter grounded brief while retaining the over-100-word rejection.
 

@@ -9,10 +9,10 @@ const { build } = require(process.env.ESBUILD_MODULE || "esbuild");
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
 const dir = await mkdtemp(join(tmpdir(), "everycall-real-dialer-controller-"));
 const fixture =
-  "import React from 'react';import{createRoot}from'react-dom/client';import CallerWorkspace from './app/admin/sales/CallerWorkspace.jsx';createRoot(document.getElementById('root')).render(<CallerWorkspace/>);";
+  "import React from 'react';import{createRoot}from'react-dom/client';import CallerWorkspace from './app/admin/sales/CallerWorkspace.jsx';const root=createRoot(document.getElementById('root'));window.unmountFixture=()=>root.unmount();root.render(<CallerWorkspace/>);";
 // Replace only the provider boundary at bundle time. The production controller,
 // queue hook, fetchSalesJson, normalizers, and screen all execute unmodified.
-const telnyxMock = `export async function connectTelnyxBrowserClient({onState,remoteElement}){window.providerAudio=remoteElement;onState('ready');window.providerEvents=[];return {isReady:()=>true,placeCall:()=>{window.providerEvents.push('place')},hangup:async()=>{window.providerEvents.push('hangup')},disconnect:async()=>{},setMuted:value=>{window.providerEvents.push(value?'mute':'unmute');return value},hasIncomingCall:()=>false};}`;
+const telnyxMock = `export async function connectTelnyxBrowserClient({onState,onCallUpdate,onError,remoteElement}){window.providerAudio=remoteElement;window.providerState=onState;window.providerCallUpdate=onCallUpdate;window.providerError=onError;onState('ready');window.providerEvents=[];return {isReady:()=>true,placeCall:()=>{window.providerEvents.push('place')},hangup:async()=>{window.providerEvents.push('hangup')},disconnect:async()=>{},setMuted:value=>{window.providerEvents.push(value?'mute':'unmute');return value},hasIncomingCall:()=>false};}`;
 await build({
   stdin: { contents: fixture, loader: "jsx", resolveDir: resolve(".") },
   bundle: true,
@@ -72,7 +72,7 @@ const notPrepped = { ...prospect, id: "not-prepped", businessName: "Awaiting Pre
 const paidContact = { ...prospect, id: "paid-contact", businessName: "Paid Business", status: "paid" };
 const dncContact = { ...prospect, id: "dnc-contact", businessName: "Do Not Call Business", doNotCall: true };
 const removedContact = { ...prospect, id: "removed-contact", businessName: "Removed Business", status: "removed" };
-let fixtureCheckoutContext = null;
+let fixtureCheckoutContext = null, ringingFixture = false;
 let testMode = false, holdCheckout = false, checkoutReply = null;
 let requests = [],
   briefStep = 0,
@@ -251,6 +251,7 @@ const server = createServer(async (req, res) => {
   if (path.pathname.endsWith("/calls") && req.method === "POST") {
     currentId = "outgoing-call";
     calls[currentId] = { ...activeCall(currentId, data.prospectId || prospect.id), contactId: data.contactId, numberId: data.numberId, contactSnapshot: { ...prospect.contacts.find(c => c.id === data.contactId), contactId: data.contactId, numberId: data.numberId } };
+    if (ringingFixture) Object.assign(calls[currentId], { state: "connecting_browser", prospectConnected: false, connectedAt: null, aiReady: false, aiState: "not_started" });
     return send({ call: calls[currentId] });
   }
   const match = path.pathname.match(
@@ -309,6 +310,7 @@ const reset = async ({
 } = {}) => {
   await context?.close();
   requests = [];
+  ringingFixture = false;
   fixtureCheckoutContext = null;
   testMode = phoneTest; holdCheckout = false; checkoutReply = null;
   calls = {};
@@ -327,6 +329,27 @@ const reset = async ({
   });
   await context.addInitScript(
     ({ denyMic }) => {
+      window.localAudio = [];
+      window.AudioContext = class {
+        constructor() { this.state = "suspended"; this.currentTime = 0; this.destination = {}; this.nodes = []; window.localAudio.push(this); }
+        resume() {
+          this.gesture = navigator.userActivation.isActive;
+          return new Promise((resolve, reject) => {
+            this.release = () => { this.state = "running"; resolve(); };
+            if (window.rejectAudio) reject(new Error("Autoplay denied"));
+            else if (!window.deferAudio) this.release();
+          });
+        }
+        close() { this.closed = true; this.state = "closed"; }
+        createGain() {
+          const context = this;
+          return { gain: { setValueAtTime() {}, linearRampToValueAtTime() {} }, connect(target) { if (target !== context.destination) throw new Error("Nonlocal ringback output"); }, disconnect() {} };
+        }
+        createOscillator() {
+          const node = { frequency: {}, connect() {}, disconnect() {}, start() { node.started = true; }, stop() { node.stopped = true; } };
+          this.nodes.push(node); return node;
+        }
+      };
       Object.defineProperty(navigator, "mediaDevices", {
         value: {
           getUserMedia: async () => {
@@ -383,6 +406,65 @@ const incoming = async () => {
   await page.locator('[data-phase="TALK"]').waitFor();
 };
 try {
+  const startRinging = async ({ deferAudio = false } = {}) => {
+    await reset(); ringingFixture = true;
+    await page.evaluate(value => { window.deferAudio = value; }, deferAudio);
+    await page.getByRole("button", { name: /^Call cell/ }).click();
+    await page.locator('[data-phase="DIALING"]').waitFor();
+    await page.waitForFunction(() => window.providerEvents.includes("place"));
+    assert.equal(await page.evaluate(() => window.localAudio[0].gesture), true);
+    await page.evaluate(() => window.providerCallUpdate({ state: "active" }));
+    assert.equal(await page.evaluate(() => window.localAudio[0].nodes.length), 0, "operator active/preparing is silent");
+    calls[currentId].state = "dialing_prospect";
+    if (!deferAudio) await page.waitForFunction(() => window.localAudio[0].nodes.length === 2);
+  };
+  await startRinging();
+  await page.evaluate(() => window.providerCallUpdate({ state: "active" }));
+  assert.equal(await page.locator('[data-phase="DIALING"]').count(), 1);
+  assert.equal(await page.evaluate(() => window.localAudio[0].closed || false), false, "operator active does not imply prospect answer");
+  calls[currentId] = { ...calls[currentId], state: "prospect_connected", prospectConnected: true };
+  await page.waitForFunction(() => window.localAudio[0].closed);
+  await page.locator('[data-phase="TALK"]').waitFor();
+
+  for (const state of ["failed", "no_answer", "closed"]) {
+    await startRinging(); calls[currentId].state = state;
+    await page.waitForFunction(() => window.localAudio[0].closed);
+  }
+  for (const event of ["cancel", "disconnect", "hangup", "error", "offline", "pagehide", "unmount", "poll-failure"]) {
+    await startRinging();
+    if (event === "cancel") await page.getByRole("button", { name: "End call", exact: true }).click();
+    else if (event === "disconnect") await page.evaluate(() => window.providerState("disconnected"));
+    else if (event === "hangup") await page.evaluate(() => window.providerCallUpdate({ state: "hangup" }));
+    else if (event === "error") await page.evaluate(() => window.providerError("Connection lost"));
+    else if (event === "unmount") await page.evaluate(() => window.unmountFixture());
+    else if (event === "poll-failure") await page.route("**/calls/outgoing-call", route => route.fulfill({ status: 503, json: { error: "Status unavailable" } }));
+    else await page.evaluate(name => window.dispatchEvent(new Event(name)), event);
+    await page.waitForFunction(() => window.localAudio[0].closed);
+    assert.equal(await page.evaluate(() => window.localAudio[0].nodes.every(node => node.stopped)), true, event);
+    if (!["cancel", "unmount"].includes(event)) {
+      const count = requests.filter(request => request.method === "GET" && request.path.endsWith("/calls/outgoing-call")).length;
+      if (event !== "poll-failure") await waitUntil(() => requests.filter(request => request.method === "GET" && request.path.endsWith("/calls/outgoing-call")).length > count);
+      assert.equal(await page.evaluate(() => window.localAudio[0].nodes.length), 2, "later polls cannot restart stopped audio");
+    }
+  }
+  await startRinging({ deferAudio: true });
+  await page.getByRole("button", { name: "End call", exact: true }).click();
+  await page.evaluate(() => window.localAudio[0].release());
+  assert.equal(await page.evaluate(() => window.localAudio[0].nodes.length), 0, "late resume after cancellation stays silent");
+  await reset();
+  await page.evaluate(() => { window.rejectAudio = true; });
+  await dial();
+  assert.equal(await page.evaluate(() => window.providerEvents.includes("place")), true, "autoplay rejection does not block calling");
+  assert.equal(await page.evaluate(() => window.localAudio[0].nodes.length), 0, "restored connected calls stay silent");
+  await reset();
+  await page.route("**/calls", route => route.fulfill({ status: 503, json: { error: "Dial rejected" } }));
+  await page.getByRole("button", { name: /^Call cell/ }).click();
+  await page.waitForFunction(() => window.localAudio[0]?.closed);
+  assert.equal(await page.evaluate(() => window.localAudio[0].nodes.length), 0);
+  await reset(); await incoming();
+  assert.equal(await page.evaluate(() => window.localAudio.length), 0, "incoming calls never create ringback");
+  console.log("controller: local ringback authority, gesture, teardown, failures and incoming isolation");
+  if (!process.env.SALES_RINGBACK_ONLY) {
   console.log("controller: editor return restores company without dialing; stale callback requires explicit replacement");
   await reset();
   await page.goto(`http://127.0.0.1:${server.address().port}/?prospectId=${matched.id}`);
@@ -920,6 +1002,7 @@ try {
       fixture: dir,
     }),
   );
+  }
 } finally {
   deferredDemo?.();
   await context?.close();
