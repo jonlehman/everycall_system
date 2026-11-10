@@ -33,3 +33,13 @@ The read-only activation plan succeeded after 833.317911 database-clock seconds.
 Live custom-price creation remains protected by the runtime Stripe endpoint-readiness guard. No claim is made that a Stripe dashboard URL or signing secret was manually inspected: the owner confirmed unchanged settings but did not know the URL. New custom test charges stay unavailable. Existing links and payment webhooks retain their frozen amount.
 
 Private execution evidence: /tmp/everycall-sales0061-release.json plus migration-attempt1/attempt2 and activation-plan/apply JSON files. The first attempt refused pending work before DDL; the successful attempt used the separately reviewed pristine-work evidence. No historical migrations were replayed.
+
+## Query-bearing webhook correction — November 10, 2026
+
+The first attempted $1 link was blocked by the new full-string webhook URL comparison. Two reviewed, read-only diagnostics on the existing authenticated scheduled maintenance route identified one enabled live endpoint at the canonical `app.everycall.io` handler, subscribed to both required completion events, with a query string. No query values or provider credentials were logged. The handler ignores query parameters and verifies the signed raw body; the configured query therefore did not justify rejecting this endpoint.
+
+Reviewed fix `72fa500` compares parsed HTTPS origin and exact canonical pathname while rejecting userinfo, fragments and decoded case-insensitive deployment-routing query keys. It preserves both event requirements, bounded provider reads, frozen amounts, signed payment validation and all recipient/retry/test/uncertainty protections. The caller UI offers $100 standard signup and $1 live test, explicitly a real charge; existing nonpreset reservations remain fixed and visible.
+
+Production deployment `dpl_4syzJhLUmihxrve5ehmWF49nGp4z` emitted the naturally scheduled diagnostic at `2026-11-10T20:45:36.819Z`: `ready:true`, reason `ready`, one enabled live canonical endpoint, both events present, query present, `deploymentPinned:false`, and no fragment or credentials. This verifies runtime readiness against the actual configured Stripe account without changing its configuration. Remove the temporary cron read/log now; the reviewed cleanup restores `sales-maintenance.js` byte-for-byte to pre-incident revision `518e2a3`.
+
+Readiness/security tests, the Sales v2 provider/database suite, the full caller controller and the 8-state × 4-viewport browser suite passed. Root independently verified query/security cases and preset UI behavior. Tests used provider fixtures; this incident work created no real Stripe session, sent no customer message, placed no call and charged no one. No schema change or pricing-gate mutation was needed.
