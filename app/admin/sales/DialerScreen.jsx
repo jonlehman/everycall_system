@@ -473,16 +473,6 @@ export default function DialerScreen({
                 </span>
               ))}
             </div>
-            {prospect?.callOpenerHook && <Row label="Suggested opener (list research)">{prospect.callOpenerHook}</Row>}
-            {(prospect?.afterHoursClass || prospect?.postedHours || prospect?.researchNotes) && (
-              <details className={styles.research}>
-                <summary>List research</summary>
-                <p>Rep preparation · not verified receptionist facts</p>
-                {prospect.afterHoursClass && <Row label="After-hours classification">{prospect.afterHoursClass}</Row>}
-                {prospect.postedHours && <Row label="Posted hours">{prospect.postedHours}</Row>}
-                {prospect.researchNotes && <Row label="Research notes">{prospect.researchNotes}</Row>}
-              </details>
-            )}
             {!prospect && <p>Prepared prospects appear here automatically.</p>}
           </Section>
           {phase === "WRAPUP" ? (

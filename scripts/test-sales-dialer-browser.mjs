@@ -85,14 +85,9 @@ try {
           assert.equal(await page.getByText(label, { exact: true }).isVisible(), true);
         }
       }
-      assert.equal(await page.getByText('Ask how evening calls reach the team.', { exact: true }).isVisible(), true);
-      const research = page.locator('details').filter({ has: page.locator('summary', { hasText: 'List research' }) });
-      await research.locator('summary').click();
-      assert.equal(await research.getByText('Mon-Fri 9-5 (list research)', { exact: true }).isVisible(), true);
-      assert.equal(await research.getByText('Imported research note, separate from call history.', { exact: true }).isVisible(), true);
-      const expandedWidth = await page.evaluate(() => document.documentElement.scrollWidth);
-      assert.ok(expandedWidth <= width);
-      await research.locator('summary').click();
+      for (const text of ["Suggested opener (list research)", "Ask how evening calls reach the team.", "List research", "Mon-Fri 9-5 (list research)", "Imported research note, separate from call history."]) {
+        assert.equal(await page.getByText(text, { exact: true }).count(), 0);
+      }
       const metrics = await page.evaluate(() => ({
         height: document.documentElement.scrollHeight,
         width: document.documentElement.scrollWidth,

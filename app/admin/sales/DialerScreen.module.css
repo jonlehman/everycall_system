@@ -12,19 +12,6 @@
     sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-.research {
-  margin-top: 10px;
-  overflow-wrap: anywhere;
-}
-.research summary {
-  cursor: pointer;
-  font-weight: 600;
-}
-.research > p {
-  color: var(--muted);
-  font-size: 11px;
-  margin: 6px 0;
-}
 .dialer * {
   box-sizing: border-box;
 }
@@ -201,6 +188,8 @@
 .numbers > div {
   display: flex;
   align-items: baseline;
+  justify-content: flex-end;
+  text-align: right;
   gap: 10px;
   flex-wrap: wrap;
 }
@@ -218,7 +207,7 @@
   font-size: 19px;
   font-weight: 600;
   color: #111318;
-  text-align: left;
+  text-align: right;
   cursor: pointer;
   letter-spacing: -0.03em;
 }
@@ -227,6 +216,7 @@
   opacity: 1;
 }
 .numbers small {
+  flex-basis: 100%;
   font-size: 10px;
   color: var(--muted);
 }

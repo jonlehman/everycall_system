@@ -1,5 +1,8 @@
 # Decisions
 
+## 2026-11-09 — Simplify the current Sales prospect card
+- Owner requested removing the suggested opener and List research disclosure from the current prospect/company card and right-aligning phone numbers, labels and notes. Keep the stored research fields and editor/import behavior; phone notes use their own right-aligned row so they do not shift the number away from the card edge.
+
 ## 2026-11-09 — Populate company contacts from saved research
 - Owner requested reviewing every Sales company's saved data and adding explicitly named people as company contacts. Use a reviewed, source-grounded additive maintenance run; preserve original captures, existing identities/defaults/phones, communication consent, role flags and source/publication boundaries. Record exact evidence privately, system audit receipts without raw names/quotes, conservative duplicate holds, source/version guards and per-company atomic results. A version increment protects stale editors; unexpected protected-field changes roll back.
 
