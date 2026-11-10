@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import Stripe from 'stripe';
-import { hasSalesLiveCheckoutWebhook } from '../pages/api/_lib/salesCheckoutReadiness.js';
+import { hasSalesLiveCheckoutWebhook, inspectSalesLiveCheckoutWebhook } from '../pages/api/_lib/salesCheckoutReadiness.js';
 
 const app = 'https://app.example.test';
 const enabled = { id: 'we_ready', status: 'enabled', livemode: true, url: `${app}/api/v1/stripe/webhook`, enabled_events: ['checkout.session.completed', 'checkout.session.async_payment_succeeded'] };
@@ -31,6 +31,34 @@ pages = 0;
 assert.equal(await hasSalesLiveCheckoutWebhook({ webhookEndpoints: { list: async () => { pages++;return { data: [{ ...enabled, id: `we_${pages}`, status: 'disabled' }], has_more: true }; } } }, app), false);
 assert.equal(pages, 3);
 assert.equal(await hasSalesLiveCheckoutWebhook({ webhookEndpoints: { list: async () => { throw Error('provider details must stay private'); } } }, app), false);
+
+// Diagnostic output is deliberately limited to fixed classifications and counts.
+const completedOnly = { ...enabled, enabled_events: ['checkout.session.completed'] };
+let diagnosis = await inspectSalesLiveCheckoutWebhook(client([completedOnly]), app);
+assert.equal(diagnosis.ready, false);
+assert.equal(diagnosis.reason, 'completion_events_missing');
+assert.deepEqual(diagnosis.counts, { scanned: 1, liveEnabled: 1, canonical: 1, canonicalCompleted: 1, canonicalAsync: 0, rewriteAlias: 0, rewriteAliasCompleted: 0, rewriteAliasAsync: 0 });
+diagnosis = await inspectSalesLiveCheckoutWebhook(client([{ ...completedOnly, url: `${app}/v1/stripe/webhook` }]), app);
+assert.equal(diagnosis.ready, false, 'Instrumentation must not change acceptance of the rewrite alias');
+assert.equal(diagnosis.reason, 'canonical_endpoint_missing');
+assert.equal(diagnosis.counts.rewriteAliasCompleted, 1);
+assert.equal(diagnosis.counts.canonical, 0);
+for (const [statusCode, reason] of [[401, 'lookup_unauthorized'], [403, 'lookup_forbidden'], [500, 'lookup_failed']]) {
+  diagnosis = await inspectSalesLiveCheckoutWebhook({ webhookEndpoints: { list: async () => { throw Object.assign(Error('SECRET_PROVIDER_DETAIL'), { statusCode, raw: { apiKey: 'SECRET_KEY' } }); } } }, app);
+  assert.equal(diagnosis.reason, reason);
+  assert(!JSON.stringify(diagnosis).includes('SECRET'));
+}
+assert.equal((await inspectSalesLiveCheckoutWebhook(client([]), app)).reason, 'no_enabled_live_endpoint');
+assert.equal((await inspectSalesLiveCheckoutWebhook(client([enabled]), `${app}/path`)).reason, 'app_url_invalid');
+assert.equal((await inspectSalesLiveCheckoutWebhook({ webhookEndpoints: { list: async () => ({ data: null }) } }, app)).reason, 'invalid_provider_response');
+diagnosis = await inspectSalesLiveCheckoutWebhook(client([
+  { ...completedOnly, url: 'https://app.everycall.io/v1/stripe/webhook' },
+  { ...enabled, url: 'https://www.everycall.io/api/v1/stripe/webhook' },
+  { ...enabled, url: 'https://SECRET.example/api/v1/stripe/webhook?secret=SECRET' },
+]), 'https://everycall.io');
+assert.equal(diagnosis.appOrigin, 'public');
+assert.deepEqual(diagnosis.knownRoutes, { appRewrite: { count: 1, completed: 1, async: 0 }, wwwApi: { count: 1, completed: 1, async: 1 } });
+assert(!JSON.stringify(diagnosis).includes('SECRET'));
 
 // Exercise the real SDK request path, using only an in-memory HTTP transport.
 // The request timeout reaches the actual transport; retryable failure is not retried.

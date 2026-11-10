@@ -2,6 +2,8 @@ import { processSalesPaidActivations } from "../_lib/salesActivation.js";
 import { ensureTables, getPool } from "../_lib/db.js";
 import { processSalesFollowupJobs } from "../_lib/salesFollowupJobs.js";
 import { processSalesDemoJobs } from "../_lib/salesRepository.js";
+import { inspectSalesLiveCheckoutWebhook } from "../_lib/salesCheckoutReadiness.js";
+import { getStripe } from "../_lib/stripe.js";
 
 export const config = {
   maxDuration: 300
@@ -16,6 +18,18 @@ function salesOutboundEnabled() {
   return ["1", "true", "yes", "on"].includes(
     String(process.env.SALES_OUTBOUND_ENABLED || "").trim().toLowerCase()
   );
+}
+
+// Temporary incident diagnostic: remove after collecting the scheduled production
+// result. This only reads Stripe endpoint configuration, never creates checkout.
+async function logCheckoutReadiness() {
+  let result;
+  try {
+    result = await inspectSalesLiveCheckoutWebhook(getStripe(), process.env.APP_BASE_URL);
+  } catch {
+    result = { ready: false, reason: "stripe_client_unavailable" };
+  }
+  console.info(JSON.stringify({ event: "sales_checkout_readiness_diagnostic", ...result }));
 }
 
 export default async function handler(req, res) {
@@ -44,7 +58,8 @@ export default async function handler(req, res) {
           claimedCount: 0,
           results: []
         }),
-      processSalesPaidActivations(pool)
+      processSalesPaidActivations(pool),
+      logCheckoutReadiness()
     ]);
     console.info(JSON.stringify({
       event: "sales_maintenance_result",
