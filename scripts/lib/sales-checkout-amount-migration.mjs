@@ -37,15 +37,30 @@ export async function verifySalesCheckoutAmountSchema(db,sql) {
   return {activationGateDefault:false,integer:true,notNull:true,legacyDefault:10000,min:100,max:99999999,immutable:true};
 }
 
+// This opt-in exception covers at most two untouched, unclaimed no-answer
+// jobs. Full row JSON is hashed in memory and never returned or logged.
+async function pristineFollowupSnapshot(client) {
+  const rows=(await client.query(`SELECT to_jsonb(j)::text AS row_json,
+    (status='queued' AND attempts=0 AND max_attempts=5 AND locked_at IS NULL AND locked_by IS NULL
+      AND completed_at IS NULL AND provider_result_json='{}'::jsonb AND last_error_code IS NULL
+      AND last_error_message IS NULL AND outcome='no_answer') AS pristine
+    FROM sales_followup_jobs j
+    WHERE status IN ('queued','leased') OR locked_at IS NOT NULL OR locked_by IS NOT NULL
+    ORDER BY sales_followup_job_id COLLATE "C" LIMIT 3`)).rows;
+  if(rows.length>2||rows.some(row=>row.pristine!==true))throw Error('amount_migration_followup_exception_not_pristine');
+  return {count:rows.length,sha256:amountMigrationDigest(JSON.stringify(rows.map(row=>row.row_json)))};
+}
+
 export async function applySalesCheckoutAmountMigration(pool, options) {
   const startedAt=performance.now();
-  const {databaseUrl,expectedTargetFingerprint,reviewedRevision,currentRevision,expectedMigrationSha256,releaseEvidenceReference,legacyPriceEvidenceReference}=options||{};
+  const {databaseUrl,expectedTargetFingerprint,reviewedRevision,currentRevision,expectedMigrationSha256,releaseEvidenceReference,legacyPriceEvidenceReference,pristineFollowupEvidenceReference}=options||{};
   const targetFingerprint=salesAmountTargetFingerprint(databaseUrl);
   if(!expectedTargetFingerprint||expectedTargetFingerprint!==targetFingerprint)throw Error('amount_migration_target_mismatch');
   if(!/^[a-f0-9]{40}$/.test(reviewedRevision||'')||reviewedRevision!==currentRevision)throw Error('amount_migration_reviewed_revision_mismatch');
   for(const [name,value] of Object.entries({releaseEvidenceReference,legacyPriceEvidenceReference})) {
     if(!/^[a-zA-Z0-9][a-zA-Z0-9:._/-]{5,159}$/.test(value||''))throw Error(`amount_migration_${name}_required`);
   }
+  if(pristineFollowupEvidenceReference!==undefined&&!/^[a-zA-Z0-9][a-zA-Z0-9:._/-]{5,159}$/.test(pristineFollowupEvidenceReference||''))throw Error('amount_migration_pristine_followup_evidence_invalid');
   const sql=await readMigration(SALES_AMOUNT_MIGRATION);
   if(!expectedMigrationSha256||amountMigrationDigest(sql)!==expectedMigrationSha256)throw Error('amount_migration_reviewed_sql_mismatch');
   const client=await pool.connect();
@@ -121,18 +136,27 @@ export async function applySalesCheckoutAmountMigration(pool, options) {
       (SELECT count(*) FROM sales_setup_bookings WHERE status='reserving') AS setup_reservations,
       (SELECT count(*) FROM sales_signup_invitations WHERE status IN ('pending','sending') AND revoked_at IS NULL) AS signup_deliveries,
       (SELECT count(*) FROM sales_demo_jobs WHERE status IN ('queued','leased')) AS demo_jobs,
-      (SELECT count(*) FROM sales_followup_jobs WHERE status IN ('queued','leased')) AS followup_jobs,
+      (SELECT count(*) FROM sales_followup_jobs WHERE status IN ('queued','leased') OR locked_at IS NOT NULL OR locked_by IS NOT NULL) AS followup_jobs,
       (SELECT count(*) FROM sales_idempotency_keys WHERE state='processing') AS mutations,
       (SELECT count(*) FROM sales_intro_email_deliveries WHERE status IN ('sending','uncertain')) AS intro_deliveries`);
     const counts=Object.fromEntries(Object.entries(activity.rows[0]).map(([key,value])=>[key,Number(value)]));
-    if(Object.values(counts).some(count=>count!==0))throw Object.assign(Error('amount_migration_sales_work_pending'),{counts});
+    let followupPreservation;
+    if(pristineFollowupEvidenceReference){
+      followupPreservation=await pristineFollowupSnapshot(client);
+      if(followupPreservation.count!==counts.followup_jobs)throw Error('amount_migration_followup_exception_count_mismatch');
+    }
+    if(Object.entries(counts).some(([key,count])=>count!==0&&!(key==='followup_jobs'&&followupPreservation)))throw Object.assign(Error('amount_migration_sales_work_pending'),{counts});
     await client.query(migrationBody(sql));
     const physical=await verifySalesCheckoutAmountSchema(client,sql);
     const gate=await client.query('SELECT custom_signup_amount_enabled FROM sales_dialer_config WHERE id=TRUE');
     if(gate.rows[0]?.custom_signup_amount_enabled!==false)throw Error('amount_migration_new_gate_not_disabled');
+    if(followupPreservation){
+      const final=await pristineFollowupSnapshot(client);
+      if(final.count!==followupPreservation.count||final.sha256!==followupPreservation.sha256)throw Error('amount_migration_followup_preservation_failed');
+    }
     await client.query('INSERT INTO schema_migrations(name) VALUES($1)',[SALES_AMOUNT_MIGRATION]);
     await client.query('COMMIT');
-    return {applied:true,migration:SALES_AMOUNT_MIGRATION,targetFingerprint,reviewedRevision,migrationSha256:expectedMigrationSha256,releaseEvidenceReference,legacyPriceEvidenceReference,scanEvidence,counts,physical,...elapsed()};
+    return {applied:true,migration:SALES_AMOUNT_MIGRATION,targetFingerprint,reviewedRevision,migrationSha256:expectedMigrationSha256,releaseEvidenceReference,legacyPriceEvidenceReference,...(followupPreservation?{pristineFollowupEvidenceReference,followupPreservation}:{}),scanEvidence,counts,physical,...elapsed()};
   }catch(error){await client.query('ROLLBACK').catch(()=>{});Object.assign(error,elapsed());throw error;}
   finally{client.release(connectionError);client.removeListener?.('error',observeConnectionError);}
 }

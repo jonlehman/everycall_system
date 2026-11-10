@@ -14,7 +14,8 @@ try {
   const result=await applySalesCheckoutAmountMigration(pool,{
     databaseUrl:process.env.DATABASE_URL,expectedTargetFingerprint:process.env.EVERYCALL_DATABASE_TARGET_SHA256,
     reviewedRevision:process.env.EVERYCALL_REVIEWED_REVISION,currentRevision,expectedMigrationSha256:process.env.EVERYCALL_0061_SQL_SHA256,
-    releaseEvidenceReference:process.env.EVERYCALL_0061_RELEASE_EVIDENCE,legacyPriceEvidenceReference:process.env.EVERYCALL_0061_LEGACY_PRICE_EVIDENCE
+    releaseEvidenceReference:process.env.EVERYCALL_0061_RELEASE_EVIDENCE,legacyPriceEvidenceReference:process.env.EVERYCALL_0061_LEGACY_PRICE_EVIDENCE,
+    pristineFollowupEvidenceReference:process.env.EVERYCALL_0061_PRISTINE_FOLLOWUP_EVIDENCE
   });
   console.log(JSON.stringify(result));
 }catch(error){console.error(JSON.stringify({error:error.code||error.message,missing:error.missing,counts:error.counts,collisions:error.collisions,elapsedMs:error.elapsedMs,transactionElapsedMs:error.transactionElapsedMs}));process.exitCode=1;}

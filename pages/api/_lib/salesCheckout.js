@@ -1,3 +1,4 @@
+import { hasSalesLiveCheckoutWebhook } from './salesCheckoutReadiness.js';
 import { DEFAULT_SALES_SIGNUP_AMOUNT_CENTS, validSalesSignupAmount, formatSalesSignupAmount } from '../../../lib/salesSignupAmount.js';
 import { normalizeSalesCheckoutPhone } from '../../../lib/salesCheckoutRecipient.js';
 import { resolveSalesContactTarget } from './salesCompanyContacts.js';
@@ -64,6 +65,23 @@ export async function sendSalesCheckout(pool,{amountCents,salesCallId=null,prosp
  const targetId=call?.prospectId||prospectId;
  if(call&&prospectId&&call.prospectId!==prospectId)throw salesError('checkout_context_mismatch','The call does not belong to this prospect.',409);
  const origin=new URL(env.APP_BASE_URL||'');if(!['https:','http:'].includes(origin.protocol))throw salesError('sales_app_url_required','Application URL is not configured.',503);
+ // Provider readiness is checked outside transactions. An existing reservation
+ // always wins the locked recheck below, including one created during lookup.
+ let liveStripe = stripe;
+ let liveCustomWebhookReady = false;
+ const customAmount = amountCents !== undefined && amountCents !== DEFAULT_SALES_SIGNUP_AMOUNT_CENTS;
+ if (customAmount) {
+  await assertSalesProspectOwner(pool,targetId,repId);
+  const mode = await pool.query('SELECT phone_test_mode,custom_signup_amount_enabled FROM sales_dialer_config WHERE id=TRUE');
+  const isTest = call ? Boolean(call.metadata?.phone_test_mode) : Boolean(mode.rows[0]?.phone_test_mode);
+  const existing = await pool.query('SELECT 1 FROM sales_checkout_sessions WHERE prospect_id=$1 AND is_test=$2 LIMIT 1',[targetId,isTest]);
+  if (!isTest && mode.rows[0]?.custom_signup_amount_enabled && !existing.rowCount && (expectedIsTest === undefined || expectedIsTest === isTest)) {
+   try {
+    liveStripe = stripe || getStripe();
+    liveCustomWebhookReady = await hasSalesLiveCheckoutWebhook(liveStripe,env.APP_BASE_URL);
+   } catch { /* Return the generic readiness error only if a new reservation is needed. */ }
+  }
+ }
  // Reserve under the same mode/ownership fences as calls. A standalone checkout
  // is a real prospect payment context; it never creates or relabels a call.
  const reservation=await salesTransaction(pool,async db=>{
@@ -97,7 +115,11 @@ export async function sendSalesCheckout(pool,{amountCents,salesCallId=null,prosp
   // Preserve a call's existing checkout identity; otherwise reuse the standalone
   // link. Prospect sends reuse an existing link instead of creating another charge.
   const existing=await db.query('SELECT * FROM sales_checkout_sessions WHERE prospect_id=$1 AND is_test=$2 ORDER BY (sales_call_id=$3) DESC NULLS LAST,created_at DESC LIMIT 1 FOR UPDATE',[targetId,isTest,salesCallId]);
-  if(!existing.rowCount&&amountCents!==undefined&&amountCents!==DEFAULT_SALES_SIGNUP_AMOUNT_CENTS&&!mode.rows[0]?.custom_signup_amount_enabled)throw salesError('custom_signup_amount_unavailable','The signup charge is currently fixed at $100.00. Refresh before changing it.',409);
+  if(!existing.rowCount&&customAmount) {
+   if(isTest)throw salesError('custom_signup_amount_unavailable','New test signup links are fixed at $100.00.',409);
+   if(!mode.rows[0]?.custom_signup_amount_enabled)throw salesError('custom_signup_amount_unavailable','The signup charge is currently fixed at $100.00. Refresh before changing it.',409);
+   if(!liveCustomWebhookReady)throw salesError('sales_checkout_not_ready','Custom signup checkout is temporarily unavailable. Try again later or use the standard signup charge.',503);
+  }
   const row=existing.rows[0]||(await db.query('INSERT INTO sales_checkout_sessions(checkout_id,sales_call_id,prospect_id,rep_user_id,channel,recipient,is_test,activation_status,contact_snapshot,amount_cents) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) RETURNING *',[`sales_checkout_${crypto.randomUUID()}`,salesCallId,targetId,repId,delivery,recipient,isTest,isTest?'test_only':'unpaid',JSON.stringify({...target.contactSnapshot,...(delivery==='sms'?{phoneE164:recipient,numberType:target.numberId?target.contactSnapshot.numberType:'cell'}:{}),email:delivery==='email'?recipient:target.contactSnapshot.email}),amountCents??DEFAULT_SALES_SIGNUP_AMOUNT_CENTS])).rows[0];
   if(amountCents!==undefined&&row.amount_cents!==amountCents)throw salesError('checkout_amount_exists',`This company's checkout is fixed at ${formatSalesSignupAmount(row.amount_cents)}. Use the existing amount and link.`,409);
   if(row.channel!==delivery||row.recipient!==recipient)throw salesError('checkout_delivery_exists',`This company's checkout is reserved for ${row.channel} to ${row.recipient}. Use the existing recipient; changing contacts cannot create another checkout.`,409);
@@ -107,7 +129,7 @@ export async function sendSalesCheckout(pool,{amountCents,salesCallId=null,prosp
  const {row,prospect,delivery,recipient}=reservation;
  if(row.channel!==delivery||row.recipient!==recipient)throw salesError('checkout_delivery_exists',`This company's checkout is reserved for ${row.channel} to ${row.recipient}. Use the existing recipient; changing contacts cannot create another checkout.`,409);
  if(!row.stripe_session_id){
-  const client=stripe||(row.is_test?getSalesTestStripe(env):getStripe());
+  const client=stripe||(row.is_test?getSalesTestStripe(env):liveStripe||getStripe());
   const session=await client.checkout.sessions.create({mode:'payment',payment_method_types:['card'],line_items:[{price_data:{currency:'usd',unit_amount:row.amount_cents,product_data:{name:row.is_test?'EveryCall TEST setup — no real charge':'EveryCall setup — first month included'}},quantity:1}],client_reference_id:row.checkout_id,metadata:{sales_checkout_id:row.checkout_id,...(row.sales_call_id?{sales_call_id:row.sales_call_id}:{}),sales_prospect_id:row.prospect_id,sales_checkout_test:String(row.is_test)},success_url:`${origin.origin}/sales/checkout-result?status=success`,cancel_url:`${origin.origin}/sales/checkout-result?status=cancelled`,...(delivery==='email'?{customer_email:row.recipient}:{})},{idempotencyKey:row.checkout_id});
   if(row.is_test&&session.livemode!==false)throw salesError('sales_test_checkout_mode_mismatch','Stripe did not return a test checkout. No link was sent.',502);
   if(!row.is_test&&session.livemode!==true)throw salesError('sales_live_checkout_mode_mismatch','Stripe did not return a live checkout. No link was sent.',502);

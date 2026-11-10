@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import { activateSalesCheckoutAmount,SALES_AMOUNT_ACTIVATION_ACTION } from './lib/sales-checkout-amount-activation.mjs';
 import { bootstrapFixtureSchema,readMigration } from './lib/schema-migrations.mjs';
@@ -55,6 +56,40 @@ try {
   await q("INSERT INTO sales_checkout_sessions(checkout_id,prospect_id,rep_user_id,channel,recipient,status) VALUES('legacy-checkout','amount-company',$1,'email','fixture@example.test','delivery_uncertain')",[rep]);
   await assert.rejects(apply(),e=>e.message==='amount_migration_sales_work_pending'&&e.counts.checkout_deliveries===1);
   await q("UPDATE sales_checkout_sessions SET status='sent'");
+  await q("INSERT INTO sales_followup_jobs(sales_followup_job_id,prospect_id,outcome) VALUES('pristine-1','amount-company','no_answer'),('pristine-2','amount-company','no_answer')");
+  const followupRows=async()=>JSON.stringify((await q('SELECT to_jsonb(j)::text AS row_json FROM sales_followup_jobs j ORDER BY sales_followup_job_id COLLATE "C"')).rows.map(row=>row.row_json));
+  const followupBefore=await followupRows();
+  await assert.rejects(apply(),e=>e.message==='amount_migration_sales_work_pending'&&e.counts.followup_jobs===2);
+  await assert.rejects(apply({pristineFollowupEvidenceReference:''}),/pristine_followup_evidence_invalid/);
+  options.pristineFollowupEvidenceReference='release:0061-pristine-followups-fixture';
+  // Every field in the narrowly approved pristine predicate must fail closed.
+  const invalidFollowups=[
+    ["status='leased'","status='queued'"], ["attempts=1",'attempts=0'], ['max_attempts=6','max_attempts=5'],
+    ['locked_at=NOW()','locked_at=NULL'], ["locked_by='fixture-worker'",'locked_by=NULL'],
+    ['completed_at=NOW()','completed_at=NULL'], ["provider_result_json='{\"sent\":true}'::jsonb", "provider_result_json='{}'::jsonb"],
+    ["last_error_code='fixture'",'last_error_code=NULL'], ["last_error_message='fixture'",'last_error_message=NULL'],
+    ["outcome='interested'","outcome='no_answer'"], ["status='completed',locked_by='fixture-worker'","status='queued',locked_by=NULL"]
+  ];
+  for(const [bad,restore] of invalidFollowups){
+    await q(`UPDATE sales_followup_jobs SET ${bad} WHERE sales_followup_job_id='pristine-1'`);
+    await assert.rejects(apply(),/followup_exception_not_pristine/);
+    await q(`UPDATE sales_followup_jobs SET ${restore} WHERE sales_followup_job_id='pristine-1'`);
+    assert.equal(await followupRows(),followupBefore);await absent();
+  }
+  await q("INSERT INTO sales_followup_jobs(sales_followup_job_id,prospect_id,outcome) VALUES('pristine-3','amount-company','no_answer')");
+  await assert.rejects(apply(),/followup_exception_not_pristine/);
+  await q("DELETE FROM sales_followup_jobs WHERE sales_followup_job_id='pristine-3'");
+  await q("UPDATE sales_call_sessions SET state='created' WHERE sales_call_id='amount-call'");
+  await assert.rejects(apply(),e=>e.message==='amount_migration_sales_work_pending'&&e.counts.active_calls===1);
+  await q("UPDATE sales_call_sessions SET state='ended' WHERE sales_call_id='amount-call'");
+  // A same-transaction change simulates an accidental migration-side edit;
+  // whole-row comparison must detect it and atomically restore the original.
+  await assert.rejects(apply({},wrap(async(client,sql,args)=>{
+    const result=await client.query(sql,args);
+    if(sql.includes('ADD COLUMN IF NOT EXISTS amount_cents'))await client.query("UPDATE sales_followup_jobs SET updated_at=updated_at+INTERVAL '1 second' WHERE sales_followup_job_id='pristine-1'");
+    return result;
+  })),/followup_preservation_failed/);
+  await absent();assert.equal(await followupRows(),followupBefore);
   await q('CREATE TABLE amount_collision_fixture(value INTEGER)');
   const collisionCases=[
     ['ALTER TABLE sales_dialer_config ADD COLUMN custom_signup_amount_enabled BOOLEAN NOT NULL DEFAULT FALSE','ALTER TABLE sales_dialer_config DROP COLUMN custom_signup_amount_enabled','column'],
@@ -85,7 +120,7 @@ try {
   await assert.rejects(apply({},wrap((client,sql,args)=>{
     if(sql==='INSERT INTO schema_migrations(name) VALUES($1)'&&args?.[0]===SALES_AMOUNT_MIGRATION)throw Error('fixture_receipt_failure');
     return client.query(sql,args);
-  })),/fixture_receipt_failure/);await absent();
+  })),/fixture_receipt_failure/);await absent();assert.equal(await followupRows(),followupBefore);
   let deadlineError;
   await assert.rejects(apply({},wrap(async(client,sql,args)=>{
     if(sql==='INSERT INTO schema_migrations(name) VALUES($1)'&&args?.[0]===SALES_AMOUNT_MIGRATION){
@@ -96,7 +131,26 @@ try {
     return client.query(sql,args);
   })),e=>{deadlineError=e;return e.code==='25P04'&&/transaction timeout/.test(e.message);});
   assert(deadlineError.transactionElapsedMs>=9000&&deadlineError.transactionElapsedMs<13000);await absent();
-  const result=await apply();assert(result.applied);assert.equal(result.scanEvidence.rows,1);assert.equal(result.physical.legacyDefault,10000);
+  assert.equal(await followupRows(),followupBefore);
+  const workerSource=await readFile(new URL('../pages/api/_lib/salesFollowupJobs.js',import.meta.url),'utf8');
+  const actualClaimSql=workerSource.match(/`(WITH claimable AS \([\s\S]*?RETURNING jobs\.\*)`/)?.[1];
+  assert(actualClaimSql,'Native contention proof must exercise the actual worker claim UPDATE');
+  let claimBlocked=false;
+  const result=await apply({},wrap(async(client,sql,args)=>{
+    if(sql.includes('ADD COLUMN IF NOT EXISTS amount_cents')){
+      const claimant=await pool.connect();
+      try {
+        await claimant.query('BEGIN');await claimant.query("SET LOCAL lock_timeout='200ms'");
+        await assert.rejects(claimant.query(actualClaimSql,[3,'fixture-claim-worker']),e=>e.code==='55P03');
+        claimBlocked=true;
+      }finally{await claimant.query('ROLLBACK');claimant.release();}
+    }
+    return client.query(sql,args);
+  }));assert(claimBlocked);assert.equal(await followupRows(),followupBefore);
+  assert.equal(result.followupPreservation.count,2);
+  assert.equal(result.followupPreservation.sha256,amountMigrationDigest(followupBefore));
+  assert.equal(result.pristineFollowupEvidenceReference,options.pristineFollowupEvidenceReference);
+assert(result.applied);assert.equal(result.scanEvidence.rows,1);assert.equal(result.physical.legacyDefault,10000);
   assert.equal((await q('SELECT custom_signup_amount_enabled FROM sales_dialer_config WHERE id=TRUE')).rows[0].custom_signup_amount_enabled,false);
   assert.equal((await q("SELECT amount_cents FROM sales_checkout_sessions WHERE checkout_id='legacy-checkout'")).rows[0].amount_cents,10000);
   const insert=amount=>q("INSERT INTO sales_checkout_sessions(checkout_id,prospect_id,rep_user_id,channel,recipient,status,amount_cents) VALUES($1,'amount-company',$2,'email','fixture@example.test','sent',$3)",['amount-'+amount,rep,amount]);
@@ -153,5 +207,5 @@ try {
   }))).alreadyEnabled,true);
   assert.equal((await q('SELECT count(*)::int AS n FROM audit_log WHERE action=$1',[SALES_AMOUNT_ACTIVATION_ACTION])).rows[0].n,1);
   assert.equal((await apply()).applied,false); // enabled gate is valid installed schema
-  console.log(JSON.stringify({status:'PASS',suite:'scoped0061 native PostgreSQL',server:(await q('SHOW server_version')).rows[0].server_version,checks:'target/revision/digest/evidence/capability; predecessors+0060 physical; owned column/constraint/functions/foreign-table trigger; row/byte bounds; activity; ACCESS EXCLUSIVE NOWAIT; receipt rollback; actual total transaction deadline; legacy10000/min/max/immutable; installed verification-only and drift; activation read-only plan/admin/target/revision/digest/deployment/810-second guards/audit rollback/idempotence/no amount edits',transactionDeadlineMs:deadlineError.transactionElapsedMs,applyMs:result.transactionElapsedMs,scanEvidence:result.scanEvidence,productionAccess:false}));
+  console.log(JSON.stringify({status:'PASS',suite:'scoped0061 native PostgreSQL',server:(await q('SHOW server_version')).rows[0].server_version,checks:'target/revision/digest/evidence/capability; predecessors+0060 physical; owned column/constraint/functions/foreign-table trigger; row/byte bounds; activity; ACCESS EXCLUSIVE NOWAIT; receipt rollback; actual total transaction deadline; legacy10000/min/max/immutable; installed verification-only and drift; explicit pristine max2 exception/nonpristine refusal/actual worker claim blocked/full-row preservation across success and failures; activation read-only plan/admin/target/revision/digest/deployment/810-second guards/audit rollback/idempotence/no amount edits',transactionDeadlineMs:deadlineError.transactionElapsedMs,applyMs:result.transactionElapsedMs,scanEvidence:result.scanEvidence,productionAccess:false}));
 }finally{await pool.end();await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();}

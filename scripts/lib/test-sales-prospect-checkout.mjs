@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { sendSalesCheckout, applySalesPaidCheckout, validateSalesCheckoutRequest } from '../../pages/api/_lib/salesCheckout.js';
-import { createSalesCallSession, updateSalesCallSession } from '../../pages/api/_lib/salesRepository.js';
+import { createSalesCallSession, updateSalesCallSession, runSalesIdempotentMutation } from '../../pages/api/_lib/salesRepository.js';
 import { getSalesRepQueue } from '../../pages/api/_lib/salesDialer.js';
 import { setSalesPhoneTestMode } from '../../pages/api/_lib/salesPhoneTestMode.js';
 
@@ -11,12 +11,13 @@ export async function testSalesProspectCheckout(pool,env) {
  await q("INSERT INTO admin_users(id,email) VALUES(9,'rep@example.test')");
  await q("CREATE TABLE IF NOT EXISTS system_config(id INT PRIMARY KEY,telnyx_sms_number TEXT)");
  await q("INSERT INTO system_config(id,telnyx_sms_number) VALUES(1,'+12065559999') ON CONFLICT(id) DO NOTHING");
- for(let n=0;n<13;n++) {
+ for(let n=0;n<15;n++) {
   await q("INSERT INTO sales_prospects(prospect_id,source_key,business_name,phone_e164,numbers_json,permission_granted,assigned_rep_user_id,contact_email,website_url,timezone) VALUES($1,$1,$1,$2,$3,TRUE,9,'customer@example.test','https://checkout-fixture.test','UTC')",[`standalone-${n}`,`+1206555800${n}`,JSON.stringify([{type:'cell',phoneE164:`+1206555800${n}`}])]);
   await q("INSERT INTO sales_demo_profiles(demo_profile_id,prospect_id,status) VALUES($1,$1,'ready')",[`standalone-${n}`]);
  }
  let created=0,sent=0,lastParams,lastMessage;
- const stripe={checkout:{sessions:{create:async params=>{lastParams=params;return {id:`cs_standalone_${++created}`,url:'https://checkout.stripe.test/fixture',livemode:params.metadata.sales_checkout_test!=='true'};}}}};
+ const readyWebhook={list:async()=>({data:[{id:'we_live',status:'enabled',livemode:true,url:`${new URL(env.APP_BASE_URL).origin}/api/v1/stripe/webhook`,enabled_events:['checkout.session.completed','checkout.session.async_payment_succeeded']}],has_more:false})};
+ const stripe={webhookEndpoints:readyWebhook,checkout:{sessions:{create:async params=>{lastParams=params;return {id:`cs_standalone_${++created}`,url:'https://checkout.stripe.test/fixture',livemode:params.metadata.sales_checkout_test!=='true'};}}}};
  const mail=async message=>{lastMessage=message;sent++;return{id:`mail_${sent}`};};
  const sms=async message=>{lastMessage=message;sent++;return{data:{id:`sms_${sent}`}};};
  const options={prospectId:'standalone-0',repId:9,channel:'email',email:'customer@example.test',confirmedWithoutCall:true,confirmedRecipient:'customer@example.test',expectedIsTest:false,env,stripe,mail,sms};
@@ -99,6 +100,47 @@ export async function testSalesProspectCheckout(pool,env) {
  await rejects(()=>sendSalesCheckout(pool,{...options,prospectId:'standalone-9',amountCents:100}),'custom_signup_amount_unavailable');
  assert.equal((await q("SELECT 1 FROM sales_checkout_sessions WHERE prospect_id='standalone-9'")).rowCount,0);
  await q('UPDATE sales_dialer_config SET custom_signup_amount_enabled=TRUE WHERE id=TRUE');
+ // An unavailable live endpoint must not reserve a row or create/deliver a checkout.
+ const notReady={...options,prospectId:'standalone-14',amountCents:375};
+ const providerCounts={created,sent};
+ for(const webhookEndpoints of [
+  {list:async()=>{throw Error('private provider error');}},
+  {list:async()=>({data:[{id:'we_disabled',status:'disabled',livemode:true,url:`${new URL(env.APP_BASE_URL).origin}/api/v1/stripe/webhook`,enabled_events:['*']}],has_more:false})},
+ ]) {
+  await rejects(()=>sendSalesCheckout(pool,{...notReady,stripe:{...stripe,webhookEndpoints}}),'sales_checkout_not_ready');
+  assert.equal((await q("SELECT 1 FROM sales_checkout_sessions WHERE prospect_id='standalone-14'")).rowCount,0);
+ }
+ assert.equal(created,providerCounts.created);assert.equal(sent,providerCounts.sent);
+ // A lookup body that outlives the real ten-second caller deadline cannot
+ // reserve a checkout. Its late result is read-only and cannot paginate.
+ let lateLookupCount=0,releaseLateLookup;
+ const lateLookup=new Promise(resolve=>{releaseLateLookup=resolve;});
+ await rejects(()=>sendSalesCheckout(pool,{...notReady,stripe:{...stripe,webhookEndpoints:{list:async()=>{lateLookupCount++;return lateLookup;}}}}),'sales_checkout_not_ready');
+ assert.equal((await q("SELECT 1 FROM sales_checkout_sessions WHERE prospect_id='standalone-14'")).rowCount,0);
+ assert.equal(created,providerCounts.created);assert.equal(sent,providerCounts.sent);
+ releaseLateLookup({data:[{id:'we_late',status:'disabled'}],has_more:true});
+ await new Promise(resolve=>setTimeout(resolve,10));
+ assert.equal(lateLookupCount,1);
+
+ // A concurrent original reservation created during failed lookup still wins.
+ let raced=false;
+ const racing={...options,prospectId:'standalone-13',amountCents:265};
+ await sendSalesCheckout(pool,{...racing,stripe:{...stripe,webhookEndpoints:{list:async()=>{
+  assert.equal(raced,false);raced=true;
+  await sendSalesCheckout(pool,racing);
+  throw Error('lookup unavailable after another request reserved the same amount');
+ }}}});
+ assert.equal(created,providerCounts.created+1);assert.equal(sent,providerCounts.sent+1);
+ // Exercise the API's real idempotency wrapper: a failed custom request must
+ // clear its receipt so the same UI key can submit a different $100 body.
+ const fallbackKey='readiness-price-fallback';
+ const mutation=(amountCents,client)=>runSalesIdempotentMutation(pool,{adminUserId:9,scope:'sales.prospect.checkout:standalone-14:live',idempotencyKey:fallbackKey,request:{amountCents}},async()=>({status:200,body:await sendSalesCheckout(pool,{...notReady,amountCents,stripe:client})}));
+ await rejects(()=>mutation(375,{...stripe,webhookEndpoints:{list:async()=>{throw Error('lookup unavailable');}}}),'sales_checkout_not_ready');
+ assert.equal((await q('SELECT 1 FROM sales_idempotency_keys WHERE idempotency_key=$1',[fallbackKey])).rowCount,0);
+ let fixedPriceLookups=0;
+ const fallback=await mutation(10000,{...stripe,webhookEndpoints:{list:async()=>{fixedPriceLookups++;throw Error('lookup unavailable');}}});
+ assert.equal(fallback.status,200);assert.equal(fallback.body.amountCents,10000);
+ assert.equal(fixedPriceLookups,0,'Standard $100 flow must not depend on endpoint lookup');
  // Boundary amounts, frozen retries, exact webhook amount and Customer isolation.
  for(const [n,amountCents] of [[9,100],[10,12345],[11,99999999]]) {
   const priced={...options,prospectId:`standalone-${n}`,amountCents};
@@ -117,24 +159,25 @@ export async function testSalesProspectCheckout(pool,env) {
  }
  let uncertaintyKey;
  const retryOptions={...options,prospectId:'standalone-12',amountCents:275};
- await assert.rejects(()=>sendSalesCheckout(pool,{...retryOptions,stripe:{checkout:{sessions:{create:async(params,request)=>{uncertaintyKey=request.idempotencyKey;throw Error('fixture stripe uncertainty');}}}}}),/fixture stripe uncertainty/);
+ await assert.rejects(()=>sendSalesCheckout(pool,{...retryOptions,stripe:{webhookEndpoints:readyWebhook,checkout:{sessions:{create:async(params,request)=>{uncertaintyKey=request.idempotencyKey;throw Error('fixture stripe uncertainty');}}}}}),/fixture stripe uncertainty/);
  await rejects(()=>sendSalesCheckout(pool,{...retryOptions,amountCents:300}),'checkout_amount_exists');
- await sendSalesCheckout(pool,{...retryOptions,stripe:{checkout:{sessions:{create:async(params,request)=>{assert.equal(request.idempotencyKey,uncertaintyKey);assert.equal(params.line_items[0].price_data.unit_amount,275);return {id:'cs_frozen_retry',url:'https://checkout.stripe.test/retry',livemode:true};}}}}});
+ await sendSalesCheckout(pool,{...retryOptions,stripe:{webhookEndpoints:{list:async()=>{throw Error('Existing reservation must skip readiness');}},checkout:{sessions:{create:async(params,request)=>{assert.equal(request.idempotencyKey,uncertaintyKey);assert.equal(params.line_items[0].price_data.unit_amount,275);return {id:'cs_frozen_retry',url:'https://checkout.stripe.test/retry',livemode:true};}}}}});
  // Retire unrelated fixture calls before exercising the real phone-mode fence.
  await q("UPDATE sales_call_sessions SET state='ended',ended_at=COALESCE(ended_at,NOW()) WHERE state NOT IN ('ended','closed','failed','completed')");
  await q("UPDATE sales_incoming_calls SET state='ended'");
  await setSalesPhoneTestMode(pool,true);
  const testEnv={...env,SALES_STRIPE_TEST_SECRET_KEY:'sk_test_fixture'};
- const test={...options,amountCents:199,env:testEnv,expectedIsTest:true,email:'rep@example.test',confirmedRecipient:'rep@example.test'};
+ const test={...options,env:testEnv,expectedIsTest:true,email:'rep@example.test',confirmedRecipient:'rep@example.test'};
  await rejects(()=>validateSalesCheckoutRequest(pool,options),'checkout_context_changed');
  await rejects(()=>sendSalesCheckout(pool,{...test,env}),'sales_test_checkout_not_configured');
  await rejects(()=>sendSalesCheckout(pool,{...test,env:{...testEnv,SALES_STRIPE_TEST_SECRET_KEY:'sk_live_wrong'}}),'sales_test_checkout_not_configured');
  await rejects(()=>sendSalesCheckout(pool,{...test,email:'customer@example.test',confirmedRecipient:'customer@example.test'}),'sales_test_email_required');
+ await rejects(()=>sendSalesCheckout(pool,{...test,amountCents:199}),'custom_signup_amount_unavailable');
  await sendSalesCheckout(pool,test); // Already paid customer can safely exercise test checkout.
  assert.equal(lastMessage.to,'rep@example.test');assert.match(lastMessage.text,/TEST ONLY/);
  assert.equal(lastParams.metadata.sales_checkout_test,'true');
  const testRow=(await q('SELECT * FROM sales_checkout_sessions WHERE prospect_id=$1 AND is_test',[options.prospectId])).rows[0];
- const testEvent={...event,id:'evt_test_standalone',livemode:false,data:{object:{...event.data.object,id:testRow.stripe_session_id,amount_total:199,livemode:false,metadata:{...lastParams.metadata}}}};
+ const testEvent={...event,id:'evt_test_standalone',livemode:false,data:{object:{...event.data.object,id:testRow.stripe_session_id,livemode:false,metadata:{...lastParams.metadata}}}};
  await rejects(()=>applySalesPaidCheckout(pool,testEvent),'sales_checkout_mode_mismatch');
  await rejects(()=>applySalesPaidCheckout(pool,event,{testWebhook:true}),'sales_checkout_mode_mismatch');
  await rejects(()=>applySalesPaidCheckout(pool,{...testEvent,livemode:true},{testWebhook:true}),'sales_checkout_mode_mismatch');
@@ -142,6 +185,14 @@ export async function testSalesProspectCheckout(pool,env) {
  const completed=(await q('SELECT * FROM sales_checkout_sessions WHERE checkout_id=$1',[testRow.checkout_id])).rows[0];
  assert.equal(completed.status,'test_complete');assert.equal(completed.paid_at,null);assert.equal(completed.activation_status,'test_only');assert.equal(completed.tenant_key,null);
  assert.equal((await getSalesRepQueue(pool,9,{timezone:'UTC',env})).counters.paid,4);
+ // Historic custom test reservations remain retryable; their frozen webhook amount still applies.
+ await q("INSERT INTO sales_checkout_sessions(checkout_id,prospect_id,rep_user_id,channel,recipient,is_test,activation_status,amount_cents,status,stripe_session_id,checkout_url) VALUES('historic_custom_test','standalone-12',9,'email','rep@example.test',TRUE,'test_only',199,'created','cs_historic_test','https://checkout.stripe.test/historic')");
+ const historic=await sendSalesCheckout(pool,{...test,prospectId:'standalone-12',amountCents:199});
+ assert.equal(historic.amountCents,199);assert.equal(historic.isTest,true);
+ const historicEvent={...testEvent,id:'evt_historic_test',data:{object:{...testEvent.data.object,id:'cs_historic_test',amount_total:199,metadata:{sales_checkout_id:'historic_custom_test',sales_prospect_id:'standalone-12',sales_checkout_test:'true'}}}};
+ await applySalesPaidCheckout(pool,historicEvent,{testWebhook:true});
+ const historicRow=(await q("SELECT status,paid_at,activation_status FROM sales_checkout_sessions WHERE checkout_id='historic_custom_test'")).rows[0];
+ assert.equal(historicRow.status,'test_complete');assert.equal(historicRow.paid_at,null);assert.equal(historicRow.activation_status,'test_only');
  await rejects(()=>sendSalesCheckout(pool,{...test,prospectId:'standalone-8',channel:'sms',phone:'+12065550199',confirmedRecipient:'+12065550199'}),'checkout_recipient_changed');
  await sendSalesCheckout(pool,{...test,prospectId:'standalone-8',channel:'sms',phone:'+14256154640',confirmedRecipient:'+14256154640'});
  assert.equal(lastMessage.to,'+14256154640');
