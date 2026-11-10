@@ -510,7 +510,6 @@
   border-radius: 8px;
 }
 .notesActions {
-  grid-column: 1 / -1;
   background: white;
   display: flex;
   flex-direction: column;

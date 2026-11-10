@@ -94,7 +94,7 @@ try {
         notesHeight: document.querySelector("textarea").getBoundingClientRect().height,
         inline: (() => {
           const card = document.querySelector("textarea").closest("section");
-          return { position: getComputedStyle(card).position, top: card.getBoundingClientRect().top };
+          return { position: getComputedStyle(card).position, top: card.getBoundingClientRect().top, previousBottom: card.previousElementSibling.getBoundingClientRect().bottom, lastInMain: card.parentElement.tagName === "MAIN" && card.parentElement.lastElementChild === card };
         })(),
         aside: document.querySelector("aside").getBoundingClientRect(),
         main: document.querySelector("main").getBoundingClientRect(),
@@ -110,7 +110,7 @@ try {
         );
       assert.ok(
         !["fixed", "sticky"].includes(metrics.inline.position) &&
-          metrics.inline.top >= Math.max(metrics.aside.bottom, metrics.main.bottom) - 1 &&
+          metrics.inline.lastInMain && metrics.inline.top >= metrics.inline.previousBottom - 1 &&
           metrics.notesHeight >= 150,
         JSON.stringify({ width, state, metrics }),
       );
@@ -256,7 +256,7 @@ try {
     const notes = page.getByLabel("Notes — carry into the wrap-up", { exact: true });
     assert.equal(await notes.count(), 1);
     assert.equal(await notes.inputValue(), "Owner wants after-hours coverage.");
-    assert.equal(await notes.evaluate(element => element.closest("section").previousElementSibling.tagName), "MAIN");
+    assert.equal(await notes.evaluate(element => element.closest("section").parentElement.lastElementChild === element.closest("section")), true);
     await page.getByRole("button", { name: "Save & next →", exact: true }).scrollIntoViewIfNeeded();
     assert.equal(await page.getByRole("button", { name: "Save & next →", exact: true }).isVisible(), true);
   }

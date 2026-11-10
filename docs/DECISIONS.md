@@ -243,3 +243,5 @@ Independent critical release review approved a narrowly scoped online migration 
 ## 2026-11-09 — Sales inline notes and outcomes
 
 Place one shared Notes textarea and the outcome/Save actions after all prospect and stage content in a full-width scrolling section for Dial, Talk, Demo and Close. Replace the viewport footer and duplicate “Note for next time” input; start Notes at 150px tall. Retain the existing shared note state, live-note persistence and outcome submission without changing call state, action gates or Contacts. Requirements: SALES-UI-NOTES-001–002 in the Sales v2 specification.
+
+Owner clarification: keep this shared section inside the Dial/Talk/Demo/Close column as its final child, after anything displayed in that column. It does not span the company column. This supersedes the full-width placement above.

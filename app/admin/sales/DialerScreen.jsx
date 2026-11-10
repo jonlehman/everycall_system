@@ -885,7 +885,6 @@ export default function DialerScreen({
               />
             </Section>
           ) : null}
-        </main>
         <Section className={styles.notesActions}>
           <Notes note={note} onNote={onNote} />
           <div className={styles.outcomeControls}>
@@ -963,6 +962,7 @@ export default function DialerScreen({
               : ""}
           </small>
         </Section>
+        </main>
       </div>}
     </div>
   );

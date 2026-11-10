@@ -138,7 +138,7 @@ This is a Sales presentation artifact, not a receptionist knowledge card or publ
 
 ## Part 4 — Notes and outcomes (inline, every dialer state)
 
-- Buttons, in order: `No answer` · `Voicemail` · `Call back ▾` · `Not interested` · `Do not call ▾` · `Demo done` · `Link sent` · `Paid — set by Stripe` (display only, dashed, never clickable). `Save & next →` follows the outcome controls. All controls sit directly below the shared Notes textarea in one full-width section after the prospect and stage content. No separate “Note for next time” input or fixed/sticky viewport footer remains; the section scrolls with the content on desktop and mobile. Contacts is excluded.
+- Buttons, in order: `No answer` · `Voicemail` · `Call back ▾` · `Not interested` · `Do not call ▾` · `Demo done` · `Link sent` · `Paid — set by Stripe` (display only, dashed, never clickable). `Save & next →` follows the outcome controls. All controls sit directly below the shared Notes textarea in one section at the bottom of the Dial/Talk/Demo/Close column, after all stage content. No separate “Note for next time” input or fixed/sticky viewport footer remains; the section scrolls with the content on desktop and mobile. Contacts is excluded.
 - Enabled from the moment a call is dialed; disabled in READY.
 - `Save & next` is disabled until the call has ended. Then one click = save outcome + note + load the next prospect. It never waits for transcript processing.
 - Semantics:
@@ -269,5 +269,5 @@ Implementation is scoped to `DisabledHint`, the caller's local `Button`, and exp
 
 | Requirement | Behavior | Regression evidence |
 | --- | --- | --- |
-| SALES-UI-NOTES-001 | One Notes textarea and all outcome/Save actions follow both content columns in normal scroll flow across Dial, Talk, Demo, Close and wrap-up; no viewport footer or duplicate note input. Notes default to 150px tall. Contacts remains separate. | `test-sales-dialer-browser.mjs`: 8 states × 4 viewport layout checks, stage browsing, scroll reachability and note persistence. |
+| SALES-UI-NOTES-001 | One Notes textarea and all outcome/Save actions follow all stage content inside the Dial/Talk/Demo/Close column in normal scroll flow across Dial, Talk, Demo, Close and wrap-up; no viewport footer or duplicate note input. Notes default to 150px tall. Contacts remains separate. | `test-sales-dialer-browser.mjs`: 8 states × 4 viewport layout checks, stage browsing, scroll reachability and note persistence. |
 | SALES-UI-NOTES-002 | Retain the existing shared note state and save handler, including interrupted-call wrap-up drafts and live-note persistence. | `test-sales-dialer-browser.mjs`: notes through demo/wrap-up and saved payload; `test-sales-dialer-controller.mjs`: original draft restoration and outcome payload. |
