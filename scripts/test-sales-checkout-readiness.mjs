@@ -13,10 +13,19 @@ assert(calls[0].options.timeout > 0 && calls[0].options.timeout <= 10000);
 for (const changed of [
   { status: 'disabled' }, { livemode: false }, { livemode: undefined },
   { url: 'https://old-deployment.vercel.app/api/v1/stripe/webhook' },
-  { url: `${enabled.url}?old=1` }, { url: `${app}/api/v1/stripe/sales-test-webhook` },
+  { url: `${enabled.url}?dpl=old` }, { url: `${app}/api/v1/stripe/sales-test-webhook` },
   { enabled_events: ['checkout.session.completed'] }, { enabled_events: [] },
 ]) assert.equal(await hasSalesLiveCheckoutWebhook(client([{ ...enabled, ...changed }]), app), false);
 assert.equal(await hasSalesLiveCheckoutWebhook(client([{ ...enabled, enabled_events: ['*'] }]), app), true);
+assert.equal(await hasSalesLiveCheckoutWebhook(client([{ ...enabled, url: `${enabled.url}?configuration=fixture&secret=PRIVATE_VALUE` }]), app), true);
+assert.equal(await hasSalesLiveCheckoutWebhook(client([{ ...enabled, url: `${enabled.url}?` }]), app), true);
+assert(!JSON.stringify(await inspectSalesLiveCheckoutWebhook(client([{ ...enabled, url: `${enabled.url}?secret=PRIVATE_VALUE` }]), app)).includes('PRIVATE_VALUE'));
+for (const query of ['dpl=old', '%64pl=old', 'DPL=old', 'other=1&dpl=old&dpl=new', 'dpl=', '__vdpl=old', 'x-deployment-id=old', '__deployment=old', '__nextDataReq=1']) {
+  assert.equal(await hasSalesLiveCheckoutWebhook(client([{ ...enabled, url: `${enabled.url}?${query}` }]), app), false, `Deployment-routing query must fail closed: ${query}`);
+}
+for (const url of [`${enabled.url}/?secret=fixture`, `${enabled.url}?secret=fixture#fragment`, `https://user:password@app.example.test/api/v1/stripe/webhook?secret=fixture`, `${app}/v1/stripe/webhook?secret=fixture`, 'https://other.example.test/api/v1/stripe/webhook?secret=fixture']) {
+  assert.equal(await hasSalesLiveCheckoutWebhook(client([{ ...enabled, url }]), app), false);
+}
 for (const base of ['http://app.example.test', `${app}/subpath`, `${app}?preview=1`, 'https://user:password@app.example.test']) {
   calls = [];assert.equal(await hasSalesLiveCheckoutWebhook(client([enabled]), base), false);assert.equal(calls.length, 0);
 }
@@ -64,11 +73,12 @@ diagnosis = await inspectSalesLiveCheckoutWebhook(client([
   { ...enabled, url: 'https://old-project.example/PATH_SECRET' },
 ]), app);
 assert.deepEqual(diagnosis.endpointLocations, [
-  { hostname: 'old-project.example', protocol: 'https', path: 'canonical', trailingSlash: true, queryPresent: true, fragmentPresent: true, credentialsPresent: true, completed: true, asyncSucceeded: true },
-  { hostname: 'old-project.example', protocol: 'https', path: 'other', trailingSlash: false, queryPresent: false, fragmentPresent: false, credentialsPresent: false, completed: true, asyncSucceeded: true },
+  { hostname: 'old-project.example', protocol: 'https', path: 'canonical', trailingSlash: true, queryPresent: true, deploymentPinned: false, fragmentPresent: true, credentialsPresent: true, completed: true, asyncSucceeded: true },
+  { hostname: 'old-project.example', protocol: 'https', path: 'other', trailingSlash: false, queryPresent: false, deploymentPinned: false, fragmentPresent: false, credentialsPresent: false, completed: true, asyncSucceeded: true },
 ]);
 assert(!JSON.stringify(diagnosis).includes('SECRET'));
 assert.equal(diagnosis.ready, false, 'Location diagnosis does not relax acceptance');
+assert.equal((await inspectSalesLiveCheckoutWebhook(client([{ ...enabled, url: `${enabled.url}?%64pL=PRIVATE_VALUE` }]), app)).endpointLocations[0].deploymentPinned, true);
 assert.equal((await inspectSalesLiveCheckoutWebhook(client(Array.from({length: 10}, () => ({ ...enabled, url: 'https://old-project.example/other' }))), app)).endpointLocations.length, 5);
 
 // Exercise the real SDK request path, using only an in-memory HTTP transport.
@@ -101,4 +111,4 @@ assert.equal(delayedRequests, 1);
 releaseBody({ data: [{ ...enabled, status: 'disabled' }], has_more: true });
 await new Promise(resolve => setTimeout(resolve, 40));
 assert.equal(delayedRequests, 1, 'Expired read must not launch another page');
-console.log('PASS live custom-checkout webhook readiness: exact canonical HTTPS URL, enabled/live/events, bounded pagination, fail closed, real Stripe SDK inactivity timeout/zero retries and overall caller deadline for delayed bodies');
+console.log('PASS live custom-checkout webhook readiness: canonical HTTPS origin/path, safe query compatibility, deployment-pin rejection, enabled/live/events, bounded pagination, fail closed, real Stripe SDK inactivity timeout/zero retries and overall caller deadline for delayed bodies');

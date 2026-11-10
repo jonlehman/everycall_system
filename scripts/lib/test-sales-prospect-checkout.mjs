@@ -16,7 +16,7 @@ export async function testSalesProspectCheckout(pool,env) {
   await q("INSERT INTO sales_demo_profiles(demo_profile_id,prospect_id,status) VALUES($1,$1,'ready')",[`standalone-${n}`]);
  }
  let created=0,sent=0,lastParams,lastMessage;
- const readyWebhook={list:async()=>({data:[{id:'we_live',status:'enabled',livemode:true,url:`${new URL(env.APP_BASE_URL).origin}/api/v1/stripe/webhook`,enabled_events:['checkout.session.completed','checkout.session.async_payment_succeeded']}],has_more:false})};
+ const readyWebhook={list:async()=>({data:[{id:'we_live',status:'enabled',livemode:true,url:`${new URL(env.APP_BASE_URL).origin}/api/v1/stripe/webhook?endpoint_tag=fixture`,enabled_events:['checkout.session.completed','checkout.session.async_payment_succeeded']}],has_more:false})};
  const stripe={webhookEndpoints:readyWebhook,checkout:{sessions:{create:async params=>{lastParams=params;return {id:`cs_standalone_${++created}`,url:'https://checkout.stripe.test/fixture',livemode:params.metadata.sales_checkout_test!=='true'};}}}};
  const mail=async message=>{lastMessage=message;sent++;return{id:`mail_${sent}`};};
  const sms=async message=>{lastMessage=message;sent++;return{data:{id:`sms_${sent}`}};};
@@ -106,6 +106,7 @@ export async function testSalesProspectCheckout(pool,env) {
  for(const webhookEndpoints of [
   {list:async()=>{throw Error('private provider error');}},
   {list:async()=>({data:[{id:'we_disabled',status:'disabled',livemode:true,url:`${new URL(env.APP_BASE_URL).origin}/api/v1/stripe/webhook`,enabled_events:['*']}],has_more:false})},
+  {list:async()=>({data:[{id:'we_pinned',status:'enabled',livemode:true,url:`${new URL(env.APP_BASE_URL).origin}/api/v1/stripe/webhook?%64pL=old`,enabled_events:['*']}],has_more:false})},
  ]) {
   await rejects(()=>sendSalesCheckout(pool,{...notReady,stripe:{...stripe,webhookEndpoints}}),'sales_checkout_not_ready');
   assert.equal((await q("SELECT 1 FROM sales_checkout_sessions WHERE prospect_id='standalone-14'")).rowCount,0);

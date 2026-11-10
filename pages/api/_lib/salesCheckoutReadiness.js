@@ -1,6 +1,22 @@
 const REQUIRED_EVENTS = ['checkout.session.completed', 'checkout.session.async_payment_succeeded'];
 const LOOKUP_BUDGET_MS = 10000;
 const MAX_PAGES = 3;
+// Vercel's documented `dpl` query can route a request to an older deployment.
+// The other deployment identifiers and Next internal keys are defensive rejects.
+const DEPLOYMENT_QUERY_KEYS = new Set(['dpl', '__vdpl', 'x-deployment-id', '__deployment']);
+
+function hasDeploymentRoutingQuery(url) {
+  return [...url.searchParams.keys()].some(key => DEPLOYMENT_QUERY_KEYS.has(key.toLowerCase()) || key.toLowerCase().startsWith('__next'));
+}
+
+function isCanonicalWebhookUrl(value, origin) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.origin === origin && url.pathname === '/api/v1/stripe/webhook'
+      && !url.username && !url.password && !url.hash
+      && !hasDeploymentRoutingQuery(url);
+  } catch { return false; }
+}
 const KNOWN_ORIGINS = new Map([
   ['https://app.everycall.io', 'app'],
   ['https://everycall.io', 'public'],
@@ -23,7 +39,6 @@ export async function inspectSalesLiveCheckoutWebhook(stripe, appBaseUrl, { budg
     const origin = new URL(appBaseUrl);
     appOrigin = KNOWN_ORIGINS.get(origin.origin) || 'other';
     if (origin.protocol !== 'https:' || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) return report('app_url_invalid');
-    const expectedUrl = `${origin.origin}/api/v1/stripe/webhook`;
     const rewriteAliasUrl = `${origin.origin}/v1/stripe/webhook`;
     const budget = Number.isInteger(budgetMs) && budgetMs > 0 ? Math.min(budgetMs, LOOKUP_BUDGET_MS) : LOOKUP_BUDGET_MS;
     const deadline = performance.now() + budget;
@@ -58,6 +73,7 @@ export async function inspectSalesLiveCheckoutWebhook(stripe, appBaseUrl, { budg
                   path: path === '/api/v1/stripe/webhook' ? 'canonical' : path === '/v1/stripe/webhook' ? 'rewrite' : 'other',
                   trailingSlash: location.pathname.endsWith('/'),
                   queryPresent: Boolean(location.search),
+                  deploymentPinned: hasDeploymentRoutingQuery(location),
                   fragmentPresent: Boolean(location.hash),
                   credentialsPresent: Boolean(location.username || location.password),
                   completed,
@@ -73,12 +89,12 @@ export async function inspectSalesLiveCheckoutWebhook(stripe, appBaseUrl, { budg
                 entry.count++;entry.completed += Number(completed);entry.async += Number(asyncSucceeded);
               }
             }
-            const route = endpoint.url === expectedUrl ? 'canonical' : endpoint.url === rewriteAliasUrl ? 'rewriteAlias' : null;
+            const route = isCanonicalWebhookUrl(endpoint.url, origin.origin) ? 'canonical' : endpoint.url === rewriteAliasUrl ? 'rewriteAlias' : null;
             if (!route) continue;
             counts[route]++;
             if (completed) counts[`${route}Completed`]++;
             if (asyncSucceeded) counts[`${route}Async`]++;
-            // Diagnostics recognize the existing rewrite; acceptance remains unchanged.
+            // Only the canonical handler is accepted; the rewrite stays diagnostic.
             if (route === 'canonical' && completed && asyncSucceeded) return report('ready');
           }
           if (result.has_more !== true) return report(!counts.liveEnabled ? 'no_enabled_live_endpoint' : !counts.canonical ? 'canonical_endpoint_missing' : 'completion_events_missing');

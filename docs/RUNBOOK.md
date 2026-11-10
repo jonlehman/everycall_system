@@ -254,6 +254,8 @@ Release status: final independent critical review on November 10 approved this e
 
 Production execution of 0061 and staged activation completed November 10; see [the release evidence](reviews/sales-dispositions-pricing-release.md#production-execution-completed--november-10-2026). Retain the runtime routing guard, frozen checkout amounts and amount-aware handlers.
 
+The November 10 checkout correction preserves the existing Stripe URL's query string: readiness compares the parsed canonical HTTPS origin and exact handler path, rejects deployment-routing query keys, and still requires both completion events. Do not remove or expose the configured query to satisfy the guard. The caller UI now offers $100 standard signup or $1 live test (a real charge); existing reservations retain their original amount. Verify readiness using the reviewed temporary read-only scheduled diagnostic, then remove that cron instrumentation after recording `ready:true`; never create/send a checkout as a release probe.
+
 
 ## Sales contact notes release (0062)
 
