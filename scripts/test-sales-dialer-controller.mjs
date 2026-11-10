@@ -785,7 +785,7 @@ try {
     .getByRole("heading", { name: "Original Business", exact: true })
     .waitFor();
   assert.equal(
-    await page.getByLabel("Note for next time").inputValue(),
+    await page.getByLabel("Notes — carry into the wrap-up", { exact: true }).inputValue(),
     "Do not lose original notes.",
   );
   assert.equal(

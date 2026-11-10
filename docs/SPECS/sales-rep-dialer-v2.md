@@ -120,12 +120,12 @@ This is a Sales presentation artifact, not a receptionist knowledge card or publ
 - Entered when the far end answers. Call timer starts; status pill names the connected number.
 - Primary: `Start demo — hand to the AI Receptionist` (amber). Secondary: `Mute`. `End call` (red outline, right-aligned).
 - Script card: discovery questions · **The hand-off** — exact copy: *"I can show you in about two minutes. I'll put our AI receptionist on — she already knows everything from the main pages of your website. Ask her anything a customer would ask your receptionist."* · two objection responses side by side · **No time right now** (→ set Call back ▾ while he's on the line) · **You got the dispatcher** (note name + best time).
-- **Notes textarea** ("Notes — carry into the wrap-up"): one field, persists across TALK → DEMO → WRAPUP, prefills the footer note.
+- **Notes textarea** ("Notes — carry into the wrap-up"): one shared field below all stage and prospect content, available in Dial, Talk, Demo and Close, persisting through wrap-up. It starts 150px tall and can be resized vertically.
 
 ### DEMO (`03-demo.html`)
 - Start demo: conference the temp-tenant receptionist leg in, mute the rep's mic, start the demo timer in the status pill.
 - Primary: `End demo — put me back on` (amber): drop the receptionist leg, unmute the rep, return to TALK (post-demo). Secondary: `Unmute me` (override while the demo runs; toggles). `End call`.
-- **While you listen** card: the same notes textarea · **If he stalls, unmute and suggest one** — chips generated from the by-heart facts (Part 7), with the after-hours ask styled as the pitch · **When he's heard enough** exit line.
+- **While you listen** card: **If he stalls, unmute and suggest one** — chips generated from the by-heart facts (Part 7), with the after-hours ask styled as the pitch · **When he's heard enough** exit line.
 - No live transcript (not available during the call). Caption: "Transcript arrives after the call."
 
 ### WRAPUP (`04-wrapup.html`)
@@ -136,9 +136,9 @@ This is a Sales presentation artifact, not a receptionist knowledge card or publ
 - **Script · Close** card, plus the one-line decline fallback ("Jon can take it at the start of your setup call").
 - Left panel **This call**: length, demo length, your notes, "Transcript — processing" until it lands, Recording link.
 
-## Part 4 — Outcome bar (footer, every state)
+## Part 4 — Notes and outcomes (inline, every dialer state)
 
-- Buttons, in order: `No answer` · `Voicemail` · `Call back ▾` · `Not interested` · `Do not call ▾` · `Demo done` · `Link sent` · `Paid — set by Stripe` (display only, dashed, never clickable). Then a one-line note input, then `Save & next →`.
+- Buttons, in order: `No answer` · `Voicemail` · `Call back ▾` · `Not interested` · `Do not call ▾` · `Demo done` · `Link sent` · `Paid — set by Stripe` (display only, dashed, never clickable). `Save & next →` follows the outcome controls. All controls sit directly below the shared Notes textarea in one full-width section after the prospect and stage content. No separate “Note for next time” input or fixed/sticky viewport footer remains; the section scrolls with the content on desktop and mobile. Contacts is excluded.
 - Enabled from the moment a call is dialed; disabled in READY.
 - `Save & next` is disabled until the call has ended. Then one click = save outcome + note + load the next prospect. It never waits for transcript processing.
 - Semantics:
@@ -191,9 +191,9 @@ This is a Sales presentation artifact, not a receptionist knowledge card or publ
 
 ## Part 10 — Acceptance
 
-1. READY → Call cell → no answer → `No answer` → next prospect loads. Three clicks, no scroll, no dropdown.
+1. READY → Call cell → no answer → `No answer` → next prospect loads. Three clicks, no dropdown; inline outcomes may require scrolling.
 2. TALK → Start demo mutes the rep and adds the receptionist leg; End demo drops the leg and unmutes; the status pill reflects each change; Unmute override works mid-demo.
-3. Notes typed in TALK persist through DEMO and prefill the footer note in WRAPUP.
+3. Notes typed in any stage persist across Dial, Talk, Demo and Close, remain editable in WRAPUP and are submitted with Save & next.
 4. Call back with an explicit date-time → the prospect is at the top of the rep's list at that time.
 5. Not interested / Do not call → the prospect never re-enters any queue, including after a list re-import containing the same phone or domain.
 6. Remove from list → `removed(attempts_exhausted)`; a later re-import is allowed.
@@ -261,6 +261,13 @@ This owner-requested UI addition explains existing Sales workspace restrictions.
 | --- | --- | --- |
 | SALES-UI-DISABLED-001 | Every rendered disabled control in the `/sales` caller, Contacts, Add prospect, callback picker, script editor, login and sign-out has a specific explanation on hover and keyboard focus. Multiple applicable blockers may be shown. Dialing uses the server's exact `callBlockedReason`, including calling-window details, without inferring local policy. | `test-sales-dialer-browser.mjs`: calling window, browser readiness, active call, demo readiness, busy and phone test restrictions; contact loading/pagination and form saving |
 | SALES-UI-DISABLED-002 | Native disabled attributes, fieldset inheritance and existing predicates/handlers remain authoritative. Setup children explain the inherited call-phase restriction alongside missing slot/email requirements. Read-only checkout destinations explain their fixed recipient while retaining native focus and text selection. | Native disabled assertions, disabled keyboard activation has no effect, inherited fieldset slot/input checks, live paid/test checkout and recipient checks |
-| SALES-UI-DISABLED-003 | Disabled wrappers are keyboard-focusable and linked to descriptions. Tooltips support Escape, persistent hover/focus and movement onto the tooltip; portals stay within the viewport above scrolling cards and the mobile footer. Enabled controls remove disabled explanations. | Hover/focus, description linkage, Escape without focus movement, hover after blur, reason removal, mobile bounds and existing 8-state × 4-viewport layout checks |
+| SALES-UI-DISABLED-003 | Disabled wrappers are keyboard-focusable and linked to descriptions. Tooltips support Escape, persistent hover/focus and movement onto the tooltip; portals stay within the viewport above scrolling cards and inline actions. Enabled controls remove disabled explanations. | Hover/focus, description linkage, Escape without focus movement, hover after blur, reason removal, mobile bounds and existing 8-state × 4-viewport layout checks |
 
 Implementation is scoped to `DisabledHint`, the caller's local `Button`, and explicit controls in the listed screens; unrelated admin management controls are unchanged. No provider-backed actions are exercised by these local browser fixtures.
+
+## 2026-11-09 — Shared inline notes and outcomes
+
+| Requirement | Behavior | Regression evidence |
+| --- | --- | --- |
+| SALES-UI-NOTES-001 | One Notes textarea and all outcome/Save actions follow both content columns in normal scroll flow across Dial, Talk, Demo, Close and wrap-up; no viewport footer or duplicate note input. Notes default to 150px tall. Contacts remains separate. | `test-sales-dialer-browser.mjs`: 8 states × 4 viewport layout checks, stage browsing, scroll reachability and note persistence. |
+| SALES-UI-NOTES-002 | Retain the existing shared note state and save handler, including interrupted-call wrap-up drafts and live-note persistence. | `test-sales-dialer-browser.mjs`: notes through demo/wrap-up and saved payload; `test-sales-dialer-controller.mjs`: original draft restoration and outcome payload. |

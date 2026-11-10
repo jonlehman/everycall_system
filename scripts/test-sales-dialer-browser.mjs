@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 const require = createRequire(import.meta.url);
-const { build } = require("esbuild");
+const { build } = require(process.env.ESBUILD_MODULE || "esbuild");
 const playwrightPath = process.env.PLAYWRIGHT_MODULE || "playwright";
 const { chromium } = require(playwrightPath);
 const dir = await mkdtemp(join(tmpdir(), "everycall-dialer-browser-"));
@@ -91,7 +91,11 @@ try {
       const metrics = await page.evaluate(() => ({
         height: document.documentElement.scrollHeight,
         width: document.documentElement.scrollWidth,
-        footer: document.querySelector("footer").getBoundingClientRect().bottom,
+        notesHeight: document.querySelector("textarea").getBoundingClientRect().height,
+        inline: (() => {
+          const card = document.querySelector("textarea").closest("section");
+          return { position: getComputedStyle(card).position, top: card.getBoundingClientRect().top };
+        })(),
         aside: document.querySelector("aside").getBoundingClientRect(),
         main: document.querySelector("main").getBoundingClientRect(),
       }));
@@ -105,7 +109,9 @@ try {
           JSON.stringify({ width, state, metrics }),
         );
       assert.ok(
-        metrics.footer <= 801,
+        !["fixed", "sticky"].includes(metrics.inline.position) &&
+          metrics.inline.top >= Math.max(metrics.aside.bottom, metrics.main.bottom) - 1 &&
+          metrics.notesHeight >= 150,
         JSON.stringify({ width, state, metrics }),
       );
       if (width <= 900)
@@ -245,9 +251,18 @@ try {
       .isDisabled(),
     true,
   );
+  for (const stage of ["Dial", "Talk", "Demo", "Close"]) {
+    await page.getByRole("list", { name: "Call phases" }).getByRole("button", { name: stage, exact: true }).click();
+    const notes = page.getByLabel("Notes — carry into the wrap-up", { exact: true });
+    assert.equal(await notes.count(), 1);
+    assert.equal(await notes.inputValue(), "Owner wants after-hours coverage.");
+    assert.equal(await notes.evaluate(element => element.closest("section").previousElementSibling.tagName), "MAIN");
+    await page.getByRole("button", { name: "Save & next →", exact: true }).scrollIntoViewIfNeeded();
+    assert.equal(await page.getByRole("button", { name: "Save & next →", exact: true }).isVisible(), true);
+  }
   await page.getByRole("button", { name: "End call", exact: true }).click();
   assert.equal(
-    await page.getByLabel("Note for next time").inputValue(),
+    await page.getByLabel("Notes — carry into the wrap-up", { exact: true }).inputValue(),
     "Owner wants after-hours coverage.",
   );
   await page.getByRole("button", { name: "Call back ▾", exact: true }).click();
@@ -394,7 +409,7 @@ try {
   await page.getByRole("button", { name: "Tomorrow 10:00", exact: true }).click();
   await expectHint(page.getByRole("button", { name: "Book Tomorrow 10:00", exact: true }), /Enter an email address/);
   await visit("state=READY");
-  await expectHint(page.getByLabel("Note for next time"), /Dial a call before adding a wrap-up note/);
+  assert.equal(await page.getByLabel("Note for next time").count(), 0);
   await expectHint(page.getByRole("button", { name: "No answer", exact: true }), /Dial a call before choosing an outcome/);
   await expectHint(page.getByRole("button", { name: "Set call back", exact: true }), /Choose a callback date and time in the future/);
   await page.route("**/api/v1/admin/sales/prospects?*", async route => {
@@ -437,7 +452,7 @@ try {
         "navigation preserves call phase and action gates",
         "viewport scroll",
         "responsive stacking",
-        "fixed footer",
+        "inline shared notes and outcomes below stage content",
         "paid display only",
         "incoming mid-call gate",
         "demo mute toggles",

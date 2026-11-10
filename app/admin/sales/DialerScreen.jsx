@@ -850,9 +850,6 @@ export default function DialerScreen({
                   />
                 </div>
               </Section>
-              <Section>
-                <Notes note={note} onNote={onNote} />
-              </Section>
             </>
           ) : panelStage === 2 ? (
             <Section>
@@ -863,7 +860,6 @@ export default function DialerScreen({
               {script("while_you_listen") && (
                 <p className={styles.caption}>{script("while_you_listen")}</p>
               )}
-              <Notes note={note} onNote={onNote} />
               <div className={styles.scriptPart}>
                 <h3>If he stalls, unmute and suggest one</h3>
                 <div className={styles.chips}>
@@ -890,92 +886,84 @@ export default function DialerScreen({
             </Section>
           ) : null}
         </main>
-      </div>}
-      {view !== "contacts" && <footer className={styles.footer}>
-        <div className={styles.footerControls}>
-          {OUTCOMES.map(([value, label]) => (
-            <Button
-              key={value}
-              disabled={!call?.id || Boolean(busy)}
-              disabledReason={disabledReasons(!call?.id && "Dial a call before choosing an outcome.", busy && busyReason)}
-              aria-pressed={outcome === value}
-              onClick={() => {
-                if (["callback_requested", "do_not_call"].includes(value))
-                  setPicker(picker === value ? "" : value);
-                else {
-                  setPicker("");
-                  onOutcome(value);
-                }
-              }}
-            >
-              {label}
-            </Button>
-          ))}
-          <span
-            className={`${styles.paid} ${call?.paidAt ? styles.paidActive : ""}`}
-          >
-            {call?.paidAt ? "✓ Paid — set by Stripe" : "Paid — set by Stripe"}
-          </span>
-          <HintInput
-            aria-label="Note for next time"
-            disabledReason="Dial a call before adding a wrap-up note."
-            disabled={!call?.id}
-            maxLength={4000}
-            placeholder="Note for next time (optional)"
-            value={note}
-            onChange={(e) => onNote(e.target.value)}
-          />
-          <Button
-            tone="blue"
-            disabled={
-              !call?.terminal ||
-              (!outcome && !call?.paidAt) ||
-              Boolean(busy) ||
-              (outcome === "callback_requested" && !callbackAt) ||
-              (outcome === "do_not_call" && !dncReason)
-            }
-            disabledReason={disabledReasons(!call?.terminal && "End the call before saving its outcome.", !outcome && !call?.paidAt && "Choose an outcome first.", busy && busyReason, outcome === "callback_requested" && !callbackAt && "Set a callback date and time first.", outcome === "do_not_call" && !dncReason && "Choose a Do not call reason first.")}
-            onClick={onSave}
-          >
-            {busy === "outcome" ? "Saving…" : "Save & next →"}
-          </Button>
-        </div>
-        {picker === "callback_requested" && (
-          <div className={styles.picker}>
-            <CallbackPicker prospect={prospect} value={callbackAt} onSet={onCallback} disabled={Boolean(busy)} schedulingReason="Dial a call before scheduling a callback outcome." canSchedule={Boolean(call?.id)} now={now} onClose={() => setPicker("")} />
-          </div>
-        )}
-        {picker === "do_not_call" && (
-          <div className={styles.picker}>
-            <strong>Do not call — reason</strong>
-            {[
-              ["bad_number", "Bad number"],
-              ["asked_not_to_be_called", "Asked not to be called"],
-              ["out_of_business", "Out of business"],
-            ].map(([reason, label]) => (
+        <Section className={styles.notesActions}>
+          <Notes note={note} onNote={onNote} />
+          <div className={styles.outcomeControls}>
+            {OUTCOMES.map(([value, label]) => (
               <Button
-                key={reason}
+                key={value}
+                disabled={!call?.id || Boolean(busy)}
+                disabledReason={disabledReasons(!call?.id && "Dial a call before choosing an outcome.", busy && busyReason)}
+                aria-pressed={outcome === value}
                 onClick={() => {
-                  onDncReason(reason);
-                  setPicker("");
+                  if (["callback_requested", "do_not_call"].includes(value))
+                    setPicker(picker === value ? "" : value);
+                  else {
+                    setPicker("");
+                    onOutcome(value);
+                  }
                 }}
               >
                 {label}
               </Button>
             ))}
+            <span
+              className={`${styles.paid} ${call?.paidAt ? styles.paidActive : ""}`}
+            >
+              {call?.paidAt ? "✓ Paid — set by Stripe" : "Paid — set by Stripe"}
+            </span>
+            <Button
+              tone="blue"
+              disabled={
+                !call?.terminal ||
+                (!outcome && !call?.paidAt) ||
+                Boolean(busy) ||
+                (outcome === "callback_requested" && !callbackAt) ||
+                (outcome === "do_not_call" && !dncReason)
+              }
+              disabledReason={disabledReasons(!call?.terminal && "End the call before saving its outcome.", !outcome && !call?.paidAt && "Choose an outcome first.", busy && busyReason, outcome === "callback_requested" && !callbackAt && "Set a callback date and time first.", outcome === "do_not_call" && !dncReason && "Choose a Do not call reason first.")}
+              onClick={onSave}
+            >
+              {busy === "outcome" ? "Saving…" : "Save & next →"}
+            </Button>
           </div>
-        )}
-        <small>
-          {phase === "READY"
-            ? "Outcomes unlock when a call is dialed. Not interested and Do not call are permanent."
-            : phase === "WRAPUP"
-              ? `Save & next doesn’t wait for the transcript.${queue.upcoming?.[0] ? ` Next up: ${queue.upcoming[0].businessName}` : ""}`
-              : "Pick an outcome any time. Save & next activates once the call has ended."}
-          {callbackAt && outcome === "callback_requested"
-            ? ` Callback: ${new Date(callbackAt).toLocaleString()}`
-            : ""}
-        </small>
-      </footer>}
+          {picker === "callback_requested" && (
+            <div className={styles.picker}>
+              <CallbackPicker prospect={prospect} value={callbackAt} onSet={onCallback} disabled={Boolean(busy)} schedulingReason="Dial a call before scheduling a callback outcome." canSchedule={Boolean(call?.id)} now={now} onClose={() => setPicker("")} />
+            </div>
+          )}
+          {picker === "do_not_call" && (
+            <div className={styles.picker}>
+              <strong>Do not call — reason</strong>
+              {[
+                ["bad_number", "Bad number"],
+                ["asked_not_to_be_called", "Asked not to be called"],
+                ["out_of_business", "Out of business"],
+              ].map(([reason, label]) => (
+                <Button
+                  key={reason}
+                  onClick={() => {
+                    onDncReason(reason);
+                    setPicker("");
+                  }}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          )}
+          <small>
+            {phase === "READY"
+              ? "Outcomes unlock when a call is dialed. Not interested and Do not call are permanent."
+              : phase === "WRAPUP"
+                ? `Save & next doesn’t wait for the transcript.${queue.upcoming?.[0] ? ` Next up: ${queue.upcoming[0].businessName}` : ""}`
+                : "Pick an outcome any time. Save & next activates once the call has ended."}
+            {callbackAt && outcome === "callback_requested"
+              ? ` Callback: ${new Date(callbackAt).toLocaleString()}`
+              : ""}
+          </small>
+        </Section>
+      </div>}
     </div>
   );
 }
