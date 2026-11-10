@@ -1,5 +1,9 @@
 # Decisions
 
+## 2026-11-10 — Sales Close cards and signup recipient
+- Owner requested chronological saved notes (oldest first; undated last), a third Introduction email card after Signup link and Setup call, and an editable live signup Text to field. SALES-UI-NOTES-005 explicitly supersedes the newest-first part of SALES-UI-NOTES-003; SALES-CLOSE-001 and SALES-CHECKOUT-007–008 record the new behavior.
+- Use the existing checkout recipient/contact snapshot fields, without a migration. Normalize and validate the explicit phone before reservation and send to that exact value; do not rewrite contact phones. A saved number ID must match the destination or be omitted for a manual number. Keep selected contact/company scopes, immutable company/mode checkout identity, fixed test destinations, DNC/quiet-hour/permission checks, provider claims and uncertain-send fences. Once reserved, the recipient remains read-only.
+
 ## 2026-11-09 — Tabbed Sales company editor
 - Owner requested one tab per existing company-editor card. Keep all five panels mounted around one company draft, with global Save/Cancel and errors. Keyboard tab navigation and native validation reveal the selected/invalid panel without changing aggregate saves, contact consent or editing permissions.
 

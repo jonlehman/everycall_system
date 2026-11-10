@@ -24,5 +24,5 @@ export function savedNoteHistory(prospect = {}) {
   if (legacy.trim() && !notes.some(note => note.body.trim() === legacy.trim())) {
     notes.push({ id: "legacy", body: legacy, enteredAt: null });
   }
-  return notes.sort((a, b) => (b.enteredAt ?? -Infinity) - (a.enteredAt ?? -Infinity));
+  return notes.sort((a, b) => (a.enteredAt ?? Infinity) - (b.enteredAt ?? Infinity));
 }

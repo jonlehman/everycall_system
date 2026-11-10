@@ -15,6 +15,8 @@ import DialerScreen from "./DialerScreen";
 import SalesIntroEmailModal from "./SalesIntroEmailModal";
 import { companyBriefRequestFailure, normalizeCompanyBrief } from "../../../lib/salesCompanyBriefDiagnostics.js";
 
+import { normalizeSalesCheckoutPhone } from "../../../lib/salesCheckoutRecipient.js";
+
 const BASE = "/api/v1/admin/sales";
 export default function CallerWorkspace() {
   const { queue, queueLoading, queueError, loadQueue } = useSalesQueue({
@@ -667,11 +669,13 @@ export default function CallerWorkspace() {
       const withoutCall = !currentCall?.id;
       const testCheckout = withoutCall ? Boolean(queue.config?.phoneTestMode) : Boolean(currentCall.phoneTestMode);
       const deliveryContactId = checkoutContext?.contactSnapshot?.contactId || currentCall?.contactId || selectedContactId;
-      const deliveryNumberId = checkoutContext?.contactSnapshot?.numberId || selectedTarget.numbers.find(number => number.type === "cell")?.id;
+      const phone = details.channel === "sms" ? normalizeSalesCheckoutPhone(checkoutContext?.recipient || (testCheckout ? queue.config?.checkoutTestPhone || "+14256154640" : details.phone)) : undefined;
+      if (details.channel === "sms" && !phone) throw new Error("Enter a valid mobile number first.");
+      const deliveryNumberId = checkoutContext ? checkoutContext.contactSnapshot?.numberId || undefined : selectedTarget.numbers.find(number => number.phoneE164 === phone)?.id;
       let confirmedRecipient;
       if (withoutCall) {
         const recipient = checkoutContext?.recipient || (details.channel === "sms"
-          ? testCheckout ? queue.config?.checkoutTestPhone || "+14256154640" : selectedTarget.numbers.find((number) => number.type === "cell")?.phoneE164
+          ? phone
           : details.email?.trim());
         confirmedRecipient = recipient;
         if (!recipient) throw new Error("Choose a signup link recipient.");
@@ -680,12 +684,21 @@ export default function CallerWorkspace() {
       const context = withoutCall
         ? `prospects/${encodeURIComponent(selected.id)}`
         : `calls/${encodeURIComponent(currentCall.id)}`;
-      const result = await fetchSalesJson(`${BASE}/${context}/checkout`, {
-        method: "POST",
-        idempotencyKey: `sales-checkout-${withoutCall ? `prospect-${selected.id}` : currentCall.id}-${details.channel}-${testCheckout ? "test" : "live"}`,
-        body: JSON.stringify({ ...details, contactId: deliveryContactId, numberId: deliveryNumberId, expectedRowVersion: selected.rowVersion, expectedIsTest: testCheckout, ...(withoutCall ? { confirmedWithoutCall: true, confirmedRecipient } : {}) }),
-      });
-      setCheckoutContext(result.checkout || null);
+      let result;
+      try {
+        result = await fetchSalesJson(`${BASE}/${context}/checkout`, {
+          method: "POST",
+          idempotencyKey: `sales-checkout-${withoutCall ? `prospect-${selected.id}` : currentCall.id}-${details.channel}-${testCheckout ? "test" : "live"}`,
+          body: JSON.stringify({ ...details, ...(phone ? { phone } : {}), contactId: deliveryContactId, numberId: deliveryNumberId, expectedRowVersion: selected.rowVersion, expectedIsTest: testCheckout, ...(withoutCall ? { confirmedWithoutCall: true, confirmedRecipient } : {}) }),
+        });
+      } catch (error) {
+        // A failed provider operation may already have reserved the recipient.
+        // Reload that identity before offering a retry or another destination.
+        const existing = await fetchSalesJson(`${BASE}/prospects/${encodeURIComponent(selected.id)}/checkout${currentCall?.id ? `?salesCallId=${encodeURIComponent(currentCall.id)}` : ""}`).catch(() => null);
+        if (existing && prospectRef.current?.id === selected.id && callRef.current?.id === currentCall?.id) setCheckoutContext(existing.checkout || null);
+        throw error;
+      }
+      if (prospectRef.current?.id === selected.id && callRef.current?.id === currentCall?.id) setCheckoutContext(result.checkout || null);
       if (!result.checkout || !["sent", "delivered", "paid", "test_complete"].includes(result.checkout.status))
         throw new Error("Checkout delivery was not confirmed.");
       if (!withoutCall && callRef.current?.id === currentCall.id) {

@@ -38,8 +38,13 @@ const notes = savedNoteHistory({ history: [
   { noteId: 'mirror', salesCallId: 'new', body: 'New', createdAt: '2026-11-09' },
   { noteId: 'company', body: 'Company', createdAt: '2026-11-05' },
 ], note: 'New' });
-assert.deepEqual(notes.map(note => note.body), ['New', 'Company', 'Old', 'Fallback']);
+assert.deepEqual(notes.map(note => note.body), ['Fallback', 'Old', 'Company', 'New']);
 assert.deepEqual(savedNoteHistory({ note: 'Undated legacy' }), [{ id: 'legacy', body: 'Undated legacy', enteredAt: null }]);
 assert.deepEqual(savedNoteHistory({}), []);
 assert.equal(normalizeProspect({ calls: [{ sales_call_id: 'call', outcome_notes: 'Contact selected note' }] }).history[0].outcomeNotes, 'Contact selected note');
 console.log('Sales note history: complete lightweight loading, unchanged actor scope, ordering, dates, blank/mirrored notes, legacy and Contacts normalization passed.');
+
+assert.deepEqual(savedNoteHistory({ savedNotes: [
+  {noteId:'unknown-a',body:'Undated A'}, {noteId:'late',body:'Later',createdAt:'2026-11-10T14:00:00Z'},
+  {noteId:'unknown-b',body:'Undated B'}, {noteId:'early',body:'Earlier',createdAt:'2026-11-10T12:00:00Z'}
+], note:'Legacy' }).map(note=>note.body), ['Earlier','Later','Undated A','Undated B','Legacy']);

@@ -11,7 +11,7 @@ export async function testSalesProspectCheckout(pool,env) {
  await q("INSERT INTO admin_users(id,email) VALUES(9,'rep@example.test')");
  await q("CREATE TABLE IF NOT EXISTS system_config(id INT PRIMARY KEY,telnyx_sms_number TEXT)");
  await q("INSERT INTO system_config(id,telnyx_sms_number) VALUES(1,'+12065559999') ON CONFLICT(id) DO NOTHING");
- for(let n=0;n<6;n++) {
+ for(let n=0;n<9;n++) {
   await q("INSERT INTO sales_prospects(prospect_id,source_key,business_name,phone_e164,numbers_json,permission_granted,assigned_rep_user_id,contact_email,website_url,timezone) VALUES($1,$1,$1,$2,$3,TRUE,9,'customer@example.test','https://checkout-fixture.test','UTC')",[`standalone-${n}`,`+1206555800${n}`,JSON.stringify([{type:'cell',phoneE164:`+1206555800${n}`}])]);
   await q("INSERT INTO sales_demo_profiles(demo_profile_id,prospect_id,status) VALUES($1,$1,'ready')",[`standalone-${n}`]);
  }
@@ -55,6 +55,40 @@ export async function testSalesProspectCheckout(pool,env) {
  await sendSalesCheckout(pool,{...options,prospectId:'standalone-1',salesCallId:callB.salesCallId});
  assert.equal(created,2);assert.equal(sent,2,'Call A → standalone → call B must reuse the same checkout');
  await updateSalesCallSession(pool,callB.salesCallId,{state:'ended',endedAt:new Date().toISOString()});
+ // Editable SMS delivery: normalize before reservation, retain actual recipient/snapshot,
+ // enforce selected number binding, and never create a second company checkout.
+ const edited={...options,prospectId:'standalone-5',channel:'sms',phone:'(206) 555-0199',confirmedRecipient:'+12065550199'};
+ const number=(await q("SELECT number_id FROM sales_prospect_contact_numbers WHERE prospect_id='standalone-5' LIMIT 1")).rows[0].number_id;
+ for(const phone of ['', 'not a phone', '+12065550199 ext 1', '+01234567890']) {
+  await rejects(()=>validateSalesCheckoutRequest(pool,{...edited,phone}),'checkout_phone_required');
+  await rejects(()=>sendSalesCheckout(pool,{...edited,phone}),'checkout_phone_required');
+ }
+ await rejects(()=>sendSalesCheckout(pool,{...edited,numberId:number}),'contact_number_changed');
+ await rejects(()=>sendSalesCheckout(pool,{...edited,contactId:'contact_legacy_standalone-6'}),'contact_unavailable');
+ await q("INSERT INTO sales_dnc_registry(identity_type,identity_value,reason) VALUES('phone','+12065550199','fixture')");
+ await rejects(()=>sendSalesCheckout(pool,edited),'prospect_suppressed');
+ await q("DELETE FROM sales_dnc_registry WHERE identity_value='+12065550199'");
+ assert.equal(await validateSalesCheckoutRequest(pool,edited),false);
+ const beforeEdited={created,sent};
+ await sendSalesCheckout(pool,edited);
+ assert.equal(lastMessage.to,'+12065550199');
+ const editedRow=(await q("SELECT * FROM sales_checkout_sessions WHERE prospect_id='standalone-5'")).rows[0];
+ assert.equal(editedRow.recipient,'+12065550199');assert.equal(editedRow.contact_snapshot.phoneE164,'+12065550199');assert.equal(editedRow.contact_snapshot.numberId,null);
+ await sendSalesCheckout(pool,edited);
+ await rejects(()=>sendSalesCheckout(pool,{...edited,phone:'+12065550198',confirmedRecipient:'+12065550198'}),'checkout_delivery_exists');
+ const editedCall=await createSalesCallSession(pool,{prospectId:'standalone-5',adminUserId:9});
+ await sendSalesCheckout(pool,{...edited,salesCallId:editedCall.salesCallId});
+ await updateSalesCallSession(pool,editedCall.salesCallId,{state:'ended',endedAt:new Date().toISOString()});
+ assert.equal(created,beforeEdited.created+1);assert.equal(sent,beforeEdited.sent+1);
+ // Explicit mobile destination works even when the contact has no saved cell.
+ await q("UPDATE sales_prospect_contact_numbers SET type='shop' WHERE prospect_id='standalone-6'");
+ await sendSalesCheckout(pool,{...edited,prospectId:'standalone-6'});
+ assert.equal(lastMessage.to,'+12065550199');
+ // A failed Stripe create retains the original recipient for a safe retry.
+ await assert.rejects(sendSalesCheckout(pool,{...edited,prospectId:'standalone-7',stripe:{checkout:{sessions:{create:async()=>{throw Error('fixture create');}}}}}),/fixture create/);
+ await rejects(()=>sendSalesCheckout(pool,{...edited,prospectId:'standalone-7',phone:'+12065550198',confirmedRecipient:'+12065550198'}),'checkout_delivery_exists');
+ await sendSalesCheckout(pool,{...edited,prospectId:'standalone-7'});
+ assert.equal(lastMessage.to,'+12065550199');
  // Retire unrelated fixture calls before exercising the real phone-mode fence.
  await q("UPDATE sales_call_sessions SET state='ended',ended_at=COALESCE(ended_at,NOW()) WHERE state NOT IN ('ended','closed','failed','completed')");
  await q("UPDATE sales_incoming_calls SET state='ended'");
@@ -77,6 +111,9 @@ export async function testSalesProspectCheckout(pool,env) {
  const completed=(await q('SELECT * FROM sales_checkout_sessions WHERE checkout_id=$1',[testRow.checkout_id])).rows[0];
  assert.equal(completed.status,'test_complete');assert.equal(completed.paid_at,null);assert.equal(completed.activation_status,'test_only');assert.equal(completed.tenant_key,null);
  assert.equal((await getSalesRepQueue(pool,9,{timezone:'UTC',env})).counters.paid,1);
+ await rejects(()=>sendSalesCheckout(pool,{...test,prospectId:'standalone-8',channel:'sms',phone:'+12065550199',confirmedRecipient:'+12065550199'}),'checkout_recipient_changed');
+ await sendSalesCheckout(pool,{...test,prospectId:'standalone-8',channel:'sms',phone:'+14256154640',confirmedRecipient:'+14256154640'});
+ assert.equal(lastMessage.to,'+14256154640');
  const testCall=await createSalesCallSession(pool,{prospectId:'standalone-2',adminUserId:9});
  await updateSalesCallSession(pool,testCall.salesCallId,{state:'ended',endedAt:new Date().toISOString()});
  await setSalesPhoneTestMode(pool,false);
@@ -90,5 +127,10 @@ export async function testSalesProspectCheckout(pool,env) {
  assert.equal((await q("SELECT status FROM sales_checkout_sessions WHERE prospect_id='standalone-4'")).rows[0].status,'delivery_uncertain');
  await rejects(()=>sendSalesCheckout(pool,{...options,prospectId:'standalone-4'}),'checkout_delivery_pending');
  await rejects(()=>setSalesPhoneTestMode(pool,true),'sales_test_activity_pending');
+ const uncertainSms={...edited,prospectId:'standalone-8'};
+ let smsAttempts=0;
+ await assert.rejects(sendSalesCheckout(pool,{...uncertainSms,sms:async()=>{smsAttempts++;throw Error('fixture sms uncertain');}}),/fixture sms uncertain/);
+ await rejects(()=>sendSalesCheckout(pool,{...uncertainSms,sms:async()=>{smsAttempts++;}}),'checkout_delivery_pending');
+ assert.equal(smsAttempts,1);
  console.log('PASS prospect checkout: confirmation/context, no fake calls, cross-context reuse, ownership, nullable verified payment, counters, test credentials/recipients, mode isolation, immutable test calls and uncertain delivery fence');
 }

@@ -67,9 +67,9 @@ try {
     await history.waitFor();
     assert.equal(await history.locator(':scope > div').count(), 106);
     const rows = await history.locator(':scope > div').allTextContents();
-    assert.match(rows[0], /Nov 9Newest saved note\nSecond line\./);
-    assert.match(rows[1], /Nov 5Company note/);
-    assert.match(rows[2], /Nov 2Older saved note/);
+    assert.match(rows[105], /Nov 9Newest saved note\nSecond line\./);
+    assert.match(rows[104], /Nov 5Company note/);
+    assert.match(rows[103], /Nov 2Older saved note/);
     assert.equal(await history.getByText('Archived saved note 102', { exact: true }).count(), 1);
     assert.equal(await page.getByText('Last note', { exact: true }).count(), 0);
     assert.equal(await history.locator(':scope > div > div').first().evaluate(node => getComputedStyle(node).whiteSpace), 'pre-wrap');
@@ -216,7 +216,7 @@ try {
   for (const state of ["READY", "TALK", "DEMO", "WRAPUP"]) {
     await page.goto("http://127.0.0.1:" + server.address().port + "/?state=" + state + "&noCell&noEmail");
     await page.getByRole("list", { name: "Call phases" }).getByRole("button", { name: "Close", exact: true }).click();
-    assert.equal(await page.getByRole("button", { name: "Text", exact: true }).isDisabled(), true);
+    assert.equal(await page.getByRole("button", { name: "Text", exact: true }).isEnabled(), true);
     assert.equal(await page.getByRole("button", { name: "Email", exact: true }).isEnabled(), true);
     assert.equal(await page.getByRole("button", { name: "Send link", exact: true }).isDisabled(), true);
     await page.getByLabel("Email to", { exact: true }).fill("owner@example.com");
@@ -397,8 +397,22 @@ try {
   await expectHint(page.getByRole("button", { name: /Generating/ }), /company brief is being generated/);
   await visit("state=READY&noCell&noEmail");
   await page.getByRole("list", { name: "Call phases" }).getByRole("button", { name: "Close", exact: true }).click();
-  await expectHint(page.getByRole("button", { name: "Text", exact: true }), /No cell number is on file/);
+  assert.equal(await page.getByRole("button", { name: "Text", exact: true }).isEnabled(), true);
   await expectHint(page.getByRole("button", { name: "Send link", exact: true }), /Enter a recipient email address/);
+  await page.getByRole("button", { name: "Text", exact: true }).click();
+  const manualPhone = page.getByLabel("Text to", { exact: true });
+  assert.equal(await manualPhone.inputValue(), "");
+  assert.equal(await manualPhone.isEditable(), true);
+  await manualPhone.fill("invalid");
+  await expectHint(page.getByRole("button", { name: "Send link", exact: true }), /valid mobile number/);
+  await manualPhone.fill("(206) 555-0199");
+  await page.getByRole("button", { name: "Send link", exact: true }).click();
+  assert.equal((await page.evaluate(() => window.fixtureCheckout)).phone, "+12065550199");
+  const introduction = page.getByRole("heading", { name: "3 · Introduction email", exact: true }).locator('..');
+  assert.equal(await introduction.getByRole("button", { name: "Send email", exact: true }).count(), 1);
+  assert.match(await introduction.innerText(), /editable introduction email to the selected contact.*Replies go to you, the rep/s);
+  await page.getByRole("button", { name: "Email", exact: true }).click();
+
   await expectHint(page.getByRole("button", { name: "Tomorrow 10:00", exact: true }), /after the call ends/, { inherited: true });
   await expectHint(page.getByLabel("Invite to", { exact: true }), /after the call ends/, { inherited: true });
   await expectHint(page.getByRole("button", { name: "Choose a slot", exact: true }), /after the call ends.*Choose an open setup slot.*Enter an email address/);

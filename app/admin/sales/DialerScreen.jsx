@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { normalizeSalesCheckoutPhone } from "../../../lib/salesCheckoutRecipient.js";
 import {
   OUTCOMES,
   HANDOFF,
@@ -194,9 +195,10 @@ export default function DialerScreen({
   const [picker, setPicker] = useState(""),
     [channel, setChannel] = useState(cell ? "sms" : "email"),
     [email, setEmail] = useState(prospect?.email || ""),
+    [phone, setPhone] = useState(cell?.phoneE164 || ""),
     [slot, setSlot] = useState(null),
     [addingIncoming, setAddingIncoming] = useState("");
-  useEffect(() => { setEmail(displayContact?.email || ""); setChannel(cell ? "sms" : "email"); }, [selectedContactId, call?.id]);
+  useEffect(() => { setEmail(displayContact?.email || ""); setChannel(cell ? "sms" : "email"); setPhone(cell?.phoneE164 || ""); }, [prospect?.id, selectedContactId, call?.id]);
   const scripts = queue.scripts || {},
     vars = {
       first_name: displayContact?.firstName || displayContact?.displayName?.split(" ")[0] || "there",
@@ -226,7 +228,8 @@ export default function DialerScreen({
   const testCheckout = call?.id ? Boolean(call.phoneTestMode) : Boolean(queue.config?.phoneTestMode);
   const checkoutRetryable = checkoutContext && ["creating", "created"].includes(checkoutContext.status);
   const checkoutChannel = checkoutContext?.channel || channel;
-  const checkoutCell = checkoutContext?.channel === "sms" ? {phoneE164: checkoutContext.recipient} : testCheckout ? { phoneE164: queue.config?.checkoutTestPhone || "+14256154640" } : cell;
+  const checkoutPhone = checkoutContext?.channel === "sms" ? checkoutContext.recipient : testCheckout ? queue.config?.checkoutTestPhone || "+14256154640" : phone;
+  const validCheckoutPhone = normalizeSalesCheckoutPhone(checkoutPhone);
   const checkoutEmail = checkoutContext?.channel === "email" ? checkoutContext.recipient : testCheckout ? queue.config?.checkoutTestEmail || "" : email;
   const canDial =
       Boolean(selectedContact) && !busy && !call?.id && softphoneState === "ready" && prospect?.eligible && prospect?.demoStatus === "ready" && !["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})),
@@ -669,9 +672,6 @@ export default function DialerScreen({
             ) : null}
             {panelStage === 3 && (
               <>
-                <div className={styles.actions}>
-                  <Button onClick={onIntroEmail} disabled={!prospect?.id || !selectedContact || !displayContact?.email || Boolean(busy) || Boolean(queue.config?.phoneTestMode) || Boolean(prospect?.suppressed || prospect?.doNotCall || ["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})))} disabledReason={disabledReasons(!prospect?.id && "Select a prospect first.", !selectedContact && "Choose an active company contact first.", !displayContact?.email && "The selected contact has no email address.", busy && busyReason, queue.config?.phoneTestMode && "Introduction emails are unavailable during phone test mode.", (prospect?.suppressed || prospect?.doNotCall || ["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {}))) && "This contact is suppressed or unavailable.")}>Send email</Button>
-                </div>
                 <div className={styles.closeCards}>
                   <div className={`${styles.card} ${styles.checkout}`}>
                     <h3>1 · Signup link</h3>
@@ -688,40 +688,40 @@ export default function DialerScreen({
                     {checkoutContext && <p role="status">This company's {checkoutContext.isTest ? "test " : ""}signup link is reserved for {checkoutContext.channel === "sms" ? "text" : "email"} to {checkoutContext.recipient}. Status: {checkoutContext.status}.{checkoutContext.url && <> <a href={checkoutContext.url} target="_blank" rel="noreferrer">Open existing checkout</a></>}</p>}
                     <div className={styles.actions}>
                       <Button
-                        disabled={!checkoutCell || busy || Boolean(checkoutContext)}
-                        disabledReason={disabledReasons(checkoutContext && "A checkout already exists. Its original recipient is fixed.", !checkoutCell && "No cell number is on file. Use Email to send the link.", busy && busyReason)}
-                        aria-pressed={checkoutChannel === "sms" && Boolean(checkoutCell)}
+                        disabled={busy || Boolean(checkoutContext)}
+                        disabledReason={disabledReasons(checkoutContext && "A checkout already exists. Its original recipient is fixed.", busy && busyReason)}
+                        aria-pressed={checkoutChannel === "sms"}
                         onClick={() => setChannel("sms")}
                       >
                         Text
                       </Button>
                       <Button
                         disabled={Boolean(checkoutContext)} disabledReason="A checkout already exists. Its original recipient is fixed."
-                        aria-pressed={checkoutChannel === "email" || !checkoutCell}
+                        aria-pressed={checkoutChannel === "email"}
                         onClick={() => setChannel("email")}
                       >
                         Email
                       </Button>
                     </div>
                     <label>
-                      {checkoutChannel === "sms" && checkoutCell ? "Text to" : "Email to"}
+                      {checkoutChannel === "sms" ? "Text to" : "Email to"}
                       <HintInput
-                        disabledReason={checkoutContext ? "The existing checkout recipient is fixed. Use its link above." : testCheckout ? "Phone test mode uses only your configured test destination. Switch delivery channel to use your other test destination." : "Text uses the cell number on record. Switch to Email to enter a different recipient."}
+                        disabledReason={checkoutContext ? "The existing checkout recipient is fixed. Use its link above." : testCheckout ? "Phone test mode uses only your configured test destination. Switch delivery channel to use your other test destination." : ""}
                         aria-label={
-                          checkoutChannel === "sms" && checkoutCell ? "Text to" : "Email to"
+                          checkoutChannel === "sms" ? "Text to" : "Email to"
                         }
-                        type={checkoutChannel === "sms" && checkoutCell ? "text" : "email"}
-                        readOnly={Boolean(checkoutContext) || testCheckout || (checkoutChannel === "sms" && Boolean(checkoutCell))}
+                        type={checkoutChannel === "sms" ? "tel" : "email"}
+                        readOnly={Boolean(checkoutContext) || testCheckout}
                         value={
-                          checkoutChannel === "sms" && checkoutCell ? checkoutCell.phoneE164 : checkoutEmail
+                          checkoutChannel === "sms" ? checkoutPhone : checkoutEmail
                         }
-                        onChange={(e) => setEmail(e.target.value)}
+                        onChange={(e) => checkoutChannel === "sms" ? setPhone(e.target.value) : setEmail(e.target.value)}
                       />
                     </label>
                     <small>
-                      {checkoutCell
-                        ? "Shop lines usually can’t take texts. Use the cell on record, or switch to Email."
-                        : "No cell on file. Text is unavailable; send by Email."}
+                      {cell
+                        ? "Use a mobile number that can receive texts. Changes apply only to this signup link."
+                        : "No cell on file. Enter a mobile number for Text, or send by Email."}
                     </small>
                     <Button
                       tone="blue"
@@ -729,13 +729,14 @@ export default function DialerScreen({
                         busy ||
                         !prospect?.id ||
                         (customerPaid && !testCheckout) ||
-                        ((Boolean(checkoutContext) && !checkoutRetryable) || !selectedContact || (!(checkoutChannel === "sms" && checkoutCell) && !checkoutEmail.trim()))
+                        ((Boolean(checkoutContext) && !checkoutRetryable) || !selectedContact || (checkoutChannel === "sms" ? !validCheckoutPhone : !checkoutEmail.trim()))
                       }
-                      disabledReason={disabledReasons(checkoutContext && !checkoutRetryable && "A checkout already exists for this company and mode. Use its original link above; no second checkout will be created.", !selectedContact && "Choose an active company contact first.", busy && busyReason, !prospect?.id && "Select a prospect first.", customerPaid && !testCheckout && "This customer has already paid for setup.", !(checkoutChannel === "sms" && checkoutCell) && !checkoutEmail.trim() && (testCheckout ? "No test email destination is configured for this account. Use Text." : "Enter a recipient email address first."))}
+                      disabledReason={disabledReasons(checkoutContext && !checkoutRetryable && "A checkout already exists for this company and mode. Use its original link above; no second checkout will be created.", !selectedContact && "Choose an active company contact first.", busy && busyReason, !prospect?.id && "Select a prospect first.", customerPaid && !testCheckout && "This customer has already paid for setup.", checkoutChannel === "sms" && !validCheckoutPhone && "Enter a valid mobile number first.", checkoutChannel !== "sms" && !checkoutEmail.trim() && (testCheckout ? "No test email destination is configured for this account. Use Text." : "Enter a recipient email address first."))}
                       onClick={() =>
                         onCheckout({
-                          channel: checkoutChannel === "sms" && checkoutCell ? "sms" : "email",
+                          channel: checkoutChannel,
                           email: checkoutEmail,
+                          ...(checkoutChannel === "sms" ? { phone: validCheckoutPhone } : {}),
                         })
                       }
                     >
@@ -798,6 +799,12 @@ export default function DialerScreen({
                           : "Choose a slot"}
                     </Button>
                   </fieldset></DisabledReasonContext.Provider>
+                  <div className={styles.card}>
+                    <h3>3 · Introduction email</h3>
+                    <h2>Introduce EveryCall by email</h2>
+                    <p>Send an editable introduction email to the selected contact. Replies go to you, the rep.</p>
+                    <Button onClick={onIntroEmail} disabled={!prospect?.id || !selectedContact || !displayContact?.email || Boolean(busy) || Boolean(queue.config?.phoneTestMode) || Boolean(prospect?.suppressed || prospect?.doNotCall || ["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {})))} disabledReason={disabledReasons(!prospect?.id && "Select a prospect first.", !selectedContact && "Choose an active company contact first.", !displayContact?.email && "The selected contact has no email address.", busy && busyReason, queue.config?.phoneTestMode && "Introduction emails are unavailable during phone test mode.", (prospect?.suppressed || prospect?.doNotCall || ["Removed", "Not interested", "Do not call"].includes(contactStatus(prospect || {}))) && "This contact is suppressed or unavailable.")}>Send email</Button>
+                  </div>
                 </div>
                 {phase !== "WRAPUP" && <p className={styles.caption}>Setup booking is available after the call ends.</p>}
                 <ScriptPart label="Script · Close" text={script("close")} />

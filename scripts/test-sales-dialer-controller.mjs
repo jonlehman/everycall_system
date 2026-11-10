@@ -73,7 +73,7 @@ const paidContact = { ...prospect, id: "paid-contact", businessName: "Paid Busin
 const dncContact = { ...prospect, id: "dnc-contact", businessName: "Do Not Call Business", doNotCall: true };
 const removedContact = { ...prospect, id: "removed-contact", businessName: "Removed Business", status: "removed" };
 let fixtureCheckoutContext = null, ringingFixture = false;
-let testMode = false, holdCheckout = false, checkoutReply = null;
+let testMode = false, holdCheckout = false, checkoutReply = null, failNextCheckout = false;
 let requests = [],
   briefStep = 0,
   calls = {},
@@ -132,6 +132,12 @@ const server = createServer(async (req, res) => {
   const send = (value) => res.end(JSON.stringify(value));
   if (path.pathname.endsWith("/checkout") && req.method === "GET") return send({ checkout: fixtureCheckoutContext });
   if (path.pathname.endsWith("/checkout")) {
+    if (failNextCheckout) {
+      failNextCheckout = false;
+      fixtureCheckoutContext = {status:'creating',channel:data.channel,recipient:data.phone,contactSnapshot:{contactId:data.contactId,numberId:data.numberId || null,phoneE164:data.phone}};
+      res.statusCode = 502;
+      return send({ok:false,error:'checkout_creation_failed',message:'Fixture Stripe unavailable'});
+    }
     const callId = path.pathname.match(/\/calls\/([^/]+)\/checkout$/)?.[1];
     const reply = () => send({ checkout: { status: "sent", isTest: data.expectedIsTest }, ...(callId ? { call: calls[callId] } : {}) });
     if (holdCheckout) checkoutReply = reply; else reply();
@@ -312,7 +318,7 @@ const reset = async ({
   requests = [];
   ringingFixture = false;
   fixtureCheckoutContext = null;
-  testMode = phoneTest; holdCheckout = false; checkoutReply = null;
+  testMode = phoneTest; holdCheckout = false; checkoutReply = null; failNextCheckout = false;
   calls = {};
   currentId = "";
   showIncoming = false;
@@ -509,12 +515,41 @@ try {
   await page.getByRole('button',{name:'Retry original delivery',exact:true}).click();
   await waitUntil(()=>requests.some(r=>r.path.endsWith('/checkout')&&r.method==='POST'));
   const retried=requests.find(r=>r.path.endsWith('/checkout')&&r.method==='POST');assert.equal(retried.data.contactId,'second');assert.equal(retried.data.email,'second@example.test');
+  await reset();
+  fixtureCheckoutContext={status:'creating',channel:'sms',recipient:'+12065550199',contactSnapshot:{contactId:'second',numberId:null,phoneE164:'+12065550199'}};
+  await page.reload();
+  await page.getByRole("list", {name:"Call phases"}).getByRole("button", {name:"Close",exact:true}).click();
+  await page.getByRole('button',{name:'Retry original delivery',exact:true}).waitFor();
+  assert.equal(await page.getByLabel('Text to',{exact:true}).inputValue(),'+12065550199');
+  assert.equal(await page.getByLabel('Text to',{exact:true}).isEditable(),false);
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Retry original delivery',exact:true}).click();
+  await waitUntil(()=>requests.some(r=>r.path.endsWith('/checkout')&&r.method==='POST'));
+  const retriedPhone=requests.find(r=>r.path.endsWith('/checkout')&&r.method==='POST');
+  assert.equal(retriedPhone.data.phone,'+12065550199');assert.equal(retriedPhone.data.numberId,undefined);assert.equal(retriedPhone.data.contactId,'second');
+  await reset();
+  await page.getByRole("list", {name:"Call phases"}).getByRole("button", {name:"Close",exact:true}).click();
+  await page.getByLabel('Text to',{exact:true}).fill('(206) 555-0198');
+  failNextCheckout = true;
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Send link',exact:true}).click();
+  await page.getByRole('button',{name:'Retry original delivery',exact:true}).waitFor();
+  assert.equal(await page.getByLabel('Text to',{exact:true}).inputValue(),'+12065550198');
+  assert.equal(await page.getByLabel('Text to',{exact:true}).isEditable(),false);
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Retry original delivery',exact:true}).click();
+  await page.getByRole('button',{name:'Checkout already created',exact:true}).waitFor();
+  const afterFailure = requests.filter(r=>r.path.endsWith('/checkout')&&r.method==='POST');
+  assert.equal(afterFailure.length,2);assert.deepEqual(afterFailure[1].data,afterFailure[0].data);
   console.log("controller: confirmed prospect checkout, busy dedupe, call and test contexts");
   for (const phoneTest of [false, true]) {
     await reset({ phoneTest });
     await page.getByRole("list", { name: "Call phases" }).getByRole("button", { name: "Close", exact: true }).click();
-    const recipient = phoneTest ? "+14256154640" : "+15035550101";
-    assert.equal(await page.getByLabel("Text to", { exact: true }).inputValue(), recipient);
+    const recipient = phoneTest ? "+14256154640" : "+12065550199";
+    const textTo = page.getByLabel("Text to", { exact: true });
+    assert.equal(await textTo.inputValue(), phoneTest ? recipient : "+15035550101");
+    if (!phoneTest) await textTo.fill("(206) 555-0199");
+    assert.equal(await textTo.isEditable(), !phoneTest);
     page.once("dialog", async dialog => { assert.match(dialog.message(), new RegExp(recipient.replace("+", "\\+"))); await dialog.dismiss(); });
     await page.getByRole("button", { name: "Send link", exact: true }).click();
     assert.equal(requests.filter(r => r.path.endsWith("/checkout") && r.method === "POST").length, 0);
@@ -530,6 +565,8 @@ try {
     assert.equal(sent[0].path, "/api/v1/admin/sales/prospects/" + prospect.id + "/checkout");
     assert.equal(sent[0].data.confirmedWithoutCall, true);
     assert.equal(sent[0].data.confirmedRecipient, recipient);
+    assert.equal(sent[0].data.phone, recipient);
+    if (!phoneTest) assert.equal(sent[0].data.numberId, undefined);
     assert.equal(sent[0].data.expectedIsTest, phoneTest);
     checkoutReply(); checkoutReply = null; holdCheckout = false;
     await page.getByRole("button", { name: "Checkout already created", exact: true }).waitFor();
