@@ -72,8 +72,9 @@ function PhoneEditor({ numbers, onChange, reason, label }) {
     })}
   </div>;
 }
-export default function CompanyContactForm({ draft, onChange, prospect, saving = false }) {
+export default function CompanyContactForm({ draft, onChange, prospect, saving = false, activeSection, tabPrefix }) {
   const titlesId = useId();
+  const panel = (id) => tabPrefix ? { id: `${tabPrefix}-panel-${id}`, role: "tabpanel", "aria-labelledby": `${tabPrefix}-tab-${id}`, tabIndex: 0, hidden: activeSection !== id } : {};
   const capabilities = prospect.editCapabilities || {};
   const reason = disabledReasons(saving && "Wait for this company to finish saving.", capabilities.canEdit !== true && (capabilities.reason || "Company editing is unavailable. Reload the page to check access."));
   const phoneReason = disabledReasons(reason, (prospect.phoneTestMode || capabilities.canEditPhones !== true) && (capabilities.phoneReason || (prospect.phoneTestMode ? "Turn off phone test mode to edit phone numbers." : "Phone number editing is unavailable.")));
@@ -84,13 +85,13 @@ export default function CompanyContactForm({ draft, onChange, prospect, saving =
   return <>
     {reason && <p className={styles.notice} role="status">{reason}</p>}
     {phoneReason && phoneReason !== reason && <p className={styles.notice}> {phoneReason} Contact names, emails, titles, and roles can still be updated.</p>}
-    <section className={styles.section} aria-labelledby="company-details-heading"><div className={styles.sectionHeading}><div><h2 id="company-details-heading">Business details</h2><p className={styles.muted}>Company information and sales research.</p></div></div>
+    <section className={styles.section} aria-labelledby="company-details-heading" {...panel("details")}><div className={styles.sectionHeading}><div><h2 id="company-details-heading">Business details</h2><p className={styles.muted}>Company information and sales research.</p></div></div>
       <div className={styles.grid}>{BUSINESS_FIELDS.map(([key, label, maxLength, type]) => <Field key={key} label={label} value={draft[key]} onChange={(value) => update(key, value)} maxLength={maxLength} type={type} required={key === "businessName"} reason={reason} />)}
       <Field label="Pitch notes — one per line" type="textarea" value={draft.pitchFlags} onChange={(value) => update("pitchFlags", value)} reason={reason} />
       </div>
     </section>
-    <section className={styles.section} aria-labelledby="shared-phones-heading"><h2 id="shared-phones-heading">Company phone numbers</h2><p className={styles.muted}>Shared business lines are available when calling any contact at this company.</p><PhoneEditor label="Shared numbers" numbers={draft.sharedNumbers} onChange={(value) => update("sharedNumbers", value)} reason={phoneReason} /></section>
-    <section className={styles.section} aria-labelledby="company-contacts-heading"><div className={styles.sectionHeading}><div><h2 id="company-contacts-heading">People at this company</h2><p className={styles.muted}>Choose a default contact. Each person can have their own phone numbers.</p></div><HintButton type="button" className={styles.button} disabled={Boolean(phoneReason)} disabledReason={phoneReason} onClick={() => { const contact = { id: newDraftId(), firstName: "", lastName: "", displayName: "", title: "", email: "", decisionMaker: false, influencer: false, numbers: [] }; onChange({ ...draft, contacts: [...draft.contacts, contact], defaultContactId: draft.defaultContactId || contact.id }); }}>Add contact</HintButton></div>
+    <section className={styles.section} aria-labelledby="shared-phones-heading" {...panel("phones")}><h2 id="shared-phones-heading">Company phone numbers</h2><p className={styles.muted}>Shared business lines are available when calling any contact at this company.</p><PhoneEditor label="Shared numbers" numbers={draft.sharedNumbers} onChange={(value) => update("sharedNumbers", value)} reason={phoneReason} /></section>
+    <section className={styles.section} aria-labelledby="company-contacts-heading" {...panel("people")}><div className={styles.sectionHeading}><div><h2 id="company-contacts-heading">People at this company</h2><p className={styles.muted}>Choose a default contact. Each person can have their own phone numbers.</p></div><HintButton type="button" className={styles.button} disabled={Boolean(phoneReason)} disabledReason={phoneReason} onClick={() => { const contact = { id: newDraftId(), firstName: "", lastName: "", displayName: "", title: "", email: "", decisionMaker: false, influencer: false, numbers: [] }; onChange({ ...draft, contacts: [...draft.contacts, contact], defaultContactId: draft.defaultContactId || contact.id }); }}>Add contact</HintButton></div>
       <datalist id={titlesId}>{TITLES.map((title) => <option key={title} value={title} />)}</datalist>
       {draft.contacts.map((contact, index) => {
         const isDefault = contact.id === draft.defaultContactId;
@@ -109,6 +110,6 @@ export default function CompanyContactForm({ draft, onChange, prospect, saving =
       })}
       <p className={styles.muted}>Decision maker and influencer roles do not grant permission to call or email.</p>
     </section>
-    <section className={styles.section} aria-labelledby="company-permissions-heading"><h2 id="company-permissions-heading">Contact permissions</h2><p className={styles.muted}>Record permission separately from a person’s role. Do-not-call and suppression rules still apply.</p><p className={styles.muted}>Email permission applies to {defaultEmail || "the default contact’s email address"}. {changedEmail ? "The recipient changed. Confirm permission again for this email address." : "Choosing a contact for a signup link does not grant marketing email permission."}</p><div className={styles.checks}><Check label="Permission to call recorded" checked={draft.permissionGranted} onChange={(value) => update("permissionGranted", value)} reason={reason} /><Check label="Permission to email recorded" checked={draft.emailPermission} onChange={(value) => update("emailPermission", value)} reason={reason} /></div></section>
+    <section className={styles.section} aria-labelledby="company-permissions-heading" {...panel("permissions")}><h2 id="company-permissions-heading">Contact permissions</h2><p className={styles.muted}>Record permission separately from a person’s role. Do-not-call and suppression rules still apply.</p><p className={styles.muted}>Email permission applies to {defaultEmail || "the default contact’s email address"}. {changedEmail ? "The recipient changed. Confirm permission again for this email address." : "Choosing a contact for a signup link does not grant marketing email permission."}</p><div className={styles.checks}><Check label="Permission to call recorded" checked={draft.permissionGranted} onChange={(value) => update("permissionGranted", value)} reason={reason} /><Check label="Permission to email recorded" checked={draft.emailPermission} onChange={(value) => update("emailPermission", value)} reason={reason} /></div></section>
   </>;
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { fetchSalesJson, displayStatus } from "./salesApi";
 import CompanyContactForm, { companyEditorDraft, companyEditorNextDraft, companyEditorPayload, newDraftId } from "./CompanyContactForm";
 import { HintButton, disabledReasons } from "./DisabledHint";
@@ -12,6 +13,8 @@ export function companyEditorReturnPath(returnTo, prospectId) {
   return `/sales?${returnTo === "contacts" ? "tab=contacts&" : ""}prospectId=${id}`;
 }
 
+const SECTIONS = [["details", "Business details"], ["phones", "Company phone numbers"], ["people", "People at this company"], ["permissions", "Contact permissions"], ["activity", "Company activity"]];
+
 export default function CompanyContactEditor({ prospectId, returnTo = "queue" }) {
   const [prospect, setProspect] = useState(null), [draft, setDraft] = useState(null),
     [savedDraft, setSavedDraft] = useState(""), [loading, setLoading] = useState(true),
@@ -19,6 +22,28 @@ export default function CompanyContactEditor({ prospectId, returnTo = "queue" })
     [conflict, setConflict] = useState(false), [notice, setNotice] = useState(""),
     [revision, setRevision] = useState(0);
   const attempt = useRef(null);
+  const tabPrefix = useId();
+  const [activeSection, setActiveSection] = useState("details");
+  const firstInvalid = useRef(null);
+  const revealInvalid = (event) => {
+    // Native validation visits every invalid control. Reveal only the first one
+    // synchronously, so the browser can focus it and show its validation message.
+    if (firstInvalid.current) { event.preventDefault(); return; }
+    firstInvalid.current = event.target;
+    const panelId = event.target.closest('[role="tabpanel"]')?.id;
+    const section = SECTIONS.find(([id]) => panelId === `${tabPrefix}-panel-${id}`)?.[0];
+    if (section) flushSync(() => setActiveSection(section));
+    window.setTimeout(() => { firstInvalid.current = null; }, 0);
+  };
+  const navigateTabs = (event, index) => {
+    const next = event.key === "ArrowRight" ? (index + 1) % SECTIONS.length
+      : event.key === "ArrowLeft" ? (index + SECTIONS.length - 1) % SECTIONS.length
+      : event.key === "Home" ? 0 : event.key === "End" ? SECTIONS.length - 1 : null;
+    if (next === null) return;
+    event.preventDefault();
+    setActiveSection(SECTIONS[next][0]);
+    document.getElementById(`${tabPrefix}-tab-${SECTIONS[next][0]}`)?.focus();
+  };
   const dirty = Boolean(draft && JSON.stringify(draft) !== savedDraft);
   const returnPath = companyEditorReturnPath(returnTo, prospectId);
   useEffect(() => {
@@ -84,9 +109,12 @@ export default function CompanyContactEditor({ prospectId, returnTo = "queue" })
     {error && <div className={styles.error} role="alert"><p>{error}</p>{conflict && <HintButton type="button" className={styles.button} disabled={saving} disabledReason="Wait for this company to finish saving." onClick={reload}>Reload latest details</HintButton>}</div>}
     {notice && <p className={styles.success} role="status">{notice}</p>}
     {!loading && !draft && <div className={styles.actions}><HintButton type="button" className={styles.button} onClick={reload}>Try again</HintButton><a className={styles.button} href="/sales/login">Sign in</a></div>}
-    {!loading && draft && <form onSubmit={save}>
-      <CompanyContactForm draft={draft} prospect={prospect} saving={saving} onChange={(next) => { setDraft((previous) => companyEditorNextDraft(previous, next)); setNotice(""); }} />
-      <section className={styles.section} aria-labelledby="company-record-heading"><div className={styles.sectionHeading}><div><h2 id="company-record-heading">Company activity</h2><p className={styles.muted}>Assignment, payment, outcomes, and contact restrictions are managed in their usual workflows.</p></div></div><dl className={styles.statusGrid}>
+    {!loading && draft && <form onSubmit={save} onInvalidCapture={revealInvalid}>
+      <div className={styles.tabs} role="tablist" aria-label="Company profile sections">
+        {SECTIONS.map(([id, label], index) => <button key={id} type="button" role="tab" id={`${tabPrefix}-tab-${id}`} aria-controls={`${tabPrefix}-panel-${id}`} aria-selected={activeSection === id} tabIndex={activeSection === id ? 0 : -1} className={styles.tab} onClick={() => setActiveSection(id)} onKeyDown={(event) => navigateTabs(event, index)}>{label}</button>)}
+      </div>
+      <CompanyContactForm activeSection={activeSection} tabPrefix={tabPrefix} draft={draft} prospect={prospect} saving={saving} onChange={(next) => { setDraft((previous) => companyEditorNextDraft(previous, next)); setNotice(""); }} />
+      <section className={styles.section} id={`${tabPrefix}-panel-activity`} role="tabpanel" aria-labelledby={`${tabPrefix}-tab-activity`} tabIndex={0} hidden={activeSection !== "activity"}><div className={styles.sectionHeading}><div><h2 id="company-record-heading">Company activity</h2><p className={styles.muted}>Assignment, payment, outcomes, and contact restrictions are managed in their usual workflows.</p></div></div><dl className={styles.statusGrid}>
         <div><dt>Assigned representative</dt><dd>{prospect.assignedRepName || prospect.assignedRepEmail || "Unassigned"}</dd></div>
         <div><dt>Status</dt><dd>{displayStatus(prospect.status)}</dd></div><div><dt>Latest outcome</dt><dd>{prospect.lastOutcome ? displayStatus(prospect.lastOutcome) : prospect.outcome ? displayStatus(prospect.outcome) : "None"}</dd></div>
         <div><dt>Phone test mode</dt><dd>{prospect.phoneTestMode ? "On — using test destinations" : "Off"}</dd></div>

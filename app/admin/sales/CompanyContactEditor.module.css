@@ -39,3 +39,9 @@
 .statusGrid dt { color: #64748b; font-size: 12px; }
 .statusGrid dd { margin: 4px 0 0; overflow-wrap: anywhere; }
 @media (max-width: 650px) { .section { padding: 18px; } .grid, .statusGrid { grid-template-columns: 1fr; } .phoneRow { grid-template-columns: 1fr 1fr; } .phoneRow > :first-child { grid-column: 1 / -1; } .contact { padding: 15px; } .header h1 { font-size: 24px; } .footer { padding: 14px; } }
+
+.tabs { display: flex; gap: 4px; overflow-x: auto; padding: 4px; border-bottom: 1px solid #dbe2eb; }
+.tab { flex: 0 0 auto; border: 0; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; padding: 12px 14px; background: transparent; color: #476078; font: inherit; font-weight: 600; cursor: pointer; }
+.tab[aria-selected="true"] { color: #1753b7; background: #e9f1ff; border-bottom-color: #175bd8; }
+.tab:focus-visible, .section[role="tabpanel"]:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+.section[hidden] { display: none; }

@@ -1,5 +1,8 @@
 # Decisions
 
+## 2026-11-09 — Tabbed Sales company editor
+- Owner requested one tab per existing company-editor card. Keep all five panels mounted around one company draft, with global Save/Cancel and errors. Keyboard tab navigation and native validation reveal the selected/invalid panel without changing aggregate saves, contact consent or editing permissions.
+
 ## 2026-11-09 — Simplify the current Sales prospect card
 - Owner requested removing the suggested opener and List research disclosure from the current prospect/company card and right-aligning phone numbers, labels and notes. Keep the stored research fields and editor/import behavior; phone notes use their own right-aligned row so they do not shift the number away from the card edge.
 
