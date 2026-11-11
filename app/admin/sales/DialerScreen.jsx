@@ -962,11 +962,11 @@ export default function DialerScreen({
             </div>
           )}
           {dispositions.length > 0 && <p role="status">Selected: {dispositions.map(salesDispositionLabel).join(" · ")}</p>}
-          {suppressesCalls && <p role="status">DND and Bad number permanently block calls to this company and its saved phone/domain identities. This overrides Follow up; no callback will be scheduled.</p>}
-          <p>Choose one or more dispositions, then Save &amp; next. Customer is a sales label; only Stripe sets Paid.</p>
+          {suppressesCalls && <p role="status">DND, Bad number and Not Interested permanently block calls to this company and its saved phone/domain identities. This overrides Follow up; no callback will be scheduled.</p>}
+          <p>Choose one or more dispositions, then Save &amp; next. Hang Up records a disposition; use End call to end the call. Customer is a sales label; only Stripe sets Paid.</p>
           <small>
             {phase === "READY"
-              ? "Outcomes unlock when a call is dialed. DND and Bad number are permanent."
+              ? "Outcomes unlock when a call is dialed. DND, Bad number and Not Interested are permanent."
               : phase === "WRAPUP"
                 ? `Save & next doesn’t wait for the transcript.${queue.upcoming?.[0] ? ` Next up: ${queue.upcoming[0].businessName}` : ""}`
                 : "Pick an outcome any time. Save & next activates once the call has ended."}
