@@ -612,11 +612,17 @@ try {
   assert.equal(await left.getAttribute('aria-pressed'),'true');
   assert.equal(requests.filter(r=>r.path.endsWith('/outcome')).length,0,'Selecting a voicemail never auto advances');
   await left.click();assert.equal(await left.getAttribute('aria-pressed'),'false');
+  const message=page.getByRole('button',{name:'Left Message',exact:true});
+  await message.click();await left.click();
+  assert.equal(await message.getAttribute('aria-pressed'),'true');
+  await left.click();
+  assert.equal(await message.getAttribute('aria-pressed'),'true','Left Message is independent of Left voicemail');
+  await page.getByRole('button',{name:'Dead Air',exact:true}).click();
   await page.getByRole('button',{name:'Customer',exact:true}).click();
   await page.getByRole('button',{name:'Save & next →',exact:true}).click();
   await waitUntil(()=>requests.some(r=>r.path.endsWith('/outcome')));
   const multiSave=requests.find(r=>r.path.endsWith('/outcome')).data;
-  assert.deepEqual(multiSave.dispositions,['prospect','customer']);assert.equal(multiSave.outcome,'connected_no_demo');
+  assert.deepEqual(multiSave.dispositions,['prospect','left_message','dead_air','customer']);assert.equal(multiSave.outcome,'connected_no_demo');
   console.log("controller: company brief HTTP 200 failure, reference, reload, pending and retry");
   await reset();
   await page.getByRole("button", { name: "Generate brief", exact: true }).click();
@@ -838,6 +844,8 @@ try {
     .getByRole("button", { name: "DND", exact: true })
     .click();
   await page.getByRole("button", { name: "Customer", exact: true }).click();
+  await page.getByRole("button", { name: "Dead Air", exact: true }).click();
+  await page.getByRole("button", { name: "Left Message", exact: true }).click();
   await incoming();
   await page
     .getByRole("heading", { name: "Matched Business", exact: true })
@@ -875,7 +883,7 @@ try {
   assert.equal(oldSave.data.dncReason, "asked_not_to_be_called");
   assert.equal(oldSave.data.notes, "Do not lose original notes.");
   assert.equal(oldSave.data.outcome, "do_not_call");
-  assert.deepEqual(oldSave.data.dispositions,["do_not_call","customer"]);
+  assert.deepEqual(oldSave.data.dispositions,["do_not_call","customer","dead_air","left_message"]);
   console.log("controller: concurrent unknown incoming identity binding");
   await reset({ unknown: true, second: true });
   await incoming();

@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { renderScript } from '../app/admin/sales/dialerState.mjs';
+import { SALES_DISPOSITIONS, callDispositions, canonicalSalesOutcome } from '../lib/salesDispositions.js';
 import { importSalesProspects,getSalesProspect,createSalesCallSession,updateSalesCallSession,recordSalesCallOutcome,skipSalesProspect } from '../pages/api/_lib/salesRepository.js';
 import { getSalesDialerSettings, getSalesRepQueue,removeSalesQueueProspect,saveSalesLiveNotes,salesTransaction,listSalesReturnItems } from '../pages/api/_lib/salesDialer.js';
 import { applySalesPaidCheckout,sendSalesCheckout } from '../pages/api/_lib/salesCheckout.js';
@@ -66,20 +67,32 @@ try {
  assert.notEqual((await getSalesProspect(pool,p.prospectId)).status,'paid');
  await assert.rejects(recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,dispositions:['paid','customer']}),e=>e.code==='invalid_call_outcome');
  await assert.rejects(recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,dispositions:[]}),e=>e.code==='invalid_call_outcome');
- for (const [dispositions,outcome] of [[['hang_up'],'connected_no_demo'],[['no_answer'],'no_answer'],[['hang_up','no_answer','prospect'],'connected_no_demo']]) {
+ assert.equal(SALES_DISPOSITIONS.length,13);
+ assert.equal(new Set(SALES_DISPOSITIONS.map(([,label])=>label)).size,13,'Do not add identically named toggles');
+ assert.deepEqual(callDispositions({outcome:'voicemail'}),['voicemail'],'Historical scalar outcomes remain readable');
+ for (const [dispositions,outcome] of [[['hang_up'],'connected_no_demo'],[['no_answer'],'no_answer'],[['hang_up','no_answer','prospect'],'connected_no_demo'],[['dead_air'],'connected_no_demo'],[['left_message'],'connected_no_demo'],[['dead_air','left_message'],'connected_no_demo'],[['voicemail_left','left_message'],'voicemail']]) {
   const recorded=await recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,dispositions});
   assert.equal(recorded.outcome,outcome);assert.deepEqual(recorded.dispositions,[...dispositions].sort());
   const persisted=(await query('SELECT metadata_json FROM sales_call_sessions WHERE sales_call_id=$1',[call.salesCallId])).rows[0];
   assert.deepEqual(persisted.metadata_json.dispositions,[...dispositions].sort());
+  assert.equal((await getSalesProspect(pool,p.prospectId)).doNotCall,false,'Neutral call results must not suppress this company');
+  const restored=await getSalesRepQueue(pool,1,{env});
+  assert.deepEqual(restored.queue.find(item=>item.prospectId===p.prospectId).history.find(item=>item.salesCallId===call.salesCallId).dispositions,[...dispositions].sort(),'Queue history preserves independent saved labels');
  }
+ await assert.rejects(recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,dispositions:['left_message','dead_air','callback_requested']}),e=>e.code==='callback_time_required');
+ const neutralCallback=await recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,dispositions:['left_message','dead_air','callback_requested'],callbackAt:new Date(Date.now()-1000).toISOString()});
+ assert.equal(neutralCallback.outcome,'callback_requested');assert.ok(neutralCallback.callbackAt);
+ assert.equal(canonicalSalesOutcome(['dead_air','left_message','wrong_number','callback_requested']),'wrong_number');
  const uninterested=await recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,dispositions:['not_interested','callback_requested','hang_up','no_answer']});
  assert.equal(uninterested.outcome,'not_interested');assert.equal(uninterested.callbackAt,null);
  assert.deepEqual(uninterested.dispositions,['callback_requested','hang_up','no_answer','not_interested']);
  const uninterestedProspect=await getSalesProspect(pool,p.prospectId);
  assert.equal(uninterestedProspect.doNotCall,true);assert.equal((await query('SELECT dnc_reason FROM sales_prospects WHERE prospect_id=$1',[p.prospectId])).rows[0].dnc_reason,'not_interested');assert.equal(uninterestedProspect.callbackAt,null);
- const suppression=await recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,dispositions:['callback_requested','do_not_call','wrong_number','customer','not_interested','hang_up','no_answer']});
- assert.equal(suppression.outcome,'do_not_call');assert.equal(suppression.callbackAt,null);assert.equal(suppression.dispositions.length,7);
+ const suppression=await recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,dispositions:SALES_DISPOSITIONS.map(([key])=>key)});
+ assert.equal(suppression.outcome,'do_not_call');assert.equal(suppression.callbackAt,null);assert.equal(suppression.dispositions.length,13);
  const suppressed=await getSalesProspect(pool,p.prospectId);assert.equal(suppressed.doNotCall,true);assert.equal(suppressed.callbackAt,null);
+ await recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,dispositions:['dead_air','left_message']});
+ assert.equal((await getSalesProspect(pool,p.prospectId)).doNotCall,true,'New neutral selections cannot clear an existing suppression');
  await recordSalesCallOutcome(pool,{salesCallId:call.salesCallId,outcome:'not_interested'});
  const repeat=await importSalesProspects(pool,{records:[{...records[0],external_ref:'other-import',phone:'+12065558888',website:'https://www.business0.test/new-page'}],adminUserId:2});assert.equal((await getSalesProspect(pool,repeat.imported[0].prospectId)).doNotCall,true);
  const phoneMatch=await importSalesProspects(pool,{records:[{...records[0],external_ref:'phone-import',website:'https://different.test'}],adminUserId:2});assert.equal((await getSalesProspect(pool,phoneMatch.imported[0].prospectId)).doNotCall,true);

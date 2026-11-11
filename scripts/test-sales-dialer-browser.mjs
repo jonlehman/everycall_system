@@ -331,9 +331,10 @@ try {
   const visit = async (query) => { await page.goto(base + query); await page.waitForSelector("[data-phase], form[aria-label='Add prospect']"); };
   await visit('state=TALK');
   await page.getByRole("list", { name: "Call phases" }).getByRole("button", { name: "Close", exact: true }).click();
-  const extraDispositions = ["Not Interested", "Hang Up", "No Answer"];
+  const extraDispositions = ["Not Interested", "Hang Up", "No Answer", "Dead Air", "Left Message"];
   for (const label of extraDispositions) {
     const button = page.getByRole("button", { name: label, exact: true });
+    assert.equal(await button.count(), 1, `Only one ${label} toggle`);
     await button.click();
     assert.equal(await button.getAttribute("aria-pressed"), "true");
   }
@@ -343,13 +344,13 @@ try {
   assert.equal(await page.getByRole("button", { name: "Save & next →", exact: true }).isDisabled(), true);
   await page.getByRole("button", { name: "Hang Up", exact: true }).click();
   assert.equal(await page.getByRole("button", { name: "Hang Up", exact: true }).getAttribute("aria-pressed"), "false");
-  for (const label of ["Not Interested", "No Answer"]) assert.equal(await page.getByRole("button", { name: label, exact: true }).getAttribute("aria-pressed"), "true");
+  for (const label of ["Not Interested", "No Answer", "Dead Air", "Left Message"]) assert.equal(await page.getByRole("button", { name: label, exact: true }).getAttribute("aria-pressed"), "true");
   await page.getByRole("button", { name: "Hang Up", exact: true }).click();
   await page.getByRole("button", { name: "Left voicemail", exact: true }).click();
   await page.getByRole("button", { name: "End call", exact: true }).click();
   await page.getByRole("button", { name: "Save & next →", exact: true }).click();
   assert.deepEqual(await page.evaluate(() => window.fixtureActions), ['end_call']);
-  assert.deepEqual(await page.evaluate(() => window.fixtureSaved.dispositions), ['not_interested', 'no_answer', 'hang_up', 'voicemail_left']);
+  assert.deepEqual(await page.evaluate(() => window.fixtureSaved.dispositions), ['not_interested', 'no_answer', 'dead_air', 'left_message', 'hang_up', 'voicemail_left']);
   assert.equal(await page.evaluate(() => window.fixtureSaved.outcome), 'not_interested');
   await visit('state=WRAPUP&fixedSignupCharge');
   assert.equal(await page.getByLabel('Signup charge (USD)',{exact:true}).isDisabled(),true);

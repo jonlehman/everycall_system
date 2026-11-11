@@ -1,5 +1,9 @@
 # Decisions
 
+## 2026-11-11 — Additional Sales call-result labels
+- After refreshing the screen, the owner clarified that identically named buttons must not be duplicated. Add only Dead Air and Left Message to the existing shared disposition row; keep Hang Up and Not Interested unchanged.
+- Store `dead_air` and `left_message` as separate metadata selections. They derive `connected_no_demo` when no existing workflow selection takes priority, preserving ordinary saved-outcome processing, permanent suppression, callback requirements and explicit Save. Left Message remains distinct from Left voicemail. No schema, call-control or payment change. SALES-DISPOSITION-005 maps persistence, history and interrupted-draft regressions.
+
 ## 2026-11-10 — Per-contact Sales memo
 - Owner requested an expandable Notes memo for each person in the company editor. Use contact-owned PostgreSQL TEXT with an empty default and a resizable multiline textarea; preserve long Unicode text and whitespace without an application character cap or silent truncation. Explicit empty clears; legacy omission preserves saved notes.
 - Keep existing company/assignment/version/pending-work/phone-test/consent guards. Contact notes stay out of immutable call, checkout and booking snapshots. Full CSV exports include notes; legacy writers and source enrichment preserve them. SALES-CONTACT-010 maps implementation and regression evidence.

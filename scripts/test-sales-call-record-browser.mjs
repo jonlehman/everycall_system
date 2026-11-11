@@ -49,7 +49,7 @@ const call = {
   endedAt: "2026-10-20T12:09:14Z",
   dialedNumber: "+15035550101",
   outcome: "callback_requested",
-  dispositions: ["customer", "prospect", "callback_requested"],
+  dispositions: ["customer", "prospect", "callback_requested", "voicemail_left", "left_message", "dead_air"],
   outcomeNotes: "Owner asked for a callback.",
   liveNotes: "Question about after-hours coverage.",
   transcriptStatus: "processing",
@@ -125,7 +125,7 @@ try {
       exact: true,
     })
     .waitFor();
-  await page.getByText("Customer · Prospect (interested) · Follow up", { exact: true }).waitFor();
+  await page.getByText("Customer · Prospect (interested) · Follow up · Left voicemail · Left Message · Dead Air", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button").count(), 0);
   assert.equal(
     await page
