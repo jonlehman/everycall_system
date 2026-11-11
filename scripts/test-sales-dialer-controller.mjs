@@ -266,6 +266,7 @@ const server = createServer(async (req, res) => {
   if (match) {
     const [, id, action] = match;
     if (action === "actions") {
+      if (data.action === "send_dtmf") return send({ call: calls[id] });
       if (data.action === "start_demo") {
         deferredDemo = () =>
           send({
@@ -413,6 +414,36 @@ const incoming = async () => {
   await page.locator('[data-phase="TALK"]').waitFor();
 };
 try {
+  await reset();
+  assert.equal(await page.getByRole("button", { name: "Keypad", exact: true }).count(), 0);
+  await dial();
+  await page.getByRole("button", { name: "Keypad", exact: true }).click();
+  const keypad = page.getByRole("region", { name: "In-call keypad" });
+  await keypad.getByRole("button", { name: "Pound (#)", exact: true }).click();
+  await waitUntil(() => requests.some(r => r.data.action === "send_dtmf"));
+  const keypadRequest = requests.find(r => r.data.action === "send_dtmf");
+  assert.equal(keypadRequest.path, "/api/v1/admin/sales/calls/outgoing-call/actions");
+  assert.equal(keypadRequest.data.payload.digit, "#");
+  assert.match(keypadRequest.data.payload.commandId, /^[0-9a-f-]{36}$/);
+  await keypad.getByRole("status").filter({ hasText: "Sent pound" }).waitFor();
+  // A late digit response cannot restore live UI after emergency hangup, and
+  // queued digits must not escape to a terminated or subsequently selected call.
+  let delayedKey;
+  await page.route("**/calls/outgoing-call/actions", async route => {
+    if (route.request().postDataJSON().action === "send_dtmf") delayedKey = route;
+    else await route.continue();
+  });
+  await keypad.getByRole("button", { name: "1", exact: true }).focus();
+  await page.keyboard.type("234");
+  await waitUntil(() => Boolean(delayedKey));
+  await end();
+  assert.equal(await keypad.count(), 0);
+  await delayedKey.fulfill({ status: 200, json: { call: activeCall("outgoing-call", prospect.id) } });
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator('[data-phase="WRAPUP"]').count(), 1);
+  assert.equal(requests.filter(r => r.data.action === "send_dtmf").length, 1);
+  await page.unroute("**/calls/outgoing-call/actions");
+
   const startRinging = async ({ deferAudio = false } = {}) => {
     await reset(); ringingFixture = true;
     await page.evaluate(value => { window.deferAudio = value; }, deferAudio);

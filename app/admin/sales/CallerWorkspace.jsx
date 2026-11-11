@@ -1,4 +1,5 @@
 "use client";
+import { canSendSalesDtmf } from "../../../lib/salesDtmf.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchSalesJson,
@@ -422,6 +423,22 @@ export default function CallerWorkspace() {
         throw err;
       }
     });
+  const sendKeypadDigit = async (callId, digit) => {
+    const current = callRef.current;
+    if (current?.id !== callId || !canSendSalesDtmf(current)
+      || endingCallIds.current.has(callId) || actionPending.current
+      || !softphone.current?.isReady() || !microphone.current?.active) {
+      throw new Error("The call is no longer connected.");
+    }
+    const commandId = crypto.randomUUID();
+    await fetchSalesJson(`${BASE}/calls/${encodeURIComponent(callId)}/actions`, {
+      method: "POST",
+      idempotencyKey: commandId,
+      body: JSON.stringify({ action: "send_dtmf", payload: { digit, commandId } })
+    });
+    // Do not apply the returned call snapshot: hangup or a newer poll may have
+    // completed while this digit was in flight.
+  };
   const callAction = (action) => {
     const activeCall = callRef.current;
     if (!activeCall?.id) return;
@@ -929,6 +946,7 @@ export default function CallerWorkspace() {
         }}
         onCall={startCall}
         onAction={callAction}
+        onSendDigit={sendKeypadDigit}
         onMute={() => {
           try {
             mute(!muted);

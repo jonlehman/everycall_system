@@ -190,6 +190,12 @@ The second 8/19 WVG call contained one possible early VAD handoff (“Got it—a
 ## Managed Live v20.1
 - Run `node scripts/validate-managed-live-runtime.mjs`, `node scripts/validate-live-brief-curation.mjs`, `node scripts/validate-live-prompt-settings.mjs`, and `node scripts/validate-client-setup-status.mjs`. Then build the contracts, gateway, and web app. These are offline gates, not an audible acceptance call; follow `docs/SPECS/live-v20-1-rollout.md` before enabling tenant traffic.
 
+## Sales in-call keypad
+
+SR-DTMF-01–04: run `node scripts/validate-sales-telephony.mjs`, compile the sales gateway and run `node scripts/validate-sales-call-gateway.mjs`, then `node --no-warnings scripts/validate-sales-auth.mjs`. The stubbed checks verify all twelve exact provider digits, prospect-only routing, input validation, no retry on uncertain provider errors, internal auth, owner isolation (including admins), API replay and no keypad payload in audits. No live provider credentials or traffic are used.
+
+Run `node scripts/test-sales-keypad-browser.mjs` and `node scripts/test-sales-dialer-controller.mjs` with installed Playwright Chromium. These cover click/keyboard entry, editable-field and shortcut exclusion, focus return, serial keys, failure feedback, queue cancellation, call changes, responsive bounds, the real controller's call ID routing and late responses after hangup. Retain the existing dialer, WebRTC and ringback regressions. Mocks do not establish carrier IVR behavior: a separately approved controlled call must verify destination menu navigation and extension entry, with the rep muted/unmuted, then verify hangup clears the keypad. Never use real prospects for acceptance testing.
+
 ## Outbound Sales System
 - Run `corepack pnpm validate:sales-system`. The Sales auth fixture also validates admin-only report/operator-list access, operator settings persistence, UTC date boundaries in a non-UTC database session, rep/unassigned filters, honest empty totals, and the 100-row detail cap without truncating aggregate totals.
 - Run `corepack pnpm typecheck` and `corepack pnpm build`.

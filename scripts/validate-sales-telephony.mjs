@@ -1087,6 +1087,31 @@ async function validateOrchestrator() {
   assert.equal(incomplete.teardown_complete, false);
 }
 
+// DTMF uses the outbound prospect resource, exact single-key body, and no
+// automatic retry after an ambiguous provider result.
+{
+  const requests = [];
+  let fail = false;
+  const client = createSalesTelnyxClient({
+    apiKey: "fixture-only", maxAttempts: 3,
+    fetchImpl: async (url, options) => {
+      requests.push({ url, body: JSON.parse(options.body) });
+      return jsonResponse(fail ? 503 : 200, fail ? { errors: [{ detail: "fixture" }] } : { data: { result: "ok" } });
+    }
+  });
+  for (const digit of "0123456789*#") {
+    const commandId = crypto.randomUUID();
+    await client.sendDtmf({ callControlId: "prospect/control", digit, commandId });
+    assert.deepEqual(requests.at(-1), { url: "https://api.telnyx.com/v2/calls/prospect%2Fcontrol/actions/send_dtmf", body: { digits: digit, duration_millis: 250, command_id: commandId } });
+  }
+  await assert.rejects(client.sendDtmf({ callControlId: "prospect", digit: "12", commandId: crypto.randomUUID() }), /invalid_sales_dtmf/);
+  await assert.rejects(client.sendDtmf({ digit: "1", commandId: crypto.randomUUID() }), /call_control_id/);
+  fail = true;
+  const before = requests.length;
+  await assert.rejects(client.sendDtmf({ callControlId: "prospect", digit: "1", commandId: crypto.randomUUID() }));
+  assert.equal(requests.length, before + 1, "Do not automatically repeat an uncertain keypress");
+}
+
 await validateProviderUtilities();
 await validateTelnyxAdapter();
 await validateOpenAIAdapter();

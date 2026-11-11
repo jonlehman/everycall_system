@@ -1,3 +1,4 @@
+import { validSalesDtmfPayload } from "../../../lib/salesDtmf.js";
 import crypto from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import {
@@ -61,7 +62,7 @@ type GatewayOptions = {
   clearTimeoutImpl?: typeof clearTimeout;
 };
 
-type GatewayAction = "start_demo" | "pause_ai" | "end_demo" | "end_call";
+type GatewayAction = "start_demo" | "pause_ai" | "end_demo" | "end_call" | "send_dtmf";
 
 type GatewayActionResult = {
   call: SalesCallContext;
@@ -87,7 +88,8 @@ const ACTIONS = new Set<GatewayAction>([
   "start_demo",
   "pause_ai",
   "end_demo",
-  "end_call"
+  "end_call",
+  "send_dtmf"
 ]);
 const INTENTIONAL_AI_TEARDOWN_STATES = new Set([
   "ending_demo",
@@ -1181,7 +1183,8 @@ export function createSalesCallGateway(options: GatewayOptions) {
 
   async function performAction(
     salesCallId: string,
-    action: GatewayAction
+    action: GatewayAction,
+    payload: JsonObject = {}
   ): Promise<GatewayActionResult> {
     return withCallLock(salesCallId, async () => {
       let call = await loadRequiredCall(salesCallId);
@@ -1201,6 +1204,27 @@ export function createSalesCallGateway(options: GatewayOptions) {
           "sales_call_terminal",
           "The sales call has already ended."
         );
+      }
+
+      if (action === "send_dtmf") {
+        if (!validSalesDtmfPayload(payload)) {
+          throw new SalesGatewayHttpError(400, "invalid_sales_dtmf", "Choose one keypad digit (0–9, * or #).");
+        }
+        // The browser leg is parked in a conference. Send from the stored
+        // prospect leg so only the destination receives the DTMF command.
+        if (!call.connectedAt || call.endedAt || !call.conferenceId
+          || !["prospect_connected", "ai_live", "ai_paused", "demo_ended", "signup_pending", "signup_completed"].includes(call.state)
+          || !call.prospectCallControlId || !call.operatorCallControlId
+          || call.prospectCallControlId === call.operatorCallControlId
+          || call.prospectCallControlId === call.aiTelnyxCallControlId) {
+          throw new SalesGatewayHttpError(409, "sales_dtmf_not_connected", "The destination must be connected before using the keypad.");
+        }
+        await telnyx.sendDtmf({
+          callControlId: call.prospectCallControlId,
+          digit: payload.digit,
+          commandId: payload.commandId
+        });
+        return { call, replayed: false };
       }
 
       if (action === "start_demo") {
@@ -1647,7 +1671,7 @@ export function createSalesCallGateway(options: GatewayOptions) {
           "Sales call action is not supported."
         );
       }
-      const result = await performAction(salesCallId, action);
+      const result = await performAction(salesCallId, action, req.body?.payload);
       return res.status(result.pending ? 202 : 200).json({
         ok: true,
         action,

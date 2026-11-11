@@ -1,3 +1,4 @@
+import { validSalesDtmfPayload } from "../../../../../../../lib/salesDtmf.js";
 import {
   getSalesCallSession
 } from "../../../../../_lib/salesRepository.js";
@@ -18,7 +19,8 @@ const ALLOWED_ACTIONS = new Set([
   "start_demo",
   "pause_ai",
   "end_demo",
-  "end_call"
+  "end_call",
+  "send_dtmf"
 ]);
 
 export default async function handler(req, res) {
@@ -44,7 +46,12 @@ export default async function handler(req, res) {
       return adminRecovery ? candidate : assertSalesCallAdmin(candidate, context.admin.id);
     };
     const call = authorizeCall(await getSalesCallSession(context.pool, salesCallId));
-    const request = { action, payload: body.payload || {} };
+    if (action === "send_dtmf" && !validSalesDtmfPayload(body.payload)) {
+      throw salesError("invalid_sales_dtmf", "Choose one keypad digit (0–9, * or #).", 400);
+    }
+    const request = { action, payload: action === "send_dtmf"
+      ? { digit: body.payload.digit, commandId: body.payload.commandId }
+      : body.payload || {} };
     const result = await runSalesAdminMutation(req, context, {
       scope: `sales.call.action:${salesCallId}`,
       request,

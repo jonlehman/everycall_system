@@ -325,7 +325,14 @@ function consumeProviderFailure(key) {
   providerFailureCounts.set(key, remaining - 1);
   return true;
 }
+const dtmfCommands = [];
+let failDtmf = false;
 const telnyx = {
+  async sendDtmf(input) {
+    dtmfCommands.push(input);
+    if (failDtmf) throw new Error("simulated DTMF failure");
+    return { data: { result: "ok" } };
+  },
   async answerCall({ callControlId, clientState }) {
     const state = decodeSalesClientState(clientState);
     assert.equal(state?.role, "operator");
@@ -602,18 +609,59 @@ async function postOpenAI(event, valid = true) {
   });
 }
 
-async function action(callId, name) {
+async function action(callId, name, payload = {}) {
   return fetch(`${baseUrl}/internal/calls/${encodeURIComponent(callId)}/actions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${internalToken}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ action: name })
+    body: JSON.stringify({ action: name, payload })
   });
 }
 
 try {
+  const dtmfCall = baseCall("keypad-call", {
+    state: "prospect_connected", connectedAt: "2026-07-28T12:00:00Z",
+    conferenceId: "keypad-conference", operatorCallControlId: "operator-keypad",
+    prospectCallControlId: "prospect-keypad", aiTelnyxCallControlId: "ai-keypad"
+  });
+  repository.calls.set(dtmfCall.salesCallId, dtmfCall);
+  const press = digit => ({ digit, commandId: crypto.randomUUID(), callControlId: "attacker-selected-leg" });
+  const unauthenticatedDtmf = await fetch(`${baseUrl}/internal/calls/keypad-call/actions`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "send_dtmf", payload: press("1") })
+  });
+  assert.equal(unauthenticatedDtmf.status, 401);
+  for (const digit of "0123456789*#") {
+    const payload = press(digit);
+    assert.equal((await action(dtmfCall.salesCallId, "send_dtmf", payload)).status, 200);
+    assert.deepEqual(dtmfCommands.at(-1), { callControlId: "prospect-keypad", digit, commandId: payload.commandId });
+  }
+  assert.equal(dtmfCommands.length, 12);
+  for (const payload of [press("12"), press("w"), press("A"), press(""), { digit: "1" }, { digit: 1, commandId: crypto.randomUUID() }]) {
+    assert.equal((await action(dtmfCall.salesCallId, "send_dtmf", payload)).status, 400);
+  }
+  for (const patch of [
+    { state: "dialing_prospect" }, { state: "ending" }, { state: "ended" },
+    { state: "failed" }, { connectedAt: null }, { endedAt: "2026-07-28T12:01:00Z" },
+    { conferenceId: null }, { prospectCallControlId: null },
+    { prospectCallControlId: "operator-keypad" }, { prospectCallControlId: "ai-keypad" }
+  ]) {
+    repository.calls.set(dtmfCall.salesCallId, { ...dtmfCall, ...patch });
+    assert.equal((await action(dtmfCall.salesCallId, "send_dtmf", press("2"))).status, 409);
+  }
+  assert.equal(dtmfCommands.length, 12, "Rejected keys must not reach any provider leg");
+  repository.calls.set(dtmfCall.salesCallId, dtmfCall);
+  failDtmf = true;
+  assert.equal((await action(dtmfCall.salesCallId, "send_dtmf", press("3"))).status, 502);
+  assert.equal(dtmfCall.state, "prospect_connected", "A digit failure must not end the call");
+  failDtmf = false;
+  await action(dtmfCall.salesCallId, "end_call");
+  const afterHangup = dtmfCommands.length;
+  assert.equal((await action(dtmfCall.salesCallId, "send_dtmf", press("4"))).status, 409);
+  assert.equal(dtmfCommands.length, afterHangup);
+
   const unauthorizedHealth = await fetch(`${baseUrl}/internal/health`);
   assert.equal(unauthorizedHealth.status, 401);
   const health = await fetch(`${baseUrl}/internal/health`, {

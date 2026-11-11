@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-11-11 — Sales in-call DTMF keypad
+
+- Add a focus-scoped 12-key keypad for connected calls. Use the existing owner-authorized Sales action path and per-call gateway lock to send Telnyx DTMF from the stored prospect leg; the browser operator leg is a conference participant and is not the destination. The provider contract is [Send DTMF](https://developers.telnyx.com/api-reference/call-commands/send-dtmf).
+- Queue keys only in component memory, cancel unsent keys on teardown/error, and ignore stale responses. Use one command UUID per press and no automatic provider retries; report ambiguous failures without replaying tones. Keep digit payloads out of audits and saved call notes. No schema, payment, recording, or inbound receptionist change. SR-DTMF-01–04 map implementation and regression evidence.
+
 ## 2026-11-11 — Additional Sales call-result labels
 - After refreshing the screen, the owner clarified that identically named buttons must not be duplicated. Add only Dead Air and Left Message to the existing shared disposition row; keep Hang Up and Not Interested unchanged.
 - Store `dead_air` and `left_message` as separate metadata selections. They derive `connected_no_demo` when no existing workflow selection takes priority, preserving ordinary saved-outcome processing, permanent suppression, callback requirements and explicit Save. Left Message remains distinct from Left voicemail. No schema, call-control or payment change. SALES-DISPOSITION-005 maps persistence, history and interrupted-draft regressions.

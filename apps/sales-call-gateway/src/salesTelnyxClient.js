@@ -1,3 +1,4 @@
+import { validSalesDtmfPayload } from "../../../lib/salesDtmf.js";
 import crypto from "node:crypto";
 
 // This adapter is scoped to the outbound-sales Telnyx application.
@@ -534,6 +535,17 @@ export function createSalesTelnyxClient({
         result = { data: { result: "already_gone" } };
       }
       return { data: result?.data || {}, command_id: commandId };
+    },
+
+    async sendDtmf({ callControlId, digit, commandId }) {
+      if (!validSalesDtmfPayload({ digit, commandId })) throw new Error("invalid_sales_dtmf");
+      // No automatic retries: an ambiguous digit must not be replayed later.
+      // command_id also protects a repeated HTTP request for the same press.
+      return request(`/calls/${encodeURIComponent(requireSalesValue(callControlId, "call_control_id"))}/actions/send_dtmf`, {
+        operation: "send_dtmf",
+        retry: false,
+        body: { digits: digit, duration_millis: 250, command_id: commandId }
+      });
     },
 
     async hangupCall({ callControlId, commandId }) {
