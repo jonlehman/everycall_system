@@ -8,7 +8,15 @@ export async function createSalesReportFixture() {
     const result = await db.query(sql, params);
     return { ...result, rowCount: result.rows?.length || Number(result.affectedRows) || 0 };
   };
-  const pool = { query, connect: async () => ({ query, release() {} }) };
+  // PGlite has one connection; serialize transaction clients like a size-one pool.
+  let available = Promise.resolve();
+  const pool = { query, connect: async () => {
+    const previous = available;
+    let release;
+    available = new Promise(resolve => { release = resolve; });
+    await previous;
+    return { query, release };
+  } };
   await bootstrapFixtureSchema(pool, { executeSql: sql => db.exec(sql) });
   await query(`INSERT INTO admin_users(id, username, email, password_hash, role) VALUES
     (1,'alex','alex@example.test','fixture','sales'),(2,'jordan','jordan@example.test','fixture','sales'),
@@ -59,4 +67,24 @@ export async function createSalesReportFixture() {
   await query(`UPDATE sales_call_sessions SET dialed_number='+12025550100',metadata_json=metadata_json || '{"direction":"inbound","prospect_number":"+12025550199"}'::jsonb WHERE sales_call_id='micro-a'`);
   await query('ALTER TABLE sales_call_sessions ENABLE TRIGGER USER');
   return { pool, query, close: () => db.close() };
+}
+
+export async function seedSalesTimelineFixture(query) {
+  const rows = [
+    ['outer',1,'2024-02-01T09:00:00Z','2024-02-01T09:20:00Z'],
+    ['nested',1,'2024-02-01T09:05:00Z','2024-02-01T09:10:00Z'],
+    ['after-five',1,'2024-02-01T09:25:00Z','2024-02-01T09:27:00Z'],
+    ['after-small',1,'2024-02-01T09:29:30Z','2024-02-01T09:32:00Z'],
+    ['other-rep',2,'2024-02-01T09:21:00Z','2024-02-01T09:26:00Z'],
+    ['unknown',1,'2024-02-01T09:35:00Z',null],
+    ['after-unknown',1,'2024-02-01T10:00:00Z','2024-02-01T10:05:00Z'],
+    ['midnight',2,'2024-02-01T23:58:00Z','2024-02-02T00:02:00Z'],
+    ['next-day',2,'2024-02-02T00:07:00Z','2024-02-02T00:10:00Z'],
+    ['reversed',3,'2024-02-01T09:00:00Z','2024-02-01T08:00:00Z'],
+    ['unassigned-one',null,'2024-02-01T09:00:00Z','2024-02-01T09:01:00Z'],
+    ['unassigned-two',null,'2024-02-01T09:10:00Z','2024-02-01T09:11:00Z'],
+  ];
+  for (const [id, rep, start, end] of rows) await query(`INSERT INTO sales_call_sessions
+    (sales_call_id,prospect_id,admin_user_id,state,created_at,started_at,ended_at)
+    VALUES($1,'fixture-company',$2,$3,$4,$4,$5)`, [`timeline-${id}`,rep,'closed',start,end]);
 }

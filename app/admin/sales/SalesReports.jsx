@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { fetchSalesJson, displayStatus } from './salesApi';
 import { Card, Field, TextInput, ActionButton, ErrorNotice } from './SalesUi';
 import { SALES_REPORT_FIELDS, SALES_REPORT_EXPORT_LIMIT } from '../../../lib/salesReportFields';
+import SalesDayTimeline from './SalesDayTimeline';
 
 const METRICS = [['sessions', 'Call sessions'], ['connected', 'Connected'], ['demosStarted', 'Demos started'], ['outcomesRecorded', 'Outcomes saved']];
 const selectClass = 'min-h-10 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm';
@@ -135,6 +136,7 @@ export default function SalesReports() {
       <p className="mt-3 text-xs text-slate-500">CSV includes all matching call fields and notes, up to {number(SALES_REPORT_EXPORT_LIMIT)} calls per export. Narrow the filters for larger reports. Full transcripts appear in call details.</p>
     </Card>
     <ErrorNotice title="Report unavailable" message={error} /><ErrorNotice title="Export unavailable" message={exportError} />
+    <SalesDayTimeline filters={applied} />
     {loading ? <p role="status" className="text-sm text-slate-500">Loading recorded sales activity…</p> : report ? <>
       <p role="status" className="m-0 text-sm text-slate-600">{report.filters.range === 'all' ? 'All time' : `${report.filters.from} through ${report.filters.to} (UTC)`} · {report.filters.mode === 'live' ? 'Live calls only' : report.filters.mode === 'test' ? 'Phone test calls only' : 'Includes phone test calls'} · {report.filters.operator ? report.reps.find(rep => String(rep.id) === report.filters.operator)?.name || 'Unassigned / deleted user' : 'All reps'} · {report.filters.direction === 'all' ? 'All directions' : displayStatus(report.filters.direction)}{report.filters.outcome ? ` · ${displayStatus(report.filters.outcome)}` : ''}{report.filters.state ? ` · ${displayStatus(report.filters.state)}` : ''}{report.filters.search ? ` · Search: ${report.filters.search}` : ''}</p>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{METRICS.map(([key, label]) => <Card key={key}><div className="text-sm text-slate-500">{label}</div><div className="mt-2 text-3xl font-semibold tabular-nums">{number(report.totals[key])}</div>{key === 'connected' || key === 'demosStarted' ? <p className="mt-1 text-xs text-slate-500">{percent(report.totals[key], report.totals.sessions)} of sessions</p> : null}</Card>)}</div>
