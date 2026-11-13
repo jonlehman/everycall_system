@@ -4,6 +4,8 @@
 
 ## Unified paid intake and billing — implementation regressions
 
+The fixed-Dave carrier operator uses `scripts/test-retired-number-release.mjs` to verify scoped capability issuance, actor/source/retirement binding, one resource-level provider submission under concurrency, consumed/expired/replacement-token behavior, accepted-timeout reconciliation and preserved owner/local number mapping with provider doubles.
+
 The November 13 mixed-disposition additions use `scripts/test-private-owner-billing-contract.mjs`, `scripts/test-private-owner-billing.mjs`, `scripts/test-retired-account-deletion.mjs` and the extended `scripts/test-paid-intake-release-cutover.mjs`. They cover exact private invoice/price identity, separate schema verification, fixed grace, concurrent admission during slow provider reads, independent disabled-service preservation, actual account deletion with retained financial history, hostile cross-tenant/indirect children, transactional receipt failure/replay and atomic mixed activation. All native fixtures require a disposable loopback `EVERYCALL_TEST_POSTGRES_URL`; none mutate providers. See [the scoped evidence](reviews/private-owner-and-retired-account-cutover.md).
 
 
