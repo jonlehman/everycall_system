@@ -58,6 +58,11 @@ try{
  await reconcilePrivateOwnerBilling(pool,{stripe,now:renewalTime,event:{id:'evt_third_first_delivery',type:'invoice.payment_failed',created:Math.floor(renewalTime.getTime()/1000),data:{object:{id:'in_renewal'}}}});
  assert.equal((await q('SELECT review_required FROM private_owner_billing')).rows[0].review_required,true);assert.equal((await admit(renewalTime)).allowed,false);
  assert.equal((await q('SELECT count(*)::integer AS n FROM paid_purchases')).rows[0].n,0);
+ // A known first attempt cannot hide another invoice whose earlier failures are unproven.
+ invoices[0].attempt_count=1;invoices.push({...structuredClone(invoices[0]),id:'in_older_unproven',attempt_count:3});
+ const firstEvent={id:'evt_known_beside_unknown',type:'invoice.payment_failed',created:Math.floor(renewalTime.getTime()/1000),data:{object:{id:'in_renewal'}}};
+ await reconcilePrivateOwnerBilling(pool,{stripe,now:renewalTime,event:firstEvent});assert.equal((await admit(renewalTime)).allowed,false);
+ await reconcilePrivateOwnerBilling(pool,{stripe,now:renewalTime,event:firstEvent});assert.equal((await admit(renewalTime)).allowed,false);
  // Failure of the private provider read cannot prevent normal paid lifecycle work.
  await q("INSERT INTO paid_intakes(intake_id,owner_email,payload_json,verified_at) VALUES('standard_lifecycle','standard@fixture.invalid','{}',NOW())");
  await q("INSERT INTO paid_purchases(purchase_id,intake_id,owner_email,tenant_key,plan_code,billing_interval,livemode,amount_cents,payment_status,paid_at,recurring_consent_at) VALUES('standard_lifecycle','standard_lifecycle','standard@fixture.invalid','ordinary_unpaid','starter','year',TRUE,10000,'paid','2026-11-01','2026-11-01')");

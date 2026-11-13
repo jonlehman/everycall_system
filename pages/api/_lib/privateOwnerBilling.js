@@ -46,6 +46,7 @@ export async function reconcilePrivateOwnerBilling(pool,{stripe=null,now=new Dat
   }
   // An unresolved episode cannot move when another retry/invoice/card arrives.
   if(owed>0&&prior.first_failed_at)firstFailure=Math.min(firstFailure??Infinity,new Date(prior.first_failed_at).getTime());
+  const uncertainFailure=unprovenFailure||Boolean(prior.review_required&&prior.first_failed_at&&owed>0);
   const grace=firstFailure===null?null:new Date(firstFailure+5*86400000);
   const paidThrough=paid?new Date(paid.end*1000):prior.paid_through;
   if(new Date(prior.current_period_start).getTime()>term.start*1000)throw Error('private_owner_stale_subscription');
@@ -58,8 +59,8 @@ export async function reconcilePrivateOwnerBilling(pool,{stripe=null,now=new Dat
   await db.query(`UPDATE private_owner_billing SET current_period_start=to_timestamp($2),current_period_end=to_timestamp($3),
    paid_through=GREATEST(paid_through,$4),paid_invoice_id=COALESCE($5,paid_invoice_id),subscription_status=$6,cancel_at_period_end=$7,
    first_failed_at=$8,grace_ends_at=$9,ended_at=$10,amount_owed_cents=$11,review_required=$13,verified_at=$12,reconciliation_version=reconciliation_version+1 WHERE tenant_key=$1`,
-   [OWNER.tenantKey,term.start,term.end,paidThrough,paid?.invoiceId||null,term.status,term.cancelAtPeriodEnd,firstFailure===null?null:new Date(firstFailure),grace,ended,owed,now,unprovenFailure&&firstFailure===null]);
-  const restricted=(unprovenFailure&&firstFailure===null)||Boolean(ended)||['unpaid','incomplete','incomplete_expired','paused'].includes(term.status)
+   [OWNER.tenantKey,term.start,term.end,paidThrough,paid?.invoiceId||null,term.status,term.cancelAtPeriodEnd,firstFailure===null?null:new Date(firstFailure),grace,ended,owed,now,uncertainFailure]);
+  const restricted=uncertainFailure||Boolean(ended)||['unpaid','incomplete','incomplete_expired','paused'].includes(term.status)
    ||(term.cancelAtPeriodEnd&&term.end*1000<=new Date(now).getTime())
    ||(owed>0&&grace&&grace<=now)||(new Date(paidThrough)<=now&&!(owed>0&&grace>now));
   // Canonical base terms live in the private ledger. Preserve the owner's
