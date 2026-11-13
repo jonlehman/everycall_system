@@ -2,9 +2,9 @@
 
 Authority: [UPIB-001–014](../SPECS/unified-paid-intake-and-billing.md). Work began on `work/sales-batch-2026-11-11` at documentation commit `45a1a68`.
 
-Status: source implementation and local regressions complete; the independent Astra review reports no remaining identified source defect in the reviewed snapshot. Production release is blocked pending real Stripe sandbox acceptance, explicit existing-account cutover and deployed configuration/version verification. This record does not claim production acceptance.
+Status: implementation and local regressions are committed on the integration review branch. Real Stripe sandbox acceptance subsequently exposed provider behavior that the earlier local fixtures did not establish: initial recurring collection, annual-to-monthly scheduling and hosted-invoice card recovery. Initial collection is corrected in `7405f85`; the remaining financial fixes and their independent Astra review are in progress. Production activation remains blocked by completed provider acceptance, explicit existing-account disposition and canonical runtime/configuration verification. This record does not claim production acceptance.
 
-## Provider and database inventory
+## Historical provider and database inventory
 
 Read-only observations on November 13, 2026 UTC:
 
@@ -19,13 +19,13 @@ Read-only observations on November 13, 2026 UTC:
 ## Test and release environment
 
 - Disposable native PostgreSQL 17.12 is available on loopback for schema, recovery and overlapping-transaction tests. It contains synthetic data only.
-- The Stripe plugin currently exposes only the live account. A sandbox connection was requested; live charges/refunds are prohibited as tests.
+- The Stripe plugin exposes the live account. A separate existing Sales test Secret was subsequently exercised inside a disposable, account-pinned acceptance function, without revealing the key. Its actual sandbox account is `acct_1T8P942HodUYhbMc`; it has no webhook endpoints. Live charges/refunds remain prohibited as tests.
 - Vercel project identity: `everycall_system` (`prj_sG2tAGfy6Jg39jqvJycxX2uvHoTz`) and website `everycall-website` (`prj_gVorFomC9IpyxtwRomuNJp5Lrpiv`), team `team_WP1ULmraMrNqHQ7jl64Usg0d`.
 - Vercel plugin environment listing returned 403. The documented CLI fallback succeeded with the existing credentials and confirmed separate Sales test-key/signing-secret variable names; their Secret values are not returned by environment listing. A pinned CLI is installed under `/tmp` for this session only.
 
 ## Release boundary
 
-No production migration, catalog/portal/webhook modification, real test charge/refund or production application deployment has been performed for this implementation. Git preview observations are recorded below. Complete sandbox evidence, explicit old-account mapping and coordinated application/provider cutover before changing release status. Keep the purchase release gate disabled until those checks pass.
+No production database migration, gate activation, portal/webhook change or canonical application/website promotion has been performed for this implementation. Six replacement live prices have been created inactive and canonically verified; reuse those exact IDs from the cutover preflight rather than creating replacements. Disposable production-environment acceptance functions use only the pinned Stripe sandbox and are never promoted to canonical production. Test payments use synthetic sandbox data. Complete provider acceptance, explicit old-account mapping and coordinated runtime/provider cutover before activating purchases.
 
 ## Implementation and regression trace
 
@@ -69,11 +69,13 @@ Website changes are prepared on `work/unified-paid-intake-billing-2026-11-12`, l
 - Billing catalog and cross-repository marketing validation passed for all six prices and fifteen public HTML/JS files. Knowledge governance, raw-source preservation and the frozen inventory passed; all 163 original requirements remain.
 - Independent Astra native diagnostics verified transaction rollback, next-term admission fencing, old schedule isolation, fixed SCA grace, manual-adjustment refusal, prepaid retention, prospect purchase uniqueness, consent/quote binding, uncertain Sales effects and recovery fairness. See the separate review for the finding log and closure evidence.
 
-## Unperformed acceptance and cutover
+## Provider acceptance in progress
 
-The connected Stripe plugin was rechecked after local validation and still exposes only the live EveryCall account. No sandbox account/key was available to complete real Checkout, test-clock, calendar-transition, card-update, SCA/retry or monthly collection acceptance. Existing Secret-type Sales test variables were listed but their values are not available through configuration listing. Do not substitute a live charge/refund for these tests.
+The original absence of a readable sandbox key is resolved by a private disposable function that consumes the existing Sales test Secret. It checks test-key mode and the exact sandbox account before every scenario, accepts only fixed test operations with authenticated expiring continuations, imports no application/database code, and has no cron jobs. Deployment-specific expiring share access is private; project-wide protection bypass is absent. The canonical application and cron targets remain unchanged. Remove the acceptance deployments/share access after testing; their HTTP wrapper and credentials must never enter the application release.
 
-No new live recurring price, portal/webhook setting, signing secret, production migration, release-gate activation, production application/worker/gateway deployment, customer charge or refund was performed. The two existing subscriptions, historic Sales checkouts and existing tenants still require an explicit reviewed reconciliation/cutover map before activation. Verification of a future cutover's deployed revision remains outstanding because no production release was attempted.
+Actual provider tests have established hosted standard/annual setup-only Checkout, full paid annual restart Checkout, the corrected zero-extra initial invoice and calendar renewal behavior, all 39 annual-plan monthly overage invoices with idempotent replay, SCA recovery without moving dates, cancellation/undo, and portal card replacement followed by usage collection. These results are scenario evidence, not completion of the acceptance matrix. A focused paid-bridge experiment now collects the full monthly base on the original anniversary after an annual term, then renews on the correct following anniversary; the reviewed application implementation and all 36 plan transitions remain required. Hosted-invoice payment alone did not reliably update the future default card in the first tested configurations; that defect remains open until a corrected contract proves the next base and usage payments.
+
+The live catalog activation, explicit EveryCall portal and webhook update, additive migrations, application/inbound/worker cutover, website promotion, old-version retirement and atomic purchase gate remain unperformed. The historical $1 payment and frozen amounts are preserved. The two existing real subscriptions need the owner's explicit disposition; no response is inferred from elapsed time. See [cutover preflight](unified-paid-intake-cutover-preflight.md) and the [guarded activation procedure](unified-paid-intake-activation.md) for exact identities, immutable evidence and refusal conditions.
 
 ## Push and deployment observations
 
@@ -81,4 +83,4 @@ No new live recurring price, portal/webhook setting, signing secret, production 
 - Before pushing, authenticated Vercel project metadata confirmed production branches `main` for the app and `master` for the website. Neither branch was changed. Website production metadata remained at `05f212c461dd7c50bb45c6b0e2af093728943e9e`.
 - After pushing, `https://app.everycall.io/api/version` returned HTTP 200, `vercelEnv=production`, commit `17195749a3cd70b421db34c2f4f244d9f153b0e3`, independently confirming canonical production was unchanged.
 - Git created app preview `dpl_FGCoNQUE7ejTVruLwanVg8CoMVfV` for the implementation commit; Vercel reported READY with no production target. This is build/deployment evidence only, not payment or production acceptance. Website preview `dpl_7HervwKZBFhZ4KsYCnTKBka1JFw7` was reported BLOCKED with no production target; the queried tool response did not establish a cause.
-- Render service/revision verification could not proceed: the connector returned `no workspace selected` and explicitly required the user to choose a workspace before retrying. Its sole listed workspace was My Workspace (`tea-d6gfq215pdvs73d23kag`). A selection was requested; no workspace selection, Render deploy or service change was performed. Do not infer running gateway/worker revisions from the Git branch or local build.
+- The user explicitly confirmed Render's My Workspace (`tea-d6gfq215pdvs73d23kag`). Request-scoped service inspection subsequently verified inbound, worker and Sales gateway at the existing production revision `1719574`; no Render deployment has been triggered for this release. The final inbound/worker must match the reviewed application revision. Sales gateway inputs are unchanged by this release, so its compatible existing revision is recorded separately. Do not infer runtime versions from a Git push.
