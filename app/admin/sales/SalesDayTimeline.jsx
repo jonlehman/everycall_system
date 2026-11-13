@@ -10,7 +10,7 @@ const pacific = value => salesTimelineTime(value);
 const duration = seconds => `${Math.floor(seconds / 60)}m ${Number((seconds % 60).toFixed(3))}s`;
 const clock = value => salesTimelineTime(value, false);
 function callDescription(call) {
-  return `${call.businessName || call.id} · ${call.id} · ${call.startSource}: ${pacific(call.at)} · ${call.valid ? `End: ${pacific(call.end)} · Elapsed session: ${duration((call.end - call.at) / 1000)}` : call.endedAt ? 'Incomplete or invalid timing; duration unknown' : 'End not recorded; duration unknown'}`;
+  return `${call.businessName || call.id} · ${call.id} · ${call.startSource}: ${pacific(call.at)} · ${call.valid ? `End: ${pacific(call.end)} · Provider interval: ${duration((call.end - call.at) / 1000)}` : call.endedAt ? 'Incomplete or invalid timing; duration unknown' : 'End not recorded; duration unknown'}`;
 }
 
 export default function SalesDayTimeline({ filters }) {
@@ -43,17 +43,24 @@ export default function SalesDayTimeline({ filters }) {
   const x = at => 60 + (at - chart.windowStart) / span * (width - 120);
   return <Card>
     <h3 className="text-base font-semibold">Calls through the day</h3>
-    <p className="mt-1 text-sm text-slate-600">See recorded session timing and gaps for each rep. All times are Pacific (PST/PDT).</p>
+    <p className="mt-1 text-sm text-slate-600">See Telnyx call records linked to each rep’s Sales sessions. All times are Pacific (PST/PDT).</p>
     <div className="mt-3 grid gap-3 sm:grid-cols-2">
       <Field label="Timeline day (Pacific)"><select className={selectClass} value={selected || data?.day || bounds?.day || ''} disabled={!days.length} onChange={event => setSelection({ filterKey, day: event.target.value })}>
         {!days.length ? <option value="">{error ? 'Unavailable' : data ? 'No matching history' : 'Loading days…'}</option> : days.map(day => <option key={day} value={day}>{day}</option>)}
       </select></Field>
       <Field label="Timeline scale"><select className={selectClass} value={zoom} onChange={event => setZoom(event.target.value)}><option value="fit">Fit activity window</option><option value="detail">5-minute detail (scroll horizontally)</option></select></Field>
     </div>
-    <p className="mt-3 text-xs leading-relaxed text-slate-500">Blue bars are recorded session start → end, including dialing; they are not connected talk time. Purple diamonds mark attempts with unknown duration (at creation if no start is recorded). Thin amber marks gaps of at least 5 minutes; gray marks shorter gaps. These are gaps between matching calls: filters can hide other calls, and a gap is not proof of a break.</p>
+    <p className="mt-3 text-xs leading-relaxed text-slate-500">Blue bars use Telnyx start → finish, including dialing; they are not connected talk time. Purple diamonds have no valid provider end. Related legs can produce multiple records for one Sales session. Thin amber marks intervals of at least 5 minutes between returned records only when coverage permits; filters can hide other calls. These intervals do not establish inactivity or breaks.</p>
+    {data?.coverage ? <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-700" role="status">
+      <strong>{['available', 'partial'].includes(data.coverage.status) ? 'Source: Telnyx' : 'Telnyx records unavailable'}</strong>
+      {data.coverage.retrievedAt ? <> · Retrieved {pacific(data.coverage.retrievedAt)}</> : null}
+      <p className="mt-1">{data.coverage.status === 'unavailable' ? `Provider read unavailable (${data.coverage.reason}). No internal timestamps are substituted.` : data.coverage.status === 'not_requested' ? 'No matching Sales history was found to select a day.' : `${data.coverage.paginationComplete ? 'All returned pages retrieved' : 'Incomplete retrieval'} · ${data.coverage.matchedRecords} matching provider records · ${data.coverage.missingSessions} local sessions without a unique provider match · ${data.coverage.ambiguousRecords} related or ambiguous records · ${data.coverage.unmatchedRecords} unmatched provider records · ${data.coverage.excludedOperatorAiRecords} operator/AI records excluded · ${data.coverage.excludedConnectionRecords} records outside the Sales application excluded.`}</p>
+      <p className="mt-1">{data.coverage.limits}</p>
+      {data.coverage.gapsAvailable === false ? <p className="mt-1 font-medium">Gap estimates withheld: current-day, missing, ambiguous, incomplete or unavailable records cannot establish calling coverage.</p> : null}
+    </div> : null}
     <ErrorNotice title="Timeline unavailable" message={error} />
-    {!data && !error ? <p role="status" className="mt-3 text-sm text-slate-500">Loading day timeline…</p> : data && !data.calls.length ? <p role="status" className="mt-4 text-sm text-slate-500">{data.day ? `No matching sessions on ${data.day} (Pacific).` : 'No matching call history. Choose different report filters.'}</p> : chart ? <>
-      <p role="status" className="mt-3 text-xs text-slate-600">{data.calls.length.toLocaleString()} sessions on {data.day} (Pacific) · Independent of the call table page · {zoom === 'detail' ? 'Scroll the chart to inspect 5-minute gaps.' : 'Choose 5-minute detail to inspect tightly spaced calls.'}</p>
+    {!data && !error ? <p role="status" className="mt-3 text-sm text-slate-500">Loading day timeline…</p> : data && !data.calls.length && data.coverage?.status !== 'unavailable' ? <p role="status" className="mt-4 text-sm text-slate-500">{data.day ? `No matching Telnyx records returned for ${data.day} (Pacific).` : 'No matching call history. Choose different report filters.'}</p> : chart && data.calls.length ? <>
+      <p role="status" className="mt-3 text-xs text-slate-600">{data.calls.length.toLocaleString()} provider records on {data.day} (Pacific) · Independent of the call table page · {zoom === 'detail' ? 'Scroll the chart to inspect 5-minute gaps.' : 'Choose 5-minute detail to inspect tightly spaced calls.'}</p>
       <div className="mt-3 max-w-full overflow-x-auto rounded-lg border border-slate-200" tabIndex={0} role="region" aria-label="Scrollable daily session timeline">
         <svg width={zoom === 'detail' ? width : undefined} viewBox={`0 0 ${width} ${50 + chart.lanes.length * 100}`} role="img" aria-label={`Session timeline for ${data.day}, Pacific time, ${chart.lanes.length} rep lanes. Exact call and gap times in the data below.`} className={zoom === 'fit' ? 'w-full min-w-[650px]' : 'max-w-none'}>
           {Array.from({ length: 6 }, (_, i) => chart.windowStart + span * i / 5).map(at => <g key={at}><line x1={x(at)} x2={x(at)} y1="28" y2={40 + chart.lanes.length * 100} stroke="#e2e8f0" /><text x={x(at)} y="18" textAnchor="middle" fontSize="11" fill="#475569">{clock(at)}</text></g>)}
@@ -67,16 +74,18 @@ export default function SalesDayTimeline({ filters }) {
           })}
         </svg>
       </div>
-      {chart.lanes.some(lane => lane.uncertain) ? <p className="mt-2 text-xs text-slate-500">Some gap estimates are unavailable because this filtered history contains incomplete or invalid session timestamps.</p> : null}
-      <div className="mt-3 grid gap-2 text-sm">{chart.lanes.map(lane => <p key={lane.key}><strong>{lane.name}:</strong> {lane.gaps.filter(gap => gap.long).length ? lane.gaps.filter(gap => gap.long).map(gap => `${duration(gap.seconds)} at ${clock(gap.start)}`).join(' · ') : 'No confirmed gaps of 5 minutes or more.'}</p>)}</div>
-      <details className="mt-3 text-xs"><summary className="cursor-pointer font-medium text-blue-700">View exact session and gap times</summary>
-        <div className="mt-2 max-h-96 overflow-auto"><table className="w-full text-left"><caption className="sr-only">Daily sessions and gaps in Pacific time, with complete recorded timestamps. Bars are clipped at midnight.</caption><thead><tr>{['Rep / session', 'Kind', 'Start (Pacific)', 'End (Pacific)', 'Elapsed'].map(label => <th className="p-2" scope="col" key={label}>{label}</th>)}</tr></thead><tbody>
+      {chart.lanes.some(lane => lane.uncertain) ? <p className="mt-2 text-xs text-slate-500">Gap estimates are unavailable because calling coverage or provider timing is incomplete.</p> : null}
+      <div className="mt-3 grid gap-2 text-sm">{chart.lanes.map(lane => <p key={lane.key}><strong>{lane.name}:</strong> {lane.gaps.filter(gap => gap.long).length ? lane.gaps.filter(gap => gap.long).map(gap => `${duration(gap.seconds)} at ${clock(gap.start)}`).join(' · ') : data.coverage?.gapsAvailable === false ? 'Gap estimates unavailable.' : 'No intervals of 5 minutes or more between these returned records.'}</p>)}</div>
+      <details className="mt-3 text-xs"><summary className="cursor-pointer font-medium text-blue-700">View exact provider records and intervals</summary>
+        <div className="mt-2 max-h-96 overflow-auto"><table className="w-full min-w-[1100px] break-all text-left"><caption className="sr-only">Daily sessions and gaps in Pacific time, with complete recorded timestamps. Bars are clipped at midnight.</caption><thead><tr>{['Rep / session', 'Kind', 'Start (Pacific)', 'End (Pacific)', 'Elapsed'].map(label => <th className="p-2" scope="col" key={label}>{label}</th>)}</tr></thead><tbody>
           {chart.lanes.flatMap(lane => [
-            ...lane.calls.map(call => <tr key={call.id}><th scope="row" className="p-2 font-normal">{lane.name}<br />{call.businessName}<br />{call.id}</th><td className="p-2">{call.startSource}{!call.valid ? ' · duration unknown' : ''}</td><td className="whitespace-nowrap p-2">{pacific(call.at)}</td><td className="whitespace-nowrap p-2">{pacific(call.endedAt)}</td><td className="p-2">{call.valid ? duration((call.end - call.at) / 1000) : 'Unknown'}</td></tr>),
+            ...lane.calls.map(call => <tr key={call.id}><th scope="row" className="p-2 font-normal">{lane.name}<br />{call.businessName}<br />{call.salesCallId}<br />Telnyx record: {call.providerId}<br />Leg: {call.providerLegId}<br />Session: {call.providerSessionId}</th><td className="p-2">{call.startSource} · {call.matchMethod === 'exact_prospect_leg' ? 'Exact prospect leg' : 'Exact Sales prospect session'}{call.relatedLeg ? ' · Multiple related legs; prospect leg uncertain' : ''}{!call.valid ? ' · duration unknown' : ''}</td><td className="whitespace-nowrap p-2">{pacific(call.at)}</td><td className="whitespace-nowrap p-2">{pacific(call.endedAt)}</td><td className="p-2">{call.valid ? duration((call.end - call.at) / 1000) : 'Unknown'}</td></tr>),
             ...lane.gaps.map(gap => <tr key={`${lane.key}-${gap.start}`}><th scope="row" className="p-2 font-normal">{lane.name}</th><td className="p-2">{gap.long ? 'Gap ≥ 5 minutes' : 'Gap < 5 minutes'}</td><td className="whitespace-nowrap p-2">{pacific(gap.start)}</td><td className="whitespace-nowrap p-2">{pacific(gap.end)}</td><td className="p-2">{duration(gap.seconds)}</td></tr>),
           ])}
         </tbody></table></div>
       </details>
     </> : null}
+    {data?.unmatched?.length ? <details className="mt-3 text-xs"><summary className="cursor-pointer font-medium">Unmatched Telnyx records — not attributed to a rep ({data.unmatched.length})</summary><ul className="mt-2 max-h-60 overflow-auto break-all">{data.unmatched.map(row => <li key={row.providerId}>{row.providerId} · {row.direction} · {pacific(row.startedAt)} → {pacific(row.endedAt)} · Session {row.providerSessionId}</li>)}</ul></details> : null}
+    {data?.missing?.length ? <details className="mt-3 text-xs"><summary className="cursor-pointer font-medium">Local sessions without a matching provider record ({data.missing.length})</summary><ul className="mt-2 max-h-60 overflow-auto">{data.missing.map(row => <li key={row.salesCallId}>{row.operatorName} · {row.salesCallId} · {row.reason}</li>)}</ul></details> : null}
   </Card>;
 }

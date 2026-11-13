@@ -89,3 +89,38 @@ export async function seedSalesTimelineFixture(query) {
     (sales_call_id,prospect_id,admin_user_id,state,created_at,started_at,ended_at)
     VALUES($1,'fixture-company',$2,$3,$4,$4,$5)`, [`timeline-${id}`,rep,'closed',start,end]);
 }
+
+// Provider-shaped synthetic CDRs only. Keep the actual HTTP adapter and report
+// handler in the test path; this fixture never loads provider credentials.
+export async function installSalesTelnyxFixture(fixture) {
+  const originalFetch = globalThis.fetch, originalKey = process.env.SALES_TELNYX_API_KEY, originalApp = process.env.SALES_TELNYX_CALL_CONTROL_APP_ID;
+  process.env.SALES_TELNYX_CALL_CONTROL_APP_ID = 'fixture-sales-app';
+  let revision = 0;
+  const refresh = async () => {
+    await fixture.query(`UPDATE sales_call_sessions SET prospect_leg_id='fixture-leg-'||sales_call_id,
+      prospect_session_id='fixture-session-'||sales_call_id`);
+    process.env.SALES_TELNYX_API_KEY = `synthetic-provider-${++revision}`;
+  };
+  await refresh();
+  let unavailable = false;
+  globalThis.fetch = async (input, options) => {
+    const url = new URL(input);
+    if (url.origin !== 'https://api.telnyx.com' || url.pathname !== '/v2/detail_records' || options.method !== 'GET') throw Error('Unexpected fixture provider request');
+    if (unavailable) return new Response('{}', { status: 503 });
+    const { rows } = await fixture.query(`SELECT sales_call_id, COALESCE(started_at,created_at) AS started_at, ended_at,
+      prospect_leg_id, prospect_session_id, COALESCE(metadata_json->>'direction','outbound') AS direction FROM sales_call_sessions`);
+    const startLt = Date.parse(url.searchParams.get('filter[started_at][lt]'));
+    const startGte = url.searchParams.get('filter[started_at][gte]'), endGt = url.searchParams.get('filter[finished_at][gt]');
+    const records = rows.filter(r => Date.parse(r.started_at) < startLt && (startGte ? Date.parse(r.started_at) >= Date.parse(startGte) : Date.parse(r.ended_at) > Date.parse(endGt)))
+      .sort((a,b) => Date.parse(a.started_at)-Date.parse(b.started_at) || a.sales_call_id.localeCompare(b.sales_call_id))
+      .map(r => ({ record_type: 'call-control', id: r.sales_call_id, telnyx_leg_id: r.prospect_leg_id,
+        telnyx_session_id: r.prospect_session_id, connection_id: 'fixture-sales-app', direction: r.direction,
+        started_at: new Date(r.started_at).toISOString(), finished_at: r.ended_at ? new Date(r.ended_at).toISOString() : null,
+        cli: 'SECRET_PROVIDER_PHONE', dest_number: 'SECRET_PROVIDER_PHONE', user_id: 'SECRET_PROVIDER_USER' }));
+    const page = Number(url.searchParams.get('page[number]')), size = Number(url.searchParams.get('page[size]'));
+    return Response.json({ data: records.slice((page-1)*size,page*size), meta: { total_pages: Math.ceil(records.length/size),total_results:records.length,page_number:page,page_size:size } });
+  };
+  return { refresh, fail: async () => { unavailable = true; await refresh(); }, restore: () => {
+    globalThis.fetch = originalFetch; if (originalApp === undefined) delete process.env.SALES_TELNYX_CALL_CONTROL_APP_ID; else process.env.SALES_TELNYX_CALL_CONTROL_APP_ID = originalApp; if (originalKey === undefined) delete process.env.SALES_TELNYX_API_KEY; else process.env.SALES_TELNYX_API_KEY = originalKey;
+  } };
+}

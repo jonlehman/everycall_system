@@ -13,7 +13,10 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'private, no-store');
     if (req.query?.view !== undefined) {
       if (req.query.view !== 'timeline') return res.status(400).json({ ok: false, error: 'invalid_report_view', message: 'Choose a valid report view.' });
-      return res.status(200).json({ ok: true, ...await getSalesReportDay(context.pool, req.query) });
+      const timeline = await getSalesReportDay(context.pool, req.query);
+      if (timeline.coverage?.status === 'unavailable') return res.status(503).json({ ok: false, ...timeline,
+        error: 'telnyx_records_unavailable', message: `Telnyx records unavailable (${timeline.coverage.reason}). Calling coverage is unknown; no internal timestamps are substituted.` });
+      return res.status(200).json({ ok: true, ...timeline });
     }
     if (req.query?.callId !== undefined) return res.status(200).json({ ok: true, ...await getSalesReportTranscript(context.pool, req.query.callId) });
     if (req.query?.format === 'csv') {

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { getSalesTelnyxRecords, reconcileSalesTelnyxRecords } from './salesTelnyxRecords.js';
 import { salesError } from './salesRepository.js';
 import { callDispositions } from '../../../lib/salesDispositions.js';
 import { SALES_REPORT_FIELDS, SALES_REPORT_EXPORT_LIMIT, salesReportCsv } from '../../../lib/salesReportFields.js';
@@ -192,7 +193,7 @@ export async function exportSalesReport(pool, query = {}) {
 }
 
 // A separate bounded read keeps day selection independent of report pagination.
-export async function getSalesReportDay(pool, query = {}) {
+export async function getSalesReportDay(pool, query = {}, { loadProvider = getSalesTelnyxRecords } = {}) {
   const filters = salesReportFilters(query);
   // The table is a creation cohort. A daily timeline instead needs every
   // overlapping session, including those created before the range boundary.
@@ -203,7 +204,7 @@ export async function getSalesReportDay(pool, query = {}) {
     || (filters.range !== 'all' && (requested < filters.from || requested > filters.to)))) {
     throw salesError('invalid_report_day', 'Choose a valid Pacific day within the applied report range.', 400);
   }
-  return consistentRead(pool, async db => {
+  const context = await consistentRead(pool, async db => {
     const bounds = await db.query(`SELECT
       to_char(MIN(${TIMELINE_START}) AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS first,
       to_char(MAX(CASE WHEN ${TIMELINE_VALID} THEN c.ended_at ELSE ${TIMELINE_START} END) AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS last,
@@ -231,15 +232,30 @@ export async function getSalesReportDay(pool, query = {}) {
       ORDER BY ${TIMELINE_START}, c.sales_call_id LIMIT ${TIMELINE_LIMIT + 1}`, values);
     if (records.rows.length > TIMELINE_LIMIT) throw salesError('report_day_too_large',
       `The timeline supports up to ${TIMELINE_LIMIT.toLocaleString('en-US')} sessions per day. Narrow the rep or other filters; no partial timeline is shown.`, 400);
-    // Earlier unresolved sessions prevent false idle claims. Keep only per-rep
-    // timing aggregates, never load the entire matching call history.
-    const prior = await db.query(`SELECT c.admin_user_id AS "operatorId",
-      BOOL_OR(NOT ${TIMELINE_VALID} AND NOT (c.state IN ('closed', 'failed', 'ended', 'completed', 'canceled', 'cancelled')
-        AND c.updated_at >= ${TIMELINE_START} AND c.updated_at <= ${start})) AS uncertain,
-      MAX(c.ended_at) FILTER (WHERE ${TIMELINE_VALID} AND c.ended_at <= ${start}) AS "endedAt"
-      ${JOINS} WHERE ${where} AND ${TIMELINE_START} < ${start} GROUP BY c.admin_user_id`, values.slice(0, -1));
-    return { filters, from, to, day, dayStart, dayEnd, timeZone: 'America/Los_Angeles', calls: records.rows, prior: prior.rows, limit: TIMELINE_LIMIT };
+    const prior = await db.query(`SELECT COUNT(*)::int AS count ${JOINS} WHERE ${where}
+      AND ${TIMELINE_START} < ${start} AND NOT ${TIMELINE_VALID}
+      AND NOT (c.state IN ('closed', 'failed', 'ended', 'completed', 'canceled', 'cancelled')
+        AND c.updated_at >= ${TIMELINE_START} AND c.updated_at <= ${start})`, values.slice(0, -1));
+    return { filters, from, to, day, dayStart, dayEnd, timeZone: 'America/Los_Angeles', expected: records.rows, priorIncompleteSessions: prior.rows[0].count, limit: TIMELINE_LIMIT };
   });
+  if (!context.day) return { ...context, coverage: { source: 'telnyx', status: 'not_requested', gapsAvailable: false }, missing: [], unresolved: [] };
+  const provider = await loadProvider(context);
+  const legIds = provider.records.map(row => row.legId), sessionIds = provider.records.map(row => row.sessionId);
+  // Join across history and across report filters before applying inclusion. This
+  // detects duplicate identities and identifies parked operator/AI legs even
+  // when their Sales rows fall outside the displayed cohort.
+  const joined = await pool.query(`SELECT c.sales_call_id AS id, c.admin_user_id AS "operatorId", ${REP_NAME} AS "operatorName",
+    p.business_name AS "businessName", ${DIRECTION} AS direction, (${where}) AS included,
+    c.prospect_leg_id AS "prospectLegId", c.prospect_session_id AS "prospectSessionId",
+    c.operator_leg_id AS "operatorLegId", c.operator_session_id AS "operatorSessionId",
+    c.ai_telnyx_leg_id AS "aiLegId", c.ai_telnyx_session_id AS "aiSessionId"
+    ${JOINS} WHERE c.prospect_leg_id = ANY($${params.length + 1}::text[]) OR c.operator_leg_id = ANY($${params.length + 1}::text[])
+      OR c.ai_telnyx_leg_id = ANY($${params.length + 1}::text[]) OR c.prospect_session_id = ANY($${params.length + 2}::text[])
+      OR c.operator_session_id = ANY($${params.length + 2}::text[]) OR c.ai_telnyx_session_id = ANY($${params.length + 2}::text[])
+    LIMIT ${TIMELINE_LIMIT + 1}`, [...params, legIds, sessionIds]);
+  if (joined.rows.length > TIMELINE_LIMIT) throw salesError('report_day_too_large', 'Too many Sales identity matches; narrow the day. No partial timeline is shown.', 400);
+  const { expected, ...publicContext } = context;
+  return { ...publicContext, ...reconcileSalesTelnyxRecords(provider, joined.rows, expected, context) };
 }
 
 // Read full transcript text only on demand; never return provider event payloads or recording URLs.
