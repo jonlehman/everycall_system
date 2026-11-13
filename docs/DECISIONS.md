@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-11-13 — Explicit collection deferral for periods already paid
+
+- Actual isolated Stripe testing found that creating a monthly subscription in the same provider second as setup payment, with only anniversary configuration and no proration, can immediately collect the recurring base amount. This violates UPIB-003/007. Use Stripe's explicit `trial_end` field solely to defer recurring collection until the end of the already-paid setup month or full reinstatement term, alongside the original payment-day anniversary configuration. This does not introduce an unpaid product trial, free service, another included month or a new business pricing rule.
+- Enrollment requires canonical matching `trialing` status, exact frozen deferral/period end, original anniversary, explicit bound payment method and a settled zero initial invoice. Preserve old frozen provider requests unchanged and move anchor-only reservations to manual reconciliation before any provider creation. Domain entitlement remains derived from verified purchase and prepaid coverage, independent of provider trial terminology. Initial local provider status is unknown until canonical synchronization; preserve a known status on conversion retries. Real provider evidence and local regression scope are recorded in the [cutover preflight](reviews/unified-paid-intake-cutover-preflight.md).
+
 ## 2026-11-13 — Unified paid intake implementation and release gates
 
 - Implement UPIB-001–014 through an owner-bound intake/purchase ledger, immutable consent and provider request snapshots, and recoverable payment, recurring enrollment and conversion. Hosted payment/consent and subscription establishment belong to one durable purchase. Conversion waits for both canonical settlement and one verified subscription; a saved payment method alone is not recurring consent. Preserve the actual payment timestamp and original calendar anniversary.

@@ -12,6 +12,7 @@ const REVIEW_ERRORS=new Set([
  'purchase_setup_intent_mismatch','verified_legacy_purchase_required','purchase_payment_method_mismatch',
  'purchase_term_reconciliation_required','duplicate_checkout_review_required','duplicate_subscription_review_required',
  'subscription_uncertainty_requires_reconciliation','purchase_subscription_mismatch','unexpected_initial_base_invoice',
+ 'paid_deferral_contract_review_required',
  'verified_purchase_required','conversion_owner_mismatch','conversion_owner_conflict','voice_order_connection_mismatch',
  'voice_assignment_conflict','replacement_number_must_differ'
 ]);

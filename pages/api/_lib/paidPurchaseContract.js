@@ -36,6 +36,9 @@ export function paidSubscriptionParams(row,paymentMethod){
  const end=calendarMonthBoundary(paidAt,months);
  const anchor={day_of_month:paidAt.getUTCDate(),hour:paidAt.getUTCHours(),minute:paidAt.getUTCMinutes(),second:paidAt.getUTCSeconds(),...(row.billing_interval==='year'?{month:end.getUTCMonth()+1}:{})};
  return {customer:row.stripe_customer_id,items:[{price:row.stripe_price_id,quantity:1}],default_payment_method:paymentMethod,
-  billing_mode:{type:'flexible'},billing_cycle_anchor_config:anchor,proration_behavior:'none',collection_method:'charge_automatically',payment_behavior:'error_if_incomplete',
+  // Stripe's trial field defers collection for a period already paid through
+  // Checkout. Anchor configuration alone can charge again in the payment second.
+  // This is never an unpaid product trial or an entitlement source.
+  billing_mode:{type:'flexible'},trial_end:Math.floor(end.getTime()/1000),billing_cycle_anchor_config:anchor,proration_behavior:'none',collection_method:'charge_automatically',payment_behavior:'error_if_incomplete',
   metadata:{app:'everycall',paid_purchase_id:row.purchase_id,paid_intake_id:row.intake_id,plan_code:row.plan_code,billing_interval:row.billing_interval,...(row.tenant_key?{tenant_key:row.tenant_key}:{})}};
 }

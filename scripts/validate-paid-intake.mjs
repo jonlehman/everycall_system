@@ -6,6 +6,7 @@ import {applyPaidPurchaseEvent,reconcilePaidPurchases,establishPaidSubscriptions
 import {convertPaidIntake,processPaidIntakeJobs} from '../pages/api/_lib/paidProvisioning.js';
 import {provisionPaidVoiceNumber} from '../pages/api/_lib/paidNumberProvisioning.js';
 import {changePaidSubscription} from '../pages/api/_lib/paidBillingChanges.js';
+import {syncPaidSubscription} from '../pages/api/_lib/paidSubscriptionSync.js';
 import {beginPaidReinstatement} from '../pages/api/_lib/paidReinstatement.js';
 import {getSalesProspect} from '../pages/api/_lib/salesRepository.js';
 import {processSalesFollowupJobs} from '../pages/api/_lib/salesFollowupJobs.js';
@@ -32,13 +33,9 @@ try {
    const session={id:`cs_${++sequence}`,url:`https://checkout.stripe.invalid/${sequence}`,livemode:true,status:'open',mode:params.mode,metadata:params.metadata,client_reference_id:params.client_reference_id,currency:'usd',amount_total:params.line_items?.[0]?.price_data.unit_amount??null,payment_status:'unpaid',customer:params.customer||`cus_${sequence}`,expires_at:Math.floor(Date.now()/1000)+86400};
    sessions.set(session.id,session);effects.set(options.idempotencyKey,{params:structuredClone(params),session});if(failCheckout){failCheckout=false;throw Error('provider_timeout_after_accept');}return session;},retrieve:async sessionId=>structuredClone(sessions.get(sessionId)),list:()=>list(sessions)}},
   subscriptions:{create:async(params,options)=>{
-   assert.equal(params.proration_behavior,'none');assert.equal(params.trial_end,undefined);
-   const c=params.billing_cycle_anchor_config,now=new Date(),interval=params.items[0].price.endsWith('_year')?'year':'month';
-   let year=now.getUTCFullYear(),month=interval==='year'?c.month-1:now.getUTCMonth();
-   function boundary(){return new Date(Date.UTC(year,month,Math.min(c.day_of_month,new Date(Date.UTC(year,month+1,0)).getUTCDate()),c.hour,c.minute,c.second));}
-   let end=boundary();if(end<=now){if(interval==='year')year++;else month++;end=boundary();}
+   assert.equal(params.proration_behavior,'none');assert(Number.isInteger(params.trial_end));
    const existing=[...subscriptions.values()].find(x=>x.metadata.paid_purchase_id===params.metadata.paid_purchase_id);if(existing)return existing;
-   const sub={...params,id:`sub_${++sequence}`,livemode:true,status:'active',items:{data:[{...params.items[0],current_period_start:Math.floor(Date.now()/1000),current_period_end:Math.floor(end/1000)}]}};
+   const sub={...params,id:`sub_${++sequence}`,livemode:true,status:'trialing',latest_invoice:{id:`in_initial_${sequence}`,livemode:true,customer:params.customer,status:'paid',total:0,amount_due:0,amount_paid:0},items:{data:[{...params.items[0],current_period_start:Math.floor(Date.now()/1000),current_period_end:params.trial_end}]}};
    subscriptions.set(sub.id,sub);if(failSubscription){failSubscription=false;throw Error('subscription_timeout_after_accept');}return structuredClone(sub);
   },list:()=>list(subscriptions),retrieve:async subId=>structuredClone(subscriptions.get(subId)),update:async(subId,params)=>{updates++;const sub=subscriptions.get(subId);Object.assign(sub,params);return structuredClone(sub);}},
   invoices:{retrieve:async invoiceId=>structuredClone(invoices.get(invoiceId)),list:()=>({async *[Symbol.asyncIterator](){}})},
@@ -78,7 +75,13 @@ try {
  const paid=(await pool.query('SELECT * FROM paid_purchases')).rows[0];assert.equal(paid.payment_status,'paid');assert.equal(new Date(paid.usage_anchor_at).getTime(),paidAt.getTime());assert.equal(new Date(paid.initial_period_end).getTime(),calendarMonthBoundary(paidAt,1).getTime());
  await intakeTransaction(pool,db=>applyPaidPurchaseEvent(db,event,{stripe}));assert.equal(updates,0);check();
  const converted=await convertPaidIntake(pool,paid.purchase_id);
+ const paidState=(await pool.query('SELECT t.billing_status,t.trial_end,b.stripe_subscription_status FROM tenants t JOIN tenant_billing_accounts b USING(tenant_key) WHERE t.tenant_key=$1',[converted.tenant_key])).rows[0];
+ assert.deepEqual(paidState,{billing_status:'active',trial_end:null,stripe_subscription_status:null});
+ const canonicalDeferred=structuredClone(sub);canonicalDeferred.items.data[0].price=await stripe.prices.retrieve(paid.stripe_price_id);
+ await syncPaidSubscription(pool,converted.tenant_key,canonicalDeferred,{plans});
+ assert.equal((await pool.query('SELECT billing_status FROM tenants WHERE tenant_key=$1',[converted.tenant_key])).rows[0].billing_status,'active');
  const repeated=await convertPaidIntake(pool,paid.purchase_id);assert.equal(converted.tenant_key,repeated.tenant_key);assert.equal((await pool.query('SELECT COUNT(*)::int count FROM tenants')).rows[0].count,baseCounts+1);check();
+ assert.equal((await pool.query('SELECT stripe_subscription_status FROM tenant_billing_accounts WHERE tenant_key=$1',[converted.tenant_key])).rows[0].stripe_subscription_status,'trialing');
  const another={...payload,loginEmail:'unrelated@fixture.invalid'};let otherMail;
  await createIntakeDraft(pool,another,{sendEmail:async m=>{otherMail=m;}});
  const other=await verifyIntakeOwner(pool,/verify=([a-f0-9]+)/.exec(otherMail.text)[1]);
@@ -118,6 +121,7 @@ try {
  const restartJobs=await processPaidIntakeJobs(pool,{enqueue:async()=>{throw Error('restart_must_not_rebuild');},prepareRestart:async(db,key)=>{await db.query('UPDATE tenants SET telnyx_voice_number=NULL WHERE tenant_key=$1',[key]);},provision:async({pool:db,tenantKey:key})=>{await db.query("UPDATE tenants SET telnyx_voice_number='+15035550888' WHERE tenant_key=$1",[key]);return {ok:true};}});
  assert.equal(restartJobs.results[0].status,'awaiting_knowledge_review');
  const restarted=(await pool.query('SELECT * FROM tenant_billing_accounts WHERE tenant_key=$1',[converted.tenant_key])).rows[0];
+ assert.equal(restarted.stripe_subscription_status,null);
  assert.equal(restarted.initial_period_end,null);assert.equal(restarted.service_ended_at,null);assert.equal(new Date(restarted.paid_base_through).getTime(),calendarMonthBoundary(restartAt,12).getTime());check();
  await intakeTransaction(pool,db=>applyPaidPurchaseEvent(db,{id:'evt_refund',livemode:true,type:'charge.refunded',data:{object:{id:'ch_setup',payment_intent:'pi_setup',amount_refunded:50}}},{stripe:{...stripe,charges:{retrieve:async()=>({id:'ch_setup',livemode:true,payment_intent:'pi_setup',customer:checkout.customer,amount_refunded:50})}}}));
  assert.equal((await pool.query('SELECT review_status FROM billing_money_reviews')).rows[0].review_status,'pending');assert.equal((await pool.query('SELECT payment_status FROM paid_purchases WHERE purchase_id=$1',[paid.purchase_id])).rows[0].payment_status,'paid');check();

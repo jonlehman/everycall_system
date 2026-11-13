@@ -35,7 +35,7 @@ export async function convertPaidIntake(pool,purchaseId,{leaseToken=null}={}) {
    await db.query(`UPDATE tenant_billing_accounts SET paid_purchase_id=$2,stripe_subscription_id=$3,stripe_price_id=$4,
     billing_interval=$5,monthly_amount_cents=$6,included_call_count=$7,call_overage_rate_cents=$8,usage_anchor_at=$9,
     initial_period_end=NULL,paid_base_through=$10,current_period_start=$9,current_period_end=$10,
-    stripe_subscription_status='active',monthly_amount_override_cents=NULL,lead_rate_override_cents=NULL,call_overage_rate_override_cents=NULL,active_coupon_redemption_id=NULL,coupon_trial_ends_at=NULL,coupon_discount_starts_at=NULL,coupon_discount_ends_at=NULL,cancel_at_period_end=FALSE,canceled_at=NULL,
+    stripe_subscription_status=NULL,monthly_amount_override_cents=NULL,lead_rate_override_cents=NULL,call_overage_rate_override_cents=NULL,active_coupon_redemption_id=NULL,coupon_trial_ends_at=NULL,coupon_discount_starts_at=NULL,coupon_discount_ends_at=NULL,cancel_at_period_end=FALSE,canceled_at=NULL,
     pending_plan_code=NULL,pending_billing_interval=NULL,pending_plan_effective_at=NULL
     WHERE tenant_key=$1 AND paid_purchase_id IS DISTINCT FROM $2`,
     [key,purchaseId,row.stripe_subscription_id,row.stripe_price_id,row.billing_interval,plan.monthlyAmountCents,plan.includedCallCount,plan.callOverageRateCents,row.usage_anchor_at,row.initial_period_end]);
@@ -48,12 +48,14 @@ export async function convertPaidIntake(pool,purchaseId,{leaseToken=null}={}) {
   await db.query('UPDATE paid_purchases SET tenant_key=$2 WHERE purchase_id=$1',[purchaseId,key]);
   await db.query(`INSERT INTO tenant_billing_accounts(tenant_key,paid_purchase_id,stripe_customer_id,stripe_subscription_id,stripe_price_id,
    billing_interval,monthly_amount_cents,included_call_count,call_overage_rate_cents,usage_anchor_at,initial_period_end,paid_base_through,current_period_start,current_period_end,stripe_subscription_status)
-   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$10,$11,'active')
+   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$10,$11,NULL)
    ON CONFLICT(tenant_key) DO UPDATE SET paid_purchase_id=EXCLUDED.paid_purchase_id,stripe_customer_id=EXCLUDED.stripe_customer_id,
     stripe_subscription_id=EXCLUDED.stripe_subscription_id,stripe_price_id=EXCLUDED.stripe_price_id,billing_interval=EXCLUDED.billing_interval,
     monthly_amount_cents=EXCLUDED.monthly_amount_cents,included_call_count=EXCLUDED.included_call_count,call_overage_rate_cents=EXCLUDED.call_overage_rate_cents,
     usage_anchor_at=EXCLUDED.usage_anchor_at,initial_period_end=EXCLUDED.initial_period_end,paid_base_through=EXCLUDED.paid_base_through,
-    current_period_start=EXCLUDED.current_period_start,current_period_end=EXCLUDED.current_period_end,monthly_amount_override_cents=NULL,lead_rate_override_cents=NULL,call_overage_rate_override_cents=NULL,active_coupon_redemption_id=NULL,coupon_trial_ends_at=NULL,coupon_discount_starts_at=NULL,coupon_discount_ends_at=NULL`,
+    current_period_start=EXCLUDED.current_period_start,current_period_end=EXCLUDED.current_period_end,
+    stripe_subscription_status=CASE WHEN tenant_billing_accounts.stripe_subscription_id=EXCLUDED.stripe_subscription_id THEN tenant_billing_accounts.stripe_subscription_status ELSE NULL END,
+    monthly_amount_override_cents=NULL,lead_rate_override_cents=NULL,call_overage_rate_override_cents=NULL,active_coupon_redemption_id=NULL,coupon_trial_ends_at=NULL,coupon_discount_starts_at=NULL,coupon_discount_ends_at=NULL`,
     [key,purchaseId,row.stripe_customer_id,row.stripe_subscription_id,row.stripe_price_id,row.billing_interval,plan.monthlyAmountCents,plan.includedCallCount,plan.callOverageRateCents,row.usage_anchor_at,row.initial_period_end]);
   // Only bootstrap once. A worker retry must never overwrite subsequent owner edits.
   const initialized=(await db.query("SELECT 1 FROM audit_log WHERE tenant_key=$1 AND action='paid_intake.initialized'",[key])).rowCount;

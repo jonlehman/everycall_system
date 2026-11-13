@@ -2,6 +2,8 @@
 
 ## Unified paid intake and billing — implementation regressions
 
+`scripts/validate-paid-subscription-deferral.mjs` covers UPIB-003/007/008/012 explicit collection deferral: 36 calendar contracts across three plans, monthly/annual setup/restart and three short-month/leap dates; original anniversary and bound payment method; zero initial invoices; unchanged old-request fencing; and eight invalid canonical response cases. These are native local contract regressions, distinct from the 36 provider plan-transition acceptance cases. The intake fixture also verifies canonical provider `trialing` synchronization leaves the account paid/active, does not create a legacy trial, preserves status on conversion retry, and performs a full-paid annual restart.
+
 `scripts/validate-paid-money-events.mjs` covers UPIB-013/014 shared-Stripe-account refund/dispute isolation through the actual webhook handler and native transactions. It requires `EVERYCALL_TEST_POSTGRES_URL` pointing at disposable loopback PostgreSQL. Verify unrelated financial payloads never enter either webhook or review ledgers; canonical purchase/customer/frozen historical Checkout associations preserve legitimate preconversion and $1 reviews; mismatches, provider uncertainty, replay and transaction rollback preserve entitlement and evidence.
 
 The approved [UPIB-001–014](SPECS/unified-paid-intake-and-billing.md) supersede historical trial, seven-day grace, separate Sales checkout, immediate cancellation and free restart expectations. The [release record](reviews/unified-paid-intake-release.md) maps each requirement to source and tests; the [independent Astra review](reviews/unified-paid-intake-independent-review.md) records unresolved findings and their verification.

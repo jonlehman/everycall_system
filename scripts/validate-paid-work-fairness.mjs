@@ -39,7 +39,7 @@ async function setup(label){
   subscriptions:{list:({customer})=>list([...subscriptions.values()].filter(s=>s.customer===customer)),create:async params=>{
    const name=params.metadata.paid_purchase_id.slice('purchase_'.length);creates.set(name,(creates.get(name)||0)+1);
    if(stripe.beforeSubscription)await stripe.beforeSubscription(name);
-   const sub={...params,id:`sub_${name}`,status:'active',livemode:true,items:{data:[{price:params.items[0].price,quantity:1,current_period_end:Math.floor(calendarMonthBoundary(paidAt,1)/1000)}]}};
+   const sub={...params,id:`sub_${name}`,status:'trialing',livemode:true,latest_invoice:{id:`in_initial_${name}`,livemode:true,customer:params.customer,status:'paid',total:0,amount_due:0,amount_paid:0},items:{data:[{price:params.items[0].price,quantity:1,current_period_end:params.trial_end}]}};
    subscriptions.set(sub.id,sub);return structuredClone(sub);
   },retrieve:async id=>structuredClone(subscriptions.get(id))}
  };

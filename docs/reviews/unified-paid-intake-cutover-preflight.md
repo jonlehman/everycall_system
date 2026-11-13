@@ -66,3 +66,21 @@ After explicit release coordination and independent agreement, six new live recu
 | Pro | Year | 1,779.90 | `price_1UbESVFgMKdd4EaWwFBq2BnM` |
 
 Each receipt verified live mode, inactive state, the existing EveryCall product, exact amount/USD/one licensed interval and unique lookup key `everycall_upib_20261112_live_<plan>_<month|year>`. Private receipt evidence: `/tmp/upib-release-preflight/stripe-inactive-price-receipts.json`. Activation is a separate reviewed step after acceptance; reuse these IDs, never create replacement prices merely to retry the release. The existing canonical webhook API version/query/signing configuration and the unrelated default portal remain unchanged.
+
+## Real provider deferral finding and bounded fix
+
+Real isolated Stripe testing of the former anchor-only request found an immediate paid $74.50 base invoice when subscription creation occurred in the same provider second as a January 31 setup payment. The existing source therefore could not satisfy setup-only collection; passing local doubles did not establish that provider behavior. No live customer charge was performed for this test.
+
+The corrected request explicitly supplies `trial_end` at the frozen paid coverage end together with original anniversary configuration and no proration. This Stripe representation defers collection for service already purchased; EveryCall's domain status remains paid/active and all knowledge/number readiness gates remain. Canonical verification requires matching provider trialing status, exact deferral/period end, original anniversary, explicit payment method and a customer-bound settled zero initial invoice. Older frozen requests lacking this field are retained unchanged for manual reconciliation before another provider effect. Provisioning does not fabricate an active provider status, and retries preserve a status already learned from canonical synchronization. No migration SQL changes are needed.
+
+Actual test-clock enrollment and renewal evidence independently observed on API `2026-02-25.clover`:
+
+| Case | Initial subscription invoice | First recurring collection | Following provider boundary |
+| --- | --- | --- | --- |
+| Monthly, paid January 31, 2028 | Paid, $0 | $74.50 paid February 29, 2028 | March 31, 2028 |
+| Annual setup, paid January 31, 2028 | Paid, $0 | $759.90 paid February 29, 2028 | February 28, 2029 |
+| Annual restart, full term paid January 31, 2028 | Paid, $0 | $759.90 paid January 31, 2029 | January 31, 2030 |
+
+Original day 31 and UTC time remained configured, including annual February clamping. The restart row proves recurring enrollment timing; completion of the full provider Checkout/restart journey and every plan transition remains separate acceptance work. Private provider evidence is `/tmp/everycall-stripe-acceptance-WKmhXf/evidence.ndjson`.
+
+The new native deferral suite passed 36 calendar contracts and rejected unsafe canonical responses and older frozen requests before conversion. Affected 26-scenario paid intake, seven-scenario recovery fairness and full paid lifecycle suites passed. Canonical trialing synchronization retained paid domain status, no legacy trial, guarded cancellation/changes and full-term restart behavior. This closes the identified enrollment-source defect subject to independent final-commit review; it does not claim completion of all provider acceptance or authorize activating the staged live prices.

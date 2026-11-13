@@ -70,6 +70,10 @@ export async function establishPaidSubscriptions(pool,{stripe=getStripe(),limit=
   await intakeTransaction(pool,async db=>{
    const row=(await db.query('SELECT * FROM paid_purchases WHERE purchase_id=$1 FOR UPDATE',[candidate.purchase_id])).rows[0];
    if(row.recurring_consent_at||row.lease_token!==claim.token)return;
+   const expectedEnd=Math.floor(new Date(row.initial_period_end).getTime()/1000);
+   // Never rewrite/replay an older frozen request under the same provider key.
+   // Missing explicit collection deferral needs operator reconciliation.
+   if(row.subscription_params.trial_end!==expectedEnd)throw intakeError('paid_deferral_contract_review_required');
    let subscription;
    if(!reservation.first){
     const matches=[];let count=0;
@@ -88,13 +92,14 @@ export async function establishPaidSubscriptions(pool,{stripe=getStripe(),limit=
    const canonical=await stripe.subscriptions.retrieve(subscription.id,{expand:['latest_invoice']});
    const item=canonical.items?.data?.[0],end=item?.current_period_end||canonical.current_period_end;
    const expected=row.subscription_params.billing_cycle_anchor_config;
-   if(canonical.livemode!==true||canonical.billing_mode?.type!=='flexible'||canonical.status!=='active'||id(canonical.customer)!==row.stripe_customer_id||canonical.metadata?.paid_purchase_id!==row.purchase_id
+   if(canonical.livemode!==true||canonical.billing_mode?.type!=='flexible'||canonical.status!=='trialing'||canonical.trial_end!==expectedEnd||id(canonical.customer)!==row.stripe_customer_id||canonical.metadata?.paid_purchase_id!==row.purchase_id
     ||canonical.items?.data?.length!==1||id(item.price)!==row.stripe_price_id||Number(item.quantity)!==1||canonical.items?.has_more
     ||id(canonical.default_payment_method)!==row.subscription_params.default_payment_method
     ||['day_of_month','month','hour','minute','second'].some(k=>expected[k]!==undefined&&canonical.billing_cycle_anchor_config?.[k]!==expected[k])
-    ||end!==Math.floor(new Date(row.initial_period_end).getTime()/1000))throw intakeError('purchase_subscription_mismatch');
+    ||end!==expectedEnd)throw intakeError('purchase_subscription_mismatch');
    const invoice=canonical.latest_invoice?typeof canonical.latest_invoice==='object'?canonical.latest_invoice:await stripe.invoices.retrieve(canonical.latest_invoice):null;
-   if(invoice&&(invoice.amount_due!==0||invoice.amount_paid!==0))throw intakeError('unexpected_initial_base_invoice');
+   if(!invoice||invoice.livemode!==true||id(invoice.customer)!==row.stripe_customer_id||invoice.status!=='paid'
+    ||invoice.total!==0||invoice.amount_due!==0||invoice.amount_paid!==0)throw intakeError('unexpected_initial_base_invoice');
    await db.query("UPDATE paid_purchases SET stripe_subscription_id=$2,recurring_consent_at=consent_accepted_at,provisioning_status='queued',last_error=NULL,updated_at=NOW() WHERE purchase_id=$1",[row.purchase_id,canonical.id]);
   });
   await finishPaidPurchaseWork(pool,'subscription',candidate.purchase_id,claim.token);
