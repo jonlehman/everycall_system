@@ -1,5 +1,7 @@
 # Manual Call Test Scripts
 
+For the November 13 unified paid intake production deployment, provider evidence and gate status, see the [production release record](reviews/unified-paid-intake-production-2026-11-13.md).
+
 `scripts/test-upib-catalog-batching.mjs` compares exact ordered JSON and frozen fingerprints for all eight baseline, sixteen installed and eight post-install exclusion contracts against the prior five-query reader. Under a 75 ms per-query transport simulation, the old path must hit the unchanged PostgreSQL transaction deadline and roll back; the batched path must install the same schema under that deadline. The existing migration suite separately retains all drift, lock contention, row preservation, receipt rollback and real timeout checks.
 
 ## Unified paid intake and billing — implementation regressions

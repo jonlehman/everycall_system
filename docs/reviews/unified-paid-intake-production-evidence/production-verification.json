@@ -1,0 +1,29 @@
+{
+  "functionalReleaseRevision": "9b5d6b45dd8a9181c09c3b8c4434f442bef4174e",
+  "websiteRevision": "a2dfd7f0ed10557b4fab607e3be7a2aaaebe1bee",
+  "activatedAt": "2026-11-13T18:49:13.374Z",
+  "gateEnabled": true,
+  "gateAuditId": 1349,
+  "gateBundleSha256": "8d0d5296f3e212f5cfa028ee778d2d332ae22353c3cb1140cd6fb0588775b1b2",
+  "legacyServiceDisables": 0,
+  "retirementSeconds": 888.781,
+  "ownerPreserved": true,
+  "ownerPrivateAmountCents": 150,
+  "retiredOperationalAccountDeleted": true,
+  "financialAuditAndAllocationHistoryRetained": true,
+  "allUpibRequirements": "UPIB-001 through UPIB-014",
+  "postCommitVerifiedAt": "2026-11-13T18:51:26.319Z",
+  "postCommitEvidenceSha256": "b7de3a77be7d8f09fffaf56f89f5d96336890af7eb4579ffb62433fbca7290b9",
+  "independentCorroborationSha256": "5c6230d2c42b00e1f882f03d7d02b7bd58320d6c72d70ba8d64834b64099e529",
+  "freshAstraSourceReviewSha256": "5606d5980ff30bf418908c101493cfcf836a4b6b2c61f4891b1347e811af8cf6",
+  "freshAstraGateReviewSha256": "a16ce957c7831e3ea49560fba5f51220fdcd75a4a46cabf0dc04be020f1cd3a2",
+  "temporaryProbeDeleted": true,
+  "globalAutomationBypassCount": 0,
+  "realCustomerChargesOrRefundsCreatedForTests": 0,
+  "productionPhoneCallTestPlaced": false,
+  "archivedIndexRepairFiles": {
+    "source-tenant-index-ops.mjs": "6fd77be7661261b5d2e0154e099f5e5fce42b8cd53697d944e272aacbb7a7e4b",
+    "source-tenant-indexes.reviewed.sql": "47b4d0160c5c92216fbe9d6c39eca36361430a00f7c6696fd0b3d6de17f4383d",
+    "test-source-tenant-index-ops.mjs": "283a47489f40911942d2ce93a6b698dd670e491e62707cafdbf397ba7ac2b49b"
+  }
+}

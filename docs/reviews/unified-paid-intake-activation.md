@@ -1,19 +1,25 @@
 # UPIB-014 guarded production activation
 
+Current owner decision is `preserve_private_owner_delete_retired_account`: preserve the private owner subscription and service, and delete the named retired account after proven provider closure and number release. The current implementation and exact evidence contract are in the [mixed-disposition record](private-owner-and-retired-account-cutover.md); execution and current gate status are in the [production release record](unified-paid-intake-production-2026-11-13.md). The activation runner remains default dry-run and fails closed on stale evidence.
+
+The following is the historical original procedure and evidence schema. Its prior exclusive disable-service option, artifact details and sequence are retained for chronology and are superseded where they conflict with the mixed-disposition record.
+
+## Historical original procedure
+
 The gate remains disabled until real provider acceptance, canonical deployments,
 old creator retirement, and explicit legacy subscription decisions are complete.
 `scripts/activate-paid-intake-release.mjs` is the only activation entry point in
 this release. Preparing this runner does not authorize execution. It makes no
 Stripe requests and cannot cancel, replace, charge or adopt a legacy subscription.
 
-The currently implemented owner option is `retain_billing_disable_legacy_service`:
+The original procedure supported `retain_billing_disable_legacy_service`:
 set tenant status inactive, disable service, and retain owner app/Billing/help access
 for each legacy subscription account, retaining its
 provider billing and local billing history unchanged. This option MUST NOT be
 selected on the owner's behalf. A different owner decision requires another
 reviewed implementation. An absent answer always fails closed.
 
-## Required evidence bundle
+## Historical required evidence bundle
 
 Keep real evidence outside the repository in a mode-0700 release directory with
 mode-0600 files. Never record credentials, webhook query strings, payment data or
@@ -96,7 +102,7 @@ activation. Inventory and provider observations must follow completed retirement
 Refresh and independently review changed artifacts; never bypass freshness.
 The synthetic native test demonstrates the schema but is not production evidence.
 
-## Execution sequence
+## Historical execution sequence
 
 A narrow [schema-only exception](unified-paid-intake-schema-only.md) permits only
 step 2's additive migration transaction before step 1's explicit legacy decision,

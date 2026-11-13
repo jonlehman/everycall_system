@@ -2,9 +2,11 @@
 
 Authority: [UPIB-001–014](../SPECS/unified-paid-intake-and-billing.md). Work began on `work/sales-batch-2026-11-11` at documentation commit `45a1a68`.
 
-Status: implementation, provider acceptance and separate fresh-context Astra source review are complete. The financial application revision is `97d344a`; migration catalog batching is `4294120`, with unchanged application and SQL bytes. Production migrations 0063/0064 committed and passed independent readback with intake disabled. The canonical application, gateways/worker, website, live catalog activation, portal and webhook cutover remain held pending explicit legacy-account disposition and the coordinated release gates. This is a schema-only production result, not full production activation.
+Status: UPIB-001–014 are implemented and production activation completed on reviewed functional source `9b5d6b45dd8a9181c09c3b8c4434f442bef4174e`; the reviewed website is published. The mixed owner/account disposition, live provider configuration and production verification are recorded in the [production release record](unified-paid-intake-production-2026-11-13.md). See that record for the current gate status.
 
 ## Historical provider and database inventory
+
+The observations and status statements in the dated sections below record the state at the time; the production record above supersedes them for current status.
 
 Read-only observations on November 13, 2026 UTC:
 
@@ -23,7 +25,7 @@ Read-only observations on November 13, 2026 UTC:
 - Vercel project identity: `everycall_system` (`prj_sG2tAGfy6Jg39jqvJycxX2uvHoTz`) and website `everycall-website` (`prj_gVorFomC9IpyxtwRomuNJp5Lrpiv`), team `team_WP1ULmraMrNqHQ7jl64Usg0d`.
 - Vercel plugin environment listing returned 403. The documented CLI fallback succeeded with the existing credentials and confirmed separate Sales test-key/signing-secret variable names; their Secret values are not returned by environment listing. A pinned CLI is installed under `/tmp` for this session only.
 
-## Release boundary
+## Historical release boundary
 
 Production migrations 0063/0064 are installed under the separately reviewed [schema-only exception](unified-paid-intake-schema-only.md). No gate activation, portal/webhook change or canonical application/website promotion has occurred. Six replacement live prices were staged inactive and canonically verified; reuse those exact IDs from the cutover preflight. All 126 owned synthetic Stripe fixtures and 15 isolated probe deployments were cleaned up; those functions were never promoted to canonical production. No real customer charge or refund was used as a test. Explicit old-account disposition and coordinated runtime/provider cutover remain required before activating purchases.
 
@@ -39,14 +41,14 @@ The approved requirement text remains unchanged. Source and tests below implemen
 | UPIB-004 | 0063 purchase uniqueness, frozen provider requests, reconciliation fences and `paidProvisioning.js` leases | Native concurrent Go, accepted-response timeout, webhook replay, worker crash/resume, expired-reference recovery and one owner/tenant/subscription |
 | UPIB-005 | Paid initial-build wrapper in `knowledgeReceptionistBuilds.js`, existing allocation/publication/readiness gates | Native once-only initial build and failed provisioning recovery; existing knowledge governance, source-preservation and 163-requirement inventory suites |
 | UPIB-006 | Recoverable Sales cleanup and preserved delivery/financial identities | Native provisional conversion/cleanup and attempted-delivery fences, existing paid callback/ownership protections and Sales delivery uncertainty fixtures |
-| UPIB-007 | Shared standard catalog, trusted $100/$1/$0 summary and payment-anniversary enrollment | Billing catalog and marketing validators, browser exact amount/consent, native frozen $1 legacy reuse; real provider anniversary proof remains outstanding |
+| UPIB-007 | Shared standard catalog, trusted $100/$1/$0 summary and payment-anniversary enrollment | Billing catalog and marketing validators, browser exact amount/consent, native frozen $1 legacy reuse; provider anniversary proof completed; see production record |
 | UPIB-008 | `paidBillingCalendar.js`, monthly call windows, frozen rating and separately bound `paidUsageInvoices.js` collection | Native January 31/leap boundaries, initial month plus 12 annual usage/invoice windows, actual rating, invoice crash/retry and explicit payment method |
-| UPIB-009 | `paidBillingChanges.js`, guarded subscription/schedule synchronization, explicit EveryCall portal, cancellation/undo controls | Native every offered target plan/interval schedule, term admission fence and old schedule isolation; browser change/cancel/undo bodies; real source/destination provider transitions remain outstanding |
+| UPIB-009 | `paidBillingChanges.js`, guarded subscription/schedule synchronization, explicit EveryCall portal, cancellation/undo controls | Native every offered target plan/interval schedule, term admission fence and old schedule isolation; browser change/cancel/undo bodies; provider transition matrix completed; see production record |
 | UPIB-010 | Payable invoice debt/episode ledger, immutable five-day grace, owner recovery links and reminder receipts | Native failed/action-required invoices, stale event after settlement, current debt/deadline reminders, retained app/Billing access and fixed anchors |
 | UPIB-011 | Pre-answer admission reservations with tenant locks, independent prepaid allowance and overage permission | Native overlapping clients, quota refusal, nonbillable slot release, monthly reset, overage settlement, daily reminder dedupe and no annual-debt number release |
 | UPIB-012 | `paidNumberRelease.js`, `paidNumberProvisioning.js`, full-period `paidReinstatement.js` | Native 30-day hold/warning, submitted deletion uncertainty, same-cycle recovery versus full-paid restart, new-number receipt/fence and no repeated setup/build/free month |
 | UPIB-013 | Bound read-only staff support sessions, actor audits, money-event review, manual customer-service escalation | Native wrong role/tenant/session/expiry/revocation and audit rollback; refund event leaves entitlement intact; unsupported paid credits/debits fail before ledger writes |
-| UPIB-014 | Closed release gate, scoped 0063/0064 runner, retired signup/free recovery paths and strict provider mode | Native migration pin/drift/contention/timeout/rollback tests, built HTTP forged-onboarding refusal/closed gate, live/test Sales identity separation; actual old-account mapping/cutover remains outstanding |
+| UPIB-014 | Guarded release gate, scoped 0063/0064/0065 runners, retired signup/free recovery paths and strict provider mode | Native migration pin/drift/contention/timeout/rollback tests, built HTTP forged-onboarding refusal/closed gate, live/test Sales identity separation; mixed owner/account disposition and gate status: see production record |
 
 Executable suites: `validate-paid-intake.mjs`, `validate-paid-billing-lifecycle.mjs`, `validate-paid-followup-cleanup.mjs`, `test-unified-paid-billing-migrations.mjs`, `test-paid-intake-browser.cjs`, `test-paid-intake-http.mjs`, `validate-paid-marketing.mjs`, `validate-billing-catalog.mjs`, and `test-sales-contact-delivery.mjs` under `scripts/`. Native suites require an explicitly selected disposable loopback PostgreSQL target. Provider doubles do not constitute Stripe sandbox evidence.
 

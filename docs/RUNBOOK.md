@@ -1,5 +1,7 @@
 # Runbook
 
+For the November 13 unified paid intake production deployment, provider evidence and gate status, see the [production release record](reviews/unified-paid-intake-production-2026-11-13.md).
+
 ## Unified paid intake and billing — guarded release
 
 [UPIB-001–014](SPECS/unified-paid-intake-and-billing.md) are authoritative. [Implementation evidence and the provider/account inventory](reviews/unified-paid-intake-release.md) and the [separate Astra review](reviews/unified-paid-intake-independent-review.md) determine release readiness. Historical unpaid trial, Sales direct-payment, public appointment, seven-day grace and free-reactivation procedures below must not grant production service.
