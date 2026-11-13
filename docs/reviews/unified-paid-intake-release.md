@@ -25,7 +25,7 @@ Read-only observations on November 13, 2026 UTC:
 
 ## Release boundary
 
-No production migration, catalog/portal/webhook modification, real test charge/refund or application deployment has been performed for this implementation. Complete the requirement/test map, independent Astra review, migration tests, sandbox evidence, explicit old-account mapping and coordinated application/provider cutover before changing this status. Keep the purchase release gate disabled until those checks pass.
+No production migration, catalog/portal/webhook modification, real test charge/refund or production application deployment has been performed for this implementation. Git preview observations are recorded below. Complete sandbox evidence, explicit old-account mapping and coordinated application/provider cutover before changing release status. Keep the purchase release gate disabled until those checks pass.
 
 ## Implementation and regression trace
 
@@ -73,4 +73,12 @@ Website changes are prepared on `work/unified-paid-intake-billing-2026-11-12`, l
 
 The connected Stripe plugin was rechecked after local validation and still exposes only the live EveryCall account. No sandbox account/key was available to complete real Checkout, test-clock, calendar-transition, card-update, SCA/retry or monthly collection acceptance. Existing Secret-type Sales test variables were listed but their values are not available through configuration listing. Do not substitute a live charge/refund for these tests.
 
-No new live recurring price, portal/webhook setting, signing secret, production migration, release-gate activation, application/worker/gateway deployment, customer charge or refund was performed. The two existing subscriptions, historic Sales checkouts and existing tenants still require an explicit reviewed reconciliation/cutover map before activation. Canonical deployed revision verification is outstanding because no release was attempted.
+No new live recurring price, portal/webhook setting, signing secret, production migration, release-gate activation, production application/worker/gateway deployment, customer charge or refund was performed. The two existing subscriptions, historic Sales checkouts and existing tenants still require an explicit reviewed reconciliation/cutover map before activation. Verification of a future cutover's deployed revision remains outstanding because no production release was attempted.
+
+## Push and deployment observations
+
+- System implementation committed and pushed as `750ae371ebf1d2614924c61c2c7a1254c463f58f` on `work/sales-batch-2026-11-11`. Marketing committed and pushed as `a2dfd7f0ed10557b4fab607e3be7a2aaaebe1bee` on `work/unified-paid-intake-billing-2026-11-12`. The unrelated CSV and lock file remain untracked and untouched.
+- Before pushing, authenticated Vercel project metadata confirmed production branches `main` for the app and `master` for the website. Neither branch was changed. Website production metadata remained at `05f212c461dd7c50bb45c6b0e2af093728943e9e`.
+- After pushing, `https://app.everycall.io/api/version` returned HTTP 200, `vercelEnv=production`, commit `17195749a3cd70b421db34c2f4f244d9f153b0e3`, independently confirming canonical production was unchanged.
+- Git created app preview `dpl_FGCoNQUE7ejTVruLwanVg8CoMVfV` for the implementation commit; Vercel reported READY with no production target. This is build/deployment evidence only, not payment or production acceptance. Website preview `dpl_7HervwKZBFhZ4KsYCnTKBka1JFw7` was reported BLOCKED with no production target; the queried tool response did not establish a cause.
+- Render service/revision verification could not proceed: the connector returned `no workspace selected` and explicitly required the user to choose a workspace before retrying. Its sole listed workspace was My Workspace (`tea-d6gfq215pdvs73d23kag`). A selection was requested; no workspace selection, Render deploy or service change was performed. Do not infer running gateway/worker revisions from the Git branch or local build.
