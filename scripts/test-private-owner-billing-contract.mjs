@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {PRIVATE_OWNER_ACCOUNT as c,privateOwnerSubscriptionTerm,privateOwnerInvoiceCoverage} from '../lib/privateOwnerBillingContract.js';
+const sub={id:c.subscriptionId,customer:c.customerId,livemode:true,metadata:{tenant_key:c.tenantKey},status:'active',cancel_at_period_end:false,items:{data:[{quantity:1,current_period_start:1792601983,current_period_end:1795280383,price:{id:c.priceId,product:c.productId,unit_amount:150,currency:'usd',recurring:{interval:'month',interval_count:1}}}]}};
+const term=privateOwnerSubscriptionTerm(sub);
+const invoice={id:'in_synthetic',livemode:true,customer:c.customerId,subscription:c.subscriptionId,currency:'usd',status:'paid',amount_remaining:0,amount_paid:150,total:150,lines:{data:[{amount:150,price:c.priceId,subscription:c.subscriptionId,period:{start:term.start,end:term.end}}]}};
+assert.equal(privateOwnerInvoiceCoverage(invoice,term).amountCents,150);
+let rejected=0;
+for(const mutate of [s=>s.customer='cus_foreign',s=>s.id='sub_foreign',s=>s.metadata.tenant_key='other',s=>s.livemode=false,s=>s.items.data[0].price.id='price_public',s=>s.items.data[0].price.unit_amount=17450,s=>s.items.data[0].price.recurring.interval='year',s=>s.items.data.push(s.items.data[0]),s=>s.schedule='sub_sched',s=>s.discounts=['di_unknown'],s=>s.items.data[0].current_period_end=1]){const s=structuredClone(sub);mutate(s);assert.throws(()=>privateOwnerSubscriptionTerm(s),/review_required/);rejected++;}
+for(const mutate of [i=>i.customer='cus_foreign',i=>i.subscription='sub_foreign',i=>i.status='open',i=>i.livemode=false,i=>i.amount_paid=0,i=>i.total=0,i=>i.amount_remaining=150,i=>i.lines.has_more=true,i=>i.lines.data[0].period.end++,i=>i.lines.data[0].price='price_other',i=>i.lines.data[0].proration=true,i=>i.lines.data[0].subscription='sub_foreign']){const i=structuredClone(invoice);mutate(i);assert.throws(()=>privateOwnerInvoiceCoverage(i,term),/review_required/);rejected++;}
+console.log(JSON.stringify({status:'PASS',suite:'private owner exact canonical billing contract',rejections:rejected,providerEffects:0}));

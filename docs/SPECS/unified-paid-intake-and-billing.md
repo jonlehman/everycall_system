@@ -131,6 +131,10 @@ This is a gap inventory, not release evidence. The inspected local source was `2
 
 Extend the existing billing catalog, Sales checkout/auth/controller, production recovery, onboarding, usage and gateway suites with these scenarios. Use disposable data and stubbed/sandbox providers for automation. An actual provider canary is a separately authorized release action, not an implicit consequence of testing.
 
+## November 13 named-account clarification
+
+The owner subsequently identified “creative_dynamio” as their business/test phone (canonically `creative_dynamic`) and requested that it continue answering, while explicitly authorizing complete deletion of `daved`. This supersedes only UPIB-014's earlier tests/inactive classification for these accounts. Preserve the original text above as historical authority. The private owner exception retains its exact existing price and positively verified paid term, phone and publication; it is not a public grandfather plan or fabricated setup purchase. Dave's actual account removal must stop future provider billing/retries while retaining financial/audit history and unrelated/shared objects. [The scoped implementation and operator record](../reviews/private-owner-and-retired-account-cutover.md) maps the new behavior and release evidence.
+
 ## Implementation and release sequence
 
 1. Design/review the purchase-intake schema and idempotency constraints, owner verification, independent usage/base/grace/admission state and webhook reconciliation. Independently review critical code/schema changes against these requirements before deployment. No ambiguous website merge or migration guess is acceptable.

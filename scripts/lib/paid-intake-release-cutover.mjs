@@ -1,3 +1,5 @@
+import {PRIVATE_OWNER_ACCOUNT as OWNER,privateOwnerSubscriptionTerm,privateOwnerInvoiceCoverage} from '../../lib/privateOwnerBillingContract.js';
+import {verifyPrivateOwnerMigration,PRIVATE_OWNER_MIGRATION} from './private-owner-migration.mjs';
 import crypto from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {readMigration} from './schema-migrations.mjs';
@@ -29,7 +31,7 @@ function validateEvidence(bundle,artifacts,now){
  const fresh=value=>{const at=Date.parse(value);return Number.isFinite(at)&&at<=now&&now-at<=10*60*1000;};
  for(const [name,value] of Object.entries({inventory,provider,runtime}))if(!fresh(value.observedAt))fail(`${name}_evidence_stale`);
  if(inventory.phase!=='post_migration_post_retirement')fail('inventory_phase');
- if(decisions.explicitlyChosen!==true||decisions.choice!=='retain_billing_disable_legacy_service'||!reference(decisions.ownerDecisionReference)||!decisions.ownerDecisionQuote?.trim())fail('explicit_owner_decision_required');
+ if(decisions.explicitlyChosen!==true||!['retain_billing_disable_legacy_service','preserve_private_owner_delete_retired_account'].includes(decisions.choice)||!reference(decisions.ownerDecisionReference)||!decisions.ownerDecisionQuote?.trim())fail('explicit_owner_decision_required');
  if(acceptance.reviewedRevision!==bundle.reviewedRevision||acceptance.testLivemode!==false||!reference(acceptance.independentReviewReference))fail('acceptance_review_required');
  for(const check of REQUIRED_CHECKS)if(acceptance.checks?.[check]?.status!=='passed'||!reference(acceptance.checks[check].evidenceReference))fail(`acceptance_${check}`);
  for(const component of ['app','gateway','worker']){
@@ -68,18 +70,25 @@ function validateEvidence(bundle,artifacts,now){
  if(!reference(provider.canonicalReadbackEvidenceReference))fail('provider_readback_reference');
  const snapshot=inventory.snapshot;
  if(!snapshot||!Array.isArray(snapshot.tenants)||!Array.isArray(snapshot.accounts)||!Array.isArray(snapshot.checkouts))fail('inventory_shape');
+ const mixed=decisions.choice==='preserve_private_owner_delete_retired_account';
  const legacy=snapshot.accounts.filter(a=>a.stripe_subscription_id&&!a.paid_purchase_id);
  const actions=decisions.subscriptionActions;
  if(!Array.isArray(actions)||actions.length!==legacy.length||new Set(actions.map(a=>a.tenant_key)).size!==actions.length)fail('legacy_decision_coverage');
  for(const row of legacy){
   const action=actions.find(a=>a.tenant_key===row.tenant_key),canonical=provider.legacySubscriptions?.find(s=>s.id===row.stripe_subscription_id);
-  if(!action||action.stripe_subscription_id!==row.stripe_subscription_id||action.service!=='disabled'||action.providerBilling!=='unchanged')fail('legacy_decision_mismatch');
+  if(!action||action.stripe_subscription_id!==row.stripe_subscription_id)fail('legacy_decision_mismatch');
+  if(mixed){
+   if(row.tenant_key===OWNER.tenantKey){if(action.service!=='preserved_private_owner'||action.providerBilling!=='unchanged_private_price')fail('private_owner_decision');}
+   else if(row.tenant_key==='daved'){if(action.service!=='account_deleted'||action.providerBilling!=='canceled_collection_stopped'||!hash(action.deletionBundleSha256)||canonical?.status!=='canceled'||snapshot.tenants.some(t=>t.tenant_key==='daved'))fail('deleted_account_decision');}
+   else fail('unmapped_mixed_legacy');
+  }else if(action.service!=='disabled'||action.providerBilling!=='unchanged')fail('legacy_decision_mismatch');
   if(!canonical||canonical.livemode!==true||canonical.customer!==row.stripe_customer_id||canonical.priceId!==row.stripe_price_id)fail('legacy_subscription_readback');
  }
  const dispositions=inventory.tenantDispositions;
  if(!Array.isArray(dispositions)||dispositions.length!==snapshot.tenants.length||new Set(dispositions.map(t=>t.tenant_key)).size!==dispositions.length
-  ||snapshot.tenants.some(t=>!dispositions.some(d=>d.tenant_key===t.tenant_key&&['retain_no_entitlement','preserve_paid_setup_owner_consent','legacy_subscription_manual_inactive'].includes(d.action))))fail('tenant_mapping_incomplete');
- if(legacy.some(a=>dispositions.find(d=>d.tenant_key===a.tenant_key)?.action!=='legacy_subscription_manual_inactive'))fail('legacy_tenant_mapping');
+  ||snapshot.tenants.some(t=>!dispositions.some(d=>d.tenant_key===t.tenant_key&&['retain_no_entitlement','preserve_paid_setup_owner_consent','legacy_subscription_manual_inactive','private_owner_service_preserved'].includes(d.action))))fail('tenant_mapping_incomplete');
+ if(!mixed&&legacy.some(a=>dispositions.find(d=>d.tenant_key===a.tenant_key)?.action!=='legacy_subscription_manual_inactive'))fail('legacy_tenant_mapping');
+ if(mixed&&(legacy.length!==2||dispositions.find(d=>d.tenant_key===OWNER.tenantKey)?.action!=='private_owner_service_preserved'))fail('mixed_tenant_mapping');
  for(const row of snapshot.checkouts.filter(s=>!s.is_test&&s.stripe_session_id)){
   const proof=provider.legacyCheckouts?.find(s=>s.sessionId===row.stripe_session_id);
   if(!proof||proof.livemode!==true||proof.mode!=='payment'||proof.currency!=='usd'||proof.amountCents!==row.amount_cents||proof.checkoutId!==row.checkout_id)fail('legacy_checkout_readback');
@@ -87,7 +96,18 @@ function validateEvidence(bundle,artifacts,now){
   else if(proof.status!=='expired'||proof.paymentStatus!=='unpaid'||proof.paymentIntentId||proof.subscriptionId)fail('legacy_unpaid_checkout');
  }
  if(snapshot.catalog.length!==3||new Set(snapshot.catalog.map(p=>p.code)).size!==3||snapshot.catalog.some(p=>!bindings.some(b=>b.code===p.code)))fail('catalog_shape');
- return {bindings:snapshot.catalog.map(p=>({...p,...bindings.find(b=>b.code===p.code)})),legacyKeys:legacy.map(a=>a.tenant_key)};
+ let owner=null;
+ if(mixed){
+  const proof=provider.privateOwner;
+  const term=privateOwnerSubscriptionTerm(proof?.subscription),coverage=privateOwnerInvoiceCoverage(proof?.invoice,term);
+  const invoices=proof.invoiceInventory;
+  if(invoices?.hasMore!==false||!Array.isArray(invoices.data)||!invoices.data.some(i=>i.id===coverage.invoiceId)
+   ||invoices.data.some(i=>i.livemode!==true||i.customer!==OWNER.customerId||i.subscription!==OWNER.subscriptionId||!['paid','void'].includes(i.status)||Number(i.amount_remaining)!==0)
+   ||proof.pendingInvoiceItems?.hasMore!==false||proof.pendingInvoiceItems.count!==0)fail('private_owner_unresolved_billing_inventory');
+  if(term.status!=='active'||term.start*1000>now||term.end*1000<=now||proof.phoneNumberId!=='2943114023983384517'||proof.carrierReady!==true||!reference(proof.carrierEvidenceReference)||!reference(proof.activeBuildId))fail('private_owner_paid_readiness');
+  owner={...coverage,term,phoneNumberId:proof.phoneNumberId,activeBuildId:proof.activeBuildId};
+ }
+ return {bindings:snapshot.catalog.map(p=>({...p,...bindings.find(b=>b.code===p.code)})),legacyKeys:mixed?[]:legacy.map(a=>a.tenant_key),owner};
 }
 
 export async function activatePaidIntakeRelease(pool,{bundle,artifacts,bundleSha256,currentRevision,databaseUrl,execute=false}={}){
@@ -115,13 +135,28 @@ export async function activatePaidIntakeRelease(pool,{bundle,artifacts,bundleSha
    await db.query('ROLLBACK');return{applied:false,alreadyEnabled:true,reviewedRevision:currentRevision};
   }
   await verifyUnifiedPaidBillingInstalled(db,sql[1]);
+  if(desired.owner){
+   if(!(await db.query('SELECT 1 FROM schema_migrations WHERE name=$1',[PRIVATE_OWNER_MIGRATION])).rowCount)fail('private_owner_schema');
+   const ownerSql=await readMigration(PRIVATE_OWNER_MIGRATION);if(cutoverDigest(ownerSql)!==bundle.privateOwnerSqlSha256)fail('private_owner_sql_pin');
+   await verifyPrivateOwnerMigration(db,ownerSql);
+   const deletion=artifacts.decisions.subscriptionActions.find(a=>a.tenant_key==='daved');
+   if(!(await db.query("SELECT 1 FROM audit_log WHERE tenant_key='daved' AND action='tenant.legacy_account.deleted' AND details::jsonb->>'bundleSha256'=$1",[deletion.deletionBundleSha256])).rowCount)fail('deleted_account_receipt');
+   const live=(await db.query(`SELECT t.status,t.service_access_status,t.telnyx_release_status,t.telnyx_voice_number_id,b.active_build_id,k.status AS build_status
+    FROM tenants t JOIN tenant_active_knowledge_builds b USING(tenant_key) JOIN knowledge_builds k ON k.build_id=b.active_build_id AND k.tenant_key=t.tenant_key WHERE t.tenant_key=$1`,[OWNER.tenantKey])).rows[0];
+   if(live?.status!=='active'||live.service_access_status!=='enabled'||live.telnyx_release_status||live.telnyx_voice_number_id!==desired.owner.phoneNumberId||live.active_build_id!==desired.owner.activeBuildId||live.build_status!=='published')fail('private_owner_readiness_changed');
+  }
   const actual=await capturePaidCutoverInventory(db);if(!same(actual,artifacts.inventory.snapshot))fail('inventory_or_catalog_changed');
   if((await db.query("SELECT 1 FROM paid_purchases WHERE payment_status IN('pending','review') OR (payment_status='paid' AND recurring_consent_at IS NULL) LIMIT 1")).rowCount)fail('purchase_reconciliation_pending');
   if(!execute){await db.query('ROLLBACK');return{applied:false,dryRun:true,reviewedRevision:currentRevision,legacyServiceDisables:desired.legacyKeys.length,gateEnabled:false};}
   await db.query('UPDATE system_config SET billing_plans_json=$1::jsonb WHERE id=1',[JSON.stringify(desired.bindings)]);
   if(desired.legacyKeys.length)await db.query("UPDATE tenants SET status='inactive',service_access_status='disabled',app_access_status='enabled',billing_lock_reason='legacy_cutover_manual_review' WHERE tenant_key=ANY($1::text[])",[desired.legacyKeys]);
+  if(desired.owner){
+   const o=desired.owner;
+   await db.query(`INSERT INTO private_owner_billing(tenant_key,stripe_customer_id,stripe_subscription_id,stripe_price_id,phone_number_id,owner_decision_reference,evidence_sha256,reviewed_revision,enabled,current_period_start,current_period_end,paid_through,paid_invoice_id,subscription_status,cancel_at_period_end)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,TRUE,to_timestamp($9),to_timestamp($10),to_timestamp($10),$11,'active',$12)`,[OWNER.tenantKey,OWNER.customerId,OWNER.subscriptionId,OWNER.priceId,o.phoneNumberId,artifacts.decisions.ownerDecisionReference,bundle.artifactSha256.provider,currentRevision,o.start,o.end,o.invoiceId,o.term.cancelAtPeriodEnd]);
+  }
   await db.query('UPDATE paid_intake_release SET enabled=TRUE,reviewed_revision=$1,inventory_reference=$2,enabled_at=NOW() WHERE id=TRUE AND enabled=FALSE',[currentRevision,`sha256:${bundle.artifactSha256.inventory}`]);
-  await db.query("INSERT INTO audit_log(actor,action,details) VALUES($1,'billing.paid_intake.release',$2)",[`admin:${bundle.actorAdminUserId}`,JSON.stringify({bundleSha256,reviewedRevision:currentRevision,targetFingerprint:bundle.targetFingerprint,evidenceReference:bundle.evidenceReference,artifactSha256:bundle.artifactSha256,ownerDecisionReference:artifacts.decisions.ownerDecisionReference,legacyServiceDisables:desired.legacyKeys,providerBillingChanges:false})]);
+  await db.query("INSERT INTO audit_log(actor,action,details) VALUES($1,'billing.paid_intake.release',$2)",[`admin:${bundle.actorAdminUserId}`,JSON.stringify({bundleSha256,reviewedRevision:currentRevision,targetFingerprint:bundle.targetFingerprint,evidenceReference:bundle.evidenceReference,artifactSha256:bundle.artifactSha256,ownerDecisionReference:artifacts.decisions.ownerDecisionReference,legacyServiceDisables:desired.legacyKeys,providerBillingChanges:false,privateOwnerServicePreserved:Boolean(desired.owner),deletedAccountReceipt:artifacts.decisions.subscriptionActions.find(a=>a.tenant_key==='daved')?.deletionBundleSha256||null})]);
   await db.query('COMMIT');return{applied:true,reviewedRevision:currentRevision,gateEnabled:true,legacyServiceDisables:desired.legacyKeys.length,bundleSha256};
  }catch(error){await db.query('ROLLBACK').catch(()=>{});throw error;}finally{db.release();}
 }

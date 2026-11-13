@@ -1,3 +1,4 @@
+import {isPrivateOwnerBilling} from './privateOwnerBilling.js';
 import {
   buildPlanDisplay,
   ensureTenantBillingAccount,
@@ -402,6 +403,7 @@ function shouldExpireRedemption(redemption) {
 }
 
 export async function refreshTenantCouponState(pool, tenantKey) {
+  if(await isPrivateOwnerBilling(pool,tenantKey))return null;
   const current = await loadTenantActiveCouponRedemptionRow(pool, tenantKey, { forUpdate: false });
   if (!current) return null;
   if (!shouldExpireRedemption(current)) {
@@ -654,6 +656,7 @@ export async function activatePendingCouponDiscountWindow(pool, tenantKey, {
   activatedAt = null,
   subscription = null
 } = {}) {
+  if(await isPrivateOwnerBilling(pool,tenantKey))return null;
   const redemption = await loadTenantActiveCouponRedemptionRow(pool, tenantKey, { forUpdate: false });
   if (!redemption || !redemptionHasAnyBenefit(redemption)) {
     return null;
@@ -1028,6 +1031,7 @@ function shouldApplyMonthlyDiscountToNextCycle(redemption, billingState) {
 }
 
 export async function syncTenantCouponSubscriptionPricing(pool, tenantKey) {
+  if(await isPrivateOwnerBilling(pool,tenantKey))return ensureTenantBillingAccount(pool,tenantKey);
   if ((await pool.query('SELECT paid_purchase_id FROM tenant_billing_accounts WHERE tenant_key=$1',[tenantKey])).rows[0]?.paid_purchase_id) return ensureTenantBillingAccount(pool,tenantKey);
   if (!tenantKey) return null;
   await refreshTenantCouponState(pool, tenantKey);

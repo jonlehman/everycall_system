@@ -3381,7 +3381,7 @@ async function processVerifiedVoiceWebhook(rawBody: string, baseUrl: string) {
       // UPIB-011: reserve an included slot under the tenant lock before any
       // provider answer. Replayed initiation uses the same call reservation.
       const admission = await pool.query(
-        `SELECT * FROM reserve_paid_call($1,$2)`, [tenantKey,callSid]
+        `SELECT * FROM reserve_private_or_paid_call($1,$2)`, [tenantKey,callSid]
       );
       if (admission.rows[0]?.allowed !== true) {
         await webhookCallAction(callControlId, "hangup", {});

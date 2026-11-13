@@ -1,3 +1,4 @@
+import {PRIVATE_OWNER_ACCOUNT as owner} from '../lib/privateOwnerBillingContract.js';
 import assert from 'node:assert/strict';
 import {getTenantBillingState,syncTenantStripeSubscription} from '../pages/api/_lib/billing.js';
 import {createUpibTestFixture} from './lib/upib-test-fixture.mjs';
@@ -59,4 +60,29 @@ try{
  assert.equal((await pool.query("SELECT stripe_subscription_id FROM tenant_billing_accounts WHERE tenant_key='legacy_owner'")).rows[0].stripe_subscription_id,'sub_legacy');
  console.log('PASS canonical legacy subscription update cannot restore tenant active status; owner app/Billing retained and subscription identity unchanged');
  console.log('PASS explicit synthetic owner decision atomically applies exact bindings and disables legacy service without billing mutation; same-bundle retry has one audit');
+ // The owner's final mixed disposition replaces the earlier synthetic disable-all choice.
+ await pool.query('UPDATE paid_intake_release SET enabled=FALSE,reviewed_revision=NULL,inventory_reference=NULL,enabled_at=NULL');
+ await pool.query("DELETE FROM tenant_billing_accounts WHERE tenant_key='legacy_owner'");await pool.query("DELETE FROM tenants WHERE tenant_key='legacy_owner'");
+ await pool.query(await readMigration('0065_private_owner_billing.sql'));await pool.query("INSERT INTO schema_migrations(name) VALUES('0065_private_owner_billing.sql')");
+ await pool.query("INSERT INTO tenants(tenant_key,name,status,service_access_status,telnyx_voice_number_id) VALUES($1,'Owner fixture','active','enabled','2943114023983384517')",[owner.tenantKey]);
+ await pool.query("INSERT INTO tenant_billing_accounts(tenant_key,stripe_customer_id,stripe_subscription_id,stripe_price_id) VALUES($1,$2,$3,$4),('daved','cus_VLsYWZAeSoe4Dm','sub_1ULAo1FgMKdd4EaWvxkS9kRa','price_retired')",[owner.tenantKey,owner.customerId,owner.subscriptionId,owner.priceId]);
+ await pool.query("INSERT INTO knowledge_builds(build_id,tenant_key,status,version) VALUES('build_owner_fixture',$1,'published','v1')",[owner.tenantKey]);await pool.query("INSERT INTO tenant_active_knowledge_builds(tenant_key,active_build_id) VALUES($1,'build_owner_fixture')",[owner.tenantKey]);
+ const deletionHash='e'.repeat(64);await pool.query("INSERT INTO audit_log(tenant_key,actor,action,details) VALUES('daved','fixture','tenant.legacy_account.deleted',$1)",[JSON.stringify({bundleSha256:deletionHash})]);
+ const mixed=structuredClone(artifacts),first=Math.floor(now/1000)-86400,last=first+30*86400;
+ mixed.inventory.snapshot=await capturePaidCutoverInventory(pool);mixed.inventory.tenantDispositions=[{tenant_key:owner.tenantKey,action:'private_owner_service_preserved'},{tenant_key:'unpaid_owner',action:'retain_no_entitlement'}];
+ mixed.decisions.choice='preserve_private_owner_delete_retired_account';mixed.decisions.subscriptionActions=[{tenant_key:owner.tenantKey,stripe_subscription_id:owner.subscriptionId,service:'preserved_private_owner',providerBilling:'unchanged_private_price'},{tenant_key:'daved',stripe_subscription_id:'sub_1ULAo1FgMKdd4EaWvxkS9kRa',service:'account_deleted',providerBilling:'canceled_collection_stopped',deletionBundleSha256:deletionHash}];
+ mixed.provider.legacySubscriptions=[{id:owner.subscriptionId,customer:owner.customerId,priceId:owner.priceId,livemode:true},{id:'sub_1ULAo1FgMKdd4EaWvxkS9kRa',customer:'cus_VLsYWZAeSoe4Dm',priceId:'price_retired',livemode:true,status:'canceled'}];
+ const sub={id:owner.subscriptionId,customer:owner.customerId,livemode:true,metadata:{tenant_key:owner.tenantKey},status:'active',cancel_at_period_end:false,items:{data:[{quantity:1,current_period_start:first,current_period_end:last,price:{id:owner.priceId,product:owner.productId,unit_amount:150,currency:'usd',recurring:{interval:'month',interval_count:1}}}]}};
+ const invoice={id:'in_owner_fixture',livemode:true,customer:owner.customerId,subscription:owner.subscriptionId,currency:'usd',status:'paid',amount_remaining:0,amount_paid:150,total:150,lines:{data:[{amount:150,price:owner.priceId,subscription:owner.subscriptionId,period:{start:first,end:last}}]}};
+ mixed.provider.privateOwner={subscription:sub,invoice,phoneNumberId:'2943114023983384517',carrierReady:true,carrierEvidenceReference:'fixture:carrier-positive',activeBuildId:'build_owner_fixture',invoiceInventory:{hasMore:false,data:[{id:invoice.id,livemode:true,customer:owner.customerId,subscription:owner.subscriptionId,status:'paid',amount_remaining:0}]},pendingInvoiceItems:{count:0,hasMore:false}};
+ const mixedBundle={...bundle,privateOwnerSqlSha256:cutoverDigest(await readMigration('0065_private_owner_billing.sql')),artifactSha256:artifactPin(mixed)};
+ assert.equal((await run(mixed,mixedBundle)).dryRun,true);
+ const debt=structuredClone(mixed);debt.provider.privateOwner.invoiceInventory.data.push({...debt.provider.privateOwner.invoiceInventory.data[0],id:'in_old_debt',status:'open',amount_remaining:150});await assert.rejects(run(debt,{...mixedBundle,artifactSha256:artifactPin(debt)},true),/unresolved_billing_inventory/);
+ const accountBefore=(await pool.query('SELECT to_jsonb(b) AS value FROM tenant_billing_accounts b WHERE tenant_key=$1',[owner.tenantKey])).rows[0].value;
+ assert.equal((await run(mixed,mixedBundle,true)).applied,true);
+ assert.equal((await pool.query('SELECT enabled FROM private_owner_billing')).rows[0].enabled,true);
+ assert.deepEqual((await pool.query('SELECT to_jsonb(b) AS value FROM tenant_billing_accounts b WHERE tenant_key=$1',[owner.tenantKey])).rows[0].value,accountBefore);
+ assert.equal((await pool.query('SELECT status FROM tenants WHERE tenant_key=$1',[owner.tenantKey])).rows[0].status,'active');assert.equal((await pool.query("SELECT 1 FROM tenants WHERE tenant_key='daved'")).rowCount,0);
+ assert.equal((await run(mixed,mixedBundle,true)).alreadyEnabled,true);
+ console.log('PASS mixed owner preservation plus deleted-account receipt atomically enables private paid-term service; debt proof required; no setup purchase, account/calendar/coupon rewrite or provider effect');
 }finally{await fixture.close();}

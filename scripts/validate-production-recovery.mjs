@@ -15,7 +15,7 @@ const pool = {
   async connect() { const unlock = await acquire(); return { query, release: unlock }; }
 };
 const load = (file, names, deps = {}) => {
-  if (file === 'pages/api/v1/stripe/webhook.js') deps = { applySalesPaidCheckout, applyPaidPurchaseEvent:async()=>false, applyPaidBillingEvent:async()=>false, syncPaidBillingEntitlement:async()=>null, ...deps }; // Paid branches have native provider-double fixtures in validate-paid-intake.mjs.
+  if (file === 'pages/api/v1/stripe/webhook.js') deps = { resolvePaidMoneyEventScope:async()=>null, handlePrivateOwnerBillingEvent:async()=>false, applySalesPaidCheckout, applyPaidPurchaseEvent:async()=>false, applyPaidBillingEvent:async()=>false, syncPaidBillingEntitlement:async()=>null, ...deps }; // Paid branches have native provider-double fixtures in validate-paid-intake.mjs.
   const source = fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
     .replace(/^import[\s\S]*?;\n/gm, '').replace(/export default /g, '').replace(/export /g, '');
   return new Function(...Object.keys(deps), `${source}\nreturn {${names.join(',')}};`)(...Object.values(deps));
@@ -161,7 +161,7 @@ console.log('PASS retired unpaid onboarding creates no tenant; paid concurrency 
 
 await pool.query("INSERT INTO tenants(tenant_key,billing_status,post_trial_access_ends_at,telnyx_voice_number,telnyx_voice_number_id) VALUES('release_fail','trial_expired',now()-interval '2 days','+15555550001','one'),('release_ok','trial_expired',now()-interval '2 days','+15555550002','two'),('already_gone','trial_expired',now()-interval '2 days','+15555550003','three')");
 const owned=new Map([['+15555550001','one'],['+15555550002','two']]);let failRelease=true, pendingRelease=false,releaseCalls=0, lookupFails=false;
-const lifecycle=load('pages/api/_lib/billingLifecycle.js',['deactivateExpiredPostTrial'],{
+const lifecycle=load('pages/api/_lib/billingLifecycle.js',['deactivateExpiredPostTrial'],{isPrivateOwnerBilling:async()=>false,
   getOwnedPhoneNumber:async({phoneNumber})=>{if(lookupFails)throw Error('provider unavailable');return owned.has(phoneNumber)?{phoneNumberId:owned.get(phoneNumber)}:null;},
   releaseVoiceNumber:async({phoneNumber})=>{releaseCalls++;if(failRelease&&phoneNumber.endsWith('1'))throw Error('provider unavailable');if(!pendingRelease)owned.delete(phoneNumber);},recordBillingLifecycleEvent:async()=>{}
 }).deactivateExpiredPostTrial;

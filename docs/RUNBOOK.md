@@ -13,6 +13,8 @@
 
 No production execution or live payment is implied by these instructions. A failed review or missing sandbox proof keeps cutover closed; finish unaffected local work and report the exact unresolved gate.
 
+The November 13 owner clarification requires the [mixed owner-preservation/account-deletion procedure](reviews/private-owner-and-retired-account-cutover.md). Apply reviewed additive 0065 before deploying the admission wrapper. The old blanket manual-inactivity disposition must not be selected for this owner's release. Provider cancellation, carrier release, actual database deletion and atomic activation each require their own concrete evidence; no test charge/refund is needed.
+
 ## Manual Sales introduction email release (0060)
 
 Review `0060_sales_intro_email.sql` and the [feature specification](SPECS/sales-intro-email.md), then apply with the reviewed migration runner before enabling the new composer. It is an additive Sales-only inventory entry, not an unrelated global readiness gate. The new API reports `intro_email_schema_not_ready` until the ledger exists. Keep the existing mail provider/sender credentials; this release introduces no inbox connection or new mail service. Offline verification uses stubs only.

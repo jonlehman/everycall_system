@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-11-13 — Preserve the owner's phone and delete the named unused account
+
+- The owner corrected the old-account classification: “creative_dynamio” is their business/test phone, canonically `creative_dynamic`, and must keep answering. They explicitly requested deleting `daved`. This narrowly supersedes UPIB-014's earlier tests/inactive assumption for those two accounts, without changing its original text, any public price or other tenants.
+- Preserve the owner's exact private $1.50 recurring subscription, proven paid term, phone, publication and access. A separate private ledger/admission wrapper introduces no standard setup purchase, replacement number or automatic new charge. Preserve calendar usage/coupon history; fence automated overages pending separate operator review. Exact paid renewals and fixed five-day grace reconcile through read-only provider evidence.
+- Delete Dave's actual account/auth/service resources only after exact provider cancellation, stopped collection/retries and positively reconciled number release. Keep financial/audit history, unpaid historical debt and unrelated/shared provider objects. Source controls, execution sequence and regression mapping are in [the mixed-disposition record](reviews/private-owner-and-retired-account-cutover.md); this decision is not an execution receipt.
+
 ## 2026-11-13 — Provider-proven monthly transition and saved-card behavior
 
 - UPIB-007/008: actual Stripe annual-to-monthly transitions reset the calendar and prorate even when phase end and anchor options are explicit. Preserve the original paid anniversary with a fully charged first monthly phase and defer its recurring collection until the next original boundary. The local immutable change operation, canonical schedule-generated one-time price, exact positive paid invoice line and original term window establish paid coverage; Stripe's internal zero-value trial line never grants service. Keep one subscription, the original monthly usage anchor and all paid history. Exact real-provider matrix and independent review remain release prerequisites.

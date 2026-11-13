@@ -1,3 +1,4 @@
+import {reconcilePrivateOwnerBilling,isPrivateOwnerBilling} from './privateOwnerBilling.js';
 import { runPaidBillingLifecycleJobs } from "./paidBillingLifecycle.js";
 import { recordBillingLifecycleEvent } from "./billing.js";
 import { refreshTenantCouponState, syncTenantCouponSubscriptionPricing } from "./billingCoupons.js";
@@ -312,6 +313,7 @@ async function deactivateExpiredPostTrial(pool, today) {
   );
   let deactivated = 0;
   for (const candidate of tenants.rows) {
+    if(await isPrivateOwnerBilling(pool,candidate.tenant_key))continue;
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -440,6 +442,11 @@ async function runCouponSync(pool) {
 
 export async function runBillingLifecycleJobs(pool) {
   const today = startOfTodayUtc();
+  let privateOwner;
+  try{privateOwner=await reconcilePrivateOwnerBilling(pool);}catch(error){
+    privateOwner={reconciliationFailed:true};
+    await pool.query("INSERT INTO audit_log(actor,action,details) VALUES('system:billing','billing.private_owner.reconciliation_failed','provider_or_concurrency_review_required')").catch(()=>{});
+  }
   const paidLifecycle = await runPaidBillingLifecycleJobs(pool);
   const couponSyncTenants = await runCouponSync(pool);
   const billingPeriods = await finalizeDueBillingPeriods(pool);
@@ -449,6 +456,7 @@ export async function runBillingLifecycleJobs(pool) {
   const postTrialDeactivated = await deactivateExpiredPostTrial(pool, new Date());
 
   return {
+    privateOwner,
     paidLifecycle,
     couponSyncTenants,
     billingPeriods,

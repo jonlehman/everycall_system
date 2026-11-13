@@ -1,3 +1,4 @@
+import {handlePrivateOwnerBillingEvent} from '../../_lib/privateOwnerBilling.js';
 import { applyPaidPurchaseEvent } from '../../_lib/paidPurchaseEvents.js';
 import { resolvePaidMoneyEventScope } from '../../_lib/paidMoneyEvents.js';
 import { applyPaidBillingEvent,syncPaidBillingEntitlement } from '../../_lib/paidBillingLifecycle.js';
@@ -181,6 +182,12 @@ export default async function handler(req, res) {
 
     const object = event.data?.object || {};
     const metadataTenantKey = String(object.metadata?.tenant_key || object.subscription_details?.metadata?.tenant_key || "").trim() || null;
+
+    if(await handlePrivateOwnerBillingEvent(pool,event)) {
+      await client.query("UPDATE billing_events SET status='processed',processed_at=NOW(),error_message=NULL WHERE stripe_event_id=$1",[event.id]);
+      await client.query('COMMIT');
+      return res.status(200).json({ok:true,privateOwner:true});
+    }
 
     const paidPurchaseEvent=await applyPaidPurchaseEvent(pool,event,{moneyScope});
     await applySalesPaidCheckout(pool,event);

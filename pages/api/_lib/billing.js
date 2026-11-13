@@ -1,3 +1,4 @@
+import {isPrivateOwnerBilling} from './privateOwnerBilling.js';
 import { syncPaidSubscription,handlePaidSubscriptionSchedule } from './paidSubscriptionSync.js';
 import { deriveAnnualAmountCents, getStandardBillingPlan, STANDARD_BILLING_PLANS } from "../../../lib/standardBillingPlans.js";
 import { getPool } from "./db.js";
@@ -785,6 +786,7 @@ export function mapStripeSubscriptionToTenantState(subscriptionStatus, currentRo
 }
 
 export async function syncTenantStripeSubscription(pool, tenantKey, currentRow, subscription, eventType = "stripe.sync") {
+  if(await isPrivateOwnerBilling(pool,tenantKey))return getTenantBillingState(pool,tenantKey);
   const paid=(await pool.query('SELECT paid_purchase_id,stripe_subscription_id FROM tenant_billing_accounts WHERE tenant_key=$1',[tenantKey])).rows[0];
   if(paid?.paid_purchase_id){
     if(subscription?.id!==paid.stripe_subscription_id)return getTenantBillingState(pool,tenantKey);
@@ -1059,6 +1061,7 @@ export async function syncTenantStripeSubscription(pool, tenantKey, currentRow, 
 }
 
 export async function syncTenantStripeSubscriptionSchedule(pool, tenantKey, currentRow, schedule, eventType = "stripe.schedule.sync") {
+  if(await isPrivateOwnerBilling(pool,tenantKey))return getTenantBillingState(pool,tenantKey);
   if (!tenantKey || !schedule?.id) {
     return currentRow;
   }

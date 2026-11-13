@@ -1,3 +1,4 @@
+import {isPrivateOwnerBilling} from './privateOwnerBilling.js';
 import {
   BILLING_CALL_TYPE_CODES,
   CALL_BILLING_RULE_VERSION,
@@ -1086,6 +1087,10 @@ export async function finalizeDueBillingPeriods(pool) {
   let createdInvoiceItems = 0;
 
   for (const period of due.rows || []) {
+    // Retained deleted-account ledgers and the private operator account never
+    // generate new automated charges. Historical windows remain unmodified.
+    if(!(await pool.query('SELECT 1 FROM tenants WHERE tenant_key=$1',[period.tenant_key])).rowCount
+      ||await isPrivateOwnerBilling(pool,period.tenant_key))continue;
     const rated = await rateBillingPeriod(pool, period.billing_period_id, { finalize: true });
     if (rated.pendingCalls) continue;
     finalizedPeriods += 1;
