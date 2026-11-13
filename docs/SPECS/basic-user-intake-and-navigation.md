@@ -1,5 +1,9 @@
 # SPEC: Basic User Intake And Navigation
 
+## Current authority — November 12, 2026
+
+[Unified paid intake and billing](unified-paid-intake-and-billing.md) supersedes payment-free signup, separate Activate Billing navigation and any unpaid customer self-service setup booking described below. Require the selected plan/interval and verified setup purchase before account creation, full build or provisioning. Keep legitimate Billing and recovery controls. Sales reps may arrange prepayment setup appointments under existing safeguards; free public demos remain available. Preserve the existing knowledge publication/readiness requirements. Historical proposed flow text below does not override UPIB-001–014.
+
 ## Status
 - Proposed
 - Owner: Platform

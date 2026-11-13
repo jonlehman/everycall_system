@@ -1,5 +1,9 @@
 # Task: EveryCall Sales — rep screen v2 (state-driven dialer)
 
+## Current authority — November 12, 2026
+
+The owner-approved [unified paid intake and billing specification](unified-paid-intake-and-billing.md) supersedes the standalone direct-payment signup path below: Sales sends secure prefilled links into the same intake as website/pricing/demo/assisted signup. A verified existing purchase is reused; new hosted checkout collects setup payment and recurring consent. Convert one correctly bound tenant automatically, then archive obsolete demo resources, revoke replaced legacy credentials and stop unsent prospect outreach while preserving immutable history and uncertain-provider fences. Paid voice still requires validated publication/readiness. Sales reps may arrange setup appointments before payment; customer self-service booking requires payment. Preserve historical SALES-CHECKOUT requirement IDs/text, frozen amounts, recipient/mode/consent safeguards and the approved $1 live-test exception. UPIB-001–014 supplies the superseding requirements and future regression map; implementation remains pending.
+
 **Status:** design approved 10/20. Reference mockups attached under `screens/`. Implement in the existing dialer app (Telnyx WebRTC in the browser, demo conferenced as a leg, inbound via Telnyx Call Control). Multi-user from the start: this task is the rep-facing side; admin screens are a separate task except where noted in Part 7.
 
 ## Local outbound ringback (owner-approved November 9, 2026)

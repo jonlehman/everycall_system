@@ -1,5 +1,9 @@
 # PRD: Account Management & Billing (Stripe)
 
+## Current authority — November 12, 2026
+
+The owner-approved [unified paid intake and billing specification](../SPECS/unified-paid-intake-and-billing.md) supersedes the conflicting trial, pricing, grace, cancellation, usage and reactivation provisions below. Current requirements are $100 including the first calendar month; new monthly/annual prices; monthly call allowances/overage invoices even on annual plans; fixed five-day grace without anchor drift; paid-term-end cancellation; and paid full-period reinstatement after true cancellation, with no proration, repeat setup fee or second included month. Annual prepaid overage debt restricts answering beyond each month's included calls after grace while retaining/resetting that allowance. Billing/help remain accessible. Historical MVP acceptance criteria below are not current release criteria; use UPIB-001–014 and its regression map. Implementation remains pending.
+
 ## 1. Summary
 EveryCall needs a complete account management and subscription billing capability for tenant owners and platform admins. This includes paid plan signup, payment method management, invoice visibility, cancellation and reactivation, and account lifecycle controls aligned with Stripe.
 

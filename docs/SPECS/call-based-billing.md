@@ -1,5 +1,9 @@
 # Spec: Call-Based Billing With Included Usage And Overage
 
+## Current authority — November 12, 2026
+
+[Unified paid intake and billing](unified-paid-intake-and-billing.md), especially UPIB-007–012, supersedes the period/pricing provisions below wherever they derive an annual usage allowance from the Stripe base-subscription period. Usage allowances and overage invoices are monthly for every plan, including the paid initial month and prepaid annual terms. The base term remains monthly or annual independently. Preserve existing billable-call classification and frozen billing evidence. Annual prepaid customers with overdue overages retain/reset included calls; after five-day grace, reject additional calls before answering once that monthly allowance is exhausted. Use the new regression map before release; this documentation does not fix the current annual-window bug.
+
 ## 1. Purpose
 Replace the current lead-based billing estimate model with a call-based billing model:
 - each pricing tier includes a fixed number of calls per billing period

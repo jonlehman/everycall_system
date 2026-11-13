@@ -1,5 +1,9 @@
 # PRD: Tenant Intake & Onboarding
 
+## Current authority — November 12, 2026
+
+The owner-approved [unified paid intake and billing specification](../SPECS/unified-paid-intake-and-billing.md) supersedes this document's trial signup and payment-free account/session/provisioning flow. All signup sources use one intake, with secure Sales prefill and an explicit plan. Final Go verifies the setup purchase or collects $100 through hosted subscription Checkout before creating/converting one tenant and starting the full build/provisioning. Free public demos remain. Customer self-service setup booking requires payment; Sales reps retain the guarded prepayment booking exception. Production voice still requires validated knowledge publication/readiness. The sections below preserve the prior design, not evidence that the replacement is implemented.
+
 ## Summary
 The intake process starts with a lightweight business identity screen, then uses AI-assisted enrichment to prefill onboarding details, followed by activation guidance.
 

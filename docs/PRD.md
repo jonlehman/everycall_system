@@ -35,7 +35,7 @@ EveryCall is a multi-tenant voice receptionist platform for service businesses. 
 
 ## Sales rep workflow
 
-The separate Sales workspace follows the owner-approved [rep dialer v2](SPECS/sales-rep-dialer-v2.md). It adds state-driven human-led outbound demos, rep-owned queues and return calls, Stripe checkout and Outlook setup booking. Sales payment and booking actions are outside the inbound receptionist's private tool surface. Real-tenant voice requires verified payment and the existing knowledge publication/readiness gates.
+The separate Sales workspace follows the owner-approved [rep dialer v2](SPECS/sales-rep-dialer-v2.md) and the November 12 [unified paid intake and billing requirements](SPECS/unified-paid-intake-and-billing.md). Website, pricing, demo, Sales and assisted signup enter one intake; verified setup payment and recurring consent precede one tenant conversion, full build and provisioning. Sales reps may book setup appointments before payment; customer self-service booking requires payment. Free public demos remain. The new requirements replace unpaid account trials and separate Sales direct checkout; implementation is pending. Sales payment and booking remain outside the inbound receptionist's private tool surface. Production voice requires existing validated knowledge publication/readiness as well as payment.
 
 ## Out of Scope (Inbound Receptionist)
 - Automated dispatch orchestration

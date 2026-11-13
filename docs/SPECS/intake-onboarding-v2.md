@@ -1,5 +1,9 @@
 # SPEC: Intake Onboarding V2
 
+## Current authority — November 12, 2026
+
+[Unified paid intake and billing](unified-paid-intake-and-billing.md), UPIB-001–006 and UPIB-014, supersedes the prepayment account/session/number creation and billing exclusion below. The replacement requires server-verified payment and recurring consent before one tenant is created or converted; it preserves deterministic validation, transactional writes, retry safety and forwarding guidance. The production status below describes historical V2, not the new paid intake. Replacement implementation and tests remain pending.
+
 ## Status
 - Implemented (production)
 - Owner: Platform

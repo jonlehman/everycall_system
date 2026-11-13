@@ -1,5 +1,13 @@
 # Runbook
 
+## Unified paid intake and billing — requirements only (November 12, 2026)
+
+[Unified paid intake and billing](SPECS/unified-paid-intake-and-billing.md) is the owner-approved target and contains the implementation/regression/release sequence. It does not certify a deployed change. Historical trial, Sales direct-checkout and booking instructions below describe older behavior wherever they conflict with UPIB-001–014; do not use them to implement a new unpaid account or grant a free reactivation period.
+
+The replacement must verify payment before account/full-build/provisioning, keep publication/readiness gates, collect overages monthly for annual subscribers, fix grace at five days without changing anchors, and preserve each prepaid annual month's included calls despite old overage debt. After grace and quota exhaustion, refuse additional calls before answering; next month's allowance restores included answering. Do not release an annual prepaid customer's number merely for overage debt while included service is owed. Full nonpayment suspension holds a number 30 days after grace, with release notice five days beforehand. Reinstatement after actual cancellation requires a full new paid period, a new number and prominent forwarding guidance; routine debt settlement retains original dates. Reconcile irreversible provider deletion before restoring service.
+
+Customer self-service appointment booking requires verified payment; a Sales rep may arrange a prepayment appointment using existing safeguards. Refund/dispute assistance is manual at customerservice@everycall.io. The explicit EveryCall portal configuration, six replacement prices, every next-term plan transition, webhook coverage and canonical deployed revision require verification during the future release; do not fall back to an unrelated default portal or expose/change the webhook's existing query configuration. Preserve historic payment amounts, $1 live-test authorization, sandbox isolation and uncertain-delivery fences. No Stripe/provider/database writes are part of this documentation change.
+
 ## Manual Sales introduction email release (0060)
 
 Review `0060_sales_intro_email.sql` and the [feature specification](SPECS/sales-intro-email.md), then apply with the reviewed migration runner before enabling the new composer. It is an additive Sales-only inventory entry, not an unrelated global readiness gate. The new API reports `intro_email_schema_not_ready` until the ledger exists. Keep the existing mail provider/sender credentials; this release introduces no inbox connection or new mail service. Offline verification uses stubs only.

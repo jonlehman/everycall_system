@@ -1,5 +1,9 @@
 # Spec: Account Management & Billing Implementation
 
+## Current authority — November 12, 2026
+
+The owner-approved [unified paid intake and billing specification](unified-paid-intake-and-billing.md) supersedes the no-card/local-trial conversion pattern, trial-based subscription timing, seven-day grace, immediate customer cancellation and free admin reactivation below. Hosted checkout must collect setup payment and recurring consent before account creation; any provider-level delayed base charge represents the paid included month, not an unpaid EveryCall trial. Keep payment, base term, monthly call window, grace and service permissions separate. UPIB-001–014 defines the replacement behavior and code-to-regression map; this historical implementation design is not evidence that it is delivered.
+
 ## 1. Purpose
 Implement the billing and account-lifecycle behavior defined in [account-management-billing.md](/home/jonle/everycall/docs/prd/account-management-billing.md) with concrete backend state, Stripe integration, scheduled jobs, middleware rules, and admin workflows.
 
