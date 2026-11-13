@@ -1,5 +1,7 @@
 # Manual Call Test Scripts
 
+`scripts/test-upib-catalog-batching.mjs` compares exact ordered JSON and frozen fingerprints for all eight baseline, sixteen installed and eight post-install exclusion contracts against the prior five-query reader. Under a 75 ms per-query transport simulation, the old path must hit the unchanged PostgreSQL transaction deadline and roll back; the batched path must install the same schema under that deadline. The existing migration suite separately retains all drift, lock contention, row preservation, receipt rollback and real timeout checks.
+
 ## Unified paid intake and billing — implementation regressions
 
 `scripts/validate-paid-canonical-base-shape.mjs` consumes the preserved actual unexpanded Stripe invoice-list response, adapting only cloned mode flags for the production verifier. The real full first-cycle proration flag grants exact coverage through the invoice event and delayed-history helper; wrong reason, partial amount/window, foreign subscription, extra/negative lines and mismatched total grant nothing. An explicitly synthetic annual adaptation covers the same full-boundary predicate.

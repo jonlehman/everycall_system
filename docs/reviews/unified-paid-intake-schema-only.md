@@ -70,3 +70,29 @@ Report this phase as **schema installed, intake disabled, canonical rollout stil
 blocked on explicit legacy disposition and remaining coordinated gates**. This
 procedure does not constitute full release completion or authorize the remaining
 activation sequence.
+
+## First production attempt and bounded transport correction
+
+The authorized attempt from `97d344a03a640276800aaa2f019e072bb40bafb9`
+stopped with PostgreSQL 17 error `25P04` (`transaction_timeout`). No retry followed.
+Independent read-only reconciliation proved both receipts absent, all owned
+relations and the admission function absent, all nine additive columns absent,
+all eight baseline contracts unchanged and every predecessor present. All five
+protected table counts/digests matched the fresh preflight exactly: 80 tenants,
+90 billing accounts, 133 billing periods, three Sales Checkout rows and one config
+row. The gate table was absent. No external relation locks remained. The private
+reconciliation artifact SHA-256 is
+`bc33ff7dec6b4cbeb81175b2b8afd8f1d685a29ddfc925a559624a5a89e4289e`.
+This was a rolled-back attempt, not a completed schema installation.
+
+The catalog verifier previously made five sequential transport requests for each
+relation, including eight baseline and sixteen installed contracts. The bounded
+correction batches those same ordered catalog projections into one parameterized
+statement per relation, retaining the original normalization, exclusions and
+stored fingerprints. It does not alter migration SQL, transaction/statement/lock
+deadlines, locks, protected-row checks, gate checks or atomic receipts. Native
+parity compares all baseline/installed/excluded contracts against the frozen old
+reader; a transport-latency fixture exercises the same real transaction deadline.
+Actual production latency profiling is read-only and requires independent query
+review. A clean separately reviewed revision, fresh evidence/pins and explicit
+coordinated retry approval remain prerequisites for another migration attempt.
