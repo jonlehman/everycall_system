@@ -37,7 +37,7 @@ function validateEvidence(bundle,artifacts,now){
   if(deployment?.revision!==bundle.reviewedRevision||deployment.healthy!==true||!reference(deployment.evidenceReference))fail(`runtime_${component}`);
  }
  const site=runtime.website;
- if(!/^[a-f0-9]{40}$/.test(bundle.reviewedWebsiteRevision||'')||site?.revision!==bundle.reviewedWebsiteRevision||site.production!==true||site.healthy!==true||site.canonicalOrigin!=='https://www.everycall.io'||site.apexRedirectVerified!==true||site.disclosuresVerified!==true||!reference(site.evidenceReference))fail('canonical_website');
+ if(!/^[a-f0-9]{40}$/.test(bundle.reviewedWebsiteRevision||'')||site?.revision!==bundle.reviewedWebsiteRevision||site.production!==true||site.healthy!==true||site.canonicalOrigin!=='https://www.everycall.io'||!Array.isArray(site.origins)||site.origins.length!==2||['https://everycall.io','https://www.everycall.io'].some(origin=>!site.origins.some(proof=>proof.origin===origin&&proof.revision===bundle.reviewedWebsiteRevision&&proof.healthy===true&&proof.disclosuresVerified===true&&reference(proof.evidenceReference)))||site.disclosuresVerified!==true||!reference(site.evidenceReference))fail('canonical_website');
  if(runtime.app.canonicalOrigin!=='https://app.everycall.io'||runtime.app.production!==true)fail('canonical_app');
  const retirement=runtime.retirement,switched=Date.parse(retirement?.canonicalChangedAt),retired=Date.parse(retirement?.completedAt);
  if(!Number.isFinite(switched)||!Number.isFinite(retired)||retired>now||retired-switched<810000||Date.parse(inventory.observedAt)<retired||Date.parse(provider.observedAt)<retired

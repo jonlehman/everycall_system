@@ -58,7 +58,11 @@ The bundle contains `reviewedRevision` (exact clean 40-character app commit),
   additionally has `production: true`, `canonicalOrigin: https://app.everycall.io`.
   `website` requires the exact reviewed website revision, `production: true`,
   `healthy: true`, `canonicalOrigin: https://www.everycall.io`,
-  `apexRedirectVerified: true`, `disclosuresVerified: true` and evidence reference.
+  `disclosuresVerified: true` and evidence reference. Its `origins` array must
+  contain exactly one proof for https://everycall.io and https://www.everycall.io,
+  each with `origin`, the same reviewed `revision`, `healthy: true`,
+  `disclosuresVerified: true` and its own `evidenceReference`. Both existing origins must
+  serve reviewed content; no redirect or domain change is required.
   `gateway` here is the inbound admission service, not the byte-identical Sales
   gateway. `retirement` contains actual `canonicalChangedAt`, actual `completedAt`
   at least 810 seconds later, `oldRevision` 17195749a3cd70b421db34c2f4f244d9f153b0e3,
@@ -111,7 +115,7 @@ The synthetic native test demonstrates the schema but is not production evidence
    The runner changes database bindings atomically with the gate; ensure runtime
    fallback environment bindings are also the reviewed values before activation.
 5. Promote the reviewed website while the intake gate remains disabled; verify
-   its canonical www origin, apex redirect and paid pricing/disclosures. Only then
+   both existing apex/www origins and paid pricing/disclosures. Only then
    capture the final database snapshot, assemble the five artifacts and bundle,
    independently review their hashes, and supply their exact references to the
    release reviewer. Keep the old original inventory and inactive-price receipts
