@@ -1,5 +1,7 @@
 # Unified paid intake and billing — independent review
 
+The opening review is historical. Current source closure and schema-only verification are recorded at the end; full canonical release remains held.
+
 Review date: November 13, 2026 UTC. Independent Astra review of the uncommitted application changes based on `45a1a68` and website changes in `/tmp/everycall-website-upib` based on `05f212c`. Implementation continued during this review; the findings below identify the inspected behavior, not a final immutable release revision. **Not approved for release.**
 
 Authority: [UPIB-001–014](../SPECS/unified-paid-intake-and-billing.md), the five core application documents, and the frozen knowledge subsystem safeguards. No production, provider, catalog, migration, charge, refund, deployment, or repository publication was performed by this reviewer. Unrelated CSV files were excluded.
@@ -57,10 +59,59 @@ Latest closure status after independent native fixtures (`/tmp/upib-independent-
 - Recovery fairness: independently reran the original starvation diagnostic as `/tmp/upib-independent-fairness-fixed.mjs`; both purchase stages now visit newer work. Independently executed `scripts/validate-paid-work-fairness.mjs`: all seven native cases pass for payment, subscription and provisioning progress, concurrent separate claims, crash rotation and stale completion fencing. Source review confirms claims are committed before I/O, payment truth and immutable request parameters survive manual-review transitions, and failed/abandoned work no longer monopolizes a batch. Native provider doubles establish local scheduling behavior only.
 - Terminal Sales actions: independently executed `scripts/validate-paid-followup-cleanup.mjs`; both groups pass, including preserving unsubscribe/pause actions and fencing conversion between a worker claim and provider I/O.
 
-## Remaining release acceptance
+## Historical remaining release acceptance
 
 - Review the final immutable release revision and migration physical-contract fingerprints after the last changes; local source review is not evidence of deployment. Re-run bounded affected checks if this reviewed working snapshot changes.
 - Run real isolated Stripe sandbox/test-clock journeys: six catalog prices; setup-only initial charge; explicit recurring consent; no-charge historical payment reuse; original calendar anniversaries; all 36 source/destination plan/interval combinations; cancellation/undo; monthly overage collection throughout initial month plus prepaid year; SCA/failure/recovery; full-period restart without setup/free month; and replay/unknown-effect recovery. Provider doubles cannot satisfy this acceptance.
 - Complete explicit per-record cutover mapping for the reported two existing subscriptions, historical live/test Sales sessions, and existing tenants. The current narrative inventory is not the mapping or authorization for provider effects.
 - Verify the EveryCall-specific portal configuration, webhook event coverage/signing secrets, live/sandbox isolation, coordinated schema/app/worker/gateway versions and actual canonical deployed revision. Keep `paid_intake_release.enabled` false until closure.
 - Preserve existing knowledge review/publication/readiness, daily build allocations, raw captures and tenant corrections. The inspected paid build wrapper delegates to existing machinery and does not itself authorize publication; its real initial-build integration and readiness flow still need final acceptance.
+
+
+## Final source and schema-only closure — November 13, 2026 UTC
+
+The initial findings and acceptance list above are historical. Separate fresh-context
+Astra reviews subsequently examined immutable financial source `97d344a`, the
+preserved actual Stripe responses and source-contract comparison, followed by the
+bounded migration-only diff `4294120`. No source finding remains open in those
+reviewed revisions. This does not approve full canonical rollout without its
+remaining owner/configuration/version gates.
+
+Actual sandbox acceptance passed all 36 financial plan transitions, 39 annual-plan
+monthly usage invoices, setup-only and no-charge recurring consent, full paid
+restart, SCA/settlement, cancellation/undo and all four interval shapes for explicit
+Portal card replacement. The provider record distinguishes the earlier financial
+matrix from the two-field payment-method delta and targeted final combined proof.
+Independent exact-source comparison passed 83 requests, including immutable usage
+rating/payment-method branches. See [provider acceptance](unified-paid-intake-provider-acceptance.md).
+
+The final actual canonical invoice regression corrected a provider-shape mismatch:
+a full original-calendar renewal may carry a proration flag. The narrow recurring
+exception requires a subscription-cycle reason, exactly one full configured line,
+matching invoice total, USD, quantity, owned subscription/price and the original
+whole window. The captured monthly response passes the actual billing-event and
+delayed-binding paths; partial/short/foreign/update-reason/extra/negative/total
+mismatches do not grant coverage. The annual adaptation is explicitly synthetic.
+
+Additional independent native evidence covers pre-effect admission fencing after
+accepted-response loss, paid-bridge rescheduling without duplicate billing,
+unpaid-refusal cancellation access, preservation of concurrent receipts and later
+owner card choices, and delayed FIRST binding from complete canonical paid history.
+Unknown/unsupported histories enter visible manual review; transient provider
+failures retain bounded retries. The 29-scenario intake suite and browser review
+flow passed, including no second checkout and no unverified-payment claim. The
+exact `97d344a` TypeScript/Next production build and built HTTP boundaries passed;
+application bytes remain unchanged in `4294120`.
+
+The schema-only retry received separate exact-source, wrapper, target, SQL,
+inventory, production timing and readback approval. The first attempt fully rolled
+back on its unchanged 10-second deadline. The reviewed batching preserved all
+checks and permitted one retry, which committed in 6,466 ms. Independent readback
+verified both receipts, physical contracts, pristine disabled gate, 13 empty
+ledgers and unchanged protected financial/Sales history. The [release record](unified-paid-intake-release.md)
+contains exact evidence hashes and canonical version observations.
+
+Full canonical app/worker/website/provider activation remains blocked on the
+explicit legacy-account decision and coordinated final deployment evidence. No
+new live price activation, subscription disposition, portal/webhook/environment
+change or customer test charge/refund was authorized by the schema-only approval.
