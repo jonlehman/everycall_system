@@ -9,23 +9,29 @@ const fail=code=>{throw Error(`legacy_deletion_${code}`);};
 const quote=name=>{if(!/^[a-z][a-z0-9_]*$/.test(name))fail('table_name');return `"${name}"`;};
 async function scopedTables(db){return (await db.query(`SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_attribute a ON a.attrelid=c.oid
  WHERE n.nspname=current_schema() AND c.relkind='r' AND a.attname='tenant_key' AND NOT a.attisdropped ORDER BY c.relname`)).rows.map(r=>r.relname);}
+async function tableFingerprints(db,names){
+ if(!names.length)return [];
+ return (await db.query(names.map(table=>`SELECT '${table}' AS "table",count(*)::integer AS count,md5(COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text)::text,'[]')) AS fingerprint FROM ${quote(table)} t WHERE tenant_key=$1`).join(' UNION ALL ')+' ORDER BY "table"',[RETIRED_ACCOUNT.tenantKey])).rows;
+}
 export async function captureRetiredAccountInventory(db){
  const tenant=(await db.query('SELECT tenant_key,telnyx_voice_number_id,md5(to_jsonb(t)::text) AS fingerprint FROM tenants t WHERE tenant_key=$1',[RETIRED_ACCOUNT.tenantKey])).rows[0]||null;
  const account=(await db.query('SELECT tenant_key,stripe_customer_id,stripe_subscription_id,stripe_price_id,paid_purchase_id,md5(to_jsonb(b)::text) AS fingerprint FROM tenant_billing_accounts b WHERE tenant_key=$1',[RETIRED_ACCOUNT.tenantKey])).rows[0]||null;
  const names=await scopedTables(db);
- const tables=(await db.query(names.map(table=>`SELECT '${table}' AS "table",count(*)::integer AS count,md5(COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text)::text,'[]')) AS fingerprint FROM ${quote(table)} t WHERE tenant_key=$1`).join(' UNION ALL '),[RETIRED_ACCOUNT.tenantKey])).rows;
+ const tables=await tableFingerprints(db,names);
  const foreignKeys=(await db.query(`SELECT c.conname,ch.relname AS child,pa.relname AS parent,c.confdeltype,
  ARRAY(SELECT a.attname FROM unnest(c.conkey) WITH ORDINALITY k(num,ord) JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.num ORDER BY k.ord)::text[] AS child_columns,
  ARRAY(SELECT a.attname FROM unnest(c.confkey) WITH ORDINALITY k(num,ord) JOIN pg_attribute a ON a.attrelid=c.confrelid AND a.attnum=k.num ORDER BY k.ord)::text[] AS parent_columns,
  pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace JOIN pg_class ch ON ch.oid=c.conrelid JOIN pg_class pa ON pa.oid=c.confrelid
  WHERE n.nspname=current_schema() AND c.contype='f' ORDER BY c.conname,ch.relname`)).rows;
- const dependencies=[];
- for(const fk of foreignKeys.filter(f=>tables.some(t=>t.table===f.parent&&t.count>0)&&PURGE.has(f.parent))){
+ // Keep every former per-FK predicate, but send one statement rather than
+ // one network round trip for each dependency. Input order remains canonical.
+ const checks=foreignKeys.filter(f=>tables.some(t=>t.table===f.parent&&t.count>0)&&PURGE.has(f.parent));
+ const dependencyCounts=checks.length?(await db.query(checks.map((fk,index)=>{
   const scopedChild=tables.some(t=>t.table===fk.child);
   const join=fk.child_columns.map((col,i)=>`c.${quote(col)}=p.${quote(fk.parent_columns[i])}`).join(' AND ');
-  const row=(await db.query(`SELECT count(*)::integer AS count FROM ${quote(fk.child)} c JOIN ${quote(fk.parent)} p ON ${join} WHERE p.tenant_key=$1 ${scopedChild?'AND c.tenant_key IS DISTINCT FROM $1':''}`,[RETIRED_ACCOUNT.tenantKey])).rows[0];
-  dependencies.push({constraint:fk.conname,child:fk.child,parent:fk.parent,indirect:!scopedChild,count:row.count});
- }
+  return `SELECT ${index} AS ordinal,count(*)::integer AS count FROM ${quote(fk.child)} c JOIN ${quote(fk.parent)} p ON ${join} WHERE p.tenant_key=$1 ${scopedChild?'AND c.tenant_key IS DISTINCT FROM $1':''}`;
+ }).join(' UNION ALL ')+' ORDER BY ordinal',[RETIRED_ACCOUNT.tenantKey])).rows:[];
+ const dependencies=checks.map((fk,index)=>({constraint:fk.conname,child:fk.child,parent:fk.parent,indirect:!tables.some(t=>t.table===fk.child),count:dependencyCounts[index].count}));
 
  const sharing=(await db.query(`SELECT
  (SELECT count(*)::integer FROM tenant_users u JOIN tenant_users other ON lower(other.email)=lower(u.email) AND other.tenant_key<>u.tenant_key WHERE u.tenant_key=$1) AS tenant_users,
@@ -87,15 +93,16 @@ export async function deleteRetiredLegacyAccount(pool,{bundle,bundleSha256,curre
   // Root tenant deletion performs the schema's reviewed knowledge cascades.
   // Non-cascading operational rows are explicitly removed below. No financial,
   // provider, customer, payment method or global staff object is deleted.
-  await db.query('DELETE FROM sessions WHERE tenant_key=$1',[RETIRED_ACCOUNT.tenantKey]);
-  await db.query('DELETE FROM auth_tokens WHERE tenant_key=$1',[RETIRED_ACCOUNT.tenantKey]);
-  await db.query('DELETE FROM tenant_users WHERE tenant_key=$1',[RETIRED_ACCOUNT.tenantKey]);
-  await db.query('DELETE FROM tenants WHERE tenant_key=$1',[RETIRED_ACCOUNT.tenantKey]);
-  for(const table of tables.filter(t=>PURGE.has(t)&&!['tenants','sessions','auth_tokens','tenant_users'].includes(t)))await db.query(`DELETE FROM ${quote(table)} WHERE tenant_key=$1`,[RETIRED_ACCOUNT.tenantKey]);
-  for(const row of actual.tables.filter(t=>RETAIN.has(t.table))){
-   const kept=(await db.query(`SELECT count(*)::integer AS count,md5(COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text)::text,'[]')) AS fingerprint FROM ${quote(row.table)} t WHERE tenant_key=$1`,[RETIRED_ACCOUNT.tenantKey])).rows[0];
-   if(kept.count!==row.count||kept.fingerprint!==row.fingerprint)fail('retained_history_changed');
-  }
+  // The fixed tenant literal contains no request input. A single simple-query
+  // message executes these statements in their original order inside this same
+  // transaction; any statement failure still rolls back the entire deletion.
+  const tenantLiteral="'"+RETIRED_ACCOUNT.tenantKey.replaceAll("'","''")+"'";
+  const roots=['sessions','auth_tokens','tenant_users','tenants'];
+  const purgeTables=[...roots,...tables.filter(t=>PURGE.has(t)&&!roots.includes(t))];
+  await db.query(purgeTables.map(table=>`DELETE FROM ${quote(table)} WHERE tenant_key=${tenantLiteral}`).join('; '));
+  const retainedBefore=actual.tables.filter(t=>RETAIN.has(t.table));
+  const retainedAfter=await tableFingerprints(db,retainedBefore.map(t=>t.table));
+  if(!isDeepStrictEqual(retainedAfter,retainedBefore))fail('retained_history_changed');
   if(tables.includes('kb_purge_audit'))await db.query("INSERT INTO kb_purge_audit(tenant_key,purge_kind,requested_by,request_id,metadata_json) VALUES($1,'tenant_account_deletion',$2,$3,$4::jsonb)",[RETIRED_ACCOUNT.tenantKey,`admin:${bundle.actorAdminUserId}`,`legacy-delete:${bundleSha256}`,JSON.stringify({bundleSha256,providerEvidenceSha256:cutoverDigest(bundle.provider),financialHistoryRetained:true})]);
   await db.query("UPDATE tenant_billing_accounts SET service_ended_at=COALESCE(service_ended_at,NOW()),stripe_subscription_status='canceled',cancel_at_period_end=FALSE,canceled_at=COALESCE(canceled_at,NOW()) WHERE tenant_key=$1",[RETIRED_ACCOUNT.tenantKey]);
   await db.query("INSERT INTO audit_log(tenant_key,actor,action,details) VALUES($1,$2,'tenant.legacy_account.deleted',$3)",[RETIRED_ACCOUNT.tenantKey,`admin:${bundle.actorAdminUserId}`,JSON.stringify({bundleSha256,ownerDecisionReference:bundle.ownerDecisionReference,reviewedRevision:currentRevision,inventorySha256:cutoverDigest(bundle.inventory),providerEvidenceSha256:cutoverDigest(bundle.provider),financialHistoryRetained:true})]);

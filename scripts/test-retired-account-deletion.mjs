@@ -1,9 +1,26 @@
 import assert from 'node:assert/strict';
+import {setTimeout as sleep} from 'node:timers/promises';
+import {captureRetiredAccountInventory as captureBeforeBatching} from './fixtures/retired-account-inventory-before-batching.mjs';
 import {createUpibTestFixture} from './lib/upib-test-fixture.mjs';
 import {upibTargetFingerprint} from './lib/unified-paid-billing-migrations.mjs';
 import {cutoverDigest} from './lib/paid-intake-release-cutover.mjs';
 import {RETIRED_ACCOUNT as c,captureRetiredAccountInventory,deleteRetiredLegacyAccount} from './lib/delete-retired-legacy-account.mjs';
 const f=await createUpibTestFixture({label:'deletelegacy'}),{pool}=f,q=(sql,p)=>pool.query(sql,p),revision='a'.repeat(40);
+const latencyMs=Number(process.argv.find(v=>v.startsWith('--latency-ms='))?.split('=')[1]||0);
+assert.ok([0,80,90,100].includes(latencyMs),'latency fixture supports only 0/80/90/100ms');
+let queryCount=0,maxOperationQueries=0,maxOperationMs=0,inventoryComparisons=0;
+const delayed=target=>async(...args)=>{queryCount++;if(latencyMs)await sleep(latencyMs);return target.query(...args);};
+const timedPool={query:delayed(pool),connect:async()=>{const db=await pool.connect();return {query:delayed(db),release:()=>db.release()};}};
+async function capture(){
+ const priorQueries=queryCount,actual=await captureRetiredAccountInventory(timedPool);
+ assert.ok(queryCount-priorQueries<=7,'capture must use at most seven database round trips');
+ const original=await captureBeforeBatching(pool);
+ // The previous UNION had no global ordering; all row/field values must match.
+ original.tables.sort((a,b)=>a.table.localeCompare(b.table));
+ const ordered=structuredClone(actual);ordered.tables.sort((a,b)=>a.table.localeCompare(b.table));
+ assert.deepEqual(ordered,original);inventoryComparisons++;return actual;
+}
+
 try{
  await q("INSERT INTO admin_users(id,username,email,role) VALUES(901,'deletion_fixture','operator@fixture.invalid','admin')");
  await q("INSERT INTO tenants(tenant_key,name,status,telnyx_voice_number_id) VALUES($1,'Retired fixture','active',$2),('creative_dynamic','Owner fixture','active','owner_number')",[c.tenantKey,c.phoneNumberId]);
@@ -16,9 +33,9 @@ try{
  await q("INSERT INTO knowledge_builds(build_id,tenant_key,status,version) VALUES('dave_failed',$1,'failed','v1')",[c.tenantKey]);
  const provider={observedAt:new Date().toISOString(),stripeAccount:'acct_16FSzlFgMKdd4EaW',livemode:true,unknownEffects:0,subscription:{id:c.subscriptionId,customer:c.customerId,status:'canceled',livemode:true,schedule:null},invoices:{hasMore:false,data:[{id:'in_preserved_debt',customer:c.customerId,subscription:c.subscriptionId,livemode:true,status:'open',auto_advance:false,next_payment_attempt:null,amount_remaining:9950}]},pendingInvoiceItems:{count:0,hasMore:false},schedules:{activeCount:0,hasMore:false},number:{id:c.phoneNumberId,absent:true,canonicalReadback:true,releaseEvidenceReference:'fixture:positive-number-absence'}};
  const runtime={observedAt:new Date().toISOString(),...Object.fromEntries(['app','gateway','worker'].map(k=>[k,{revision,healthy:true}])),retirement:{oldCanonicalIngressRemoved:true,oldWorkerInstancesAbsent:true,oldRevision:'17195749a3cd70b421db34c2f4f244d9f153b0e3',configuredFunctionMaximumSeconds:300,canonicalChangedAt:new Date(Date.now()-900000).toISOString(),completedAt:new Date(Date.now()-1000).toISOString()}};
- const make=async()=>({runtime,reviewedRevision:revision,targetFingerprint:upibTargetFingerprint(f.databaseUrl),actorAdminUserId:901,ownerDecisionReference:'fixture:explicit-dave-delete',ownerDecisionQuote:'SYNTHETIC ONLY delete the retired account and stop billing.',independentReviewReference:'fixture:review',provider,inventory:await captureRetiredAccountInventory(pool)});
- const run=b=>deleteRetiredLegacyAccount(pool,{bundle:b,bundleSha256:cutoverDigest(b),currentRevision:revision,databaseUrl:f.databaseUrl,execute:true});
- let bundle=await make();assert.equal((await deleteRetiredLegacyAccount(pool,{bundle,bundleSha256:cutoverDigest(bundle),currentRevision:revision,databaseUrl:f.databaseUrl})).dryRun,true);
+ const make=async()=>({runtime,reviewedRevision:revision,targetFingerprint:upibTargetFingerprint(f.databaseUrl),actorAdminUserId:901,ownerDecisionReference:'fixture:explicit-dave-delete',ownerDecisionQuote:'SYNTHETIC ONLY delete the retired account and stop billing.',independentReviewReference:'fixture:review',provider,inventory:await capture()});
+ const run=async(b,execute=true)=>{const start=performance.now(),priorQueries=queryCount;try{return await deleteRetiredLegacyAccount(timedPool,{bundle:b,bundleSha256:cutoverDigest(b),currentRevision:revision,databaseUrl:f.databaseUrl,execute});}finally{const count=queryCount-priorQueries,elapsed=performance.now()-start;maxOperationQueries=Math.max(maxOperationQueries,count);maxOperationMs=Math.max(maxOperationMs,elapsed);assert.ok(count<=30,`operation exceeded 30 round trips: ${count}`);if(latencyMs)assert.ok(elapsed<9000,`operation approached 10s transaction deadline: ${elapsed}ms`);}};
+ let bundle=await make();assert.equal((await run(bundle,false)).dryRun,true);
  let bad=structuredClone(bundle);bad.provider.invoices.data[0].auto_advance=true;await assert.rejects(run(bad),/invoice_collection_not_stopped/);
  bad=structuredClone(bundle);bad.provider.number.absent=false;await assert.rejects(run(bad),/number_release_unresolved/);
  await q("UPDATE tenants SET name='changed' WHERE tenant_key=$1",[c.tenantKey]);await assert.rejects(run(bundle),/inventory_changed/);bundle=await make();
@@ -33,6 +50,11 @@ try{
  await assert.rejects(run(await make()),/retained_cascade_dependency/);await q("DELETE FROM call_states WHERE call_id='retained_state'");
  await q("INSERT INTO auth_tokens(token,token_type,user_id,email,expires_at) VALUES('unscoped_fixture','password_reset',41,'retired@fixture.invalid',NOW()+INTERVAL '1 hour')");
  await assert.rejects(run(await make()),/shared_local_identity/);await q("DELETE FROM auth_tokens WHERE token='unscoped_fixture'");
+ // A delete-side trigger cannot silently alter retained financial history.
+ await q("CREATE FUNCTION mutate_retained_period() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN UPDATE billing_periods SET period_end=period_end+INTERVAL '1 day' WHERE tenant_key=OLD.tenant_key; RETURN OLD; END $$");
+ await q('CREATE TRIGGER mutate_retained_period BEFORE DELETE ON tenants FOR EACH ROW EXECUTE FUNCTION mutate_retained_period()');
+ bundle=await make();await assert.rejects(run(bundle),/retained_history_changed/);assert.deepEqual(await capture(),bundle.inventory);
+ await q('DROP TRIGGER mutate_retained_period ON tenants');await q('DROP FUNCTION mutate_retained_period()');
  // The entire delete rolls back if the durable completion receipt fails.
  await q("CREATE FUNCTION reject_deletion_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='tenant.legacy_account.deleted' THEN RAISE EXCEPTION 'fixture_receipt_failure'; END IF; RETURN NEW; END $$");
  await q('CREATE TRIGGER reject_delete BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION reject_deletion_receipt()');bundle=await make();await assert.rejects(run(bundle),/fixture_receipt_failure/);assert.equal((await q('SELECT 1 FROM tenants WHERE tenant_key=$1',[c.tenantKey])).rowCount,1);await q('DROP TRIGGER reject_delete ON audit_log');await q('DROP FUNCTION reject_deletion_receipt()');
@@ -41,5 +63,5 @@ try{
  for(const table of ['billing_lifecycle_events','billing_periods','tenant_billing_accounts'])assert.equal((await q(`SELECT 1 FROM ${table} WHERE tenant_key=$1`,[c.tenantKey])).rowCount,1);
  assert.equal((await q("SELECT 1 FROM audit_log WHERE tenant_key=$1 AND action='historical'",[c.tenantKey])).rowCount,1);
  assert.equal((await q("SELECT 1 FROM sessions WHERE id='owner_session'")).rowCount,1);assert.equal((await q("SELECT 1 FROM tenants WHERE tenant_key='creative_dynamic'")).rowCount,1);
- console.log(JSON.stringify({status:'PASS',suite:'guarded retired account deletion native retention/isolation/rollback/replay',providerWrites:0}));
+ console.log(JSON.stringify({status:'PASS',suite:'guarded retired account deletion native retention/isolation/rollback/replay',latencyMs,inventoryComparisons,maxOperationQueries,maxOperationMs:Math.round(maxOperationMs),providerWrites:0}));
 }finally{await f.close();}
