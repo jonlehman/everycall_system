@@ -35,10 +35,23 @@ export function paidSubscriptionParams(row,paymentMethod){
  const paidAt=new Date(row.paid_at),months=row.kind==='restart'&&row.billing_interval==='year'?12:1;
  const end=calendarMonthBoundary(paidAt,months);
  const anchor={day_of_month:paidAt.getUTCDate(),hour:paidAt.getUTCHours(),minute:paidAt.getUTCMinutes(),second:paidAt.getUTCSeconds(),...(row.billing_interval==='year'?{month:end.getUTCMonth()+1}:{})};
- return {customer:row.stripe_customer_id,items:[{price:row.stripe_price_id,quantity:1}],default_payment_method:paymentMethod,
+ return {customer:row.stripe_customer_id,items:[{price:row.stripe_price_id,quantity:1}],default_payment_method:paymentMethod,payment_settings:{save_default_payment_method:'on_subscription'},
   // Stripe's trial field defers collection for a period already paid through
   // Checkout. Anchor configuration alone can charge again in the payment second.
   // This is never an unpaid product trial or an entitlement source.
   billing_mode:{type:'flexible'},trial_end:Math.floor(end.getTime()/1000),billing_cycle_anchor_config:anchor,proration_behavior:'none',collection_method:'charge_automatically',payment_behavior:'error_if_incomplete',
   metadata:{app:'everycall',paid_purchase_id:row.purchase_id,paid_intake_id:row.intake_id,plan_code:row.plan_code,billing_interval:row.billing_interval,...(row.tenant_key?{tenant_key:row.tenant_key}:{})}};
+}
+
+// Initial recurring consent permits the explicit subscription method. Only a
+// newly created, dedicated setup customer may also receive a null default seed;
+// a reused customer's existing preference (including null) is never overwritten.
+export async function freezePaidEnrollment(db,row,paymentMethod,stripe){
+ const customer=await stripe.customers.retrieve(row.stripe_customer_id);
+ if(customer.deleted||customer.livemode!==true||customer.id!==row.stripe_customer_id)throw intakeError('paid_customer_identity_review_required');
+ const original=typeof customer.invoice_settings?.default_payment_method==='string'?customer.invoice_settings.default_payment_method:customer.invoice_settings?.default_payment_method?.id||null;
+ const exposed=(await db.query('SELECT 1 FROM tenant_billing_accounts WHERE stripe_customer_id=$1 UNION ALL SELECT 1 FROM paid_purchases WHERE stripe_customer_id=$1 AND purchase_id<>$2 LIMIT 1',[row.stripe_customer_id,row.purchase_id])).rowCount;
+ const seed=original===null&&row.kind==='setup'&&row.customer_started_at&&customer.metadata?.app==='everycall'&&customer.metadata?.paid_purchase_id===row.purchase_id&&!exposed;
+ return {version:'paid-enrollment-v2',subscription:paidSubscriptionParams(row,paymentMethod),customerDefault:{mode:seed?'seed_null':'preserve',value:seed?paymentMethod:original,
+  ...(seed?{params:{invoice_settings:{default_payment_method:paymentMethod}},idempotencyKey:`${row.purchase_id}:customer-default`,proof:{purchaseId:row.purchase_id,customerCreatedAt:new Date(row.customer_started_at).toISOString()}}:{})}};
 }

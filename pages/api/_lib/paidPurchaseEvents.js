@@ -1,7 +1,8 @@
+import {isDeepStrictEqual} from 'node:util';
 import {claimPaidPurchaseWork,finishPaidPurchaseWork} from './paidPurchaseWork.js';
 import {getStripe} from './stripe.js';
 import {intakeError,intakeTransaction} from './paidIntake.js';
-import {paidSubscriptionParams,PURCHASE_TERMS_VERSION} from './paidPurchaseContract.js';
+import {freezePaidEnrollment,PURCHASE_TERMS_VERSION} from './paidPurchaseContract.js';
 import {calendarMonthBoundary} from '../../../lib/paidBillingCalendar.js';
 import {resolvePaidMoneyEventScope} from './paidMoneyEvents.js';
 const id=value=>typeof value==='string'?value:value?.id;
@@ -46,7 +47,7 @@ export async function applyPaidPurchaseEvent(db,event,{stripe=getStripe(),moneyS
  if(!method||method.livemode!==true||id(method.customer)!==row.stripe_customer_id)throw intakeError('purchase_payment_method_mismatch');
  const end=calendarMonthBoundary(paidAt,row.kind==='restart'&&row.billing_interval==='year'?12:1);
  if(end.getTime()<=Date.now())throw intakeError('purchase_term_reconciliation_required');
- const params=paidSubscriptionParams({...row,paid_at:paidAt},paymentMethod);
+ const params=await freezePaidEnrollment(db,{...row,paid_at:paidAt},paymentMethod,stripe);
  // Webhook commits payment and exact future subscription params, but does no
  // provider creation inside its transaction. Recovery worker owns that effect.
  await db.query(`UPDATE paid_purchases SET payment_status='paid',provisioning_status='awaiting_subscription',stripe_session_id=$2,
@@ -70,10 +71,15 @@ export async function establishPaidSubscriptions(pool,{stripe=getStripe(),limit=
   await intakeTransaction(pool,async db=>{
    const row=(await db.query('SELECT * FROM paid_purchases WHERE purchase_id=$1 FOR UPDATE',[candidate.purchase_id])).rows[0];
    if(row.recurring_consent_at||row.lease_token!==claim.token)return;
+   const contract=row.subscription_params;
+   if(contract?.version!=='paid-enrollment-v2'||!contract.subscription||!['seed_null','preserve'].includes(contract.customerDefault?.mode))throw intakeError('paid_customer_default_contract_review_required');
+   const params=contract.subscription,policy=contract.customerDefault;
+   if(params.customer!==row.stripe_customer_id||!params.default_payment_method)throw intakeError('paid_customer_default_contract_review_required');
    const expectedEnd=Math.floor(new Date(row.initial_period_end).getTime()/1000);
    // Never rewrite/replay an older frozen request under the same provider key.
    // Missing explicit collection deferral needs operator reconciliation.
-   if(row.subscription_params.trial_end!==expectedEnd)throw intakeError('paid_deferral_contract_review_required');
+   if(params.payment_settings?.save_default_payment_method!=='on_subscription')throw intakeError('paid_payment_method_contract_review_required');
+   if(params.trial_end!==expectedEnd)throw intakeError('paid_deferral_contract_review_required');
    let subscription;
    if(!reservation.first){
     const matches=[];let count=0;
@@ -87,14 +93,30 @@ export async function establishPaidSubscriptions(pool,{stripe=getStripe(),limit=
    if(!subscription){
     if(Date.now()-new Date(row.subscription_started_at)>23*3600000)throw intakeError('subscription_uncertainty_requires_reconciliation');
     if(new Date(row.initial_period_end).getTime()<=Date.now())throw intakeError('purchase_term_reconciliation_required');
-    subscription=await stripe.subscriptions.create(row.subscription_params,{idempotencyKey:`${row.purchase_id}:subscription`});
+    let customer=await stripe.customers.retrieve(row.stripe_customer_id);
+    if(customer.deleted||customer.livemode!==true||customer.id!==row.stripe_customer_id)throw intakeError('paid_customer_identity_review_required');
+    const current=id(customer.invoice_settings?.default_payment_method)||null;
+    if(policy.mode==='seed_null'){
+     const proof=policy.proof;
+     const exposed=(await db.query('SELECT 1 FROM tenant_billing_accounts WHERE stripe_customer_id=$1 UNION ALL SELECT 1 FROM paid_purchases WHERE stripe_customer_id=$1 AND purchase_id<>$2 LIMIT 1',[row.stripe_customer_id,row.purchase_id])).rowCount;
+     if(row.kind!=='setup'||!row.customer_started_at||proof?.purchaseId!==row.purchase_id||proof.customerCreatedAt!==new Date(row.customer_started_at).toISOString()||customer.metadata?.app!=='everycall'||customer.metadata?.paid_purchase_id!==row.purchase_id||exposed||policy.value!==params.default_payment_method||!isDeepStrictEqual(policy.params,{invoice_settings:{default_payment_method:policy.value}})||policy.idempotencyKey!==`${row.purchase_id}:customer-default`)throw intakeError('paid_customer_default_review_required');
+     if(current!==null&&current!==policy.value)throw intakeError('paid_customer_default_review_required');
+     if(current===null){
+      const method=await stripe.paymentMethods.retrieve(policy.value);
+      if(method.livemode!==true||id(method.customer)!==row.stripe_customer_id)throw intakeError('purchase_payment_method_mismatch');
+      await stripe.customers.update(row.stripe_customer_id,policy.params,{idempotencyKey:policy.idempotencyKey});
+      customer=await stripe.customers.retrieve(row.stripe_customer_id);
+      if(customer.deleted||customer.livemode!==true||customer.id!==row.stripe_customer_id||id(customer.invoice_settings?.default_payment_method)!==policy.value)throw intakeError('paid_customer_default_review_required');
+     }
+    }else if(current!==policy.value)throw intakeError('paid_customer_default_review_required');
+    subscription=await stripe.subscriptions.create(params,{idempotencyKey:`${row.purchase_id}:subscription`});
    }
    const canonical=await stripe.subscriptions.retrieve(subscription.id,{expand:['latest_invoice']});
    const item=canonical.items?.data?.[0],end=item?.current_period_end||canonical.current_period_end;
-   const expected=row.subscription_params.billing_cycle_anchor_config;
+   const expected=params.billing_cycle_anchor_config;
    if(canonical.livemode!==true||canonical.billing_mode?.type!=='flexible'||canonical.status!=='trialing'||canonical.trial_end!==expectedEnd||id(canonical.customer)!==row.stripe_customer_id||canonical.metadata?.paid_purchase_id!==row.purchase_id
     ||canonical.items?.data?.length!==1||id(item.price)!==row.stripe_price_id||Number(item.quantity)!==1||canonical.items?.has_more
-    ||id(canonical.default_payment_method)!==row.subscription_params.default_payment_method
+    ||canonical.payment_settings?.save_default_payment_method!=='on_subscription'||id(canonical.default_payment_method)!==params.default_payment_method
     ||['day_of_month','month','hour','minute','second'].some(k=>expected[k]!==undefined&&canonical.billing_cycle_anchor_config?.[k]!==expected[k])
     ||end!==expectedEnd)throw intakeError('purchase_subscription_mismatch');
    const invoice=canonical.latest_invoice?typeof canonical.latest_invoice==='object'?canonical.latest_invoice:await stripe.invoices.retrieve(canonical.latest_invoice):null;

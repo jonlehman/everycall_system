@@ -280,3 +280,50 @@ This procedure is specific to the owner-requested `sales_prospect_contacts.notes
 2. Independently verify the target fingerprint, reviewed SHA, SQL SHA-256 and concrete release evidence. Run `scripts/apply-sales-contact-notes-migration.mjs` with `DATABASE_URL`, `EVERYCALL_APPLY_SALES_NOTES_0062=1`, `EVERYCALL_DATABASE_TARGET_SHA256`, `EVERYCALL_REVIEWED_REVISION`, `EVERYCALL_0062_SQL_SHA256`, and `EVERYCALL_0062_RELEASE_EVIDENCE`. The target hash uses the existing host:port/database convention and exposes no credentials.
 3. The runner requires predecessor receipts through 0061, verifies the contact table is ordinary/unpartitioned/uninherited with exact base column types/nullability/defaults, its contact primary key, company foreign key, same-company unique/default foreign key, and enabled metadata/default guards, takes the shared migration advisory lock plus NOWAIT contact ACCESS EXCLUSIVE and receipt SHARE ROW EXCLUSIVE locks, and rejects an unreceipted notes column. It applies only the additive column and receipt in one transaction. Verify TEXT/not-null/empty-default; a repeated run verifies the installed column without altering data. Lock contention, missing predecessors, collision/drift or unavailable transaction timeout abort; do not automatically retry or widen bounds. The database bounds the whole transaction to five seconds, each statement to four seconds and other lock acquisition to 250 ms. No data scan or row UPDATE is required.
 4. Capture the content-free apply result; deploy the exact reviewed application revision only after the receipt and physical column verify. Verify the deployed revision and unauthenticated access denial, plus read-only production receipt/schema/contact-ownership checks. Native API and browser fixtures verify separate contact Notes, long Unicode/newline round-trip, resizing, clearing, failed-save draft retention and unrelated company edit preservation. Record that authenticated production browser/canary verification was not performed when no existing session is available; a memo-writing production canary is not required. Do not bypass authentication, change user notes or reset versions to manufacture that evidence. Existing provider/ownership/phone-test/consent controls remain active. If application rollout fails, old binaries remain compatible; retain the additive column and diagnose rather than dropping memos.
+
+
+## Unified paid billing provider recovery
+
+UPIB-003/007/008/009/010/011 uses Stripe collection deferral to represent coverage
+already paid through setup or a full restart. Provider `trialing` is not an unpaid
+EveryCall trial. Domain coverage comes from the verified purchase and positive,
+canonical settled base invoice lines. Annual-to-monthly changes charge one full
+monthly term at the old term end, then resume recurring collection at the original
+calendar anniversary. Do not copy an already-billed bridge item into a replacement
+schedule: that creates a delayed duplicate charge. Only omit it after its exact
+paid price/invoice/window receipt is durable; unresolved debt keeps plan changes
+blocked while cancellation and payment recovery remain available.
+
+Owner Portal selection controls recurring payment preferences. A hosted invoice
+Pay action settles that invoice; do not infer permission to promote its payer’s
+card to a recurring default. The hosted form separately offers saving details for
+future purchases. New dedicated setup customers may receive an immutable,
+verified null-default initialization. Never overwrite a nonnull customer default,
+and never infer customer exclusivity from the shared Stripe account or an email.
+Reused/null customers retain their preferences and use the consented explicit
+subscription method. If the effective subscription method and customer default
+are unaligned, direct the owner to Manage Billing before scheduling a plan change;
+no blocking plan operation is reserved, and cancellation remains available.
+Schedules clear their payment-method defaults and omit phase overrides so future
+owner Portal updates do not restore an old card.
+
+A frozen request without the reviewed enrollment/default policy, a divergent
+owner preference after an uncertain seed, or an effect older than the retry window
+requires review. Reconcile the known canonical customer/subscription and recorded
+request before acting. Do not change bodies under old idempotency keys, seed a
+reused customer, create a second setup payment, invent arrears or restart an included
+period to clear an operational error. Use the guarded UPIB-014 activation procedure
+in `docs/reviews/unified-paid-intake-activation.md`; provider acceptance and explicit
+legacy decisions remain mandatory.
+
+Delayed first provisioning can recover missed renewal webhooks read-only when the
+original subscription is unchanged and active, and a complete bounded canonical
+invoice inventory proves contiguous, fully settled positive base coverage through
+the current term. First binding records the receipt windows and an audit in the
+same transaction; original purchase/usage dates remain unchanged. Already-bound
+retries preserve the current account. Gapped, indebted, canceled, scheduled or
+otherwise unsupported histories enter actionable provisioning review before
+binding, build or number allocation. Provider outages retain bounded retry. Review
+the known canonical subscription and invoices before any separately authorized
+remediation; do not infer grace, create arrears, restart an included month or ask
+for another setup payment to resolve a delayed job.

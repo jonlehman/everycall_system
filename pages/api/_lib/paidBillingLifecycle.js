@@ -1,3 +1,4 @@
+import {paidBaseCoverageEnd} from './paidBaseInvoice.js';
 import { getStripe } from './stripe.js';
 import { sendTransactionalEmail } from './mail.js';
 import { reconcilePaidNumberRelease } from './paidNumberRelease.js';
@@ -107,11 +108,11 @@ export async function applyPaidBillingEvent(pool, event, { stripe = getStripe(),
         amount_remaining_cents=$4,status=$5,failed_at=COALESCE(billing_invoice_debts.failed_at,$6),hosted_invoice_url=$7,provider_updated_at=$8,updated_at=NOW()`,
       [invoice.id,candidate.tenant_key,kind,amount,invoice.status,failed?eventTime.toISOString():null,invoice.hosted_invoice_url || null,now]);
     }
-    if(kind==='base' && invoice.status==='paid' && Number(invoice.amount_paid)>0) {
-      const lines=invoice.lines?.data || [];
-      if(invoice.lines?.has_more) throw Error('billing_invoice_lines_incomplete');
-      const ends=lines.filter(l=>Number(l.amount)>0 && (id(l.subscription || l.parent?.subscription_item_details?.subscription)===subId || l.type==='subscription' || l.parent?.type==='subscription_item_details')).map(l=>Number(l.period?.end)).filter(Number.isFinite);
-      if(ends.length) await db.query(`UPDATE tenant_billing_accounts SET paid_base_through=GREATEST(paid_base_through,$2::timestamptz) WHERE tenant_key=$1`,[candidate.tenant_key,new Date(Math.max(...ends)*1000).toISOString()]);
+    if(kind==='base' && invoice.status==='paid') {
+      // Settled positive base lines (including balance-credit settlement) prove
+      // coverage. A zero recurring deferral line or unrelated one-time item does not.
+      const end=await paidBaseCoverageEnd(db,account,invoice,stripe);
+      if(end)await db.query(`UPDATE tenant_billing_accounts SET paid_base_through=GREATEST(paid_base_through,$2::timestamptz) WHERE tenant_key=$1`,[candidate.tenant_key,new Date(end*1000).toISOString()]);
     }
     state=await syncLocked(db,await lockedAccount(db,candidate.tenant_key),now);
     await db.query('COMMIT');

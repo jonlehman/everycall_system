@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {capturePaidRequests} from './lib/paid-request-capture.mjs';
 import crypto from 'node:crypto';
 import {createUpibTestFixture} from './lib/upib-test-fixture.mjs';
 import {createIntakeDraft,verifyIntakeOwner,beginPaidCheckout,intakeTransaction,getIntakeQuote,createIntakeQuote,issueIntakeSalesReference,resolveIntakeSalesReference} from '../pages/api/_lib/paidIntake.js';
@@ -25,7 +26,7 @@ try {
  const setupIntents=new Map(),intents=new Map(),methods=new Map(),customers=new Map(),sessions=new Map(),subscriptions=new Map(),invoices=new Map(),schedules=new Map(),effects=new Map();let sequence=0,creates=0,updates=0,failCheckout=false,failSubscription=false;
  const list=map=>({async *[Symbol.asyncIterator](){for(const value of map.values())yield structuredClone(value);}});
  const stripe={
-  customers:{create:async(params)=>{const prior=[...customers.values()].find(c=>c.metadata.paid_purchase_id===params.metadata.paid_purchase_id);if(prior)return prior;const c={...params,id:`cus_${++sequence}`,livemode:true};customers.set(c.id,c);return structuredClone(c);},list:()=>list(customers)},
+  customers:{retrieve:async id=>structuredClone(customers.get(id)),update:async(id,params)=>{Object.assign(customers.get(id),params);return structuredClone(customers.get(id));},create:async(params)=>{const prior=[...customers.values()].find(c=>c.metadata.paid_purchase_id===params.metadata.paid_purchase_id);if(prior)return prior;const c={...params,id:`cus_${++sequence}`,livemode:true};customers.set(c.id,c);return structuredClone(c);},list:()=>list(customers)},
   setupIntents:{retrieve:async id=>structuredClone(setupIntents.get(id))},
   paymentIntents:{retrieve:async id=>structuredClone(intents.get(id))},paymentMethods:{retrieve:async id=>structuredClone(methods.get(id))},
   prices:{retrieve:async priceId=>{const match=/^price_(starter|growth|pro)_(month|year)$/.exec(priceId);assert.ok(match);const p=plans.find(p=>p.code===match[1]);return {id:priceId,product:p.stripeProductId,active:true,livemode:true,currency:'usd',unit_amount:match[2]==='year'?p.annualAmountCents:p.monthlyAmountCents,recurring:{interval:match[2],interval_count:1}};}},
@@ -123,6 +124,13 @@ try {
  const restarted=(await pool.query('SELECT * FROM tenant_billing_accounts WHERE tenant_key=$1',[converted.tenant_key])).rows[0];
  assert.equal(restarted.stripe_subscription_status,null);
  assert.equal(restarted.initial_period_end,null);assert.equal(restarted.service_ended_at,null);assert.equal(new Date(restarted.paid_base_through).getTime(),calendarMonthBoundary(restartAt,12).getTime());check();
+ // A delayed setup/restart retry must not roll back a later paid renewal or plan.
+ await pool.query("UPDATE tenant_billing_accounts SET billing_interval='month',stripe_price_id='price_growth_month',monthly_amount_cents=12450,current_period_start=$2,current_period_end=$3,paid_base_through=$3 WHERE tenant_key=$1",[converted.tenant_key,calendarMonthBoundary(restartAt,12),calendarMonthBoundary(restartAt,13)]);
+ await pool.query("UPDATE tenants SET status='active',plan='growth',plan_code='growth',service_access_status='enabled',billing_lock_reason=NULL WHERE tenant_key=$1",[converted.tenant_key]);
+ const beforeDelayed={account:(await pool.query('SELECT to_jsonb(b) AS row FROM tenant_billing_accounts b WHERE tenant_key=$1',[converted.tenant_key])).rows[0].row,tenant:(await pool.query('SELECT to_jsonb(t) AS row FROM tenants t WHERE tenant_key=$1',[converted.tenant_key])).rows[0].row};
+ await convertPaidIntake(pool,restartRow.purchase_id);await convertPaidIntake(pool,paid.purchase_id);
+ assert.deepEqual((await pool.query('SELECT to_jsonb(b) AS row FROM tenant_billing_accounts b WHERE tenant_key=$1',[converted.tenant_key])).rows[0].row,beforeDelayed.account);
+ assert.deepEqual((await pool.query('SELECT to_jsonb(t) AS row FROM tenants t WHERE tenant_key=$1',[converted.tenant_key])).rows[0].row,beforeDelayed.tenant);check();
  await intakeTransaction(pool,db=>applyPaidPurchaseEvent(db,{id:'evt_refund',livemode:true,type:'charge.refunded',data:{object:{id:'ch_setup',payment_intent:'pi_setup',amount_refunded:50}}},{stripe:{...stripe,charges:{retrieve:async()=>({id:'ch_setup',livemode:true,payment_intent:'pi_setup',customer:checkout.customer,amount_refunded:50})}}}));
  assert.equal((await pool.query('SELECT review_status FROM billing_money_reviews')).rows[0].review_status,'pending');assert.equal((await pool.query('SELECT payment_status FROM paid_purchases WHERE purchase_id=$1',[paid.purchase_id])).rows[0].payment_status,'paid');check();
 
@@ -145,6 +153,13 @@ try {
  const legacyIntake=(await verifyIntakeOwner(pool,/verify=([a-f0-9]+)/.exec(legacyMail.text)[1])).row;
  const quote=await getIntakeQuote(pool,legacyIntake,{stripe});assert.equal(quote.amountDueNowCents,0);assert.equal(quote.isLiveTest,true);assert.equal(quote.requiresRecurringConsent,true);check();
  await assert.rejects(()=>beginPaidCheckout(pool,legacyIntake,{...legacyPayload,consentAccepted:false},{stripe}),/recurring_consent_required/);
+ const oldChargeCreated=intents.get('pi_legacy').latest_charge.created;
+ intents.get('pi_legacy').latest_charge.created=Math.floor(Date.now()/1000)-70*86400;
+ legacyPayload.quoteToken=(await createIntakeQuote(pool,legacyIntake,legacyPayload,{stripe})).quote.token;
+ const beforeExpired={customers:customers.size,checkouts:creates,subscriptions:subscriptions.size,purchases:(await pool.query('SELECT count(*)::int n FROM paid_purchases')).rows[0].n,legacy:(await pool.query("SELECT to_jsonb(s) AS row FROM sales_checkout_sessions s WHERE checkout_id='legacy_one'")).rows[0].row};
+ await assert.rejects(beginPaidCheckout(pool,legacyIntake,legacyPayload,{stripe}),/historical_purchase_term_review_required/);
+ assert.equal(customers.size,beforeExpired.customers);assert.equal(creates,beforeExpired.checkouts);assert.equal(subscriptions.size,beforeExpired.subscriptions);assert.equal((await pool.query('SELECT count(*)::int n FROM paid_purchases')).rows[0].n,beforeExpired.purchases);assert.deepEqual((await pool.query("SELECT to_jsonb(s) AS row FROM sales_checkout_sessions s WHERE checkout_id='legacy_one'")).rows[0].row,beforeExpired.legacy);
+ intents.get('pi_legacy').latest_charge.created=oldChargeCreated;check();
  legacyPayload.quoteToken=(await createIntakeQuote(pool,legacyIntake,legacyPayload,{stripe})).quote.token;
  const legacyCheckout=await beginPaidCheckout(pool,legacyIntake,{...legacyPayload,marketingAttribution:{source:'forged'}},{stripe});
  const legacyPurchase=(await pool.query('SELECT * FROM paid_purchases WHERE purchase_id=$1',[legacyCheckout.purchaseId])).rows[0];
@@ -199,5 +214,12 @@ try {
  await pool.query("UPDATE sales_followup_jobs SET locked_at=NOW()-interval '1 hour' WHERE sales_followup_job_id='inflight'");
  await processSalesFollowupJobs(pool,{workerId:'stale_worker',route:async()=>{throw Error('stale_provider_replay');}});
  const stale=(await pool.query("SELECT * FROM sales_followup_jobs WHERE sales_followup_job_id='inflight'")).rows[0];assert.equal(stale.status,'reconciliation_required');assert.ok(stale.locked_at);assert.equal(stale.attempts,1);check();
+ // Capture a genuine full-month restart request too; no payment or provider
+ // effect occurs beyond the bounded synthetic Checkout double.
+ const lastAccount=(await pool.query('SELECT * FROM tenant_billing_accounts WHERE tenant_key=$1',[converted.tenant_key])).rows[0];subscriptions.get(lastAccount.stripe_subscription_id).status='canceled';
+ await pool.query('UPDATE tenant_billing_accounts SET service_ended_at=NOW() WHERE tenant_key=$1',[converted.tenant_key]);
+ const monthlyRestart=await beginPaidReinstatement(pool,converted.tenant_key,{id:converted.ownerId,email:payload.loginEmail},{planCode:'starter',billingInterval:'month',consentAccepted:true},{stripe});
+ const monthlyRequest=(await pool.query('SELECT amount_cents,checkout_params FROM paid_purchases WHERE purchase_id=$1',[monthlyRestart.purchaseId])).rows[0];assert.equal(monthlyRequest.amount_cents,7450);assert.equal(monthlyRequest.checkout_params.line_items[0].price_data.unit_amount,7450);check();
+ capturePaidRequests('checkout-create',(await pool.query('SELECT kind,plan_code,billing_interval,amount_cents,setup_amount_cents,checkout_params AS request FROM paid_purchases WHERE checkout_params IS NOT NULL ORDER BY purchase_id')).rows);
  console.log(`paid intake native PostgreSQL: ${cases} scenarios passed`);
 } finally {await fixture.close();}

@@ -209,12 +209,12 @@ export async function beginPaidCheckout(pool,intake,body,{stripe=getStripe()}={}
     checkout_generation=checkout_generation+1 WHERE purchase_id=$1 RETURNING *`,[row.purchase_id])).rows[0];
   }
   if(row.checkout_started_at && Date.now()-new Date(row.checkout_started_at).getTime()>23*60*60*1000)throw intakeError('checkout_uncertainty_requires_reconciliation');
+  const includedEnd=calendarMonthBoundary(row.paid_at||new Date(),1);
+  if(row.legacy_checkout_id && includedEnd.getTime()<=Date.now())throw intakeError('historical_purchase_term_review_required');
   const terms=row.consent_terms_json||purchaseTerms(row);
   await db.query('UPDATE paid_purchases SET consent_terms_json=$2::jsonb,consent_accepted_at=COALESCE(consent_accepted_at,NOW()) WHERE purchase_id=$1',[row.purchase_id,JSON.stringify(terms)]);
   row=await ensurePurchaseCustomer(db,row,stripe);
   const metadata={paid_purchase_id:row.purchase_id,paid_intake_id:row.intake_id,plan_code:row.plan_code,billing_interval:row.billing_interval,terms_version:terms.version,paid_checkout_generation:String(row.checkout_generation)};
-  const includedEnd=calendarMonthBoundary(row.paid_at||new Date(),1);
-  if(row.legacy_checkout_id && includedEnd.getTime()<=Date.now())throw intakeError('historical_purchase_term_review_required');
   const params=row.checkout_params||{mode:row.amount_cents>0?'payment':'setup',customer:row.stripe_customer_id,payment_method_types:['card'],
    client_reference_id:row.purchase_id,metadata,success_url:`${appOrigin()}/intake?checkout=success`,cancel_url:`${appOrigin()}/intake?checkout=cancel`,
    consent_collection:{terms_of_service:'required'},

@@ -9,5 +9,5 @@ export default async function handler(req,res){
   if(!await requireTenantOwner(session))return res.status(403).json({error:'owner_required'});
   const tenantKey=resolveTenantKey(session,String(req.query.tenantKey||'default'));
   return res.json({ok:true,...await changePaidSubscription(pool,tenantKey,`tenant:${session.user_id}`,{...req.body,action:'plan'})});
- }catch(e){return res.status(e.status||500).json({error:e.status?e.message:'billing_change_unavailable'});}
+ }catch(e){return res.status(e.status||500).json({error:e.status?e.message:'billing_change_unavailable',...(e.message==='confirm_payment_method_before_plan_change'?{message:'Confirm your saved payment method in Manage Billing before scheduling a plan change. You can still cancel at the current term’s end.'}:e.message==='paid_bridge_settlement_required_before_plan_change'?{message:'Pay the current invoice before changing plans. You can still cancel at the current term’s end.'}:{})});}
 }

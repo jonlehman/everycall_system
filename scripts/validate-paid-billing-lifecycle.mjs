@@ -31,6 +31,7 @@ async function fail(key,id,{kind='base',amount=7450,now=at,periodId=null}={}){
  await applyPaidBillingEvent(pool,{type:'invoice.payment_failed',created:Math.floor(now.getTime()/1000),data:{object:invoice}},{stripe:{invoices:{retrieve:async()=>invoice}},now,sendEmail:async()=>({id:'mail'})});return invoice;
 }
 try{
+ await pool.query("INSERT INTO system_config(id,billing_plans_json,global_emergency_phrase) VALUES(1,$1,'Emergency')",[JSON.stringify([{code:'starter',stripePriceId:'price_starter'}])]);
  assert.equal(iso(calendarMonthBoundary('2028-01-31T12:34:56Z',1)),'2028-02-29T12:34:56.000Z');
  assert.equal(iso(calendarMonthBoundary('2028-01-31T12:34:56Z',2)),'2028-03-31T12:34:56.000Z');
  assert.equal(iso(calendarMonthBoundary('2028-02-29T12:00:00Z',12)),'2029-02-28T12:00:00.000Z');
@@ -63,12 +64,12 @@ try{
  assert.equal((await syncPaidBillingEntitlement(pool,'annual',{now:late})).restriction,'normal');
  assert.deepEqual((await pool.query("SELECT usage_anchor_at,paid_base_through,stripe_subscription_id FROM tenant_billing_accounts WHERE tenant_key='annual'")).rows[0],before);
  console.log('PASS calendar anniversaries, real admission contention, nonbillable reconciliation, annual monthly reset, stale failure settlement');
- await seed('sca',{interval:'month',through:at});
+ await seed('sca',{interval:'month',anchor:at,through:at});
  const scaInvoice={id:'in_sca',customer:'cus_sca',subscription:'sub_sca',livemode:true,currency:'usd',status:'open',amount_remaining:7450,total:7450};
  const scaEvent={type:'invoice.payment_action_required',created:at.getTime()/1000,data:{object:scaInvoice}},scaStripe={invoices:{retrieve:async()=>scaInvoice}};
  await applyPaidBillingEvent(pool,scaEvent,{stripe:scaStripe,now:at,sendEmail:async()=>({id:'sca_mail'})});
  assert.equal((await syncPaidBillingEntitlement(pool,'sca',{now:new Date(at.getTime()+86400000)})).restriction,'grace');
- scaInvoice.status='paid';scaInvoice.amount_remaining=0;scaInvoice.amount_paid=7450;scaInvoice.lines={data:[{type:'subscription',amount:7450,period:{end:calendarMonthBoundary(at,1).getTime()/1000}}]};
+ scaInvoice.status='paid';scaInvoice.amount_remaining=0;scaInvoice.amount_paid=7450;scaInvoice.lines={data:[{type:'subscription',amount:7450,currency:'usd',quantity:1,price:{id:'price_starter'},period:{start:at.getTime()/1000,end:calendarMonthBoundary(at,1).getTime()/1000}}]};
  await applyPaidBillingEvent(pool,{...scaEvent,type:'invoice.paid'},{stripe:scaStripe,now:at});
  await applyPaidBillingEvent(pool,scaEvent,{stripe:scaStripe,now:at,sendEmail:async()=>{throw Error('no stale SCA reminder');}});
  const scaState=await syncPaidBillingEntitlement(pool,'sca',{now:at});assert.equal(scaState.restriction,'normal');assert.equal(scaState.graceEndsAt,null);
@@ -172,7 +173,7 @@ try{
  const attempted=reserve('transition','boundary_pending',boundary);await new Promise(r=>setTimeout(r,30));
  const reconcile=syncPaidSubscription(pool,'transition',transitionSub,config);await new Promise(r=>setTimeout(r,30));await lock.query('COMMIT');lock.release();
  assert.equal((await attempted).reason,'plan_transition_reconciliation_required');await reconcile;
- const paidRenewal={id:'in_transition',customer:'cus_transition',subscription:'sub_transition',livemode:true,currency:'usd',status:'paid',total:12450,amount_paid:12450,amount_remaining:0,lines:{data:[{amount:12450,type:'subscription',period:{end:transitionSub.items.data[0].current_period_end}}]}};
+ const paidRenewal={id:'in_transition',customer:'cus_transition',subscription:'sub_transition',livemode:true,currency:'usd',status:'paid',total:12450,amount_paid:12450,amount_remaining:0,lines:{data:[{amount:12450,type:'subscription',currency:'usd',quantity:1,price:{id:'price_growth'},period:{start:transitionSub.items.data[0].current_period_start,end:transitionSub.items.data[0].current_period_end}}]}};
  await applyPaidBillingEvent(pool,{type:'invoice.paid',data:{object:paidRenewal}},{now:boundary,stripe:{invoices:{retrieve:async()=>paidRenewal}}});
  await call('transition','boundary_after',boundary);assert.equal((await reserve('transition','boundary_after',boundary)).allowed,true);
  const transitionPeriod=(await pool.query("SELECT plan_code,included_call_count,call_overage_rate_cents FROM billing_periods WHERE tenant_key='transition'")).rows[0];assert.deepEqual(transitionPeriod,{plan_code:'growth',included_call_count:60,call_overage_rate_cents:200});

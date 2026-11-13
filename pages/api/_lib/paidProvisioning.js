@@ -1,3 +1,5 @@
+import {getStripe} from './stripe.js';
+import {reconcilePaidInitialCoverage,persistPaidInitialCoverage} from './paidInitialCoverage.js';
 import {claimPaidPurchaseWork,finishPaidPurchaseWork,renewPaidPurchaseWork} from './paidPurchaseWork.js';
 import crypto from 'node:crypto';
 import { intakeTransaction } from './paidIntake.js';
@@ -14,12 +16,16 @@ import { preparePaidReinstatementNumber } from './paidBillingLifecycle.js';
 import { ensureCurrentBillingPeriod } from './callBilling.js';
 import { saveSetupInterviewIntent } from './knowledgeReceptionistSetupInterview.js';
 
-export async function convertPaidIntake(pool,purchaseId,{leaseToken=null}={}) {
+export async function convertPaidIntake(pool,purchaseId,{leaseToken=null,stripe=null,now=new Date()}={}) {
  return intakeTransaction(pool,async db=>{
   const row=(await db.query(`SELECT p.*,i.payload_json,i.verified_at FROM paid_purchases p JOIN paid_intakes i USING(intake_id)
    WHERE p.purchase_id=$1 FOR UPDATE OF p`,[purchaseId])).rows[0];
   if(leaseToken&&row?.lease_token!==leaseToken)throw Error('paid_purchase_lease_lost');
   if(!row||row.payment_status!=='paid'||!row.livemode||!row.recurring_consent_at||!row.verified_at)throw Error('verified_purchase_required');
+  const priorInitialization=row.tenant_key?(await db.query("SELECT 1 FROM audit_log WHERE tenant_key=$1 AND action='paid_intake.initialized' AND details::jsonb->>'purchaseId'=$2",[row.tenant_key,purchaseId])).rowCount:0;
+  const priorBinding=row.tenant_key?(await db.query('SELECT 1 FROM tenant_billing_accounts WHERE tenant_key=$1 AND paid_purchase_id=$2',[row.tenant_key,purchaseId])).rowCount:0;
+  const recovered=!priorInitialization&&!priorBinding&&new Date(row.initial_period_end).getTime()<=new Date(now).getTime()
+   ?await reconcilePaidInitialCoverage(row,stripe||getStripe(),{now}):null;
   const payload=row.payload_json,key=row.tenant_key||`paid_${crypto.randomUUID().replaceAll('-','')}`;
   const existing=(await db.query('SELECT tenant_key FROM tenants WHERE tenant_key=$1 FOR UPDATE',[key])).rows[0];
   if(!existing)await db.query(`INSERT INTO tenants(tenant_key,name,status,industry,plan,plan_code,billing_status,service_access_status,app_access_status,billing_lock_reason,live_prompt_mode)
@@ -32,14 +38,15 @@ export async function convertPaidIntake(pool,purchaseId,{leaseToken=null}={}) {
    VALUES($1,$2,$3,'owner','active',TRUE) RETURNING id`,[key,payload.businessName,row.owner_email])).rows[0];
   if(row.kind==='restart'){
    const plan=STANDARD_BILLING_PLANS.find(p=>p.code===row.plan_code);
-   await db.query(`UPDATE tenant_billing_accounts SET paid_purchase_id=$2,stripe_subscription_id=$3,stripe_price_id=$4,
+   const initialized=await db.query(`UPDATE tenant_billing_accounts SET paid_purchase_id=$2,stripe_subscription_id=$3,stripe_price_id=$4,
     billing_interval=$5,monthly_amount_cents=$6,included_call_count=$7,call_overage_rate_cents=$8,usage_anchor_at=$9,
     initial_period_end=NULL,paid_base_through=$10,current_period_start=$9,current_period_end=$10,
     stripe_subscription_status=NULL,monthly_amount_override_cents=NULL,lead_rate_override_cents=NULL,call_overage_rate_override_cents=NULL,active_coupon_redemption_id=NULL,coupon_trial_ends_at=NULL,coupon_discount_starts_at=NULL,coupon_discount_ends_at=NULL,cancel_at_period_end=FALSE,canceled_at=NULL,
     pending_plan_code=NULL,pending_billing_interval=NULL,pending_plan_effective_at=NULL
-    WHERE tenant_key=$1 AND paid_purchase_id IS DISTINCT FROM $2`,
+    WHERE tenant_key=$1 AND paid_purchase_id IS DISTINCT FROM $2 RETURNING tenant_key`,
     [key,purchaseId,row.stripe_subscription_id,row.stripe_price_id,row.billing_interval,plan.monthlyAmountCents,plan.includedCallCount,plan.callOverageRateCents,row.usage_anchor_at,row.initial_period_end]);
-   await db.query("UPDATE tenants SET plan_code=$2,billing_status='active',app_access_status='enabled',service_access_status='disabled',billing_lock_reason='new_number_forwarding_required' WHERE tenant_key=$1",[key,row.plan_code]);
+   if(recovered)await persistPaidInitialCoverage(db,key,purchaseId,recovered);
+   if(initialized.rowCount)await db.query("UPDATE tenants SET plan_code=$2,billing_status='active',app_access_status='enabled',service_access_status='disabled',billing_lock_reason='new_number_forwarding_required' WHERE tenant_key=$1",[key,row.plan_code]);
    return {...row,tenant_key:key,payload,ownerId:owner.id};
   }
   const alreadyInitialized=(await db.query("SELECT 1 FROM audit_log WHERE tenant_key=$1 AND action='paid_intake.initialized'",[key])).rowCount;
@@ -57,6 +64,7 @@ export async function convertPaidIntake(pool,purchaseId,{leaseToken=null}={}) {
     stripe_subscription_status=CASE WHEN tenant_billing_accounts.stripe_subscription_id=EXCLUDED.stripe_subscription_id THEN tenant_billing_accounts.stripe_subscription_status ELSE NULL END,
     monthly_amount_override_cents=NULL,lead_rate_override_cents=NULL,call_overage_rate_override_cents=NULL,active_coupon_redemption_id=NULL,coupon_trial_ends_at=NULL,coupon_discount_starts_at=NULL,coupon_discount_ends_at=NULL`,
     [key,purchaseId,row.stripe_customer_id,row.stripe_subscription_id,row.stripe_price_id,row.billing_interval,plan.monthlyAmountCents,plan.includedCallCount,plan.callOverageRateCents,row.usage_anchor_at,row.initial_period_end]);
+  if(recovered)await persistPaidInitialCoverage(db,key,purchaseId,recovered);
   // Only bootstrap once. A worker retry must never overwrite subsequent owner edits.
   const initialized=(await db.query("SELECT 1 FROM audit_log WHERE tenant_key=$1 AND action='paid_intake.initialized'",[key])).rowCount;
   if(!initialized){
@@ -79,11 +87,11 @@ export async function convertPaidIntake(pool,purchaseId,{leaseToken=null}={}) {
   return {...row,tenant_key:key,payload,ownerId:owner.id};
  });
 }
-export async function processPaidIntakeJobs(pool,{limit=2,enqueue=enqueuePaidIntakeKnowledgeBuild,provision=provisionPaidVoiceNumber,prepareRestart=preparePaidReinstatementNumber}={}) {
+export async function processPaidIntakeJobs(pool,{limit=2,enqueue=enqueuePaidIntakeKnowledgeBuild,provision=provisionPaidVoiceNumber,prepareRestart=preparePaidReinstatementNumber,stripe=null,now=new Date()}={}) {
  const jobs=await claimPaidPurchaseWork(pool,'provisioning',{limit}),lease=jobs.token;
  const results=[];
  for(const job of jobs.rows){try{
-  const row=await convertPaidIntake(pool,job.purchase_id,{leaseToken:lease});
+  const row=await convertPaidIntake(pool,job.purchase_id,{leaseToken:lease,stripe,now});
   let buildId=row.build_id;
   await renewPaidPurchaseWork(pool,row.purchase_id,lease);
   if(row.kind!=='restart'&&row.payload.website&&!buildId){

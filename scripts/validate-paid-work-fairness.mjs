@@ -17,7 +17,7 @@ async function setup(label){
   const payload={businessName:`Fixture ${name}`,businessCategory:'service_business',website:`https://${name}.fixture.invalid/`,companyDescription:'A fixture service business.',leadPhone:'+15035550000',planCode:'growth',billingInterval:'month',marketingAttribution:{}};
   await pool.query('INSERT INTO paid_intakes(intake_id,owner_email,payload_json,verified_at) VALUES($1,$2,$3::jsonb,NOW())',[intake,`${name}@fixture.invalid`,JSON.stringify(payload)]);
   const row={purchase_id:key,intake_id:intake,owner_email:`${name}@fixture.invalid`,kind:'setup',plan_code:'growth',billing_interval:'month',amount_cents:10000,setup_amount_cents:10000,paid_at:paidAt,stripe_customer_id:customer,stripe_price_id:'price_growth_month'};
-  const params=paidSubscriptionParams(row,`pm_${name}`);
+  const params={version:'paid-enrollment-v2',subscription:paidSubscriptionParams(row,`pm_${name}`),customerDefault:{mode:'preserve',value:`pm_${name}`}};
   await pool.query(`INSERT INTO paid_purchases(purchase_id,intake_id,owner_email,plan_code,billing_interval,livemode,amount_cents,
    payment_status,provisioning_status,stripe_customer_id,stripe_price_id,stripe_session_id,checkout_started_at,
    consent_accepted_at,consent_terms_json,paid_at,usage_anchor_at,initial_period_end,subscription_params,subscription_started_at,
@@ -27,6 +27,7 @@ async function setup(label){
   rows.set(key,{...row,name,params,open:false});return key;
  }
  const stripe={
+  customers:{retrieve:async customer=>({id:customer,livemode:true,invoice_settings:{default_payment_method:`pm_${customer.slice(4)}`}})},
   checkout:{sessions:{retrieve:async sessionId=>{
    const name=sessionId.slice(3),row=rows.get(`purchase_${name}`);sessionReads.set(name,(sessionReads.get(name)||0)+1);
    if(stripe.beforeSession)await stripe.beforeSession(name);
