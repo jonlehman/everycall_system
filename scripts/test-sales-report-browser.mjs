@@ -44,7 +44,7 @@ try{
  await page.getByText('1–100 of 210',{exact:false}).waitFor();
  await page.getByRole('img',{name:/Session timeline for/}).waitFor();
  assert.equal(await page.getByRole('img').count(),5);
- const dayPicker=page.getByRole('combobox',{name:'Timeline day (UTC)',exact:true});
+ const dayPicker=page.getByRole('combobox',{name:'Timeline day (Pacific)',exact:true});
  assert.equal(await dayPicker.locator('option').count(),30);
  await dayPicker.selectOption('2026-11-10');await page.getByText('205 sessions on 2026-11-10',{exact:false}).waitFor();
  const timelineRequests=requests.filter(request=>request.view==='timeline').length;
@@ -57,7 +57,7 @@ try{
  await page.getByText('1–100 of 211',{exact:false}).waitFor();await page.getByRole('heading',{name:'Monthly call activity'}).waitFor();assert.equal(await page.getByLabel('From (UTC)',{exact:true}).isDisabled(),true);
  await page.getByText('1 sessions on 2026-11-12',{exact:false}).waitFor();
  assert.equal(await dayPicker.locator('option').first().getAttribute('value'),'2026-11-12');
- await dayPicker.selectOption('2023-01-02');await page.getByText('No matching sessions on 2023-01-02 (UTC).',{exact:true}).waitFor();
+ await dayPicker.selectOption('2023-01-02');await page.getByText('No matching sessions on 2023-01-02 (Pacific).',{exact:true}).waitFor();
  await page.getByRole('combobox',{name:'Call mode',exact:true}).selectOption('test');await page.getByRole('button',{name:'Update report',exact:true}).click();await page.getByText('1–1 of 1',{exact:false}).waitFor();
  assert.equal(await page.getByRole('button',{name:/Show details for/}).count(),1);
  await page.getByRole('combobox',{name:'Call mode',exact:true}).selectOption('live');await page.getByRole('combobox',{name:'Date range',exact:true}).selectOption('dates');
@@ -79,10 +79,18 @@ try{
  await seedSalesTimelineFixture(fixture.query);
  await page.getByRole('combobox',{name:'Sales rep',exact:true}).selectOption('');await page.getByRole('combobox',{name:'Outcome',exact:true}).selectOption('');
  await page.getByLabel('From (UTC)',{exact:true}).fill('2024-02-01');await page.getByLabel('Through (UTC)',{exact:true}).fill('2024-02-03');
- await page.getByRole('button',{name:'Update report',exact:true}).click();await page.getByText('No matching sessions on 2024-02-03 (UTC).',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'Update report',exact:true}).click();await page.getByText('No matching sessions on 2024-02-03 (Pacific).',{exact:true}).waitFor();
  await dayPicker.selectOption('2024-02-01');await page.getByText('11 sessions on 2024-02-01',{exact:false}).waitFor();
  await page.getByText('View exact session and gap times',{exact:true}).click();
  await page.getByRole('cell',{name:'Gap ≥ 5 minutes',exact:true}).first().waitFor();
+ const timeline=page.getByRole('img',{name:/Session timeline for/});
+ assert.equal(await timeline.locator('rect[fill="#fbbf24"]').count(),0);
+ assert.ok(await timeline.locator('line[stroke="#d97706"]').count()>0);
+ assert.ok((await timeline.textContent()).includes('PST'));
+ assert.ok(!(await timeline.textContent()).includes('UTC'));
+ assert.ok(!(await timeline.textContent()).includes('00:00:00.000 PST')); // no midnight-to-first-call gap
+ await page.getByRole('cell',{name:'2024-02-01 09:00:00.000 PST',exact:true}).first().waitFor();
+
  assert.equal(await page.getByRole('cell',{name:'Gap < 5 minutes',exact:true}).count(),1);
  await page.getByRole('combobox',{name:'Timeline scale',exact:true}).selectOption('detail');
  await page.getByRole('region',{name:'Scrollable daily session timeline'}).focus();await page.keyboard.press('ArrowRight');
@@ -91,7 +99,7 @@ try{
  await page.setViewportSize({width:1440,height:1100});await page.getByRole('combobox',{name:'Timeline scale',exact:true}).selectOption('fit');
  await page.screenshot({path:'/tmp/everycall-sales-timeline-desktop.png',fullPage:true});
  delayDay='2024-02-02';await dayPicker.selectOption('2024-02-02');await dayPicker.selectOption('2024-02-03');
- await page.getByText('No matching sessions on 2024-02-03 (UTC).',{exact:true}).waitFor();await page.waitForTimeout(450);
+ await page.getByText('No matching sessions on 2024-02-03 (Pacific).',{exact:true}).waitFor();await page.waitForTimeout(450);
  assert.equal(await dayPicker.inputValue(),'2024-02-03');assert.equal(await page.getByRole('img',{name:/Session timeline for/}).count(),0);
  failReport=true;await page.getByRole('button',{name:'Update report',exact:true}).click();await page.getByRole('alert').filter({hasText:'Synthetic report unavailable'}).first().waitFor();assert.equal(await page.getByRole('heading',{name:'All call sessions'}).count(),0);
  assert.deepEqual(errors,[]);

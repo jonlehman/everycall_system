@@ -120,7 +120,7 @@ export default function SalesReports() {
   return <div className="grid min-w-0 grid-cols-1 gap-4">
     <Card>
       <h2 className="m-0 text-lg font-semibold">Sales call report</h2>
-      <p className="mt-1 text-sm text-slate-500">Explore every sales call, rep activity, and recorded results. Dates and times are UTC; the default is live calls from the last 30 days.</p>
+      <p className="mt-1 text-sm text-slate-500">Explore every sales call, rep activity, and recorded results. The daily timeline uses Pacific time; other charts, table, and CSV use UTC. The default is live calls from the last 30 days.</p>
       <form onSubmit={event => { event.preventDefault(); setCursor(''); setHistory([]); setApplied({ ...filters }); setExportError(''); }} className="mt-4 grid items-end gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Field label="Date range"><select className={selectClass} value={filters.range} onChange={event => update('range', event.target.value)}><option value="dates">Selected dates (up to 366 days)</option><option value="all">All time</option></select></Field>
         <Field label="From (UTC)"><TextInput type="date" required disabled={filters.range === 'all'} value={filters.from} onChange={event => update('from', event.target.value)} /></Field>

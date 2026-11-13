@@ -201,23 +201,28 @@ export async function getSalesReportDay(pool, query = {}) {
   if (requested !== undefined && (typeof requested !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(requested)
     || !Number.isFinite(Date.parse(requested)) || new Date(requested).toISOString().slice(0, 10) !== requested
     || (filters.range !== 'all' && (requested < filters.from || requested > filters.to)))) {
-    throw salesError('invalid_report_day', 'Choose a valid UTC day within the applied report range.', 400);
+    throw salesError('invalid_report_day', 'Choose a valid Pacific day within the applied report range.', 400);
   }
   return consistentRead(pool, async db => {
     const bounds = await db.query(`SELECT
-      to_char(MIN(${TIMELINE_START}) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS first,
-      to_char(MAX(CASE WHEN ${TIMELINE_VALID} THEN c.ended_at ELSE ${TIMELINE_START} END) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS last,
-      to_char(MAX(${TIMELINE_START}) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS latest
+      to_char(MIN(${TIMELINE_START}) AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS first,
+      to_char(MAX(CASE WHEN ${TIMELINE_VALID} THEN c.ended_at ELSE ${TIMELINE_START} END) AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS last,
+      to_char(MAX(${TIMELINE_START}) AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS latest
       ${JOINS} WHERE ${where}`, params);
     const history = bounds.rows[0];
     const from = filters.range === 'all' ? history.first : filters.from;
     const to = filters.range === 'all' ? history.last : filters.to;
     if (requested && (!from || requested < from || requested > to)) {
-      throw salesError('invalid_report_day', 'Choose a UTC day within the matching call history.', 400);
+      throw salesError('invalid_report_day', 'Choose a Pacific day within the matching call history.', 400);
     }
     const day = requested || (history.latest && history.latest >= from && history.latest <= to ? history.latest : to);
     if (!day) return { filters, from, to, day: null, calls: [], prior: [], limit: TIMELINE_LIMIT };
-    const values = [...params, `${day}T00:00:00Z`], start = `$${values.length}::timestamptz`, end = `(${start} + interval '24 hours')`;
+    // Resolve each local midnight independently: DST days contain 23 or 25 hours.
+    const dayBounds = await db.query(`SELECT
+      $1::date::timestamp AT TIME ZONE 'America/Los_Angeles' AS "dayStart",
+      ($1::date + 1)::timestamp AT TIME ZONE 'America/Los_Angeles' AS "dayEnd"`, [day]);
+    const { dayStart, dayEnd } = dayBounds.rows[0];
+    const values = [...params, dayStart, dayEnd], start = `$${values.length - 1}::timestamptz`, end = `$${values.length}::timestamptz`;
     const records = await db.query(`SELECT c.sales_call_id AS id, c.admin_user_id AS "operatorId", ${REP_NAME} AS "operatorName",
       p.business_name AS "businessName", c.state, c.created_at AS "createdAt", c.started_at AS "startedAt",
       c.connected_at AS "connectedAt", c.ended_at AS "endedAt"
@@ -232,8 +237,8 @@ export async function getSalesReportDay(pool, query = {}) {
       BOOL_OR(NOT ${TIMELINE_VALID} AND NOT (c.state IN ('closed', 'failed', 'ended', 'completed', 'canceled', 'cancelled')
         AND c.updated_at >= ${TIMELINE_START} AND c.updated_at <= ${start})) AS uncertain,
       MAX(c.ended_at) FILTER (WHERE ${TIMELINE_VALID} AND c.ended_at <= ${start}) AS "endedAt"
-      ${JOINS} WHERE ${where} AND ${TIMELINE_START} < ${start} GROUP BY c.admin_user_id`, values);
-    return { filters, from, to, day, calls: records.rows, prior: prior.rows, limit: TIMELINE_LIMIT };
+      ${JOINS} WHERE ${where} AND ${TIMELINE_START} < ${start} GROUP BY c.admin_user_id`, values.slice(0, -1));
+    return { filters, from, to, day, dayStart, dayEnd, timeZone: 'America/Los_Angeles', calls: records.rows, prior: prior.rows, limit: TIMELINE_LIMIT };
   });
 }
 
