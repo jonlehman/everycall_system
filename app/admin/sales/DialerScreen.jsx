@@ -16,6 +16,8 @@ import {
 } from "./dialerState.mjs";
 import { DisabledHint, HintButton, HintInput, DisabledReasonContext, busyReason, disabledReasons } from "./DisabledHint";
 import styles from "./DialerScreen.module.css";
+import InCallKeypad from "./InCallKeypad";
+import { canSendSalesDtmf } from "../../../lib/salesDtmf.js";
 import CallbackPicker from "./CallbackPicker";
 import AddContactForm from "./AddContactForm";
 import ContactsScreen, { contactStatus } from "./ContactsScreen";
@@ -163,6 +165,7 @@ export default function DialerScreen({
   onDncReason,
   onCall,
   onAction,
+  onSendDigit,
   onMute,
   onReconnect,
   onSkip,
@@ -664,6 +667,7 @@ export default function DialerScreen({
                         ? "Unmute"
                         : "Mute"}
                   </Button>
+                  <InCallKeypad key={call.id} enabled={Boolean(onSendDigit && !busy && canSendSalesDtmf(call) && softphoneState === "ready" && microphoneState === "live")} onSendDigit={digit => onSendDigit(call.id, digit)} />
                   <Button
                     tone="dangerOutline"
                     disabled={busy === "end_call"}

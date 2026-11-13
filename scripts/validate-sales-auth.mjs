@@ -25,6 +25,7 @@ import salesRestore from '../pages/api/v1/admin/sales/prospects/[prospectId]/res
 import salesRemove from '../pages/api/v1/admin/sales/prospects/[prospectId]/remove.js';
 import salesIncoming from '../pages/api/v1/admin/sales/incoming.js';
 import salesCalls from '../pages/api/v1/admin/sales/calls/index.js';
+import salesCallActions from '../pages/api/v1/admin/sales/calls/[salesCallId]/actions.js';
 import salesQueue from '../pages/api/v1/admin/sales/queue/index.js';
 import { listSalesProspects } from '../pages/api/_lib/salesRepository.js';
 
@@ -137,6 +138,41 @@ try {
     ('r4', 'report-prospect', $1, 'created', '2026-10-02T00:00:00Z', NULL, NULL, NULL, NULL, NULL),
     ('r5', 'report-prospect', NULL, 'failed', '2026-10-01T10:00:00Z', NULL, NULL, NULL, NULL, NULL),
     ('r0', 'report-prospect', $1, 'failed', '2026-09-30T23:59:59Z', NULL, NULL, NULL, NULL, NULL)`, [sales.id, admin.id]);
+  // The existing action route must keep DTMF strictly call-owner scoped,
+  // including admins (the end_call recovery exception does not apply).
+  {
+    const originalFetch = globalThis.fetch;
+    const originalUrl = process.env.SALES_CALL_GATEWAY_BASE_URL;
+    const originalSecret = process.env.INTERNAL_SERVICE_SECRET;
+    process.env.SALES_CALL_GATEWAY_BASE_URL = "https://fixture-gateway.invalid";
+    process.env.INTERNAL_SERVICE_SECRET = "fixture-dtmf-secret";
+    const sent = [];
+    globalThis.fetch = async (url, options) => {
+      assert.ok(String(url).startsWith("https://fixture-gateway.invalid/internal/calls/"));
+      sent.push(JSON.parse(options.body));
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+    try {
+      const payload = { digit: "#", commandId: crypto.randomUUID(), callControlId: "untrusted-leg" };
+      const keypadRequest = (cookie, id, data = payload) => ({ ...request(cookie, "POST", { action: "send_dtmf", payload: data }), query: { salesCallId: id } });
+      assert.equal((await call(salesCallActions, keypadRequest("", "r1"))).statusCode, 401);
+      assert.equal((await call(salesCallActions, keypadRequest(salesCookie, "r3"))).statusCode, 403);
+      assert.equal((await call(salesCallActions, keypadRequest(adminCookie, "r1"))).statusCode, 403);
+      assert.equal((await call(salesCallActions, keypadRequest(salesCookie, "r1", { ...payload, digit: "12" }))).statusCode, 400);
+      assert.equal(sent.length, 0);
+      const owned = keypadRequest(salesCookie, "r1");
+      const result = await call(salesCallActions, owned);
+      assert.equal(result.statusCode, 200, JSON.stringify(result.body));
+      assert.equal((await call(salesCallActions, owned)).statusCode, 200);
+      assert.deepEqual(sent, [{ action: "send_dtmf", payload: { digit: "#", commandId: payload.commandId } }]);
+      const audit = (await query("SELECT details FROM audit_log WHERE action='sales.call.action_requested' ORDER BY created_at DESC LIMIT 1")).rows[0];
+      assert.ok(!JSON.stringify(audit).includes(payload.commandId), "Do not audit entered digits or keypad payloads");
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalUrl === undefined) delete process.env.SALES_CALL_GATEWAY_BASE_URL; else process.env.SALES_CALL_GATEWAY_BASE_URL = originalUrl;
+      if (originalSecret === undefined) delete process.env.INTERNAL_SERVICE_SECRET; else process.env.INTERNAL_SERVICE_SECRET = originalSecret;
+    }
+  }
   // Query boundaries remain UTC even when the database connection is not.
   await query("SET TIME ZONE 'America/Los_Angeles'");
   const report = await getSalesReport(pool, { from: '2026-10-01', to: '2026-10-01' });
