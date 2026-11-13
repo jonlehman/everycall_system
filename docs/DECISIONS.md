@@ -1,5 +1,9 @@
 # Decisions
 
+## 2026-11-13 — Guarded UPIB-014 activation
+
+- Prepare a default-dry-run, source/SQL/target/evidence-pinned activation runner with fresh canonical provider and exact deployment evidence, actual old-creator retirement, complete local inventory CAS and atomic catalog/gate/audit changes. It requires an explicit recorded owner decision for every legacy subscription; the supported retain-billing/disable-service option is never a default. Preparing or testing the runner does not choose that option or authorize activation. Historical charges and provider subscriptions remain unchanged. See [activation procedure](reviews/unified-paid-intake-activation.md).
+
 ## 2026-11-13 — Explicit collection deferral for periods already paid
 
 - Actual isolated Stripe testing found that creating a monthly subscription in the same provider second as setup payment, with only anniversary configuration and no proration, can immediately collect the recurring base amount. This violates UPIB-003/007. Use Stripe's explicit `trial_end` field solely to defer recurring collection until the end of the already-paid setup month or full reinstatement term, alongside the original payment-day anniversary configuration. This does not introduce an unpaid product trial, free service, another included month or a new business pricing rule.

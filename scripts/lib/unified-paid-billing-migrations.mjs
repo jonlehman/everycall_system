@@ -7,6 +7,7 @@ export const UPIB_MIGRATIONS = Object.freeze(['0063_unified_paid_intake.sql', '0
 export const UPIB_PREDECESSORS = Object.freeze(['0049_live_prompt_settings.sql', ...SALES_NOTES_PREDECESSORS, '0062_sales_contact_notes.sql']);
 export const upibMigrationDigest = value => crypto.createHash('sha256').update(value).digest('hex');
 export const upibTargetFingerprint = salesAmountTargetFingerprint;
+export { verifyInstalled as verifyUnifiedPaidBillingInstalled };
 const ADDITIONS = {
   tenant_billing_accounts: ['paid_purchase_id', 'usage_anchor_at', 'initial_period_end', 'paid_base_through', 'service_ended_at', 'changed_number_ack_required', 'stripe_subscription_status'],
   billing_periods: ['invoice_attempted_at', 'invoice_payload']
