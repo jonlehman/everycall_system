@@ -11,6 +11,7 @@ export default async function handler(req, res) {
     if (!context) return;
     if (context.session.role !== 'admin') return res.status(403).json({ ok: false, error: 'forbidden' });
     res.setHeader('Cache-Control', 'private, no-store');
+    if (req.query?.contract !== 'telnyx-v1') return res.status(400).json({ ok: false, error: 'report_contract_changed', message: 'Sales reporting now uses Telnyx records throughout. Reload this page to use the new provider report.' });
     if (req.query?.view !== undefined) {
       if (req.query.view !== 'timeline') return res.status(400).json({ ok: false, error: 'invalid_report_view', message: 'Choose a valid report view.' });
       const timeline = await getSalesReportDay(context.pool, req.query);
@@ -22,7 +23,7 @@ export default async function handler(req, res) {
     if (req.query?.format === 'csv') {
       const csv = await exportSalesReport(context.pool, req.query);
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', 'attachment; filename="sales-calls.csv"');
+      res.setHeader('Content-Disposition', 'attachment; filename="telnyx-sales-records.csv"');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       return res.status(200).send(csv);
     }

@@ -6,7 +6,13 @@ import { createHash } from 'node:crypto';
 const PAGE_SIZE = 50, MAX_PAGES = 40, MAX_BYTES = 2 * 1024 * 1024;
 const cache = new Map();
 const identifier = value => typeof value === 'string' && value.length > 0 && value.length <= 300 ? value : null;
-const instant = value => typeof value === 'string' && /(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
+// Preserve provider sub-millisecond precision, including when normalizing offsets.
+const instant = value => {
+  if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?(?:Z|[+-]\d\d:\d\d)$/.test(value) || !Number.isFinite(Date.parse(value))) return null;
+  return new Date(value).toISOString().slice(0, 19) + '.' + (value.match(/\.(\d+)/)?.[1] || '').padEnd(9, '0') + 'Z';
+};
+const flag = value => value === 1 || value === true ? true : value === 0 || value === false ? false : null;
+const seconds = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const failed = reason => Object.assign(new Error(reason), { reason });
 
 async function readJson(response) {
@@ -27,11 +33,11 @@ export async function fetchSalesTelnyxRecords({ dayStart, dayEnd, env = process.
   const retrievedAt = new Date(now()).toISOString();
   const connectionId = identifier(env.SALES_TELNYX_CALL_CONTROL_APP_ID);
   const base = { source: 'telnyx', connectionId, excludedConnectionRecords: 0, retrievedAt, paginationComplete: false, pagesRead: 0, records: [],
-    scope: 'Configured Sales application call-control records starting in the Pacific day, plus completed records overlapping its start.',
+    scope: 'Configured Sales application call-control records starting in the selected Pacific date window, plus completed records overlapping its start.',
     limits: 'Telnyx retention and finalization delay are not guaranteed by this endpoint. Recent or in-progress calls may be absent. This does not establish all work or all calls.' };
   if (!env.SALES_TELNYX_API_KEY) return { ...base, status: 'unavailable', reason: 'credential_unavailable' };
   if (!connectionId) return { ...base, status: 'unavailable', reason: 'sales_connection_unconfigured' };
-  if (!instant(new Date(dayStart).toISOString()) || !(new Date(dayEnd) > new Date(dayStart))) return { ...base, status: 'unavailable', reason: 'invalid_bounds' };
+  if (!Number.isFinite(Date.parse(dayStart)) || !Number.isFinite(Date.parse(dayEnd)) || !(new Date(dayEnd) > new Date(dayStart))) return { ...base, status: 'unavailable', reason: 'invalid_bounds' };
   const deadline = now() + 20000, seen = new Map(), seenRaw = new Set(); let pagesRead = 0, duplicate = false;
   try {
     for (const overlap of [false, true]) {
@@ -59,6 +65,7 @@ export async function fetchSalesTelnyxRecords({ dayStart, dayEnd, env = process.
           || json.data.length !== Math.min(PAGE_SIZE, Math.max(0, meta.total_results - (page - 1) * PAGE_SIZE))) throw failed('invalid_pagination');
         if (expectedTotal !== null && (meta.total_results !== expectedTotal || meta.total_pages !== expectedPages)) throw failed('changing_results');
         expectedTotal = meta.total_results; expectedPages = meta.total_pages; received += json.data.length;
+        if (expectedPages + pagesRead - page > maxPages) throw failed('page_limit');
         let added = 0;
         for (const row of json.data) {
           if (!identifier(row.id) || !identifier(row.connection_id)) throw failed('invalid_record');
@@ -66,7 +73,12 @@ export async function fetchSalesTelnyxRecords({ dayStart, dayEnd, env = process.
           if (row.connection_id !== connectionId) { base.excludedConnectionRecords++; continue; }
           const record = { id: identifier(row.id), legId: identifier(row.telnyx_leg_id), sessionId: identifier(row.telnyx_session_id),
             connectionId: identifier(row.connection_id), startedAt: instant(row.started_at), endedAt: instant(row.finished_at),
-            direction: ['inbound', 'outbound'].includes(row.direction) ? row.direction : null };
+            direction: ['inbound', 'outbound'].includes(row.direction) ? row.direction : null,
+            attempted: flag(row.attempted), connected: flag(row.connected), completed: flag(row.completed),
+            callSeconds: seconds(row.call_sec), billedSeconds: seconds(row.billed_sec),
+            callerNumber: identifier(row.caller_number), destinationNumber: identifier(row.dest_number),
+            callerName: identifier(row.caller_name), connectionName: identifier(row.connection_name),
+            countryCode: identifier(row.country_code), sourceCountryCode: identifier(row.source_country_code) };
           if (row.record_type !== 'call-control' || !record.id || !record.legId || !record.sessionId || !record.connectionId || !record.startedAt) throw failed('invalid_record');
           const start = Date.parse(record.startedAt), end = Date.parse(record.endedAt);
           if (start >= Date.parse(dayEnd) || (overlap ? !(start < Date.parse(dayStart) && end > Date.parse(dayStart)) : start < Date.parse(dayStart))) throw failed('filter_mismatch');
@@ -97,50 +109,4 @@ export async function getSalesTelnyxRecords(bounds) {
   if (cache.size >= 8) cache.delete(cache.keys().next().value);
   const entry = { until: Date.now() + 30000, promise: fetchSalesTelnyxRecords(bounds) }; cache.set(key, entry);
   return entry.promise;
-}
-
-export function reconcileSalesTelnyxRecords(provider, rows, expected, bounds) {
-  const calls = [], unresolved = [], unmatchedRecords = [], matched = new Set();
-  const legRows = new Map(), sessionRows = new Map(), excludedLegs = new Set(), excludedSessions = new Set();
-  const add = (map, key, row) => { if (key) map.set(key, [...(map.get(key) || []), row]); };
-  for (const row of rows) {
-    add(legRows, row.prospectLegId, row); add(sessionRows, row.prospectSessionId, row);
-    for (const value of [row.operatorLegId, row.aiLegId]) if (value) excludedLegs.add(value);
-    for (const value of [row.operatorSessionId, row.aiSessionId]) if (value) excludedSessions.add(value);
-  }
-  const scoped = provider.records.filter(r => provider.connectionId && r.connectionId === provider.connectionId);
-  const excludedConnections = (provider.excludedConnectionRecords || 0) + provider.records.length - scoped.length;
-  const eligible = scoped.filter(r => !excludedLegs.has(r.legId) && !excludedSessions.has(r.sessionId));
-  const sessionCounts = new Map(); for (const r of eligible) sessionCounts.set(r.sessionId, (sessionCounts.get(r.sessionId) || 0) + 1);
-  let excluded = scoped.length - eligible.length, filtered = 0, unmatched = 0, ambiguous = 0;
-  for (const record of eligible) {
-    const exactLeg = legRows.get(record.legId) || [], exactSession = sessionRows.get(record.sessionId) || [];
-    const candidates = [...new Map([...exactLeg, ...exactSession].map(r => [r.id, r])).values()];
-    if (!candidates.length) { unmatched++; unmatchedRecords.push({ providerId: record.id, providerLegId: record.legId, providerSessionId: record.sessionId, startedAt: record.startedAt, endedAt: record.endedAt, direction: record.direction }); continue; }
-    const row = candidates[0];
-    // A session can own multiple related legs. Preserve their provider intervals
-    // under the uniquely linked Sales session, but flag them and suppress gaps.
-    if (candidates.length !== 1 || record.direction !== row.direction || (exactLeg.length && row.prospectSessionId && record.sessionId !== row.prospectSessionId)) {
-      ambiguous++; if (candidates.some(r => r.included)) unresolved.push({ providerId: record.id, reason: 'ambiguous_identity' }); continue;
-    }
-    if (!row.included) { filtered++; continue; }
-    const relatedLeg = exactLeg.length !== 1 && sessionCounts.get(record.sessionId) !== 1;
-    if (relatedLeg) { ambiguous++; unresolved.push({ providerId: record.id, salesCallId: row.id, reason: 'multiple_related_legs' }); }
-    matched.add(row.id);
-    calls.push({ id: record.id, salesCallId: row.id, operatorId: row.operatorId, operatorName: row.operatorName,
-      businessName: row.businessName, startedAt: record.startedAt, endedAt: record.endedAt,
-      providerId: record.id, providerLegId: record.legId, providerSessionId: record.sessionId, providerConnectionId: record.connectionId,
-      matchMethod: exactLeg.length ? 'exact_prospect_leg' : 'exact_prospect_session', relatedLeg, source: 'telnyx', direction: record.direction });
-  }
-  const missing = expected.filter(r => !matched.has(r.id)).map(r => ({ salesCallId: r.id, operatorId: r.operatorId, operatorName: r.operatorName,
-    reason: provider.status === 'unavailable' ? 'provider_unavailable' : 'no_unique_provider_record' }));
-  const currentDay = Date.parse(bounds.dayEnd) > Date.parse(provider.retrievedAt);
-  const invalidTiming = calls.some(r => !r.endedAt || Date.parse(r.endedAt) < Date.parse(r.startedAt));
-  const gapsAvailable = provider.paginationComplete && !currentDay && !missing.length && !unmatched && !ambiguous && !invalidTiming && !bounds.priorIncompleteSessions;
-  const prior = gapsAvailable ? [] : [...new Set(calls.map(row => row.operatorId))].map(operatorId => ({ operatorId, uncertain: true }));
-  return { calls, prior, coverage: { source: 'telnyx', status: provider.status, reason: provider.reason, retrievedAt: provider.retrievedAt,
-    paginationComplete: provider.paginationComplete, pagesRead: provider.pagesRead, providerRecords: provider.records.length,
-    matchedRecords: calls.length, localSessions: expected.length, excludedOperatorAiRecords: excluded, excludedConnectionRecords: excludedConnections, connectionId: provider.connectionId, filteredRecords: filtered,
-    unmatchedRecords: unmatched, ambiguousRecords: ambiguous, missingSessions: missing.length, currentDay, gapsAvailable,
-    priorIncompleteSessions: bounds.priorIncompleteSessions || 0, scope: provider.scope, limits: provider.limits }, unresolved, missing, unmatched: unmatchedRecords };
 }

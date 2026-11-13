@@ -92,7 +92,7 @@ export async function seedSalesTimelineFixture(query) {
 
 // Provider-shaped synthetic CDRs only. Keep the actual HTTP adapter and report
 // handler in the test path; this fixture never loads provider credentials.
-export async function installSalesTelnyxFixture(fixture) {
+export async function installSalesTelnyxFixture(fixture, suppliedRecords = null) {
   const originalFetch = globalThis.fetch, originalKey = process.env.SALES_TELNYX_API_KEY, originalApp = process.env.SALES_TELNYX_CALL_CONTROL_APP_ID;
   process.env.SALES_TELNYX_CALL_CONTROL_APP_ID = 'fixture-sales-app';
   let revision = 0;
@@ -111,16 +111,17 @@ export async function installSalesTelnyxFixture(fixture) {
       prospect_leg_id, prospect_session_id, COALESCE(metadata_json->>'direction','outbound') AS direction FROM sales_call_sessions`);
     const startLt = Date.parse(url.searchParams.get('filter[started_at][lt]'));
     const startGte = url.searchParams.get('filter[started_at][gte]'), endGt = url.searchParams.get('filter[finished_at][gt]');
-    const records = rows.filter(r => Date.parse(r.started_at) < startLt && (startGte ? Date.parse(r.started_at) >= Date.parse(startGte) : Date.parse(r.ended_at) > Date.parse(endGt)))
+    const generated = rows.filter(r => Date.parse(r.started_at) < startLt && (startGte ? Date.parse(r.started_at) >= Date.parse(startGte) : Date.parse(r.ended_at) > Date.parse(endGt)))
       .sort((a,b) => Date.parse(a.started_at)-Date.parse(b.started_at) || a.sales_call_id.localeCompare(b.sales_call_id))
       .map(r => ({ record_type: 'call-control', id: r.sales_call_id, telnyx_leg_id: r.prospect_leg_id,
         telnyx_session_id: r.prospect_session_id, connection_id: 'fixture-sales-app', direction: r.direction,
         started_at: new Date(r.started_at).toISOString(), finished_at: r.ended_at ? new Date(r.ended_at).toISOString() : null,
-        cli: 'SECRET_PROVIDER_PHONE', dest_number: 'SECRET_PROVIDER_PHONE', user_id: 'SECRET_PROVIDER_USER' }));
+        cli: 'SECRET_PROVIDER_PHONE', dest_number: '+12025550199', caller_number: '+12025550100', attempted: 1, connected: 1, completed: 1, call_sec: 17, billed_sec: 60, user_id: 'SECRET_PROVIDER_USER', auth_username: 'SECRET_PROVIDER_AUTH' }));
+    const records = suppliedRecords === null ? generated : suppliedRecords.filter(r => Date.parse(r.started_at) < startLt && (startGte ? Date.parse(r.started_at) >= Date.parse(startGte) : Date.parse(r.finished_at) > Date.parse(endGt))).sort((a,b) => a.started_at.localeCompare(b.started_at) || a.id.localeCompare(b.id));
     const page = Number(url.searchParams.get('page[number]')), size = Number(url.searchParams.get('page[size]'));
     return Response.json({ data: records.slice((page-1)*size,page*size), meta: { total_pages: Math.ceil(records.length/size),total_results:records.length,page_number:page,page_size:size } });
   };
-  return { refresh, fail: async () => { unavailable = true; await refresh(); }, restore: () => {
+  return { refresh, setRecords: async records => { suppliedRecords = records; await refresh(); }, fail: async () => { unavailable = true; await refresh(); }, restore: () => {
     globalThis.fetch = originalFetch; if (originalApp === undefined) delete process.env.SALES_TELNYX_CALL_CONTROL_APP_ID; else process.env.SALES_TELNYX_CALL_CONTROL_APP_ID = originalApp; if (originalKey === undefined) delete process.env.SALES_TELNYX_API_KEY; else process.env.SALES_TELNYX_API_KEY = originalKey;
   } };
 }

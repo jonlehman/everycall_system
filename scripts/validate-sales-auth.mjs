@@ -14,7 +14,7 @@ import salesLogin from '../pages/api/v1/sales/auth/login.js';
 import salesMe from '../pages/api/v1/sales/auth/me.js';
 import adminOverview from '../pages/api/v1/admin/overview.js';
 import adminUsers from '../pages/api/v1/admin/users.js';
-import { getSalesReport, salesReportFilters } from '../pages/api/_lib/salesReporting.js';
+import { salesReportFilters } from '../pages/api/_lib/salesReporting.js';
 import salesReports from '../pages/api/v1/admin/sales/reports.js';
 import phoneTestMode from '../pages/api/v1/admin/sales/phone-test-mode.js';
 import operatorSettings from '../pages/api/v1/admin/sales/operator-settings/index.js';
@@ -126,7 +126,7 @@ try {
 
   assert.equal((await call(salesReports, request(copiedCookie))).statusCode, 401);
   assert.equal((await call(salesReports, request(''))).statusCode, 401);
-  assert.equal((await call(salesReports, request(adminCookie))).body.totals.sessions, 0);
+  assert.equal((await call(salesReports, request(adminCookie))).body.error, 'report_contract_changed');
   assert.equal((await call(salesReports, { ...request(adminCookie), query: { from: '2026-02-30' } })).statusCode, 400);
   await query(`INSERT INTO sales_prospects (prospect_id, source_key, business_name, phone_e164, timezone, permission_granted)
     VALUES ('report-prospect', 'report-fixture', 'Reporting fixture', '+12065550111', 'UTC', TRUE)`);
@@ -173,28 +173,11 @@ try {
       if (originalSecret === undefined) delete process.env.INTERNAL_SERVICE_SECRET; else process.env.INTERNAL_SERVICE_SECRET = originalSecret;
     }
   }
-  // Query boundaries remain UTC even when the database connection is not.
-  await query("SET TIME ZONE 'America/Los_Angeles'");
-  const report = await getSalesReport(pool, { from: '2026-10-01', to: '2026-10-01' });
-  assert.deepEqual(report.totals, { sessions: 4, connected: 2, demosStarted: 1, ended: 3, outcomesRecorded: 2 });
-  assert.equal(report.summary.length, 3);
-  assert.deepEqual(report.recent.map((row) => row.id), ['r2', 'r3', 'r5', 'r1']);
-  assert.equal(report.outcomes.find((row) => row.outcome === 'not_recorded').count, 2);
-  const singleRep = await getSalesReport(pool, { from: '2026-10-01', to: '2026-10-01', operator: String(sales.id) });
-  assert.equal(singleRep.totals.sessions, 2);
-  const unassigned = await getSalesReport(pool, { from: '2026-10-01', to: '2026-10-01', operator: 'unassigned' });
-  assert.equal(unassigned.totals.sessions, 1);
-  assert.equal((await getSalesReport(pool, { from: '2026-01-01', to: '2026-01-01' })).recent.length, 0);
-  assert.throws(() => salesReportFilters({ from: '2026-10-02', to: '2026-10-01' }), /valid UTC/);
-  assert.throws(() => salesReportFilters({ from: '2024-01-01', to: '2026-10-01' }), /valid UTC/);
+  // Provider report source/aggregation contracts are exercised by test-sales-reporting.
+  // This auth validator must not use production credentials or reach a provider.
+  assert.throws(() => salesReportFilters({ from: '2026-10-02', to: '2026-10-01' }), /Pacific date window/);
+  assert.throws(() => salesReportFilters({ range: 'all' }), /All time is unavailable/);
   assert.throws(() => salesReportFilters({ operator: '1 OR 1=1' }), /valid sales rep/);
-  // The detail cap must never cap aggregate totals.
-  await query(`INSERT INTO sales_call_sessions (sales_call_id, prospect_id, admin_user_id, state, created_at)
-    SELECT 'cap-' || value, 'report-prospect', $1, 'closed', '2026-10-03T12:00:00Z'::timestamptz FROM generate_series(1, 105) value`, [sales.id]);
-  const capped = await getSalesReport(pool, { from: '2026-10-03', to: '2026-10-03' });
-  assert.equal(capped.totals.sessions, 105);
-  assert.equal(capped.recent.length, 100);
-  await query("SET TIME ZONE 'UTC'");
   const savedSettings = await call(operatorSettings, request(adminCookie, 'PUT', {
     adminUserId: sales.id, displayName: 'Updated rep', callerIdNumber: '+12065550123',
     telnyxTelephonyCredentialId: 'dedicated-sales-credential', active: true

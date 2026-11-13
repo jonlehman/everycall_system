@@ -1,275 +1,200 @@
 import { createHash } from 'node:crypto';
-import { getSalesTelnyxRecords, reconcileSalesTelnyxRecords } from './salesTelnyxRecords.js';
+import { getSalesTelnyxRecords } from './salesTelnyxRecords.js';
 import { salesError } from './salesRepository.js';
-import { callDispositions } from '../../../lib/salesDispositions.js';
 import { SALES_REPORT_FIELDS, SALES_REPORT_EXPORT_LIMIT, salesReportCsv } from '../../../lib/salesReportFields.js';
 
-export function salesReportFilters(query = {}, now = new Date()) {
-  const today = now.toISOString().slice(0, 10);
-  const fromDefault = new Date(now.getTime() - 29 * 86400000).toISOString().slice(0, 10);
-  const from = query.from ?? fromDefault;
-  const to = query.to ?? today;
-  const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
-    && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
-  const range = query.range ?? 'dates';
-  if (!['dates', 'all'].includes(range) || (range === 'dates' && (!validDate(from) || !validDate(to) || from > to
-      || Date.parse(to) - Date.parse(from) > 365 * 86400000))) {
-    throw salesError('invalid_report_dates', 'Choose a valid UTC date range of at most 366 days, or All time.', 400);
-  }
-  const operator = query.operator ?? '';
-  if (typeof operator !== 'string' || (operator && operator !== 'unassigned' && (!/^[1-9]\d*$/.test(operator) || !Number.isSafeInteger(Number(operator))))) {
-    throw salesError('invalid_report_operator', 'Choose a valid sales rep.', 400);
-  }
-  const direction = query.direction ?? 'all';
-  if (!['all', 'inbound', 'outbound'].includes(direction)) throw salesError('invalid_report_direction', 'Choose inbound, outbound, or all directions.', 400);
-  const mode = query.mode ?? 'live';
-  if (!['live', 'test', 'all'].includes(mode)) throw salesError('invalid_report_mode', 'Choose live, test, or all calls.', 400);
-  const outcome = query.outcome ?? '', state = query.state ?? '', search = query.search ?? '';
-  if ([outcome, state].some(value => typeof value !== 'string' || (value && !/^[a-z][a-z0-9_]{0,63}$/.test(value)))
-      || typeof search !== 'string' || search.length > 120) {
-    throw salesError('invalid_report_filter', 'Use a valid outcome, call state, and search of at most 120 characters.', 400);
-  }
-  return { from: range === 'all' ? null : from, to: range === 'all' ? null : to, operator, range, mode, direction, outcome, state, search: search.trim() };
-}
-
+const ZONE = 'America/Los_Angeles';
+const dateLabel = value => new Intl.DateTimeFormat('en-CA', { timeZone: ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
+const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+  && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const REP_NAME = "COALESCE(NULLIF(s.display_name, ''), NULLIF(u.username, ''), u.email, 'Unassigned / deleted user')";
-const JOINS = `FROM sales_call_sessions c LEFT JOIN sales_prospects p ON p.prospect_id = c.prospect_id
-  LEFT JOIN admin_users u ON u.id = c.admin_user_id LEFT JOIN sales_operator_settings s ON s.admin_user_id = c.admin_user_id`;
-const DIRECTION = "CASE WHEN c.metadata_json->>'direction' = 'inbound' THEN 'inbound' ELSE 'outbound' END";
-const PROSPECT_NUMBER = `CASE WHEN ${DIRECTION} = 'inbound' THEN c.metadata_json->>'prospect_number' ELSE COALESCE(NULLIF(c.dialed_number, ''), c.metadata_json->>'prospect_number') END`;
-const TEST_CALL = "COALESCE(c.metadata_json->>'phone_test_mode' = 'true', FALSE)";
-const duration = (start, end) => `CASE WHEN c.${start} IS NOT NULL AND c.${end} >= c.${start} THEN EXTRACT(EPOCH FROM (c.${end} - c.${start}))::float8 END`;
-const SESSION_DURATION = duration('started_at', 'ended_at');
-const CONNECTED_DURATION = duration('connected_at', 'ended_at');
-const TIMELINE_START = 'COALESCE(c.started_at, c.created_at)';
-const TIMELINE_VALID = '(c.started_at IS NOT NULL AND c.ended_at IS NOT NULL AND c.ended_at >= c.started_at)';
-const TIMELINE_LIMIT = 10000;
-const DEMO_DURATION = duration('demo_started_at', 'demo_ended_at');
-const METRICS = `COUNT(*)::int AS sessions,
-  COUNT(*) FILTER (WHERE c.connected_at IS NOT NULL)::int AS connected,
-  COUNT(*) FILTER (WHERE c.demo_started_at IS NOT NULL)::int AS "demosStarted",
-  COUNT(*) FILTER (WHERE c.ended_at IS NOT NULL)::int AS ended,
-  COUNT(*) FILTER (WHERE c.outcome_recorded_at IS NOT NULL)::int AS "outcomesRecorded"`;
-const CALL_COLUMNS = {
-  id: 'c.sales_call_id', prospectId: 'c.prospect_id', operatorId: 'c.admin_user_id', operatorName: REP_NAME,
-  businessName: 'p.business_name', businessCategory: 'p.business_category', websiteUrl: 'p.website_url',
-  prospectStatus: 'p.status', timezone: 'p.timezone', state: 'c.state', phoneTestMode: TEST_CALL,
-  direction: DIRECTION, prospectNumber: PROSPECT_NUMBER,
-  dialedNumber: `CASE WHEN ${DIRECTION} = 'outbound' THEN ${PROSPECT_NUMBER} END`,
-  callerNumber: `CASE WHEN ${DIRECTION} = 'inbound' THEN c.metadata_json->>'prospect_number' END`,
-  contactId: "c.metadata_json->>'contact_id'", numberId: "c.metadata_json->>'number_id'",
-  outcome: 'c.outcome', dispositions: "c.metadata_json->'dispositions'", outcomeNotes: 'c.outcome_notes', liveNotes: 'c.live_notes',
-  aiState: 'c.ai_state', providerErrorCode: 'c.provider_error_code',
-  hasTranscript: "c.transcript_json IS NOT NULL AND c.transcript_json NOT IN ('null'::jsonb, '[]'::jsonb)",
-  hasRecording: "NULLIF(c.recording_url, '') IS NOT NULL",
-  sessionSeconds: SESSION_DURATION, connectedSeconds: CONNECTED_DURATION, demoSeconds: DEMO_DURATION,
-};
-for (const [key, source] of Object.entries({ contactName: 'displayName', contactFirstName: 'firstName', contactLastName: 'lastName',
-  contactTitle: 'title', contactEmail: 'email', numberType: 'numberType', numberLabel: 'numberLabel' })) {
-  CALL_COLUMNS[key] = `c.metadata_json->'contact_snapshot'->>'${source}'`;
-}
-for (const [key, source] of Object.entries({ contactDecisionMaker: 'decisionMaker', contactInfluencer: 'influencer' })) {
-  CALL_COLUMNS[key] = `CASE c.metadata_json->'contact_snapshot'->>'${source}' WHEN 'true' THEN TRUE WHEN 'false' THEN FALSE END`;
-}
-for (const key of ['createdAt', 'updatedAt', 'startedAt', 'connectedAt', 'demoStartedAt', 'demoEndedAt', 'endedAt',
-  'outcomeRecordedAt', 'callbackAt', 'linkSentAt', 'bookedAt', 'paidAt', 'conferenceId', 'operatorLegId', 'operatorSessionId',
-  'prospectLegId', 'prospectSessionId', 'aiTelnyxLegId', 'aiTelnyxSessionId', 'openaiCallId']) {
-  CALL_COLUMNS[key] = 'c.' + key.replace(/[A-Z]/g, letter => '_' + letter.toLowerCase());
-}
-const SELECT_CALL = SALES_REPORT_FIELDS.flatMap(([, fields]) => fields)
-  .map(([key]) => `${CALL_COLUMNS[key]} AS "${key}"`).join(',\n');
+const STATUS = ['completed', 'connected_not_completed', 'attempted_not_connected', 'not_attempted', 'unknown'];
+const stale = () => salesError('report_snapshot_changed', 'The Telnyx dataset or matched labels changed. Update the report before paging, exporting, or selecting a day.', 409);
 
-function reportWhere(filters) {
-  const params = [], clauses = [];
-  const bind = value => { params.push(value); return `$${params.length}`; };
-  if (filters.range !== 'all') clauses.push(`c.created_at >= ${bind(filters.from)}::date::timestamp AT TIME ZONE 'UTC'`,
-    `c.created_at < (${bind(filters.to)}::date + 1)::timestamp AT TIME ZONE 'UTC'`);
-  if (filters.mode !== 'all') clauses.push(`${TEST_CALL} = ${filters.mode === 'test' ? 'TRUE' : 'FALSE'}`);
-  if (filters.direction !== 'all') clauses.push(`${DIRECTION} = ${bind(filters.direction)}`);
-  if (filters.operator === 'unassigned') clauses.push('c.admin_user_id IS NULL');
-  else if (filters.operator) clauses.push(`c.admin_user_id = ${bind(Number(filters.operator))}`);
-  if (filters.outcome) clauses.push(`COALESCE(NULLIF(c.outcome, ''), 'not_recorded') = ${bind(filters.outcome)}`);
-  if (filters.state) clauses.push(`c.state = ${bind(filters.state)}`);
-  if (filters.search) {
-    const search = bind('%' + filters.search.replace(/[\\%_]/g, value => '\\' + value) + '%');
-    clauses.push(`(p.business_name ILIKE ${search} OR c.sales_call_id ILIKE ${search}
-      OR ${PROSPECT_NUMBER} ILIKE ${search}
-      OR c.metadata_json->'contact_snapshot'->>'displayName' ILIKE ${search})`);
+export function salesReportFilters(query = {}, now = new Date()) {
+  const to = query.to ?? dateLabel(now);
+  const from = query.from ?? new Date(Date.parse(dateLabel(now)) - 29 * 86400000).toISOString().slice(0, 10);
+  if ((query.range !== undefined && query.range !== 'dates') || !validDate(from) || !validDate(to) || from > to || Date.parse(to) - Date.parse(from) > 30 * 86400000) {
+    throw salesError('invalid_report_dates', 'Choose a Pacific date window of at most 31 days. All time is unavailable because provider retention is not guaranteed.', 400);
   }
-  return { where: clauses.join(' AND ') || 'TRUE', params };
+  // Fail old clients explicitly: these filters describe EveryCall workflow, not CDR facts.
+  if ((query.mode !== undefined && query.mode !== 'all') || query.outcome || query.state) {
+    throw salesError('unsupported_report_filter', 'This report now uses Telnyx records. Refresh to use provider status filters; app mode, outcome and state filters are unavailable.', 400);
+  }
+  const operator = query.operator ?? '', direction = query.direction ?? 'all', status = query.status ?? '', search = query.search ?? '';
+  if (typeof operator !== 'string' || (operator && operator !== 'unassigned' && (!/^[1-9]\d*$/.test(operator) || !Number.isSafeInteger(Number(operator))))) throw salesError('invalid_report_operator', 'Choose a valid sales rep.', 400);
+  if (!['all', 'inbound', 'outbound', 'unknown'].includes(direction)) throw salesError('invalid_report_direction', 'Choose a valid provider direction.', 400);
+  if ((status && !STATUS.includes(status)) || typeof status !== 'string' || typeof search !== 'string' || search.length > 120) throw salesError('invalid_report_filter', 'Choose a valid provider status and search of at most 120 characters.', 400);
+  return { from, to, operator, direction, status, search: search.trim(), range: 'dates' };
 }
-function pageOptions(query, filters) {
+
+function pageOptions(query) {
   const limit = query.limit ?? '100';
-  if (!/^(?:[1-9]\d?|100)$/.test(String(limit)) || (typeof limit !== 'string' && typeof limit !== 'number')) {
-    throw salesError('invalid_report_page', 'Choose a page size from 1 to 100.', 400);
-  }
-  const fingerprint = createHash('sha256').update(JSON.stringify(filters)).digest('hex');
+  if (!['string', 'number'].includes(typeof limit) || !/^(?:[1-9]\d?|100)$/.test(String(limit))) throw salesError('invalid_report_page', 'Choose a page size from 1 to 100.', 400);
   let cursor = null;
   if (query.cursor) {
     try {
       if (typeof query.cursor !== 'string' || query.cursor.length > 2000) throw Error();
       cursor = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf8'));
-      if (cursor.filter !== fingerprint || typeof cursor.id !== 'string' || !cursor.id || cursor.id.length > 300
-        || typeof cursor.at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(cursor.at)
-        || !Number.isFinite(Date.parse(cursor.at))) throw Error();
-    } catch { throw salesError('invalid_report_cursor', 'Refresh the report before changing pages.', 400); }
+      if (typeof cursor.id !== 'string' || !cursor.id || cursor.id.length > 300 || !/^[a-f0-9]{64}$/.test(cursor.snapshot)) throw Error();
+    } catch { throw salesError('invalid_report_cursor', 'Update the report before changing pages.', 400); }
   }
-  return { limit: Number(limit), cursor, fingerprint };
-}
-function serializeCall(row) {
-  const result = Object.fromEntries(SALES_REPORT_FIELDS.flatMap(([, fields]) => fields).map(([key]) => [key, row[key] ?? null]));
-  result.dispositions = callDispositions({ outcome: row.outcome, dispositions: row.dispositions });
-  if (result.operatorId !== null) result.operatorId = Number(result.operatorId);
-  return result;
-}
-async function consistentRead(pool, action) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    const result = await action(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (error) { await client.query('ROLLBACK'); throw error; }
-  finally { client.release(); }
+  if (query.snapshot !== undefined && (typeof query.snapshot !== 'string' || !/^[a-f0-9]{64}$/.test(query.snapshot))) throw stale();
+  return { limit: Number(limit), cursor };
 }
 
-export async function getSalesReport(pool, query = {}) {
-  const filters = salesReportFilters(query), paging = pageOptions(query, filters);
-  const { where, params } = reportWhere(filters);
-  return consistentRead(pool, async db => {
-    const reps = await db.query(`SELECT u.id, ${REP_NAME} AS name, u.role
-      FROM admin_users u LEFT JOIN sales_operator_settings s ON s.admin_user_id = u.id
-      WHERE u.role IN ('sales', 'admin', 'super_admin') OR EXISTS (
-        SELECT 1 FROM sales_call_sessions c WHERE c.admin_user_id = u.id) ORDER BY name, u.id`);
-    const summary = await db.query(`SELECT c.admin_user_id AS "operatorId", ${REP_NAME} AS "operatorName", ${METRICS}
-      ${JOINS} WHERE ${where} GROUP BY c.admin_user_id, u.username, u.email, s.display_name
-      ORDER BY sessions DESC, "operatorName", c.admin_user_id`, params);
-    const outcomes = await db.query(`SELECT COALESCE(NULLIF(c.outcome, ''), 'not_recorded') AS outcome, COUNT(*)::int AS count
-      ${JOINS} WHERE ${where} GROUP BY COALESCE(NULLIF(c.outcome, ''), 'not_recorded') ORDER BY count DESC, outcome`, params);
-    const states = await db.query(`SELECT c.state, COUNT(*)::int AS count ${JOINS} WHERE ${where} GROUP BY c.state ORDER BY count DESC, c.state`, params);
-    // All-time charts use monthly buckets to keep decades of history readable. Bounded windows use UTC days.
-    const interval = filters.range === 'all' ? 'month' : 'day';
-    const activity = await db.query(`SELECT to_char(date_trunc('${interval}', c.created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS date,
-      ${METRICS} ${JOINS} WHERE ${where} GROUP BY 1 ORDER BY 1`, params);
-    const durations = await db.query(`SELECT COUNT(${SESSION_DURATION})::int AS "sessionCount", AVG(${SESSION_DURATION})::float8 AS "averageSessionSeconds",
-      COUNT(${CONNECTED_DURATION})::int AS "connectedCount", AVG(${CONNECTED_DURATION})::float8 AS "averageConnectedSeconds",
-      COUNT(${DEMO_DURATION})::int AS "demoCount", AVG(${DEMO_DURATION})::float8 AS "averageDemoSeconds",
-      COUNT(*) FILTER (WHERE ${CONNECTED_DURATION} < 60)::int AS "underMinute",
-      COUNT(*) FILTER (WHERE ${CONNECTED_DURATION} >= 60 AND ${CONNECTED_DURATION} < 180)::int AS "oneToThree",
-      COUNT(*) FILTER (WHERE ${CONNECTED_DURATION} >= 180 AND ${CONNECTED_DURATION} < 600)::int AS "threeToTen",
-      COUNT(*) FILTER (WHERE ${CONNECTED_DURATION} >= 600)::int AS "tenPlus"
-      ${JOINS} WHERE ${where}`, params);
-    const pageParams = [...params];
-    let pageWhere = where;
-    if (paging.cursor) {
-      pageParams.push(paging.cursor.at, paging.cursor.id);
-      pageWhere += ` AND (c.created_at, c.sales_call_id) < ($${pageParams.length - 1}::timestamptz, $${pageParams.length}::text)`;
-    }
-    pageParams.push(paging.limit + 1);
-    const records = await db.query(`SELECT ${SELECT_CALL}, to_char(c.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorAt"
-      ${JOINS} WHERE ${pageWhere} ORDER BY c.created_at DESC, c.sales_call_id DESC LIMIT $${pageParams.length}`, pageParams);
-    const hasMore = records.rows.length > paging.limit, rows = records.rows.slice(0, paging.limit), last = rows.at(-1);
-    const nextCursor = hasMore ? Buffer.from(JSON.stringify({ at: last.cursorAt, id: last.id, filter: paging.fingerprint })).toString('base64url') : null;
-    const totals = summary.rows.reduce((total, row) => {
-      for (const key of Object.keys(total)) total[key] += Number(row[key]);
-      return total;
-    }, { sessions: 0, connected: 0, demosStarted: 0, ended: 0, outcomesRecorded: 0 });
-    return { filters, reps: reps.rows, summary: summary.rows, outcomes: outcomes.rows, states: states.rows,
-      activity: activity.rows, activityInterval: interval, durations: durations.rows[0],
-      recent: rows.map(serializeCall), totals, nextCursor, pageSize: paging.limit, exportLimit: SALES_REPORT_EXPORT_LIMIT };
-  });
+function providerStatus(record) {
+  if (record.completed === true) return 'completed';
+  if (record.connected === true && record.completed === false) return 'connected_not_completed';
+  if (record.attempted === true && record.connected === false) return 'attempted_not_connected';
+  if (record.attempted === false && record.connected === false && record.completed === false) return 'not_attempted';
+  return 'unknown';
 }
 
-export async function exportSalesReport(pool, query = {}) {
-  const filters = salesReportFilters(query), { where, params } = reportWhere(filters);
-  return consistentRead(pool, async db => {
-    const count = await db.query(`SELECT COUNT(*)::int AS count ${JOINS} WHERE ${where}`, params);
-    if (count.rows[0].count > SALES_REPORT_EXPORT_LIMIT) throw salesError('report_export_too_large',
-      `Export supports up to ${SALES_REPORT_EXPORT_LIMIT.toLocaleString('en-US')} calls. Narrow the dates, rep, or other filters; no rows were exported.`, 400);
-    const records = await db.query(`SELECT ${SELECT_CALL} ${JOINS} WHERE ${where}
-      ORDER BY c.created_at DESC, c.sales_call_id DESC`, params);
-    return salesReportCsv(records.rows.map(serializeCall));
-  });
-}
-
-// A separate bounded read keeps day selection independent of report pagination.
-export async function getSalesReportDay(pool, query = {}, { loadProvider = getSalesTelnyxRecords } = {}) {
-  const filters = salesReportFilters(query);
-  // The table is a creation cohort. A daily timeline instead needs every
-  // overlapping session, including those created before the range boundary.
-  const { where, params } = reportWhere({ ...filters, range: 'all' });
-  const requested = query.day;
-  if (requested !== undefined && (typeof requested !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(requested)
-    || !Number.isFinite(Date.parse(requested)) || new Date(requested).toISOString().slice(0, 10) !== requested
-    || (filters.range !== 'all' && (requested < filters.from || requested > filters.to)))) {
-    throw salesError('invalid_report_day', 'Choose a valid Pacific day within the applied report range.', 400);
-  }
-  const context = await consistentRead(pool, async db => {
-    const bounds = await db.query(`SELECT
-      to_char(MIN(${TIMELINE_START}) AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS first,
-      to_char(MAX(CASE WHEN ${TIMELINE_VALID} THEN c.ended_at ELSE ${TIMELINE_START} END) AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS last,
-      to_char(MAX(${TIMELINE_START}) AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS latest
-      ${JOINS} WHERE ${where}`, params);
-    const history = bounds.rows[0];
-    const from = filters.range === 'all' ? history.first : filters.from;
-    const to = filters.range === 'all' ? history.last : filters.to;
-    if (requested && (!from || requested < from || requested > to)) {
-      throw salesError('invalid_report_day', 'Choose a Pacific day within the matching call history.', 400);
-    }
-    const day = requested || (history.latest && history.latest >= from && history.latest <= to ? history.latest : to);
-    if (!day) return { filters, from, to, day: null, calls: [], prior: [], limit: TIMELINE_LIMIT };
-    // Resolve each local midnight independently: DST days contain 23 or 25 hours.
-    const dayBounds = await db.query(`SELECT
-      $1::date::timestamp AT TIME ZONE 'America/Los_Angeles' AS "dayStart",
-      ($1::date + 1)::timestamp AT TIME ZONE 'America/Los_Angeles' AS "dayEnd"`, [day]);
-    const { dayStart, dayEnd } = dayBounds.rows[0];
-    const values = [...params, dayStart, dayEnd], start = `$${values.length - 1}::timestamptz`, end = `$${values.length}::timestamptz`;
-    const records = await db.query(`SELECT c.sales_call_id AS id, c.admin_user_id AS "operatorId", ${REP_NAME} AS "operatorName",
-      p.business_name AS "businessName", c.state, c.created_at AS "createdAt", c.started_at AS "startedAt",
-      c.connected_at AS "connectedAt", c.ended_at AS "endedAt"
-      ${JOINS} WHERE ${where} AND ${TIMELINE_START} < ${end}
-      AND (${TIMELINE_START} >= ${start} OR (${TIMELINE_VALID} AND c.ended_at > ${start}))
-      ORDER BY ${TIMELINE_START}, c.sales_call_id LIMIT ${TIMELINE_LIMIT + 1}`, values);
-    if (records.rows.length > TIMELINE_LIMIT) throw salesError('report_day_too_large',
-      `The timeline supports up to ${TIMELINE_LIMIT.toLocaleString('en-US')} sessions per day. Narrow the rep or other filters; no partial timeline is shown.`, 400);
-    const prior = await db.query(`SELECT COUNT(*)::int AS count ${JOINS} WHERE ${where}
-      AND ${TIMELINE_START} < ${start} AND NOT ${TIMELINE_VALID}
-      AND NOT (c.state IN ('closed', 'failed', 'ended', 'completed', 'canceled', 'cancelled')
-        AND c.updated_at >= ${TIMELINE_START} AND c.updated_at <= ${start})`, values.slice(0, -1));
-    return { filters, from, to, day, dayStart, dayEnd, timeZone: 'America/Los_Angeles', expected: records.rows, priorIncompleteSessions: prior.rows[0].count, limit: TIMELINE_LIMIT };
-  });
-  if (!context.day) return { ...context, coverage: { source: 'telnyx', status: 'not_requested', gapsAvailable: false }, missing: [], unresolved: [] };
-  const provider = await loadProvider(context);
-  const legIds = provider.records.map(row => row.legId), sessionIds = provider.records.map(row => row.sessionId);
-  // Join across history and across report filters before applying inclusion. This
-  // detects duplicate identities and identifies parked operator/AI legs even
-  // when their Sales rows fall outside the displayed cohort.
+// All matching is by saved provider identities. Phone/time proximity and current
+// prospect ownership never establish rep attribution. Query across local history.
+async function enrichProviderRecords(pool, provider) {
+  const ids = provider.records.map(row => row.legId), sessions = provider.records.map(row => row.sessionId);
   const joined = await pool.query(`SELECT c.sales_call_id AS id, c.admin_user_id AS "operatorId", ${REP_NAME} AS "operatorName",
-    p.business_name AS "businessName", ${DIRECTION} AS direction, (${where}) AS included,
-    c.prospect_leg_id AS "prospectLegId", c.prospect_session_id AS "prospectSessionId",
+    p.business_name AS "businessName", c.prospect_leg_id AS "prospectLegId", c.prospect_session_id AS "prospectSessionId",
     c.operator_leg_id AS "operatorLegId", c.operator_session_id AS "operatorSessionId",
     c.ai_telnyx_leg_id AS "aiLegId", c.ai_telnyx_session_id AS "aiSessionId"
-    ${JOINS} WHERE c.prospect_leg_id = ANY($${params.length + 1}::text[]) OR c.operator_leg_id = ANY($${params.length + 1}::text[])
-      OR c.ai_telnyx_leg_id = ANY($${params.length + 1}::text[]) OR c.prospect_session_id = ANY($${params.length + 2}::text[])
-      OR c.operator_session_id = ANY($${params.length + 2}::text[]) OR c.ai_telnyx_session_id = ANY($${params.length + 2}::text[])
-    LIMIT ${TIMELINE_LIMIT + 1}`, [...params, legIds, sessionIds]);
-  if (joined.rows.length > TIMELINE_LIMIT) throw salesError('report_day_too_large', 'Too many Sales identity matches; narrow the day. No partial timeline is shown.', 400);
-  const { expected, ...publicContext } = context;
-  return { ...publicContext, ...reconcileSalesTelnyxRecords(provider, joined.rows, expected, context) };
+    FROM sales_call_sessions c LEFT JOIN sales_prospects p ON p.prospect_id = c.prospect_id
+    LEFT JOIN admin_users u ON u.id = c.admin_user_id LEFT JOIN sales_operator_settings s ON s.admin_user_id = c.admin_user_id
+    WHERE c.prospect_leg_id = ANY($1::text[]) OR c.operator_leg_id = ANY($1::text[]) OR c.ai_telnyx_leg_id = ANY($1::text[])
+      OR c.prospect_session_id = ANY($2::text[]) OR c.operator_session_id = ANY($2::text[]) OR c.ai_telnyx_session_id = ANY($2::text[])
+    LIMIT 10001`, [ids, sessions]);
+  if (joined.rows.length > 10000) throw salesError('report_identity_limit', 'Too many identity matches. Narrow the dates; no partial report is shown.', 400);
+  const legs = new Map(), sessionRows = new Map(), excludedLegs = new Set(), excludedSessions = new Set();
+  const add = (map, id, row) => { if (id) map.set(id, [...(map.get(id) || []), row]); };
+  for (const row of joined.rows) {
+    add(legs, row.prospectLegId, row); add(sessionRows, row.prospectSessionId, row);
+    [row.operatorLegId, row.aiLegId].filter(Boolean).forEach(id => excludedLegs.add(id));
+    [row.operatorSessionId, row.aiSessionId].filter(Boolean).forEach(id => excludedSessions.add(id));
+  }
+  let excludedOperatorAiRecords = 0, excludedConnectionRecords = provider.excludedConnectionRecords || 0;
+  const scoped = provider.records.filter(record => {
+    if (!provider.connectionId || record.connectionId !== provider.connectionId) { excludedConnectionRecords++; return false; }
+    if (excludedLegs.has(record.legId) || excludedSessions.has(record.sessionId)) { excludedOperatorAiRecords++; return false; }
+    return true;
+  });
+  const counts = new Map(); scoped.forEach(record => counts.set(record.sessionId, (counts.get(record.sessionId) || 0) + 1));
+  const rows = scoped.map(record => {
+    const exactLeg = legs.get(record.legId) || [], exactSession = sessionRows.get(record.sessionId) || [];
+    const candidates = [...new Map([...exactLeg, ...exactSession].map(row => [row.id, row])).values()];
+    const matched = candidates.length === 1 && !(exactLeg.length && candidates[0].prospectSessionId && candidates[0].prospectSessionId !== record.sessionId);
+    const local = matched ? candidates[0] : null;
+    const elapsed = record.endedAt && record.endedAt >= record.startedAt ? (Date.parse(record.endedAt) - Date.parse(record.startedAt)) / 1000 : null;
+    return { id: record.id, providerLegId: record.legId, providerSessionId: record.sessionId, providerConnectionId: record.connectionId,
+      connectionName: record.connectionName, direction: record.direction, status: providerStatus(record),
+      attempted: record.attempted, connected: record.connected, completed: record.completed,
+      startedAt: record.startedAt, endedAt: record.endedAt, elapsedSeconds: elapsed,
+      callSeconds: record.callSeconds, billedSeconds: record.billedSeconds,
+      callerNumber: record.callerNumber, destinationNumber: record.destinationNumber, callerName: record.callerName,
+      countryCode: record.countryCode, sourceCountryCode: record.sourceCountryCode,
+      operatorId: local?.operatorId == null ? null : Number(local.operatorId), operatorName: local?.operatorName || 'Unassigned / unclassified',
+      businessName: local?.businessName || null, salesCallId: local?.id || null,
+      matchMethod: matched ? exactLeg.length ? 'exact_prospect_leg' : 'exact_prospect_session' : null,
+      classification: matched ? 'matched_prospect' : candidates.length ? 'ambiguous_identity' : 'unmatched_identity',
+      relatedLeg: counts.get(record.sessionId) > 1, source: 'telnyx', retrievedAt: provider.retrievedAt,
+      coverageNotice: provider.limits };
+  });
+  return { rows, excludedOperatorAiRecords, excludedConnectionRecords };
 }
 
-// Read full transcript text only on demand; never return provider event payloads or recording URLs.
-export async function getSalesReportTranscript(pool, callId) {
-  if (typeof callId !== 'string' || !callId || callId.length > 300) {
-    throw salesError('invalid_report_call', 'Choose a valid call.', 400);
+async function cohort(pool, query, { loadProvider = getSalesTelnyxRecords } = {}) {
+  const filters = salesReportFilters(query), paging = pageOptions(query);
+  const bounds = (await pool.query(`SELECT $1::date::timestamp AT TIME ZONE 'America/Los_Angeles' AS "dayStart",
+    ($2::date + 1)::timestamp AT TIME ZONE 'America/Los_Angeles' AS "dayEnd"`, [filters.from, filters.to])).rows[0];
+  const provider = await loadProvider(bounds);
+  if (provider.status !== 'available' || !provider.paginationComplete) throw salesError('telnyx_records_unavailable',
+    `Telnyx records unavailable or incomplete (${provider.reason || 'incomplete_retrieval'}). Narrow the dates or retry. No partial totals or internal records are substituted.`, 503);
+  const enriched = await enrichProviderRecords(pool, provider);
+  const matches = row => (!filters.operator || (filters.operator === 'unassigned' ? row.operatorId === null : String(row.operatorId) === filters.operator))
+    && (filters.direction === 'all' || (row.direction || 'unknown') === filters.direction)
+    && (!filters.status || row.status === filters.status)
+    && (!filters.search || [row.id, row.providerLegId, row.providerSessionId, row.businessName, row.callerNumber, row.destinationNumber, row.callerName].some(value => String(value || '').toLowerCase().includes(filters.search.toLowerCase())));
+  const all = enriched.rows.sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id));
+  // Exclude retrieval time from identity: identical re-reads can safely continue.
+  // Include the entire provider and enrichment dataset, even records hidden by filters.
+  const snapshot = digest({ filters, connectionId: provider.connectionId, excluded: [enriched.excludedOperatorAiRecords, enriched.excludedConnectionRecords],
+    records: provider.records, rows: all.map(({ retrievedAt, ...row }) => row) });
+  if ((paging.cursor && paging.cursor.snapshot !== snapshot) || (query.snapshot && query.snapshot !== snapshot)) throw stale();
+  all.forEach(row => { row.snapshot = snapshot; });
+  const filtered = all.filter(matches);
+  const rows = filtered.filter(row => Date.parse(row.startedAt) >= Date.parse(bounds.dayStart));
+  const reps = [...new Map(all.filter(row => row.operatorId !== null).map(row => [row.operatorId, { id: row.operatorId, name: row.operatorName }])).values()].sort((a, b) => a.name.localeCompare(b.name));
+  const coverage = { source: 'telnyx', status: 'available', paginationComplete: true, retrievedAt: provider.retrievedAt,
+    connectionId: provider.connectionId, pagesRead: provider.pagesRead, providerRecords: provider.records.length,
+    excludedOperatorAiRecords: enriched.excludedOperatorAiRecords, excludedConnectionRecords: enriched.excludedConnectionRecords,
+    matchedRecords: all.filter(row => row.classification === 'matched_prospect').length,
+    unmatchedRecords: all.filter(row => row.classification === 'unmatched_identity').length,
+    ambiguousRecords: all.filter(row => row.classification === 'ambiguous_identity').length,
+    relatedRecords: all.filter(row => row.relatedLeg).length, filteredRecords: rows.length,
+    overlapRecords: filtered.length - rows.length, gapsAvailable: false, scope: provider.scope, limits: provider.limits,
+    snapshot, timeZone: ZONE };
+  return { filters, paging, bounds, rows, filtered, reps, coverage, snapshot };
+}
+
+function aggregate(rows) {
+  const result = { records: rows.length, uniqueSessions: new Set(rows.map(row => row.providerSessionId)).size };
+  for (const flag of ['attempted', 'connected', 'completed']) {
+    result[flag] = rows.filter(row => row[flag] === true).length;
+    result[`${flag}Unknown`] = rows.filter(row => row[flag] == null).length;
   }
-  const result = await pool.query(`SELECT c.sales_call_id AS id,
-    (SELECT COALESCE(jsonb_agg(jsonb_build_object('text', item->>'text',
-      'role', CASE WHEN item->>'role' IN ('caller', 'assistant', 'operator') THEN item->>'role' END,
-      'at', item->>'at') ORDER BY ordinal), '[]'::jsonb)
-      FROM jsonb_array_elements(CASE WHEN jsonb_typeof(c.transcript_json) = 'array' THEN c.transcript_json ELSE '[]'::jsonb END)
-        WITH ORDINALITY AS entries(item, ordinal) WHERE jsonb_typeof(item->'text') = 'string') AS transcript
-    FROM sales_call_sessions c WHERE c.sales_call_id = $1`, [callId]);
-  if (!result.rows.length) throw salesError('sales_call_not_found', 'Call not found.', 404);
-  return result.rows[0];
+  return result;
+}
+function group(rows, key) {
+  const groups = new Map();
+  for (const row of rows) { const value = key(row); groups.set(value, [...(groups.get(value) || []), row]); }
+  return [...groups.entries()];
+}
+function publicRow(row) { return Object.fromEntries(SALES_REPORT_FIELDS.flatMap(([, fields]) => fields).map(([key]) => [key, row[key] ?? null])); }
+
+export async function getSalesReport(pool, query = {}, options) {
+  const data = await cohort(pool, query, options), { rows, filters, paging, snapshot } = data;
+  let offset = 0;
+  if (paging.cursor) { const index = rows.findIndex(row => row.id === paging.cursor.id); if (index < 0) throw stale(); offset = index + 1; }
+  const recent = rows.slice(offset, offset + paging.limit), last = recent.at(-1);
+  const nextCursor = offset + paging.limit < rows.length ? Buffer.from(JSON.stringify({ id: last.id, snapshot })).toString('base64url') : null;
+  const durations = {};
+  for (const key of ['elapsedSeconds', 'callSeconds', 'billedSeconds']) {
+    const values = rows.map(row => row[key]).filter(value => value !== null && value !== undefined);
+    durations[`${key}Count`] = values.length;
+    durations[`${key}Average`] = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    durations[`${key}Total`] = values.length ? values.reduce((sum, value) => sum + value, 0) : null;
+  }
+  const values = rows.map(row => row.callSeconds).filter(value => value != null);
+  Object.assign(durations, { underMinute: values.filter(v => v < 60).length, oneToThree: values.filter(v => v >= 60 && v < 180).length,
+    threeToTen: values.filter(v => v >= 180 && v < 600).length, tenPlus: values.filter(v => v >= 600).length, unknown: rows.length - values.length });
+  return { filters, reps: data.reps, coverage: data.coverage, snapshot, totals: aggregate(rows),
+    summary: group(rows, row => row.operatorId).map(([operatorId, records]) => ({ operatorId, operatorName: records[0].operatorName, ...aggregate(records) })),
+    statuses: group(rows, row => row.status).map(([status, records]) => ({ status, count: records.length })),
+    activity: group(rows, row => dateLabel(row.startedAt)).map(([date, records]) => ({ date, ...aggregate(records) })).sort((a, b) => a.date.localeCompare(b.date)),
+    activityInterval: 'day', durations, recent: recent.map(publicRow), nextCursor, pageSize: paging.limit, offset, exportLimit: SALES_REPORT_EXPORT_LIMIT };
+}
+
+export async function exportSalesReport(pool, query = {}, options) {
+  const data = await cohort(pool, query, options);
+  if (data.rows.length > SALES_REPORT_EXPORT_LIMIT) throw salesError('report_export_too_large', `Export supports up to ${SALES_REPORT_EXPORT_LIMIT} provider records. Narrow the dates; no rows were exported.`, 400);
+  return salesReportCsv(data.rows.map(publicRow));
+}
+
+export async function getSalesReportDay(pool, query = {}, options) {
+  const filters = salesReportFilters(query), day = query.day ?? filters.to;
+  if (!validDate(day) || day < filters.from || day > filters.to) throw salesError('invalid_report_day', 'Choose a valid Pacific day within the applied report range.', 400);
+  const data = await cohort(pool, query, options);
+  const bounds = (await pool.query(`SELECT $1::date::timestamp AT TIME ZONE 'America/Los_Angeles' AS "dayStart",
+    ($1::date + 1)::timestamp AT TIME ZONE 'America/Los_Angeles' AS "dayEnd"`, [day])).rows[0];
+  const calls = data.filtered.filter(row => Date.parse(row.startedAt) < Date.parse(bounds.dayEnd)
+    && (Date.parse(row.startedAt) >= Date.parse(bounds.dayStart) || Date.parse(row.endedAt) > Date.parse(bounds.dayStart))).map(publicRow);
+  return { filters, from: filters.from, to: filters.to, day, ...bounds, timeZone: ZONE, calls,
+    prior: [...new Set(calls.map(row => row.operatorId))].map(operatorId => ({ operatorId, uncertain: true })),
+    coverage: { ...data.coverage, matchedRecords: calls.length, currentDay: Date.parse(bounds.dayEnd) > Date.parse(data.coverage.retrievedAt),
+      missingSessions: null }, snapshot: data.snapshot, missing: [], unresolved: [], unmatched: [] };
+}
+
+export async function getSalesReportTranscript() {
+  throw salesError('unsupported_report_detail', 'Telnyx detail records do not supply a transcript. EveryCall session transcripts are not part of this provider report.', 400);
 }
