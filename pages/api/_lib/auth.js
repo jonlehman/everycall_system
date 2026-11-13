@@ -1,7 +1,9 @@
 import crypto from "crypto";
 import { getPool } from "./db.js";
+import { resolveSupportSession } from "./supportSessions.js";
 
 const SESSION_COOKIE = "everycall_session";
+const SUPPORT_SESSION_COOKIE = "everycall_support_session";
 const SALES_SESSION_COOKIE = "everycall_sales_session";
 const SESSION_TTL_DAYS = 7;
 
@@ -148,11 +150,26 @@ async function findSession(sessionId) {
   return session;
 }
 
+export async function getStaffSession(req) {
+  const session = await findSession(getSessionCookie(req));
+  return session?.role === "admin" && await getAdminActor(session) ? session : null;
+}
+
+export function getSupportSessionCookie(req) { return readCookie(req, SUPPORT_SESSION_COOKIE); }
+export function setSupportSessionCookie(res, id) { writeSessionCookie(res, SUPPORT_SESSION_COOKIE, id, 30 * 60); }
+export function clearSupportSessionCookie(res) { writeSessionCookie(res, SUPPORT_SESSION_COOKIE, "", 0); }
+
 export async function getSession(req) {
   const session = await findSession(getSessionCookie(req));
   // Cookie names are not an authorization boundary: reject a copied sales ID.
   if (!session || !["admin", "tenant"].includes(session.role)) return null;
   if (session.role === "admin" && !await getAdminActor(session)) return null;
+  const supportId = getSupportSessionCookie(req);
+  if (supportId) {
+    return resolveSupportSession(getPool(), {supportId, staffSession:session,
+      requestedTenantKey:req.query?.tenantKey || req.query?.tenant_key || req.body?.tenantKey || req.body?.tenant_key,
+      method:req.method || 'GET',path:req.url || ''});
+  }
   return session;
 }
 

@@ -1,3 +1,5 @@
+import { applyPaidPurchaseEvent } from '../../_lib/paidPurchaseEvents.js';
+import { applyPaidBillingEvent,syncPaidBillingEntitlement } from '../../_lib/paidBillingLifecycle.js';
 import { applySalesPaidCheckout } from "../../_lib/salesCheckout.js";
 import { readRawBody } from "../../_lib/telnyx.js";
 import { constructWebhookEvent, retrieveSubscription, retrieveSubscriptionSchedule } from "../../_lib/stripe.js";
@@ -141,6 +143,8 @@ export default async function handler(req, res) {
     verified = true;
     await ensureTables(pool);
 
+    await applyPaidBillingEvent(database,event);
+
     // Persist a retryable identity, then serialize every effect and the final
     // marker in one transaction. A crash rolls back all local effects.
     client = await database.connect();
@@ -174,8 +178,9 @@ export default async function handler(req, res) {
     const object = event.data?.object || {};
     const metadataTenantKey = String(object.metadata?.tenant_key || object.subscription_details?.metadata?.tenant_key || "").trim() || null;
 
+    const paidPurchaseEvent=await applyPaidPurchaseEvent(pool,event);
     await applySalesPaidCheckout(pool,event);
-    if (event.type === "checkout.session.completed" && !object.metadata?.sales_checkout_id) {
+    if (event.type === "checkout.session.completed" && !object.metadata?.sales_checkout_id && !paidPurchaseEvent) {
       const tenantRow = await getTenantBillingRow(pool, {
         tenantKey: metadataTenantKey,
         customerId: object.customer ? String(object.customer) : null,
@@ -283,6 +288,9 @@ export default async function handler(req, res) {
        WHERE stripe_event_id = $1`, [event.id]
     );
     await client.query("COMMIT");
+    client.release();client=null;
+    const paidTenant=(await database.query("SELECT tenant_key FROM tenant_billing_accounts WHERE paid_purchase_id IS NOT NULL AND stripe_customer_id=$1",[typeof object.customer==='string'?object.customer:object.customer?.id||null])).rows[0];
+    if(paidTenant)await syncPaidBillingEntitlement(database,paidTenant.tenant_key);
     return res.status(200).json({ ok: true });
   } catch (err) {
     if (client) {

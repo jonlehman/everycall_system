@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-11-13 — Unified paid intake implementation and release gates
+
+- Implement UPIB-001–014 through an owner-bound intake/purchase ledger, immutable consent and provider request snapshots, and recoverable payment, recurring enrollment and conversion. Hosted payment/consent and subscription establishment belong to one durable purchase. Conversion waits for both canonical settlement and one verified subscription; a saved payment method alone is not recurring consent. Preserve the actual payment timestamp and original calendar anniversary.
+- Keep base terms, monthly usage, debt/grace and production readiness independent. Scope support access to an expiring audited staff session; paid setup booking uses guarded server-side calendar reservation. Preserve historical money and provider-effect records. Unsupported paid-account credit/debit writes fail closed for manual review rather than silently omitting an accepted adjustment from collection.
+- The source implementation and [fresh Astra review](reviews/unified-paid-intake-independent-review.md) do not authorize cutover. The [release record](reviews/unified-paid-intake-release.md) separates local/native doubles from required Stripe sandbox/test-clock acceptance, per-record legacy mapping, reviewed migrations and exact application/provider deployment. Keep the gate closed until all release conditions pass; stage website changes on a review branch while production pricing remains unchanged.
+
 ## 2026-11-12 — Unified paid intake and recurring billing
 
 - Owner finalized [UPIB-001–014](SPECS/unified-paid-intake-and-billing.md). All website/pricing/demo/Sales/assisted signup uses one intake, secure owner-bound prefill, editable/rematched website and explicit plan. Website identity alone is not ownership. Final Go reuses a verified purchase or collects $100, card and recurring consent through hosted Checkout before one tenant is created/converted and initial full build/provisioning begins. Preserve validated publication/readiness, raw capture, tenant corrections and existing source authority; this narrow paid initial-build trigger does not permit automatic publication or periodic rebuilds.

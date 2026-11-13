@@ -15,7 +15,7 @@ const pool = {
   async connect() { const unlock = await acquire(); return { query, release: unlock }; }
 };
 const load = (file, names, deps = {}) => {
-  if (file === 'pages/api/v1/stripe/webhook.js') deps = { applySalesPaidCheckout, ...deps };
+  if (file === 'pages/api/v1/stripe/webhook.js') deps = { applySalesPaidCheckout, applyPaidPurchaseEvent:async()=>false, applyPaidBillingEvent:async()=>false, syncPaidBillingEntitlement:async()=>null, ...deps }; // Paid branches have native provider-double fixtures in validate-paid-intake.mjs.
   const source = fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
     .replace(/^import[\s\S]*?;\n/gm, '').replace(/export default /g, '').replace(/export /g, '');
   return new Function(...Object.keys(deps), `${source}\nreturn {${names.join(',')}};`)(...Object.values(deps));
@@ -28,7 +28,7 @@ CREATE TABLE tenant_users(id bigserial PRIMARY KEY,tenant_key text,email text UN
 CREATE TABLE auth_tokens(id bigserial PRIMARY KEY,token text UNIQUE,token_hash text,token_type text,user_id bigint,email text,tenant_key text,expires_at timestamptz,used_at timestamptz,created_at timestamptz DEFAULT now());
 CREATE TABLE billing_events(id bigserial PRIMARY KEY,tenant_key text,stripe_event_id text UNIQUE,event_type text,payload_json jsonb,processed_at timestamptz,status text,error_message text);
 CREATE TABLE tenants(tenant_key text PRIMARY KEY,name text,status text,data_region text,plan text,primary_number text,industry text,live_prompt_mode text,plan_code text,billing_status text,service_access_status text,app_access_status text,billing_lock_reason text,telnyx_voice_number text,telnyx_voice_number_id text,telnyx_voice_order_id text,telnyx_voice_status text,post_trial_access_ends_at timestamptz,deactivated_at timestamptz,billing_status_updated_at timestamptz);
-CREATE TABLE tenant_billing_accounts(tenant_key text PRIMARY KEY,price_override_cycles_remaining int,stripe_customer_id text,stripe_subscription_id text,billing_interval text,pending_plan_code text,current_period_start timestamptz,current_period_end timestamptz,last_invoice_id text,updated_at timestamptz);
+CREATE TABLE tenant_billing_accounts(tenant_key text PRIMARY KEY,paid_purchase_id text,price_override_cycles_remaining int,stripe_customer_id text,stripe_subscription_id text,billing_interval text,pending_plan_code text,current_period_start timestamptz,current_period_end timestamptz,last_invoice_id text,updated_at timestamptz);
 CREATE TABLE audit_log(tenant_key text,actor text,action text,details text);
 INSERT INTO tenant_users(tenant_key,email,status,created_at) VALUES('legacy','valid@fixture.test','invited',now()-interval '1 day'),('legacy','replacement@fixture.test','invited',now()),('legacy','active@fixture.test','active',now()-interval '1 day');
 INSERT INTO auth_tokens(token,token_type,tenant_key,email,expires_at,created_at) VALUES('legacy_valid','invite','legacy','valid@fixture.test',now()+interval '1 day',now()-interval '1 hour'),('legacy_stale','invite','legacy','replacement@fixture.test',now()+interval '1 day',now()-interval '1 hour'),('legacy_active','invite','legacy','active@fixture.test',now()+interval '1 day',now()-interval '1 hour');
@@ -153,13 +153,11 @@ assert.equal((await send({...event,id:'evt_timeout'},timedOut)).statusCode,503);
 assert.equal((await pool.query("SELECT status FROM billing_events WHERE stripe_event_id='evt_timeout'")).rows[0].status,'failed');
 console.log('PASS Stripe failure retry, transactional effect rollback, processed replay, per-invoice dedupe, signature status');
 
-const onboard=fs.readFileSync(new URL('../pages/api/v1/tenants/onboard.js',import.meta.url),'utf8');
-const start=onboard.indexOf('      for (let attempt = 0; attempt < 50;');const end=onboard.indexOf('\n      await client.query(',start);
-const allocate=new Function('client','payload','baseTenantKey',`return (async()=>{let tenantKey;${onboard.slice(start,end)} return tenantKey;})()`);
-await pool.query("INSERT INTO tenants(tenant_key) VALUES('acme')");
-async function signup(){const c=await pool.connect();try{await c.query('BEGIN');const key=await allocate(c,{businessName:'Acme',businessCategory:'test'},'acme');await c.query('SELECT 1');await c.query('COMMIT');return key;}finally{c.release();}}
-assert.deepEqual(await Promise.all([signup(),signup()]),['acme_2','acme_3']);
-console.log('PASS onboarding normalized-name collisions retain valid transaction and unique attempts');
+const retiredOnboard=load('pages/api/v1/tenants/onboard.js',['handler']).handler;
+const beforeSignup=(await pool.query('SELECT COUNT(*)::int n FROM tenants')).rows[0].n;
+for(let i=0;i<2;i++){const r=response();await retiredOnboard({method:'POST',body:{businessName:'Acme'}},r);assert.equal(r.statusCode,410);}
+assert.equal((await pool.query('SELECT COUNT(*)::int n FROM tenants')).rows[0].n,beforeSignup);
+console.log('PASS retired unpaid onboarding creates no tenant; paid concurrency covered by native intake fixture');
 
 await pool.query("INSERT INTO tenants(tenant_key,billing_status,post_trial_access_ends_at,telnyx_voice_number,telnyx_voice_number_id) VALUES('release_fail','trial_expired',now()-interval '2 days','+15555550001','one'),('release_ok','trial_expired',now()-interval '2 days','+15555550002','two'),('already_gone','trial_expired',now()-interval '2 days','+15555550003','three')");
 const owned=new Map([['+15555550001','one'],['+15555550002','two']]);let failRelease=true, pendingRelease=false,releaseCalls=0, lookupFails=false;
@@ -191,12 +189,14 @@ assert.equal((await activatePaid()).serviceAccessStatus,'disabled');
 // An older activation writer also cannot bypass the persistent deletion guard.
 await pool.query("UPDATE tenants SET service_access_status='enabled',billing_lock_reason=NULL WHERE tenant_key='paid_during_release'");
 assert.equal((await pool.query("SELECT service_access_status FROM tenants WHERE tenant_key='paid_during_release'")).rows[0].service_access_status,'disabled');
-let orders=0;
+// Restart now creates a paid Checkout rather than ordering a number. The native
+// paid lifecycle suite covers debt settlement and irreversible-release fences.
+let restarts=0;
 const reactivate=load('pages/api/v1/billing/reactivate.js',['handler'],{
   getPool:()=>pool,ensureTables:async()=>{},requireSession:async()=>({user_id:1}),requireTenantOwner:async()=>({id:1}),resolveTenantKey:()=>paid.tenant_key,
-  ensureTenantBillingAccount:async()=>paid,findAvailableVoiceNumber:async()=>{orders++;throw Error('must not provision');},orderVoiceNumber:async()=>{orders++;}
+  beginPaidReinstatement:async()=>{restarts++;const error=Error('outstanding_debt_requires_payment');error.status=409;throw error;}
 }).handler;
-const recoveryResponse=response();await reactivate({method:'POST',query:{}},recoveryResponse);assert.equal(recoveryResponse.statusCode,409);assert.equal(orders,0);
+const recoveryResponse=response();await reactivate({method:'POST',query:{},body:{}},recoveryResponse);assert.equal(recoveryResponse.statusCode,409);assert.equal(restarts,1);
 const alert=load('pages/api/v1/billing/index.js',['buildBillingAlert']).buildBillingAlert({row:paid});assert.match(alert.message,/Contact support to select/);
 console.log('PASS post-trial typed SQL, independent cleanup, release retries, async pending, already-gone and lookup failure retention');
 await db.close();

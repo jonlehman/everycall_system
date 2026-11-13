@@ -5,6 +5,10 @@ import {
 } from "./salesRepository.js";
 import { routeSalesOutcomeToSmartlead } from "./salesSmartlead.js";
 
+// These operations stop provider outreach; conversion must not discard an
+// outstanding opt-out or the pause of an already-running sales campaign.
+const TERMINAL_PROVIDER_OUTCOMES = ['do_not_call','signup_completed','not_interested','wrong_number'];
+
 function serializeJob(row) {
   if (!row) return null;
   return {
@@ -14,7 +18,8 @@ function serializeJob(row) {
     outcome: row.outcome,
     status: row.status,
     attempts: Number(row.attempts || 0),
-    maxAttempts: Number(row.max_attempts || 0)
+    maxAttempts: Number(row.max_attempts || 0),
+    lockedBy:row.locked_by,lockedAt:row.locked_at
   };
 }
 
@@ -41,13 +46,8 @@ async function claimJobs(pool, {
     await client.query("BEGIN");
     await client.query(
       `UPDATE sales_followup_jobs
-       SET status = 'queued',
-           locked_at = NULL,
-           locked_by = NULL,
-           available_at = NOW(),
-           updated_at = NOW()
-       WHERE status = 'leased'
-         AND locked_at < NOW() - ($1::text || ' minutes')::interval`,
+       SET status='reconciliation_required',last_error_code='provider_outcome_unknown',updated_at=NOW()
+       WHERE status='leased' AND locked_at<NOW()-($1::text||' minutes')::interval`,
       [String(Math.max(1, Number(leaseMinutes) || 10))]
     );
     const result = await client.query(
@@ -55,8 +55,10 @@ async function claimJobs(pool, {
          SELECT sales_followup_job_id
          FROM sales_followup_jobs
          WHERE status = 'queued'
+           AND (outcome=ANY($3::text[]) OR NOT EXISTS(SELECT 1 FROM sales_prospects p WHERE p.prospect_id=sales_followup_jobs.prospect_id AND p.status='paid'))
            AND available_at <= NOW()
-           AND attempts < max_attempts
+           AND attempts=0 AND attempts < max_attempts
+           AND locked_at IS NULL AND locked_by IS NULL AND provider_result_json='{}'::jsonb
          ORDER BY available_at ASC, created_at ASC
          FOR UPDATE SKIP LOCKED
          LIMIT $1
@@ -72,7 +74,8 @@ async function claimJobs(pool, {
        RETURNING jobs.*`,
       [
         Math.min(10, Math.max(1, Number(limit) || 3)),
-        normalizeSalesText(workerId, 200)
+        normalizeSalesText(workerId, 200),
+        TERMINAL_PROVIDER_OUTCOMES
       ]
     );
     await client.query("COMMIT");
@@ -96,36 +99,17 @@ async function completeJob(pool, job, providerResult) {
          last_error_code = NULL,
          last_error_message = NULL,
          updated_at = NOW()
-     WHERE sales_followup_job_id = $1`,
-    [job.jobId, JSON.stringify(providerResult || {})]
+     WHERE sales_followup_job_id=$1 AND status='leased' AND locked_by=$3 AND attempts=$4`,
+    [job.jobId, JSON.stringify(providerResult || {}),job.lockedBy,job.attempts]
   );
 }
 
-async function failJob(pool, job, error) {
-  const exhausted = job.attempts >= job.maxAttempts;
-  const delaySeconds = Math.min(3600, 30 * (2 ** Math.max(0, job.attempts - 1)));
-  await pool.query(
-    `UPDATE sales_followup_jobs
-     SET status = $2,
-         available_at = CASE
-           WHEN $2 = 'queued' THEN NOW() + ($3::text || ' seconds')::interval
-           ELSE available_at
-         END,
-         completed_at = CASE WHEN $2 = 'failed' THEN NOW() ELSE NULL END,
-         locked_at = NULL,
-         locked_by = NULL,
-         last_error_code = $4,
-         last_error_message = $5,
-         updated_at = NOW()
-     WHERE sales_followup_job_id = $1`,
-    [
-      job.jobId,
-      exhausted ? "failed" : "queued",
-      String(delaySeconds),
-      normalizeSalesText(error?.code, 120) || "smartlead_followup_failed",
-      normalizeSalesText(error?.message, 1000) || "Smartlead follow-up failed."
-    ]
-  );
+async function failJob(pool,job,error){
+ // Provider acceptance is unknowable after a timeout. Preserve the lease and
+ // attempt identity for reconciliation; never auto-replay or cancel as unsent.
+ await pool.query(`UPDATE sales_followup_jobs SET status='reconciliation_required',last_error_code='provider_outcome_unknown',
+  last_error_message=$2,updated_at=NOW() WHERE sales_followup_job_id=$1 AND status='leased' AND locked_by=$3 AND attempts=$4`,
+ [job.jobId,normalizeSalesText(error?.message,1000)||'Provider outcome requires reconciliation',job.lockedBy,job.attempts]);
 }
 
 async function persistProviderState(pool, prospect, outcome, providerResult) {
@@ -149,38 +133,31 @@ async function persistProviderState(pool, prospect, outcome, providerResult) {
   await updateSalesProspectEmailState(pool, prospect.contactEmail, changes);
 }
 
-export async function processSalesFollowupJobs(pool, {
-  workerId,
-  limit = 3,
-  fetchImpl
-}) {
-  const jobs = await claimJobs(pool, { workerId, limit });
-  const results = [];
-  for (const job of jobs) {
-    try {
-      const prospect = await getSalesProspect(pool, job.prospectId);
-      if (!prospect) {
-        const error = new Error("Prospect not found for follow-up.");
-        error.code = "prospect_not_found";
-        throw error;
-      }
-      const providerResult = await routeSalesOutcomeToSmartlead({
-        prospect,
-        outcome: job.outcome,
-        fetchImpl
-      });
-      const providerSummary = summarizeProviderResult(providerResult);
-      await persistProviderState(pool, prospect, job.outcome, providerSummary);
-      await completeJob(pool, job, providerSummary);
-      results.push({ jobId: job.jobId, ok: true, providerResult: providerSummary });
-    } catch (error) {
-      await failJob(pool, job, error);
-      results.push({
-        jobId: job.jobId,
-        ok: false,
-        error: normalizeSalesText(error?.message, 500) || "Follow-up failed."
-      });
-    }
-  }
-  return { claimedCount: jobs.length, results };
+export async function processSalesFollowupJobs(pool,{workerId,limit=3,fetchImpl,route=routeSalesOutcomeToSmartlead}){
+ const jobs=await claimJobs(pool,{workerId,limit});const results=[];
+ for(const job of jobs){
+  const client=await pool.connect();
+  try{
+   await client.query('BEGIN');
+   const current=(await client.query('SELECT * FROM sales_followup_jobs WHERE sales_followup_job_id=$1 FOR UPDATE',[job.jobId])).rows[0];
+   if(current?.status!=='leased'||current.locked_by!==job.lockedBy||Number(current.attempts)!==job.attempts||new Date(current.locked_at).getTime()!==new Date(job.lockedAt).getTime()){
+    await client.query('COMMIT');results.push({jobId:job.jobId,ok:false,error:'lease_changed'});continue;
+   }
+   // Conversion must acquire this same prospect lock. A provider attempt either
+   // finishes before conversion or observes paid state and makes no new effect.
+   const state=(await client.query('SELECT status FROM sales_prospects WHERE prospect_id=$1 FOR UPDATE',[job.prospectId])).rows[0];
+   if(state?.status==='paid'&&!TERMINAL_PROVIDER_OUTCOMES.includes(job.outcome)){
+    await failJob(client,job,Error('Paid conversion requires review of the preexisting attempt.'));
+    await client.query('COMMIT');results.push({jobId:job.jobId,ok:false,error:'paid_conversion_reconciliation_required'});continue;
+   }
+   const prospect=await getSalesProspect(client,job.prospectId);
+   if(!prospect)throw Error('Prospect not found for follow-up.');
+   const providerResult=await route({prospect,outcome:job.outcome,fetchImpl});
+   const summary=summarizeProviderResult(providerResult);
+   await persistProviderState(client,prospect,job.outcome,summary);await completeJob(client,job,summary);
+   await client.query('COMMIT');results.push({jobId:job.jobId,ok:true,providerResult:summary});
+  }catch(error){await client.query('ROLLBACK');await failJob(client,job,error);results.push({jobId:job.jobId,ok:false,error:normalizeSalesText(error?.message,500)||'Follow-up failed.'});}
+  finally{client.release();}
+ }
+ return {claimedCount:jobs.length,results};
 }

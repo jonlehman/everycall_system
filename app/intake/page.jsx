@@ -1,815 +1,175 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import {
-  INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY,
-  isEmptyMarketingAttribution,
-  normalizeMarketingAttribution
-} from '../../lib/intakeMarketingAttribution';
-import { formatPhoneDisplay } from '../../lib/phoneDisplay';
+import { useEffect, useState } from 'react';
 import BrandLogo from '../_components/BrandLogo';
+import { INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY, normalizeMarketingAttribution } from '../../lib/intakeMarketingAttribution';
 import './intake.css';
 
-const GOOGLE_ADS_SIGNUP_CONVERSION_ID = 'AW-18124035745/qSx4CM-0vKQcEKGtm8JD';
-const SIGNUP_CONVERSION_PENDING_KEY = 'everycall.googleAds.signupConversionPending';
-const SIGNUP_CONVERSION_SENT_KEY = 'everycall.googleAds.signupConversionSent';
-const SALES_SIGNUP_TOKEN_STORAGE_KEY = 'everycall.salesSignupToken';
-
-const INTAKE_STEPS = [
-  {
-    key: 'website',
-    number: '1',
-    title: 'Website',
-    heroTitle: 'Start with your website',
-    heroCopy: ''
-  },
-  {
-    key: 'business',
-    number: '2',
-    title: 'Business Name',
-    heroTitle: 'Tell us the business name',
-    heroCopy: ''
-  },
-  {
-    key: 'lead-destination',
-    number: '3',
-    title: 'Send Leads To',
-    heroTitle: 'Send new leads to:',
-    heroCopy: ''
-  },
-  {
-    key: 'login',
-    number: '4',
-    title: 'Create Login',
-    heroTitle: 'Create your login',
-    heroCopy: ''
+const PLANS = {
+  starter: { name: 'Starter', calls: 25, overage: '$3.00', monthly: '$74.50', annual: '$759.90' },
+  growth: { name: 'Growth', calls: 60, overage: '$2.00', monthly: '$124.50', annual: '$1,269.90' },
+  pro: { name: 'Pro', calls: 100, overage: '$1.75', monthly: '$174.50', annual: '$1,779.90' }
+};
+const EMPTY = { businessName: '', website: '', businessCategory: '', loginEmail: '', leadPhone: '', companyDescription: '', planCode: '', billingInterval: '' };
+async function request(url, body) {
+  const response = await fetch(url, { cache: 'no-store', ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) {
+    const messages = { existing_owner_login_required: 'Sign in to your existing owner account before continuing.', intake_owner_mismatch: 'This verification belongs to another owner. Sign in with the intended owner account.', verification_expired: 'This verification link has expired. Request another owner verification email.', paid_intake_release_pending: 'Paid signup is being prepared. Please contact customerservice@everycall.io for help; no payment has been collected.', verification_recently_sent: 'A verification email was sent recently. Check your inbox before requesting another link.' };
+    const error = new Error(data.message || messages[data.error] || 'We could not complete this request. Please try again.');
+    error.code = data.error;
+    throw error;
   }
-];
-
-function FieldLabel({ htmlFor, badge = 'required', children }) {
-  return (
-    <label htmlFor={htmlFor} className="intake-label-row">
-      <span className="intake-label-text">{children}</span>
-      <span className={`intake-label-badge ${badge}`}>{badge === 'optional' ? 'Optional' : 'Required'}</span>
-    </label>
-  );
+  return data;
 }
 
-function createInitialForm(qaMode = false) {
-  const qaLeadEmail = qaMode ? 'qa-owner@example.com' : '';
-  return {
-    businessName: qaMode ? 'Knowledge Receptionist QA Tenant' : '',
-    businessCategory: '',
-    leadEmail: qaLeadEmail,
-    leadPhone: qaMode ? '+12065550199' : '',
-    loginEmail: qaLeadEmail,
-    password: qaMode ? 'Password123!' : '',
-    website: qaMode ? 'https://example.com' : '',
-    hasNoWebsite: false
-  };
-}
-
-function fetchJson(url, options) {
-  return fetch(url, options).then((resp) => (resp.ok ? resp.json() : resp.json().catch(() => null)));
-}
-
-function hasSessionFlag(key) {
-  try {
-    return window.sessionStorage.getItem(key) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function setSessionFlag(key) {
-  try {
-    window.sessionStorage.setItem(key, '1');
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
-function removeSessionFlag(key) {
-  try {
-    window.sessionStorage.removeItem(key);
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
-function fireGoogleAdsSignupConversion() {
-  if (typeof window === 'undefined' || typeof window.gtag !== 'function') {
-    return Promise.resolve(false);
-  }
-  if (hasSessionFlag(SIGNUP_CONVERSION_SENT_KEY)) {
-    return Promise.resolve(true);
-  }
-
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      setSessionFlag(SIGNUP_CONVERSION_SENT_KEY);
-      removeSessionFlag(SIGNUP_CONVERSION_PENDING_KEY);
-      resolve(true);
-    };
-    const timeoutId = window.setTimeout(finish, 1500);
-
-    window.gtag('event', 'conversion', {
-      send_to: GOOGLE_ADS_SIGNUP_CONVERSION_ID,
-      value: 1.0,
-      currency: 'USD',
-      event_timeout: 1500,
-      event_callback: () => {
-        window.clearTimeout(timeoutId);
-        finish();
-      }
-    });
-  });
-}
-
-function normalizeWebsiteUrl(value) {
-  const trimmed = String(value || '').trim();
-  if (!trimmed) return '';
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
-}
-
-function defaultStatusForStep() {
-  return { message: '', tone: 'normal' };
-}
-
-function firstFieldErrorMessage(fieldErrors, fallbackMessage) {
-  if (!fieldErrors || typeof fieldErrors !== 'object') {
-    return fallbackMessage;
-  }
-  return Object.values(fieldErrors).find(Boolean) || fallbackMessage;
-}
-
-function validateWebsiteStep(form) {
-  if (form.hasNoWebsite) return '';
-  if (!form.website.trim()) {
-    return 'Website URL is required unless you select "I don\'t have a website."';
-  }
-  return '';
-}
-
-function validateBusinessStep(form) {
-  if (!form.businessName.trim()) {
-    return 'Business name is required.';
-  }
-  return '';
-}
-
-function validateLeadDestinationStep(form) {
-  if (!String(form.leadEmail || '').trim()) {
-    return 'Lead email is required.';
-  }
-  const normalizedPhone = String(form.leadPhone || '').trim();
-  if (normalizedPhone) {
-    const digits = normalizedPhone.replace(/[^\d]/g, '');
-    if (digits.length < 10 || digits.length > 15) {
-      return 'Enter a valid mobile number for SMS alerts, or leave it blank.';
-    }
-  }
-  return '';
-}
-
-function validateLoginStep(form) {
-  if (!String(form.loginEmail || '').trim()) {
-    return 'Login email is required.';
-  }
-  if (!form.password || form.password.length < 8) {
-    return 'Password must be at least 8 characters.';
-  }
-  return '';
-}
-
-function validateStep(stepIndex, form) {
-  if (stepIndex === 0) return validateWebsiteStep(form);
-  if (stepIndex === 1) return validateBusinessStep(form);
-  if (stepIndex === 2) return validateLeadDestinationStep(form);
-  if (stepIndex === 3) return validateLoginStep(form);
-  return '';
-}
-
-function resolveStepForFieldErrors(fieldErrors) {
-  if (fieldErrors?.website) return 0;
-  if (fieldErrors?.businessName) return 1;
-  if (fieldErrors?.leadEmail || fieldErrors?.leadPhone) return 2;
-  if (fieldErrors?.loginEmail || fieldErrors?.password) return 3;
-  return 3;
-}
-
-export function IntakePageClient({ qaMode = false } = {}) {
-  const initialForm = useMemo(() => createInitialForm(Boolean(qaMode)), [qaMode]);
-  const [form, setForm] = useState(initialForm);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [status, setStatus] = useState(defaultStatusForStep(0));
-  const [busy, setBusy] = useState(false);
-  const [activation, setActivation] = useState(null);
-  const [marketingAttribution, setMarketingAttribution] = useState({});
+export function IntakePageClient() {
+  const [form, setForm] = useState(EMPTY);
+  const [verified, setVerified] = useState(false);
+  const [busy, setBusy] = useState(true);
+  const [message, setMessage] = useState('Loading secure setup…');
+  const [error, setError] = useState(false);
+  const [attribution, setAttribution] = useState({});
   const [salesSignupToken, setSalesSignupToken] = useState('');
-  const [showNoWebsiteSetupModal, setShowNoWebsiteSetupModal] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const getStartedHref = '/client/get-started';
-  const receptionistHref = '/client/receptionist/basics';
-  const knowledgeHref = '/client/receptionist/knowledge';
-  const sendLeadsHref = '/client/team';
-  const noWebsiteSetupHref = 'https://calendly.com/jonlehman/everycall-setup';
-  const provisioningFailed = activation?.voiceProvisioning?.ok === false;
-  const step = INTAKE_STEPS[currentStep];
-  const formattedReceptionistNumber = formatPhoneDisplay(activation?.voiceProvisioning?.phoneNumber)
-    || String(activation?.voiceProvisioning?.phoneNumber || '').trim()
-    || 'Setting things up';
+  const [salesRef, setSalesRef] = useState('');
+  const [purchase, setPurchase] = useState(null);
+  const [quote, setQuote] = useState(null);
+  const [consentAccepted, setConsentAccepted] = useState(false);
+  const [loginRequired, setLoginRequired] = useState(false);
+  const [loginHref, setLoginHref] = useState('/login?next=%2Fintake');
+  const plan = PLANS[form.planCode];
+  const paid = purchase?.paymentStatus === 'paid' && Boolean(quote && !quote.requiresRecurringConsent);
+  const setupProgress = String(purchase?.provisioningStatus || '').endsWith('_review')
+    ? 'Setup needs manual review. Please contact customerservice@everycall.io; your verified payment is saved.'
+    : {
+    queued: 'Your account is waiting for setup.',
+    processing: 'We are preparing your account.',
+    failed: 'Setup needs attention. Your verified payment is saved.',
+    awaiting_knowledge_review: 'Your business knowledge is ready for review.',
+    complete: 'Your account setup is complete.'
+  }[purchase?.provisioningStatus] || 'Your payment is saved while setup is checked.';
+  const dueNow = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((verified ? Number(quote?.amountDueNowCents || 0) : 10000) / 100);
+  const update = (key, value) => { setForm((current) => ({ ...current, [key]: value })); setConsentAccepted(false); if (verified) setQuote(null); };
 
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-
-    const searchParams = new URLSearchParams(window.location.search || '');
-    const hasQueryParams = Array.from(searchParams.keys()).length > 0;
-    const urlSignupToken = String(searchParams.get('salesInvite') || '').trim();
-    let signupToken = urlSignupToken;
-    try {
-      if (urlSignupToken) {
-        window.sessionStorage.setItem(SALES_SIGNUP_TOKEN_STORAGE_KEY, urlSignupToken);
-      } else {
-        signupToken = String(
-          window.sessionStorage.getItem(SALES_SIGNUP_TOKEN_STORAGE_KEY) || ''
-        ).trim();
-      }
-    } catch {
-      // The URL token still works when tab storage is unavailable.
-    }
     let canceled = false;
-
-    if (hasQueryParams) {
-      const normalized = normalizeMarketingAttribution(searchParams);
-      setMarketingAttribution(normalized);
-      try {
-        if (isEmptyMarketingAttribution(normalized)) {
-          window.sessionStorage.removeItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
-        } else {
-          window.sessionStorage.setItem(
-            INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY,
-            JSON.stringify(normalized)
-          );
-        }
-      } catch {
-        // Ignore session storage failures.
-      }
-    } else {
-      try {
-        const stored = window.sessionStorage.getItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
-        if (stored) {
-          const normalized = normalizeMarketingAttribution(JSON.parse(stored));
-          if (isEmptyMarketingAttribution(normalized)) {
-            window.sessionStorage.removeItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
-          } else {
-            setMarketingAttribution(normalized);
-          }
-        }
-      } catch {
-        window.sessionStorage.removeItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
-      }
-    }
-
-    if (urlSignupToken) {
-      const sanitizedUrl = new URL(window.location.href);
-      sanitizedUrl.searchParams.delete('salesInvite');
-      window.history.replaceState(
-        window.history.state,
-        '',
-        `${sanitizedUrl.pathname}${sanitizedUrl.search}${sanitizedUrl.hash}`
-      );
-    }
-    if (signupToken) {
-      setSalesSignupToken(signupToken);
-      setStatus({ message: 'Loading your prefilled setup information…', tone: 'warn' });
-      void fetch('/api/v1/sales/signup-prefill/open', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: signupToken })
-      })
-        .then(async (response) => {
-          const data = await response.json().catch(() => null);
-          if (!response.ok || !data?.ok) {
-            const error = new Error(data?.message || 'This setup link is unavailable.');
-            error.status = response.status;
-            error.code = data?.error || '';
-            throw error;
-          }
-          if (canceled) return;
-          const prefill = data.prefill && typeof data.prefill === 'object' ? data.prefill : {};
-          setForm((current) => ({
-            ...current,
-            businessName: current.businessName || String(prefill.businessName || ''),
-            businessCategory: current.businessCategory || String(prefill.businessCategory || ''),
-            leadEmail: current.leadEmail || String(prefill.leadEmail || ''),
-            loginEmail: current.loginEmail || String(prefill.loginEmail || ''),
-            website: current.website || String(prefill.website || ''),
-            hasNoWebsite: current.hasNoWebsite && !prefill.website
-          }));
-          const trustedAttribution = normalizeMarketingAttribution(prefill.marketingAttribution);
-          if (!isEmptyMarketingAttribution(trustedAttribution)) {
-            setMarketingAttribution(trustedAttribution);
-          }
-          setStatus({
-            message: 'Your business information is prefilled. Please review it and create your password.',
-            tone: 'ok'
-          });
-        })
-        .catch((error) => {
-          if (canceled) return;
-          setSalesSignupToken('');
-          if (
-            [404, 410].includes(Number(error?.status))
-            || String(error?.code || '').startsWith('signup_invitation_')
-          ) {
-            try {
-              window.sessionStorage.removeItem(SALES_SIGNUP_TOKEN_STORAGE_KEY);
-            } catch {
-              // Ignore session storage failures.
-            }
-          }
-          setStatus({
-            message: error?.message || 'This setup link is unavailable.',
-            tone: 'bad'
-          });
-        });
-    }
-
-    return () => {
-      canceled = true;
+    const params = new URLSearchParams(window.location.search);
+    const marketingParams = new URLSearchParams(params);
+    for (const key of ['verify', 'salesRef', 'salesInvite', 'payment_status', 'session_id', 'website', 'business_name']) marketingParams.delete(key);
+    const incomingAttribution = normalizeMarketingAttribution(marketingParams);
+    try {
+      const stored = normalizeMarketingAttribution(JSON.parse(window.sessionStorage.getItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY) || '{}'));
+      const merged = normalizeMarketingAttribution({ ...stored, ...incomingAttribution, utm: { ...stored.utm, ...incomingAttribution.utm }, clickIds: { ...stored.clickIds, ...incomingAttribution.clickIds } });
+      setAttribution(merged);
+      window.sessionStorage.setItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY, JSON.stringify(merged));
+    } catch { setAttribution(incomingAttribution); }
+    const token = params.get('salesInvite') || '';
+    const reference = params.get('salesRef') || '';
+    setSalesRef(reference);
+    setSalesSignupToken(token);
+    const planCode = params.get('plan_interest') || params.get('plan') || '';
+    const cycle = params.get('billing_cycle') || '';
+    setForm((current) => ({ ...current, website: params.get('website') || '', businessName: params.get('business_name') || '', planCode: PLANS[planCode] ? planCode : '', billingInterval: cycle === 'annual' ? 'year' : cycle === 'monthly' ? 'month' : '' }));
+    const apply = (data) => {
+      if (canceled) return;
+      if (data.intake) setForm((current) => ({ ...current, ...Object.fromEntries(Object.entries(data.intake).filter(([key]) => key in EMPTY)) }));
+      if (data.intake?.marketingAttribution) setAttribution(normalizeMarketingAttribution(data.intake.marketingAttribution));
+      setVerified(Boolean(data.verified));
+      setPurchase(data.purchase || null);
+      setQuote(data.quote || null);
+      setMessage(data.verified ? 'Owner email verified. Refresh your payment summary, then review and accept recurring billing before Go.' : 'Choose your plan and verify your owner email to continue.');
+      if (data.redirectUrl && data.purchase?.paymentStatus === 'paid') window.location.assign(data.redirectUrl);
     };
+    async function load() {
+      try {
+        if (params.get('verify')) {
+          const verificationToken = params.get('verify');
+          setLoginHref(`/login?next=${encodeURIComponent(`/intake?verify=${encodeURIComponent(verificationToken)}`)}`);
+          const clean = new URL(window.location.href);
+          clean.searchParams.delete('verify');
+          window.history.replaceState(null, '', clean.pathname + clean.search);
+          apply(await request('/api/v1/intake/verify', { token: verificationToken }));
+        } else {
+          try { apply(await request('/api/v1/intake/status')); }
+          catch (err) { if (err.code !== 'owner_verification_required') throw err; apply({ verified: false }); }
+          if (reference || token) {
+            const data = reference ? await request(`/api/v1/intake?salesRef=${encodeURIComponent(reference)}`) : await request('/api/v1/sales/signup-prefill/open', { token });
+            if (!canceled && data.prefill) setForm((current) => ({ ...current, businessName: data.prefill.businessName || current.businessName, website: data.prefill.website || current.website, loginEmail: data.prefill.loginEmail || data.prefill.leadEmail || current.loginEmail, businessCategory: data.prefill.businessCategory || current.businessCategory, leadPhone: data.prefill.leadPhone || current.leadPhone }));
+          }
+        }
+      } catch (err) {
+        if (!canceled) { setError(true); setMessage(err.message); setLoginRequired(err.code === 'existing_owner_login_required'); }
+      } finally { if (!canceled) setBusy(false); }
+    }
+    void load();
+    return () => { canceled = true; };
   }, []);
 
   useEffect(() => {
-    if (activation?.ok && form.hasNoWebsite) {
-      setShowNoWebsiteSetupModal(true);
-    }
-  }, [activation, form.hasNoWebsite]);
+    if (!verified || !purchase || purchase.tenantKey) return undefined;
+    let active = true;
+    const timer = window.setInterval(() => {
+      void request('/api/v1/intake/status').then((data) => {
+        if (!active) return;
+        setPurchase(data.purchase || null);
+        if (data.redirectUrl && data.purchase?.paymentStatus === 'paid') window.location.assign(data.redirectUrl);
+      }).catch(() => {});
+    }, 5000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [verified, Boolean(purchase), purchase?.tenantKey]);
 
-  const setFormValue = (field, value) => setForm((current) => ({ ...current, [field]: value }));
-
-  const setLeadEmail = (value) => {
-    setForm((current) => ({
-      ...current,
-      leadEmail: value,
-      loginEmail: value
-    }));
-  };
-
-  const setStepAndResetStatus = (stepIndex) => {
-    setCurrentStep(stepIndex);
-    setStatus(defaultStatusForStep(stepIndex));
-  };
-
-  const moveToNextStep = () => {
-    const error = validateStep(currentStep, form);
-    if (error) {
-      setStatus({ message: error, tone: 'bad' });
-      return;
-    }
-    if (currentStep < INTAKE_STEPS.length - 1) {
-      setStepAndResetStatus(currentStep + 1);
-    }
-  };
-
-  const moveToPreviousStep = () => {
-    if (currentStep > 0) {
-      setStepAndResetStatus(currentStep - 1);
-    }
-  };
-
-  const submit = async () => {
-    for (let stepIndex = 0; stepIndex < INTAKE_STEPS.length; stepIndex += 1) {
-      const error = validateStep(stepIndex, form);
-      if (error) {
-        setCurrentStep(stepIndex);
-        setStatus({ message: error, tone: 'bad' });
-        return;
-      }
-    }
-
-    const hasWebsite = !form.hasNoWebsite && Boolean(form.website.trim());
-    setBusy(true);
-    setStatus({
-      message: hasWebsite
-        ? 'Creating your account and starting the website build...'
-        : 'Creating your account and setting up your workspace...',
-      tone: 'warn'
-    });
+  async function refreshPaymentSummary() {
+    setBusy(true); setError(false);
     try {
-      const requestBody = {
-        businessName: form.businessName,
-        businessCategory: form.businessCategory || undefined,
-        leadEmail: form.leadEmail,
-        leadPhone: form.leadPhone,
-        loginEmail: form.loginEmail,
-        password: form.password,
-        website: form.hasNoWebsite ? '' : normalizeWebsiteUrl(form.website),
-        noWebsite: form.hasNoWebsite,
-        bootstrapMode: form.hasNoWebsite ? 'setup_interview' : 'website_first'
-      };
+      const data = await request('/api/v1/intake/quote', form);
+      setQuote(data.quote || null); setConsentAccepted(false);
+      setMessage('Payment summary updated. Review the terms and accept recurring billing before Go.');
+    } catch (failure) { setError(true); setMessage(failure.message); }
+    finally { setBusy(false); }
+  }
 
-      if (salesSignupToken) {
-        requestBody.salesSignupToken = salesSignupToken;
-      }
-
-      if (!isEmptyMarketingAttribution(marketingAttribution)) {
-        requestBody.marketingAttribution = marketingAttribution;
-      }
-
-      const data = await fetchJson('/api/v1/tenants/onboard', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
-      if (!data?.ok) {
-        if (
-          salesSignupToken
-          && String(data?.error || '').startsWith('signup_invitation_')
-        ) {
-          try {
-            window.sessionStorage.removeItem(SALES_SIGNUP_TOKEN_STORAGE_KEY);
-          } catch {
-            // Ignore session storage failures.
-          }
-          setSalesSignupToken('');
-        }
-        if (data?.fieldErrors) {
-          setCurrentStep(resolveStepForFieldErrors(data.fieldErrors));
-        }
-        setStatus({
-          message: firstFieldErrorMessage(data?.fieldErrors, data?.message || 'Could not create account.'),
-          tone: 'bad'
-        });
-        return;
-      }
-      const initialBuildId = String(data?.initialKnowledgeBuild?.build_id || '').trim();
-      if (initialBuildId) {
-        void fetch(`/api/v1/knowledge/builds/${encodeURIComponent(initialBuildId)}/run`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({})
-        }).catch(() => {});
-      }
-      setActivation(data);
-      try {
-        window.sessionStorage.removeItem(INTAKE_MARKETING_ATTRIBUTION_STORAGE_KEY);
-        window.sessionStorage.removeItem(SALES_SIGNUP_TOKEN_STORAGE_KEY);
-      } catch {
-        // Ignore session storage failures.
-      }
-      setMarketingAttribution({});
-      setSalesSignupToken('');
-      const nextParams = new URLSearchParams();
-      const signupConversionFired = await fireGoogleAdsSignupConversion();
-      if (!signupConversionFired) {
-        setSessionFlag(SIGNUP_CONVERSION_PENDING_KEY);
-        nextParams.set('signup', 'success');
-      }
-      if (form.hasNoWebsite) {
-        nextParams.set('support_setup', '1');
-      }
-      if (data?.voiceProvisioning?.ok === false) {
-        nextParams.set('setup_issue', '1');
-        setStatus({
-          message: 'A problem occurred while setting up your account. Opening Get Started...',
-          tone: 'warn'
-        });
-      } else {
-        setStatus({
-          message: 'Account created. Opening Get Started...',
-          tone: 'ok'
-        });
-      }
-      const nextQuery = nextParams.toString();
-      const nextGetStartedHref = nextQuery ? `${getStartedHref}?${nextQuery}` : getStartedHref;
-      window.location.assign(nextGetStartedHref);
-    } catch {
-      setStatus({ message: 'Could not create account.', tone: 'bad' });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const heroEyebrow = activation ? 'Account Created' : `Step ${step.number} of ${INTAKE_STEPS.length}`;
-  const heroTitle = activation ? 'Your workspace is ready' : step.heroTitle;
-  const heroCopy = activation
-    ? 'Use the guided setup below to finish the few things EveryCall needs before you start forwarding calls.'
-    : step.heroCopy;
+  async function submit(event) {
+    event.preventDefault();
+    if (!plan || !['month', 'year'].includes(form.billingInterval)) { setError(true); setMessage('Select a plan and billing interval.'); return; }
+    if (verified && (!quote?.token || quote.ready === false || !consentAccepted)) { setError(true); setMessage('Review your payment and accept the recurring billing terms before Go.'); return; }
+    setBusy(true); setError(false); setMessage(verified ? 'Checking your purchase securely…' : 'Sending your owner verification link…');
+    try {
+      const body = { ...form, consentAccepted, quoteToken: quote?.token, marketingAttribution: attribution, ...(salesSignupToken ? { salesSignupToken } : {}), ...(salesRef ? { salesRef } : {}) };
+      const data = await request(verified ? '/api/v1/intake/checkout' : '/api/v1/intake', body);
+      if (data.url) { window.location.assign(data.url); return; }
+      if (data.status === 'paid' && data.redirectUrl) { window.location.assign(data.redirectUrl); return; }
+      setMessage(data.message || 'Check your owner email for a secure verification link. Your account starts after verified payment.');
+    } catch (err) {
+      setError(true); setMessage(err.message); setLoginRequired(err.code === 'existing_owner_login_required');
+    } finally { setBusy(false); }
+  }
 
   return (
     <div className="intake-shell">
-      <header className="intake-topbar">
-        <div className="intake-topbar-inner">
-          <div className="intake-brand">
-            <BrandLogo
-              className="h-10 w-[172px]"
-              imageClassName="h-full w-full object-contain"
-              priority
-            />
+      <header className="intake-topbar"><div className="intake-topbar-inner"><BrandLogo className="h-10 w-[172px]" imageClassName="h-full w-full object-contain" priority /><a href="/login">Sign in</a></div></header>
+      <main className="intake-main"><div className="intake-canvas">
+        <section className="intake-hero"><p className="intake-eyebrow">Secure paid setup</p><h1>Get started with EveryCall</h1><p>{verified && quote && quote.amountDueNowCents !== 10000 ? 'Your saved purchase is checked before payment. Review the verified amount below.' : '$100 includes setup and your first calendar month with your selected plan’s full call allowance.'}</p></section>
+        <form className="intake-card" onSubmit={submit}>
+          <div role={error ? 'alert' : 'status'} aria-live="polite" className={`intake-status ${error ? 'bad' : 'normal'}`}>{message}</div>
+          {loginRequired ? <p><a href={loginHref}>Sign in to verify your existing owner account</a></p> : null}
+          {paid ? <section><h2>Payment verified — setup in progress</h2><p>{setupProgress} Production calls begin after knowledge and phone setup are ready.</p>{purchase.tenantKey ? <a href="/client/account/billing">Open Billing and setup progress</a> : <p>You can keep this page open or contact customerservice@everycall.io for help. Your verified purchase is retained.</p>}</section> : null}
+          <div className="intake-form-stack">
+            <div className="intake-stack"><label htmlFor="business-name">Business name</label><input id="business-name" required autoComplete="organization" value={form.businessName} onChange={(e) => update('businessName', e.target.value)} /></div>
+            <div className="intake-stack"><label htmlFor="website">Business website (optional)</label><input id="website" autoComplete="url" placeholder="https://example.com" value={form.website} onChange={(e) => update('website', e.target.value)} /><p className="intake-muted">No website? We can help with setup after payment.</p></div>
+            <div className="intake-stack"><label htmlFor="owner-email">Owner email</label><input id="owner-email" required type="email" autoComplete="email" readOnly={verified} value={form.loginEmail} onChange={(e) => update('loginEmail', e.target.value)} /></div>
+            <div className="intake-stack"><label htmlFor="lead-phone">Mobile number for lead alerts (optional)</label><input id="lead-phone" type="tel" autoComplete="tel" value={form.leadPhone} onChange={(e) => update('leadPhone', e.target.value)} /><p className="intake-muted">Text alerts require confirmation. Reply STOP to opt out.</p></div>
+            <fieldset className="intake-plan-options"><legend>Choose your plan</legend>{Object.entries(PLANS).map(([code, item]) => <label key={code} className="intake-checkbox-card"><input type="radio" name="plan" required checked={form.planCode === code} onChange={() => update('planCode', code)} /><span><strong>{item.name}</strong> — {item.calls} calls each month; {item.overage} per additional billable call, billed monthly.<br />Later base: {item.monthly}/month or {item.annual}/year.</span></label>)}</fieldset>
+            <fieldset className="intake-plan-options"><legend>Choose your later base billing interval</legend><label className="intake-checkbox-card"><input type="radio" name="interval" required checked={form.billingInterval === 'month'} onChange={() => update('billingInterval', 'month')} />Monthly</label><label className="intake-checkbox-card"><input type="radio" name="interval" required checked={form.billingInterval === 'year'} onChange={() => update('billingInterval', 'year')} />Annual — save 15% on base service</label></fieldset>
+            {plan && form.billingInterval ? <section className="intake-purchase-review" aria-label="Purchase summary"><h2>Review before Go</h2><p><strong>{plan.name} · {form.billingInterval === 'year' ? 'Annual' : 'Monthly'} · {verified ? quote ? `${dueNow} due now` : 'Checking your purchase…' : '$100 due now'}</strong></p>{verified && quote?.isLiveTest ? <p><strong>Authorized $1 live test — this is a real charge.</strong></p> : null}{verified && quote?.kind === 'consent' ? <p>Your verified setup payment is retained. Complete payment-method and recurring consent setup without another setup charge.</p> : null}<p>Your first calendar month starts on successful payment and includes {plan.calls} calls. Additional billable calls cost {plan.overage} each, billed monthly, including the first month and every month on annual billing.</p><p>At the end of that first calendar month, {form.billingInterval === 'year' ? `${plan.annual} is due for the following 12 months, renewing yearly` : `${plan.monthly} is due, renewing monthly`}. Your call allowance resets monthly with no carryover.</p><p>Plan changes and cancellation take effect at the paid term’s end. Refund or dispute assistance: <a href="mailto:customerservice@everycall.io">customerservice@everycall.io</a>.</p></section> : null}
           </div>
-          <div className="intake-topbar-label">Onboarding</div>
-        </div>
-      </header>
-
-      <main className="intake-main">
-        <div className="intake-canvas">
-          <section className="intake-hero">
-            <p className="intake-eyebrow">{heroEyebrow}</p>
-            <h1>{heroTitle}</h1>
-            {heroCopy ? <p>{heroCopy}</p> : null}
-          </section>
-
-          {!activation ? (
-            <form className="intake-card" onSubmit={(event) => event.preventDefault()}>
-              {status.message ? (
-                <div className={`intake-status ${status.tone || 'normal'}`}>
-                  {status.message}
-                </div>
-              ) : null}
-
-              {currentStep === 0 ? (
-                <section className="intake-panel">
-                  <div className="intake-panel-header">
-                    <span className="intake-panel-step">Step 1</span>
-                    <div>
-                      <h2 className="intake-panel-title">Website</h2>
-                    </div>
-                  </div>
-
-                  <div className="intake-stack">
-                    <FieldLabel htmlFor="website" badge="required">What is your business website?</FieldLabel>
-                    <input
-                      id="website"
-                      type="url"
-                      value={form.website}
-                      onChange={(event) => setFormValue('website', event.target.value)}
-                      placeholder="https://example.com"
-                      disabled={form.hasNoWebsite}
-                      autoComplete="url"
-                    />
-                  </div>
-
-                  <label className="intake-checkbox-card" htmlFor="has-no-website">
-                    <input
-                      id="has-no-website"
-                      type="checkbox"
-                      checked={form.hasNoWebsite}
-                      onChange={(event) => setFormValue('hasNoWebsite', event.target.checked)}
-                    />
-                    <span>
-                      <strong>I don&apos;t have a website</strong>
-                    </span>
-                  </label>
-                </section>
-              ) : null}
-
-              {currentStep === 1 ? (
-                <section className="intake-panel">
-                  <div className="intake-panel-header">
-                    <span className="intake-panel-step">Step 2</span>
-                    <div>
-                      <h2 className="intake-panel-title">Business Name</h2>
-                    </div>
-                  </div>
-
-                  <div className="intake-stack">
-                    <FieldLabel htmlFor="business-name" badge="required">What is your business name?</FieldLabel>
-                    <input
-                      id="business-name"
-                      value={form.businessName}
-                      onChange={(event) => setFormValue('businessName', event.target.value)}
-                      autoComplete="organization"
-                    />
-                  </div>
-                </section>
-              ) : null}
-
-              {currentStep === 2 ? (
-                <section className="intake-panel">
-                  <div className="intake-panel-header">
-                    <span className="intake-panel-step">Step 3</span>
-                    <div>
-                      <h2 className="intake-panel-title">Send Leads To</h2>
-                      <div className="intake-muted">(You can add more recipients later.)</div>
-                    </div>
-                  </div>
-
-                  <div className="intake-form-stack">
-                    <div className="intake-stack">
-                      <FieldLabel htmlFor="lead-email" badge="required">What email should receive new leads?</FieldLabel>
-                      <input
-                        id="lead-email"
-                        type="email"
-                        value={form.leadEmail}
-                        onChange={(event) => setLeadEmail(event.target.value)}
-                        autoComplete="email"
-                        placeholder="you@company.com"
-                      />
-                    </div>
-
-                    <div className="intake-stack">
-                      <FieldLabel htmlFor="lead-phone" badge="optional">What mobile number should receive text alerts?</FieldLabel>
-                      <input
-                        id="lead-phone"
-                        type="tel"
-                        value={form.leadPhone}
-                        onChange={(event) => setFormValue('leadPhone', event.target.value)}
-                        autoComplete="tel"
-                        placeholder="+1XXXXXXXXXX"
-                      />
-                      <div className="intake-muted">
-                        EveryCall will send a confirmation text.
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              ) : null}
-
-              {currentStep === 3 ? (
-                <section className="intake-panel">
-                  <div className="intake-panel-header">
-                    <span className="intake-panel-step">Step 4</span>
-                    <div>
-                      <h2 className="intake-panel-title">Create Login</h2>
-                    </div>
-                  </div>
-
-                  <div className="intake-form-stack">
-                    <div className="intake-stack intake-login-username">
-                      <div className="intake-inline-display">
-                        <span className="intake-inline-label">Username:</span>
-                        <span>{form.loginEmail || form.leadEmail || ''}</span>
-                      </div>
-                    </div>
-
-                    <div className="intake-stack">
-                      <FieldLabel htmlFor="password" badge="required">Password</FieldLabel>
-                      <div className="intake-input-with-action">
-                        <input
-                          id="password"
-                          type={showPassword ? 'text' : 'password'}
-                          value={form.password}
-                          onChange={(event) => setFormValue('password', event.target.value)}
-                          autoComplete="new-password"
-                        />
-                        <button
-                          type="button"
-                          className="intake-input-action"
-                          onClick={() => setShowPassword((current) => !current)}
-                          aria-pressed={showPassword}
-                          aria-label={showPassword ? 'Hide password' : 'Show password'}
-                        >
-                          {showPassword ? 'Hide' : 'Show'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              ) : null}
-
-              <div className="intake-actions">
-                {currentStep > 0 ? (
-                  <button type="button" className="btn secondary" onClick={moveToPreviousStep} disabled={busy}>
-                    Back
-                  </button>
-                ) : <span className="intake-actions-spacer" />}
-
-                {currentStep < INTAKE_STEPS.length - 1 ? (
-                  <button type="button" className="btn primary" onClick={moveToNextStep} disabled={busy}>
-                    Continue
-                  </button>
-                ) : (
-                  <button type="button" className="btn primary" onClick={submit} disabled={busy}>
-                    {busy ? 'Creating...' : 'Create Account'}
-                  </button>
-                )}
-              </div>
-            </form>
-          ) : (
-            <section className="intake-card intake-success-card">
-              {status.message ? (
-                <div className={`intake-status ${status.tone || 'normal'}`}>
-                  {status.message}
-                </div>
-              ) : null}
-
-              <div className="intake-success-grid">
-                <div>
-                  <span className="intake-success-label">Tenant Key</span>
-                  <div>{activation.tenantKey || 'created'}</div>
-                </div>
-                <div>
-                  <span className="intake-success-label">EveryCall Number</span>
-                  <div>{formattedReceptionistNumber}</div>
-                </div>
-                <div>
-                  <span className="intake-success-label">Knowledge Setup</span>
-                  <div>
-                    {form.hasNoWebsite
-                      ? 'Support-assisted setup'
-                      : (activation.initialKnowledgeBuild?.build_id ? 'Website build queued' : 'Website build pending')}
-                  </div>
-                </div>
-                <div>
-                  <span className="intake-success-label">Lead Alerts</span>
-                  <div>{form.leadEmail}</div>
-                  {form.leadPhone ? (
-                    <div className="intake-success-subvalue">
-                      {formatPhoneDisplay(form.leadPhone) || form.leadPhone}
-                      {activation?.smsOptInRequest?.ok ? ' • confirmation text sent' : ''}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="intake-setup-list">
-                <div className="intake-setup-item">
-                  <div className="intake-setup-number">1</div>
-                  <div>
-                    <h3>Open Get Started</h3>
-                    <p>Use the guided setup page to see what is ready, what still needs attention, and what to do next.</p>
-                  </div>
-                </div>
-                <div className="intake-setup-item">
-                  <div className="intake-setup-number">2</div>
-                  <div>
-                    <h3>Forward your calls</h3>
-                    <p>
-                      Forward desired calls from your business phone system to{' '}
-                      <strong>{formattedReceptionistNumber}</strong>.
-                    </p>
-                  </div>
-                </div>
-                <div className="intake-setup-item">
-                  <div className="intake-setup-number">3</div>
-                  <div>
-                    <h3>Review knowledge and lead destinations</h3>
-                    <p>
-                      {form.hasNoWebsite
-                        ? 'Support will help create the first knowledge source. In the meantime, confirm where lead alerts should go.'
-                        : 'Watch the website build, then confirm your receptionist details and where lead alerts should go.'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="intake-actions intake-success-actions">
-                <a className="btn primary" href={getStartedHref}>Open Get Started</a>
-                <a className="btn secondary" href={knowledgeHref}>Open Knowledge</a>
-                <a className="btn secondary" href={sendLeadsHref}>Open Send Leads To</a>
-                <a className="btn secondary" href={receptionistHref}>Open Receptionist</a>
-              </div>
-
-              {provisioningFailed ? (
-                <div className="intake-muted">
-                  A problem occurred while setting up your account. Use Get Started to review the remaining setup items before forwarding calls.
-                </div>
-              ) : null}
-            </section>
-          )}
-        </div>
-      </main>
-
-      {showNoWebsiteSetupModal ? (
-        <div className="intake-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="no-website-setup-title">
-          <div className="intake-modal">
-            <div className="intake-modal-content">
-              <h2 id="no-website-setup-title" className="intake-modal-title">No website? We&apos;ll help you get set up.</h2>
-              <p className="intake-modal-copy">
-                Since you do not have a website yet, the fastest path is a short setup call with support. Pick a time that works for you and we&apos;ll help configure your sales receptionist correctly.
-              </p>
-            </div>
-
-            <div className="intake-actions intake-modal-actions">
-              <button
-                type="button"
-                className="btn secondary"
-                onClick={() => setShowNoWebsiteSetupModal(false)}
-              >
-                I&apos;ll do this later
-              </button>
-              <a
-                className="btn primary"
-                href={noWebsiteSetupHref}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Schedule Setup Call
-              </a>
-            </div>
-          </div>
-        </div>
-      ) : null}
+          {verified && !paid ? <button type="button" disabled={busy || !plan || !form.billingInterval} onClick={refreshPaymentSummary}>Refresh payment summary</button> : null}
+          {verified && quote?.ready === false ? <p role="status">An earlier payment link is still being checked. Contact customerservice@everycall.io for secure recovery before making another payment.</p> : null}
+          {verified && plan && quote ? <label className="intake-checkbox-card" htmlFor="recurring-consent"><input id="recurring-consent" type="checkbox" required checked={consentAccepted} onChange={(event) => setConsentAccepted(event.target.checked)} disabled={busy || paid} /><span>I agree to {form.billingInterval === 'year' ? `${plan.annual} per year` : `${plan.monthly} per month`} after the included first calendar month, with {plan.calls} included calls each month and {plan.overage} per additional billable call, billed monthly. My subscription renews until canceled at its term end.</span></label> : null}
+          <div className="intake-actions"><button className="btn primary" type="submit" disabled={busy || paid || (verified && (!quote?.token || quote.ready === false || !consentAccepted))}>{busy ? 'Please wait…' : verified ? 'Go' : 'Verify owner email'}</button></div>
+          <p className="intake-muted">Go opens secure payment and recurring subscription consent. A payment return link does not confirm payment. Existing verified purchases are checked before collecting setup again.</p>
+        </form>
+      </div></main>
     </div>
   );
 }
-
-export default function IntakePage() {
-  return <IntakePageClient />;
-}
+export default function IntakePage() { return <IntakePageClient />; }

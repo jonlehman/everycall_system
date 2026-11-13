@@ -28,6 +28,12 @@ export async function salesAvailability(pool,{after=null,env=process.env,graph=n
  const result=await request(`/users/${encodeURIComponent(config.owner)}/calendar/getSchedule`,{schedules:[config.owner],startTime:graphDate(start),endTime:graphDate(end),availabilityViewInterval:15});
  const schedule=result.value?.[0];if(!schedule||schedule.error||typeof schedule.availabilityView!=='string')throw salesError('sales_calendar_unavailable','Outlook did not return availability.',502);
  const reservations=await pool.query("SELECT starts_at,ends_at FROM sales_setup_bookings WHERE calendar_owner=$1 AND status IN ('reserving','booked') AND starts_at<$3 AND ends_at>$2",[config.owner,new Date(start).toISOString(),new Date(end).toISOString()]);
+ // During the additive release, old fixtures/deployments may not have the paid
+ // ledger yet. Once installed, both booking paths reserve the same calendar.
+ if((await pool.query("SELECT to_regclass('paid_setup_bookings') IS NOT NULL AS ready")).rows[0]?.ready){
+  const paid=await pool.query('SELECT starts_at,ends_at FROM paid_setup_bookings WHERE calendar_owner=$1 AND starts_at<$3 AND ends_at>$2',[config.owner,new Date(start).toISOString(),new Date(end).toISOString()]);
+  reservations.rows.push(...paid.rows);
+ }
  const slots=[];
  for(let index=0;index<schedule.availabilityView.length;index++) {
   if(schedule.availabilityView[index]!=='0')continue;

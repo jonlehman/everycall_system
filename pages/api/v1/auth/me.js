@@ -17,7 +17,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       authenticated: true,
       role: session.role,
-      tenantKey: session.tenant_key || null
+      tenantKey: session.tenant_key || null,
+      supportSession: session.support_session || null
     });
   } catch (err) {
     return res.status(500).json({ error: "auth_me_error", message: err?.message || "unknown" });

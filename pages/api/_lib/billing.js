@@ -1,3 +1,4 @@
+import { syncPaidSubscription,handlePaidSubscriptionSchedule } from './paidSubscriptionSync.js';
 import { deriveAnnualAmountCents, getStandardBillingPlan, STANDARD_BILLING_PLANS } from "../../../lib/standardBillingPlans.js";
 import { getPool } from "./db.js";
 import { retrieveSubscriptionSchedule } from "./stripe.js";
@@ -318,6 +319,7 @@ export function buildPendingPlanDisplay(row, billingConfig = null) {
 }
 
 export async function requireActiveTenantUser(session) {
+  if(session?.support_session)return {id:session.user_id,tenant_key:session.tenant_key,role:"admin",status:"active",supportSession:true};
   const pool = getPool();
   if (!pool || !session?.user_id || session.role !== "tenant") {
     return null;
@@ -325,9 +327,9 @@ export async function requireActiveTenantUser(session) {
   const result = await pool.query(
     `SELECT id, tenant_key, role, email, name, phone_number, status
      FROM tenant_users
-     WHERE id = $1
+     WHERE id = $1 AND tenant_key = $2
      LIMIT 1`,
-    [session.user_id]
+    [session.user_id,session.tenant_key]
   );
   const user = result.rows[0] || null;
   if (!user || user.status !== "active") {
@@ -337,6 +339,7 @@ export async function requireActiveTenantUser(session) {
 }
 
 export async function requireTenantOwner(session) {
+  if(session?.support_session)return null;
   const user = await requireActiveTenantUser(session);
   if (!user || user.role !== "owner") {
     return null;
@@ -502,6 +505,13 @@ export async function getTenantBillingState(pool, tenantKey) {
        t.deactivated_at,
        t.billing_status_updated_at,
        t.billing_lock_reason,
+       b.paid_purchase_id,
+       b.usage_anchor_at,
+       b.initial_period_end,
+       b.paid_base_through,
+       b.service_ended_at,
+       b.changed_number_ack_required,
+       b.stripe_subscription_status,
        b.stripe_customer_id,
        b.stripe_subscription_id,
        b.stripe_product_id,
@@ -559,9 +569,9 @@ export async function ensureTenantBillingAccount(pool, tenantKey, values = {}) {
   const billingInterval = normalizeBillingInterval(values.billing_interval ?? current?.billing_interval);
   await pool.query(
     `UPDATE tenants
-     SET trial_started_at = COALESCE(trial_started_at, created_at),
-         trial_end = COALESCE(trial_end, created_at + ($2::text || ' days')::interval),
-         billing_status_updated_at = COALESCE(billing_status_updated_at, NOW()),
+     SET trial_started_at = trial_started_at,
+         trial_end = trial_end,
+         billing_status_updated_at = COALESCE(billing_status_updated_at, NOW()) + ($2::integer * interval '0 seconds'),
          plan_code = COALESCE(plan_code, $3),
          plan = CASE
            WHEN plan_code IS NULL OR TRIM(plan_code) = '' THEN $4
@@ -775,6 +785,13 @@ export function mapStripeSubscriptionToTenantState(subscriptionStatus, currentRo
 }
 
 export async function syncTenantStripeSubscription(pool, tenantKey, currentRow, subscription, eventType = "stripe.sync") {
+  const paid=(await pool.query('SELECT paid_purchase_id,stripe_subscription_id FROM tenant_billing_accounts WHERE tenant_key=$1',[tenantKey])).rows[0];
+  if(paid?.paid_purchase_id){
+    if(subscription?.id!==paid.stripe_subscription_id)return getTenantBillingState(pool,tenantKey);
+    await syncPaidSubscription(pool,tenantKey,subscription,await getSystemBillingConfig(pool));
+    return getTenantBillingState(pool,tenantKey);
+  }
+
   if (!tenantKey || !subscription?.id) {
     return currentRow;
   }
@@ -1045,6 +1062,7 @@ export async function syncTenantStripeSubscriptionSchedule(pool, tenantKey, curr
   if (!tenantKey || !schedule?.id) {
     return currentRow;
   }
+  if(await handlePaidSubscriptionSchedule(pool,tenantKey,schedule))return getTenantBillingState(pool,tenantKey);
   const billingConfig = await getSystemBillingConfig(pool);
   const pendingPlan = buildPendingPlanFromStripeSchedule(billingConfig.plans, schedule, {
     currentPlanCode: currentRow?.plan_code || DEFAULT_PLAN_CODE,

@@ -275,25 +275,20 @@ export async function createCheckoutSession({
   return session;
 }
 
-export async function createBillingPortalSession({
-  customerId,
-  returnUrl
-}) {
-  const stripe = getStripe();
-  return stripe.billingPortal.sessions.create({
-    customer: customerId,
-    return_url: returnUrl || getStripeBillingPortalReturnUrl(),
-    ...(getStripeBillingPortalConfigurationId()
-      ? { configuration: getStripeBillingPortalConfigurationId() }
-      : {})
-  });
+export async function createBillingPortalSession({customerId,returnUrl}) {
+  const stripe=getStripe(),configuration=getStripeBillingPortalConfigurationId();
+  if(!configuration)throw Error('everycall_portal_configuration_required');
+  const config=await stripe.billingPortal.configurations.retrieve(configuration);
+  // Plan changes use our explicit next-term schedule endpoint; the portal must
+  // not expose immediate upgrades that bypass that contract.
+  if(!config.active || config.id!==configuration || config.metadata?.app!=='everycall' || config.metadata?.environment!=='live' || config.features?.subscription_cancel?.mode!=='at_period_end'
+    || config.features?.subscription_update?.enabled!==false)throw Error('everycall_portal_configuration_mismatch');
+  return stripe.billingPortal.sessions.create({customer:customerId,return_url:returnUrl||getStripeBillingPortalReturnUrl(),configuration});
 }
 
 export async function cancelSubscription(subscriptionId, { immediate = false } = {}) {
   const stripe = getStripe();
-  if (immediate) {
-    return stripe.subscriptions.cancel(subscriptionId);
-  }
+  if (immediate) throw Error("immediate_cancellation_not_allowed");
   return stripe.subscriptions.update(subscriptionId, {
     cancel_at_period_end: true
   });

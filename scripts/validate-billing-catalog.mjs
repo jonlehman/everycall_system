@@ -16,24 +16,24 @@ const EXPECTED_STANDARD_PLANS = [
   {
     code: "starter",
     label: "Starter",
-    monthlyAmountCents: 4950,
-    annualAmountCents: 50490,
+    monthlyAmountCents: 7450,
+    annualAmountCents: 75990,
     includedCallCount: 25,
     callOverageRateCents: 300
   },
   {
     code: "growth",
     label: "Growth",
-    monthlyAmountCents: 9950,
-    annualAmountCents: 101490,
+    monthlyAmountCents: 12450,
+    annualAmountCents: 126990,
     includedCallCount: 60,
     callOverageRateCents: 200
   },
   {
     code: "pro",
     label: "Pro",
-    monthlyAmountCents: 14950,
-    annualAmountCents: 152490,
+    monthlyAmountCents: 17450,
+    annualAmountCents: 177990,
     includedCallCount: 100,
     callOverageRateCents: 175
   }
@@ -68,8 +68,8 @@ const normalizedPlans = normalizeBillingPlans([
   }
 ]);
 
-assert.equal(normalizedPlans[0].monthlyAmountCents, 4950, "runtime config should not override starter monthly price");
-assert.equal(normalizedPlans[0].annualAmountCents, 50490, "runtime config should not override starter annual price");
+assert.equal(normalizedPlans[0].monthlyAmountCents, 7450, "runtime config should not override starter monthly price");
+assert.equal(normalizedPlans[0].annualAmountCents, 75990, "runtime config should not override starter annual price");
 assert.equal(normalizedPlans[0].includedCallCount, 25, "runtime config should not override starter included call count");
 assert.equal(normalizedPlans[0].callOverageRateCents, 300, "runtime config should not override starter overage rate");
 assert.equal(normalizedPlans[0].stripeProductId, "prod_testStarter", "runtime Stripe product binding should be preserved");
@@ -136,8 +136,8 @@ assert.deepEqual(
     effectiveAt: "2026-05-01T00:00:00.000Z",
     billingInterval: "month",
     billingIntervalLabel: "Monthly",
-    monthlyAmountCents: 4950,
-    annualAmountCents: 50490,
+    monthlyAmountCents: 7450,
+    annualAmountCents: 75990,
     includedCallCount: 25,
     callOverageRateCents: 300
   },

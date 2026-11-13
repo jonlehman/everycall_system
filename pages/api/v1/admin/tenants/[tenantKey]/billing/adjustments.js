@@ -59,6 +59,7 @@ export default async function handler(req, res) {
       currentBillingPeriod
     });
   } catch (err) {
+    if(err?.message==='paid_adjustments_manual_review_required')return res.status(409).json({error:err.message,message:'Paid-account credits and debits require manual billing review. Contact customerservice@everycall.io; no adjustment was created.'});
     return res.status(500).json({ error: "admin_tenant_billing_adjustment_error", message: err?.message || "unknown" });
   }
 }

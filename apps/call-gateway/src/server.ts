@@ -3378,6 +3378,18 @@ async function processVerifiedVoiceWebhook(rawBody: string, baseUrl: string) {
         [callSid, tenantKey, from, to]
       );
 
+      // UPIB-011: reserve an included slot under the tenant lock before any
+      // provider answer. Replayed initiation uses the same call reservation.
+      const admission = await pool.query(
+        `SELECT * FROM reserve_paid_call($1,$2)`, [tenantKey,callSid]
+      );
+      if (admission.rows[0]?.allowed !== true) {
+        await webhookCallAction(callControlId, "hangup", {});
+        await markCallCompleted(callSid);
+        logInfo("call_billing_admission_refused", {callSid,tenantKey,reason:admission.rows[0]?.reason || "billing_unavailable"});
+        return;
+      }
+
       const existingSession = streamSessions.get(callControlId);
       if (existingSession) {
         if (existingSession.isShuttingDown) {

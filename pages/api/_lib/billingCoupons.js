@@ -333,6 +333,8 @@ async function updateTenantCouponPointers(pool, tenantKey, redemption) {
 }
 
 async function restoreTenantTrialState(pool, tenantKey, redemption, currentState) {
+  return; // Historical coupon removal never grants unpaid access under UPIB-014.
+
   const metadata = redemption?.metadata_json && typeof redemption.metadata_json === "object"
     ? redemption.metadata_json
     : {};
@@ -720,6 +722,7 @@ export async function redeemBillingCouponForTenant(pool, {
   actorId = null,
   source = "self_service"
 }) {
+  throw new Error('coupon_redemption_retired_paid_intake_required');
   const normalizedCode = normalizeCouponCode(code);
   if (!tenantKey || !normalizedCode) {
     throw new Error("coupon_redemption_invalid");
@@ -1025,6 +1028,7 @@ function shouldApplyMonthlyDiscountToNextCycle(redemption, billingState) {
 }
 
 export async function syncTenantCouponSubscriptionPricing(pool, tenantKey) {
+  if ((await pool.query('SELECT paid_purchase_id FROM tenant_billing_accounts WHERE tenant_key=$1',[tenantKey])).rows[0]?.paid_purchase_id) return ensureTenantBillingAccount(pool,tenantKey);
   if (!tenantKey) return null;
   await refreshTenantCouponState(pool, tenantKey);
   let billingState = await ensureTenantBillingAccount(pool, tenantKey);

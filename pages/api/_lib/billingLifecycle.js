@@ -1,3 +1,4 @@
+import { runPaidBillingLifecycleJobs } from "./paidBillingLifecycle.js";
 import { recordBillingLifecycleEvent } from "./billing.js";
 import { refreshTenantCouponState, syncTenantCouponSubscriptionPricing } from "./billingCoupons.js";
 import { finalizeDueBillingPeriods } from "./callBilling.js";
@@ -305,8 +306,9 @@ async function runShutdownWarnings(pool, today) {
 async function deactivateExpiredPostTrial(pool, today) {
   const tenants = await pool.query(
     `SELECT tenant_key FROM tenants
-     WHERE (billing_status = 'trial_expired' AND post_trial_access_ends_at < $1::timestamptz)
-        OR telnyx_release_status IN ('requested', 'submitted', 'failed')`, [today.toISOString()]
+     WHERE NOT EXISTS(SELECT 1 FROM tenant_billing_accounts b WHERE b.tenant_key=tenants.tenant_key AND b.paid_purchase_id IS NOT NULL)
+       AND ((billing_status = 'trial_expired' AND post_trial_access_ends_at < $1::timestamptz)
+        OR telnyx_release_status IN ('requested', 'submitted', 'failed'))`, [today.toISOString()]
   );
   let deactivated = 0;
   for (const candidate of tenants.rows) {
@@ -425,7 +427,7 @@ async function runCouponSync(pool) {
   const tenants = await pool.query(
     `SELECT tenant_key
      FROM tenant_billing_accounts
-     WHERE active_coupon_redemption_id IS NOT NULL`
+     WHERE active_coupon_redemption_id IS NOT NULL AND paid_purchase_id IS NULL`
   );
   let syncedTenants = 0;
   for (const row of tenants.rows || []) {
@@ -438,14 +440,16 @@ async function runCouponSync(pool) {
 
 export async function runBillingLifecycleJobs(pool) {
   const today = startOfTodayUtc();
+  const paidLifecycle = await runPaidBillingLifecycleJobs(pool);
   const couponSyncTenants = await runCouponSync(pool);
   const billingPeriods = await finalizeDueBillingPeriods(pool);
   const remindersSent = await runTrialReminders(pool, today);
   const trialsExpired = await expireTrials(pool, today);
   const shutdownWarningsSent = await runShutdownWarnings(pool, today);
-  const postTrialDeactivated = await deactivateExpiredPostTrial(pool, today);
+  const postTrialDeactivated = await deactivateExpiredPostTrial(pool, new Date());
 
   return {
+    paidLifecycle,
     couponSyncTenants,
     billingPeriods,
     remindersSent,

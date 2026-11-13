@@ -552,7 +552,8 @@ function prospectPreparationBlock(row, { allowPaidCall = false } = {}) {
 function demoStatus(row) {
   const current = normalizeSalesText(row?.demo_status, 60) || "not_prepared";
 
-  return current;
+  // Archived briefs remain staff-only context for explicitly requested paid support calls.
+  return current==='archived'&&row?.status==='paid'?'ready':current;
 }
 
 function localTimeForZone(timezone) {
@@ -943,7 +944,7 @@ export async function listSalesProspects(pool, {
   if (operatorUserId !== null) {
     values.push(Number(operatorUserId));
     where.push(`p.assigned_rep_user_id = $${values.length}`);
-    if (!includeUnprepared || eligibleOnly) where.push("d.status = 'ready'");
+    if (!includeUnprepared || eligibleOnly) where.push("(d.status = 'ready' OR (p.status='paid' AND d.status='archived'))");
   }
   if (!includeDeleted) {
     where.push("p.status <> 'deleted'");
@@ -1949,7 +1950,7 @@ async function prepareSalesDemoProfileSource(pool, prospectId) {
     bundle.core_facts = salesCoreFacts(bundle);
     const result = await pool.query(
       `UPDATE sales_demo_profiles
-       SET status = 'ready',
+       SET status = CASE WHEN EXISTS(SELECT 1 FROM sales_prospects p WHERE p.prospect_id=sales_demo_profiles.prospect_id AND p.status='paid') THEN 'archived' ELSE 'ready' END,
            normalized_website_url = $2,
            website_origin = $3,
            website_hostname = $4,
@@ -2009,7 +2010,7 @@ async function prepareSalesDemoProfileSource(pool, prospectId) {
            build_completed_at = NOW(),
            expires_at = NULL,
            updated_at = NOW()
-       WHERE prospect_id = $1`,
+       WHERE prospect_id = $1 AND NOT EXISTS(SELECT 1 FROM sales_prospects p WHERE p.prospect_id=sales_demo_profiles.prospect_id AND p.status='paid')`,
       [prospect.prospectId, code, message]
     );
     throw salesError(code, message, Number(error?.statusCode || 500) || 500);

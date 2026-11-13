@@ -77,7 +77,15 @@
     "test:sales-dialer-browser": "node scripts/test-sales-dialer-browser.mjs",
     "test:sales-dialer-controller": "node scripts/test-sales-dialer-controller.mjs",
     "test:sales-call-record-browser": "node scripts/test-sales-call-record-browser.mjs",
-    "validate:sales-contacts": "node --no-warnings scripts/validate-sales-contacts.mjs"
+    "validate:sales-contacts": "node --no-warnings scripts/validate-sales-contacts.mjs",
+    "validate:paid-intake": "node --no-warnings scripts/validate-paid-intake.mjs",
+    "validate:paid-billing": "node --no-warnings scripts/validate-paid-billing-lifecycle.mjs",
+    "validate:paid-followup-cleanup": "node --no-warnings scripts/validate-paid-followup-cleanup.mjs",
+    "validate:paid-work-fairness": "node --no-warnings scripts/validate-paid-work-fairness.mjs",
+    "validate:paid-marketing": "node scripts/validate-paid-marketing.mjs",
+    "test:paid-intake:browser": "node scripts/test-paid-intake-browser.cjs",
+    "test:paid-intake:http": "node --no-warnings scripts/test-paid-intake-http.mjs",
+    "test:paid-billing:migrations": "node scripts/test-unified-paid-billing-migrations.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

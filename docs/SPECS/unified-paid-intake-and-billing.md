@@ -2,6 +2,8 @@
 
 Status: Owner-approved product decisions, November 12, 2026; implementation and release pending. This document changes requirements only. It does not assert that application code, Stripe, databases, deployed services or customer accounts have been changed.
 
+Implementation follow-up: code, executable regression mapping and actual release limits are recorded separately in [the implementation evidence](../reviews/unified-paid-intake-release.md) and [independent Astra review](../reviews/unified-paid-intake-independent-review.md). The original requirement text and approval-time gap inventory below are preserved. A source implementation is not production or provider acceptance.
+
 ## Authority and scope
 
 This is the current authority for signup, payment, subscription timing, usage periods, delinquency and reinstatement. It supersedes conflicting provisions in the intake and account-management PRDs; intake onboarding V2, basic intake/navigation, account-management billing implementation and call-based billing specifications; and Sales rep dialer v2. Their historical requirement IDs and text remain intact. Unrelated behavior and safeguards remain in force.

@@ -1,4 +1,5 @@
-import { processSalesPaidActivations } from "../_lib/salesActivation.js";
+import { reconcilePaidPurchases } from '../_lib/paidPurchaseEvents.js';
+import { processPaidIntakeJobs } from "../_lib/paidProvisioning.js";
 import { ensureTables, getPool } from "../_lib/db.js";
 import { processSalesFollowupJobs } from "../_lib/salesFollowupJobs.js";
 import { processSalesDemoJobs } from "../_lib/salesRepository.js";
@@ -44,7 +45,7 @@ export default async function handler(req, res) {
           claimedCount: 0,
           results: []
         }),
-      processSalesPaidActivations(pool)
+      reconcilePaidPurchases(pool).then(()=>processPaidIntakeJobs(pool))
     ]);
     console.info(JSON.stringify({
       event: "sales_maintenance_result",

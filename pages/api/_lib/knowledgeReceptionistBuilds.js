@@ -4696,14 +4696,21 @@ export async function runKnowledgeBuildJobs(db, options = {}) {
 // verified paid checkout can initiate this service build; it grants no review rights.
 const salesPaidBuildAuthority = Symbol('sales-paid-build');
 async function paidBuildCreator(db, tenantKey, checkoutId) {
-  const row = (await db.query(`SELECT c.rep_user_id FROM sales_checkout_sessions c
-    JOIN sales_prospects p ON p.prospect_id=c.prospect_id
-    WHERE c.checkout_id=$1 AND c.tenant_key=$2 AND p.tenant_key=$2
-      AND c.paid_at IS NOT NULL AND c.stripe_event_id IS NOT NULL
-      AND c.stripe_session_id IS NOT NULL AND c.status='paid'`, [checkoutId, tenantKey])).rows[0];
-  if (!row) throw new Error('sales_verified_payment_required');
-  return `sales:${row.rep_user_id}`;
+  if (String(checkoutId).startsWith('purchase_')) {
+    const purchase=(await db.query(`SELECT p.purchase_id,u.id FROM paid_purchases p JOIN tenant_users u ON u.tenant_key=p.tenant_key AND lower(u.email)=p.owner_email AND u.role='owner' AND u.status='active' WHERE p.purchase_id=$1 AND p.tenant_key=$2 AND p.payment_status='paid' AND p.kind='setup' AND p.livemode=TRUE AND p.recurring_consent_at IS NOT NULL`,[checkoutId,tenantKey])).rows[0];
+    if(!purchase)throw Error('verified_paid_intake_required');
+    return `tenant:${purchase.id}`;
+  }
+
+  throw new Error('unified_paid_intake_recurring_consent_required');
 }
+export async function enqueuePaidIntakeKnowledgeBuild(db, tenantKey, input = {}) {
+  await paidBuildCreator(db,tenantKey,input.purchaseId);
+  const existing=(await db.query('SELECT build_id FROM paid_purchases WHERE purchase_id=$1',[input.purchaseId])).rows[0];
+  if(existing?.build_id)return {build:{build_id:existing.build_id}};
+  return createKnowledgeBuild(db,tenantKey,{websiteUrl:input.websiteUrl,assignments:input.assignments,buildKind:'website_base',enqueueOnly:true,[salesPaidBuildAuthority]:input.purchaseId});
+}
+
 export async function enqueueSalesPaidKnowledgeBuild(db, tenantKey, input = {}) {
   await paidBuildCreator(db, tenantKey, input.checkoutId);
   return createKnowledgeBuild(db, tenantKey, {
@@ -4854,6 +4861,7 @@ export async function createKnowledgeBuild(db, tenantKey, input = {}) {
           creatorId
         ]
       );
+      if(String(paidCheckoutId||'').startsWith('purchase_')) await client.query('UPDATE paid_purchases SET build_id=$2 WHERE purchase_id=$1 AND build_id IS NULL',[paidCheckoutId,buildId]);
       await client.query(
         `INSERT INTO source_intake_sessions (
            source_intake_session_id, tenant_key, build_id, runtime_entry_mode, status, website_root_url,

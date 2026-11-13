@@ -456,6 +456,15 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
   const tenantKey = String(params.tenantKey || '');
 
   const [tenant, setTenant] = useState(null);
+  const [supportBusy, setSupportBusy] = useState(false);
+  const openCustomerAccount = async () => {
+    setSupportBusy(true);
+    try {
+      const data = await fetchJson(`/api/v1/admin/tenants/${encodeURIComponent(tenantKey)}/support-session`, { method: 'POST' });
+      if (!data.url) throw new Error('Support access is unavailable.');
+      window.location.assign(data.url);
+    } catch (error) { setStatus(error.message || 'Could not open customer account.'); setSupportBusy(false); }
+  };
   const [draft, setDraft] = useState(null);
   const [users, setUsers] = useState([]);
   const [builds, setBuilds] = useState([]);
@@ -890,6 +899,10 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
   };
 
   const saveBillingAdjustment = async () => {
+    if (billingReview.billing?.manualAdjustmentsAllowed === false) {
+      setStatus('Paid-account credits and debits require manual review at customerservice@everycall.io.');
+      return;
+    }
     const billingPeriodId = Number(billingReview.billing?.currentBillingPeriod?.billingPeriodId || 0);
     const amountCents = parseMoneyInput(adjustmentDraft.amount);
     if (!billingPeriodId) {
@@ -1285,6 +1298,7 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
           <div className="mt-1 text-xs text-slate-500">Tenant key: <code>{tenantKey}</code></div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button onClick={openCustomerAccount} disabled={supportBusy || loading}>{supportBusy ? 'Opening…' : 'Open Customer Account'}</Button>
           <Link className="btn" href="/admin/tenants">Back</Link>
           <Button variant="outline" onClick={loadTenant} disabled={loading || saving || primaryUserSaving}>Reload</Button>
           <Button variant="destructive" onClick={deleteTenant} disabled={deleteBusy}>
@@ -1439,76 +1453,7 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
         <div className="grid gap-4">
           {showBilling ? (
           <>
-          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="m-0 text-lg font-semibold">Extend Demo</h2>
-                <div className="mt-1 text-sm text-slate-500">
-                  Add demo days to an active trial, or reopen an expired demo from today.
-                </div>
-              </div>
-              <div className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
-                Status: {billingReview.billing?.status || tenant?.billing_status || 'unknown'}
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-4">
-              <RuntimeStat label="Current Trial End" value={formatDateTimeDisplay(billingReview.billing?.trialEnd || tenant?.trial_end)} />
-              <RuntimeStat label="Days Remaining" value={billingReview.billing?.trialDaysRemaining ?? '-'} />
-              <RuntimeStat label="App Access" value={billingReview.billing?.appAccessStatus || tenant?.app_access_status || '-'} />
-              <RuntimeStat label="Voice Number" value={formatPhoneDisplay(tenant?.telnyx_voice_number) || 'Unassigned'} />
-            </div>
-
-            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.8fr)]">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                <div className="font-medium text-slate-900">How it works</div>
-                <div className="mt-2">
-                  If the tenant is still in trial, the new days are added to the current trial end. If the demo already expired, the trial reopens for the number of days entered starting now.
-                </div>
-                <div className="mt-2">
-                  If a Stripe subscription is already in `trialing`, Stripe’s trial end is updated too so billing stays aligned.
-                </div>
-                {extendDemoWillProvisionNumber ? (
-                  <div className="mt-2 font-medium text-amber-800">
-                    This tenant is deactivated and has no Sales Receptionist Number assigned. Extending the demo will provision a replacement number.
-                  </div>
-                ) : null}
-                {!canExtendDemo ? (
-                  <div className="mt-2 font-medium text-rose-700">
-                    Demo extension is only available while the tenant is `trialing`, `trial_expired`, or `deactivated`.
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <div className="grid gap-3">
-                  <Field label="Additional Demo Days" hint="Enter how many days to add. For expired demos, this becomes the new trial length from today.">
-                    <TextInput
-                      inputMode="numeric"
-                      value={demoExtensionDays}
-                      onChange={(event) => setDemoExtensionDays(event.target.value)}
-                      placeholder={String(billingReview.pricingCatalog?.defaultTrialDays || 14)}
-                    />
-                  </Field>
-                  <div className="flex flex-wrap gap-2">
-                    <Button onClick={extendDemo} disabled={demoExtensionBusy || !canExtendDemo}>
-                      {demoExtensionBusy ? 'Extending...' : 'Extend Demo'}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setDemoExtensionDays(String(billingReview.pricingCatalog?.defaultTrialDays || 14));
-                        setStatus('Reset demo extension days.');
-                      }}
-                      disabled={demoExtensionBusy}
-                    >
-                      Reset
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm"><h2 className="text-lg font-semibold">Paid service and recovery</h2><p>Service requires verified payment. Free trial extensions and unpaid reactivation are retired. Use Billing for payment recovery. Refunds and disputes require manual review at customerservice@everycall.io.</p></section>
 
           <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1722,11 +1667,13 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
                 </table>
               </div>
 
-              <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <fieldset disabled={adjustmentSaving || billingReview.billing?.manualAdjustmentsAllowed === false} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <div>
                   <h3 className="m-0 text-base font-semibold text-slate-900">Adjustment</h3>
                   <div className="mt-1 text-sm text-slate-500">
-                    Add a manual credit or debit for the current billing period.
+                    {billingReview.billing?.manualAdjustmentsAllowed === false
+                      ? 'Paid-account credits and debits require manual review at customerservice@everycall.io. Existing financial records are retained.'
+                      : 'Add a manual credit or debit for the current billing period.'}
                   </div>
                 </div>
                 <Field label="Type">
@@ -1760,7 +1707,7 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
                 <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
                   Net adjustments: {formatMoney(currentBillingPeriod?.adjustments?.netAdjustmentAmountCents || 0)}
                 </div>
-              </div>
+              </fieldset>
             </div>
           </section>
           </>
@@ -2720,7 +2667,7 @@ export default function TenantAdminWorkspace({ section = 'overview' }) {
 
         <div className="mt-4 grid gap-4">
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-            Billing lifecycle fields are intentionally hidden here. Use the Billing tab for pricing, coupons, current-period adjustments, and the dedicated `Extend Demo` workflow.
+            Billing lifecycle fields are intentionally hidden here. Use the Billing tab for pricing, coupons, current-period adjustments, and authorized payment recovery.
           </div>
 
           {ADVANCED_FIELD_SECTIONS.map((section) => (

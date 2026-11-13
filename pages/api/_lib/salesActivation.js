@@ -17,6 +17,8 @@ export async function ensureSalesDemoTenant(pool,prospectId) {
  });
 }
 export async function processSalesPaidActivations(pool,{limit=2,enqueue=enqueueSalesPaidKnowledgeBuild,savePrompt=saveTenantPromptProfile,resolveAssignments=resolveTenantDomainAssignments}={}) {
+ return {claimedCount:0,results:[],reason:'unified_paid_intake_recurring_consent_required'};
+ /* Historical implementation retained for audit; unreachable after paid intake cutover.
  const jobs=await pool.query(`UPDATE sales_checkout_sessions SET activation_status='building',updated_at=NOW() WHERE checkout_id IN (SELECT checkout_id FROM sales_checkout_sessions WHERE paid_at IS NOT NULL AND (activation_status IN ('queued','failed') OR (activation_status='building' AND updated_at<NOW()-interval '15 minutes')) ORDER BY paid_at FOR UPDATE SKIP LOCKED LIMIT $1) RETURNING *`,[limit]);
  const results=[];
  for(const job of jobs.rows){try{
@@ -31,5 +33,5 @@ export async function processSalesPaidActivations(pool,{limit=2,enqueue=enqueueS
   await pool.query("UPDATE sales_checkout_sessions SET activation_status='awaiting_knowledge_review',tenant_key=$2,activation_error=NULL,updated_at=NOW() WHERE checkout_id=$1",[job.checkout_id,key]);
   results.push({checkoutId:job.checkout_id,tenantKey:key,status:'awaiting_knowledge_review',buildId:build?.build?.build_id||build?.build_id||null});
  }catch(error){await pool.query("UPDATE sales_checkout_sessions SET activation_status='failed',activation_error=$2,updated_at=NOW() WHERE checkout_id=$1",[job.checkout_id,String(error.message||error).slice(0,500)]);results.push({checkoutId:job.checkout_id,status:'failed'});}}
- return {claimedCount:jobs.rowCount,results};
+ return {claimedCount:jobs.rowCount,results}; */
 }

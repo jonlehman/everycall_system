@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { STANDARD_BILLING_PLANS } from '../../../../lib/standardBillingPlans';
 import SectionPage from '../../_components/SectionPage';
 import { accountNavItems } from '../../_components/navigation';
 
@@ -67,7 +68,7 @@ function fetchJson(url, options) {
 
 function getBillingActionLabel(type) {
   if (type === 'portal') return 'Manage Billing';
-  if (type === 'checkout') return 'Activate Billing';
+  if (type === 'checkout') return 'Complete Paid Setup';
   if (type === 'reactivate') return 'Restart Service';
   return 'Manage Billing';
 }
@@ -121,16 +122,7 @@ function renderStatusDot(tone) {
 
 function buildPlanHeroDescription(billing) {
   const includedCount = Number(billing?.callPricing?.includedCallCount || billing?.plan?.includedCallCount || 0);
-  const interval = String(billing?.plan?.billingIntervalLabel || '').trim().toLowerCase();
-  if (includedCount > 0 && interval === 'monthly') {
-    return `Perfect for growing teams handling up to ${formatCount(includedCount)} inbound calls monthly.`;
-  }
-  if (includedCount > 0 && interval === 'annual') {
-    return `Perfect for growing teams handling up to ${formatCount(includedCount)} inbound calls yearly.`;
-  }
-  if (includedCount > 0) {
-    return `Perfect for growing teams handling up to ${formatCount(includedCount)} inbound calls each billing cycle.`;
-  }
+  if (includedCount > 0) return `${formatCount(includedCount)} included calls each month. Additional billable calls are billed monthly, including on annual plans.`;
   if (billing?.plan?.isCustom) {
     return 'Custom billing terms for this EveryCall workspace.';
   }
@@ -153,8 +145,7 @@ function intervalUnitLabel(label) {
 
 function buildPlanFeatureItems(billing) {
   const includedCount = Number(billing?.callPricing?.includedCallCount || billing?.plan?.includedCallCount || 0);
-  const interval = String(billing?.plan?.billingIntervalLabel || '').trim().toLowerCase();
-  const periodLabel = interval === 'annual' ? 'year' : 'month';
+  const periodLabel = 'month';
   const overageRateCents = Number(billing?.callPricing?.callOverageRateCents || billing?.plan?.callOverageRateCents || 0);
 
   return [
@@ -162,7 +153,7 @@ function buildPlanFeatureItems(billing) {
       ? `${formatCount(includedCount)} Inbound Calls / ${periodLabel}`
       : 'Custom inbound call allowance',
     overageRateCents > 0
-      ? `${formatMoney(overageRateCents)} per additional call`
+      ? `${formatMoney(overageRateCents)} per additional billable call, billed monthly`
       : 'Custom additional call pricing',
     'Billing managed securely in Stripe'
   ];
@@ -171,7 +162,7 @@ function buildPlanFeatureItems(billing) {
 function buildNextChargeLabel(nextCharge) {
   if (!nextCharge) return 'No charge scheduled';
   if (nextCharge.mode === 'trial_end') {
-    return nextCharge.date ? `Trial ends ${formatShortDate(nextCharge.date)}` : 'Trial active';
+    return nextCharge.date ? `Included month ends ${formatShortDate(nextCharge.date)}` : 'First calendar month included';
   }
   if (nextCharge.mode === 'amount_due') {
     return nextCharge.amountCents ? `${formatMoney(nextCharge.amountCents)} due` : 'Amount due';
@@ -344,6 +335,10 @@ export default function AccountBillingPage() {
   const [billingCouponBusy, setBillingCouponBusy] = useState(false);
   const [couponSummaryWidth, setCouponSummaryWidth] = useState(null);
   const [flashStatus, setFlashStatus] = useState(null);
+  const [selectedPlanCode, setSelectedPlanCode] = useState('');
+  const [selectedInterval, setSelectedInterval] = useState('');
+  const [restartConsent, setRestartConsent] = useState(false);
+  const restartPlan = STANDARD_BILLING_PLANS.find(plan => plan.code === selectedPlanCode);
   const [selectedPanel, setSelectedPanel] = useState(PANEL_KEYS.plan);
 
   const loadPage = async () => {
@@ -369,7 +364,7 @@ export default function AccountBillingPage() {
   useEffect(() => {
     const checkoutState = String(searchParams?.get('checkout') || '').trim().toLowerCase();
     if (checkoutState === 'success') {
-      setFlashStatus({ tone: 'ok', message: 'Billing updated.' });
+      setFlashStatus({ tone: 'warn', message: 'Checking payment status. Your billing details below reflect server verification.' });
       return;
     }
     if (checkoutState === 'cancel') {
@@ -399,34 +394,10 @@ export default function AccountBillingPage() {
   }, [selectedPanel, billingCouponBusy, billing?.activeCoupon?.code]);
 
   const launchStripeFlow = async (preferredType) => {
-    const openPortal = () => fetchJson('/api/v1/billing/portal', { method: 'POST' });
-    const openCheckout = () => fetchJson('/api/v1/billing/checkout', { method: 'POST' });
-
-    if (preferredType === 'portal') {
-      try {
-        const data = await openPortal();
-        window.location.href = data.portalUrl;
-        return;
-      } catch (error) {
-        if (error?.code !== 'billing_customer_missing') {
-          throw error;
-        }
-      }
-      const fallback = await openCheckout();
-      window.location.href = fallback.checkoutUrl;
-      return;
-    }
-
-    try {
-      const data = await openCheckout();
-      window.location.href = data.checkoutUrl;
-    } catch (error) {
-      if (error?.code !== 'subscription_already_exists') {
-        throw error;
-      }
-      const fallback = await openPortal();
-      window.location.href = fallback.portalUrl;
-    }
+    if (preferredType === 'checkout') { window.location.assign('/intake'); return; }
+    const data = await fetchJson('/api/v1/billing/portal', { method: 'POST' });
+    if (!data.portalUrl) throw new Error('Billing management is unavailable. Please contact support.');
+    window.location.assign(data.portalUrl);
   };
 
   const handleBillingAction = async () => {
@@ -434,16 +405,19 @@ export default function AccountBillingPage() {
     if (!actionType || !viewer.canManage) return;
 
     if (actionType === 'reactivate') {
-      const confirmed = window.confirm('Restart this account and provision a new Sales Receptionist Number?');
+      if (!restartConsent) { setFlashStatus({ tone: 'bad', message: 'Review and accept recurring billing before restarting service.' }); return; }
+      const confirmed = window.confirm('Restart requires full payment for a new period and settlement of outstanding debt. After verified payment, a new number will require updating your forwarding. Continue?');
       if (!confirmed) return;
     }
 
     setManageBusy(true);
     try {
       if (actionType === 'reactivate') {
-        const data = await fetchJson('/api/v1/billing/reactivate', { method: 'POST' });
+        if (!selectedPlanCode || !selectedInterval) throw new Error('Choose your restart plan and billing interval first.');
+        const data = await fetchJson('/api/v1/billing/reactivate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ planCode: selectedPlanCode, billingInterval: selectedInterval, consentAccepted: restartConsent }) });
         await loadPage();
-        setFlashStatus({ tone: 'ok', message: data?.message || 'Service restarted.' });
+        if (data?.checkoutUrl || data?.url) { window.location.assign(data.checkoutUrl || data.url); return; }
+        setFlashStatus({ tone: 'warn', message: data?.message || 'Payment must be verified before service resumes.' });
         return;
       }
 
@@ -453,6 +427,23 @@ export default function AccountBillingPage() {
     } finally {
       setManageBusy(false);
     }
+  };
+
+  const scheduleBillingChange = async (cancel) => {
+    if (!viewer.canManage) return;
+    if (cancel === undefined && (!selectedPlanCode || !selectedInterval)) {
+      setFlashStatus({ tone: 'warn', message: 'Choose a plan and billing interval first.' }); return;
+    }
+    setManageBusy(true);
+    try {
+      const data = await fetchJson(cancel === undefined ? '/api/v1/billing/change' : '/api/v1/billing/cancel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cancel === undefined ? { planCode: selectedPlanCode, billingInterval: selectedInterval } : { cancelAtPeriodEnd: cancel })
+      });
+      await loadPage();
+      setFlashStatus({ tone: 'ok', message: data.message || (cancel === undefined ? 'Plan change scheduled for your next base renewal.' : cancel ? 'Cancellation scheduled for the paid term’s end.' : 'Scheduled cancellation removed.') });
+    } catch (error) { setFlashStatus({ tone: 'bad', message: error.message }); }
+    finally { setManageBusy(false); }
   };
 
   const applyBillingCoupon = async () => {
@@ -497,7 +488,7 @@ export default function AccountBillingPage() {
   const usagePercent = includedCallCount > 0
     ? Math.min((totalCallsThisCycle / includedCallCount) * 100, 100)
     : 0;
-  const cycleResetLabel = formatShortDate(billing?.currentPeriod?.end || billing?.currentPeriodEnd);
+  const cycleResetLabel = formatShortDate(billing?.callUsage?.periodEnd || billing?.usagePeriod?.end || billing?.currentPeriod?.end || billing?.currentPeriodEnd);
   const paymentMethod = summary?.paymentMethod || { hasPaymentMethod: false };
   const latestInvoice = summary?.latestInvoice || { hasInvoice: false };
 
@@ -593,7 +584,7 @@ export default function AccountBillingPage() {
     detailBadgeLabel = latestInvoice?.hasInvoice ? latestInvoice.statusLabel : 'No Invoices';
     detailBadgeTone = getInvoiceBadgeTone(latestInvoice?.statusLabel);
     detailSecondaryAction = {
-      label: billingActionType === 'reactivate' ? 'Current Plan' : (billingActionType === 'portal' ? 'View Invoices' : 'Activate Billing'),
+      label: billingActionType === 'reactivate' ? 'Current Plan' : (billingActionType === 'portal' ? 'View Invoices' : 'Complete Paid Setup'),
       onClick: billingActionType === 'reactivate' ? () => setSelectedPanel(PANEL_KEYS.plan) : handleBillingAction,
       disabled: billingActionType === 'reactivate' ? false : (!canManage || manageBusy)
     };
@@ -655,7 +646,7 @@ export default function AccountBillingPage() {
           />
         </div>
         <p className="text-xs text-[#434655]">
-          {cycleResetLabel ? `Resets on ${cycleResetLabel}` : 'Usage resets each billing cycle'}
+          {cycleResetLabel ? `Resets on ${cycleResetLabel}` : 'Call allowance resets monthly'}
         </p>
         {overageCalls > 0 ? (
           <p className="mt-3 text-xs font-medium text-[#93000a]">
@@ -685,6 +676,8 @@ export default function AccountBillingPage() {
         <LoadingLayout />
       ) : (
         <div className="mx-auto w-full max-w-6xl">
+          {billing?.lifecycle?.changedNumberAckRequired ? <div role="alert" className="mb-5 rounded-lg border-2 border-amber-500 bg-amber-50 p-5 text-amber-950"><h2 className="font-bold">Your receptionist number has changed</h2><p>Update your business phone forwarding to your new EveryCall number before sending calls. Your former number must no longer be used.</p><a className="underline" href="/client/get-started">Review your new number and forwarding setup</a></div> : null}
+          {billing?.lifecycle?.restriction && billing.lifecycle.restriction !== 'none' ? <div role="status" className="mb-5 rounded-lg border border-amber-300 bg-amber-50 p-4"><strong>{billing.lifecycle.restriction === 'included_only' ? 'Included calls remain available; additional calls are restricted.' : 'Service needs payment attention.'}</strong><p>Amount owed: {formatMoney(billing.lifecycle.amountOwedCents)}. {billing.lifecycle.graceEndsAt ? `Payment deadline: ${formatShortDate(billing.lifecycle.graceEndsAt)}.` : ''} {billing.lifecycle.numberReleaseAt ? `Number release scheduled: ${formatShortDate(billing.lifecycle.numberReleaseAt)}.` : ''}</p><p>Payment recovery keeps your original term dates while the subscription remains recoverable. Refund and dispute assistance: <a className="underline" href="mailto:customerservice@everycall.io">customerservice@everycall.io</a>.</p></div> : null}
           <div className="flex flex-col gap-8 lg:flex-row">
             <div className="w-full lg:w-1/3">
               <div className="flex flex-col gap-4">
@@ -729,6 +722,15 @@ export default function AccountBillingPage() {
                   </div>
                 </div>
 
+                {selectedPanel === PANEL_KEYS.plan && canManage ? <section aria-label="Plan and cancellation controls" className="mt-6 space-y-3 rounded border border-slate-200 p-4 text-sm">
+                  <p>{billingActionType === 'reactivate' ? 'Restart requires the full selected period and any outstanding debt. No repeat setup fee or included month. A new number requires updating your forwarding.' : 'Plan and interval changes take effect at the next base renewal. Annual changes wait until annual renewal. Cancellation takes effect at the paid term’s end, with no automatic refund.'}</p>
+                  <div className="flex flex-wrap gap-3">
+                    <label>Plan <select aria-label="Selected billing plan" value={selectedPlanCode} onChange={(e) => { setSelectedPlanCode(e.target.value); setRestartConsent(false); }} disabled={manageBusy} className="rounded border p-2"><option value="">Choose a plan</option>{STANDARD_BILLING_PLANS.map((plan) => <option key={plan.code} value={plan.code}>{plan.label} — {formatMoney(plan.monthlyAmountCents)}/month or {formatMoney(plan.annualAmountCents)}/year</option>)}</select></label>
+                    <label>Interval <select aria-label="Selected billing interval" value={selectedInterval} onChange={(e) => { setSelectedInterval(e.target.value); setRestartConsent(false); }} disabled={manageBusy} className="rounded border p-2"><option value="">Choose an interval</option><option value="month">Monthly</option><option value="year">Annual</option></select></label>
+                  </div>
+                  {billingActionType === 'reactivate' && restartPlan && selectedInterval ? <label className="flex items-start gap-3"><input id="restart-consent" type="checkbox" checked={restartConsent} onChange={(event) => setRestartConsent(event.target.checked)} disabled={manageBusy} /><span>I agree to pay {formatMoney(selectedInterval === 'year' ? restartPlan.annualAmountCents : restartPlan.monthlyAmountCents)} for a full new period, renewing {selectedInterval === 'year' ? 'yearly' : 'monthly'} until canceled at term end, with {restartPlan.includedCallCount} included calls each month and {formatMoney(restartPlan.callOverageRateCents)} per additional billable call, billed monthly. There is no setup charge or included free month.</span></label> : null}
+                  {billingActionType !== 'reactivate' && billing?.hasStripeSubscription ? <div className="flex flex-wrap gap-3"><button type="button" disabled={manageBusy || !selectedPlanCode || !selectedInterval} onClick={() => scheduleBillingChange()} className="rounded border px-3 py-2">Schedule plan change</button><button type="button" disabled={manageBusy} onClick={() => scheduleBillingChange(!billing.cancelAtPeriodEnd)} className="rounded border px-3 py-2">{billing.cancelAtPeriodEnd ? 'Keep service — remove cancellation' : 'Cancel at paid term end'}</button></div> : null}
+                </section> : null}
                 <div className="mt-8 border-t border-[#dee9fc] pt-6">
                   <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                     {selectedPanel === PANEL_KEYS.plan ? (

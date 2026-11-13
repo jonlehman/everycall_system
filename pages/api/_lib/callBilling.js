@@ -13,6 +13,8 @@ import {
 } from "./billing.js";
 import { resolveBillingWindow } from "../../../lib/leadBilling.js";
 import { createInvoiceItem } from "./stripe.js";
+import { monthlyUsageWindow } from "../../../lib/paidBillingCalendar.js";
+import { collectPaidUsageInvoice } from "./paidUsageInvoices.js";
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -229,8 +231,8 @@ export async function ensureBillingPeriodForWindow(pool, {
 
   const plan = buildPlanDisplay(billingState, normalizedBillingConfig);
   const callPricing = resolveEffectiveCallPricing(billingState, normalizedBillingConfig);
-  await refreshTenantCouponState(pool, tenantKey);
-  const activeCoupon = await getTenantActiveCouponRedemption(pool, tenantKey);
+  if (!billingState?.paid_purchase_id) await refreshTenantCouponState(pool, tenantKey);
+  const activeCoupon = billingState?.paid_purchase_id ? null : await getTenantActiveCouponRedemption(pool, tenantKey);
   const appliedCoupon = couponAppliesToPeriod(activeCoupon, periodStart)
     ? activeCoupon
     : null;
@@ -290,6 +292,7 @@ export async function ensureBillingPeriodForWindow(pool, {
   const existingPeriod = result.rows[0] || null;
   if (
     existingPeriod
+    && !billingState?.paid_purchase_id
     && String(existingPeriod.status || "").toLowerCase() === "open"
     && Number(existingPeriod.eligible_call_count || 0) === 0
     && Number(existingPeriod.included_call_count_used || 0) === 0
@@ -334,7 +337,8 @@ export async function ensureCurrentBillingPeriod(pool, tenantKey) {
   const billingState = await ensureTenantBillingAccount(pool, tenantKey);
   if (!billingState) return null;
   const billingConfig = await getSystemBillingConfig(pool);
-  const window = resolveBillingWindow({
+  const window = billingState.paid_purchase_id && billingState.usage_anchor_at
+    ? monthlyUsageWindow(billingState.usage_anchor_at) : resolveBillingWindow({
     currentPeriodStart: billingState.current_period_start,
     currentPeriodEnd: billingState.current_period_end
   });
@@ -427,7 +431,7 @@ async function classifyMissingCallsForPeriod(db, period) {
   }
 }
 
-export async function rateBillingPeriod(pool, periodId) {
+export async function rateBillingPeriod(pool, periodId, { finalize = false } = {}) {
   await ensureBillingCallTypesSeeded(pool);
   const client = await pool.connect();
   try {
@@ -445,6 +449,14 @@ export async function rateBillingPeriod(pool, periodId) {
       throw new Error("billing_period_not_found");
     }
 
+    if (period.status !== "open") {
+      await client.query("COMMIT");
+      return { billingPeriodId: Number(periodId), frozen: true };
+    }
+    if (finalize) {
+      const active = await client.query(`SELECT 1 FROM calls WHERE tenant_key=$1 AND created_at >= $2 AND created_at < $3 AND status <> 'completed' LIMIT 1`, [period.tenant_key, period.period_start, period.period_end]);
+      if (active.rowCount) { await client.query("COMMIT"); return { pendingCalls: true }; }
+    }
     await classifyMissingCallsForPeriod(client, period);
 
     const callsResult = await client.query(
@@ -543,6 +555,7 @@ export async function rateBillingPeriod(pool, periodId) {
       ]
     );
 
+    if (finalize) await client.query("UPDATE billing_periods SET status='finalized',finalized_at=COALESCE(finalized_at,NOW()) WHERE billing_period_id=$1", [periodId]);
     await client.query("COMMIT");
     return {
       billingPeriodId: Number(period.billing_period_id || 0),
@@ -829,6 +842,9 @@ export async function syncCallBillingForCall(pool, {
   callSid
 }) {
   await classifyAndPersistCallBilling(pool, { tenantKey, callSid });
+  await pool.query(`UPDATE billing_call_admissions a SET status=CASE WHEN ct.counts_toward_usage THEN 'billable' ELSE 'nonbillable' END,reconciled_at=NOW()
+    FROM calls c JOIN billing_call_types ct ON ct.billing_call_type_id=c.billing_call_type_id
+    WHERE a.call_sid=c.call_sid AND c.call_sid=$1 AND c.tenant_key=$2 AND c.status='completed'`, [callSid,tenantKey]);
   return syncCurrentBillingPeriod(pool, tenantKey);
 }
 
@@ -865,6 +881,10 @@ export async function setManualCallBillingExclusion(pool, {
   if (!period || period.tenantKey !== tenantKey) {
     throw new Error("billing_period_not_found");
   }
+  if ((await pool.query('SELECT 1 FROM tenant_billing_accounts WHERE tenant_key=$1 AND paid_purchase_id IS NOT NULL',[tenantKey])).rowCount && period.status!=='open') {
+    throw new Error('paid_closed_period_manual_review_required');
+  }
+  if(!(await pool.query('SELECT 1 FROM calls WHERE call_sid=$1 AND tenant_key=$2 AND created_at>=$3 AND created_at<$4',[callSid,tenantKey,period.periodStart,period.periodEnd])).rowCount)throw new Error('billing_call_outside_period');
 
   if (exclude) {
     const manualType = await getBillingCallTypeByCode(pool, BILLING_CALL_TYPE_CODES.manualExclusion);
@@ -915,6 +935,9 @@ export async function createBillingPeriodAdjustment(pool, {
   }
   if (!Number.isInteger(normalizedAmount) || normalizedAmount <= 0) {
     throw new Error("billing_adjustment_amount_invalid");
+  }
+  if ((await pool.query('SELECT 1 FROM tenant_billing_accounts WHERE tenant_key=$1 AND paid_purchase_id IS NOT NULL',[tenantKey])).rowCount) {
+    throw new Error('paid_adjustments_manual_review_required');
   }
   const period = await getBillingPeriodDetail(pool, normalizedPeriodId, { callLimit: 1 });
   if (!period || period.tenantKey !== tenantKey) {
@@ -1063,15 +1086,8 @@ export async function finalizeDueBillingPeriods(pool) {
   let createdInvoiceItems = 0;
 
   for (const period of due.rows || []) {
-    await rateBillingPeriod(pool, period.billing_period_id);
-    await pool.query(
-      `UPDATE billing_periods
-       SET status = CASE WHEN status = 'open' THEN 'finalized' ELSE status END,
-           finalized_at = COALESCE(finalized_at, NOW()),
-           updated_at = NOW()
-       WHERE billing_period_id = $1`,
-      [period.billing_period_id]
-    );
+    const rated = await rateBillingPeriod(pool, period.billing_period_id, { finalize: true });
+    if (rated.pendingCalls) continue;
     finalizedPeriods += 1;
 
     const refreshedResult = await pool.query(
@@ -1082,6 +1098,12 @@ export async function finalizeDueBillingPeriods(pool) {
       [period.billing_period_id]
     );
     const refreshed = refreshedResult.rows[0] || period;
+    const paidAccount = (await pool.query('SELECT paid_purchase_id FROM tenant_billing_accounts WHERE tenant_key=$1', [period.tenant_key])).rows[0];
+    if (paidAccount?.paid_purchase_id) {
+      const invoice = await collectPaidUsageInvoice(pool, period.billing_period_id);
+      if (invoice) invoicedPeriods += 1;
+      continue;
+    }
     const overageItem = await createOverageInvoiceItemForPeriod(pool, refreshed);
     const adjustmentCount = await createAdjustmentInvoiceItemsForPeriod(pool, refreshed);
     if (overageItem) {

@@ -87,6 +87,7 @@ export default async function handler(req, res) {
       ok: true,
       tenantKey,
       billing: {
+        manualAdjustmentsAllowed: !row.paid_purchase_id,
         status: row.billing_status,
         serviceAccessStatus: row.service_access_status,
         appAccessStatus: row.app_access_status,

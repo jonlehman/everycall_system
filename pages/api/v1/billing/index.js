@@ -1,3 +1,4 @@
+import { getPaidBillingReadModel, paidUsageInvoiceEstimate } from '../../_lib/paidBillingReadModel.js';
 import { requireSession, resolveTenantKey } from "../../_lib/auth.js";
 import { ensureTables, getPool } from "../../_lib/db.js";
 import {
@@ -55,7 +56,7 @@ function humanizeLabel(value) {
 function buildBillingStatusLabel(status, { cancelAtPeriodEnd = false } = {}) {
   const normalized = normalizeText(status).toLowerCase();
   if (cancelAtPeriodEnd && ["active", "trialing"].includes(normalized)) {
-    return "Canceled";
+    return "Cancellation scheduled";
   }
   if (normalized === "active") return "Active";
   if (normalized === "trialing") return "Trialing";
@@ -183,7 +184,7 @@ function buildFallbackInvoiceEstimate(plan) {
 function buildUsageAllowanceSummary(plan) {
   const includedCallCount = Number(plan?.includedCallCount ?? plan?.includedCount ?? 0);
   if (!Number.isFinite(includedCallCount) || includedCallCount <= 0) return null;
-  const cadence = normalizeText(plan?.billingIntervalLabel).toLowerCase() === "annual" ? "year" : "month";
+  const cadence = "month";
   return `Includes ${includedCallCount.toLocaleString("en-US")} ${includedCallCount === 1 ? "call" : "calls"} per ${cadence}.`;
 }
 
@@ -302,7 +303,7 @@ function buildBillingAlert({ row, paymentMethodSummary }) {
 
 function buildManagementAction(row) {
   const normalizedStatus = normalizeText(row?.billing_status).toLowerCase();
-  if (normalizedStatus === "deactivated") {
+  if (row?.service_ended_at || (row?.cancel_at_period_end && new Date(row.current_period_end).getTime() <= Date.now()) || normalizedStatus === "deactivated") {
     return {
       type: "reactivate",
       endpoint: "/api/v1/billing/reactivate"
@@ -448,7 +449,7 @@ export default async function handler(req, res) {
           || String(priorStripeSubscriptionId) !== String(row.stripe_subscription_id || "")
           || String(priorCurrentPeriodStart || "") !== String(nextCurrentPeriodStart || "")
         );
-      if (shouldActivatePendingDiscount) {
+      if (shouldActivatePendingDiscount && !row.paid_purchase_id) {
         await activatePendingCouponDiscountWindow(pool, tenantKey, { subscription: tenantSubscription }).catch(() => null);
       }
     }
@@ -550,7 +551,9 @@ export default async function handler(req, res) {
       customer: stripeCustomer,
       latestInvoice
     });
-    const callInvoiceEstimate = callBilling?.invoiceEstimate || buildFallbackInvoiceEstimate(planDisplay);
+    let callInvoiceEstimate = callBilling?.invoiceEstimate || buildFallbackInvoiceEstimate(planDisplay);
+    const lifecycle = await getPaidBillingReadModel(pool, row);
+    if (lifecycle) callInvoiceEstimate = paidUsageInvoiceEstimate(row, planDisplay, callInvoiceEstimate, callBilling?.currentPeriod?.end);
     const callAdjustments = callBilling?.adjustments || {
       creditAmountCents: 0,
       debitAmountCents: 0,
@@ -590,10 +593,24 @@ export default async function handler(req, res) {
       latestInvoice: latestInvoiceSummary
     };
 
+    if (lifecycle) {
+      const due = lifecycle.amountOwedCents > 0;
+      billingSummary.nextCharge = {
+        ...billingSummary.nextCharge,
+        mode: due ? 'amount_due' : 'charge',
+        amountCents: due ? lifecycle.amountOwedCents : callInvoiceEstimate.totalEstimatedInvoiceCents,
+        date: due ? lifecycle.graceEndsAt : callBilling?.currentPeriod?.end || row.current_period_end,
+        baseRenewalAt: row.cancel_at_period_end || row.service_ended_at ? null : row.current_period_end,
+        baseRenewalAmountCents: row.cancel_at_period_end || row.service_ended_at ? 0 : Number(planDisplay.baseAmountCents || 0),
+        monthlyOverageAmountCents: Number(callInvoiceEstimate.overageAmountCents || 0)
+      };
+    }
+    res.setHeader('Cache-Control', 'private, no-store');
     return res.status(200).json({
       ok: true,
       tenantKey,
       billing: {
+        lifecycle,
         status: row.billing_status,
         serviceAccessStatus: row.service_access_status,
         appAccessStatus: row.app_access_status,

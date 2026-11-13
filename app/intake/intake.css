@@ -518,3 +518,9 @@
     justify-content: stretch;
   }
 }
+
+.intake-plan-options { border: 0; padding: 0; margin: 0; min-width: 0; }
+.intake-plan-options legend { font-weight: 700; margin-bottom: 10px; }
+.intake-purchase-review { padding: 20px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 16px; }
+.intake-purchase-review p { margin-top: 12px; line-height: 1.6; }
+.intake-purchase-review a { text-decoration: underline; overflow-wrap: anywhere; }

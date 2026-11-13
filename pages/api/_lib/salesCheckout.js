@@ -1,3 +1,4 @@
+import { issueIntakeSalesReference } from './paidIntake.js';
 import { hasSalesLiveCheckoutWebhook } from './salesCheckoutReadiness.js';
 import { DEFAULT_SALES_SIGNUP_AMOUNT_CENTS, validSalesSignupAmount, formatSalesSignupAmount } from '../../../lib/salesSignupAmount.js';
 import { normalizeSalesCheckoutPhone } from '../../../lib/salesCheckoutRecipient.js';
@@ -116,6 +117,7 @@ export async function sendSalesCheckout(pool,{amountCents,salesCallId=null,prosp
   // link. Prospect sends reuse an existing link instead of creating another charge.
   const existing=await db.query('SELECT * FROM sales_checkout_sessions WHERE prospect_id=$1 AND is_test=$2 ORDER BY (sales_call_id=$3) DESC NULLS LAST,created_at DESC LIMIT 1 FOR UPDATE',[targetId,isTest,salesCallId]);
   if(!existing.rowCount&&customAmount) {
+   if(![100,10000].includes(amountCents))throw salesError('signup_amount_retired','New signup links use $100 or the authorized $1 live test.',409);
    if(isTest)throw salesError('custom_signup_amount_unavailable','New test signup links are fixed at $100.00.',409);
    if(!mode.rows[0]?.custom_signup_amount_enabled)throw salesError('custom_signup_amount_unavailable','The signup charge is currently fixed at $100.00. Refresh before changing it.',409);
    if(!liveCustomWebhookReady)throw salesError('sales_checkout_not_ready','Custom signup checkout is temporarily unavailable. Try again later or use the standard signup charge.',503);
@@ -128,7 +130,17 @@ export async function sendSalesCheckout(pool,{amountCents,salesCallId=null,prosp
  });
  const {row,prospect,delivery,recipient}=reservation;
  if(row.channel!==delivery||row.recipient!==recipient)throw salesError('checkout_delivery_exists',`This company's checkout is reserved for ${row.channel} to ${row.recipient}. Use the existing recipient; changing contacts cannot create another checkout.`,409);
- if(!row.stripe_session_id){
+ if(!row.is_test){
+  const intakeUrl=await salesTransaction(pool,async db=>{
+   await db.query('SELECT checkout_id FROM sales_checkout_sessions WHERE checkout_id=$1 FOR UPDATE',[row.checkout_id]);
+   const url=await issueIntakeSalesReference(db,row);
+   await db.query("UPDATE sales_checkout_sessions SET checkout_url=$2,status=CASE WHEN status='creating' THEN 'created' ELSE status END WHERE checkout_id=$1",[row.checkout_id,url]);
+   return url;
+  });
+  row.checkout_url=intakeUrl;
+  if(row.status==='creating')row.status='created';
+ }
+ if(row.is_test&&!row.stripe_session_id){
   const client=stripe||(row.is_test?getSalesTestStripe(env):liveStripe||getStripe());
   const session=await client.checkout.sessions.create({mode:'payment',payment_method_types:['card'],line_items:[{price_data:{currency:'usd',unit_amount:row.amount_cents,product_data:{name:row.is_test?'EveryCall TEST setup — no real charge':'EveryCall setup — first month included'}},quantity:1}],client_reference_id:row.checkout_id,metadata:{sales_checkout_id:row.checkout_id,...(row.sales_call_id?{sales_call_id:row.sales_call_id}:{}),sales_prospect_id:row.prospect_id,sales_checkout_test:String(row.is_test)},success_url:`${origin.origin}/sales/checkout-result?status=success`,cancel_url:`${origin.origin}/sales/checkout-result?status=cancelled`,...(delivery==='email'?{customer_email:row.recipient}:{})},{idempotencyKey:row.checkout_id});
   if(row.is_test&&session.livemode!==false)throw salesError('sales_test_checkout_mode_mismatch','Stripe did not return a test checkout. No link was sent.',502);

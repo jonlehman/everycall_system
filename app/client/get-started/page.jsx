@@ -550,7 +550,7 @@ export default function ClientGetStartedPage() {
     { label: 'Choose where leads go', done: setupStatus?.tasks?.leadDestinations?.status === 'ready' },
     { label: 'Review receptionist settings', done: receptionistSettings.done },
     { label: 'How to use this number', done: forwarding.forwardingConfigured },
-    { label: 'Activate billing', done: billingSetup.done }
+    { label: 'Payment and setup', done: billingSetup.done }
   ], [
     billingSetup.done,
     forwarding.forwardingConfigured,
@@ -567,6 +567,18 @@ export default function ClientGetStartedPage() {
   const showSetupIssueBanner = searchParams?.get('setup_issue') === '1' || forwarding.voiceSetupNeedsAttention;
   const showWebsiteTrainingRefresh = websiteTraining.progressPercent < 100;
 
+  const [appointmentBusy, setAppointmentBusy] = useState(false);
+  const [appointmentError, setAppointmentError] = useState('');
+  const bookSetup = async () => {
+    setAppointmentBusy(true); setAppointmentError('');
+    try {
+      const response = await fetch('/api/v1/billing/setup-appointment', { cache: 'no-store' });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.url) throw new Error(data?.message || 'Setup booking requires verified payment. Open Billing or contact support.');
+      window.location.assign(data.url);
+    } catch (error) { setAppointmentError(error.message); setAppointmentBusy(false); }
+  };
+
   const refreshWebsiteTraining = async () => {
     if (refreshingWebsiteTraining) return;
     setRefreshingWebsiteTraining(true);
@@ -580,6 +592,7 @@ export default function ClientGetStartedPage() {
   return (
     <>
       <ClientPage className="gap-4 pt-2 md:pt-3">
+        {appointmentError ? <p role="alert" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{appointmentError}</p> : null}
         <div className="mx-auto w-full max-w-5xl">
         <header className="mt-12 mb-7 flex flex-col gap-3 md:mb-8 md:flex-row md:items-start md:justify-between">
           <h1 className="mb-2 font-['Space_Grotesk'] text-4xl font-bold tracking-[-0.05em] text-[#121c2a] md:text-5xl">
@@ -587,15 +600,12 @@ export default function ClientGetStartedPage() {
             <br />
             <span className="font-medium text-[#2563eb]">Prepare EveryCall for live calls.</span>
           </h1>
-          <a
-            href="https://calendly.com/jonlehman/everycall-setup"
-            target="_blank"
-            rel="noreferrer"
+          <button type="button" onClick={bookSetup} disabled={appointmentBusy}
             className="inline-flex flex-col items-start self-start rounded-3xl border border-[#dbeafe] bg-[#eff6ff] px-4 py-3 text-left text-sm font-semibold leading-tight text-[#2563eb] shadow-sm transition-colors hover:bg-[#dbeafe] hover:text-[#1d4ed8]"
           >
             <span>Get Help</span>
             <span className="mt-1 text-xs font-medium text-[#1d4ed8]">Schedule Onboarding Session</span>
-          </a>
+          </button>
         </header>
 
           {showSetupIssueBanner ? (
@@ -767,7 +777,7 @@ export default function ClientGetStartedPage() {
 
             <SetupStepCard
               step="5"
-              title="Activate Billing"
+              title="Payment and setup"
               statusBox={{
                 label: 'Current status',
                 value: billingSetup.statusValue,
@@ -776,7 +786,7 @@ export default function ClientGetStartedPage() {
               }}
               descriptionContent={(
                 <ul className="list-disc space-y-2 pl-5">
-                  <li>When activated, charges won&apos;t start until your trial ends</li>
+                  <li>Your paid setup includes the first calendar month. Review payment, invoices and your next charge in Billing.</li>
                 </ul>
               )}
               action={(
@@ -784,7 +794,7 @@ export default function ClientGetStartedPage() {
                   href="/client/account/billing"
                   className={actionButtonClass(false)}
                 >
-                  {billingSetup.done ? 'Billing' : 'Activate Billing'}
+                  Billing
                 </Link>
               )}
             />
@@ -815,19 +825,14 @@ export default function ClientGetStartedPage() {
               <button
                 type="button"
                 className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-                onClick={dismissSupportSetupModal}
               >
                 I&apos;ll do this later
               </button>
-              <a
+              <button type="button" onClick={bookSetup} disabled={appointmentBusy}
                 className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[#004ac6] px-5 text-sm font-semibold text-white shadow-[0_16px_30px_rgba(0,74,198,0.18)] transition-opacity hover:opacity-95"
-                href="https://calendly.com/jonlehman/everycall-setup"
-                target="_blank"
-                rel="noreferrer"
-                onClick={dismissSupportSetupModal}
               >
                 Schedule Setup Call
-              </a>
+              </button>
             </div>
           </div>
         </div>

@@ -1,34 +1,23 @@
 import assert from 'node:assert/strict';
-import pg from 'pg';
-import crypto from 'node:crypto';
-import fs from 'node:fs/promises';
+import { createUpibTestFixture } from './lib/upib-test-fixture.mjs';
+import { resolveIntakeSalesReference } from '../pages/api/_lib/paidIntake.js';
+import { setSalesPhoneTestMode } from '../pages/api/_lib/salesPhoneTestMode.js';
 import { getSalesProspect, createSalesCallSession, updateSalesCallSession } from '../pages/api/_lib/salesRepository.js';
-import { sendSalesCheckout, getSalesCheckoutContext } from '../pages/api/_lib/salesCheckout.js';
+import { sendSalesCheckout, getSalesCheckoutContext, applySalesPaidCheckout } from '../pages/api/_lib/salesCheckout.js';
 import { bookSalesSetup } from '../pages/api/_lib/salesCalendar.js';
 import { buildSalesCallView } from '../pages/api/_lib/salesCallView.js';
 import { salesIncomingAction } from '../pages/api/_lib/salesIncoming.js';
 import { createSalesInboundService } from '../apps/sales-call-gateway/src/salesInbound.js';
 import { initialCompanyContactId, companyContactTarget } from '../app/admin/sales/dialerState.mjs';
-const target=process.env.EVERYCALL_TEST_POSTGRES_URL;
-assert(target&&['127.0.0.1','localhost'].includes(new URL(target).hostname),'Use isolated loopback fixture only');
-const schema=`contact_delivery_${crypto.randomBytes(6).toString('hex')}`;
-const admin=new pg.Pool({connectionString:target});await admin.query(`CREATE SCHEMA ${schema}`);
-const pool=new pg.Pool({connectionString:target,options:`-c search_path=${schema}`});const db={exec:sql=>pool.query(sql)};
+const fixture=await createUpibTestFixture({label:'contactdelivery'});
+const {pool}=fixture;
 const q=(sql,values=[])=>pool.query(sql,values);
 const env={APP_BASE_URL:'https://example.test',SETUP_CALL_OWNER:'owner@example.test',FULL_BUILD_LEAD_MINUTES:'360',SETUP_CALL_TIMEZONE:'UTC',SETUP_CALL_START_HOUR:'0',SETUP_CALL_END_HOUR:'24',SALES_GRAPH_TENANT_ID:'test',SALES_GRAPH_CLIENT_ID:'test',SALES_GRAPH_CLIENT_SECRET:'test',SALES_TELNYX_CALLER_ID:'+12065559999',SALES_TELNYX_CALL_CONTROL_APP_ID:'test-app'};
 process.env.SALES_CALL_WINDOW_START_LOCAL='00:00';process.env.SALES_CALL_WINDOW_END_LOCAL='00:00';process.env.SALES_CALL_MISSING_TIMEZONE_POLICY='allow';
 try {
- await db.exec(`CREATE TABLE admin_users(id BIGSERIAL PRIMARY KEY);CREATE TABLE tenants(tenant_key TEXT PRIMARY KEY,name TEXT,industry TEXT,app_access_status TEXT,billing_status TEXT,live_prompt_mode TEXT,updated_at TIMESTAMPTZ,status TEXT,telnyx_voice_number TEXT,telnyx_voice_status TEXT,service_access_status TEXT,billing_lock_reason TEXT);CREATE TABLE tenant_bootstrap_profiles(tenant_key TEXT PRIMARY KEY,website_url TEXT,company_description TEXT,business_category TEXT,source_mode TEXT,marketing_attribution_json JSONB DEFAULT '{}'::jsonb,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());CREATE TABLE tenant_active_knowledge_builds(tenant_key TEXT,active_build_id TEXT);CREATE TABLE knowledge_builds(build_id TEXT,tenant_key TEXT,status TEXT);CREATE TABLE provisioning_jobs(id BIGSERIAL PRIMARY KEY,tenant_key TEXT,status TEXT,provider TEXT,stage TEXT,status_detail TEXT,provider_reference TEXT,error_code TEXT,error_message TEXT,updated_at TIMESTAMPTZ,completed_at TIMESTAMPTZ);INSERT INTO admin_users(id) VALUES(1),(2);`);
- await db.exec(await fs.readFile(new URL('../migrations/0032_outbound_sales_demo.sql',import.meta.url),'utf8'));
- await db.exec(await fs.readFile(new URL('../migrations/0056_sales_dialer_v2.sql',import.meta.url),'utf8'));
- await db.exec(await fs.readFile(new URL('../migrations/0057_sales_phone_test_mode.sql',import.meta.url),'utf8'));
- await db.exec(await fs.readFile(new URL('../migrations/0058_sales_prospect_checkout.sql',import.meta.url),'utf8'));
- await db.exec(await fs.readFile(new URL('../migrations/0059_sales_company_contacts.sql',import.meta.url),'utf8'));
- await db.exec(await fs.readFile(new URL('../migrations/0062_sales_contact_notes.sql',import.meta.url),'utf8'));
- await db.exec(await fs.readFile(new URL('../migrations/0061_sales_checkout_amount.sql',import.meta.url),'utf8'));
-
- await q("ALTER TABLE admin_users ADD COLUMN email TEXT");
- await q("UPDATE admin_users SET email='rep@example.test'");
+ await q("INSERT INTO admin_users(id,username,email,role) VALUES(1,'rep1','rep@example.test','sales'),(2,'rep2','rep2@example.test','sales')");
+ await q('UPDATE paid_intake_release SET enabled=TRUE');
+ process.env.APP_BASE_URL=env.APP_BASE_URL;
  for(const id of ['company','foreign']) {
   await q("INSERT INTO sales_prospects(prospect_id,source_key,business_name,phone_e164,contact_name,contact_email,numbers_json,permission_granted,assigned_rep_user_id,timezone) VALUES($1,$1,$1,'+12065550100','Original Person','original@example.test',$2::jsonb,TRUE,1,'UTC')",[id,JSON.stringify([{type:'cell',phoneE164:'+12065550100'}])]);
   await q("INSERT INTO sales_demo_profiles(demo_profile_id,prospect_id,status) VALUES($1,$1,'ready')",[id]);
@@ -50,7 +39,21 @@ try {
  assert.equal(result.recipient,'second@example.test');assert.equal(messages[0].to,'second@example.test');
  const frozen=await getSalesCheckoutContext(pool,{prospectId:'company',repId:1});assert.equal(frozen.contactSnapshot.contactId,'second');assert(!Object.hasOwn(frozen.contactSnapshot,'notes'));assert(!JSON.stringify(messages).includes('Private memo'));
  await assert.rejects(sendSalesCheckout(pool,{...delivery,contactId:company.defaultContactId,email:'original@example.test',confirmedRecipient:'original@example.test'}),e=>e.code==='checkout_delivery_exists');
- assert.equal(charges,1);assert.equal(messages.length,1);
+ assert.equal(charges,0,'Live Sales sends shared intake and must not create a direct Checkout');assert.equal(messages.length,1);
+ const liveUrl=new URL(result.url);assert.equal(liveUrl.origin,'https://example.test');assert.equal(liveUrl.pathname,'/intake');assert(liveUrl.searchParams.get('salesRef'));
+ const scoped=await resolveIntakeSalesReference(pool,liveUrl.searchParams.get('salesRef'));assert.equal(scoped.prospect_id,'company');assert.equal(scoped.contact_snapshot.contactId,'second');assert.equal(scoped.stripe_session_id,null);
+ const resent=await sendSalesCheckout(pool,delivery);assert.equal(resent.url,result.url);assert.equal(messages.length,1);assert.equal(charges,0);
+ await assert.rejects(resolveIntakeSalesReference(pool,'forged-reference'),/intake_reference_expired/);
+ assert.equal(Number((await q('SELECT COUNT(*) AS n FROM tenants')).rows[0].n),0);
+ assert.equal(Number((await q('SELECT COUNT(*) AS n FROM paid_purchases')).rows[0].n),0);
+ // A possibly sent scoped link retains the original recipient and delivery fence.
+ const foreign=await getSalesProspect(pool,'foreign');let uncertainSends=0;
+ const uncertainDelivery={...delivery,prospectId:'foreign',contactId:foreign.defaultContactId,email:'original@example.test',confirmedRecipient:'original@example.test',expectedRowVersion:foreign.rowVersion,mail:async()=>{uncertainSends++;throw Error('provider response lost');}};
+ await assert.rejects(sendSalesCheckout(pool,uncertainDelivery),/provider response lost/);
+ const pending=(await q("SELECT checkout_url,recipient,status FROM sales_checkout_sessions WHERE prospect_id='foreign'")).rows[0];assert.equal(pending.status,'delivery_uncertain');assert.equal(pending.recipient,'original@example.test');
+ await assert.rejects(sendSalesCheckout(pool,uncertainDelivery),e=>e.code==='checkout_delivery_pending');assert.equal(uncertainSends,1);
+ assert.equal((await q("SELECT checkout_url FROM sales_checkout_sessions WHERE prospect_id='foreign'")).rows[0].checkout_url,pending.checkout_url);
+
  const call=await createSalesCallSession(pool,{prospectId:'company',adminUserId:1,contactId:'second',numberId:'shared',expectedRowVersion:company.rowVersion,idempotencyKey:'reservation',metadata:{prospect_number:'+12065550102',business_name:'Frozen Business'}});
  assert.equal(call.metadata.contact_snapshot.displayName,'Second Person');assert(!Object.hasOwn(call.metadata.contact_snapshot,'notes'));
  const replay=await createSalesCallSession(pool,{prospectId:'company',adminUserId:1,contactId:'second',numberId:'shared',expectedRowVersion:company.rowVersion,idempotencyKey:'reservation',metadata:{prospect_number:'+12065550102'}});assert.equal(replay.salesCallId,call.salesCallId);
@@ -77,5 +80,26 @@ try {
  await q("UPDATE sales_prospects SET assigned_rep_user_id=2 WHERE prospect_id='company'");
  await assert.rejects(createSalesCallSession(pool,{prospectId:'company',adminUserId:1,contactId:'second',numberId:'shared',idempotencyKey:'reservation'}),e=>e.code==='prospect_forbidden');
  await assert.rejects(getSalesCheckoutContext(pool,{prospectId:'company',repId:1}),e=>e.code==='prospect_forbidden');
- console.log('PASS selected contact reservation/replay, frozen checkout, immutable booking retry, historic snapshots and inbound ambiguity');
-} finally {await pool.end();await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();}
+ console.log('PASS selected contact reservation/replay, scoped live intake without charge/tenant, frozen recipient/uncertain send, immutable booking retry, historic snapshots and inbound ambiguity');
+} finally {await fixture.close();}
+
+// The deliberately separate sandbox keeps its fixed test Checkout; it never
+// acquires a live intake reference, production purchase, or tenant entitlement.
+const sandboxFixture=await createUpibTestFixture({label:'contactdeliverytest'});
+try {
+ const sandbox=sandboxFixture.pool;
+ await sandbox.query("INSERT INTO admin_users(id,username,email,role) VALUES(1,'testrep','rep@example.test','sales')");
+ await sandbox.query("INSERT INTO sales_prospects(prospect_id,source_key,business_name,phone_e164,contact_name,contact_email,permission_granted,assigned_rep_user_id,timezone) VALUES('sandbox','sandbox','Sandbox business','+12065550190','Test owner','owner@example.test',TRUE,1,'UTC')");
+ await setSalesPhoneTestMode(sandbox,true);
+ const prospect=await getSalesProspect(sandbox,'sandbox');let testCreates=0,testMessages=0,params;
+ const testEnv={...env,SALES_STRIPE_TEST_SECRET_KEY:'sk_test_fixture_only',SALES_CHECKOUT_TEST_EMAIL:'rep@example.test'};
+ const testStripe={checkout:{sessions:{create:async value=>{testCreates++;params=value;return {id:'cs_test_contact',url:'https://checkout.test/sandbox',livemode:false};}}}};
+ const request={prospectId:'sandbox',repId:1,channel:'email',contactId:prospect.defaultContactId,email:'rep@example.test',expectedRowVersion:prospect.rowVersion,confirmedWithoutCall:true,confirmedRecipient:'rep@example.test',expectedIsTest:true,env:testEnv,stripe:testStripe,mail:async m=>{testMessages++;assert.equal(m.to,'rep@example.test');assert.match(m.text,/TEST ONLY/);return{id:'sandbox_mail'};}};
+ const sent=await sendSalesCheckout(sandbox,request);assert.equal(sent.isTest,true);assert.equal(testCreates,1);assert.equal(params.mode,'payment');assert.equal(params.line_items[0].price_data.unit_amount,10000);
+ await sendSalesCheckout(sandbox,request);assert.equal(testCreates,1);assert.equal(testMessages,1);
+ const event={id:'evt_test_contact',type:'checkout.session.completed',livemode:false,data:{object:{id:'cs_test_contact',mode:'payment',currency:'usd',amount_total:10000,livemode:false,payment_status:'paid',metadata:params.metadata}}};
+ await applySalesPaidCheckout(sandbox,event,{testWebhook:true});
+ const ledger=(await sandbox.query("SELECT status,paid_at,activation_status FROM sales_checkout_sessions WHERE prospect_id='sandbox'")).rows[0];assert.equal(ledger.status,'test_complete');assert.equal(ledger.paid_at,null);assert.equal(ledger.activation_status,'test_only');
+ for(const table of ['paid_intake_sales_references','paid_purchases','tenants'])assert.equal(Number((await sandbox.query(`SELECT COUNT(*) AS n FROM ${table}`)).rows[0].n),0);
+ console.log('PASS isolated sandbox keeps $100 payment Checkout and immutable test recipient; test payment grants no live intake/purchase/tenant');
+}finally{await sandboxFixture.close();}

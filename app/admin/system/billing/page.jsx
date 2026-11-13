@@ -93,7 +93,7 @@ export default function AdminSystemBillingPage() {
       <div>
         <h2 className="m-0 text-xl font-semibold text-slate-900">Billing</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Trial length and Stripe catalog bindings for the standard plans defined in code.
+          Stripe catalog bindings for the standard paid plans defined in code.
         </p>
       </div>
 
@@ -104,17 +104,7 @@ export default function AdminSystemBillingPage() {
           Standard plan pricing, included call counts, and overage rates are code-owned. Change those in the app code first, then update the website separately.
         </div>
 
-        <div className="max-w-xs">
-          <label className="block">Global Free Trial Days</label>
-          <input
-            type="number"
-            min="1"
-            max="365"
-            className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            value={defaultTrialDays}
-            onChange={(event) => setDefaultTrialDays(event.target.value)}
-          />
-        </div>
+        <p className="mt-3 text-sm text-slate-600">New signups require paid setup. Historical trial settings do not authorize service or free reactivation.</p>
 
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
           {billingPlans.map((plan, index) => (

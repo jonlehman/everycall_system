@@ -62,6 +62,7 @@ async function findActiveStripeSubscription(row, tenantKey) {
 }
 
 export default async function handler(req, res) {
+  return res.status(410).json({error:'owner_next_term_change_required',message:'Use the owner-authorized Billing plan change flow. Historical prices and overrides are retained for review.'});
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "method_not_allowed" });

@@ -19,6 +19,23 @@ export default function Header() {
     overageCallCount: 0
   });
   const [open, setOpen] = useState(false);
+  const [supportSession, setSupportSession] = useState(null);
+  const [supportError, setSupportError] = useState('');
+  const [endingSupport, setEndingSupport] = useState(false);
+  useEffect(() => {
+    let active = true;
+    fetch('/api/v1/auth/me', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null)
+      .then((data) => { if (active) setSupportSession(data?.supportSession || null); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+  const endSupport = async () => {
+    setEndingSupport(true); setSupportError('');
+    try {
+      const response = await fetch('/api/v1/auth/support-session', { method: 'DELETE' });
+      if (!response.ok) throw new Error('Could not end the support session. Please try again.');
+      window.location.assign('/admin/tenants');
+    } catch (error) { setSupportError(error.message); setEndingSupport(false); }
+  };
   const timerRef = useRef(null);
 
   const openMenu = () => {
@@ -86,14 +103,12 @@ export default function Header() {
     };
   }, []);
 
-  const showTrialBadge = !billing.loading && billing.status === 'trialing' && !billing.hasStripeSubscription;
-  const showBillingBadge = !billing.loading && !showTrialBadge && (billing.appAccessStatus === 'billing_locked' || billing.status === 'deactivated');
-  const trialLabel = billing.trialDaysRemaining === 1 ? 'Trial: 1 Day Left' : `Trial: ${billing.trialDaysRemaining ?? 0} Days Left`;
-  const showActivateBillingAction = billing.canManage && (showTrialBadge || showBillingBadge);
+  const showBillingBadge = !billing.loading && (billing.appAccessStatus === 'billing_locked' || billing.status === 'deactivated');
   const showCallUsageBadge = !billing.loading;
-  const callUsageLabel = `Calls: ${billing.includedCallCountUsed}/${billing.includedCallCount}${billing.overageCallCount > 0 ? ` Overage: ${billing.overageCallCount}` : ''}${showTrialBadge ? ' (No charge during trial)' : ''}`;
+  const callUsageLabel = `Calls: ${billing.includedCallCountUsed}/${billing.includedCallCount}${billing.overageCallCount > 0 ? ` Overage: ${billing.overageCallCount}` : ''}`;
 
   return (
+    <>
     <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/70 bg-white/80 shadow-sm backdrop-blur-md">
       <div className="flex h-16 items-center justify-between px-4 md:px-6">
         <div className="flex items-center gap-8">
@@ -103,13 +118,6 @@ export default function Header() {
             imageClassName="h-full w-full object-contain"
             priority
           />
-          {showTrialBadge ? (
-            <div className="hidden md:flex items-center">
-              <Link href="/client/account/billing" className="border-b-2 border-[#004ac6] py-5 text-sm font-semibold text-[#004ac6]">
-                {trialLabel}
-              </Link>
-            </div>
-          ) : null}
           {showBillingBadge ? (
             <div className="hidden md:flex items-center">
               <Link href="/client/account/billing" className="border-b-2 border-amber-500 py-5 text-sm font-semibold text-amber-700">
@@ -136,15 +144,6 @@ export default function Header() {
           >
             <span className="material-symbols-outlined text-[20px]">help_outline</span>
           </Link>
-
-          {showActivateBillingAction ? (
-            <Link
-              href="/client/account/billing"
-              className="hidden rounded-md bg-[#004ac6] px-4 py-2 text-sm font-semibold text-white transition-all hover:opacity-90 md:inline-flex"
-            >
-              Activate Billing
-            </Link>
-          ) : null}
 
           <div
             className="relative"
@@ -201,5 +200,7 @@ export default function Header() {
         </div>
       </div>
     </header>
+    {supportSession ? <aside role="status" className="sticky top-16 z-40 flex flex-wrap items-center justify-between gap-2 border-b border-amber-300 bg-amber-100 px-4 py-3 text-sm text-amber-950"><span><strong>Support session</strong> · {supportSession.tenantKey} · {supportSession.actorEmail} · Expires {new Date(supportSession.expiresAt).toLocaleTimeString()}. Billing changes require owner authorization.</span><button type="button" className="rounded border border-amber-700 px-3 py-1 font-semibold" onClick={endSupport} disabled={endingSupport}>{endingSupport ? 'Ending…' : 'End support session'}</button>{supportError ? <span role="alert">{supportError}</span> : null}</aside> : null}
+    </>
   );
 }
